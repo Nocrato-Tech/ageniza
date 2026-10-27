@@ -89,6 +89,9 @@ Verifica se a API está pronta para receber tráfego.
 |---|---|---|---|---|
 | `POST` | `/auth/login` | Público | — | Autentica com e-mail e senha |
 | `POST` | `/auth/sign-up` | Público | — | Cria uma conta com e-mail e senha |
+| `GET` | `/auth/providers` | Público | — | Diz se o Google está ligado |
+| `GET` | `/auth/google/start` | Público | — | Leva o navegador ao Google para entrar |
+| `GET` | `/auth/callback/google` | Público | — | Volta do Google: cria ou abre a sessão |
 | `POST` | `/auth/email/verification/resend` | Público | — | Reenvia o link de confirmação do e-mail |
 | `POST` | `/auth/email/verify` | Pública, pelo token do link e a senha | — | Confirma o e-mail com o link e a senha da conta, ou com a sessão dela |
 | `POST` | `/auth/logout` | Sessão | — | Encerra a sessão atual |
@@ -153,6 +156,45 @@ Cria uma conta com e-mail e senha.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `403 CSRF_REJECTED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `GET /auth/providers`
+
+Diz se o Google está ligado.
+
+- Acesso: Público.
+- Permissão: —.
+
+**Resposta `200`** — Provedores ligados.
+
+```json
+{
+  "google": true
+}
+```
+
+**Erros:** `500 INTERNAL_ERROR`
+
+#### `GET /auth/google/start`
+
+Leva o navegador ao Google para entrar.
+
+- Acesso: Público.
+- Permissão: —.
+
+**Resposta `302`** — Redirecionamento ao Google; o estado do fluxo vai num cookie assinado.
+
+**Erros:** `400 VALIDATION_ERROR` · `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `GET /auth/callback/google`
+
+Volta do Google: cria ou abre a sessão.
+
+- Acesso: Público.
+- Permissão: —.
+
+**Resposta `302`** — Para `/entrar/google` (entrou) ou `/entrar?erro=google` (recusado).
+
+**Erros:** `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /auth/email/verification/resend`
 
@@ -375,7 +417,7 @@ Lista os convites de colaborador pendentes.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/invitations/collaborators`
 
@@ -404,7 +446,7 @@ Convida uma pessoa para a agência.
 }
 ```
 
-**Erros:** `400 INVALID_ROLE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 MEMBERSHIP_EXISTS` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
+**Erros:** `400 INVALID_ROLE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 MEMBERSHIP_EXISTS` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
 
 #### `POST /agencies/:agencyId/invitations/:invitationId/resend`
 
@@ -423,7 +465,7 @@ Reenvia um convite pendente.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 INVITATION_NOT_PENDING` · `409 PORTAL_INVITATION_DISCONTINUED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 INVITATION_NOT_PENDING` · `409 PORTAL_INVITATION_DISCONTINUED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
 
 #### `DELETE /agencies/:agencyId/invitations/:invitationId`
 
@@ -434,7 +476,7 @@ Cancela um convite pendente.
 
 **Resposta `204`** — Convite cancelado.
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 INVITATION_NOT_PENDING` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 INVITATION_NOT_PENDING` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /invitations/:token`
 
@@ -609,7 +651,7 @@ Marca o primeiro acesso ao portal do cliente.
 
 **Resposta `204`** — Registrado.
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 ### agencies — Dados do contexto de agência, incluindo as permissões efetivas.
 
@@ -650,7 +692,7 @@ Devolve as permissões efetivas do contexto de agência.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies`
 
@@ -682,7 +724,7 @@ Cria uma agência em período de teste.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_VERIFIED` · `409 TRIAL_ALREADY_EXISTS` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_VERIFIED` · `403 TERMS_NOT_ACCEPTED` · `409 TRIAL_ALREADY_EXISTS` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
 
 ### clients — Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.
 
@@ -772,7 +814,7 @@ Lista a carteira de clientes com ordem de triagem.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients`
 
@@ -810,7 +852,7 @@ Cadastra um cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_NAME_IN_USE` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_NAME_IN_USE` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId`
 
@@ -846,7 +888,7 @@ Lê o detalhe do cliente com o resumo da aba Geral.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `PATCH /agencies/:agencyId/clients/:clientId`
 
@@ -885,7 +927,7 @@ Edita o cadastro do cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CLIENT_NAME_IN_USE` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CLIENT_NAME_IN_USE` · `500 INTERNAL_ERROR`
 
 #### `PUT /agencies/:agencyId/clients/:clientId/photo`
 
@@ -910,7 +952,7 @@ Envia a foto do cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `DELETE /agencies/:agencyId/clients/:clientId/photo`
 
@@ -921,7 +963,7 @@ Remove a foto do cliente.
 
 **Resposta `204`** — Foto removida.
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
 #### `PUT /agencies/:agencyId/clients/:clientId/closing`
 
@@ -959,7 +1001,7 @@ Agenda o encerramento do contrato do cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `DELETE /agencies/:agencyId/clients/:clientId/closing`
 
@@ -989,7 +1031,7 @@ Desmarca o encerramento agendado do cliente.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CLOSING_DATE_NOT_SET` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CLOSING_DATE_NOT_SET` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/archive`
 
@@ -1019,7 +1061,7 @@ Arquiva o cliente agora.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/reactivate`
 
@@ -1049,7 +1091,7 @@ Reativa um cliente arquivado.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_NAME_IN_USE` · `409 CLIENT_NOT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_NAME_IN_USE` · `409 CLIENT_NOT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/brand-study`
 
@@ -1151,7 +1193,7 @@ Lê o estudo de marca com as sete seções e as personas.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `PUT /agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey`
 
@@ -1189,7 +1231,7 @@ Grava uma seção do estudo de marca (upsert).
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/personas`
 
@@ -1226,7 +1268,7 @@ Cria uma persona do cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
 #### `PATCH /agencies/:agencyId/clients/:clientId/personas/:personaId`
 
@@ -1263,7 +1305,7 @@ Edita uma persona.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/archive`
 
@@ -1291,7 +1333,7 @@ Arquiva uma persona.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive`
 
@@ -1319,7 +1361,7 @@ Desarquiva uma persona.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/threads`
 
@@ -1371,7 +1413,7 @@ Lista as conversas de um assunto do cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/threads`
 
@@ -1427,7 +1469,7 @@ Abre uma conversa pela agência, com o primeiro comentário.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/threads/:threadId/comments`
 
@@ -1469,7 +1511,7 @@ Lista os comentários de uma conversa.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/threads/:threadId/comments`
 
@@ -1501,7 +1543,7 @@ Comenta uma conversa pela agência.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/threads/:threadId/resolve`
 
@@ -1536,7 +1578,7 @@ Resolve uma conversa.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/members`
 
@@ -1584,7 +1626,7 @@ Lista as pessoas com acesso ao portal de um cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/members`
 
@@ -1614,7 +1656,7 @@ Adiciona uma pessoa ao portal do cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 ACCESS_EXISTS` · `409 AGENCY_READ_ONLY` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `429 DAILY_EMAIL_LIMIT` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 ACCESS_EXISTS` · `409 AGENCY_READ_ONLY` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `429 DAILY_EMAIL_LIMIT` · `500 INTERNAL_ERROR` · `502 EMAIL_DELIVERY_FAILED`
 
 #### `POST /agencies/:agencyId/clients/:clientId/members/:accessId/remove`
 
@@ -1636,7 +1678,7 @@ Remove uma pessoa do portal do cliente.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/members/:accessId/reactivate`
 
@@ -1658,7 +1700,7 @@ Reativa uma pessoa do portal do cliente.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 AGENCY_READ_ONLY` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 AGENCY_READ_ONLY` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/invitations`
 
@@ -1695,7 +1737,7 @@ Lista os convites de portal pendentes de um cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/threads`
 
@@ -1746,7 +1788,7 @@ Lista as conversas de um assunto, no portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /clients/:clientId/threads`
 
@@ -1802,7 +1844,7 @@ Abre uma conversa pelo portal, com o primeiro comentário.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `409 SECTION_NOT_FILLED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 SECTION_NOT_FILLED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/threads/:threadId/comments`
 
@@ -1844,7 +1886,7 @@ Lista os comentários de uma conversa, no portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /clients/:clientId/threads/:threadId/comments`
 
@@ -1876,7 +1918,7 @@ Comenta uma conversa pelo portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId`
 
@@ -1914,7 +1956,7 @@ Lê o cadastro do próprio cliente e o resumo do Início, no portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/brand-study`
 
@@ -1999,7 +2041,7 @@ Lê o estudo de marca, no portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 ### contents — Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste.
 
@@ -2085,7 +2127,7 @@ Consulta os conteúdos e os roteiros de stories de um período.
 }
 ```
 
-**Erros:** `400 CONTENT_PERIOD_TOO_LARGE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_PERIOD_TOO_LARGE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents`
 
@@ -2162,7 +2204,7 @@ Cria um conteúdo em produção.
 }
 ```
 
-**Erros:** `400 CONTENT_FOLDER_INVALID` · `400 CONTENT_MEDIA_INVALID` · `400 CONTENT_OWNER_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_FOLDER_INVALID` · `400 CONTENT_MEDIA_INVALID` · `400 CONTENT_OWNER_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/contents/:contentId`
 
@@ -2227,7 +2269,7 @@ Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `PATCH /agencies/:agencyId/clients/:clientId/contents/:contentId`
 
@@ -2301,7 +2343,7 @@ Edita um conteúdo; mover de data é editar `publishOn`.
 }
 ```
 
-**Erros:** `400 CONTENT_FOLDER_INVALID` · `400 CONTENT_MEDIA_INVALID` · `400 CONTENT_OWNER_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_FOLDER_IN_USE` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_NOT_EDITABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_FOLDER_INVALID` · `400 CONTENT_MEDIA_INVALID` · `400 CONTENT_OWNER_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_FOLDER_IN_USE` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_NOT_EDITABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/submit`
 
@@ -2372,7 +2414,7 @@ Envia o conteúdo para aprovação.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 CONTENT_TASKS_NOT_APPROVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 CONTENT_TASKS_NOT_APPROVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/approve-by-agency`
 
@@ -2449,7 +2491,7 @@ Registra a aprovação feita fora da plataforma.
 }
 ```
 
-**Erros:** `400 CONTENT_REASON_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_REVISION_CHANGED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_REASON_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_REVISION_CHANGED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/publish`
 
@@ -2522,7 +2564,7 @@ Marca o conteúdo aprovado como publicado.
 }
 ```
 
-**Erros:** `400 CONTENT_PUBLISHED_ON_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_PUBLISHED_ON_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/unpublish`
 
@@ -2593,7 +2635,7 @@ Desfaz a publicação no mesmo dia.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 CONTENT_UNPUBLISH_EXPIRED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 CONTENT_UNPUBLISH_EXPIRED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/cancel`
 
@@ -2664,7 +2706,7 @@ Cancela o conteúdo (ele fica guardado).
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/reschedule`
 
@@ -2737,7 +2779,7 @@ Reagenda um conteúdo cancelado.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/tasks`
 
@@ -2776,7 +2818,7 @@ Cria uma subtarefa do conteúdo.
 }
 ```
 
-**Erros:** `400 CONTENT_TASK_ASSIGNEE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_LIMIT` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_TASK_ASSIGNEE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_LIMIT` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `PATCH /agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId`
 
@@ -2813,7 +2855,7 @@ Edita uma subtarefa do conteúdo.
 }
 ```
 
-**Erros:** `400 CONTENT_TASK_ASSIGNEE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_TASK_ASSIGNEE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/deliver`
 
@@ -2841,7 +2883,7 @@ Entrega uma subtarefa.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/approve`
 
@@ -2872,7 +2914,7 @@ Aprova uma subtarefa entregue.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/return`
 
@@ -2908,7 +2950,7 @@ Devolve uma subtarefa entregue, com comentário.
 }
 ```
 
-**Erros:** `400 CONTENT_TASK_COMMENT_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_TASK_COMMENT_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_TASK_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/contents`
 
@@ -2959,7 +3001,7 @@ Lista os conteúdos de um período, no portal.
 }
 ```
 
-**Erros:** `400 CONTENT_PERIOD_TOO_LARGE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_PERIOD_TOO_LARGE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/contents/awaiting-approval`
 
@@ -3004,7 +3046,7 @@ Lista o que espera a aprovação da pessoa, no portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/contents/:contentId`
 
@@ -3038,7 +3080,7 @@ Lê um conteúdo, no portal.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/contents/:contentId/media/:assetId/url`
 
@@ -3064,7 +3106,7 @@ Emite a URL assinada de uma mídia do conteúdo, no portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `409 VARIANT_NOT_READY` · `409 VARIANT_PROCESSING_FAILED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 VARIANT_NOT_READY` · `409 VARIANT_PROCESSING_FAILED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /clients/:clientId/contents/:contentId/approve`
 
@@ -3106,7 +3148,7 @@ Aprova um conteúdo, no portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /clients/:clientId/contents/:contentId/request-changes`
 
@@ -3149,7 +3191,7 @@ Pede ajuste de um conteúdo, no portal.
 }
 ```
 
-**Erros:** `400 CONTENT_COMMENT_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_COMMENT_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 ### collaborators — A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.
 
@@ -3212,7 +3254,7 @@ Lista a equipe da agência.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/collaborators/:membershipId`
 
@@ -3241,7 +3283,7 @@ Devolve um colaborador da agência.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `PATCH /agencies/:agencyId/collaborators/:membershipId`
 
@@ -3279,7 +3321,7 @@ Altera o cargo e/ou o papel de um colaborador.
 }
 ```
 
-**Erros:** `400 INVALID_ROLE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 INVALID_ROLE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/collaborators/:membershipId/remove`
 
@@ -3308,7 +3350,7 @@ Remove um colaborador do quadro.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 COLLABORATOR_ALREADY_REMOVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 COLLABORATOR_ALREADY_REMOVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/collaborators/:membershipId/reactivate`
 
@@ -3345,7 +3387,7 @@ Reativa um colaborador removido.
 }
 ```
 
-**Erros:** `400 INVALID_ROLE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 COLLABORATOR_NOT_REMOVED` · `500 INTERNAL_ERROR`
+**Erros:** `400 INVALID_ROLE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 COLLABORATOR_NOT_REMOVED` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/collaborators/job-titles`
 
@@ -3366,7 +3408,7 @@ Lista os cargos que existem na agência.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/roles`
 
@@ -3394,7 +3436,7 @@ Lista os papéis atribuíveis na agência.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 ### media — Upload direto ao armazenamento, confirmação e URLs assinadas de mídia; as pastas de mídia de um cliente, a listagem do que há nelas e a remoção.
 
@@ -3441,7 +3483,7 @@ Inicia um upload de mídia.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 QUOTA_EXCEEDED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 QUOTA_EXCEEDED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/media/uploads/:assetId/parts`
 
@@ -3475,7 +3517,7 @@ Pede URLs assinadas de partes do multipart.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 UPLOAD_NOT_PENDING` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 UPLOAD_NOT_PENDING` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/media/uploads/:assetId/complete`
 
@@ -3508,7 +3550,7 @@ Confirma o upload e valida o objeto.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 QUOTA_EXCEEDED` · `409 UPLOAD_NOT_PENDING` · `413 PAYLOAD_TOO_LARGE` · `422 UPLOAD_REJECTED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 QUOTA_EXCEEDED` · `409 UPLOAD_NOT_PENDING` · `413 PAYLOAD_TOO_LARGE` · `422 UPLOAD_REJECTED` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/media/:assetId/download-url`
 
@@ -3534,7 +3576,7 @@ Emite uma URL assinada de leitura.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 VARIANT_NOT_READY` · `409 VARIANT_PROCESSING_FAILED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 VARIANT_NOT_READY` · `409 VARIANT_PROCESSING_FAILED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/media-folders`
 
@@ -3573,7 +3615,7 @@ Lista as pastas de mídia de um cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/media-folders`
 
@@ -3603,7 +3645,7 @@ Cria uma pasta de mídia do cliente.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets`
 
@@ -3643,7 +3685,7 @@ Lista as mídias de uma pasta.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets/:assetId/remove`
 
@@ -3661,7 +3703,7 @@ Remove uma mídia da pasta.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 MEDIA_IN_USE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 MEDIA_IN_USE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 ### profile — Edição do próprio nome e da própria foto de perfil.
 
@@ -3739,6 +3781,7 @@ Consulta a versão aceita dos Termos e da Privacidade.
 
 ```json
 {
+  "required": false,
   "documents": [
     {
       "document": "terms",
@@ -3777,6 +3820,7 @@ Aceita um documento legal, na versão em vigor.
 
 ```json
 {
+  "required": false,
   "documents": [
     {
       "document": "terms",
@@ -3825,7 +3869,7 @@ Pede a troca do e-mail da própria conta.
 {}
 ```
 
-**Erros:** `400 SAME_EMAIL` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 INVALID_PASSWORD` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+**Erros:** `400 SAME_EMAIL` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 INVALID_PASSWORD` · `403 REAUTH_REQUIRED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /email-change/confirm`
 
@@ -3912,7 +3956,7 @@ Cria um roteiro de stories em rascunho.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/story-scripts/:scriptId`
 
@@ -3948,7 +3992,7 @@ Lê um roteiro de stories, com as cenas.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `PATCH /agencies/:agencyId/clients/:clientId/story-scripts/:scriptId`
 
@@ -4006,7 +4050,7 @@ Edita o dia e as cenas de um roteiro em rascunho.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 STORY_SCENES_MISMATCH` · `409 STORY_SCRIPT_STATE` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 STORY_SCENES_MISMATCH` · `409 STORY_SCRIPT_STATE` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/story-scripts/:scriptId/send`
 
@@ -4042,7 +4086,7 @@ Envia o roteiro ao cliente.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 STORY_SCRIPT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 STORY_SCRIPT_STATE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/story-scripts`
 
@@ -4093,7 +4137,7 @@ Lista os roteiros enviados de um período, no portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /clients/:clientId/story-scripts/:scriptId/recorded`
 
@@ -4128,7 +4172,7 @@ Marca o roteiro como gravado, no portal.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 ## Catálogo de códigos de erro
 
@@ -4183,6 +4227,8 @@ Marca o roteiro como gravado, no portal.
 | `STORY_SCRIPT_STATE` | O roteiro não está no estado que esta ação exige. |
 | `STORY_SCENES_MISMATCH` | O roteiro mudou: recarregue e envie todas as cenas, na ordem desejada. |
 | `INVALID_PASSWORD` | A senha atual não confere. |
+| `REAUTH_REQUIRED` | Confirme com o Google para continuar. |
+| `TERMS_NOT_ACCEPTED` | Aceite os Termos de Uso e a Política de Privacidade para continuar. |
 | `SAME_EMAIL` | Informe um e-mail diferente do atual. |
 | `EMAIL_DELIVERY_FAILED` | Não foi possível entregar o e-mail. |
 | `QUOTA_EXCEEDED` | This agency has reached its storage quota. |

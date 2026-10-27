@@ -9,6 +9,7 @@ import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
+import { GOOGLE_REAUTH_WINDOW_MS } from '../auth/google.js';
 import type { EmailService } from '../auth/email-service.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import { hashInvitationToken } from '../invitations/tokens.js';
@@ -22,6 +23,8 @@ import {
   EMAIL_CHANGE_ERRORS,
   isRetryableConflict,
   loadCredentialHash,
+  loadGoogleSubjectOfPasswordlessAccount,
+  loadSessionCreatedAt,
   requestEmailChange
 } from './service.js';
 
@@ -40,6 +43,8 @@ const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth'
 /** 403, not 401: a 401 means "the session ended" to the web client and would log the person out. */
 const invalidPassword = (): HttpError =>
   new HttpError({ statusCode: 403, code: 'INVALID_PASSWORD', message: 'A senha atual não confere.' });
+const reauthRequired = (): HttpError =>
+  new HttpError({ statusCode: 403, code: 'REAUTH_REQUIRED', message: 'Confirme com o Google para continuar.' });
 const sameAddress = (): HttpError =>
   new HttpError({ statusCode: 400, code: 'SAME_EMAIL', message: 'Informe um e-mail diferente do atual.' });
 const invalidLink = (): HttpError =>
@@ -89,16 +94,31 @@ export const registerEmailChangeModule = (app: FastifyInstance, dependencies: Em
     const body = routeBody(requestDocs, request);
 
     const hash = await dependencies.database.transaction((transaction) => loadCredentialHash(transaction, auth.userId));
-    const verified = hash !== undefined
-      && await (await dependencies.auth.$context).password.verify({ hash, password: body.currentPassword });
-    if (hash === undefined || !verified) throw invalidPassword();
+    let verifiedCredential: string;
+    if (hash !== undefined) {
+      // The schema lets the password out for the account that has none; for this one leaving it out is still the 400 it was.
+      if (body.currentPassword === undefined) throw new HttpError({ statusCode: 400, code: 'VALIDATION_ERROR', message: 'Request validation failed' });
+      const verified = await (await dependencies.auth.$context).password.verify({ hash, password: body.currentPassword });
+      if (!verified) throw invalidPassword();
+      verifiedCredential = hash;
+    } else {
+      // No password: only a Google-only account is asked for something else, a Google sign-in of the last 5 minutes
+      // (decision 2026-10-26, item 6). Its request is made under the Google subject, as another is under the hash.
+      const proof = await dependencies.database.transaction(async (transaction) => ({
+        subject: await loadGoogleSubjectOfPasswordlessAccount(transaction, auth.userId),
+        signedInAt: await loadSessionCreatedAt(transaction, auth.sessionId)
+      }));
+      if (proof.subject === undefined) throw invalidPassword();
+      if (proof.signedInAt === undefined || Date.now() - proof.signedInAt.getTime() > GOOGLE_REAUTH_WINDOW_MS) throw reauthRequired();
+      verifiedCredential = proof.subject;
+    }
 
     let recorded: Awaited<ReturnType<typeof requestEmailChange>>;
     try {
       recorded = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
         // The hash that was verified, not whatever the account holds by now: the password check and
         // this transaction are apart, and a reset in between must not pass for a request made after it.
-        requestEmailChange(transaction, body.newEmail, hash)
+        requestEmailChange(transaction, body.newEmail, verifiedCredential)
       );
     } catch (error) {
       if (databaseErrorCode(error) === EMAIL_CHANGE_ERRORS.sameAddress) throw sameAddress();

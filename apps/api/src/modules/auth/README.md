@@ -88,6 +88,31 @@ invitation that started the recovery (`forgot` appends `invite=` to the link onl
 addressed to that e-mail) continues through that login. An invalid/expired/used reset token gets the
 generic `400 INVALID_LINK`.
 
+**Sign in with Google (issue #707, decisions 2026-10-26 and 2026-10-27).** Off unless `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` are set (`config.google`): `GET /auth/providers` answers `{ google: false }` and the two routes
+below answer 404. `GET /auth/google/start[?intent=reauth]` calls `auth.api.signInSocial` (state in a signed cookie and a
+`verification` row, PKCE S256, scopes `openid email profile` only, no `include_granted_scopes`), puts a per-flow `nonce`
+in the state record's `additionalData` and in the URL (Better Auth has no nonce binding for Google's redirect flow),
+and redirects. `GET /auth/callback/google` calls `auth.api.callbackOAuth`; **every** failure, and any outcome that is
+not the landing `/entrar/google`, redirects to `/entrar?erro=google` with no body and no reason (the reason goes to the
+log), so the flow is no oracle for which address has a password account. `google.ts` is the one place the rules live:
+`verifyGoogleIdToken` (signature, `iss`, `aud`, expiry, `nonce`), `email_verified === true`, then
+`app_private.google_sign_in_admission(sub, email, name)` (the name is the Google profile name only when `DisplayNameSchema`,
+the schema of `PATCH /me/profile`, accepts it; otherwise the part of the address before the `@`), which decides in the database, locking the user: a linked `sub` enters
+only with the address of its account; an account holding another Google identity is refused; an **unconfirmed** account
+is taken over by `app_private.google_takes_over_account` (password, sessions, reset and confirmation links and open
+e-mail changes die; the legal acceptances are revoked; `passwordChangedAt` is set; the name the earlier holder typed gives
+way to the name of the Google profile); a confirmed account just gains the
+second way in (`accountLinking` is on, `trustedProviders` empty, and `requireLocalEmailVerified` is why the takeover is
+our code). The account is the `sub` (`auth.account.accountId`, unique per provider and one Google per user). No Google
+token is stored (`databaseHooks.account.create.before`), and no other provider can be linked. `session-guard.ts`
+refuses a session created at or before the user's `passwordChangedAt`. A Google-only account has no password: the
+e-mail change asks for a Google sign-in of the last 5 minutes (`GOOGLE_REAUTH_WINDOW_MS`, `403 REAUTH_REQUIRED`, and
+`intent=reauth` sends `prompt=login`), its credential fingerprint is the `sub`, and "Esqueci a senha" creates a
+password. An account with Google and without both acceptances is `required` on `GET /me/legal-acceptances`, has no
+contexts and cannot create an agency (`403 TERMS_NOT_ACCEPTED`) until it accepts. The simulated Google for the tests is
+`test-support/fake-google.ts`.
+
 ## Composition
 
 - `better-auth.ts` (`createAuth`) builds an isolated Better Auth instance from injected
@@ -102,6 +127,8 @@ generic `400 INVALID_LINK`.
   authenticated request reuses (20B and 20C included). It calls `auth.api.getSession`, then enforces
   the 30-day absolute session lifetime described below, and attaches `request.auth`.
 - `routes.ts` wires the six routes above to `auth.api.*`, the rate limiter, and the audit recorder.
+- `google.ts` (the id token and admission rules) and `google-routes.ts` (providers, start, callback) are the Google
+  sign-in; `per-ip-rate-limit.ts` holds the per-address limiter `routes.ts` and `google-routes.ts` share.
 - `server.ts` (the process entry point) owns the Better Auth pool's lifetime and closes it during
   shutdown; `app.ts` composes everything through `buildApp`, which never touches process state.
 

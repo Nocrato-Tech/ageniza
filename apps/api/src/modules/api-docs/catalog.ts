@@ -27,6 +27,9 @@ import {
   AgencyRolesResponseSchema,
   AuthEmailVerificationResendRequestSchema,
   AuthEmailVerificationResendResponseSchema,
+  AuthGoogleCallbackQuerySchema,
+  AuthGoogleStartQuerySchema,
+  AuthProvidersResponseSchema,
   AuthEmailVerifyRequestSchema,
   AuthEmailVerifyResponseSchema,
   AuthLoginRequestSchema,
@@ -288,6 +291,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   STORY_SCRIPT_STATE: 'O roteiro não está no estado que esta ação exige.',
   STORY_SCENES_MISMATCH: 'O roteiro mudou: recarregue e envie todas as cenas, na ordem desejada.',
   INVALID_PASSWORD: 'A senha atual não confere.',
+  REAUTH_REQUIRED: 'Confirme com o Google para continuar.',
+  TERMS_NOT_ACCEPTED: 'Aceite os Termos de Uso e a Política de Privacidade para continuar.',
   SAME_EMAIL: 'Informe um e-mail diferente do atual.',
   EMAIL_DELIVERY_FAILED: 'Não foi possível entregar o e-mail.',
   QUOTA_EXCEEDED: 'This agency has reached its storage quota.',
@@ -441,6 +446,7 @@ const agencyContextExample = {
 } as const;
 
 const legalAcceptancesExample = {
+  required: false,
   documents: [
     { document: 'terms', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false },
     { document: 'privacy', currentVersion: '2026-10-01', acceptedVersion: '2026-02-01', pending: true }
@@ -640,6 +646,68 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       COMMON_ERRORS.csrf,
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/auth/providers',
+    operationId: 'getAuthProviders',
+    module: 'auth',
+    summary: 'Diz se o Google está ligado',
+    description: [
+      'Um campo só, sem segredo nem identificador do cliente OAuth: `google` é verdadeiro quando o servidor tem as',
+      'credenciais do Google. A interface esconde "Entrar com o Google" quando é falso.'
+    ].join('\n'),
+    access: 'Público',
+    permission: null,
+    responses: [{ status: 200, description: 'Provedores ligados.', schema: AuthProvidersResponseSchema, example: { google: true } }],
+    errors: [COMMON_ERRORS.internal]
+  },
+  {
+    method: 'get',
+    path: '/auth/google/start',
+    operationId: 'getAuthGoogleStart',
+    module: 'auth',
+    summary: 'Leva o navegador ao Google para entrar',
+    description: [
+      'Navegação, não chamada de API: o navegador é redirecionado (302) para a tela de consentimento do Google, com',
+      '`state`, PKCE (S256) e `nonce` próprios do fluxo e só os escopos `openid`, `email` e `profile`.',
+      '`intent=reauth` pede ao Google que autentique a pessoa de novo (`prompt=login`), para a conta que não tem senha',
+      'confirmar uma operação sensível; a volta cai em `/entrar/google?intent=reauth`. Com o Google desligado responde 404.'
+    ].join('\n'),
+    access: 'Público',
+    permission: null,
+    query: AuthGoogleStartQuerySchema,
+    responses: [{ status: 302, description: 'Redirecionamento ao Google; o estado do fluxo vai num cookie assinado.' }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 404, code: 'NOT_FOUND' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/auth/callback/google',
+    operationId: 'getAuthCallbackGoogle',
+    module: 'auth',
+    summary: 'Volta do Google: cria ou abre a sessão',
+    description: [
+      'É o endereço de retorno cadastrado no Google. Troca o código (com o segredo do cliente e o verificador PKCE),',
+      'confere o id token (assinatura, emissor, cliente, validade e `nonce`) e só aceita e-mail que o Google verificou. Depois',
+      'decide pela identidade (`sub`): cria a conta, abre a sessão da conta vinculada, vincula o Google a uma conta',
+      'confirmada ou assume uma conta não confirmada (a decisão de 2026-10-26 lista o que morre). Sempre 302: sucesso vai',
+      'a `/entrar/google` com o cookie de sessão, e **qualquer** falha vai a `/entrar?erro=google`, sem motivo, para a rota',
+      'nunca dizer se um e-mail tem conta. Com o Google desligado responde 404.'
+    ].join('\n'),
+    access: 'Público',
+    permission: null,
+    query: AuthGoogleCallbackQuerySchema,
+    responses: [{ status: 302, description: 'Para `/entrar/google` (entrou) ou `/entrar?erro=google` (recusado).' }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 404, code: 'NOT_FOUND' },
       { status: 429, code: 'RATE_LIMITED' }
     ]
   },
@@ -1136,6 +1204,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'EMAIL_NOT_VERIFIED' },
+      { status: 403, code: 'TERMS_NOT_ACCEPTED' },
       { status: 409, code: 'TRIAL_ALREADY_EXISTS' }
     ]
   },
@@ -3410,7 +3479,11 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Uma entrada por documento, Termos primeiro: a versão em vigor no servidor, a versão mais nova',
       'que a conta aceitou (`null` se nunca aceitou) e se há aceite pendente. Pendente não bloqueia',
-      'nenhuma funcionalidade; só alimenta o aviso da interface.'
+      'nenhuma funcionalidade; só alimenta o aviso da interface.',
+      '',
+      '`required` é verdadeiro só para a conta que tem o Google e não tem o aceite dos dois documentos',
+      '(conta criada pelo Google, ou conta que o Google assumiu): sem o aceite essa conta não tem contexto',
+      'e não cria agência, e a interface a leva à tela de aceite antes do primeiro uso.'
     ].join('\n'),
     access: 'Sessão',
     permission: null,
@@ -3465,8 +3538,10 @@ path: '/agencies/:agencyId/roles',
     description: [
       'A pessoa não troca o e-mail sozinha: ela pede, e a operação da plataforma aprova pelo CLI',
       '(`cli:email-change`), porque a conta é global e o pedido não pertence a nenhuma agência. O',
-      'corpo traz só o e-mail novo e a senha atual; a conta é sempre a da sessão. Há um pedido',
-      'aberto por conta, e um novo substitui o anterior. O endereço atual recebe um aviso.',
+      'corpo traz só o e-mail novo e a senha atual; a conta é sempre a da sessão. A conta que só',
+      'tem o Google não tem senha: omite `currentPassword` e prova a identidade com um login pelo Google de até',
+      '5 minutos (`403 REAUTH_REQUIRED` quando passou disso; a interface leva a pessoa a `/auth/google/start?intent=reauth`).',
+      'Há um pedido aberto por conta, e um novo substitui o anterior. O endereço atual recebe um aviso.',
       'A resposta é a mesma 202 vazia quando o e-mail novo já pertence a outra conta: a rota não',
       'revela quais e-mails têm conta. O teto é de 5 pedidos por hora e por conta.'
     ].join('\n'),
@@ -3488,6 +3563,7 @@ path: '/agencies/:agencyId/roles',
       { status: 400, code: 'SAME_EMAIL' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'INVALID_PASSWORD' },
+      { status: 403, code: 'REAUTH_REQUIRED' },
       { status: 409, code: 'TRY_AGAIN' },
       { status: 429, code: 'RATE_LIMITED' }
     ]

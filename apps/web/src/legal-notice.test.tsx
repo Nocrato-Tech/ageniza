@@ -44,6 +44,7 @@ interface Scenario {
 }
 
 const status = (account: Account) => ({
+  required: false,
   documents: (['terms', 'privacy'] as const).map((document) => ({
     document,
     currentVersion: account.current[document],

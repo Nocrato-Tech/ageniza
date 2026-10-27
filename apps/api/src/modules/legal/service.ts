@@ -27,8 +27,10 @@ export const loadLegalStatus = async (
     group by document
   `, [userId]);
   const accepted = new Map(result.rows.map((row) => [row.document, row.version]));
+  const blocking = await raw<RawRows<{ required: boolean }>>(transaction, 'select app_private.legal_acceptance_blocks_access(?::uuid) as required', [userId]);
 
   return {
+    required: blocking.rows[0]?.required === true,
     documents: LEGAL_DOCUMENTS.map((document) => {
       const acceptedVersion = accepted.get(document) ?? null;
       return {

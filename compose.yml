@@ -93,6 +93,10 @@ services:
       IDENTITY_STORAGE_BUCKET: ageniza-identity-local
       IDENTITY_STORAGE_REGION: auto
       IDENTITY_STORAGE_FORCE_PATH_STYLE: 'true'
+      # Sign in with Google (issue #707): off while both are empty. Read from the ignored `.env`, never written here.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
     depends_on: { postgres: { condition: service_healthy }, mailpit: { condition: service_healthy }, localstack: { condition: service_healthy } }
     ports: ["127.0.0.1:3001:3001"]
     networks: [edge, internal]

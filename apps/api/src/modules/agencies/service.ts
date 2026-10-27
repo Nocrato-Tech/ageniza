@@ -103,6 +103,13 @@ const emailNotVerified = (): HttpError => new HttpError({
   message: 'Confirme o seu e-mail antes de criar uma agência.'
 });
 
+/** An account that came in through Google has to accept the Terms and the Privacy Policy before any use (issue #707). */
+const termsNotAccepted = (): HttpError => new HttpError({
+  statusCode: 403,
+  code: 'TERMS_NOT_ACCEPTED',
+  message: 'Aceite os Termos de Uso e a Política de Privacidade para continuar.'
+});
+
 const trialAlreadyExists = (): HttpError => new HttpError({
   statusCode: 409,
   code: 'TRIAL_ALREADY_EXISTS',
@@ -132,6 +139,7 @@ export const createTrialAgency = async (transaction: AgencyTransaction, name: st
     const code = databaseErrorCode(error);
     if (code === 'A0093') throw emailNotVerified();
     if (code === 'A0094') throw trialAlreadyExists();
+    if (code === 'A0096') throw termsNotAccepted();
     throw error;
   }
 };
