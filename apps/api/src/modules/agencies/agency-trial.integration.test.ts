@@ -172,7 +172,7 @@ describe('the plan refusals through the API (issue #708)', () => {
 });
 
 describe('the operation command lifts the trial (issue #708)', () => {
-  it('upgrade turns a read-only trial into ativo, writable and without the trial quota; new-trial gives it another end', async () => {
+  it('set-plan ativo turns a read-only trial into ativo, writable and without the trial quota; new-trial gives it another end', async () => {
     const { cookie } = await signedIn(true);
     const agencyId = (await createAgency(cookie)).json<{ context: { agencyId: string } }>().context.agencyId;
     await owner.knex('agencies').where({ id: agencyId }).update({ trial_ends_at: owner.knex.raw("now() - interval '1 minute'") });
@@ -186,11 +186,11 @@ describe('the operation command lifts the trial (issue #708)', () => {
     });
     try {
       const ends = new Date(Date.now() + 5 * 86_400_000).toISOString();
-      await expect(service.newTrial(agencyId, ends)).resolves.toMatchObject({ plan: 'trial' });
+      await expect(service.setPlan(agencyId, 'trial', ends)).resolves.toMatchObject({ plan: 'trial' });
       expect((await request(cookie, 'GET', `/agencies/${agencyId}/me`)).json<{ plan: { readOnly: boolean } }>().plan.readOnly).toBe(false);
 
-      await expect(service.upgrade(agencyId)).resolves.toEqual({ agencyId, plan: 'ativo', trialEndsAt: null });
-      expect((await request(cookie, 'GET', `/agencies/${agencyId}/me`)).json<{ plan: unknown }>().plan).toEqual({ kind: 'ativo', trialEndsAt: null, readOnly: false });
+      await expect(service.setPlan(agencyId, 'ativo')).resolves.toEqual({ agencyId, plan: 'ativo', trialEndsAt: null });
+      expect((await request(cookie, 'GET', `/agencies/${agencyId}/me`)).json<{ plan: unknown }>().plan).toEqual({ kind: 'ativo', trialEndsAt: null, readOnly: false, supportContactEmail: null });
       expect((await owner.knex('agency_storage_quotas').where({ agency_id: agencyId }).first('quota_bytes')).quota_bytes).toBeNull();
       for (let index = 0; index < 4; index += 1) {
         expect((await request(cookie, 'POST', `/agencies/${agencyId}/clients`, { name: `Depois ${index} ${randomUUID().slice(0, 6)}` })).statusCode).toBe(201);
@@ -199,6 +199,37 @@ describe('the operation command lifts the trial (issue #708)', () => {
       expect((await createAgency(cookie)).statusCode).toBe(201);
     } finally {
       await database.close();
+    }
+  });
+});
+
+describe('the daily e-mail limit through the API (issue #708)', () => {
+  it('answers 429 DAILY_EMAIL_LIMIT once the agency sent its invitations of the day', async () => {
+    const { cookie } = await signedIn(true);
+    const agencyId = (await createAgency(cookie)).json<{ context: { agencyId: string } }>().context.agencyId;
+    await owner.knex('agencies').where({ id: agencyId }).update({ daily_email_limit: 1 });
+    const roleId = (await owner.knex('roles').whereNull('agency_id').where({ key: 'production' }).first('id')).id as string;
+    expect((await request(cookie, 'POST', `/agencies/${agencyId}/invitations/collaborators`, { email: `d1-${randomUUID().slice(0, 6)}@trial.test`, roleId })).statusCode).toBe(201);
+    const second = await request(cookie, 'POST', `/agencies/${agencyId}/invitations/collaborators`, { email: `d2-${randomUUID().slice(0, 6)}@trial.test`, roleId });
+    expect(second.statusCode).toBe(429);
+    expect(second.json<{ error: { code: string; message: string } }>().error).toEqual({ code: 'DAILY_EMAIL_LIMIT', message: 'Limite diário de envios atingido. Tente amanhã.' });
+    expect(await owner.knex('invitations').where({ agency_id: agencyId })).toHaveLength(1);
+  });
+});
+
+describe('the support contact of the plan notice', () => {
+  it('serves SUPPORT_CONTACT_EMAIL in /me only when it is configured', async () => {
+    const { cookie } = await signedIn(true);
+    const agencyId = (await createAgency(cookie)).json<{ context: { agencyId: string } }>().context.agencyId;
+    expect((await request(cookie, 'GET', `/agencies/${agencyId}/me`)).json<{ plan: { supportContactEmail: unknown } }>().plan.supportContactEmail).toBeNull();
+
+    const configured = await buildTestApp({ config: { supportContactEmail: 'suporte@ageniza.test' } });
+    try {
+      const me = await configured.app.inject({ method: 'GET', url: `/agencies/${agencyId}/me`, headers: { ...origin, cookie } });
+      expect(me.statusCode).toBe(200);
+      expect(me.json<{ plan: { supportContactEmail: unknown } }>().plan.supportContactEmail).toBe('suporte@ageniza.test');
+    } finally {
+      await configured.close();
     }
   });
 });

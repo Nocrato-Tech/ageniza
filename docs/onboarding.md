@@ -55,7 +55,7 @@ pnpm storage:start   # LocalStack, substitui o R2 localmente
 pnpm db:migrate
 ```
 
-**O banco sobe vazio, e não existe cadastro público.** Para ter uma agência e um convite com que trabalhar, use `pnpm --filter @ageniza/api cli:agency create` — o passo a passo, com as variáveis necessárias e como ler o e-mail no Mailpit, está no guia de ambiente local. É o ponto em que todo mundo trava na primeira semana.
+**O banco sobe vazio.** Uma agência só nasce pelo produto ("Criar agência", em teste); para ter uma com que trabalhar, rode `pnpm seed:demo --i-know-this-is-local` — o passo a passo, com as variáveis necessárias, como trocar o plano pelo `cli:agency set-plan` e como ler o e-mail no Mailpit, está no guia de ambiente local. É o ponto em que todo mundo trava na primeira semana.
 
 Antes de abrir qualquer PR:
 

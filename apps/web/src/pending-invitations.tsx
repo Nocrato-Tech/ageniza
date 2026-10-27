@@ -4,7 +4,7 @@ import { Clock, Plus, Send, ShieldCheck, X } from 'lucide-react';
 
 import {
   AuthNoContentResponseSchema,
-  InvitationCreatedResponseSchema,
+  InvitationResentResponseSchema,
   PendingInvitationListResponseSchema,
   type PendingInvitation
 } from '@ageniza/contracts';
@@ -12,6 +12,7 @@ import { Button, ConfirmDialog, EmptyState, LiveStatus, Pagination, Pill, Skelet
 
 import { useAgencyContext, useCan } from './agency.js';
 import { apiPath } from './api-path.js';
+import { CopyInvitationLinkButton } from './copy-invitation-link.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 /** `specs/colaboradores.md` §6: 24 per page, creation date ascending (the route owns the order). */
@@ -64,7 +65,8 @@ export interface PendingInvitationsSectionProps {
  * and its pages depend on `colaborador.convidar`. Without the permission the section does not exist
  * -- not empty, not disabled. Resending revokes the previous link and creates a new invitation, so
  * the list is invalidated and the deadline is renewed in place; cancelling asks for confirmation
- * first. No response field carries the invitation token, and none is rendered.
+ * first. The list never carries the link; a resend answers the new one, which is never rendered,
+ * only offered to "Copiar link".
  */
 export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot = false }: PendingInvitationsSectionProps) {
   const agency = useAgencyContext();
@@ -74,7 +76,7 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
   const canResend = useCan('convite.reenviar');
   const canCancel = useCan('convite.cancelar');
   const [confirming, setConfirming] = useState<PendingInvitation | null>(null);
-  const [resentEmail, setResentEmail] = useState<string | null>(null);
+  const [resent, setResent] = useState<{ email: string; invitationUrl: string | null } | null>(null);
 
   const invitations = useQuery({
     queryKey: ['agency', agency.agencyId, 'invitations', { page }],
@@ -92,13 +94,17 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
   // The API commits the change before it sends the e-mail: a failed resend may have already renewed
   // the invitation, and a failed cancel may have been raced by another one. Invalidating on settle
   // makes the list show what the server actually holds, error or not.
+  // The new link goes to this section's state only, never to the mutation cache (issue #710).
   const resend = useMutation({
-    mutationFn: (invitation: PendingInvitation) => httpClient.request({
-      path: apiPath('/agencies/:agencyId/invitations/:invitationId/resend', { agencyId: agency.agencyId, invitationId: invitation.id }),
-      method: 'POST',
-      response: InvitationCreatedResponseSchema
-    }),
-    onSuccess: (_result, invitation) => setResentEmail(invitation.email),
+    mutationFn: async (invitation: PendingInvitation) => {
+      const { invitationUrl, ...renewed } = await httpClient.request({
+        path: apiPath('/agencies/:agencyId/invitations/:invitationId/resend', { agencyId: agency.agencyId, invitationId: invitation.id }),
+        method: 'POST',
+        response: InvitationResentResponseSchema
+      });
+      setResent({ email: invitation.email, invitationUrl });
+      return renewed;
+    },
     onSettled: () => { void invalidateList(); }
   });
 
@@ -164,7 +170,7 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
               leadingIcon={<Send />}
               aria-label={`Reenviar convite de ${invitation.email}`}
               loading={resend.isPending && resend.variables?.id === invitation.id}
-              onClick={() => { setResentEmail(null); resend.mutate(invitation); }}
+              onClick={() => { setResent(null); resend.mutate(invitation); }}
             >
               Reenviar
             </Button>}
@@ -189,7 +195,8 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
       <h2 id="pending-invites-title">Convites aguardando aceite</h2>
       {data !== undefined && <Pill className="invites__count">{data.meta.totalItems}</Pill>}
     </header>
-    {resentEmail !== null && <LiveStatus>Convite reenviado para {resentEmail}. O link anterior deixou de valer.</LiveStatus>}
+    {resent !== null && <LiveStatus>Convite reenviado para {resent.email}. O link anterior deixou de valer.</LiveStatus>}
+    {resent?.invitationUrl != null && <CopyInvitationLinkButton key={resent.invitationUrl} url={resent.invitationUrl} />}
     {/* The failure may already have renewed the invitation; the message stays visible above the list. */}
     {resend.isError && <p className="invites__error-line" role="alert">{RESEND_ERROR}</p>}
     {body}

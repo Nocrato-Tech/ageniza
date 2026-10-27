@@ -36,15 +36,18 @@ id que `owner.membershipId` de um conteúdo carrega, para a tela saber se a pess
 
 ## Plano, período de teste e criação (#708, #709)
 
-`GET /agencies/:agencyId/me` traz `plan`: `kind` (`trial`, `ativo` ou `isenta`), `trialEndsAt` e `readOnly`, que o
-relógio do banco decide (`trial_ends_at <= now()`). É UX, como as permissões: quem recusa é o banco.
+`GET /agencies/:agencyId/me` traz `plan`: `kind` (`trial`, `ativo` ou `isenta`), `trialEndsAt`, `readOnly`, que o
+relógio do banco decide (`trial_ends_at <= now()`), e `supportContactEmail`, o contato público de `SUPPORT_CONTACT_EMAIL`
+(`null` quando não configurado). É UX, como as permissões: quem recusa é o banco.
 
 `POST /agencies` cria uma agência em teste por `app_private.create_trial_agency(name)`, que tira o ator da transação.
-Só conta com e-mail confirmado (`403 EMAIL_NOT_VERIFIED`) e no máximo uma agência em teste por conta, vencida ou não
-(`409 TRIAL_ALREADY_EXISTS`; numa corrida, a trava por conta faz a segunda criação ver a primeira, e o índice único `agencies_one_trial_per_owner` é a última barreira). Quem cria vira Owner com
+Só conta com e-mail confirmado (`403 EMAIL_NOT_VERIFIED`) e no máximo uma agência em teste por conta e por e-mail normalizado (minúsculas, sem `+alias` e, em gmail.com e
+googlemail.com, sem pontos e com o domínio unificado: `app_private.trial_email_key`), vencida ou não
+(`409 TRIAL_ALREADY_EXISTS`; numa corrida, as travas por conta e por chave fazem a segunda criação ver a primeira, e os índices únicos
+`agencies_one_trial_per_owner` e `agencies_one_trial_per_email_key` são a última barreira). Quem cria vira Owner com
 o vínculo Admin, e a agência ganha a cota de 2 GiB em `agency_storage_quotas`. A resposta é o contexto novo.
 
-O que o banco impõe (migration `20261027020000`), em todos os módulos, e a API responde sem 500
+O que o banco impõe (migrations `20261027020000` e `20261027020100`), em todos os módulos, e a API responde sem 500
 (`plugins/infra/errors.ts`):
 
 - **Somente leitura** ao fim do teste: um gatilho `00_<tabela>_agency_accepts_writes` em toda tabela de dados da agência
@@ -54,10 +57,13 @@ O que o banco impõe (migration `20261027020000`), em todos os módulos, e a API
   (`notification_item_still_holds`). Convite de agência vencida não é válido nem aceitável.
 - **Limites do teste**: 3 clientes ativos (A0091, `409 TRIAL_CLIENT_LIMIT`) e 3 colaboradores contando o Owner e os
   convites de colaborador pendentes (A0092, `409 TRIAL_COLLABORATOR_LIMIT`), contados depois de uma trava consultiva por
-  agência, para duas criações ao mesmo tempo não verem a mesma vaga.
+  agência, para duas criações ao mesmo tempo não verem a mesma vaga. Convite vencido não ocupa vaga; o Owner conta pela posse.
+- **Limite diário de e-mails**: cada convite de colaborador ou de portal criado ou reenviado conta no dia de Brasília;
+  20 no teste e 200 nos outros planos, ou o de `agencies.daily_email_limit` (`cli:agency set-email-limit`). Passou,
+  A0095, `429 DAILY_EMAIL_LIMIT`, contado sob trava por agência.
 
 `GET /me/contexts` traz `canCreateAgency`, da mesma regra (`app_private.can_create_trial_agency()`), e o portal recebe
-`agencyReadOnly` em `GET /clients/:clientId`. O upgrade é da operação: `cli:agency upgrade` e `cli:agency new-trial`.
+`agencyReadOnly` em `GET /clients/:clientId`. A aplicação nunca muda `plan`: só `cli:agency set-plan`, da operação, auditado.
 
 ## O que ficou de fora
 

@@ -41,8 +41,9 @@ const planErrorResponses: Readonly<Record<string, Omit<PublicErrorResponse, 'det
   A0090: {
     statusCode: 409,
     code: 'AGENCY_READ_ONLY',
-    message: 'O período de teste desta agência terminou e ela está somente leitura. Fale com a equipe do Ageniza para continuar.'
+    message: 'O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados.'
   },
+  A0095: { statusCode: 429, code: 'DAILY_EMAIL_LIMIT', message: 'Limite diário de envios atingido. Tente amanhã.' },
   A0091: { statusCode: 409, code: 'TRIAL_CLIENT_LIMIT', message: 'O período de teste permite até 3 clientes ativos.' },
   A0092: {
     statusCode: 409,

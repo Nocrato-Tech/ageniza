@@ -93,6 +93,7 @@ import {
   InvitationAcceptResponseSchema,
   InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
+  InvitationResentResponseSchema,
   LegalAcceptancesResponseSchema,
   MeContextsResponseSchema,
   MediaDownloadUrlQuerySchema,
@@ -243,7 +244,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   CSRF_REJECTED: 'Request origin is not allowed',
   EMAIL_NOT_VERIFIED: 'Confirme o seu e-mail antes de criar uma agência.',
   TRIAL_ALREADY_EXISTS: 'Sua conta já tem uma agência em período de teste.',
-  AGENCY_READ_ONLY: 'O período de teste desta agência terminou e ela está somente leitura. Fale com a equipe do Ageniza para continuar.',
+  AGENCY_READ_ONLY: 'O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados.',
+  DAILY_EMAIL_LIMIT: 'Limite diário de envios atingido. Tente amanhã.',
   TRIAL_CLIENT_LIMIT: 'O período de teste permite até 3 clientes ativos.',
   TRIAL_COLLABORATOR_LIMIT: 'O período de teste permite até 3 colaboradores, contando quem criou a agência e os convites pendentes.',
   PAYLOAD_TOO_LARGE: 'Request payload is too large',
@@ -755,7 +757,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'createCollaboratorInvitation',
     module: 'invitations',
     summary: 'Convida uma pessoa para a agência',
-    description: 'O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). A resposta informa o convite pendente que esta criação revogou, quando havia um.',
+    description: 'O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). A resposta informa o convite pendente que esta criação revogou, quando havia um, e traz uma única vez o link que foi ao e-mail (`invitationUrl`, `Cache-Control: no-store`): nenhuma outra rota o devolve, e reenviar gera outro link e invalida este.',
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.convidar',
     params: AgencyPathParamsSchema,
@@ -765,7 +767,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       status: 201,
       description: 'Convite criado e enviado.',
       schema: CollaboratorInvitationCreatedResponseSchema,
-      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z', supersededInvitationId: null }
+      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z', supersededInvitationId: null, invitationUrl: 'https://app.ageniza.test/convite/<token-do-exemplo>' }
     }],
     errors: [
       COMMON_ERRORS.csrf,
@@ -820,15 +822,15 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'resendInvitation',
     module: 'invitations',
     summary: 'Reenvia um convite pendente',
-    description: 'Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O reenvio de convite de portal de um cliente que acabou de ser arquivado responde 409 `CLIENT_ARCHIVED` e o convite segue como estava.',
+    description: 'Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Num convite de colaborador, a resposta traz uma única vez o link novo (`invitationUrl`, `Cache-Control: no-store`) a quem também tem `colaborador.convidar`; sem ela, ou num convite de portal, `null`. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O reenvio de convite de portal de um cliente que acabou de ser arquivado responde 409 `CLIENT_ARCHIVED` e o convite segue como estava.',
     access: 'Sessão + vínculo com a agência',
     permission: 'convite.reenviar',
     params: AgencyInvitationPathParamsSchema,
     responses: [{
       status: 200,
       description: 'Convite reenviado.',
-      schema: InvitationCreatedResponseSchema,
-      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z' }
+      schema: InvitationResentResponseSchema,
+      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z', invitationUrl: 'https://app.exemplo.test/convite/token-do-exemplo' }
     }],
     errors: [
       COMMON_ERRORS.csrf,
@@ -893,7 +895,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'acceptInvitationNewAccount',
     module: 'invitations',
     summary: 'Cria a conta e aceita o convite',
-    description: 'A conta nasce com o e-mail do convite, verificado, e a sessão já vem no cookie da resposta.',
+    description: 'A conta nasce com o e-mail do convite, ainda não confirmado; a sessão já vem no cookie da resposta e o contexto do convite vale na hora.',
     access: 'Token do convite',
     permission: null,
     params: PublicInvitationTokenPathParamsSchema,

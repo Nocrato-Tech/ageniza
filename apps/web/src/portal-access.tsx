@@ -11,6 +11,7 @@ import {
   ClientMemberListResponseSchema,
   ClientMemberSchema,
   InvitationCreatedResponseSchema,
+  InvitationResentResponseSchema,
   type ClientMember,
   type ClientPendingInvitation,
   type ClientDetailResponse
@@ -284,7 +285,7 @@ export function ClientAccessTab() {
     mutationFn: (invitation: ClientPendingInvitation) => httpClient.request({
       path: apiPath('/agencies/:agencyId/invitations/:invitationId/resend', { agencyId: agency.agencyId, invitationId: invitation.invitationId }),
       method: 'POST',
-      response: InvitationCreatedResponseSchema
+      response: InvitationResentResponseSchema
     }),
     onSuccess: (_result, invitation) => setResentEmail(invitation.email),
     onSettled: () => { void invalidateAccess(); }

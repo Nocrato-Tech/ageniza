@@ -10,5 +10,5 @@ O **gatilho** que obriga a decisão: **a primeira vez que um limite — de clien
 
 **Consequência.** Enquanto o gatilho não acontecer, nenhum módulo assume plano, limite comercial ou estado de pagamento. Quando acontecer, assinatura e faturamento entram por definição na lista de capacidades não delegáveis a papel personalizado.
 
-**Origem.** Decidido em sessão (sessão 0 de autorização e transversais).
+**Origem.** Decidido em sessão (sessão 0 de autorização e transversais). **Substituída em parte em 2026-10-26**, quanto ao gatilho: ele aconteceu com o trial, que é o primeiro limite imposto por plano (ver a entrada de 2026-10-26 "ESTRUTURAL: a agência nasce pelo produto, em trial de 14 dias, e o upgrade é da operação"). A isenção como estado explícito continua valendo, e preço, pagamento e faturamento continuam sem desenho.
 

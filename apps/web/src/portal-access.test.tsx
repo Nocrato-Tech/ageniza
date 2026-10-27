@@ -425,7 +425,7 @@ describe('portal access tab (#140)', () => {
       clientInvitations: () => json(pageOf(invitations)),
       resend: () => {
         invitations = [{ ...carla, expiresAt: new Date(Date.now() + 14 * DAY_MS).toISOString() }];
-        return json({ invitationId: carla.invitationId, expiresAt: invitations[0]!.expiresAt });
+        return json({ invitationId: carla.invitationId, expiresAt: invitations[0]!.expiresAt, invitationUrl: null });
       },
       cancel: () => { invitations = []; pending = 0; return noContent(); }
     });
@@ -492,7 +492,7 @@ describe('portal access tab (#140)', () => {
       clientInvitations: () => json(pageOf([carla, rita])),
       resend: (invitationId) => {
         resent.push(invitationId);
-        return json({ invitationId, expiresAt: new Date(Date.now() + 14 * DAY_MS).toISOString() });
+        return json({ invitationId, expiresAt: new Date(Date.now() + 14 * DAY_MS).toISOString(), invitationUrl: null });
       }
     });
     renderAccess(impl);
