@@ -163,17 +163,6 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     if (token !== undefined) dependencies.emailService.sendEmailVerification({ to: email, token });
   };
 
-  const reissueConfirmationInBackground = (request: FastifyRequest, email: string): void => {
-    try {
-      dependencies.limiter.consume('resendVerification', normalizeRateLimitIp(request.ip), email);
-    } catch {
-      return;
-    }
-    sendConfirmationIfPending(email).catch((error: unknown) => {
-      request.log.error({ err: error }, 'Could not reissue the e-mail confirmation after a login.');
-    });
-  };
-
   app.post('/auth/login', { ...perIpRateLimit(AUTH_RATE_LIMITS.login.ip, loginDocs), onRequest: noStore }, async (request, reply) => {
     const body = routeBody(loginDocs, request);
     dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), body.email);
@@ -189,12 +178,10 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     } catch (error) {
       // An unconfirmed account answers exactly like a wrong password, even with the right one:
       // whoever signed up chose that password, so telling the two apart would say whether the address
-      // already had an account (security review of PR #722). The right password sends a new link to
-      // the mailbox, in the background and within the resend limits.
-      if (isEmailNotVerified(error)) {
-        reissueConfirmationInBackground(request, body.email);
-        throw new HttpError(invalidCredentials);
-      }
+      // already had an account (security review of PR #722). It has no side effect either: a link sent
+      // from here would spend a counter the public resend answers 429 on, which tells the same thing
+      // (second review of PR #722). The screen offers the resend under every refused credential.
+      if (isEmailNotVerified(error)) throw new HttpError(invalidCredentials);
       throw toPublicAuthError(error, invalidCredentials);
     }
 

@@ -587,7 +587,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     description: [
       'Conta com e-mail confirmado ganha sessão mesmo sem nenhum contexto (o `resolve` responde `none`).',
       'Conta não confirmada responde o mesmo 401 `INVALID_CREDENTIALS`, com a senha certa ou não, e não cria sessão;',
-      'com a senha certa, um link de confirmação novo vai ao e-mail, nos limites do reenvio. `inviteToken` é aceito e não muda a resposta.'
+      'e não tem efeito colateral. `inviteToken` é aceito e não muda a resposta.'
     ].join('\n'),
     access: 'Público',
     permission: null,

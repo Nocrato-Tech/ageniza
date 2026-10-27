@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
 
 import type { OutgoingEmail } from '@ageniza/email';
 
@@ -189,29 +189,42 @@ describe('POST /auth/sign-up (#706)', () => {
     expect((await userRow(fresh))?.emailVerified).toBe(false);
     expect(await queryAsOwner('select 1 from auth.session where "userId" = $1', [(await userRow(fresh))?.id])).toHaveLength(0);
 
-    // The right password sends a new link to the mailbox, never to whoever is logging in.
-    await vi.waitFor(async () => {
-      await flush(app);
-      expect(messagesTo(sender, fresh).filter((message) => message.text.includes('/email/verificar'))).toHaveLength(2);
-    });
+    // No side effect: no new link, so nothing to observe afterwards (second review of PR #722).
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await flush(app);
+    expect(messagesTo(sender, fresh).filter((message) => message.text.includes('/email/verificar'))).toHaveLength(1);
     expect(messagesTo(sender, taken.email).filter((message) => message.text.includes('/email/verificar'))).toHaveLength(0);
   });
 
-  it('reissues the link after a login only within the resend limits', async () => {
-    const { app, sender } = await openApp();
-    const email = newEmail('sign-up-login-reissue');
-    await signUp(app, email, '10.13.0.1');
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, remoteAddress: '10.13.0.1', payload: { email, password } });
-      expect(login.statusCode).toBe(401);
-    }
-    await vi.waitFor(async () => {
-      await flush(app);
-      expect(messagesTo(sender, email)).toHaveLength(4);
-    });
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    await flush(app);
-    expect(messagesTo(sender, email)).toHaveLength(4);
+  it('answers a resend after logins with the chosen password the same for a new and a taken address, per IP and per e-mail (second review of PR #722)', async () => {
+    const { app } = await openApp();
+    const chosen = 'the prober chose this password too';
+    const probe = async (label: string, loginIps: readonly string[], resendIp: string) => {
+      const taken = await insertTestUser(app.pool, app.auth, { email: newEmail(`${label}-taken`) });
+      const fresh = newEmail(`${label}-fresh`);
+      const results = [];
+      for (const [index, email] of [taken.email, fresh].entries()) {
+        await app.app.inject({
+          method: 'POST', url: '/auth/sign-up', headers: origin, remoteAddress: `10.18.${index}.250`,
+          payload: { name: 'Quem Sonda', email, password: chosen, acceptTerms: true }
+        });
+        for (const ip of loginIps) {
+          const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, remoteAddress: ip.replace('X', String(index)), payload: { email, password: chosen } });
+          expect(login.statusCode).toBe(401);
+        }
+        results.push(comparable(await app.app.inject({
+          method: 'POST', url: '/auth/email/verification/resend', headers: { ...origin, 'x-request-id': 'resend-probe-request-id' },
+          remoteAddress: resendIp.replace('X', String(index)), payload: { email }
+        })));
+      }
+      expect(results[1]).toEqual(results[0]);
+      expect(results[0]?.status).toBe(202);
+    };
+
+    // Per IP and e-mail: three logins and the resend from one IP.
+    await probe('resend-probe-ip', ['10.19.X.1', '10.19.X.1', '10.19.X.1'], '10.19.X.1');
+    // Per e-mail: ten logins from ten IPs, then the resend from another.
+    await probe('resend-probe-email', Array.from({ length: 10 }, (_, attempt) => `10.20.X.${attempt + 1}`), '10.20.X.200');
   });
 
   it('limits sign-ups by IP and e-mail with the same 429', async () => {
