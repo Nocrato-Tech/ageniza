@@ -80,6 +80,21 @@ unconfirmed account takes it over: `onPasswordReset` calls
 `app_private.confirm_email_by_password_reset`, which voids the links, confirms the e-mail and revokes
 the legal acceptances recorded at sign-up.
 
+**A password change stamps `passwordChangedAt` (issue #719, decision 2026-10-27).** Migration
+`20261027120000` adds `auth.account."passwordChangedAt"` and a `BEFORE UPDATE OF password` trigger on
+`auth.account` (credential rows) that sets it on `NEW` to the database clock, in the statement that replaced the
+hash, so the reset and any later writer are covered. The trigger writes no other row: one that updated `auth.user`
+would lock the account row before the user row, the reverse of the order the confirmation link, the Google takeover
+and the purge use, and deadlock. `confirm_email_by_password_reset` (the takeover by the reset) stamps the user's
+date too. A credential inserted with a password is stamped as well (the account with only Google that sets one, a credential put back after a delete), and the application role cannot write either date (UPDATE on both tables and INSERT on `auth.account` are by column).
+`session-guard.ts` refuses, and deletes, a session whose `createdAt` is at or before the greater of the user's date and the credential's. The date alone
+does not close the race: a login that checked the old hash creates its session after the reset committed, with a
+`createdAt` later than the date. So `/auth/login` and `/auth/email/verify` read the credential again after
+`signInEmail` created the session and end it when the hash is no longer the one they checked (or the read fails);
+a hash that still matches means the reset's deletion of sessions has not run yet and takes the session too. The
+session clock is the API's and the date is the database's, one host (ADR 0011); a skew only refuses sessions
+created right after a reset, never accepts an old one.
+
 **`password/reset` creates no session (issue #699, 2026-10-16 decision "Redefinir a senha não entra
 direto: volta ao login").** The reset ends every previous session (`revokeSessionsOnPasswordReset`)
 and answers `204`, no body and no cookie, whether or not the account has a context: it never signs

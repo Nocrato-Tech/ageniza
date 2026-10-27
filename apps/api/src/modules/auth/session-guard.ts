@@ -34,6 +34,15 @@ export interface SessionGuardOptions {
   readonly renew?: boolean;
 }
 
+/** The latest instant the credential of the account was replaced, from the user row and from its credential rows. */
+const passwordChangedAtOf = async (auth: AuthInstance, user: { readonly id: string; readonly passwordChangedAt?: Date | string | null }): Promise<number | undefined> => {
+  const accounts = await (await auth.$context).internalAdapter.findAccounts(user.id);
+  const instants = [user.passwordChangedAt, ...accounts.map((account) => (account as { passwordChangedAt?: Date | string | null }).passwordChangedAt)]
+    .filter((instant): instant is Date | string => instant != null)
+    .map((instant) => new Date(instant).getTime());
+  return instants.length === 0 ? undefined : Math.max(...instants);
+};
+
 const unauthenticatedFallback = { statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' } as const;
 
 const unauthenticated = (): HttpError => new HttpError(unauthenticatedFallback);
@@ -76,9 +85,11 @@ export const createRequireSession = (dependencies: SessionGuardDependencies, opt
     applyAuthCookies(reply, responseHeaders);
 
     const { session, user } = result;
-    // A session older than the last time the account's credential was replaced under the person (Google taking the
-    // account over) is not theirs, even if its row survived the deletion that came with the replacement (issue #719).
-    if (user.passwordChangedAt != null && new Date(session.createdAt).getTime() <= new Date(user.passwordChangedAt).getTime()) {
+    // A session older than the last time the account's credential was replaced under the person (a reset, Google taking
+    // the account over) is not theirs, even if its row survived the deletion that came with the replacement (issue #719).
+    // The date is the greater of the user's and the credential's own: the reset stamps the latter, in its own statement.
+    const changedAt = await passwordChangedAtOf(dependencies.auth, user);
+    if (changedAt !== undefined && new Date(session.createdAt).getTime() <= changedAt) {
       await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => undefined);
       throw unauthenticated();
     }

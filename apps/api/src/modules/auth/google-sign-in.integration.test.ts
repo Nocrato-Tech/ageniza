@@ -745,6 +745,8 @@ describe('an account with only Google (rule 6)', () => {
     expect(reset.statusCode).toBe(204);
 
     expect((await accountsOf(userId)).map((account) => account.providerId)).toEqual(['credential', 'google']);
+    // The password was created, not replaced: the insert stamps the date as well (issue #719).
+    expect((await queryAsOwner<{ at: Date | null }>(`select "passwordChangedAt" as at from auth.account where "userId" = $1 and "providerId" = 'credential'`, [userId]))[0]?.at).not.toBeNull();
     expect((await passwordLogin(email, newPassword)).statusCode).toBe(200);
     // Now the credential is the password: the fingerprint moved, and the request made under the subject can no longer be confirmed.
     expect(await fingerprintOf()).not.toBe(request?.credential_fingerprint);
