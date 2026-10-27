@@ -222,41 +222,76 @@ const ANSWERS_UNCONFIRMED_ACCOUNT = new Set([
   'get /me/contexts/resolve'
 ]);
 
+// The routes that need no session at all, fixed too (method and url, as registered). Everything registered that is on
+// neither list answers 403 EMAIL_NOT_CONFIRMED to this session, whatever it would answer an anonymous caller, so a route
+// that fails its validation or says 404 before the session guard cannot slip out of the sweep by looking public.
+const PUBLIC_ROUTES = new Set([
+  'get /health',
+  'get /ready',
+  'get /auth/providers',
+  'get /auth/google/start',
+  'get /auth/callback/google',
+  'post /auth/login',
+  'post /auth/sign-up',
+  'post /auth/email/verification/resend',
+  'post /auth/email/verify',
+  'post /auth/password/forgot',
+  'post /auth/password/reset',
+  'get /invitations/:token',
+  'post /invitations/:token/accept-new-account',
+  'post /portal-approval/session',
+  'get /portal-approval/batch',
+  'get /portal-approval/contents/:contentId/media/:assetId/url',
+  'post /portal-approval/contents/:contentId/approve',
+  'post /portal-approval/contents/:contentId/request-changes',
+  'post /email-change/confirm'
+]);
+
 const concretePath = (url: string): string => url
   .replace(/:agencyId|:clientId|:contentId|:folderId|:assetId|:scriptId|:roleId|:invitationId|:membershipId|:accessId|:threadId|:taskId|:userId|:id\b/g, () => randomUUID())
   .replace(/:[A-Za-z]+/g, 'some-value');
 
-describe('every route that needs a session', () => {
-  it('refuses the session of an unconfirmed invited account with 403 EMAIL_NOT_CONFIRMED, except the six that answer it', async () => {
+describe('every registered route', () => {
+  const swept = () => registeredRoutes.filter((route) => route.method !== 'head' && route.method !== 'options' && !route.url.includes('*') && !route.url.startsWith('/__test/'));
+  const call = (route: { method: string; url: string }, cookie?: string) => app.app.inject({
+    method: route.method.toUpperCase() as 'GET',
+    url: concretePath(route.url),
+    headers: { ...origin, ...(cookie === undefined ? {} : { cookie }) },
+    ...(route.method === 'get' || route.method === 'delete' ? {} : { payload: {} })
+  });
+
+  it('refuses the session of an unconfirmed invited account with 403 EMAIL_NOT_CONFIRMED, unless it is one of the six that answer it or one of the public ones', async () => {
     const mine = await scene('collaborator_invite');
-    const routes = registeredRoutes.filter((route) => route.method !== 'head' && route.method !== 'options' && !route.url.includes('*') && !route.url.startsWith('/__test/'));
-    const sessionRoutes: string[] = [];
+    const checked: string[] = [];
     const wronglyOpen: string[] = [];
 
-    for (const route of routes) {
+    for (const route of swept()) {
       const key = `${route.method} ${route.url}`;
-      const request = (cookie?: string) => app.app.inject({
-        method: route.method.toUpperCase() as 'GET',
-        url: concretePath(route.url),
-        headers: { ...origin, ...(cookie === undefined ? {} : { cookie }) },
-        ...(route.method === 'get' || route.method === 'delete' ? {} : { payload: {} })
-      });
-      const anonymous = await request();
-      const needsSession = anonymous.statusCode === 401 && anonymous.json<{ error?: { code?: string } }>().error?.code === 'UNAUTHENTICATED';
-      if (!needsSession) continue;
-      sessionRoutes.push(key);
-      if (ANSWERS_UNCONFIRMED_ACCOUNT.has(key)) continue;
+      if (ANSWERS_UNCONFIRMED_ACCOUNT.has(key) || PUBLIC_ROUTES.has(key)) continue;
+      checked.push(key);
 
-      const answered = await request(mine.cookie);
+      const answered = await call(route, mine.cookie);
       if (answered.statusCode !== 403 || answered.json<{ error?: { code?: string } }>().error?.code !== 'EMAIL_NOT_CONFIRMED') {
         wronglyOpen.push(`${key} -> ${answered.statusCode}`);
       }
     }
 
     expect(wronglyOpen).toEqual([]);
-    // The sweep sees the real surface: the six are session routes, and so are the rest of the product's.
-    for (const key of ANSWERS_UNCONFIRMED_ACCOUNT) expect(sessionRoutes, key).toContain(key);
-    expect(sessionRoutes.length).toBeGreaterThan(60);
+    // The sweep sees the real surface, not an empty one.
+    expect(checked.length).toBeGreaterThan(60);
+  });
+
+  it('keeps both fixed lists true: every listed route is registered, the public ones need no session and the six do', async () => {
+    const registered = new Set(swept().map((route) => `${route.method} ${route.url}`));
+    for (const key of [...ANSWERS_UNCONFIRMED_ACCOUNT, ...PUBLIC_ROUTES]) expect(registered, key).toContain(key);
+
+    for (const route of swept()) {
+      const key = `${route.method} ${route.url}`;
+      if (!ANSWERS_UNCONFIRMED_ACCOUNT.has(key) && !PUBLIC_ROUTES.has(key)) continue;
+      const anonymous = await call(route);
+      const needsSession = anonymous.statusCode === 401 && anonymous.json<{ error?: { code?: string } }>().error?.code === 'UNAUTHENTICATED';
+      expect(needsSession, key).toBe(ANSWERS_UNCONFIRMED_ACCOUNT.has(key));
+    }
   });
 
   it.each([...ANSWERS_UNCONFIRMED_ACCOUNT])('%s does answer the unconfirmed account', async (key) => {
