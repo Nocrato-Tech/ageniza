@@ -21,6 +21,8 @@ const unauthenticated = (): Response => json({ error: { code: 'UNAUTHENTICATED',
 interface Scenario {
   readonly initiallyLoggedIn?: boolean;
   readonly verifyError?: Response;
+  /** Refuses only the request that carries no password: the session is not the account of the link. */
+  readonly verifyWithoutPasswordError?: Response;
 }
 
 const makeFetch = (scenario: Scenario = {}) => {
@@ -35,6 +37,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (url.endsWith('/auth/email/verify')) {
       bodies.verify!.push(body());
       if (scenario.verifyError !== undefined) return scenario.verifyError;
+      if (scenario.verifyWithoutPasswordError !== undefined && !('password' in (body() as object))) return scenario.verifyWithoutPasswordError;
       serverLoggedIn = true;
       return json({ user: sessionBody.user });
     }
@@ -197,6 +200,41 @@ describe('VerifyEmailPage (/email/verificar, finding A1 of the review of PR #720
     expect(await screen.findByRole('heading', { name: 'Confirmar e-mail' })).toBeTruthy();
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(probe.pathname).toBe('/email/verificar');
+  });
+
+  it('offers the click that sends no password only to a browser that holds a session (decision 2026-10-27)', async () => {
+    const withoutSession = makeFetch();
+    renderAt(withoutSession.impl, '/email/verificar?token=the-token');
+    await screen.findByLabelText('Senha');
+    expect(screen.queryByRole('button', { name: 'Confirmar sem digitar a senha' })).toBeNull();
+    cleanup();
+
+    const { impl, bodies } = makeFetch({ initiallyLoggedIn: true });
+    const { probe, store } = renderAt(impl, '/email/verificar?token=the-token');
+    await store.refresh();
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar sem digitar a senha' }));
+
+    await waitFor(() => expect(probe.pathname).toBe('/comecar'));
+    // The token only: no password, not even an empty one.
+    expect(bodies.verify).toEqual([{ token: 'the-token' }]);
+  });
+
+  it('keeps the password form when the API refuses the click, says why, and the password still confirms', async () => {
+    const { impl, bodies } = makeFetch({
+      initiallyLoggedIn: true,
+      verifyWithoutPasswordError: json({ error: { code: 'INVALID_LINK_OR_PASSWORD', message: 'x' } }, 400)
+    });
+    const { probe, store } = renderAt(impl, '/email/verificar?token=the-token');
+    await store.refresh();
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar sem digitar a senha' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('pertence a outra conta. Digite a senha da conta do link.');
+    expect(probe.pathname).toBe('/email/verificar');
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'the account password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar e-mail' }));
+
+    await waitFor(() => expect(probe.pathname).toBe('/comecar'));
+    expect(bodies.verify).toEqual([{ token: 'the-token' }, { token: 'the-token', password: 'the account password' }]);
   });
 
   it('without a token shows the invalid link with the resend, and goes back to /entrar', async () => {
