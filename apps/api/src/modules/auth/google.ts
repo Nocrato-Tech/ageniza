@@ -3,14 +3,13 @@ import { getOAuthState } from 'better-auth/api';
 import { verifyGoogleIdToken, type GoogleProfile } from 'better-auth/social-providers';
 
 import type { CoreLogger } from '@ageniza/core';
+import { DisplayNameSchema } from '@ageniza/contracts';
 
 /** The nonce rides the state record the callback reads back, so it cannot be set by the browser. */
 export const GOOGLE_NONCE_KEY = 'googleNonce';
 
 /** How long a Google sign-in counts as the proof an account without a password gives where a password is asked. */
 export const GOOGLE_REAUTH_WINDOW_MS = 5 * 60 * 1_000;
-
-const MAX_NAME_LENGTH = 120;
 
 export interface GoogleUserInfoDependencies {
   readonly clientId: string;
@@ -48,8 +47,11 @@ export const createGoogleUserInfo = (dependencies: GoogleUserInfoDependencies) =
     const { sub, email, name } = claims;
     if (typeof sub !== 'string' || sub === '' || typeof email !== 'string' || email === '') return refuse('claims_incomplete');
 
-    // The name of the Google profile, or the part of the address before the @ when it has none (same rule as a new account).
-    const displayName = typeof name === 'string' && name.trim() !== '' ? name.trim().slice(0, MAX_NAME_LENGTH) : email.split('@')[0] ?? email;
+    // The name of the Google profile when it is one the product accepts as a name (the schema of `PATCH /me/profile`: no control,
+    // bidi or invisible character, no line break, at most 120 characters); otherwise the part of the address before the @, as for
+    // a profile with no name. The same name serves the new account and the takeover.
+    const profileName = DisplayNameSchema.safeParse(name);
+    const displayName = profileName.success ? profileName.data : email.split('@')[0] ?? email;
     const result = await dependencies.pool.query<{ admitted: boolean }>(
       'select app_private.google_sign_in_admission($1::text, $2::text, $3::text) as admitted',
       [sub, email, displayName]
