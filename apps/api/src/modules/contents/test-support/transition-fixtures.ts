@@ -144,7 +144,12 @@ export const createTransitionFixtures = (w: ContentsWorld) => {
   };
 
   const queueRows = async (contentId: string): Promise<Array<{ type: string; recipient: string }>> => {
-    const rows = await w.getOwner().knex('notification_queue').where({ content_id: contentId }).orderBy(['type', 'recipient_user_id']).select('type', 'recipient_user_id');
+    // The queue names the access of the person (#711); the tests talk about the account the access is linked to.
+    const rows = await w.getOwner().knex('notification_queue as item')
+      .join('client_portal_accesses as access', 'access.id', 'item.recipient_portal_access_id')
+      .where('item.content_id', contentId)
+      .orderBy(['item.type', 'access.user_id'])
+      .select('item.type', 'access.user_id as recipient_user_id');
     return rows.map((row) => ({ type: row.type as string, recipient: row.recipient_user_id as string }));
   };
 
@@ -182,7 +187,7 @@ export const createTransitionFixtures = (w: ContentsWorld) => {
       await owner('content_media').whereIn('client_id', clients).delete();
       await owner('content_tasks').whereIn('client_id', clients).delete();
       await owner('contents').whereIn('client_id', clients).delete();
-      await owner('notification_queue').whereIn('recipient_user_id', extraUserIds).delete();
+      await owner('notification_queue').whereIn('client_id', clients).delete();
       await owner('client_memberships').whereIn('user_id', extraUserIds).delete();
       await owner('agency_memberships').whereIn('user_id', fixturePersonIds).delete();
       await w.getApp().pool.query('delete from auth."user" where id = any($1::uuid[])', [extraUserIds]);

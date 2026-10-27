@@ -10,8 +10,6 @@ import {
   ClientInvitationListResponseSchema,
   ClientMemberListResponseSchema,
   ClientMemberSchema,
-  InvitationCreatedResponseSchema,
-  InvitationResentResponseSchema,
   type ClientMember,
   type ClientPendingInvitation,
   type ClientDetailResponse
@@ -22,7 +20,6 @@ import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth, useClientDetail } from './client-detail.js';
 import { HttpClientError, useApiClient } from './http.js';
-import { inviteLinkDays } from './invite-collaborator.js';
 import { pendingInviteExpiryLabel } from './pending-invitations.js';
 import { NotFoundPage } from './status-pages.js';
 
@@ -33,11 +30,14 @@ const MEMBERS_FAILED = 'Não foi possível carregar as pessoas com acesso. Tente
 const INVITATIONS_FAILED = 'Não foi possível carregar os convites. Tente de novo.';
 const REMOVE_FAILED = 'Não foi possível remover o acesso. Tente de novo.';
 const REACTIVATE_FAILED = 'Não foi possível reativar o acesso. Tente de novo.';
-const RESEND_FAILED = 'Não foi possível reenviar o convite. Tente de novo.';
 const CANCEL_FAILED = 'Não foi possível cancelar o convite. Tente de novo.';
+const READ_ONLY_FAILED = 'O plano desta agência precisa ser renovado para usar esta opção.';
+const ARCHIVED_FAILED = 'Cliente arquivado: o acesso ao portal não pode ser alterado.';
 const NO_PERMISSION = 'Você não tem permissão para alterar o acesso deste cliente.';
 const REMOVE_DESCRIPTION = 'A pessoa perde o acesso ao portal deste cliente. As outras pessoas não são afetadas.';
-const INVITE_HINT = 'A pessoa recebe um link para criar a conta e entrar no portal deste cliente.';
+const ADD_HINT = 'A pessoa passa a ter acesso ao portal deste cliente na hora e recebe um e-mail de boas-vindas.';
+const NOT_ENTERED = 'ainda não entrou';
+const ADD_FAILED = 'Não foi possível adicionar a pessoa. Tente de novo.';
 
 const parsePage = (value: string | null): number => {
   const parsed = Number(value);
@@ -88,8 +88,15 @@ interface PendingAction {
   readonly email?: string;
 }
 
-/** The invite modal (`specs/clientes.md` §7): the e-mail, and nothing else — the invite carries only it. */
-function InviteClientDialog({ client, onClose }: { client: ClientDetailResponse; onClose: () => void }) {
+/** The name of the account once the person has entered, or "ainda não entrou"; it never says whether the address has an account. */
+function MemberName({ member }: { member: ClientMember }) {
+  return member.name === null
+    ? <span className="portal-access__name portal-access__name--pending">{NOT_ENTERED}</span>
+    : <span className="portal-access__name">{member.name}</span>;
+}
+
+/** The "Adicionar pessoa" modal (`specs/clientes.md` §7): the e-mail, and nothing else. The access is valid on the spot. */
+function AddPersonDialog({ client, onClose, onAdded }: { client: ClientDetailResponse; onClose: () => void; onAdded: (email: string) => void }) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const { formRef, summary } = useFormErrors();
@@ -97,41 +104,42 @@ function InviteClientDialog({ client, onClose }: { client: ClientDetailResponse;
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
-  const [sent, setSent] = useState<{ email: string; days: number } | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    if (sent === null) emailRef.current?.focus();
-    else closeRef.current?.focus();
-  }, [sent]);
+  useEffect(() => { emailRef.current?.focus(); }, []);
 
-  const invite = useMutation({
+  const add = useMutation({
     mutationFn: (target: string) => httpClient.request({
-      path: apiPath('/agencies/:agencyId/clients/:clientId/invitations', { agencyId: agency.agencyId, clientId: client.id }),
+      path: apiPath('/agencies/:agencyId/clients/:clientId/members', { agencyId: agency.agencyId, clientId: client.id }),
       method: 'POST',
       body: { email: target },
-      response: InvitationCreatedResponseSchema
+      response: ClientMemberSchema
     }),
-    onSuccess: (created, target) => {
-      setSent({ email: target, days: inviteLinkDays(created.expiresAt) });
+    onSuccess: (_member, target) => {
+      onAdded(target);
+      onClose();
     },
     onError: (error: unknown) => {
-      if (!(error instanceof HttpClientError)) { setFormError('Não foi possível enviar o convite. Tente de novo.'); return; }
-      if (error.code === 'MEMBERSHIP_EXISTS') { setEmailError('Esta pessoa já tem acesso ao portal deste cliente.'); return; }
-      if (error.code === 'CLIENT_ARCHIVED') { setFormError('Cliente arquivado: não é possível convidar para o portal.'); return; }
-      if (error.code === 'FORBIDDEN' || error.status === 403) { setFormError('Você não tem permissão para convidar para este cliente.'); return; }
+      if (!(error instanceof HttpClientError)) { setFormError(ADD_FAILED); return; }
+      if (error.code === 'ACCESS_EXISTS') { setEmailError('Esta pessoa já tem acesso ao portal deste cliente.'); return; }
+      if (error.code === 'CLIENT_ARCHIVED') { setFormError('Cliente arquivado: não é possível adicionar pessoas ao portal.'); return; }
+      if (error.code === 'AGENCY_READ_ONLY') { setFormError(READ_ONLY_FAILED); return; }
+      if (error.code === 'FORBIDDEN' || error.status === 403) { setFormError('Você não tem permissão para adicionar pessoas a este cliente.'); return; }
+      if (error.status === 429 && error.code === 'DAILY_EMAIL_LIMIT') { setFormError('Limite diário de e-mails da agência atingido. Tente amanhã.'); return; }
+      if (error.status === 502 && error.code === 'EMAIL_DELIVERY_FAILED') {
+        setFormError('O acesso foi dado, mas o e-mail de boas-vindas não foi entregue. Para mandar de novo, remova o acesso e adicione o e-mail outra vez.');
+        return;
+      }
       if (error.status === 400) {
         const parsed = z.object({ issues: z.array(z.object({ path: z.string() })) }).safeParse(error.details);
         const refusedEmail = parsed.success && parsed.data.issues.some((issue) => issue.path === 'email' || issue.path.startsWith('email.'));
         if (refusedEmail) setEmailError('Informe um e-mail válido.');
-        else setFormError('Revise os dados do convite.');
+        else setFormError('Revise os dados.');
         return;
       }
-      setFormError('Não foi possível enviar o convite. Tente de novo.');
+      setFormError(ADD_FAILED);
     },
-    // The API commits the invitation before it sends the e-mail: a 502 leaves a real invitation
-    // behind, so the list refetches on settle to show what the server actually holds.
+    // A 502 leaves the access created, so the list refetches on settle to show what the server holds.
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'clients'] });
     }
@@ -142,24 +150,13 @@ function InviteClientDialog({ client, onClose }: { client: ClientDetailResponse;
     const target = email.trim().toLowerCase();
     if (target === '') { setEmailError('Informe o e-mail.'); return; }
     if (!AuthEmailSchema.safeParse(target).success) { setEmailError('Informe um e-mail válido.'); return; }
-    invite.mutate(target);
+    add.mutate(target);
   };
 
-  if (sent !== null) {
-    return <Modal title="Convidar para o portal" closeLabel="Fechar convite para o portal" onClose={onClose}>
-      <div className="form-stack">
-        <LiveStatus>Convite enviado para {sent.email}. O link vale por {sent.days} dias.</LiveStatus>
-        <div className="form-actions">
-          <Button ref={closeRef} onClick={onClose}>Fechar</Button>
-        </div>
-      </div>
-    </Modal>;
-  }
-
-  return <Modal title="Convidar para o portal" closeLabel="Fechar convite para o portal" onClose={onClose}>
+  return <Modal title="Adicionar pessoa" closeLabel="Fechar adicionar pessoa" onClose={onClose}>
     <form ref={formRef} className="form-stack" onSubmit={onSubmit} noValidate>
       {summary}
-      <Field label="E-mail" hint={INVITE_HINT} error={emailError}>
+      <Field label="E-mail" hint={ADD_HINT} error={emailError}>
         {(control) => <TextInput
           ref={emailRef}
           {...control}
@@ -172,18 +169,18 @@ function InviteClientDialog({ client, onClose }: { client: ClientDetailResponse;
       </Field>
       {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
       <div className="form-actions">
-        <Button type="submit" disabled={email.trim() === ''} loading={invite.isPending}>Enviar convite</Button>
+        <Button type="submit" disabled={email.trim() === ''} loading={add.isPending}>Adicionar</Button>
       </div>
     </form>
   </Modal>;
 }
 
 /**
- * The portal-access tab (`specs/clientes.md` §7, issue #140): the people who enter the client's
- * portal, the removed ones and the pending invitations, with the same shape as the collaborators'
- * invitation section. Reading is `cliente.convidar_usuario` (the tab gate); removing and
- * reactivating need `cliente.remover_usuario`, resending and cancelling need their own permissions;
- * without them the action is simply absent. Every write invalidates the clients prefix, which
+ * The portal-access tab (`specs/clientes.md` §7, issues #140 and #716): the people who have access to
+ * the client's portal, the removed ones and the old invitations still pending. Reading and adding
+ * need `cliente.convidar_usuario` (the tab gate); removing and reactivating need
+ * `cliente.remover_usuario`, cancelling an old invitation needs `convite.cancelar`; without them the
+ * action is simply absent. A pending portal invitation is never resent (decision 2026-10-27). Every write invalidates the clients prefix, which
  * carries the roster badge, the detail summary and this tab's lists (SPEC §6 invalidation table).
  */
 export function ClientAccessTab() {
@@ -192,19 +189,18 @@ export function ClientAccessTab() {
   const queryClient = useQueryClient();
   const client = useClientDetail();
   const canRemove = useCan('cliente.remover_usuario');
-  const canResend = useCan('convite.reenviar');
   const canCancel = useCan('convite.cancelar');
   const activeClient = client.status === 'active';
-  // Removing and cancelling reduce access and stay enabled in a read-only agency; inviting, reactivating and resending
+  // Removing and cancelling reduce access and stay enabled in a read-only agency; adding and reactivating
   // stay on screen, disabled, with the reason.
   const blocked = useWriteBlocked();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const [removedOpen, setRemovedOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [actionError, setActionError] = useState<string | undefined>();
-  const [resentEmail, setResentEmail] = useState<string | null>(null);
+  const [addedEmail, setAddedEmail] = useState<string | null>(null);
 
   const membersPage = parsePage(searchParams.get('membros'));
   const removedPage = parsePage(searchParams.get('removidas'));
@@ -259,10 +255,10 @@ export function ClientAccessTab() {
 
   const changeMemberStatus = useMutation({
     mutationFn: (action: PendingAction) => httpClient.request({
-      path: apiPath('/agencies/:agencyId/clients/:clientId/members/:membershipId/:action', {
+      path: apiPath('/agencies/:agencyId/clients/:clientId/members/:accessId/:action', {
         agencyId: agency.agencyId,
         clientId: client.id,
-        membershipId: action.id,
+        accessId: action.id,
         action: action.kind
       }),
       method: 'POST',
@@ -275,21 +271,14 @@ export function ClientAccessTab() {
     },
     onError: (error: unknown, action: PendingAction) => {
       setPending(null);
+      const refused = (code: string): boolean => error instanceof HttpClientError && error.code === code;
       setActionError(error instanceof HttpClientError && (error.code === 'FORBIDDEN' || error.status === 403)
         ? NO_PERMISSION
-        : action.kind === 'remove' ? REMOVE_FAILED : REACTIVATE_FAILED);
+        : refused('AGENCY_READ_ONLY') ? READ_ONLY_FAILED
+          : refused('CLIENT_ARCHIVED') ? ARCHIVED_FAILED
+            : action.kind === 'remove' ? REMOVE_FAILED : REACTIVATE_FAILED);
       void invalidateAccess();
     }
-  });
-
-  const resend = useMutation({
-    mutationFn: (invitation: ClientPendingInvitation) => httpClient.request({
-      path: apiPath('/agencies/:agencyId/invitations/:invitationId/resend', { agencyId: agency.agencyId, invitationId: invitation.invitationId }),
-      method: 'POST',
-      response: InvitationResentResponseSchema
-    }),
-    onSuccess: (_result, invitation) => setResentEmail(invitation.email),
-    onSettled: () => { void invalidateAccess(); }
   });
 
   const cancel = useMutation({
@@ -320,12 +309,11 @@ export function ClientAccessTab() {
   return <section className="portal-access" aria-labelledby="portal-access-title">
     <header className="portal-access__header">
       <h2 id="portal-access-title">Pessoas com acesso ao portal</h2>
-      {activeClient && <Button variant={emptyList ? 'secondary' : 'primary'} leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setInviteOpen(true)}>Convidar</Button>}
+      {activeClient && <Button variant={emptyList ? 'secondary' : 'primary'} leadingIcon={<Plus />} blockedReason={blocked} onClick={() => { setAddedEmail(null); setAddOpen(true); }}>Adicionar pessoa</Button>}
     </header>
 
     {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
-    {resentEmail !== null && <LiveStatus>Convite reenviado para {resentEmail}. O link anterior deixou de valer.</LiveStatus>}
-    {resend.isError && <p className="portal-access__error-line" role="alert">{RESEND_FAILED}</p>}
+    {addedEmail !== null && <LiveStatus>{addedEmail} agora tem acesso ao portal deste cliente.</LiveStatus>}
 
     {members.isPending ? (
       <ul className="portal-access__list" aria-hidden="true">
@@ -342,23 +330,23 @@ export function ClientAccessTab() {
         mascot={activeClient}
         headingLevel={3}
         title="Ninguém deste cliente acessa o portal ainda"
-        description={activeClient ? INVITE_HINT : undefined}
-        action={activeClient ? <Button leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setInviteOpen(true)}>Convidar</Button> : undefined}
+        description={activeClient ? ADD_HINT : undefined}
+        action={activeClient ? <Button leadingIcon={<Plus />} blockedReason={blocked} onClick={() => { setAddedEmail(null); setAddOpen(true); }}>Adicionar pessoa</Button> : undefined}
       />
     ) : <>
       <ul className="portal-access__list">
-        {memberRows.map((member: ClientMember) => <li key={member.membershipId} className="portal-access__row">
-          <Avatar name={member.name} size="md" />
+        {memberRows.map((member: ClientMember) => <li key={member.accessId} className="portal-access__row">
+          <Avatar name={member.name ?? member.email} size="md" />
           <span className="portal-access__who">
-            <span className="portal-access__name">{member.name}</span>
+            <MemberName member={member} />
             <span className="portal-access__email">{member.email}</span>
           </span>
           <span className="portal-access__since">desde {formatAgencyDayMonth(member.since)}</span>
           {activeClient && canRemove && <Button
             size="sm"
             variant="secondary"
-            aria-label={`Remover o acesso de ${member.name}`}
-            onClick={() => { setActionError(undefined); setPending({ kind: 'remove', id: member.membershipId, name: member.name }); }}
+            aria-label={`Remover o acesso de ${member.name ?? member.email}`}
+            onClick={() => { setActionError(undefined); setPending({ kind: 'remove', id: member.accessId, name: member.name ?? member.email }); }}
           >Remover</Button>}
         </li>)}
       </ul>
@@ -382,20 +370,20 @@ export function ClientAccessTab() {
           </div>
         ) : <>
           <ul className="portal-access__list">
-            {removedRows.map((member: ClientMember) => <li key={member.membershipId} className="portal-access__row">
-              <Avatar name={member.name} size="md" />
+            {removedRows.map((member: ClientMember) => <li key={member.accessId} className="portal-access__row">
+              <Avatar name={member.name ?? member.email} size="md" />
               <span className="portal-access__who">
-                <span className="portal-access__name">{member.name}</span>
+                <MemberName member={member} />
                 <span className="portal-access__email">{member.email}</span>
               </span>
               <span className="portal-access__since">removido</span>
               {activeClient && canRemove && <Button
                 size="sm"
                 variant="secondary"
-                aria-label={`Reativar o acesso de ${member.name}`}
+                aria-label={`Reativar o acesso de ${member.name ?? member.email}`}
                 blockedReason={blocked}
-                loading={changeMemberStatus.isPending && changeMemberStatus.variables?.id === member.membershipId}
-                onClick={() => { setActionError(undefined); changeMemberStatus.mutate({ kind: 'reactivate', id: member.membershipId, name: member.name }); }}
+                loading={changeMemberStatus.isPending && changeMemberStatus.variables?.id === member.accessId}
+                onClick={() => { setActionError(undefined); changeMemberStatus.mutate({ kind: 'reactivate', id: member.accessId, name: member.name ?? member.email }); }}
               >Reativar</Button>}
             </li>)}
           </ul>
@@ -425,14 +413,6 @@ export function ClientAccessTab() {
             <span className="portal-access__who"><span className="portal-access__email">{invitation.email}</span></span>
             <Pill icon={<Clock />}>{pendingInviteExpiryLabel(invitation.expiresAt)}</Pill>
             <span className="portal-access__actions">
-              {activeClient && canResend && <Button
-                size="sm"
-                variant="secondary"
-                aria-label={`Reenviar convite de ${invitation.email}`}
-                blockedReason={blocked}
-                loading={resend.isPending && resend.variables?.invitationId === invitation.invitationId}
-                onClick={() => { setResentEmail(null); resend.mutate(invitation); }}
-              >Reenviar</Button>}
               {activeClient && canCancel && <Button
                 size="sm"
                 variant="ghost"
@@ -459,13 +439,13 @@ export function ClientAccessTab() {
     <ConfirmDialog
       open={pending?.kind === 'cancel'}
       title="Cancelar este convite?"
-      description={pending?.email === undefined ? '' : `O link enviado para ${pending.email} deixa de valer imediatamente. Para dar acesso de novo, será preciso convidar a pessoa outra vez.`}
+      description={pending?.email === undefined ? '' : `O link enviado para ${pending.email} deixa de valer imediatamente. Para dar acesso de novo, use Adicionar pessoa.`}
       confirmLabel="Cancelar convite"
       cancelLabel="Voltar"
       busy={cancel.isPending}
       onConfirm={() => { if (pending !== null) cancel.mutate(pending.id); }}
       onCancel={() => { if (!cancel.isPending) setPending(null); }}
     />
-    {inviteOpen && <InviteClientDialog client={client} onClose={() => setInviteOpen(false)} />}
+    {addOpen && <AddPersonDialog client={client} onClose={() => setAddOpen(false)} onAdded={setAddedEmail} />}
   </section>;
 }

@@ -12,7 +12,7 @@ export interface ClaimedNotification {
   readonly clientId: string;
   readonly clientName: string;
   readonly agencyName: string;
-  readonly recipientUserId: string;
+  readonly recipientPortalAccessId: string;
   readonly recipientEmail: string;
   readonly contentId: string;
   readonly contentTitle: string;
@@ -34,7 +34,7 @@ export interface NotificationQueue {
   fail(itemIds: readonly string[], claimToken: string, errorCode: string): Promise<number>;
 }
 
-const COLUMNS = `item_id, claim_token, notification_type, client_id, client_name, agency_name, recipient_user_id, recipient_email,
+const COLUMNS = `item_id, claim_token, notification_type, client_id, client_name, agency_name, recipient_portal_access_id, recipient_email,
   content_id, content_title, content_publish_on::text as content_publish_on`;
 
 const text = (row: Record<string, unknown>, column: string): string => {
@@ -53,7 +53,7 @@ const toClaimed = (row: Record<string, unknown>): ClaimedNotification => {
     clientId: text(row, 'client_id'),
     clientName: text(row, 'client_name'),
     agencyName: text(row, 'agency_name'),
-    recipientUserId: text(row, 'recipient_user_id'),
+    recipientPortalAccessId: text(row, 'recipient_portal_access_id'),
     recipientEmail: text(row, 'recipient_email'),
     contentId: text(row, 'content_id'),
     contentTitle: text(row, 'content_title'),

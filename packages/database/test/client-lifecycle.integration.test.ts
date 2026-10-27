@@ -126,6 +126,13 @@ const membershipStatus = async (membershipId: string): Promise<string | undefine
   return row?.status;
 };
 
+// The audit event of a removal is about the access of the membership, which is what the removal changes (#711).
+const accessOf = async (membershipId: string): Promise<string> => {
+  const row = await getOwner().knex('client_memberships').where({ id: membershipId }).first<{ portal_access_id: string }>('portal_access_id');
+  if (row === undefined) throw new Error(`Membership ${membershipId} not found.`);
+  return row.portal_access_id;
+};
+
 const invitationState = async (invitationId: string): Promise<{ revoked_at: Date | null; used_at: Date | null } | undefined> =>
   getOwner().knex('invitations').where({ id: invitationId }).first<{ revoked_at: Date | null; used_at: Date | null }>('revoked_at', 'used_at');
 
@@ -484,14 +491,15 @@ describe('CLIENT lifecycle functions (#123)', () => {
     try {
       await setMembershipStatus(adminA, membershipId, 'removed');
       expect(await membershipStatus(membershipId)).toBe('removed');
-      expect(await auditEvents(membershipId)).toContainEqual(expect.objectContaining({ action: 'client_member.removed', actor_user_id: adminA, target_type: 'client_membership' }));
+      const accessId = await accessOf(membershipId);
+      expect(await auditEvents(accessId)).toContainEqual(expect.objectContaining({ action: 'client_member.removed', actor_user_id: adminA, target_type: 'client_portal_access' }));
 
       await setMembershipStatus(adminA, membershipId, 'removed');
-      expect((await auditEvents(membershipId)).filter((event) => event.action === 'client_member.removed')).toHaveLength(1);
+      expect((await auditEvents(accessId)).filter((event) => event.action === 'client_member.removed')).toHaveLength(1);
 
       await setMembershipStatus(adminA, membershipId, 'active');
       expect(await membershipStatus(membershipId)).toBe('active');
-      expect(await auditEvents(membershipId)).toContainEqual(expect.objectContaining({ action: 'client_member.reactivated', actor_user_id: adminA }));
+      expect(await auditEvents(accessId)).toContainEqual(expect.objectContaining({ action: 'client_member.reactivated', actor_user_id: adminA }));
 
       await expect(setMembershipStatus(managerA, membershipId, 'removed')).rejects.toMatchObject({ code: 'A0020' });
       await expect(setMembershipStatus(singleA, membershipId, 'removed')).rejects.toMatchObject({ code: 'A0020' });

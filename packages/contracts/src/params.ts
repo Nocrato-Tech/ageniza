@@ -73,8 +73,8 @@ export const AgencyClientMemberPathParamsSchema = z.object({
   agencyId: z.string().uuid(),
   clientId: z.string().uuid(),
   // A plain string for the same reason as `AgencyCollaboratorPathParamsSchema.membershipId`: a
-  // malformed link id answers the same 404 as a foreign or absent one, never a 400.
-  membershipId: z.string().min(1).max(100)
+  // malformed access id answers the same 404 as a foreign or absent one, never a 400.
+  accessId: z.string().min(1).max(100)
 }).strict();
 
 export const ClientThreadPathParamsSchema = z.object({

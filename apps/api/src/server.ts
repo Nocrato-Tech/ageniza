@@ -77,6 +77,7 @@ export const startApi = async (): Promise<void> => {
   const clientDependencies: ClientModuleDependencies = {
     database,
     auth,
+    emailService,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
     requirePermission,
     requireClientAccess: createRequireClientAccess({ database }),
