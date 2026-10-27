@@ -58,7 +58,7 @@ const renderContexts = (
   return { probe, store };
 };
 
-const selectResponse = { decision: 'select', contexts: [agencyA, agencyB, clientC], highlighted: agencyB };
+const selectResponse = { decision: 'select', contexts: [agencyA, agencyB, clientC], highlighted: agencyB, canCreateAgency: false };
 
 const cardTexts = (): string[] => screen.getAllByRole('button')
   .filter((element) => element.classList.contains('ui-choice-card'))
@@ -147,7 +147,7 @@ describe('ContextSelectPage (/contextos)', () => {
   it('reloads the list on a 404 instead of resending the context that vanished', async () => {
     let resolveCalls = 0;
     let putCalls = 0;
-    const withoutB = { decision: 'select', contexts: [agencyA, clientC], highlighted: null };
+    const withoutB = { decision: 'select', contexts: [agencyA, clientC], highlighted: null, canCreateAgency: false };
     renderContexts(async (input, init) => {
       const url = String(input);
       if (url.endsWith('/me/contexts/resolve')) { resolveCalls += 1; return json(resolveCalls === 1 ? selectResponse : withoutB); }
@@ -201,7 +201,7 @@ describe('ContextSelectPage (/contextos)', () => {
       if (url.endsWith('/me/contexts/resolve')) return json({ decision: 'enter', context: agencyA });
       if (url.endsWith('/me/last-context') && init?.method === 'PUT') { putBodies.push(JSON.parse(String(init.body))); return noContent(); }
       if (url.endsWith(`/agencies/${AGENCY_A}/me`)) {
-        return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
+        return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
       }
       throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`);
     });

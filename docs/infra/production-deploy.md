@@ -203,7 +203,8 @@ sudo docker compose -p ageniza logs --tail=200 worker
 
 ### Agency operator CLI
 
-Agency creation and lifecycle commands are operator-only actions. Run them on the VPS with the
+An agency is created only through the product ("Criar agência", in a 14-day trial); no command creates one. The plan
+and lifecycle commands are operator-only actions. Run them on the VPS with the
 production API image, the application runtime settings, and the owner-only migration connection;
 the `api` service inherits `production-private`, the internal network shared with PostgreSQL.
 `MIGRATION_DATABASE_URL` must remain in `/etc/ageniza/migrations.env` and must never be added to
@@ -211,11 +212,24 @@ the `api` service inherits `production-private`, the internal network shared wit
 when applicable, the activation expiration; it never prints the activation token or link.
 
 ```bash
-docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js create --name "<agency name>" --owner-email "<owner@example.com>"
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js set-plan --agency-id <agency UUID> --plan <isenta|ativo|trial> [--ends-at <YYYY-MM-DD or ISO 8601 instant>]
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js set-email-limit --agency-id <agency UUID> --per-day <0-100000|padrao>
 docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js suspend --agency-id <agency UUID>
 docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js reactivate --agency-id <agency UUID>
 docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js resend-activation --agency-id <agency UUID>
 ```
+
+`set-plan` is the only way to change the plan, and the application never writes `plan` (decision 2026-10-27, "a agência
+só nasce pelo produto e o plano isenta"). `isenta` is an agency that pays nothing and uses everything (ours, by the
+backfill); `ativo` is one that upgraded: neither has limits nor a read-only state, and the 2 GiB trial quota goes back to
+the deployment default. `trial` gives it a new trial end (`--ends-at` is required; a bare date ends at 23:59:59 in
+Brasília) and refuses when the owner, or an account with the same normalized e-mail, already has another agency in
+trial. Every change is audited (`agency.plan_<plan>`). `set-email-limit` overrides the daily cap of invitation e-mails of
+the agency (20 in trial, 200 otherwise; `padrao` returns to that default); the refused send answers `429
+DAILY_EMAIL_LIMIT`.
+
+`SUPPORT_CONTACT_EMAIL` in `runtime.env` is optional: a public e-mail, not a secret, that the API serves in
+`GET /agencies/:agencyId/me` so the plan notice can name a contact. Unset, the notice names none.
 
 Account e-mail changes are operator-only too, with the same image and files. A person asks from the
 account menu; nothing notifies the operation, so `list` is how open requests are found. `approve`

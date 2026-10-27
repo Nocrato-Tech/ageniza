@@ -95,7 +95,7 @@ export const assignmentWorld = (options: AssignmentOptions) => {
     const path = call.path.split('?')[0]!;
     if (path.endsWith('/auth/session')) return json(sessionBody);
     if (/\/agencies\/[^/]+\/me$/.test(path)) {
-      return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, role: { key: 'custom', name: 'Papel' }, permissions: options.permissions, membershipId: options.self });
+      return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: options.permissions, membershipId: options.self });
     }
     if (/\/agencies\/[^/]+\/collaborators$/.test(path)) {
       if (!holds('colaborador.visualizar')) return failure(403, 'FORBIDDEN');

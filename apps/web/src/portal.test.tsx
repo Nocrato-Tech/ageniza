@@ -48,9 +48,11 @@ const agencyMe = {
   isOwner: false,
   membershipId: null,
   role: { key: 'admin', name: 'Admin' },
+  plan: { kind: 'isenta', trialEndsAt: null, readOnly: false },
   permissions: ['cliente.visualizar', 'cliente.operar', 'cliente.cadastrar', 'cliente.arquivar']
 };
 const contextsBody = {
+  canCreateAgency: false,
   contexts: [{ type: 'client', clientId: CLIENT_ID, clientName: 'Padaria Central', agencyId: AGENCY_A, agencyName: 'Agência Um', onboardingPending: false }]
 };
 const legalAccepted = {
@@ -76,7 +78,7 @@ const portalClient = (overrides: Partial<PortalClientResponse> = {}): Record<str
   closingDate: null,
   archivedAt: null,
   agencyName: 'Agência Um',
-  onboardingSeenAt: '2026-10-01T12:00:00.000Z',
+  onboardingSeenAt: '2026-10-01T12:00:00.000Z', agencyReadOnly: false,
   home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0 },
   ...overrides
 });
@@ -87,7 +89,7 @@ const detailOf = (registration: Record<string, unknown>): Record<string, unknown
 });
 
 function registrationOf(detail: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(detail).filter(([key]) => key !== 'summary' && key !== 'agencyName' && key !== 'onboardingSeenAt' && key !== 'home'));
+  return Object.fromEntries(Object.entries(detail).filter(([key]) => key !== 'summary' && key !== 'agencyName' && key !== 'onboardingSeenAt' && key !== 'agencyReadOnly' && key !== 'home'));
 }
 
 const json = (body: unknown, status = 200): Response =>

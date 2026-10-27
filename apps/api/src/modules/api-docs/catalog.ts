@@ -19,6 +19,8 @@ import {
   AgencyCollaboratorPathParamsSchema,
   AgencyInvitationPathParamsSchema,
   AgencyMeResponseSchema,
+  CreateAgencyRequestSchema,
+  CreateAgencyResponseSchema,
   AgencyMediaAssetPathParamsSchema,
   AgencyPathParamsSchema,
   AgencyRolesQuerySchema,
@@ -240,6 +242,12 @@ export const ERROR_MESSAGES: Record<string, string> = {
   NO_CONTEXT_ACCESS: 'Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite.',
   NOT_FOUND: 'Resource not found.',
   CSRF_REJECTED: 'Request origin is not allowed',
+  EMAIL_NOT_VERIFIED: 'Confirme o seu e-mail antes de criar uma agência.',
+  TRIAL_ALREADY_EXISTS: 'Sua conta já tem uma agência em período de teste.',
+  AGENCY_READ_ONLY: 'O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados.',
+  DAILY_EMAIL_LIMIT: 'Limite diário de envios atingido. Tente amanhã.',
+  TRIAL_CLIENT_LIMIT: 'O período de teste permite até 3 clientes ativos.',
+  TRIAL_COLLABORATOR_LIMIT: 'O período de teste permite até 3 colaboradores, contando quem criou a agência e os convites pendentes.',
   PAYLOAD_TOO_LARGE: 'Request payload is too large',
   RATE_LIMITED: 'Too many requests',
   NOT_READY: 'Service is not ready',
@@ -948,7 +956,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       status: 200,
       description: 'Contextos válidos.',
       schema: MeContextsResponseSchema,
-      example: { contexts: [agencyContextExample] }
+      example: { contexts: [agencyContextExample], canCreateAgency: true }
     }],
     errors: [COMMON_ERRORS.internal, { status: 401, code: 'UNAUTHENTICATED' }]
   },
@@ -960,7 +968,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Resolve em qual contexto entrar',
     description: [
       '`none` encerra a sessão quando não há contexto algum; `enter` traz o contexto único (ou o',
-      'último usado); `select` traz a lista para escolher. Um `preferred` inválido é ignorado em',
+      'último usado); `select` traz a lista para escolher e `canCreateAgency` (se a conta pode criar uma agência em teste). Um `preferred` inválido é ignorado em',
       'silêncio, nunca vira 400.'
     ].join('\n'),
     access: 'Sessão',
@@ -1039,7 +1047,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
         isOwner: false,
         membershipId,
         role: { key: 'admin', name: 'Admin' },
-        permissions: ['cliente.visualizar', 'colaborador.visualizar', 'midia.enviar']
+        permissions: ['cliente.visualizar', 'colaborador.visualizar', 'midia.enviar'],
+        plan: { kind: 'trial', trialEndsAt: '2026-11-09T12:00:00.000Z', readOnly: false }
       }
     }],
     errors: [
@@ -1047,6 +1056,37 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies',
+    operationId: 'createAgency',
+    module: 'agencies',
+    summary: 'Cria uma agência em período de teste',
+    description: [
+      'Quem chama vira Owner, com o vínculo Admin, de uma agência em teste por 14 dias, com até 3 clientes ativos,',
+      '3 colaboradores (contando o Owner e os convites pendentes) e 2 GB. Só conta com e-mail confirmado, e no máximo',
+      'uma agência em teste por conta, vencida ou não; o banco decide as duas coisas. Devolve o contexto novo.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    body: CreateAgencyRequestSchema,
+    requestExample: { name: 'Agência Exemplo' },
+    responses: [{
+      status: 201,
+      description: 'Agência criada.',
+      schema: CreateAgencyResponseSchema,
+      example: { context: { ...agencyContextExample, isOwner: true } }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_VERIFIED' },
+      { status: 409, code: 'TRIAL_ALREADY_EXISTS' }
     ]
   },
 
@@ -2903,7 +2943,8 @@ path: '/agencies/:agencyId/roles',
         ...clientExample,
         agencyName: 'Agência Exemplo',
         onboardingSeenAt: '2026-10-01T12:00:00.000Z',
-        home: { threadsAnsweredByAgency: 2, brandStudyFilled: 3, contentsAwaitingApproval: 2 }
+        home: { threadsAnsweredByAgency: 2, brandStudyFilled: 3, contentsAwaitingApproval: 2 },
+        agencyReadOnly: false
       }
     }],
     errors: [

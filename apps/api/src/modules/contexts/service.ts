@@ -36,6 +36,12 @@ export interface ListValidContextsResult {
   readonly lastUsedContext: Context | null;
 }
 
+/** Whether the actor may create an agency in trial now, by the database's own rule (issue #709). */
+export const canCreateAgency = async (transaction: ContextTransaction): Promise<boolean> => {
+  const result = await raw<RawRows<{ allowed: boolean }>>(transaction, 'select app_private.can_create_trial_agency() as allowed', []);
+  return result.rows[0]?.allowed === true;
+};
+
 /** Stable per-context key used for equality/sort tie-breaking; never exposed on the wire. */
 const contextKey = (context: Context): string => context.type === 'agency'
   ? `agency:${context.agencyId}`
