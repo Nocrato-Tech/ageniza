@@ -21,6 +21,9 @@ const origin = { origin: TEST_APP_PUBLIC_URL };
 type Purpose = 'agency_activation' | 'collaborator_invite' | 'client_invite';
 const PURPOSES: readonly Purpose[] = ['agency_activation', 'collaborator_invite', 'client_invite'];
 
+/** Every route Fastify registered, collected by the `onRoute` observer before the app is ready. */
+const registeredRoutes: { method: string; url: string }[] = [];
+
 let owner: DatabaseClient;
 let app: TestApp;
 let adminRoleId = '';
@@ -87,6 +90,7 @@ const expectNotConfirmed = (response: { statusCode: number; json: () => unknown 
 beforeAll(async () => {
   owner = ownerClient();
   app = await buildTestApp({
+    onRoute: (route) => { registeredRoutes.push({ method: route.method, url: route.url }); },
     registerExtraRoutes: (fastifyApp, guards) => {
       // The guards that come after the session, each tried alone: with the session guard letting the account through,
       // only the guard under test stands between it and the handler.
@@ -155,6 +159,18 @@ describe.each(PURPOSES)('the session of an unconfirmed account created by an inv
     expect(await owner.knex('user_context_preferences').where({ user_id: mine.userId }).select('user_id')).toEqual([]);
   });
 
+  it('is a 401 SESSION_EXPIRED, and the session is revoked, once it is past its 30 days, not a 403', async () => {
+    const mine = await scene(purpose);
+    await app.pool.query(`update auth.session set "createdAt" = now() - interval '31 days' where "userId" = $1`, [mine.userId]);
+    // The credential was set "just now", and a session created before that is refused first (issue #719): age it too, so only the 30 days reject.
+    await owner.knex.raw(`update auth.account set "passwordChangedAt" = now() - interval '60 days' where "userId" = ?`, [mine.userId]);
+
+    const expired = await get(mine.cookie, `/agencies/${mine.agencyId}/me`);
+    expect(expired.statusCode).toBe(401);
+    expect(expired.json()).toMatchObject({ error: { code: 'SESSION_EXPIRED' } });
+    expect((await app.pool.query('select id from auth.session where "userId" = $1', [mine.userId])).rows).toEqual([]);
+  });
+
   it('is refused by the agency guard on its own, whatever the session guard in front of it did', async () => {
     const mine = await scene(purpose);
 
@@ -192,5 +208,62 @@ describe('an unconfirmed account that no invitation created', () => {
 
     expect((await get(mine.cookie, '/auth/session')).statusCode).toBe(401);
     expect((await get(mine.cookie, '/me/contexts')).statusCode).toBe(401);
+  });
+});
+
+// The session routes that answer an account whose e-mail is not confirmed, fixed here on purpose: a route that needs a
+// session and is not one of these refuses it, so one added later that escapes the guard turns the sweep below red.
+const ANSWERS_UNCONFIRMED_ACCOUNT = new Set([
+  'get /auth/session',
+  'get /auth/session/check',
+  'post /auth/logout',
+  'post /auth/logout-all',
+  'get /me/contexts',
+  'get /me/contexts/resolve'
+]);
+
+const concretePath = (url: string): string => url
+  .replace(/:agencyId|:clientId|:contentId|:folderId|:assetId|:scriptId|:roleId|:invitationId|:membershipId|:accessId|:threadId|:taskId|:userId|:id\b/g, () => randomUUID())
+  .replace(/:[A-Za-z]+/g, 'some-value');
+
+describe('every route that needs a session', () => {
+  it('refuses the session of an unconfirmed invited account with 403 EMAIL_NOT_CONFIRMED, except the six that answer it', async () => {
+    const mine = await scene('collaborator_invite');
+    const routes = registeredRoutes.filter((route) => route.method !== 'head' && route.method !== 'options' && !route.url.includes('*') && !route.url.startsWith('/__test/'));
+    const sessionRoutes: string[] = [];
+    const wronglyOpen: string[] = [];
+
+    for (const route of routes) {
+      const key = `${route.method} ${route.url}`;
+      const request = (cookie?: string) => app.app.inject({
+        method: route.method.toUpperCase() as 'GET',
+        url: concretePath(route.url),
+        headers: { ...origin, ...(cookie === undefined ? {} : { cookie }) },
+        ...(route.method === 'get' || route.method === 'delete' ? {} : { payload: {} })
+      });
+      const anonymous = await request();
+      const needsSession = anonymous.statusCode === 401 && anonymous.json<{ error?: { code?: string } }>().error?.code === 'UNAUTHENTICATED';
+      if (!needsSession) continue;
+      sessionRoutes.push(key);
+      if (ANSWERS_UNCONFIRMED_ACCOUNT.has(key)) continue;
+
+      const answered = await request(mine.cookie);
+      if (answered.statusCode !== 403 || answered.json<{ error?: { code?: string } }>().error?.code !== 'EMAIL_NOT_CONFIRMED') {
+        wronglyOpen.push(`${key} -> ${answered.statusCode}`);
+      }
+    }
+
+    expect(wronglyOpen).toEqual([]);
+    // The sweep sees the real surface: the six are session routes, and so are the rest of the product's.
+    for (const key of ANSWERS_UNCONFIRMED_ACCOUNT) expect(sessionRoutes, key).toContain(key);
+    expect(sessionRoutes.length).toBeGreaterThan(60);
+  });
+
+  it.each([...ANSWERS_UNCONFIRMED_ACCOUNT])('%s does answer the unconfirmed account', async (key) => {
+    const mine = await scene('collaborator_invite');
+    const [method, url] = key.split(' ') as ['get' | 'post', string];
+
+    const answered = await app.app.inject({ method: method.toUpperCase() as 'GET', url, headers: { ...origin, cookie: mine.cookie } });
+    expect(answered.statusCode, key).toBeLessThan(300);
   });
 });

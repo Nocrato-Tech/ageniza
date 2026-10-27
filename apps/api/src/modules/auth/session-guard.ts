@@ -114,7 +114,6 @@ export const createRequireSession = (dependencies: SessionGuardDependencies, opt
       await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => undefined);
       throw unauthenticated();
     }
-    if (user.emailVerified !== true && options.allowUnconfirmed !== true) throw emailNotConfirmed();
     const ageMs = Date.now() - new Date(session.createdAt).getTime();
     if (ageMs > AUTH_SESSION_MAX_AGE_MS) {
       await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => {
@@ -122,6 +121,8 @@ export const createRequireSession = (dependencies: SessionGuardDependencies, opt
       });
       throw sessionExpired();
     }
+    // After the age: a session past its 30 days is a 401 and is revoked, whatever the account has confirmed.
+    if (user.emailVerified !== true && options.allowUnconfirmed !== true) throw emailNotConfirmed();
 
     request.auth = {
       userId: user.id,
