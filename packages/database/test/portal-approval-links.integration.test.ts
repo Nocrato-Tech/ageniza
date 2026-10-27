@@ -648,6 +648,34 @@ describe('Aprovar, as the access of the link', () => {
     for (const content of decidedTwice.contents) expect(await contentOf(content)).toMatchObject({ status: 'approved', approved_by_portal_access_id: decidedTwice.accessId });
   });
 
+  it('leaves no context behind after Pedir ajuste either: the next write in the transaction is not the access', async () => {
+    const s = await scenario({ contents: 3 });
+    await requestBy(s.sessionHash, s.contents[0]!, 'Troque a legenda.');
+    expect((await owner().raw<{ rows: Array<{ n: string }> }>('select count(*)::text as n from app_private.portal_approval_context where access_id = ?::uuid', [s.accessId])).rows[0]!.n).toBe('0');
+    // Inside one transaction, after the request, neither a plain approval nor a plain conversation can borrow the access.
+    await expect(owner().transaction(async (transaction) => {
+      await transaction.raw('select app_private.request_changes_by_portal_approval(?, ?::uuid, 1, ?)', [s.sessionHash, s.contents[1]!, 'Troque a capa.']);
+      await transaction('contents').where({ id: s.contents[2]! }).update({ status: 'approved' });
+    })).rejects.toMatchObject({ code: '42501', message: expect.stringContaining('approved by a person') });
+    await expect(owner().transaction(async (transaction) => {
+      await transaction.raw('select app_private.request_changes_by_portal_approval(?, ?::uuid, 1, ?)', [s.sessionHash, s.contents[1]!, 'Troque a capa.']);
+      await transaction('client_threads').insert({ client_id: s.clientId, content_id: s.contents[2]!, opened_by_portal_access_id: s.accessId, opened_side: 'client' });
+    })).rejects.toMatchObject({ code: '42501', message: expect.stringContaining('only through its approval link') });
+    expect((await contentOf(s.contents[1]!)).status).toBe('awaiting_approval');
+    expect((await contentOf(s.contents[2]!)).status).toBe('awaiting_approval');
+    expect(await threadsOf(s.contents[2]!)).toEqual([]);
+  });
+
+  it('refuses an approval by an account and by an access in the same transaction: the actor is bound and the context is there', async () => {
+    const s = await scenario({ contents: 1 });
+    await expect(owner().transaction(async (transaction) => {
+      await transaction.raw('select app_private.bind_actor(?::uuid)', [ids.adminA]);
+      await transaction.raw('insert into app_private.portal_approval_context (xact_id, access_id, link_id) values (pg_current_xact_id(), ?::uuid, ?::uuid)', [s.accessId, s.linkId]);
+      await transaction('contents').where({ id: s.contents[0]! }).update({ status: 'approved' });
+    })).rejects.toMatchObject({ code: '42501', message: expect.stringContaining('never by both') });
+    expect(await contentOf(s.contents[0]!)).toMatchObject({ status: 'awaiting_approval', approved_by: null, approved_by_portal_access_id: null });
+  });
+
   it('is idempotent: a content already approved stays as the first approval left it', async () => {
     const s = await scenario();
     const second = await scenario({ clientId: s.clientId });
