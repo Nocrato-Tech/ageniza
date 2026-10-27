@@ -141,15 +141,18 @@ const createInvitation = async (
   agencyId: string,
   email: string
 ): Promise<{ invitation: InvitationRow; token: string }> => {
+  // The link only exists in the e-mail (nobody sees it, the operator included), so it is the token of the
+  // e-mail: accepting through it confirms the account (decision 2026-10-27). The column of the token to
+  // copy is required, so it holds the hash of a random token that no one ever receives.
   const token = createInvitationToken();
-  const tokenHash = hashInvitationToken(token);
+  const tokenHash = hashInvitationToken(createInvitationToken());
   const result = await transaction.query<InvitationRow>(
     `insert into public.invitations
-       (agency_id, purpose, email, role_id, client_id, token_hash, expires_at,
+       (agency_id, purpose, email, role_id, client_id, token_hash, email_token_hash, expires_at,
         invited_by_user_id, accepted_by_user_id)
-     values (?, 'agency_activation', ?, null, null, ?, now() + interval '7 days', null, null)
+     values (?, 'agency_activation', ?, null, null, ?, ?, now() + interval '7 days', null, null)
      returning id, email, expires_at`,
-    [agencyId, email, tokenHash]
+    [agencyId, email, tokenHash, hashInvitationToken(token)]
   );
   return { invitation: oneRow(result.rows, 'The activation invitation could not be created.'), token };
 };

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AuthEmailVerificationResendRequestSchema,
@@ -10,13 +10,16 @@ import { ArrowLeft } from 'lucide-react';
 import { Button, Field, TextInput, useFormErrors } from '@ageniza/ui';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { useOptionalAuthSessionStore } from './auth.js';
+import { useOptionalAuthSessionStore, type AuthSessionSnapshot } from './auth.js';
 import { AuthMessage, AuthPanel } from './auth-layout.js';
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 const RATE_LIMITED = 'Muitas tentativas. Tente novamente mais tarde.';
+const CLICK_REFUSED = 'Não foi possível confirmar com a sessão deste navegador: o link não é mais válido ou pertence a outra conta. Digite a senha da conta do link.';
+const NO_SESSION: AuthSessionSnapshot = { status: 'ready', isAuthenticated: false, user: null };
+const subscribeNothing = (): (() => void) => () => undefined;
 const RESENT = 'Se houver uma conta esperando confirmação com esse e-mail, enviamos um novo link. O anterior deixou de valer.';
 
 /**
@@ -66,8 +69,10 @@ export function ResendVerification({ email, idPrefix, lead, buttonLabel = 'Reenv
 /**
  * `/email/verificar?token=…`: the link alone confirms nothing (finding A1 of the review of PR #720).
  * It asks for the account's password and a click, so a mail reader opening the link spends nothing
- * and whoever did not create the account cannot confirm it. The token leaves the address bar as soon
- * as it is held. Success signs the confirmed account in, replacing any session the browser had, and
+ * and whoever did not create the account cannot confirm it. The one exception is a browser that already
+ * holds a session (the account an invitation just created): it also offers a click that sends no password,
+ * and the API accepts it only when that session is the link's own account (decision 2026-10-27). The token
+ * leaves the address bar as soon as it is held. Success signs the confirmed account in, replacing any session the browser had, and
  * goes to `/contextos`, which sends the account with no context to `/comecar`.
  */
 export function VerifyEmailPage() {
@@ -82,12 +87,39 @@ export function VerifyEmailPage() {
   const [passwordError, setPasswordError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
   const [refused, setRefused] = useState(false);
+  const [clickRefused, setClickRefused] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const holdsSession = useSyncExternalStore(
+    authStore?.subscribe ?? subscribeNothing,
+    () => authStore?.getSnapshot() ?? NO_SESSION
+  ).isAuthenticated;
   useDocumentTitle('Confirmar e-mail — Ageniza');
 
   useEffect(() => {
     if (searchParams.toString() !== '') navigate('/email/verificar', { replace: true });
   }, [searchParams, navigate]);
+
+  const finish = async (): Promise<void> => {
+    queryClient.clear();
+    await authStore?.refresh();
+    navigate('/contextos', { replace: true });
+  };
+
+  const confirmWithSession = async (): Promise<void> => {
+    setFormError(undefined);
+    setClickRefused(false);
+    setConfirming(true);
+    try {
+      await httpClient.request({ path: '/auth/email/verify', method: 'POST', body: { token }, response: AuthEmailVerifyResponseSchema });
+    } catch (caught: unknown) {
+      setConfirming(false);
+      if (caught instanceof HttpClientError && caught.status === 400 && caught.code === 'INVALID_LINK_OR_PASSWORD') { setClickRefused(true); return; }
+      setFormError(caught instanceof HttpClientError && caught.status === 429 ? RATE_LIMITED : 'Não foi possível confirmar o e-mail. Tente de novo.');
+      return;
+    }
+    await finish();
+  };
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -104,9 +136,7 @@ export function VerifyEmailPage() {
       setFormError(caught instanceof HttpClientError && caught.status === 429 ? RATE_LIMITED : 'Não foi possível confirmar o e-mail. Tente de novo.');
       return;
     }
-    queryClient.clear();
-    await authStore?.refresh();
-    navigate('/contextos', { replace: true });
+    await finish();
   };
 
   const backToSignIn = <Link className="auth-back" to="/entrar"><ArrowLeft className="auth-back__icon" aria-hidden="true" />Voltar para entrar</Link>;
@@ -119,6 +149,11 @@ export function VerifyEmailPage() {
   }
 
   return <AuthPanel titleId="verify-title" title="Confirmar e-mail" lead="Para confirmar, digite a senha que você escolheu ao criar a conta.">
+    {holdsSession && <div className="auth-form">
+      <p className="auth-note">Você já entrou neste navegador. Se esta for a conta do link, confirme com um clique, sem digitar a senha.</p>
+      {clickRefused && <AuthMessage tone="danger" role="alert">{CLICK_REFUSED}</AuthMessage>}
+      <Button variant="secondary" className="auth-submit" onClick={() => { void confirmWithSession(); }} loading={confirming}>Confirmar sem digitar a senha</Button>
+    </div>}
     <form ref={formRef} className="auth-form" onSubmit={onSubmit} noValidate>
       <Field label="Senha" id="verify-password" error={passwordError}>
         {(control) => <TextInput {...control} name="password" type="password" autoComplete="current-password" value={password}
