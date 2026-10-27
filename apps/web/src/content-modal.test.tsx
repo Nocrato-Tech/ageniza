@@ -51,7 +51,10 @@ describe('the address of a content', () => {
     const first = render_(impl, `${base()}/${row.id}`);
     expect(await screen.findByRole('heading', { name: 'Lançamento do pão' })).toBeTruthy();
     expect((field('Título') as HTMLInputElement).value).toBe('Lançamento do pão');
-    expect((field('Data') as HTMLInputElement).value).toBe('2026-10-20');
+    expect((field('Data') as HTMLInputElement).value).toBe('20/10/2026');
+    // The day uses the DatePicker of the other day fields of Conteúdos, not the native date input.
+    expect((field('Data') as HTMLInputElement).type).toBe('text');
+    expect(within(dialog()).getByRole('button', { name: 'Abrir calendário da data' })).toBeTruthy();
     expect((field('Hora') as HTMLInputElement).value).toBe('18:00');
     expect((field('Legenda') as HTMLTextAreaElement).value).toBe('Pão fresquinho');
     expect((field('Formato') as HTMLSelectElement).value).toBe('image');
@@ -213,7 +216,7 @@ describe('editing', () => {
   it('sends the day and clears the time with null, and a blank caption as null', async () => {
     const row = stored({ publishAtTime: '18:00:00' });
     const { calls } = await openContent(row);
-    type('Data', '2026-10-25');
+    type('Data', '25/10/2026');
     type('Hora', '');
     type('Legenda', '   ');
     click('Salvar');
@@ -337,7 +340,7 @@ describe('editing', () => {
     type('Título', 'Pão de queijo');
     type('Legenda', 'Linha 1\nLinha 2');
     type('Formato', 'reels');
-    type('Data', '2026-10-25');
+    type('Data', '25/10/2026');
     type('Hora', '09:15');
     expect(within(preview).getByText('Pão de queijo')).toBeTruthy();
     expect(within(preview).getByText((_text, element) => element?.tagName === 'P' && element.textContent === 'Linha 1\nLinha 2')).toBeTruthy();
@@ -352,7 +355,7 @@ describe('editing', () => {
     ['approved', 'the format', 'Formato', 'carousel', true],
     ['approved', 'the title only', 'Título', 'Outro título', false],
     ['approved', 'the time only', 'Hora', '10:00', false],
-    ['approved', 'the day only', 'Data', '2026-10-27', false],
+    ['approved', 'the day only', 'Data', '27/10/2026', false],
     ['in_production', 'the caption', 'Legenda', 'Outra legenda', false],
     ['adjusting', 'the caption', 'Legenda', 'Outra legenda', false]
   ] as const)('a %s content, when you change %s, %s the warning that it goes back to waiting for approval', async (status, _what, label, value, warns) => {
@@ -650,7 +653,7 @@ describe('creating a content', () => {
 
     expect(await screen.findByRole('dialog', { name: 'Novo conteúdo' })).toBeTruthy();
     await screen.findByLabelText('Data');
-    expect((field('Data') as HTMLInputElement).value).toBe(TODAY);
+    expect((field('Data') as HTMLInputElement).value).toBe(TODAY.split('-').reverse().join('/'));
     expect(probe.pathname).toBe(`${base()}/novo`);
     expect(probe.search).toBe(`?dia=${TODAY}`);
   });
@@ -665,13 +668,13 @@ describe('creating a content', () => {
 
     expect(await screen.findByRole('dialog', { name: 'Novo conteúdo' })).toBeTruthy();
     await screen.findByLabelText('Data');
-    expect((field('Data') as HTMLInputElement).value).toBe('2026-10-22');
+    expect((field('Data') as HTMLInputElement).value).toBe('22/10/2026');
     expect(first.probe.search).toBe('?dia=2026-10-22');
     first.unmount();
 
     render_(impl, `${base()}/novo?dia=2026-10-22`);
     await screen.findByLabelText('Data');
-    expect((field('Data') as HTMLInputElement).value).toBe('2026-10-22');
+    expect((field('Data') as HTMLInputElement).value).toBe('22/10/2026');
   });
 
   it('keeps the period of the calendar in the address, and drops the day of the "+" when it closes', async () => {
@@ -688,7 +691,7 @@ describe('creating a content', () => {
     const { impl } = makeFetch();
     render_(impl, `${base()}/novo?dia=${day}`);
     await screen.findByLabelText('Data');
-    expect((field('Data') as HTMLInputElement).value).toBe(TODAY);
+    expect((field('Data') as HTMLInputElement).value).toBe(TODAY.split('-').reverse().join('/'));
   });
 
   it('sends the content as typed, closes, and the new card is on the calendar', async () => {

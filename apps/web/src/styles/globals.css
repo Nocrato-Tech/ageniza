@@ -6130,11 +6130,6 @@ html:has(.portal-post__bar) {
   background: var(--bg-hover);
 }
 
-.content-feed__tile--empty {
-  border: 1px dashed var(--border-default);
-  background: var(--bg-surface);
-}
-
 .content-feed__cover {
   display: flex;
   align-items: center;
