@@ -1499,3 +1499,28 @@ describe('what the review of #728 found', () => {
     });
   });
 });
+
+describe('the migrations of this change run after the ones that patch the functions they rewrite (review of #728, round 3)', () => {
+  const definitionOf = async (signature: string): Promise<string> =>
+    (await owner().raw('select pg_catalog.pg_get_functiondef(?::pg_catalog.regprocedure) as definition', [signature])).rows[0].definition as string;
+
+  it('accept_invitation finds the invitation by either token (#731) and still grants the portal access (#711)', async () => {
+    const definition = await definitionOf('app_private.accept_invitation(text, uuid, text, text, boolean)');
+    expect(definition).toContain('email_token_hash = p_token_hash');
+    expect(definition).toContain('token_hash = p_token_hash');
+    expect(definition).toContain('grant_client_portal_access_from_invitation');
+  });
+
+  it('invitation_by_token_hash, which this change does not rewrite, keeps finding it by either token', async () => {
+    expect(await definitionOf('app_private.invitation_by_token_hash(text)')).toContain('email_token_hash = p_token_hash');
+  });
+
+  it('runs every migration of this change after the one that added the second token', async () => {
+    const names: string[] = (await owner().raw('select name from public.knex_migrations order by id')).rows.map((row: { name: string }) => row.name);
+    const added = names.indexOf('20261027050000_invitation_email_token.mjs');
+    expect(added).toBeGreaterThanOrEqual(0);
+    for (const name of ['20261027080100_client_portal_accesses.mjs', '20261027080200_portal_access_authorship_and_queue.mjs', '20261027080300_portal_access_functions.mjs']) {
+      expect(names.indexOf(name)).toBeGreaterThan(added);
+    }
+  });
+});

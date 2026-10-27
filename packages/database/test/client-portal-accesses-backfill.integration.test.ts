@@ -15,7 +15,7 @@ import { resolveIntegrationDatabaseUrls } from '../src/index.js';
 // the change shipped is still accepted afterwards.
 const { ownerUrl } = resolveIntegrationDatabaseUrls();
 const migrationsDir = fileURLToPath(new URL('../migrations', import.meta.url));
-const FIRST_OF_THIS_CHANGE = '20261027040100_client_portal_accesses.mjs';
+const FIRST_OF_THIS_CHANGE = '20261027080100_client_portal_accesses.mjs';
 
 const databaseName = `ageniza_backfill_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 let admin: Knex;

@@ -3,10 +3,10 @@
 //
 // This file creates `client_portal_accesses`, backfills it from `client_memberships` (removed links included, so Reativar keeps
 // working) and ties every membership to the access that originated it. The authorship columns and the notification queue are
-// 20261027040200; the single-purpose functions that write the table are 20261027040300.
+// 20261027080200; the single-purpose functions that write the table are 20261027080300.
 //
 // `ageniza_app` writes nothing here: no INSERT, no UPDATE, no DELETE, no policy for them. The triggers below therefore guard the
-// writers that remain (the `security definer` functions of 20261027040300, the owner, operations), and they are written so a
+// writers that remain (the `security definer` functions of 20261027080300, the owner, operations), and they are written so a
 // caller cannot forge the thing they look at: they read the STATE of the two tables, never a setting the caller could set.
 
 export async function up(knex) {
