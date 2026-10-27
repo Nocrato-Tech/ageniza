@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { AuthSignUpRequestSchema, AuthSignUpResponseSchema } from '@ageniza/contracts';
 import { ArrowLeft } from 'lucide-react';
 import { Button, Field, TextInput, useFormErrors } from '@ageniza/ui';
@@ -11,6 +11,15 @@ import { validateForm } from './forms.js';
 import { GoogleSignInBlock } from './google-sign-in.js';
 import { HttpClientError, useApiClient } from './http.js';
 
+/** The address the approval link was sent to, carried by the navigation and never by the URL: the field starts with it, and the person can change it. */
+export const signUpEmailState = (email: string): { email: string } => ({ email });
+
+const prefilledEmail = (state: unknown): string => {
+  const carried = typeof state === 'object' && state !== null ? (state as { email?: unknown }).email : undefined;
+  const parsed = AuthSignUpRequestSchema.shape.email.safeParse(carried);
+  return parsed.success ? parsed.data : '';
+};
+
 /**
  * `/criar-conta` (specs/auth.md section 13). `POST /auth/sign-up` answers the same whether or not the
  * address already has an account, so after sending the screen is always the same: the link went to
@@ -21,8 +30,9 @@ export function SignUpPage() {
   const httpClient = useApiClient();
   const { formRef, summary } = useFormErrors();
   const sentRef = useRef<HTMLHeadingElement>(null);
+  const location = useLocation();
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => prefilledEmail(location.state));
   const [password, setPassword] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({});

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { AuthSessionSnapshot } from './auth.js';
 import { AcceptanceGate, AcceptancePage } from './acceptance.js';
 import { AccountMenu } from './account-menu.js';
+import { ApprovalLinkPage } from './approval-link.js';
 import { DarkArea } from './area-theme.js';
 import { AgencyAreaLayout, AgencyHomePage, AgencyPermissionRoute } from './agency.js';
 import { AuthLayout } from './auth-layout.js';
@@ -102,6 +103,8 @@ function ServiceStatus() {
  */
 export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot }) {
   return <Routes>
+    {/* The page of the link in the e-mail "conteúdos para aprovar": no login, no shell of the product, its own header (#717). */}
+    <Route path="aprovar" element={<ApprovalLinkPage />} />
     <Route element={<PublicLayout />}>
       <Route index element={<PublicHome />} />
       <Route path="status" element={<ServiceStatus />} />
