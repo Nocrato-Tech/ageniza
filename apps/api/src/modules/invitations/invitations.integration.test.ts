@@ -422,7 +422,15 @@ describe('invitation HTTP module', () => {
 
       // The password login stays closed to an unconfirmed account, invited or not, and answers like a
       // wrong password (#706): the session above is the only one this account gets before confirming.
-      const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email, password: 'a secure activation password' } });
+      // It never reaches the sign-in either: the time of a refusal is the same for every account (#722, B2).
+      const signIn = vi.spyOn(app.auth.api, 'signInEmail');
+      let login: Awaited<ReturnType<typeof app.app.inject>>;
+      try {
+        login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email, password: 'a secure activation password' } });
+        expect(signIn, item.purpose).not.toHaveBeenCalled();
+      } finally {
+        signIn.mockRestore();
+      }
       expect(login.statusCode, item.purpose).toBe(401);
       expect(login.json(), item.purpose).toMatchObject({ error: { code: 'INVALID_CREDENTIALS' } });
 
