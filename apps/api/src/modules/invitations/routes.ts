@@ -21,7 +21,6 @@ import {
 import { HttpError } from '@ageniza/core';
 import { raw, isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import {
-  createInvitationToken,
   createInvitationTokenPair,
   hashInvitationToken,
   type InvitationToken
@@ -286,8 +285,6 @@ const auditInTransaction = async (
     values (?, ?, ?, 'invitation', ?)
   `, [event.action, event.actorUserId, event.agencyId, event.targetId]);
 };
-
-const tokenForInsert = (appPublicUrl: string): InvitationToken => createInvitationToken({ appPublicUrl });
 
 const agencyInvitationDetails = async (transaction: InvitationTransaction, agencyId: string): Promise<{ agencyName: string } | undefined> => {
   const result = await raw<RawRows<{ agency_name: string }>>(transaction, `
