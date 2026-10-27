@@ -27,6 +27,11 @@ export interface ClaimedNotification {
  */
 export interface NotificationQueue {
   claim(groupLimit: number): Promise<ClaimedNotification[]>;
+  /**
+   * The approval link of an e-mail "contents to approve" (issue #712), issued from the items the claim still holds: the database stores
+   * the hash of the token and ties the link to the contents of those items. The token is the worker's and goes only into the e-mail.
+   */
+  issueApprovalLink(itemIds: readonly string[], claimToken: string, tokenHash: string): Promise<void>;
   /** Right before the send: drops what stopped being true and returns what still holds. */
   recheck(itemIds: readonly string[], claimToken: string): Promise<ClaimedNotification[]>;
   markSent(itemIds: readonly string[], claimToken: string): Promise<number>;
@@ -71,6 +76,9 @@ export const createNotificationQueue = (database: DatabaseClient): NotificationQ
   claim: (groupLimit) => database.transaction(async (transaction) => {
     const result = await raw<{ rows: Array<Record<string, unknown>> }>(transaction, `select ${COLUMNS} from app_private.claim_notification_batch(?::integer)`, [groupLimit]);
     return result.rows.map(toClaimed);
+  }),
+  issueApprovalLink: (itemIds, claimToken, tokenHash) => database.transaction(async (transaction) => {
+    await raw(transaction, 'select app_private.issue_portal_approval_link(?::uuid[], ?::uuid, ?)', [[...itemIds], claimToken, tokenHash]);
   }),
   recheck: (itemIds, claimToken) => database.transaction(async (transaction) => {
     const result = await raw<{ rows: Array<Record<string, unknown>> }>(

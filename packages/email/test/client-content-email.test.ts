@@ -1,28 +1,33 @@
 import { describe, expect, it } from 'vitest';
 
-import { contentsAwaitingApprovalEmail, contentsPublishedEmail, type ClientContentEmailInput } from '../src/index.js';
+import { contentsAwaitingApprovalEmail, contentsPublishedEmail, type ClientApprovalEmailInput, type ClientContentEmailInput } from '../src/index.js';
 
 const portalUrl = 'https://app.ageniza.example/portal/00000000-0000-4000-8000-0000000000c1/calendario';
-const input = (overrides: Partial<ClientContentEmailInput> = {}): ClientContentEmailInput => ({
+const approvalUrl = 'https://app.ageniza.example/aprovar#x9Qm2L0vWk3pTz8RjYb4Nc7HsAe1UdFgO5iXqKrMtV6';
+// One input for both e-mails: "to approve" reads the approval link, "published" reads the portal.
+const input = (overrides: Partial<ClientContentEmailInput & ClientApprovalEmailInput> = {}): ClientContentEmailInput & ClientApprovalEmailInput => ({
   agencyName: 'Agência Aurora',
   clientName: 'Padaria Sol',
   portalUrl,
+  approvalUrl,
   items: [{ title: 'Pão de queijo', publishOn: '2026-10-20' }, { title: 'Promoção de sexta', publishOn: null }],
   ...overrides
 });
 
 describe('the e-mails of the contents of a client (issue #260)', () => {
-  it('lists every content once, with its planned date, and ends with the link of the portal, in the text and in the HTML', () => {
+  it('lists every content once, with its planned date, and ends with the approval link, in the text and in the HTML', () => {
     const message = contentsAwaitingApprovalEmail(input());
 
     expect(message.subject).toBe('2 conteúdos para você aprovar: Padaria Sol');
     expect(message.text).toBe([
       'Agência Aurora enviou 2 conteúdos de Padaria Sol para a sua aprovação.',
       '- Pão de queijo (20/10/2026)\n- Promoção de sexta',
-      `Abra o portal para aprovar ou pedir ajuste:\n${portalUrl}`
+      `Abra o link para ver os conteúdos e aprovar ou pedir ajuste:\n${approvalUrl}`,
+      'O link vale por 7 dias e é só seu: quem o abrir pode aprovar ou pedir ajuste em seu nome. Não o encaminhe.'
     ].join('\n\n'));
     expect(message.html).toContain('<li>Pão de queijo (20/10/2026)</li><li>Promoção de sexta</li>');
-    expect(message.html).toContain(`<a href="${portalUrl}">${portalUrl}</a>`);
+    expect(message.html).toContain(`<a href="${approvalUrl}">${approvalUrl}</a>`);
+    expect(message.text).not.toContain('/portal/');
   });
 
   it('says one content in the singular, in both e-mails', () => {
@@ -66,12 +71,22 @@ describe('the e-mails of the contents of a client (issue #260)', () => {
   });
 
   it('refuses a link that is not https (loopback aside), a contentless e-mail and a missing name', () => {
-    expect(() => contentsAwaitingApprovalEmail(input({ portalUrl: 'http://app.ageniza.example/portal/1' }))).toThrow('HTTPS');
-    expect(() => contentsAwaitingApprovalEmail(input({ portalUrl: 'javascript:alert(1)' }))).toThrow();
-    expect(contentsAwaitingApprovalEmail(input({ portalUrl: 'http://127.0.0.1:5173/portal/1' })).text).toContain('http://127.0.0.1:5173/portal/1');
+    expect(() => contentsAwaitingApprovalEmail(input({ approvalUrl: 'http://app.ageniza.example/aprovar#abc' }))).toThrow('HTTPS');
+    expect(() => contentsAwaitingApprovalEmail(input({ approvalUrl: 'javascript:alert(1)' }))).toThrow();
+    expect(() => contentsPublishedEmail(input({ portalUrl: 'http://app.ageniza.example/portal/1' }))).toThrow('HTTPS');
+    expect(() => contentsPublishedEmail(input({ portalUrl: 'javascript:alert(1)' }))).toThrow();
+    expect(contentsAwaitingApprovalEmail(input({ approvalUrl: 'http://127.0.0.1:5173/aprovar#abc' })).text).toContain('http://127.0.0.1:5173/aprovar#abc');
+    expect(contentsPublishedEmail(input({ portalUrl: 'http://127.0.0.1:5173/portal/1' })).text).toContain('http://127.0.0.1:5173/portal/1');
     expect(() => contentsPublishedEmail(input({ items: [] }))).toThrow('ao menos um conteúdo');
     expect(() => contentsPublishedEmail(input({ clientName: '  ' }))).toThrow('nome do cliente');
     expect(() => contentsPublishedEmail(input({ agencyName: '' }))).toThrow('nome da agência');
+  });
+
+  it('refuses an approval link whose token is not in the fragment: a query would carry it to the server, and no fragment carries nothing', () => {
+    expect(() => contentsAwaitingApprovalEmail(input({ approvalUrl: 'https://app.ageniza.example/aprovar?token=abc#abc' }))).toThrow('fragmento');
+    expect(() => contentsAwaitingApprovalEmail(input({ approvalUrl: 'https://app.ageniza.example/aprovar?token=abc' }))).toThrow('fragmento');
+    expect(() => contentsAwaitingApprovalEmail(input({ approvalUrl: 'https://app.ageniza.example/aprovar' }))).toThrow('fragmento');
+    expect(() => contentsAwaitingApprovalEmail(input({ approvalUrl: 'https://app.ageniza.example/aprovar#' }))).toThrow('fragmento');
   });
 
   it('formats the planned date from its text, without a time zone, and leaves out one it cannot read', () => {

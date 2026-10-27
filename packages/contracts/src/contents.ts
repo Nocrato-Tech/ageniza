@@ -88,7 +88,12 @@ export const ContentPersonSchema = z.object({
  */
 export const ContentApproverSchema = z.object({
   name: z.string(),
-  side: z.enum(['agency', 'client'])
+  side: z.enum(['agency', 'client']),
+  /**
+   * `true` when a person of the client approved through the link of the e-mail "conteúdos para aprovar" (issue #712), as an access with
+   * no login. Present on the approval of a content; absent (as `false`) on the approval of a subtask and in older clients.
+   */
+  viaLink: z.boolean().optional()
 }).strict();
 
 /**

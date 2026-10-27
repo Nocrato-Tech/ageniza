@@ -5,6 +5,7 @@ import type { ApiConfig } from '@ageniza/config/server';
 import { CORRELATION_ID_HEADER, createLogger, createReadiness, REQUEST_ID_HEADER, resolveRequestId, withLogContext, type CoreLogger, type HealthCheck, type Readiness } from '@ageniza/core';
 
 import { registerAgencyModule, type AgencyModuleDependencies } from './modules/agencies/routes.js';
+import { registerApprovalLinkModule, type ApprovalLinkModuleDependencies } from './modules/approval-links/routes.js';
 import { registerAuthModule, type AuthModuleDependencies } from './modules/auth/routes.js';
 import { registerClientModule, type ClientModuleDependencies } from './modules/clients/routes.js';
 import { registerContentPortalModule, type ContentPortalModuleDependencies } from './modules/contents/portal-routes.js';
@@ -48,6 +49,8 @@ export interface ApiAppOptions {
   contents?: ContentModuleDependencies;
   /** The portal's routes of the contents (#257); optional, undefined for tests that never touch them. */
   contentPortal?: ContentPortalModuleDependencies;
+  /** The approval link of the e-mail (#712); optional, undefined for tests that never touch it. */
+  approvalLinks?: ApprovalLinkModuleDependencies;
   /** Collaborator dependencies need identity storage; optional for lightweight health/app tests. */
   collaborators?: CollaboratorModuleDependencies;
   /** Media dependencies are optional; undefined for tests that never touch object storage. */
@@ -194,6 +197,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.contentPortal !== undefined) {
     registerContentPortalModule(app, options.contentPortal);
+  }
+  if (options.approvalLinks !== undefined) {
+    registerApprovalLinkModule(app, options.approvalLinks);
   }
   if (options.collaborators !== undefined) {
     registerCollaboratorModule(app, options.collaborators);
