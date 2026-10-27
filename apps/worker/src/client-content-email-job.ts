@@ -56,12 +56,12 @@ interface Group {
   readonly items: ClaimedNotification[];
 }
 
-// The claim returns the rows of one person and client and type together; the key says so again, so a row of another group
+// The claim returns the rows of one address and client and type (two accesses can resolve to the same mailbox) together; the key says so again, so a row of another group
 // never rides in someone else's e-mail.
 const groupsOf = (claimed: readonly ClaimedNotification[]): Group[] => {
   const groups = new Map<string, Group>();
   for (const item of claimed) {
-    const key = [item.claimToken, item.recipientPortalAccessId, item.clientId, item.notificationType].join('|');
+    const key = [item.claimToken, item.recipientEmail, item.clientId, item.notificationType].join('|');
     const group = groups.get(key) ?? { claimToken: item.claimToken, type: item.notificationType, items: [] };
     group.items.push(item);
     groups.set(key, group);
@@ -89,7 +89,8 @@ const messageOf = (type: KnownType, items: readonly ClaimedNotification[], appPu
     agencyName: first.agencyName,
     clientName: first.clientName,
     portalUrl: portalUrlFor(appPublicUrl, first.clientId),
-    items: items.map((item) => ({ title: item.contentTitle, publishOn: item.contentPublishOn }))
+    // The same content queued for two accesses of one mailbox is one line of the e-mail.
+    items: [...new Map(items.map((item) => [item.contentId, item])).values()].map((item) => ({ title: item.contentTitle, publishOn: item.contentPublishOn }))
   });
 };
 

@@ -184,6 +184,14 @@ export const countValidContexts = async (database: DatabaseClient, userId: strin
   return contexts.length;
 };
 
+/**
+ * The account enters the portal of a client (it resolved or selected it): the first time is recorded on its access, and it is
+ * what the agency's list shows as "entrou" and the name. Must run inside `withAuthenticatedUserTransaction`.
+ */
+export const markClientPortalEntered = async (transaction: ContextTransaction, clientId: string): Promise<void> => {
+  await raw(transaction, 'select app_private.mark_client_portal_entered(?::uuid)', [clientId]);
+};
+
 /** Finds the context matching a raw `preferred=agency:<uuid>` / `client:<uuid>` query value. */
 export const findPreferredContext = (contexts: readonly Context[], preferred: string): Context | undefined => {
   return contexts.find((context) => contextKey(context) === preferred);

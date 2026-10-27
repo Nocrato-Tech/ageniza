@@ -133,6 +133,8 @@ describe('the backfill of the accesses from the memberships (#711)', () => {
         email: emailOf(membership.user_id as string),
         status: membership.status,
         generation: 1,
+        // Whoever is in the portal today has entered it: the list shows them as it did.
+        first_entered_at: membership.created_at,
         created_at: membership.created_at,
         updated_at: membership.updated_at
       });

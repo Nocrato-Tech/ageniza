@@ -345,7 +345,22 @@ export async function up(knex) {
       )
     $function$;
 
-    create function app_private.notification_group_ready(p_recipient_portal_access_id uuid, p_client_id uuid, p_type text)
+    -- The address the e-mail of an item goes to: the account's when the access has one, the access's own when it has none. The
+    -- group of a claim is the address and not the access: an account that changed its address into the one of another access
+    -- of the same client would otherwise get two e-mails in the same mailbox.
+    create function app_private.notification_address(p_access_id uuid)
+    returns text
+    language sql
+    stable
+    set search_path = ''
+    as $function$
+      select coalesce(person.email, access.email)
+      from public.client_portal_accesses access
+      left join auth."user" person on person.id = access.user_id
+      where access.id = p_access_id
+    $function$;
+
+    create function app_private.notification_group_ready(p_address text, p_client_id uuid, p_type text)
     returns boolean
     language sql
     stable
@@ -355,14 +370,14 @@ export async function up(knex) {
           app_private.notification_max_wait(p_type) is null
           or not exists (
             select 1 from public.notification_queue other
-            where other.recipient_portal_access_id = p_recipient_portal_access_id and other.client_id = p_client_id and other.type = p_type
+            where app_private.notification_address(other.recipient_portal_access_id) = p_address and other.client_id = p_client_id and other.type = p_type
               and other.discarded_at is null
               and other.attempts < 5
               and other.send_after > pg_catalog.now()
           )
           or exists (
             select 1 from public.notification_queue other
-            where other.recipient_portal_access_id = p_recipient_portal_access_id and other.client_id = p_client_id and other.type = p_type
+            where app_private.notification_address(other.recipient_portal_access_id) = p_address and other.client_id = p_client_id and other.type = p_type
               and other.sent_at is null and other.discarded_at is null
               and other.attempts < 5
               and other.created_at <= pg_catalog.now() - app_private.notification_max_wait(p_type)
@@ -370,7 +385,7 @@ export async function up(knex) {
         )
         and not exists (
           select 1 from public.notification_queue other
-          where other.recipient_portal_access_id = p_recipient_portal_access_id and other.client_id = p_client_id and other.type = p_type
+          where app_private.notification_address(other.recipient_portal_access_id) = p_address and other.client_id = p_client_id and other.type = p_type
             and other.sent_at is null and other.discarded_at is null
             and other.claimed_at >= pg_catalog.now() - interval '10 minutes'
         )
@@ -452,19 +467,19 @@ export async function up(knex) {
       -- so a second worker cannot claim part of a group whose first claim it cannot see yet. Whether the group is ready is asked in the
       -- statement that claims, after the lock, so it sees what the previous holder of the lock committed.
       for v_group in
-        select item.recipient_portal_access_id, item.client_id, item.type
+        select app_private.notification_address(item.recipient_portal_access_id) as address, item.client_id, item.type
         from public.notification_queue item
         where item.sent_at is null
           and item.discarded_at is null
           and item.send_after <= pg_catalog.now()
           and (item.claimed_at is null or item.claimed_at < pg_catalog.now() - interval '10 minutes')
           and item.attempts < 5
-        group by item.recipient_portal_access_id, item.client_id, item.type
-        order by min(item.send_after), item.recipient_portal_access_id, item.client_id, item.type
+        group by app_private.notification_address(item.recipient_portal_access_id), item.client_id, item.type
+        order by min(item.send_after), app_private.notification_address(item.recipient_portal_access_id), item.client_id, item.type
       loop
         exit when v_claimed >= p_limit;
         continue when not pg_catalog.pg_try_advisory_xact_lock(
-          pg_catalog.hashtextextended('notification_queue:' || v_group.recipient_portal_access_id::text || ':' || v_group.client_id::text || ':' || v_group.type, 0)
+          pg_catalog.hashtextextended('notification_queue:' || v_group.address || ':' || v_group.client_id::text || ':' || v_group.type, 0)
         );
 
         update public.notification_queue item
@@ -472,7 +487,7 @@ export async function up(knex) {
         where item.id in (
           select due.id
           from public.notification_queue due
-          where due.recipient_portal_access_id = v_group.recipient_portal_access_id and due.client_id = v_group.client_id and due.type = v_group.type
+          where app_private.notification_address(due.recipient_portal_access_id) = v_group.address and due.client_id = v_group.client_id and due.type = v_group.type
             and due.sent_at is null
             and due.discarded_at is null
             and due.send_after <= pg_catalog.now()
@@ -480,7 +495,7 @@ export async function up(knex) {
             and due.attempts < 5
           for update skip locked
         )
-        and app_private.notification_group_ready(v_group.recipient_portal_access_id, v_group.client_id, v_group.type);
+        and app_private.notification_group_ready(v_group.address, v_group.client_id, v_group.type);
         get diagnostics v_rows = row_count;
         if v_rows > 0 then
           v_claimed := v_claimed + 1;
@@ -500,7 +515,7 @@ export async function up(knex) {
       join public.client_portal_accesses access on access.id = item.recipient_portal_access_id
       left join auth."user" person on person.id = access.user_id
       where item.claim_token = v_token
-      order by item.recipient_portal_access_id, item.client_id, item.type, item.send_after, item.id;
+      order by coalesce(person.email, access.email), item.client_id, item.type, item.send_after, item.id;
     end;
     $function$;
 
@@ -571,12 +586,13 @@ export async function up(knex) {
         -- Not redundant with the discard above: each statement has a snapshot of its own, and the lock holds only the clients, so a suspension of
         -- the agency, a removal from the portal or a change of the content that commits between the two statements is seen only here.
         and app_private.notification_item_still_holds(item.type, item.client_id, item.recipient_portal_access_id, item.content_id)
-      order by item.recipient_portal_access_id, item.client_id, item.type, item.send_after, item.id;
+      order by coalesce(person.email, access.email), item.client_id, item.type, item.send_after, item.id;
     end;
     $function$;
 
     revoke all on function app_private.notification_item_still_holds(text, uuid, uuid, uuid) from public;
-    revoke all on function app_private.notification_group_ready(uuid, uuid, text) from public;
+    revoke all on function app_private.notification_group_ready(text, uuid, text) from public;
+    revoke all on function app_private.notification_address(uuid) from public;
     revoke all on function app_private.claim_notification_batch(integer) from public;
     revoke all on function app_private.recheck_notifications(uuid[], uuid) from public;
     grant execute on function app_private.claim_notification_batch(integer) to ageniza_app;

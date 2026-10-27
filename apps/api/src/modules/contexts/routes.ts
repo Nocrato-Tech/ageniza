@@ -16,7 +16,7 @@ import { createRequireSession } from '../auth/session-guard.js';
 import { noStore } from '../../plugins/infra/no-store.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
-import { canCreateAgency, findPreferredContext, isValidAgencyContext, isValidClientContext, listValidContexts } from './service.js';
+import { canCreateAgency, findPreferredContext, isValidAgencyContext, isValidClientContext, listValidContexts, markClientPortalEntered } from './service.js';
 
 export type ContextPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -109,8 +109,14 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
       await endSessionForNoContext(dependencies.auth, request, reply);
       return reply.send(routeResponse(resolveDocs, request, { decision: 'none' }));
     }
+    // The portal is entered when the decision is to enter it; the list of contexts alone enters nothing.
+    const enter = async (context: (typeof contexts)[number]): Promise<void> => {
+      if (context.type !== 'client') return;
+      await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) => markClientPortalEntered(transaction, context.clientId));
+    };
     // Step 3: exactly one valid context.
     if (contexts.length === 1) {
+      await enter(contexts[0]!);
       return reply.send(routeResponse(resolveDocs, request, { decision: 'enter', context: contexts[0]! }));
     }
     // Step 4: an explicit, valid `preferred` context wins over the last-used preference. An
@@ -121,6 +127,7 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     }
     // Step 5: the last-used context, if still valid.
     if (lastUsedContext !== null) {
+      await enter(lastUsedContext);
       return reply.send(routeResponse(resolveDocs, request, { decision: 'enter', context: lastUsedContext }));
     }
     // Step 6: no signal to prefer any one context.
@@ -136,6 +143,7 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
         ? await isValidAgencyContext(transaction, body.agencyId)
         : await isValidClientContext(transaction, body.clientId);
       if (!valid) throw contextNotFound();
+      if (body.type === 'client') await markClientPortalEntered(transaction, body.clientId);
 
       await raw(transaction, `
         insert into public.user_context_preferences (user_id, context_type, agency_id, client_id, updated_at)

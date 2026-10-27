@@ -13,6 +13,7 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 import type { DatabaseClient } from '@ageniza/database';
+import { createInvitationToken } from '../invitations/tokens.js';
 
 // Issue #711: "Adicionar pessoa" and the link of the access to the account at the login. A person of the portal is an access given
 // to an e-mail address; the list never says whether an address has an account, and the account takes the access only when its
@@ -39,7 +40,7 @@ interface Reply {
   json<T = any>(): T; // eslint-disable-line @typescript-eslint/no-explicit-any -- test helper over untyped JSON
 }
 
-const call = async (method: 'GET' | 'POST', url: string, cookie?: string, payload?: unknown): Promise<Reply> =>
+const call = async (method: 'GET' | 'POST' | 'PUT', url: string, cookie?: string, payload?: unknown): Promise<Reply> =>
   (await app.app.inject({
     method,
     url,
@@ -122,6 +123,8 @@ describe('CLIENTS portal access by e-mail (#711)', () => {
 
   afterAll(async () => {
     const clientIds = [clientA1, clientA2, clientB1];
+    await owner.knex('user_context_preferences').whereIn('user_id', createdUserIds).delete();
+    await owner.knex('invitations').whereIn('agency_id', [agencyA, agencyB]).delete();
     await owner.knex('audit.events').whereIn('agency_id', [agencyA, agencyB]).delete();
     await owner.knex('client_memberships').whereIn('client_id', clientIds).delete();
     await owner.knex('agency_memberships').whereIn('agency_id', [agencyA, agencyB]).delete();
@@ -354,6 +357,91 @@ describe('CLIENTS portal access by e-mail (#711)', () => {
       } finally {
         await renew();
       }
+    });
+  });
+
+  describe('what the review of #728 found', () => {
+    const verified = async (key: string, name: string, extra: { otherPortal?: boolean } = {}): Promise<TestUserFixture> => {
+      const user = await makeUser(key, name);
+      await app.pool.query('update auth."user" set "emailVerified" = true where id = $1', [user.id]);
+      // Someone who works in another agency, or in the portal of another client: the context that lets the account sign in.
+      if (extra.otherPortal !== false) await owner.knex('client_memberships').insert({ client_id: clientA2, user_id: user.id });
+      return user;
+    };
+    const listed = async (email: string) =>
+      (await call('GET', `${membersUrl(agencyA, clientA1)}?pageSize=100`, cookies.admin)).json().data.find((item: { email: string }) => item.email === email);
+
+    it('keeps "ainda não entrou" and hides the name of a person linked by a load of the contexts who never opened this portal', async () => {
+      const person = await verified('worksElsewhere', 'Pessoa de Outra Agência');
+      await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email: person.email });
+      const cookie = await login(person);
+
+      // Any load of the app runs the link; the access is the account's now.
+      expect((await call('GET', '/me/contexts', cookie)).statusCode).toBe(200);
+      expect(await accessOf(clientA1, person.email)).toMatchObject({ user_id: person.id, first_entered_at: null });
+      expect(await listed(person.email)).toMatchObject({ entered: false, name: null, email: person.email });
+      expect(JSON.stringify(await listed(person.email))).not.toContain('Pessoa de Outra Agência');
+
+      // The same for the resolve that does not enter (two contexts and no preference): it only lists.
+      expect((await call('GET', '/me/contexts/resolve', cookie)).json()).toMatchObject({ decision: 'select' });
+      expect(await listed(person.email)).toMatchObject({ entered: false, name: null });
+    });
+
+    it.each([
+      ['opens the portal of the client', (cookie: string) => call('GET', `/clients/${clientA1}`, cookie)],
+      ['selects the context of the client as the last used', (cookie: string) => call('PUT', '/me/last-context', cookie, { type: 'client', clientId: clientA1 })]
+    ])('shows the name once the person %s', async (_label, enter) => {
+      const person = await verified(`enters-${_label.length}`, `Entrou ${_label}`);
+      await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email: person.email });
+      const cookie = await login(person);
+      await call('GET', '/me/contexts', cookie);
+      expect(await listed(person.email)).toMatchObject({ entered: false, name: null });
+
+      expect([200, 204]).toContain((await enter(cookie)).statusCode);
+      expect(await listed(person.email)).toMatchObject({ entered: true, name: `Entrou ${_label}` });
+    });
+
+    it('shows it once the resolve decides to enter the portal of the client', async () => {
+      const person = await verified('onlyHere', 'Só Este Portal', { otherPortal: false });
+      await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email: person.email });
+      const cookie = await login(person);
+      expect(await listed(person.email)).toMatchObject({ entered: false, name: null });
+
+      expect((await call('GET', '/me/contexts/resolve', cookie)).json()).toMatchObject({ decision: 'enter', context: { clientId: clientA1 } });
+      expect(await listed(person.email)).toMatchObject({ entered: true, name: 'Só Este Portal' });
+    });
+
+    it('does not record an entry in a read-only agency, and does not fail the portal either', async () => {
+      const person = await verified('readOnlyEntry', 'Entrada Somente Leitura');
+      await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email: person.email });
+      const cookie = await login(person);
+      await call('GET', '/me/contexts', cookie);
+      await owner.knex('agencies').where({ id: agencyA }).update({
+        plan: 'trial', trial_ends_at: owner.knex.raw("now() - interval '1 minute'"), trial_owner_email_key: owner.knex.raw('coalesce(trial_owner_email_key, id::text)')
+      });
+      try {
+        expect((await call('GET', `/clients/${clientA1}`, cookie)).statusCode).toBe(200);
+        expect(await listed(person.email)).toMatchObject({ entered: false, name: null });
+      } finally {
+        await owner.knex('agencies').where({ id: agencyA }).update({ plan: 'isenta', trial_ends_at: null, trial_owner_email_key: null });
+      }
+    });
+
+    it('does not let an old portal invitation bring back a person the agency removed', async () => {
+      const person = await verified('oldInvitation', 'Convite Antigo');
+      const { token, tokenHash } = (() => { const created = createInvitationToken({ appPublicUrl: TEST_APP_PUBLIC_URL }); return { token: created.token, tokenHash: created.tokenHash }; })();
+      await owner.knex('invitations').insert({
+        agency_id: agencyA, purpose: 'client_invite', email: person.email, client_id: clientA1, token_hash: tokenHash, expires_at: new Date(Date.now() + 86_400_000)
+      });
+      const added = (await call('POST', membersUrl(agencyA, clientA1), cookies.admin, { email: person.email })).json();
+      expect((await call('POST', `${membersUrl(agencyA, clientA1)}/${added.accessId}/remove`, cookies.admin)).statusCode).toBe(200);
+
+      expect(await owner.knex('invitations').where({ token_hash: tokenHash }).first('revoked_at')).toEqual({ revoked_at: expect.any(Date) });
+      const cookie = await login(person);
+      const accept = await call('POST', `/invitations/${token}/accept`, cookie);
+      expect(accept.statusCode).toBe(410);
+      expect(await accessOf(clientA1, person.email)).toMatchObject({ status: 'removed', user_id: null });
+      expect((await call('GET', `/clients/${clientA1}`, cookie)).statusCode).toBe(404);
     });
   });
 

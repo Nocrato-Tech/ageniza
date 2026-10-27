@@ -996,16 +996,17 @@ describe('a portal invitation that was pending is accepted into the access (#711
     expect(await isMember(account.id, client)).toBe(true);
   });
 
-  it('brings back a person who was removed, on the same access and with the generation as it is', async () => {
+  it('does not bring back a person who was removed: the old invitation is refused and the access stays removed', async () => {
     const client = await freshClient();
     const account = await newUser({ verified: false });
     await owner()('client_memberships').insert({ client_id: client, user_id: account.id });
     const access = (await accessOfUser(client, account.id))!;
     await removeAs(ids.adminA, access.id);
 
-    expect(await accept(account.id, await invite(client, account.email))).toMatchObject({ status: 'accepted' });
-    expect(await accessOfUser(client, account.id)).toMatchObject({ id: access.id, status: 'active', generation: 2 });
-    expect((await membershipOf(client, account.id))!.status).toBe('active');
+    await expect(accept(account.id, await invite(client, account.email))).rejects.toMatchObject({ code: 'A0001' });
+    expect(await accessOfUser(client, account.id)).toMatchObject({ id: access.id, status: 'removed', generation: 2 });
+    expect((await membershipOf(client, account.id))!.status).toBe('removed');
+    expect(await isMember(account.id, client)).toBe(false);
   });
 
   it('takes the address from the account that moved on', async () => {
@@ -1301,6 +1302,200 @@ describe('the plan of the agency: read-only and the daily limit of e-mails (#711
       await owner()('audit.events').insert({ action: 'client_member.readded', agency_id: agencyId, target_type: 'client_portal_access', target_id: randomUUID(), occurred_at: rows[0]!.at });
       await expect(addAs(admin, client, freshEmail())).resolves.toMatchObject({ outcome: 'created' });
       await expect(addAs(admin, client, freshEmail())).rejects.toMatchObject(DAILY_LIMIT);
+    });
+  });
+});
+
+// ---- the review of #728 ----------------------------------------------------------------------------------------------------
+
+describe('what the review of #728 found', () => {
+  const pendingInvitation = async (clientId: string, email: string): Promise<string> => {
+    const tokenHash = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
+    await owner()('invitations').insert({
+      agency_id: ids.agencyA, purpose: 'client_invite', email, client_id: clientId, token_hash: tokenHash, expires_at: new Date(Date.now() + 86_400_000)
+    });
+    return tokenHash;
+  };
+  const acceptAs = (userId: string, tokenHash: string) =>
+    call(userId, 'select * from app_private.accept_invitation(?, ?::uuid, null, null, false)', tokenHash, userId);
+  const markAs = (userId: string, clientId: string) => call(userId, 'select app_private.mark_client_portal_entered(?::uuid)', clientId);
+  const enteredAt = async (clientId: string, email: string): Promise<Date | null> =>
+    (await owner()('client_portal_accesses').where({ client_id: clientId, email }).first('first_entered_at')).first_entered_at as Date | null;
+  const whileReadOnly = async (work: () => Promise<void>): Promise<void> => {
+    await owner()('agencies').where({ id: ids.agencyA }).update({
+      plan: 'trial', trial_ends_at: owner().raw("now() - interval '1 minute'"), trial_owner_email_key: owner().raw('coalesce(trial_owner_email_key, id::text)')
+    });
+    try { await work(); } finally {
+      await owner()('agencies').where({ id: ids.agencyA }).update({ plan: 'isenta', trial_ends_at: null, trial_owner_email_key: null });
+    }
+  };
+
+  describe('an old portal invitation does not undo a removal', () => {
+    it('Remover revokes the pending portal invitations of the same address and client, and no other', async () => {
+      const client = await freshClient();
+      const account = await newUser({ verified: false });
+      const token = await pendingInvitation(client, account.email);
+      const otherAddress = await pendingInvitation(client, freshEmail());
+      const otherClient = await pendingInvitation(await freshClient(), account.email);
+      const added = await addAs(ids.adminA, client, account.email);
+      const revoked = async (tokenHash: string) => (await owner()('invitations').where({ token_hash: tokenHash }).first('id', 'revoked_at'));
+
+      await removeAs(ids.adminA, added.access_id);
+
+      expect((await revoked(token)).revoked_at).toBeInstanceOf(Date);
+      expect((await revoked(otherAddress)).revoked_at).toBeNull();
+      expect((await revoked(otherClient)).revoked_at).toBeNull();
+      expect(await sinceAuditCount('invitation.revoked', (await revoked(token)).id)).toBe(1);
+      // The old link does not bring the person back.
+      await expect(acceptAs(account.id, token)).rejects.toMatchObject({ code: 'A0001' });
+      expect(await accessOf(client, account.email)).toMatchObject({ status: 'removed', user_id: null });
+      expect(await membershipOf(client, account.id)).toBeUndefined();
+      expect(await isMember(account.id, client)).toBe(false);
+      // Removing again revokes nothing more and writes no second event.
+      await removeAs(ids.adminA, added.access_id);
+      expect(await sinceAuditCount('invitation.revoked', (await revoked(token)).id)).toBe(1);
+    });
+
+    it('revokes them in a read-only agency too, because removing narrows access', async () => {
+      const client = await freshClient();
+      const email = freshEmail();
+      const token = await pendingInvitation(client, email);
+      const added = await addAs(ids.adminA, client, email);
+      await whileReadOnly(async () => {
+        expect((await removeAs(ids.adminA, added.access_id)).changed).toBe(true);
+      });
+      expect((await owner()('invitations').where({ token_hash: token }).first('revoked_at')).revoked_at).toBeInstanceOf(Date);
+    });
+
+    it('the function that writes the access refuses a removed row by itself, whatever invitation reaches it', async () => {
+      const client = await freshClient();
+      const account = await newUser({ verified: false });
+      const added = await addAs(ids.adminA, client, account.email);
+      await removeAs(ids.adminA, added.access_id);
+      // An invitation born after the removal (the route that created them is gone; this is a row written by the owner).
+      const late = await pendingInvitation(client, account.email);
+      await expect(acceptAs(account.id, late)).rejects.toMatchObject({ code: 'A0001' });
+      await expect(owner().raw('select app_private.grant_client_portal_access_from_invitation(?::uuid, ?::uuid, ?)', [client, account.id, account.email]))
+        .rejects.toMatchObject({ code: 'A0001' });
+      expect(await accessOf(client, account.email)).toMatchObject({ status: 'removed', user_id: null });
+    });
+  });
+
+  describe('the list of the agency shows a person only after the first entry into THAT portal', () => {
+    it('does not set the entry by the link: the account is linked and the list still says "ainda não entrou"', async () => {
+      const client = await freshClient();
+      const account = await newUser({ verified: true });
+      await addAs(ids.adminA, client, account.email);
+
+      expect(await linkAs(account.id)).toBe(1);
+      expect(await accessOf(client, account.email)).toMatchObject({ user_id: account.id });
+      expect(await enteredAt(client, account.email)).toBeNull();
+    });
+
+    it('records it once, when the account enters the portal of the client, and never moves it', async () => {
+      const client = await freshClient();
+      const account = await newUser({ verified: true });
+      await addAs(ids.adminA, client, account.email);
+      await linkAs(account.id);
+
+      await markAs(account.id, client);
+      const first = await enteredAt(client, account.email);
+      expect(first).toBeInstanceOf(Date);
+      await markAs(account.id, client);
+      expect(await enteredAt(client, account.email)).toEqual(first);
+      // The row cannot be changed to another instant, even by the owner.
+      await expect(owner()('client_portal_accesses').where({ client_id: client, email: account.email }).update({ first_entered_at: new Date('2020-01-01T00:00:00Z') }))
+        .rejects.toMatchObject({ code: '42501', message: expect.stringContaining('written once') });
+    });
+
+    it('marks only the access the account holds, in that client, and only while it is active', async () => {
+      const client = await freshClient();
+      const other = await freshClient();
+      const account = await newUser({ verified: true });
+      const stranger = await newUser({ verified: true });
+      await addAs(ids.adminA, client, account.email);
+      await addAs(ids.adminA, other, account.email);
+      await linkAs(account.id);
+
+      await markAs(stranger.id, client);
+      expect(await enteredAt(client, account.email)).toBeNull();
+      await markAs(account.id, other);
+      expect(await enteredAt(client, account.email)).toBeNull();
+      expect(await enteredAt(other, account.email)).toBeInstanceOf(Date);
+      await removeAs(ids.adminA, (await accessOf(client, account.email))!.id);
+      await markAs(account.id, client);
+      expect(await enteredAt(client, account.email)).toBeNull();
+    });
+
+    it('needs an account, and leaves a read-only agency alone instead of failing the portal', async () => {
+      await expect(worker.knex.raw('select app_private.mark_client_portal_entered(?::uuid)', [ids.clientA1])).rejects.toMatchObject({ code: '42501' });
+      const client = await freshClient();
+      const account = await newUser({ verified: true });
+      await addAs(ids.adminA, client, account.email);
+      await linkAs(account.id);
+      await whileReadOnly(async () => {
+        await markAs(account.id, client);
+        expect(await enteredAt(client, account.email)).toBeNull();
+      });
+      await markAs(account.id, client);
+      expect(await enteredAt(client, account.email)).toBeInstanceOf(Date);
+    });
+
+    it('is the account of the address now that enters, not the one that moved on: Adicionar pessoa de novo clears it', async () => {
+      const client = await freshClient();
+      const former = await newUser({ verified: true });
+      await addAs(ids.adminA, client, former.email);
+      await linkAs(former.id);
+      await markAs(former.id, client);
+      expect(await enteredAt(client, former.email)).toBeInstanceOf(Date);
+
+      const address = former.email;
+      await owner()('auth.user').where({ id: former.id }).update({ email: `${randomUUID()}@moved.test` });
+      await addAs(ids.adminA, client, address);
+      expect(await enteredAt(client, address)).toBeNull();
+      const holder = await newUser({ email: address, verified: true });
+      expect(await linkAs(holder.id)).toBe(1);
+      expect(await enteredAt(client, address)).toBeNull();
+      await markAs(holder.id, client);
+      expect(await enteredAt(client, address)).toBeInstanceOf(Date);
+    });
+
+    it('counts as entered the person who accepts an old invitation and the one a legacy writer put in', async () => {
+      const client = await freshClient();
+      const accepted = await newUser({ verified: false });
+      await acceptAs(accepted.id, await pendingInvitation(client, accepted.email));
+      expect(await enteredAt(client, accepted.email)).toBeInstanceOf(Date);
+      const legacy = await newUser();
+      await owner()('client_memberships').insert({ client_id: client, user_id: legacy.id });
+      expect(await enteredAt(client, legacy.email)).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('one mailbox gets one e-mail', () => {
+    it('puts two accesses of a client that resolve to the same address in ONE group of the claim', async () => {
+      const client = await freshClient();
+      const account = await newUser();
+      await owner()('client_memberships').insert({ client_id: client, user_id: account.id });
+      const oldAddress = account.email;
+      const address = freshEmail();
+      // The account changed its address into the one of another access of the same client; the link does not take that one.
+      await owner()('auth.user').where({ id: account.id }).update({ email: address });
+      await addAs(ids.adminA, client, address);
+      expect(await linkAs(account.id)).toBe(0);
+
+      const content = await w.seedContent(client, { status: 'in_production', folderId: await w.folderOf(client) });
+      await owner()('contents').where({ id: content }).update({ status: 'awaiting_approval' });
+      // The oldest group of the queue, so a limit of ONE group reaches it first.
+      await owner().raw("update public.notification_queue set send_after = '2000-01-01T00:00:00Z' where client_id = ?::uuid", [client]);
+      const queued = await owner()('notification_queue').where({ content_id: content });
+      expect(queued).toHaveLength(2);
+
+      const rows = (await worker.knex.raw<{ rows: Array<{ item_id: string; claim_token: string; recipient_email: string; client_id: string }> }>(
+        'select item_id, claim_token, recipient_email, client_id from app_private.claim_notification_batch(1)'
+      )).rows.filter((row) => row.client_id === client);
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((row) => row.recipient_email))).toEqual(new Set([address]));
+      expect(oldAddress).not.toBe(address);
     });
   });
 });

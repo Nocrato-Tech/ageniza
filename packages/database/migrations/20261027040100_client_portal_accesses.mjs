@@ -22,6 +22,10 @@ export async function up(knex) {
       status text not null default 'active',
       -- What the approval links of the access carry (T7). It only advances, and only when the access is removed.
       generation integer not null default 1,
+      -- When the account entered the portal of THIS client (the first time it resolved or selected it). The link alone does not
+      -- set it: the link happens at any load of the contexts, and the list of the agency must not turn "ainda não entrou" into
+      -- the name of an account just because that account used another agency. Null while nobody has entered.
+      first_entered_at timestamptz,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       constraint client_portal_accesses_email_check check (
@@ -75,6 +79,10 @@ export async function up(knex) {
         raise exception using errcode = '42501', message = 'The address and the client of a portal access never change; remove it and add the other address.';
       end if;
 
+      if new.first_entered_at is not null and old.first_entered_at is not null and new.first_entered_at <> old.first_entered_at then
+        raise exception using errcode = '42501', message = 'The first entry of an account into a portal is written once.';
+      end if;
+
       if new.generation is distinct from old.generation then
         if not (old.status = 'active' and new.status = 'removed' and new.generation = old.generation + 1) then
           raise exception using errcode = '42501', message = 'The generation of a portal access only advances, and only when it is removed.';
@@ -103,8 +111,9 @@ export async function up(knex) {
   // The backfill. Memberships are unique per (client, user) and the address of an account is unique, so no pair collides. The
   // removed ones come along as removed, and every row starts in its first generation: no approval link exists yet.
   await knex.raw(`
-    insert into public.client_portal_accesses (client_id, email, user_id, status, created_at, updated_at)
-    select membership.client_id, lower(btrim(account.email)), membership.user_id, membership.status, membership.created_at, membership.updated_at
+    -- The people who are in the portal today have entered it: the list shows them as it did.
+    insert into public.client_portal_accesses (client_id, email, user_id, status, first_entered_at, created_at, updated_at)
+    select membership.client_id, lower(btrim(account.email)), membership.user_id, membership.status, membership.created_at, membership.created_at, membership.updated_at
     from public.client_memberships membership
     join auth."user" account on account.id = membership.user_id;
 
@@ -152,12 +161,12 @@ export async function up(knex) {
           select * into v_access from public.client_portal_accesses where client_id = new.client_id and email = v_email and user_id is null;
           if found then
             update public.client_portal_accesses
-            set user_id = new.user_id, status = new.status,
+            set user_id = new.user_id, status = new.status, first_entered_at = pg_catalog.now(),
                 generation = generation + case when status = 'active' and new.status = 'removed' then 1 else 0 end
             where id = v_access.id returning * into v_access;
           else
-            insert into public.client_portal_accesses (client_id, email, user_id, status)
-            values (new.client_id, v_email, new.user_id, new.status)
+            insert into public.client_portal_accesses (client_id, email, user_id, status, first_entered_at)
+            values (new.client_id, v_email, new.user_id, new.status, pg_catalog.now())
             returning * into v_access;
           end if;
         end if;

@@ -198,7 +198,8 @@ export async function up(knex) {
           -- The welcome goes again: it takes a place in the day too.
           perform app_private.charge_daily_email(v_client.agency_id);
           update public.client_portal_accesses
-          set status = 'active', user_id = case when v_unlinked is null then user_id else null end, updated_at = pg_catalog.now()
+          set status = 'active', user_id = case when v_unlinked is null then user_id else null end,
+              first_entered_at = case when v_unlinked is null then first_entered_at else null end, updated_at = pg_catalog.now()
           where id = v_access.id;
 
           -- The membership follows the access: back for the same account, or leaving with the account that lost the address.
@@ -273,6 +274,17 @@ export async function up(knex) {
       update public.client_memberships
       set status = 'removed', updated_at = pg_catalog.now()
       where portal_access_id = v_access.id and status = 'active';
+
+      -- An old portal invitation of the same address must not bring the person back: it dies with the access.
+      with revoked as (
+        update public.invitations
+        set revoked_at = pg_catalog.now()
+        where client_id = v_access.client_id and email = v_access.email and purpose = 'client_invite'
+          and used_at is null and revoked_at is null
+        returning id
+      )
+      insert into audit.events (action, actor_user_id, agency_id, target_type, target_id)
+      select 'invitation.revoked', app_private.current_user_id(), v_client.agency_id, 'invitation', revoked.id from revoked;
 
       insert into audit.events (action, actor_user_id, agency_id, target_type, target_id)
       values ('client_member.removed', app_private.current_user_id(), v_client.agency_id, 'client_portal_access', v_access.id);
@@ -396,7 +408,7 @@ export async function up(knex) {
           update public.client_portal_accesses set user_id = null, updated_at = pg_catalog.now() where id = v_other.id;
         end if;
 
-        update public.client_portal_accesses set user_id = v_actor, updated_at = pg_catalog.now() where id = v_access.id;
+        update public.client_portal_accesses set user_id = v_actor, first_entered_at = null, updated_at = pg_catalog.now() where id = v_access.id;
 
         update public.client_memberships
         set status = 'active', portal_access_id = v_access.id, updated_at = pg_catalog.now()
@@ -442,6 +454,10 @@ export async function up(knex) {
       end if;
 
       select * into v_access from public.client_portal_accesses where client_id = p_client_id and email = p_email for update;
+      -- The agency removed this address after it sent the invitation: the invitation does not undo that.
+      if v_access.status = 'removed' then
+        raise exception using errcode = 'A0001', message = 'Invitation link is not valid.';
+      end if;
       select * into v_other from public.client_portal_accesses
       where client_id = p_client_id and user_id = p_user_id and id is distinct from v_access.id for update;
       if found then
@@ -453,20 +469,20 @@ export async function up(knex) {
       end if;
 
       if v_access.id is null then
-        insert into public.client_portal_accesses (client_id, email, user_id)
-        values (p_client_id, p_email, p_user_id)
+        insert into public.client_portal_accesses (client_id, email, user_id, first_entered_at)
+        values (p_client_id, p_email, p_user_id, pg_catalog.now())
         returning * into v_access;
       else
         -- The address changed hands: the account that held it before is out, and the one that has it now is in.
         if v_access.user_id is not null and v_access.user_id <> p_user_id then
           v_previous := v_access.user_id;
-          update public.client_portal_accesses set user_id = null, updated_at = pg_catalog.now() where id = v_access.id;
+          update public.client_portal_accesses set user_id = null, first_entered_at = null, updated_at = pg_catalog.now() where id = v_access.id;
           update public.client_memberships
           set status = 'removed', updated_at = pg_catalog.now()
           where portal_access_id = v_access.id and user_id = v_previous and status = 'active';
         end if;
         update public.client_portal_accesses
-        set user_id = p_user_id, status = 'active', updated_at = pg_catalog.now()
+        set user_id = p_user_id, status = 'active', first_entered_at = pg_catalog.now(), updated_at = pg_catalog.now()
         where id = v_access.id;
       end if;
 
@@ -477,6 +493,32 @@ export async function up(knex) {
         insert into public.client_memberships (client_id, user_id, portal_access_id)
         values (p_client_id, p_user_id, v_access.id);
       end if;
+    end;
+    $function$;
+
+    -- The account of the transaction enters the portal of a client: the first time is recorded, and it is what the agency's list
+    -- shows as "entrou" and the name. Resolving or selecting the context of that client is the entry; loading the list of
+    -- contexts is not. A read-only agency is left as it is (the write would be refused), and nothing is marked for an access the
+    -- account does not hold.
+    create function app_private.mark_client_portal_entered(p_client_id uuid)
+    returns void
+    language plpgsql
+    security definer
+    set search_path = ''
+    as $function$
+    declare
+      v_actor uuid := app_private.current_user_id();
+    begin
+      if v_actor is null then
+        raise exception using errcode = '42501', message = 'The portal is entered by an account.';
+      end if;
+      update public.client_portal_accesses access
+      set first_entered_at = pg_catalog.now()
+      where access.client_id = p_client_id
+        and access.user_id = v_actor
+        and access.status = 'active'
+        and access.first_entered_at is null
+        and app_private.agency_accepts_writes(app_private.client_agency_id(access.client_id));
     end;
     $function$;
 
@@ -515,6 +557,8 @@ export async function up(knex) {
     revoke all on function app_private.remove_client_portal_access(uuid) from public;
     revoke all on function app_private.reactivate_client_portal_access(uuid) from public;
     revoke all on function app_private.link_client_portal_accesses() from public;
+    revoke all on function app_private.mark_client_portal_entered(uuid) from public;
+    grant execute on function app_private.mark_client_portal_entered(uuid) to ageniza_app;
     revoke all on function app_private.grant_client_portal_access_from_invitation(uuid, uuid, text) from public;
     grant execute on function app_private.add_client_portal_access(uuid, text) to ageniza_app;
     grant execute on function app_private.remove_client_portal_access(uuid) to ageniza_app;

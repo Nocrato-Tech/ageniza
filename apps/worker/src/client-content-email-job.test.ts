@@ -159,6 +159,21 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
     expect([...sent].sort()).toEqual([...group, ...otherPerson, ...otherClient, ...published].map((claimed) => claimed.itemId).sort());
   });
 
+  it('sends ONE e-mail to a mailbox that two accesses of the client resolve to, with the content once, and stamps both items', async () => {
+    const shared = item({ recipientPortalAccessId: PERSON_1, recipientEmail: 'ana@padaria.test' });
+    const twin = item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'ana@padaria.test', contentId: shared.contentId, contentTitle: shared.contentTitle });
+    const { queue, sent } = fakeQueue([[shared, twin]]);
+    const { sender, emails } = senderThatRecords();
+
+    await run(queue, sender);
+
+    expect(emails).toHaveLength(1);
+    expect(emails[0]!.to).toBe('ana@padaria.test');
+    expect(emails[0]!.subject).toBe('um conteúdo para você aprovar: Padaria Sol');
+    expect(emails[0]!.text.split(shared.contentTitle)).toHaveLength(2);
+    expect([...sent].sort()).toEqual([shared.itemId, twin.itemId].sort());
+  });
+
   it('points each e-mail to the portal of its own client, with nothing of the person in the link', async () => {
     const { queue } = fakeQueue([[item(), item({ clientId: CLIENT_B, clientName: 'Loja Lua' })]]);
     const { sender, emails } = senderThatRecords();

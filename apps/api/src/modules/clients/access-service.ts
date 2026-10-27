@@ -13,7 +13,9 @@ import type { ClientTransaction } from './service.js';
  * filtered by the client of the route and by that client's agency, and reaches the account only through the access's own
  * `user_id`, with a LEFT join: an access nobody has entered is a row, not a gap.
  *
- * Nothing here says whether an address has an account. The name is the account's, and only once it is linked to the access.
+ * Nothing here says whether an address has an account. The name is the account's, and only once that account has entered the
+ * portal of THIS client (`first_entered_at`): the link happens at any load of the contexts, even of someone who only works in
+ * another agency, and the list must not turn that into a name.
  */
 
 interface RawRows<TResult> {
@@ -31,10 +33,10 @@ export interface ClientMemberRow {
 
 const MEMBER_COLUMNS = `
   access.id as access_id,
-  member.name as name,
+  case when access.first_entered_at is not null then member.name end as name,
   access.email as email,
   access.status as status,
-  (access.user_id is not null) as entered,
+  (access.first_entered_at is not null and access.user_id is not null) as entered,
   access.created_at as created_at
 `;
 

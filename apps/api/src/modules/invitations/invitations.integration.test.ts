@@ -2169,7 +2169,7 @@ describe('invitation HTTP module', () => {
     });
 
     describe('client invitations', () => {
-      it('#469: a removed portal member who accepts a new invitation gets the same link back, and no other link of theirs changes', async () => {
+      it('#469, changed by #711: a removed portal member does not get the link back by accepting a pending invitation, and no other link of theirs changes', async () => {
         const removed = await addPortalMembership(clientId, 'invitation-client-removed-accepts', 'removed');
         const otherClients = [randomUUID(), randomUUID()];
         for (const otherClientId of otherClients) {
@@ -2191,13 +2191,11 @@ describe('invitation HTTP module', () => {
 
         const invitation = await insertInvitation({ agencyId, purpose: 'client_invite', roleId: null, clientId, email: removed.email });
         const accepted = await app.app.inject({ method: 'POST', url: `/invitations/${invitation.token}/accept`, remoteAddress: MEMBER_IP, headers: { ...origin, cookie } });
-        expect(accepted.statusCode).toBe(200);
-        expect(accepted.json()).toMatchObject({ status: 'accepted', context: { agencyId, clientId } });
+        // The agency removed this person after the invitation was sent: the invitation does not undo it.
+        expect(accepted.statusCode).toBe(410);
 
-        await expect(owner.knex('client_memberships').where({ client_id: clientId, user_id: removed.id }).select('id', 'status')).resolves.toEqual([{ id: linkBefore!.id, status: 'active' }]);
-        const read = await portalRead();
-        expect(read.statusCode).toBe(200);
-        expect(read.json()).toMatchObject({ id: clientId });
+        await expect(owner.knex('client_memberships').where({ client_id: clientId, user_id: removed.id }).select('id', 'status')).resolves.toEqual([{ id: linkBefore!.id, status: 'removed' }]);
+        expect((await portalRead()).statusCode).toBe(404);
 
         const othersAfter = await owner.knex('client_memberships').whereIn('client_id', otherClients).where({ user_id: removed.id }).orderBy('client_id').select('id', 'client_id', 'status', 'updated_at');
         expect(othersAfter).toEqual(othersBefore);

@@ -278,8 +278,8 @@ conta com aquele e-mail verificado carrega os contextos (`app_private.link_clien
 
 - **Pessoas**: 20 por página, por nome (o e-mail, enquanto a pessoa não entrou) sem diferenciar maiúsculas nem acento,
   comparado byte a byte (`collate "C"`) com o id do acesso de desempate; `status=active` (padrão) ou `removed`. Item:
-  `accessId`, `name` (nulo até a conta entrar), `email` (como foi gravado), `status`, `entered` ("ainda não entrou"
-  quando `false`) e `since`. A consulta parte de `client_portal_accesses` filtrado pelo cliente e pela agência e chega em
+  `accessId`, `name` (nulo até a conta entrar no portal **daquele cliente**), `email` (como foi gravado), `status`, `entered` ("ainda não entrou"
+  quando `false`; só vira `true` na primeira entrada no portal do cliente, e não no vínculo) e `since`. A consulta parte de `client_portal_accesses` filtrado pelo cliente e pela agência e chega em
   `auth."user"` só pelo `user_id` do acesso, num `LEFT JOIN`. **Nada na lista diz se um e-mail tem conta.**
 - **Adicionar pessoa**: só o e-mail. Dá o acesso na hora, sem conta e sem aceite, e manda o e-mail de boas-vindas
   ("Entrar no portal"). O mesmo e-mail de novo reativa a mesma linha (`409 ACCESS_EXISTS` se já estava ativo). Se a conta
