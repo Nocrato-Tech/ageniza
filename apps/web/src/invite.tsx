@@ -79,6 +79,11 @@ export function InvitationPage() {
     // The new session may belong to a different account; drop the previous account's cache first.
     queryClient.clear();
     await authStore.refresh();
+    // The account of a copied link has a session that opens nothing until its e-mail is confirmed (decision 2026-10-27).
+    if (authStore.getSnapshot().emailUnconfirmed === true) {
+      navigate('/confirme-seu-email', { replace: true });
+      return;
+    }
     const target = invitationTarget(context);
     await rememberContext(httpClient, target);
     navigate(contextDestination(target), { replace: true, state: noticeState() });

@@ -38,6 +38,8 @@ export const AuthLogoutAllResponseSchema = AuthNoContentResponseSchema;
 export const AuthSessionRequestSchema = AuthNoBodySchema;
 export const AuthSessionResponseSchema = z.object({
   user: AuthUserSchema,
+  /** `false` for the account of an invitation that has not confirmed its e-mail: its session opens nothing until it does (decision 2026-10-27). */
+  emailVerified: z.boolean().optional(),
   session: z.object({ expiresAt: z.string().datetime({ offset: true }) }).strict()
 }).strict();
 

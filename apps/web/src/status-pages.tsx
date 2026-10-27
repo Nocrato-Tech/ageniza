@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 
 import { ButtonLink, LiveStatus } from '@ageniza/ui';
 
@@ -45,5 +45,6 @@ function SessionEndedPage() {
 export function SessionGate({ session, children }: { session: AuthSessionSnapshot; children: React.ReactNode }) {
   if (session.status === 'loading') return <LoadingPage />;
   if (!session.isAuthenticated) return <SessionEndedPage />;
+  if (session.emailUnconfirmed === true) return <Navigate to="/confirme-seu-email" replace />;
   return <>{children}</>;
 }

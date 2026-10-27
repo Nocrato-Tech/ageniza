@@ -2567,6 +2567,11 @@ a.client-general__block:focus-visible {
   width: 100%;
 }
 
+/* A word with a hyphen that must not be split across two lines in a title ("e-mail"). */
+.auth-nowrap {
+  white-space: nowrap;
+}
+
 .auth-note {
   margin: 0;
   color: var(--text-muted);

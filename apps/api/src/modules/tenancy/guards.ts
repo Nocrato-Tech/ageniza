@@ -37,6 +37,7 @@ interface AgencyAccessRow {
   readonly role_key: string | null;
   readonly permissions: readonly string[] | null;
   readonly terms_blocked: boolean;
+  readonly email_unconfirmed: boolean;
 }
 
 interface ClientAccessRow {
@@ -44,6 +45,7 @@ interface ClientAccessRow {
   readonly agency_id: string;
   readonly client_membership_id: string;
   readonly terms_blocked: boolean;
+  readonly email_unconfirmed: boolean;
 }
 
 interface RawRows<TResult> {
@@ -86,6 +88,13 @@ const termsNotAccepted = (): HttpError => new HttpError({
   statusCode: 403,
   code: 'TERMS_NOT_ACCEPTED',
   message: 'Aceite os Termos de Uso e a Política de Privacidade para continuar.'
+});
+
+/** An account that has not confirmed its e-mail opens no agency and no portal, even with the session of an invitation (decision 2026-10-27). */
+const emailNotConfirmed = (): HttpError => new HttpError({
+  statusCode: 403,
+  code: 'EMAIL_NOT_CONFIRMED',
+  message: 'Confirme o seu e-mail para entrar.'
 });
 
 const invalidAgencyId = (): HttpError => new HttpError({
@@ -133,7 +142,8 @@ export const createRequireAgencyAccess = (dependencies: TenancyGuardDependencies
             (select array_agg(held.key order by held.key) from app_private.agency_permission_keys(agency.id) as held(key)),
             array[]::text[]
           ) as permissions,
-          app_private.legal_acceptance_blocks_access(app_private.current_user_id()) as terms_blocked
+          app_private.legal_acceptance_blocks_access(app_private.current_user_id()) as terms_blocked,
+          app_private.email_not_confirmed(app_private.current_user_id()) as email_unconfirmed
         from public.agencies as agency
         left join public.agency_memberships as membership
           on membership.agency_id = agency.id
@@ -153,6 +163,7 @@ export const createRequireAgencyAccess = (dependencies: TenancyGuardDependencies
 
     // A missing row intentionally covers nonexistent, suspended, and inaccessible agencies.
     if (row === undefined) throw notFound();
+    if (row.email_unconfirmed !== false) throw emailNotConfirmed();
     if (row.terms_blocked === true) throw termsNotAccepted();
     request.tenant = {
       agencyId,
@@ -221,7 +232,8 @@ export const createRequireClientAccess = (dependencies: TenancyGuardDependencies
           client.id as client_id,
           client.agency_id as agency_id,
           membership.id as client_membership_id,
-          app_private.legal_acceptance_blocks_access(app_private.current_user_id()) as terms_blocked
+          app_private.legal_acceptance_blocks_access(app_private.current_user_id()) as terms_blocked,
+          app_private.email_not_confirmed(app_private.current_user_id()) as email_unconfirmed
         from public.client_memberships as membership
         join public.clients as client on client.id = membership.client_id
         join public.agencies as agency on agency.id = client.agency_id
@@ -237,6 +249,7 @@ export const createRequireClientAccess = (dependencies: TenancyGuardDependencies
     // A missing row intentionally covers a nonexistent client, an archived client, a suspended
     // agency, and a caller without an active client membership -- never revealing which.
     if (row === undefined) throw clientNotFound();
+    if (row.email_unconfirmed !== false) throw emailNotConfirmed();
     if (row.terms_blocked === true) throw termsNotAccepted();
     request.clientContext = {
       clientId: row.client_id,

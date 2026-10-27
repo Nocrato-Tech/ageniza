@@ -24,7 +24,7 @@ export function AuthLayout() {
 
 export interface AuthPanelProps {
   titleId: string;
-  title: string;
+  title: ReactNode;
   /** One sentence under the title that says what the screen is for. */
   lead?: string;
   /** Lets a screen that swaps its form for a confirmation move focus to the new title. */

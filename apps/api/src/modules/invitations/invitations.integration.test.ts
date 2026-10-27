@@ -391,7 +391,7 @@ describe('invitation HTTP module', () => {
     expect(legal).toHaveLength(2);
   });
 
-  it('#710: creates the account with the invitation email still unconfirmed and opens the context at once, for every purpose', async () => {
+  it('#710: creates the account with the invitation email still unconfirmed, and its session opens no context until it is confirmed, for every purpose', async () => {
     const activationAgency = await createAgency('Unverified email activation agency', null);
     const cases = [
       { purpose: 'agency_activation' as const, agencyId: activationAgency, roleId: null, clientId: null },
@@ -414,10 +414,15 @@ describe('invitation HTTP module', () => {
       expect(created[0]).toMatchObject({ email, emailVerified: false });
       createdUserIds.push(created[0]!.id as string);
 
-      // The invitation's context is open right away, before any confirmation.
-      const contexts = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { cookie: sessionCookieHeader(response.cookies) } });
+      // The session of the acceptance opens nothing before the confirmation (decision 2026-10-27): no context, and the
+      // routes of the agency and of the portal answer 403.
+      const acceptanceCookie = sessionCookieHeader(response.cookies);
+      const contexts = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { cookie: acceptanceCookie } });
       expect(contexts.statusCode, item.purpose).toBe(200);
-      expect(contexts.body, item.purpose).toContain(item.clientId ?? item.agencyId);
+      expect(contexts.json(), item.purpose).toEqual({ contexts: [], canCreateAgency: false });
+      const opened = await app.app.inject({ method: 'GET', url: item.purpose === 'client_invite' ? `/clients/${item.clientId}` : `/agencies/${item.agencyId}/me`, headers: { cookie: acceptanceCookie } });
+      expect(opened.statusCode, item.purpose).toBe(403);
+      expect(opened.json(), item.purpose).toMatchObject({ error: { code: 'EMAIL_NOT_CONFIRMED' } });
 
       // The password login stays closed to an unconfirmed account, invited or not, and answers like a
       // wrong password (#706): the session above is the only one this account gets before confirming.
@@ -447,8 +452,14 @@ describe('invitation HTTP module', () => {
       });
       expect((await verify('not the password chosen at acceptance')).statusCode, item.purpose).toBe(400);
       expect((await owner.knex('auth.user').where({ email }).first('emailVerified')).emailVerified, item.purpose).toBe(false);
-      expect((await verify('a secure activation password')).statusCode, item.purpose).toBe(200);
+      const confirmed = await verify('a secure activation password');
+      expect(confirmed.statusCode, item.purpose).toBe(200);
       expect((await owner.knex('auth.user').where({ email }).first('emailVerified')).emailVerified, item.purpose).toBe(true);
+      // Confirmed, the account has its context, with the session the confirmation gave it and with the one of the acceptance.
+      for (const cookie of [sessionCookieHeader(confirmed.cookies), acceptanceCookie]) {
+        const opens = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { cookie } });
+        expect(opens.body, item.purpose).toContain(item.clientId ?? item.agencyId);
+      }
     }
   });
 

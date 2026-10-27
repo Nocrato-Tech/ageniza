@@ -350,6 +350,9 @@
             ],
             "additionalProperties": false
           },
+          "emailVerified": {
+            "type": "boolean"
+          },
           "session": {
             "type": "object",
             "properties": {
@@ -7686,7 +7689,7 @@
       "get": {
         "operationId": "getAuthSession",
         "summary": "Devolve a sessão e a pessoa autenticada",
-        "description": "Usado pelo cliente para saber se a sessão continua válida e quando expira.\n\nAcesso: Sessão.",
+        "description": "Usado pelo cliente para saber se a sessão continua válida e quando expira. `emailVerified: false` é a conta criada por um convite que ainda não confirmou o e-mail: a sessão dela não abre agência nem portal, e a tela pede a confirmação.\n\nAcesso: Sessão.",
         "tags": [
           "auth"
         ],
@@ -7705,6 +7708,7 @@
                     "name": "Dono da Agência",
                     "email": "dono@exemplo.test"
                   },
+                  "emailVerified": true,
                   "session": {
                     "expiresAt": "2026-10-01T12:00:00.000Z"
                   }
@@ -7776,6 +7780,7 @@
                     "name": "Dono da Agência",
                     "email": "dono@exemplo.test"
                   },
+                  "emailVerified": true,
                   "session": {
                     "expiresAt": "2026-10-01T12:00:00.000Z"
                   }
@@ -8157,7 +8162,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8306,7 +8311,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8468,7 +8473,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8618,7 +8623,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8989,7 +8994,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | INVITATION_ACCOUNT_MISMATCH: A conta autenticada não corresponde ao convite.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | INVITATION_ACCOUNT_MISMATCH: A conta autenticada não corresponde ao convite. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9071,7 +9076,7 @@
       "get": {
         "operationId": "listMyContexts",
         "summary": "Lista os contextos válidos da pessoa",
-        "description": "Traz agências e portais de cliente ativos, já ordenados pela regra do resolve.\n\nAcesso: Sessão.",
+        "description": "Traz agências e portais de cliente ativos, já ordenados pela regra do resolve. A conta que não confirmou o e-mail recebe a lista vazia.\n\nAcesso: Sessão.",
         "tags": [
           "contexts"
         ],
@@ -9145,7 +9150,7 @@
       "get": {
         "operationId": "resolveMyContext",
         "summary": "Resolve em qual contexto entrar",
-        "description": "`none` quando não há contexto algum (a sessão continua e a pessoa vai a `/comecar`); `enter` traz o contexto único (ou o\núltimo usado); `select` traz a lista para escolher e `canCreateAgency` (se a conta pode criar uma agência em teste). Um `preferred` inválido é ignorado em\nsilêncio, nunca vira 400.\n\nAcesso: Sessão.",
+        "description": "`none` quando não há contexto algum (a sessão continua e a pessoa vai a `/comecar`; é também a resposta da conta que não confirmou o e-mail); `enter` traz o contexto único (ou o\núltimo usado); `select` traz a lista para escolher e `canCreateAgency` (se a conta pode criar uma agência em teste). Um `preferred` inválido é ignorado em\nsilêncio, nunca vira 400.\n\nAcesso: Sessão.",
         "tags": [
           "contexts"
         ],
@@ -9292,7 +9297,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9395,7 +9400,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9544,7 +9549,7 @@
             }
           },
           "403": {
-            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9685,7 +9690,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_VERIFIED: Confirme o seu e-mail antes de criar uma agência. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_VERIFIED: Confirme o seu e-mail antes de criar uma agência. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9895,7 +9900,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10099,7 +10104,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10297,7 +10302,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10507,7 +10512,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10735,7 +10740,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10969,7 +10974,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11199,7 +11204,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11427,7 +11432,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11655,7 +11660,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11885,7 +11890,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12081,7 +12086,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12284,7 +12289,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12454,7 +12459,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12627,7 +12632,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12829,7 +12834,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13021,7 +13026,7 @@
             }
           },
           "403": {
-            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13194,7 +13199,7 @@
             }
           },
           "403": {
-            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13333,7 +13338,7 @@
             }
           },
           "403": {
-            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13497,7 +13502,7 @@
             }
           },
           "403": {
-            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13706,7 +13711,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13897,7 +13902,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14137,7 +14142,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14291,7 +14296,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14460,7 +14465,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14614,7 +14619,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14800,7 +14805,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14955,7 +14960,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15101,7 +15106,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15314,7 +15319,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15470,7 +15475,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15649,7 +15654,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15815,7 +15820,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15988,7 +15993,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16174,7 +16179,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16360,7 +16365,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16512,7 +16517,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16666,7 +16671,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16820,7 +16825,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17065,7 +17070,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17248,7 +17253,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17433,7 +17438,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17627,7 +17632,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17788,7 +17793,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17949,7 +17954,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18207,7 +18212,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18393,7 +18398,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18604,7 +18609,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18775,7 +18780,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18946,7 +18951,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19163,7 +19168,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19320,7 +19325,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19514,7 +19519,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19670,7 +19675,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19864,7 +19869,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20091,7 +20096,7 @@
             }
           },
           "403": {
-            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20265,7 +20270,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20464,7 +20469,7 @@
             }
           },
           "403": {
-            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20623,7 +20628,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20795,7 +20800,7 @@
             }
           },
           "403": {
-            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20995,7 +21000,7 @@
             }
           },
           "403": {
-            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21152,7 +21157,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21375,7 +21380,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21578,7 +21583,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21794,7 +21799,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22009,7 +22014,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22166,7 +22171,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22391,7 +22396,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22551,7 +22556,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22705,7 +22710,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22839,7 +22844,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22973,6 +22978,25 @@
               }
             }
           },
+          "403": {
+            "description": "EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "EMAIL_NOT_CONFIRMED",
+                    "message": "Confirme o seu e-mail para entrar."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
           "500": {
             "description": "INTERNAL_ERROR: An unexpected error occurred",
             "content": {
@@ -23082,7 +23106,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed",
+            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -23215,7 +23239,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | INVALID_PASSWORD: A senha atual não confere. | REAUTH_REQUIRED: Confirme com o Google para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | INVALID_PASSWORD: A senha atual não confere. | REAUTH_REQUIRED: Confirme com o Google para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -23586,7 +23610,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -23774,7 +23798,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -23968,7 +23992,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -24156,7 +24180,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -24348,7 +24372,7 @@
             }
           },
           "403": {
-            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -24488,7 +24512,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "description": "CSRF_REJECTED: Request origin is not allowed | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
             "content": {
               "application/json": {
                 "schema": {
