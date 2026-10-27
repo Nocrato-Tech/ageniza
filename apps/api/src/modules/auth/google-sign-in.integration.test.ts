@@ -973,6 +973,46 @@ describe('the acceptance blocks the routes of an agency and of the portal, not o
   });
 });
 
+// The name Google gives goes through the schema of `PATCH /me/profile`, for a new account and for the takeover: what the profile
+// would answer 400 for does not get in by the Google door (review of #733). The account then carries the part of the address
+// before the @, like a profile with no name.
+describe('the name of the Google profile is held to the same rule as the name in the profile', () => {
+  const refused: ReadonlyArray<readonly [string, string]> = [
+    ['a right-to-left override (U+202E)', 'Ana ‮admin'],
+    ['a zero-width space (U+200B)', 'Ana​Silva'],
+    ['a line break', 'Ana\nSilva'],
+    ['a carriage return and a line feed', 'Ana\r\nSilva'],
+    ['121 characters, one over the limit', 'a'.repeat(121)]
+  ];
+
+  it.each(refused)('names a new account by the part of the address when the profile name has %s', async (_label, profileName) => {
+    const email = newEmail('google-name-new');
+
+    await signInWithGoogle(app.app, google, identity(email, { name: profileName }));
+
+    expect((await userRow(email))?.name).toBe(email.split('@')[0]);
+  });
+
+  it.each(refused)('names a taken-over account by the part of the address when the profile name has %s', async (_label, profileName) => {
+    const email = newEmail('google-name-takeover');
+    await signUpUnconfirmed(email);
+
+    await signInWithGoogle(app.app, google, identity(email, { name: profileName }));
+
+    expect((await userRow(email))?.name).toBe(email.split('@')[0]);
+  });
+
+  it.each([['a new account', false], ['a taken-over account', true]])('keeps the name of exactly 120 characters, trimmed, for %s', async (_label, takeOver) => {
+    const email = newEmail('google-name-limit');
+    if (takeOver) await signUpUnconfirmed(email);
+    const exact = 'b'.repeat(120);
+
+    await signInWithGoogle(app.app, google, identity(email, { name: `  ${exact}  ` }));
+
+    expect((await userRow(email))?.name).toBe(exact);
+  });
+});
+
 describe('limits', () => {
   it('answers 429 without rate-limit headers once an address starts and returns too often', async () => {
     const limited = await buildTestApp({ config: { google: TEST_GOOGLE } });
