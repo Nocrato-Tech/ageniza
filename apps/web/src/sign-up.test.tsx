@@ -77,7 +77,7 @@ const renderAt = (impl: typeof fetch, entry: string) => {
       </QueryClientProvider>
     </AuthSessionProvider>
   );
-  return { probe, store };
+  return { probe, store, queryClient };
 };
 
 describe('SignUpPage (/criar-conta, #713)', () => {
@@ -174,6 +174,20 @@ describe('VerifyEmailPage (/email/verificar, finding A1 of the review of PR #720
     fireEvent.change(screen.getByLabelText('E-mail da conta'), { target: { value: 'pessoa@example.test' } });
     fireEvent.click(screen.getByRole('button', { name: 'Reenviar o link' }));
     await waitFor(() => expect(bodies.resend).toEqual([{ email: 'pessoa@example.test' }]));
+  });
+
+  it('clears what was cached for the account the browser had, once another one is confirmed', async () => {
+    const { impl } = makeFetch({ initiallyLoggedIn: true });
+    const { probe, queryClient, store } = renderAt(impl, '/email/verificar?token=the-token');
+    // The browser's own session is in place first: what it cached is what must not survive.
+    await store.refresh();
+    queryClient.setQueryData(['another-account', 'profile'], { name: 'Conta que estava no navegador' });
+
+    fireEvent.change(await screen.findByLabelText('Senha'), { target: { value: 'the account password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar e-mail' }));
+
+    await waitFor(() => expect(probe.pathname).toBe('/comecar'));
+    expect(queryClient.getQueryData(['another-account', 'profile'])).toBeUndefined();
   });
 
   it('opens with a session in the browser, without redirecting (rule 11)', async () => {

@@ -45,8 +45,9 @@ export function LoginPage() {
   const [formError, setFormError] = useState<string | undefined>();
   const [resolveError, setResolveError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
-  // Set only after a right password on an unconfirmed account: saying so reveals nothing then.
-  const [unverifiedEmail, setUnverifiedEmail] = useState<string | undefined>();
+  // Set after any refused credential: the API answers an unconfirmed account like a wrong password
+  // (security review of PR #722), so the screen always offers the new link and never says which it was.
+  const [refusedEmail, setRefusedEmail] = useState<string | undefined>();
   const [resolving, setResolving] = useState(false);
   // While the chain runs the login screen owns the redirect; the session must not drive it yet.
   const [authenticating, setAuthenticating] = useState(false);
@@ -97,7 +98,7 @@ export function LoginPage() {
     event.preventDefault();
     setFormError(undefined);
     setResolveError(undefined);
-    setUnverifiedEmail(undefined);
+    setRefusedEmail(undefined);
     const validation = validateForm(AuthLoginRequestSchema, {
       email,
       password,
@@ -125,8 +126,7 @@ export function LoginPage() {
       // The login itself failed: the message is about entering, never about loading contexts.
       setAuthenticating(false);
       if (error instanceof HttpClientError && error.status === 429) setFormError('Muitas tentativas. Tente novamente mais tarde.');
-      else if (error instanceof HttpClientError && error.status === 403 && error.code === 'EMAIL_NOT_VERIFIED') setUnverifiedEmail(validation.data.email);
-      else if (error instanceof HttpClientError && error.status === 401) setFormError(INVALID_CREDENTIALS_MESSAGE);
+      else if (error instanceof HttpClientError && error.status === 401) { setFormError(INVALID_CREDENTIALS_MESSAGE); setRefusedEmail(validation.data.email); }
       else setFormError(LOGIN_FAILED);
       return;
     } finally {
@@ -175,12 +175,9 @@ export function LoginPage() {
         <Button variant="secondary" className="auth-submit" onClick={() => { void runResolve(); }} loading={resolving}>Tentar de novo</Button>
       </div>}
       {formError !== undefined && <AuthMessage tone="danger" role="alert">{formError}</AuthMessage>}
-      {unverifiedEmail !== undefined && <AuthMessage tone="danger" role="alert">
-        Confirme o seu e-mail para entrar. Abra o link que enviamos para {unverifiedEmail} ou peça um novo.
-      </AuthMessage>}
       <Button type="submit" className="auth-submit" loading={submitting}>Entrar</Button>
       <p className="auth-note">Ainda não tem conta? <Link to="/criar-conta">Criar conta</Link></p>
     </form>
-    {unverifiedEmail !== undefined && <ResendVerification email={unverifiedEmail} idPrefix="login" />}
+    {refusedEmail !== undefined && <ResendVerification email={refusedEmail} idPrefix="login" lead="Criou a conta e não confirmou?" buttonLabel="Reenviar o link de confirmação" />}
   </AuthPanel>;
 }

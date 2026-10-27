@@ -199,13 +199,16 @@ describe('LoginPage (/entrar)', () => {
     await waitFor(() => expect(probe.pathname).toBe('/entrar'));
   });
 
-  it('says to confirm the e-mail after a right password on an unconfirmed account, and resends the link to it', async () => {
-    const { impl, resendBodies, isServerLoggedIn } = makeFetch({ loginError: json({ error: { code: 'EMAIL_NOT_VERIFIED', message: 'x' } }, 403) });
+  it('offers a new confirmation link under every refused credential, never saying the account exists (security review of PR #722)', async () => {
+    const { impl, resendBodies, isServerLoggedIn } = makeFetch({ loginError: json({ error: { code: 'INVALID_CREDENTIALS', message: 'x' } }, 401) });
     const { probe } = renderLogin(impl);
+    expect(screen.queryByText('Criou a conta e não confirmou?')).toBeNull();
     submit('pessoa@example.test', 'a correct password');
 
-    expect((await screen.findByText(/Confirme o seu e-mail para entrar/)).textContent).toContain('pessoa@example.test');
-    fireEvent.click(screen.getByRole('button', { name: 'Reenviar o link' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('E-mail ou senha incorretos.');
+    expect(screen.getByText('Criou a conta e não confirmou?')).toBeTruthy();
+    expect(screen.queryByText(/Confirme o seu e-mail/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Reenviar o link de confirmação' }));
 
     await waitFor(() => expect(resendBodies).toEqual([{ email: 'pessoa@example.test' }]));
     expect(await screen.findByText(/enviamos um novo link/)).toBeTruthy();

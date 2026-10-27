@@ -23,7 +23,12 @@ const RESENT = 'Se houver uma conta esperando confirmação com esse e-mail, env
  * Asks for a new confirmation link. The answer is the same whether or not the address has an account
  * waiting, so the screen says the same either way.
  */
-export function ResendVerification({ email, idPrefix }: { email?: string; idPrefix: string }) {
+export function ResendVerification({ email, idPrefix, lead, buttonLabel = 'Reenviar o link' }: {
+  email?: string;
+  idPrefix: string;
+  lead?: string;
+  buttonLabel?: string;
+}) {
   const httpClient = useApiClient();
   const [typed, setTyped] = useState(email ?? '');
   const [emailError, setEmailError] = useState<string | undefined>();
@@ -48,12 +53,13 @@ export function ResendVerification({ email, idPrefix }: { email?: string; idPref
   };
 
   return <div className="auth-form">
+    {lead !== undefined && <p className="auth-note">{lead}</p>}
     {email === undefined && <Field label="E-mail da conta" id={`${idPrefix}-resend-email`} error={emailError}>
       {(control) => <TextInput {...control} name="email" type="email" autoComplete="email" value={typed} onChange={(event) => setTyped(event.target.value)} />}
     </Field>}
     {status === 'sent' && <AuthMessage tone="success" role="status">{RESENT}</AuthMessage>}
     {error !== undefined && <AuthMessage tone="danger" role="alert">{error}</AuthMessage>}
-    <Button variant="secondary" className="auth-submit" onClick={() => { void resend(); }} loading={sending}>Reenviar o link</Button>
+    <Button variant="secondary" className="auth-submit" onClick={() => { void resend(); }} loading={sending}>{buttonLabel}</Button>
   </div>;
 }
 
