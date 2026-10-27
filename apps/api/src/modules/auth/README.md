@@ -13,7 +13,7 @@ Origin/CSRF checking is global (see below); no route repeats it.
 
 | Method and route | Body | Success | Errors |
 | --- | --- | --- | --- |
-| `POST /auth/login` | `{ email, password, inviteToken? }` | `200 { user: { id, name, email } }` + session cookie | `401 INVALID_CREDENTIALS`; `403 EMAIL_NOT_VERIFIED`; `429 RATE_LIMITED` |
+| `POST /auth/login` | `{ email, password, inviteToken? }` | `200 { user: { id, name, email } }` + session cookie | `401 INVALID_CREDENTIALS`; `429 RATE_LIMITED` |
 | `POST /auth/sign-up` | `{ name, email, password, acceptTerms: true }` | always `202 {}`, no cookie | `400 VALIDATION_ERROR`; `429 RATE_LIMITED` |
 | `POST /auth/email/verification/resend` | `{ email }` | always `202 {}` | `429 RATE_LIMITED` |
 | `POST /auth/email/verify` | `{ token, password }` | `200 { user }` + session cookie | `400 INVALID_LINK_OR_PASSWORD`; `429 RATE_LIMITED` |
@@ -39,10 +39,15 @@ session and lands on `/comecar`; `GET /me/contexts/resolve` answers `none` and k
 an invitation carries it) but no longer changes the outcome.
 
 **Unconfirmed accounts (issue #706).** `requireEmailVerification: true` makes Better Auth refuse the
-sign-in of an account whose `emailVerified` is false, after the password is checked: a wrong password
-is still `401 INVALID_CREDENTIALS`, byte-for-byte, and only the right one gets
-`403 EMAIL_NOT_VERIFIED`, with no cookie and no session row. `routes.ts` checks `emailVerified` again
-on the response, and `session-guard.ts` revokes any session an unconfirmed account holds.
+sign-in of an account whose `emailVerified` is false, after the password is checked. The route answers
+it with the same `401 INVALID_CREDENTIALS` as a wrong password, byte for byte, with no cookie and no
+session row: whoever signs up with someone else's address chose the password, so a distinct answer
+would tell whether the address already had an account (security review of PR #722). The right
+password also reissues the link in the background, within the resend limits. `routes.ts` checks
+`emailVerified` again on the response, and `session-guard.ts` revokes any session an unconfirmed
+account holds. If the sign-in after a consumed link fails (the password changed in between),
+`/auth/email/verify` answers `400 INVALID_LINK_OR_PASSWORD`, never 500; consuming the link locks the
+credential row, so a reset either waits for it or makes it refuse.
 
 **Sign-up and the confirmation link (issue #706, finding A1 of the review of PR #720, security
 review of PR #721).** `POST /auth/sign-up` creates the account unconfirmed, with the credential and

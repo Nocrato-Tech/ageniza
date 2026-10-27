@@ -171,16 +171,19 @@ describe('POST /auth/login and the confirmation of the e-mail (#706)', () => {
     expect(sessionRows.rowCount).toBe(1);
   });
 
-  it('answers EMAIL_NOT_VERIFIED to an unconfirmed account with the right password, with no cookie and no session row', async () => {
+  it('answers an unconfirmed account with the right password exactly like a wrong one, with no cookie and no session row (security review of PR #722)', async () => {
     const app = await openApp();
     const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'login-unverified', emailVerified: false });
     createdUsers.push({ app, userId: user.id });
     createdAgencyIds.push(await grantOwnedAgencyContext(user.id));
 
-    const response = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
+    const headers = { ...origin, 'x-request-id': 'login-unverified-right-shared-request-id' };
+    const response = await app.app.inject({ method: 'POST', url: '/auth/login', headers, payload: loginPayload(user) });
+    const wrong = await app.app.inject({ method: 'POST', url: '/auth/login', headers, payload: { email: user.email, password: 'definitely the wrong password' } });
 
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toMatchObject({ error: { code: 'EMAIL_NOT_VERIFIED', message: 'Confirme o seu e-mail para entrar.' } });
+    expect(response.statusCode).toBe(401);
+    expect(response.body).toBe(wrong.body);
+    expect(response.json()).toMatchObject({ error: { code: 'INVALID_CREDENTIALS' } });
     expect(response.cookies.length).toBe(0);
     const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
     expect(sessionRows.rowCount).toBe(0);

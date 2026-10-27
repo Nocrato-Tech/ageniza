@@ -586,8 +586,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Autentica com e-mail e senha',
     description: [
       'Conta com e-mail confirmado ganha sessão mesmo sem nenhum contexto (o `resolve` responde `none`).',
-      'Conta não confirmada com a senha certa responde 403 `EMAIL_NOT_VERIFIED` e não cria sessão;',
-      'com a senha errada, o mesmo 401 de sempre. `inviteToken` é aceito e não muda a resposta.'
+      'Conta não confirmada responde o mesmo 401 `INVALID_CREDENTIALS`, com a senha certa ou não, e não cria sessão;',
+      'com a senha certa, um link de confirmação novo vai ao e-mail, nos limites do reenvio. `inviteToken` é aceito e não muda a resposta.'
     ].join('\n'),
     access: 'Público',
     permission: null,
@@ -604,7 +604,6 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'INVALID_CREDENTIALS' },
-      { status: 403, code: 'EMAIL_NOT_VERIFIED' },
       { status: 429, code: 'RATE_LIMITED' }
     ]
   },

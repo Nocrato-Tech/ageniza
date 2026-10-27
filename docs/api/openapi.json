@@ -6185,7 +6185,7 @@
       "post": {
         "operationId": "postAuthLogin",
         "summary": "Autentica com e-mail e senha",
-        "description": "Conta com e-mail confirmado ganha sessão mesmo sem nenhum contexto (o `resolve` responde `none`).\nConta não confirmada com a senha certa responde 403 `EMAIL_NOT_VERIFIED` e não cria sessão;\ncom a senha errada, o mesmo 401 de sempre. `inviteToken` é aceito e não muda a resposta.\n\nAcesso: Público.",
+        "description": "Conta com e-mail confirmado ganha sessão mesmo sem nenhum contexto (o `resolve` responde `none`).\nConta não confirmada responde o mesmo 401 `INVALID_CREDENTIALS`, com a senha certa ou não, e não cria sessão;\ncom a senha certa, um link de confirmação novo vai ao e-mail, nos limites do reenvio. `inviteToken` é aceito e não muda a resposta.\n\nAcesso: Público.",
         "tags": [
           "auth"
         ],
@@ -6261,7 +6261,7 @@
             }
           },
           "403": {
-            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_VERIFIED:",
+            "description": "CSRF_REJECTED: Request origin is not allowed",
             "content": {
               "application/json": {
                 "schema": {
