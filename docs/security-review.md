@@ -148,3 +148,4 @@ O registro detalhado vive no ai-memory, em `notes/licoes-seguranca-rls.md`. As r
 - Teto de página é **limitar**, e `page` gigante não pode virar 500.
 - Upload validado pelo conteúdo; URL assinada com tipo forçado.
 - Mudança de ambiente entra na allowlist do deploy.
+- Trocar a credencial (redefinir a senha, o Google assumir a conta) invalida a sessão **pela data da troca**, não só apagando as sessões uma vez: um login com a senha antiga em andamento grava a sessão depois do apagamento e sobrevive (#705, #719). Quem revisa roda logins com a credencial antiga em paralelo com a troca e conta as sessões que sobram.
