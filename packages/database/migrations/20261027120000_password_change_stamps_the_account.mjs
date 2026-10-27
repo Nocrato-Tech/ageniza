@@ -2,32 +2,35 @@
 //
 // Recorded in docs/business/decisions/2026-10-27-estrutural-toda-troca-de-senha-grava-a-data-e-o-login-confere-a-credencial-de-novo.md.
 //
-// 1. Every replacement of a credential's password stamps `auth."user"."passwordChangedAt"`, in the very statement that
-//    replaced it: a trigger on `auth.account`, so the reset ("Esqueci a senha"), a future change of password and any other
-//    writer are covered without each remembering to. Security definer because the application role only reads that
-//    column (the date is not something a route may write). It is a BEFORE trigger on purpose: it takes the lock of the
-//    user row before the update takes the one of the account row, the order `consume_email_confirmation` already uses
-//    (user, then credential); an AFTER trigger would reverse it and the two could deadlock.
-// 2. `app_private.confirm_email_by_password_reset` (the takeover by the reset) stamps the date itself as well: it is the
-//    moment the earlier holder of an unconfirmed account loses it, whatever wrote the password before it.
+// 1. Every replacement of a credential's password stamps the date, in the very statement that replaced it. The date lives on
+//    the credential's own row (`auth."account"."passwordChangedAt"`) and a BEFORE UPDATE trigger sets it on NEW: the trigger
+//    writes no other row and takes no other lock. That is deliberate. A trigger that updated `auth."user"` would take the
+//    lock of the account row first (the update already holds it) and then ask for the user row, the reverse of the order
+//    `consume_email_confirmation`, `google_takes_over_account` and the purge use (user, then credential): the two would
+//    deadlock (40P01) and a reset would answer 500 with its link consumed and the old password still valid.
+//    The session guard refuses a session created at or before the greater of this date and `auth."user"."passwordChangedAt"`.
+// 2. `app_private.confirm_email_by_password_reset` (the takeover by the reset) stamps the user's date itself as well: it is
+//    the moment the earlier holder of an unconfirmed account loses it. It already holds the user lock, so it takes no new one.
+// 3. The application role can no longer write either date: UPDATE on `auth."user"` and `auth."account"` becomes a grant by
+//    column, without `passwordChangedAt`. Only the trigger and the definer functions move it, so a compromised or buggy
+//    route cannot set it back and revive an old session.
 
 export async function up(knex) {
   await knex.raw(`
+    alter table auth."account" add column "passwordChangedAt" timestamptz;
+
     create function app_private.stamp_password_changed_at()
     returns trigger
     language plpgsql
-    security definer
     set search_path = ''
     as $function$
     begin
-      update auth."user" set "passwordChangedAt" = pg_catalog.clock_timestamp() where id = new."userId";
+      new."passwordChangedAt" := pg_catalog.clock_timestamp();
       return new;
     end;
     $function$;
-    revoke all on function app_private.stamp_password_changed_at() from public;
-    revoke all on function app_private.stamp_password_changed_at() from ageniza_app;
 
-    create trigger account_password_stamps_the_user
+    create trigger account_password_stamps_the_date
     before update of password on auth."account"
     for each row
     when (new."providerId" = 'credential' and new.password is distinct from old.password)
@@ -61,6 +64,20 @@ export async function up(knex) {
     end;
     $function$;
   `);
+
+  // UPDATE by column on the two tables, every column that exists except the date. The application role keeps SELECT of it.
+  for (const table of ['user', 'account']) {
+    const { rows } = await knex.raw(
+      `select column_name from information_schema.columns
+       where table_schema = 'auth' and table_name = ? and column_name <> 'passwordChangedAt' order by ordinal_position`,
+      [table]
+    );
+    const columns = rows.map((row) => `"${row.column_name}"`).join(', ');
+    await knex.raw(`
+      revoke update on auth."${table}" from ageniza_app;
+      grant update (${columns}) on auth."${table}" to ageniza_app;
+    `);
+  }
 }
 
 export async function down() {

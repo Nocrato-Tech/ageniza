@@ -81,10 +81,13 @@ unconfirmed account takes it over: `onPasswordReset` calls
 the legal acceptances recorded at sign-up.
 
 **A password change stamps `passwordChangedAt` (issue #719, decision 2026-10-27).** Migration
-`20261027120000` puts a `BEFORE UPDATE OF password` trigger on `auth.account` (credential rows) that sets
-`auth."user"."passwordChangedAt"` to the database clock in the statement that replaced the hash, so the reset
-and any later writer are covered; `confirm_email_by_password_reset` (the takeover by the reset) stamps it too.
-`session-guard.ts` refuses, and deletes, a session whose `createdAt` is at or before that date. The date alone
+`20261027120000` adds `auth.account."passwordChangedAt"` and a `BEFORE UPDATE OF password` trigger on
+`auth.account` (credential rows) that sets it on `NEW` to the database clock, in the statement that replaced the
+hash, so the reset and any later writer are covered. The trigger writes no other row: one that updated `auth.user`
+would lock the account row before the user row, the reverse of the order the confirmation link, the Google takeover
+and the purge use, and deadlock. `confirm_email_by_password_reset` (the takeover by the reset) stamps the user's
+date too, and the application role cannot write either date (UPDATE on both tables is by column).
+`session-guard.ts` refuses, and deletes, a session whose `createdAt` is at or before the greater of the user's date and the credential's. The date alone
 does not close the race: a login that checked the old hash creates its session after the reset committed, with a
 `createdAt` later than the date. So `/auth/login` and `/auth/email/verify` read the credential again after
 `signInEmail` created the session and end it when the hash is no longer the one they checked (or the read fails);

@@ -108,16 +108,7 @@ const insertCredential = async (userId: string, password = `hash-${randomUUID()}
 };
 
 /** What a password reset does to the credential: a new salted hash replaces the old one. */
-const changeCredential = async (userId: string, options: { readonly stamp?: boolean } = {}): Promise<void> => {
-  if (options.stamp === false) {
-    // The stamp of the date (issue #719) takes the lock of the user row, which the test holds: the change would wait for it.
-    // This replays the change as if it had landed before the request took that lock, with no trigger of its own.
-    await getOwner().knex.transaction(async (transaction) => {
-      await transaction.raw('set local session_replication_role = replica');
-      await transaction('auth.account').where({ userId, providerId: 'credential' }).update({ password: `hash-${randomUUID()}`, updatedAt: new Date() });
-    });
-    return;
-  }
+const changeCredential = async (userId: string): Promise<void> => {
   await getOwner().knex('auth.account').where({ userId, providerId: 'credential' }).update({ password: `hash-${randomUUID()}`, updatedAt: new Date() });
 };
 
@@ -439,7 +430,7 @@ describe('a request does not outlive the credential it was made under (issue #80
     const asking = request(victim.id, unique('race-attacker'), verifiedHash);
     asking.catch(() => undefined);
     await waitUntilBlocked('%request_email_change%');
-    await changeCredential(victim.id, { stamp: false });
+    await changeCredential(victim.id);
     const hook = supersedeOpenRequests(victim.id);
     await waitUntilBlocked('%supersede_email_change_requests%');
     holder.release();

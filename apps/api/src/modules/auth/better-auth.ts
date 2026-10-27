@@ -78,6 +78,8 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
       }
     }),
     account: {
+      // The day the password of this credential was last replaced (issue #719). Set by a database trigger; read-only here.
+      additionalFields: { passwordChangedAt: { type: 'date', required: false, input: false } },
       // The only provider is Google, and it links to a confirmed account only when it says the address is verified
       // (Better Auth's `requireLocalEmailVerified` stays on); no provider is trusted without that.
       accountLinking: { enabled: true, trustedProviders: [] },

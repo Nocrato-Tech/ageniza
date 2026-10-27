@@ -101,8 +101,13 @@ const signUp = async (app: TestApp, sender: FakeEmailSender, label: string): Pro
 const verify = (app: TestApp, token: string, candidate = password) =>
   app.app.inject({ method: 'POST', url: '/auth/email/verify', headers: origin, remoteAddress: nextAddress(), payload: { token, password: candidate } });
 
+/** The latest date the credential was replaced: the one on the user and the one on its credential, whichever is greater. */
 const passwordChangedAt = async (email: string): Promise<Date | null> =>
-  (await queryAsOwner<{ at: Date | null }>('select "passwordChangedAt" as at from auth."user" where email = $1', [email]))[0]?.at ?? null;
+  (await queryAsOwner<{ at: Date | null }>(
+    `select greatest(person."passwordChangedAt", (select max(credential."passwordChangedAt") from auth.account credential where credential."userId" = person.id)) as at
+     from auth."user" person where person.email = $1`,
+    [email]
+  ))[0]?.at ?? null;
 
 const sessionCountOf = async (email: string): Promise<number> =>
   (await queryAsOwner('select 1 from auth.session where "userId" = (select id from auth."user" where email = $1)', [email])).length;
@@ -191,11 +196,41 @@ describe('the date of a password change (#719)', () => {
       await queryAsOwner('delete from auth.session where "userId" = $1', [user.id]);
     }
   });
+
+  it('the guard reads the date of the credential as well, to the millisecond', async () => {
+    const { app } = await openApp();
+    const user = await makeUser(app, 'guard-boundary-credential');
+    for (const { offsetMs, status } of [{ offsetMs: 0, status: 401 }, { offsetMs: 1, status: 401 }, { offsetMs: -1, status: 200 }]) {
+      const login = await loginAs(app, user.email);
+      await queryAsOwner(
+        `update auth.account set "passwordChangedAt" = (select "createdAt" from auth.session where "userId" = $1 order by "createdAt" desc limit 1) + ($2 || ' milliseconds')::interval where "userId" = $1`,
+        [user.id, String(offsetMs)]
+      );
+
+      expect(await sessionStatus(app, login.cookies), `offset ${offsetMs} ms`).toBe(status);
+      await queryAsOwner('delete from auth.session where "userId" = $1', [user.id]);
+    }
+  });
+
+  it('the application role cannot write either date, and still writes the other columns Better Auth writes', async () => {
+    const { app } = await openApp();
+    const user = await makeUser(app, 'grant-by-column');
+    const asApp = async (statement: string): Promise<void> => {
+      const client = new Client({ connectionString: process.env.DATABASE_URL });
+      await client.connect();
+      try { await client.query(statement, [user.id]); } finally { await client.end(); }
+    };
+
+    await expect(asApp(`update auth."user" set "passwordChangedAt" = null where id = $1`)).rejects.toThrow(/permission denied/);
+    await expect(asApp(`update auth.account set "passwordChangedAt" = null where "userId" = $1`)).rejects.toThrow(/permission denied/);
+    await expect(asApp(`update auth."user" set name = 'Renamed', "updatedAt" = now() where id = $1`)).resolves.toBeUndefined();
+    await expect(asApp(`update auth.account set "updatedAt" = now() where "userId" = $1`)).resolves.toBeUndefined();
+  });
 });
 
 interface ParkedInsert {
   release: () => Promise<void>;
-  waitUntilParked: () => Promise<void>;
+  waitUntilParked: (request: Promise<{ statusCode: number; body: string }>) => Promise<void>;
 }
 
 let parkSequence = 0;
@@ -229,8 +264,11 @@ const parkSessionInsert = async (userId: string, stampAfterParking: boolean): Pr
     await queryAsOwner(`drop trigger if exists ${name} on auth.session`);
     await queryAsOwner(`drop function if exists public.${name}()`);
   });
-  const waitUntilParked = async (): Promise<void> => {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
+  const waitUntilParked = async (request: Promise<{ statusCode: number; body: string }>): Promise<void> => {
+    let settled: { statusCode: number; body: string } | undefined;
+    void request.then((response) => { settled = response; }, () => undefined);
+    for (let attempt = 0; attempt < 600; attempt += 1) {
+      if (settled) throw new Error(`The request ended before its session insert was parked: ${settled.statusCode} ${settled.body}`);
       const waiting = await queryAsOwner('select 1 from pg_locks where locktype = $1 and not granted and objid = $2', ['advisory', key]);
       if (waiting.length === 1) return;
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -251,7 +289,7 @@ describe('a login with the old password that races the reset (#719)', () => {
       const token = await requestReset(app, sender, user.email);
 
       const login = loginAs(app, user.email);
-      await parked.waitUntilParked();
+      await parked.waitUntilParked(login);
       expect((await reset(app, token)).statusCode).toBe(204);
       await parked.release();
       const response = await login;
@@ -297,7 +335,7 @@ describe('POST /auth/email/verify with the old password that races the reset (#7
       const resetToken = await requestReset(app, sender, email);
 
       const confirmation = verify(app, confirmationToken);
-      await parked.waitUntilParked();
+      await parked.waitUntilParked(confirmation);
       expect((await reset(app, resetToken)).statusCode).toBe(204);
       await parked.release();
       const response = await confirmation;
@@ -324,6 +362,31 @@ describe('POST /auth/email/verify with the old password that races the reset (#7
       expect(await passwordChangedAt(email)).not.toBeNull();
       for (const attempt of attempts) {
         expect([200, 400]).toContain(attempt.statusCode);
+        expect(await sessionStatus(app, attempt.cookies), `round ${round}`).toBe(401);
+      }
+      expect(await sessionCountOf(email)).toBe(0);
+    }
+  }, 240_000);
+});
+
+describe('the reset, the confirmation link and Google taking the account over, all at once (#719)', () => {
+  it('never deadlocks, never answers 500 and leaves no valid session, in 12 rounds', async () => {
+    const { app, sender } = await openApp();
+    for (let round = 0; round < 12; round += 1) {
+      const { email, confirmationToken } = await signUp(app, sender, `deadlock-${round}`);
+      const userId = (await queryAsOwner<{ id: string }>('select id from auth."user" where email = $1', [email]))[0]?.id ?? '';
+      const resetToken = await requestReset(app, sender, email);
+
+      const [resetResponse, takeover, ...attempts] = await Promise.all([
+        reset(app, resetToken),
+        queryAsOwner('select app_private.google_takes_over_account($1, $2)', [userId, 'Google Person']).then(() => 'done', (error: unknown) => String(error)),
+        ...Array.from({ length: 3 }, () => verify(app, confirmationToken))
+      ]);
+
+      expect(takeover, `round ${round}`).toBe('done');
+      expect([204, 400], `round ${round}`).toContain(resetResponse.statusCode);
+      for (const attempt of attempts) {
+        expect([200, 400], `round ${round}`).toContain(attempt.statusCode);
         expect(await sessionStatus(app, attempt.cookies), `round ${round}`).toBe(401);
       }
       expect(await sessionCountOf(email)).toBe(0);
