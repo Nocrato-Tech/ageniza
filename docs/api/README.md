@@ -311,7 +311,8 @@ Convida uma pessoa para a agência.
 {
   "invitationId": "33333333-3333-4333-8333-333333333333",
   "expiresAt": "2026-10-02T12:00:00.000Z",
-  "supersededInvitationId": null
+  "supersededInvitationId": null,
+  "invitationUrl": "https://app.ageniza.test/convite/<token-do-exemplo>"
 }
 ```
 
@@ -355,7 +356,8 @@ Reenvia um convite pendente.
 ```json
 {
   "invitationId": "33333333-3333-4333-8333-333333333333",
-  "expiresAt": "2026-10-02T12:00:00.000Z"
+  "expiresAt": "2026-10-02T12:00:00.000Z",
+  "invitationUrl": "https://app.exemplo.test/convite/token-do-exemplo"
 }
 ```
 

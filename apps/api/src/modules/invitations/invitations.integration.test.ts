@@ -10,7 +10,7 @@ import {
   type TestApp,
   type TestUserFixture
 } from '../auth/test-support/harness.js';
-import { createInvitationToken } from './tokens.js';
+import { createInvitationToken, hashInvitationToken } from './tokens.js';
 import { raw, type DatabaseClient } from '@ageniza/database';
 import { randomUUID } from 'node:crypto';
 
@@ -390,28 +390,104 @@ describe('invitation HTTP module', () => {
     expect(legal).toHaveLength(2);
   });
 
-  it('creates the account with the invitation email, already verified, for every invitation purpose', async () => {
-    const activationAgency = await createAgency('Verified email activation agency', null);
+  it('#710: creates the account with the invitation email still unconfirmed and opens the context at once, for every purpose', async () => {
+    const activationAgency = await createAgency('Unverified email activation agency', null);
     const cases = [
       { purpose: 'agency_activation' as const, agencyId: activationAgency, roleId: null, clientId: null },
       { purpose: 'collaborator_invite' as const, agencyId, roleId: productionRoleId, clientId: null },
       { purpose: 'client_invite' as const, agencyId, roleId: null, clientId }
     ];
     for (const item of cases) {
-      const email = `verified-${item.purpose}-${randomUUID()}@example.test`;
+      const email = `unverified-${item.purpose}-${randomUUID()}@example.test`;
       const invitation = await insertInvitation({ ...item, email });
+      const sentBefore = sender.sent.length;
       const response = await app.app.inject({
         method: 'POST',
         url: `/invitations/${invitation.token}/accept-new-account`,
         headers: origin,
-        payload: { name: 'Verified Invitee', password: 'a secure activation password', acceptTerms: true }
+        payload: { name: 'Unverified Invitee', password: 'a secure activation password', acceptTerms: true }
       });
       expect(response.statusCode, item.purpose).toBe(201);
       const created = await owner.knex('auth.user').where({ email }).select('id', 'email', 'emailVerified');
       expect(created, item.purpose).toHaveLength(1);
-      expect(created[0]).toMatchObject({ email, emailVerified: true });
+      expect(created[0]).toMatchObject({ email, emailVerified: false });
       createdUserIds.push(created[0]!.id as string);
+
+      // The invitation's context is open right away, before any confirmation.
+      const contexts = await app.app.inject({ method: 'GET', url: '/me/contexts', headers: { cookie: sessionCookieHeader(response.cookies) } });
+      expect(contexts.statusCode, item.purpose).toBe(200);
+      expect(contexts.body, item.purpose).toContain(item.clientId ?? item.agencyId);
+
+      // No confirmation is sent yet: it arrives with #706's stateful, password-checked confirmation.
+      await app.emailService.drain();
+      expect(sender.sent.slice(sentBefore), item.purpose).toEqual([]);
     }
+  });
+
+  /** An app of its own, so these requests do not spend the shared app's per-IP invitation budget. */
+  const ownApp = async (): Promise<{ own: TestApp; ownSender: ReturnType<typeof createFakeEmailSender>; adminCookie: string }> => {
+    const ownSender = createFakeEmailSender();
+    const own = await buildTestApp({ sender: ownSender });
+    const login = await own.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: admin.email, password: admin.password } });
+    expect(login.statusCode).toBe(200);
+    return { own, ownSender, adminCookie: sessionCookieHeader(login.cookies) };
+  };
+
+  it('#710: the collaborator creation answers, once and no-store, the same link the e-mail carries, and the database keeps only its hash', async () => {
+    const { own, ownSender, adminCookie } = await ownApp();
+    const email = `copy-link-${randomUUID()}@example.test`;
+    const created = await own.app.inject({
+      method: 'POST',
+      url: `/agencies/${agencyId}/invitations/collaborators`,
+      headers: { ...origin, cookie: adminCookie },
+      payload: { email, roleId: productionRoleId }
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.headers['cache-control']).toBe('no-store');
+    const body = created.json<{ invitationId: string; invitationUrl: string }>();
+    const token = invitationTokenFromLatestEmail(ownSender);
+    expect(body.invitationUrl).toBe(`${TEST_APP_PUBLIC_URL}/convite/${token}`);
+    expect(ownSender.sent.at(-1)?.text).toContain(body.invitationUrl);
+
+    const row = await owner.knex('invitations').where({ id: body.invitationId }).first();
+    expect(row?.token_hash).toBe(hashInvitationToken(token));
+    expect(JSON.stringify(row)).not.toContain(token);
+
+    const list = await own.app.inject({ method: 'GET', url: `/agencies/${agencyId}/invitations?pageSize=100`, headers: { ...origin, cookie: adminCookie } });
+    expect(list.statusCode).toBe(200);
+    expect(list.body).toContain(body.invitationId);
+    expect(list.body).not.toContain(token);
+    expect(list.body).not.toContain('/convite/');
+
+    // Resending answers a new link, no-store as well, and the copied one stops working.
+    const resent = await own.app.inject({
+      method: 'POST',
+      url: `/agencies/${agencyId}/invitations/${body.invitationId}/resend`,
+      headers: { ...origin, cookie: adminCookie }
+    });
+    expect(resent.statusCode).toBe(200);
+    expect(resent.headers['cache-control']).toBe('no-store');
+    const renewed = resent.json<{ invitationUrl: string }>();
+    const renewedToken = invitationTokenFromLatestEmail(ownSender);
+    expect(renewed.invitationUrl).toBe(`${TEST_APP_PUBLIC_URL}/convite/${renewedToken}`);
+    expect(renewedToken).not.toBe(token);
+    expect((await own.app.inject({ method: 'GET', url: `/invitations/${token}` })).statusCode).toBe(410);
+    expect((await own.app.inject({ method: 'GET', url: `/invitations/${renewedToken}` })).statusCode).toBe(200);
+    await own.close();
+  });
+
+  it('#710: a portal invitation resend answers no link to copy', async () => {
+    const { own, ownSender, adminCookie } = await ownApp();
+    const invitation = await insertInvitation({ agencyId, purpose: 'client_invite', roleId: null, clientId, email: `portal-resend-${randomUUID()}@example.test` });
+    const resent = await own.app.inject({
+      method: 'POST',
+      url: `/agencies/${agencyId}/invitations/${invitation.invitationId}/resend`,
+      headers: { ...origin, cookie: adminCookie }
+    });
+    expect(resent.statusCode).toBe(200);
+    expect(resent.json<{ invitationUrl: string | null }>().invitationUrl).toBeNull();
+    expect(resent.body).not.toContain(invitationTokenFromLatestEmail(ownSender));
+    await own.close();
   });
 
   describe('Cache-Control: no-store on the routes that read or issue a session (#432)', () => {
@@ -1823,6 +1899,23 @@ describe('invitation HTTP module', () => {
       expect(sender.sent.at(-1)?.to).toBe(refusedTarget.email);
     });
 
+    it('#721 review: a role with only convite.reenviar gets no link back from the resend; adding colaborador.convidar gets it', async () => {
+      const target = await pendingInvitation();
+      const resent = await resend(onlyResendCookie, target.invitationId);
+      expect(resent.statusCode).toBe(200);
+      expect(resent.json<{ invitationUrl: string | null }>().invitationUrl).toBeNull();
+      const mailedToken = invitationTokenFromLatestEmail();
+      expect(sender.sent.at(-1)?.to).toBe(target.email);
+      expect(resent.body).not.toContain(mailedToken);
+      expect(resent.body).not.toContain('/convite/');
+
+      const resendAndInvite = await memberWithPermissions('resend-and-invite', ['convite.reenviar', 'colaborador.convidar']);
+      const second = await pendingInvitation();
+      const allowed = await resend(await loginCookie(resendAndInvite), second.invitationId);
+      expect(allowed.statusCode).toBe(200);
+      expect(allowed.json<{ invitationUrl: string | null }>().invitationUrl).toBe(`${TEST_APP_PUBLIC_URL}/convite/${invitationTokenFromLatestEmail()}`);
+    });
+
     it('lets a role with only convite.cancelar cancel (204, nothing sent) and refuses it the resend', async () => {
       const target = await pendingInvitation();
       const sentBefore = sender.sent.length;
@@ -1900,6 +1993,8 @@ describe('invitation HTTP module', () => {
     });
     const collaboratorId = collaborator.json<{ invitationId: string }>().invitationId;
     const collaboratorToken = invitationTokenFromLatestEmail(logSender);
+    // These responses do carry the links (#710): a log of any response body fails the assertions below.
+    expect(collaborator.body).toContain(collaboratorToken);
     const resent = await logApp.app.inject({
       method: 'POST',
       url: `/agencies/${logAgencyId}/invitations/${collaboratorId}/resend`,
@@ -1909,6 +2004,7 @@ describe('invitation HTTP module', () => {
     const resentInvitationId = resent.json<{ invitationId: string }>().invitationId;
     const resentToken = logSender.sent.at(-1)?.text.match(/\/convite\/([^\s]+)/)?.[1];
     expect(resentToken).toBeDefined();
+    expect(resent.body).toContain(resentToken!);
 
     const logClientId = randomUUID();
     createdClientIds.push(logClientId);
@@ -1982,6 +2078,7 @@ describe('invitation HTTP module', () => {
     expect(logs).not.toContain(resentToken!);
     expect(logs).not.toContain(clientToken!);
     expect(logs).not.toContain(resetToken!);
+    expect(logs).not.toContain('/convite/');
     expect(logs).not.toContain(nextPassword);
     expect(logs).not.toContain(activationPassword);
     expect(logs).not.toContain(logAdmin.email);
