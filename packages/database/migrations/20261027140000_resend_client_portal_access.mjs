@@ -84,9 +84,11 @@ export async function up(knex) {
       end if;
 
       -- The clock of the event is the start of its transaction, the one here is the real one, so a transaction that waited counts.
+      -- The agency comes first so the count uses events_agency_action_occurred_idx and does not scan audit.events under the lock.
       if exists (
         select 1 from audit.events event
-        where event.target_type = 'client_portal_access'
+        where event.agency_id = v_client.agency_id
+          and event.target_type = 'client_portal_access'
           and event.target_id = v_access.id
           and event.action in ('client_member.added', 'client_member.readded', 'client_member.resent')
           and event.occurred_at > pg_catalog.clock_timestamp() - interval '60 seconds'
