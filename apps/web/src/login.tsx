@@ -6,12 +6,12 @@ import {
   ContextResolveResponseSchema
 } from '@ageniza/contracts';
 import { Button, Field, TextInput, useFormErrors } from '@ageniza/ui';
-import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSession, useAuthSessionStore } from './auth.js';
 import { AuthMessage, AuthPanel } from './auth-layout.js';
 import { contextDestination, contextTarget, rememberContext, targetFromDestination } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
+import { ResendVerification } from './email-verification.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { sessionDestination } from './session-end.js';
@@ -23,8 +23,8 @@ const RESOLVE_FAILED = 'Não foi possível carregar seus contextos. Tente de nov
 
 /**
  * `/entrar` and the chain that decides where the person goes: `POST /auth/login` ->
- * `GET /me/contexts/resolve` -> enter goes to the context, select to `/contextos`, none to the
- * "no access" screen. The screen obeys the resolve; it never recomputes the decision.
+ * `GET /me/contexts/resolve` -> enter goes to the context, select to `/contextos`, none to
+ * `/comecar`. The screen obeys the resolve; it never recomputes the decision.
  *
  * The session is published (`refresh`) only after the destination is known, so the app never
  * renders the workspace before the resolve decides. When the login carries an `inviteToken`, the
@@ -36,7 +36,6 @@ export function LoginPage() {
   // No error summary here: the login has two fields, and the focus on the first invalid one is enough (decision 2026-10-16).
   const { formRef } = useFormErrors();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const authStore = useAuthSessionStore();
   const session = useAuthSession(authStore);
   const location = useLocation();
@@ -46,6 +45,8 @@ export function LoginPage() {
   const [formError, setFormError] = useState<string | undefined>();
   const [resolveError, setResolveError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
+  // Set only after a right password on an unconfirmed account: saying so reveals nothing then.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | undefined>();
   const [resolving, setResolving] = useState(false);
   // While the chain runs the login screen owns the redirect; the session must not drive it yet.
   const [authenticating, setAuthenticating] = useState(false);
@@ -58,25 +59,15 @@ export function LoginPage() {
     : undefined;
   const destination = sessionDestination(location.state);
 
-  /**
-   * The server already ended the session for a `none` resolve, and a 403 never created one, so
-   * there is nothing to revoke: drop the client session and the cache, then navigate. Calling
-   * `logout` here would answer 401 without a session and trigger the session-ended redirect.
-   */
-  const leaveToNoAccess = (): void => {
-    authStore.end();
-    queryClient.clear();
-    navigate('/sem-acesso', { replace: true });
-  };
-
   /** Runs the resolve and navigates; a failure is repeatable on its own, without the password again. */
   const runResolve = async (): Promise<void> => {
     setResolveError(undefined);
     setResolving(true);
     try {
       const resolve = await httpClient.request({ path: '/me/contexts/resolve', response: ContextResolveResponseSchema });
-      if (resolve.decision === 'none') { leaveToNoAccess(); return; }
       await authStore.refresh();
+      // A confirmed account with no context keeps its session and goes to `/comecar` (2026-10-26).
+      if (resolve.decision === 'none') { navigate('/comecar', { replace: true }); return; }
       if (resolve.decision === 'enter') {
         // Entering a context records it as the last one; the destination carries the agency or
         // client id, never `/app` (docs/business/decisions.md, 2026-09-29). When a saved
@@ -106,6 +97,7 @@ export function LoginPage() {
     event.preventDefault();
     setFormError(undefined);
     setResolveError(undefined);
+    setUnverifiedEmail(undefined);
     const validation = validateForm(AuthLoginRequestSchema, {
       email,
       password,
@@ -133,7 +125,7 @@ export function LoginPage() {
       // The login itself failed: the message is about entering, never about loading contexts.
       setAuthenticating(false);
       if (error instanceof HttpClientError && error.status === 429) setFormError('Muitas tentativas. Tente novamente mais tarde.');
-      else if (error instanceof HttpClientError && error.status === 403 && error.code === 'NO_CONTEXT_ACCESS') leaveToNoAccess();
+      else if (error instanceof HttpClientError && error.status === 403 && error.code === 'EMAIL_NOT_VERIFIED') setUnverifiedEmail(validation.data.email);
       else if (error instanceof HttpClientError && error.status === 401) setFormError(INVALID_CREDENTIALS_MESSAGE);
       else setFormError(LOGIN_FAILED);
       return;
@@ -183,8 +175,12 @@ export function LoginPage() {
         <Button variant="secondary" className="auth-submit" onClick={() => { void runResolve(); }} loading={resolving}>Tentar de novo</Button>
       </div>}
       {formError !== undefined && <AuthMessage tone="danger" role="alert">{formError}</AuthMessage>}
+      {unverifiedEmail !== undefined && <AuthMessage tone="danger" role="alert">
+        Confirme o seu e-mail para entrar. Abra o link que enviamos para {unverifiedEmail} ou peça um novo.
+      </AuthMessage>}
       <Button type="submit" className="auth-submit" loading={submitting}>Entrar</Button>
-      <p className="auth-note">O acesso ao Ageniza é por convite.</p>
+      <p className="auth-note">Ainda não tem conta? <Link to="/criar-conta">Criar conta</Link></p>
     </form>
+    {unverifiedEmail !== undefined && <ResendVerification email={unverifiedEmail} idPrefix="login" />}
   </AuthPanel>;
 }

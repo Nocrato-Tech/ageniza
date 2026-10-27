@@ -35,7 +35,8 @@ interface Scenario {
 
 /** Behaves like the real API: an authenticated route without a session answers 401 `UNAUTHENTICATED`. */
 const makeFetch = (scenario: Scenario = {}) => {
-  const calls = { resolve: 0, login: 0, logout: 0, forgot: 0 };
+  const calls = { resolve: 0, login: 0, logout: 0, forgot: 0, resend: 0 };
+  const resendBodies: unknown[] = [];
   const forgotBodies: unknown[] = [];
   const lastContextBodies: unknown[] = [];
   let serverLoggedIn = scenario.initiallyLoggedIn ?? false;
@@ -63,9 +64,10 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (url.endsWith('/auth/logout')) { calls.logout += 1; if (!serverLoggedIn) return unauthenticated(); serverLoggedIn = false; return noContent(); }
     if (url.endsWith('/auth/password/forgot')) { calls.forgot += 1; forgotBodies.push(JSON.parse(String(init?.body))); return json({}); }
     if (url.endsWith('/auth/password/reset')) return noContent();
+    if (url.endsWith('/auth/email/verification/resend')) { calls.resend += 1; resendBodies.push(JSON.parse(String(init?.body))); return json({}, 202); }
     throw new Error(`unexpected ${url}`);
   };
-  return { impl, calls, forgotBodies, lastContextBodies, isServerLoggedIn: () => serverLoggedIn };
+  return { impl, calls, forgotBodies, resendBodies, lastContextBodies, isServerLoggedIn: () => serverLoggedIn };
 };
 
 /** Mounts the real routes and a real session, wired as `app.tsx` does. */
@@ -184,11 +186,31 @@ describe('LoginPage (/entrar)', () => {
     expect(calls.login).toBe(0);
   });
 
-  it('offers the invite line and the recovery link', () => {
+  it('offers the recovery link and "Criar conta", which opens /criar-conta (#713)', async () => {
     const { impl } = makeFetch();
-    renderLogin(impl);
-    expect(screen.getByText('O acesso ao Ageniza é por convite.')).toBeTruthy();
+    const { probe } = renderLogin(impl);
     expect(screen.getByRole('link', { name: 'Esqueci minha senha' }).getAttribute('href')).toBe('/senha/esquecida');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Criar conta' }));
+
+    await waitFor(() => expect(probe.pathname).toBe('/criar-conta'));
+    expect(await screen.findByRole('heading', { name: 'Criar conta' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Já tenho conta' }));
+    await waitFor(() => expect(probe.pathname).toBe('/entrar'));
+  });
+
+  it('says to confirm the e-mail after a right password on an unconfirmed account, and resends the link to it', async () => {
+    const { impl, resendBodies, isServerLoggedIn } = makeFetch({ loginError: json({ error: { code: 'EMAIL_NOT_VERIFIED', message: 'x' } }, 403) });
+    const { probe } = renderLogin(impl);
+    submit('pessoa@example.test', 'a correct password');
+
+    expect((await screen.findByText(/Confirme o seu e-mail para entrar/)).textContent).toContain('pessoa@example.test');
+    fireEvent.click(screen.getByRole('button', { name: 'Reenviar o link' }));
+
+    await waitFor(() => expect(resendBodies).toEqual([{ email: 'pessoa@example.test' }]));
+    expect(await screen.findByText(/enviamos um novo link/)).toBeTruthy();
+    expect(probe.pathname).toBe('/entrar');
+    expect(isServerLoggedIn()).toBe(false);
   });
 
   it('goes to /contextos for select, and never stops on the workspace first', async () => {
@@ -276,14 +298,18 @@ describe('LoginPage (/entrar)', () => {
     await waitFor(() => expect(forgotBodies).toEqual([{ email: 'pessoa@example.test', inviteToken: 'invite-token-value' }]));
   });
 
-  it('goes to /sem-acesso and ends the session for a zero-context account', async () => {
-    const { impl } = makeFetch({ loginError: json({ error: { code: 'NO_CONTEXT_ACCESS', message: 'x' } }, 403) });
+  it('goes to /comecar with the session kept when the resolve answers none (#713)', async () => {
+    const { impl, calls } = makeFetch({ resolve: { decision: 'none' } });
     const { probe, store } = renderLogin(impl);
     const end = vi.spyOn(store, 'end');
     submit('pessoa@example.test', 'a correct password');
 
-    await waitFor(() => expect(probe.pathname).toBe('/sem-acesso'));
-    expect(end).toHaveBeenCalled();
+    await waitFor(() => expect(probe.pathname).toBe('/comecar'));
+    expect(await screen.findByRole('heading', { name: 'Sua conta está pronta' })).toBeTruthy();
+    const createAgency = screen.getByRole('button', { name: 'Criar agência' });
+    expect(createAgency.getAttribute('aria-disabled') === 'true' || createAgency.hasAttribute('disabled')).toBe(true);
+    expect(end).not.toHaveBeenCalled();
+    expect(calls.logout).toBe(0);
   });
 
   it('redirects a person who already has a session, through the resolve', async () => {

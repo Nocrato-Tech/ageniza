@@ -78,15 +78,12 @@ export function ContextSelectPage() {
 
   const decision = resolve.data?.decision;
   const enteredContext = resolve.data?.decision === 'enter' ? resolve.data.context : null;
-  // `resolve` already ended the session on the server. Calling `logout` here would answer 401
-  // without a session and trigger the session-ended redirect to `/entrar`; so only drop the client
-  // session and the cache, then go to the "no access" screen.
+  // No context at all: the session stays and the person goes to `/comecar` (2026-10-26 decision on the public sign-up).
   useEffect(() => {
     if (decision !== 'none') return;
-    authStore.end();
-    queryClient.clear();
-    navigate('/sem-acesso', { replace: true });
-  }, [decision, authStore, queryClient, navigate]);
+    queryClient.removeQueries({ queryKey: ['contexts'] });
+    navigate('/comecar', { replace: true });
+  }, [decision, queryClient, navigate]);
 
   // Entering records the context as the last one and goes to its area (`/agencia/...` or
   // `/portal/...`), never `/app`.
@@ -115,7 +112,7 @@ export function ContextSelectPage() {
 
   // Exactly one valid context is entered without asking; none at all is handled by the effect above.
   if (resolve.data.decision === 'enter') return <LiveStatus>Entrando…</LiveStatus>;
-  if (resolve.data.decision === 'none') return <LiveStatus>Encerrando a sessão…</LiveStatus>;
+  if (resolve.data.decision === 'none') return <LiveStatus>Abrindo…</LiveStatus>;
 
   const { contexts, highlighted } = resolve.data;
   const highlightedKey = highlighted === null ? null : contextKey(highlighted);
