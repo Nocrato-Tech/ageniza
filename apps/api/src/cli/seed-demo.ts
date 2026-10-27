@@ -24,8 +24,8 @@ import { DEMO_CONTENTS, ensureContentDemo, type ContentSpec } from './seed-demo-
  * It uses the application paths, not raw inserts around the rules: accounts and memberships go
  * through `app_private.accept_invitation`, clients and the brand study go through the
  * `ageniza_app` role under the same RLS policies the future routes will use, and agencies are
- * created the way `cli:agency` creates them (the migration owner, since `public.agencies` has no
- * INSERT policy by design).
+ * created by the migration owner, since `public.agencies` has no INSERT policy for the application role
+ * by design (the product creates them through `public.create_trial_agency`).
  *
  * Everything is idempotent: agencies and users take identifiers derived from stable demo keys, and the
  * rows the application role writes (clients, personas, threads and comments) are found by their natural key
@@ -540,7 +540,7 @@ const ensureInvitationAccepted = async (input: {
 
   const tokenHash = input.inviterUserId === null
     // Agency activation has no inviter yet and no INSERT policy for the application role; the
-    // migration owner is the same path `cli:agency` uses to create it.
+    // migration owner writes it, as the activation of an agency always was.
     ? await input.ownerDatabase.transaction((transaction) => run(transaction))
     : await withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId: input.inviterUserId }), (transaction) => run(transaction));
 

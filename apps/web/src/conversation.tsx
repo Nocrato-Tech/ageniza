@@ -41,6 +41,8 @@ export interface ConversationProps {
   readonly readOnly: boolean;
   /** Why nobody writes to the subject right now (a content not yet open to the client); reading and resolving stay. */
   readonly blockedReason?: string | undefined;
+  /** The plan of the agency must be renewed: the write buttons stay on screen, disabled, with this reason. */
+  readonly planBlockedReason?: string | undefined;
   /** Called after a write the conversation cannot invalidate itself (client summary, roster badge). */
   readonly onWritten: () => void;
   /** Called when a write is refused because the subject changed under the person (persona archived, section emptied). */
@@ -226,7 +228,7 @@ function CommentItem({ comment }: { comment: ThreadComment }) {
 }
 
 function OpenThread({ props, thread, onClose }: { props: ConversationProps; thread: Thread; onClose: () => void }) {
-  const { scope, subjectLabel, canWrite, readOnly, blockedReason, onWritten, onStale } = props;
+  const { scope, subjectLabel, canWrite, readOnly, blockedReason, planBlockedReason, onWritten, onStale } = props;
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const routes = routesOf(scope);
@@ -297,7 +299,10 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
           : `Resolvida ${thread.resolvedBy?.name ? `por ${thread.resolvedBy.name}` : 'pela agência'} em ${formatDay(thread.resolvedAt)}`}
       </p>}
       {writable && blockedReason !== undefined && <p className="conversation__note">{blockedReason}</p>}
-      {writable && blockedReason === undefined
+      {writable && blockedReason === undefined && planBlockedReason !== undefined && <div className="conversation__actions">
+        <Button blockedReason={planBlockedReason}>Responder</Button>
+      </div>}
+      {writable && blockedReason === undefined && planBlockedReason === undefined
         ? <Composer
           key={`${thread.id}-${sent}`}
           label="Escrever resposta"
@@ -309,7 +314,7 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
         />
         : !writable && <p className="conversation__note">Esta conversa é somente leitura.</p>}
       {canResolve && <div className="conversation__actions">
-        <Button variant="secondary" loading={resolve.isPending} onClick={() => { setResolveError(undefined); resolve.mutate(); }}>Resolver</Button>
+        <Button variant="secondary" loading={resolve.isPending} blockedReason={planBlockedReason} onClick={() => { setResolveError(undefined); resolve.mutate(); }}>Resolver</Button>
       </div>}
       {resolveError !== undefined && <FieldMessage role="alert">{resolveError}</FieldMessage>}
     </div>
@@ -373,7 +378,7 @@ function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: Convers
 }
 
 export function Conversation(props: ConversationProps) {
-  const { scope, subject, subjectLabel, canWrite, readOnly, blockedReason, headingLevel = 4 } = props;
+  const { scope, subject, subjectLabel, canWrite, readOnly, blockedReason, planBlockedReason, headingLevel = 4 } = props;
   const Heading = `h${headingLevel}` as const;
   const opening = OPENING[scope.side];
   const httpClient = useApiClient();
@@ -417,8 +422,8 @@ export function Conversation(props: ConversationProps) {
         {scope.side === 'agency' ? `${awaiting} aguardando` : `${awaiting} com resposta da agência`}
       </Pill>}
       {canStart && (scope.side === 'client'
-        ? <Button variant="secondary" aria-label={opening.buttonName(subjectLabel)} onClick={() => setCreating(true)}>Sugerir</Button>
-        : <Button size="sm" variant="secondary" leadingIcon={<Plus />} aria-label={opening.buttonName(subjectLabel)} onClick={() => setCreating(true)}>conversa</Button>)}
+        ? <Button variant="secondary" aria-label={opening.buttonName(subjectLabel)} blockedReason={planBlockedReason} onClick={() => setCreating(true)}>Sugerir</Button>
+        : <Button size="sm" variant="secondary" leadingIcon={<Plus />} aria-label={opening.buttonName(subjectLabel)} blockedReason={planBlockedReason} onClick={() => setCreating(true)}>conversa</Button>)}
     </header>
 
     {threads.isPending && <div className="conversation__threads-skeleton" aria-busy="true"><Skeleton /><Skeleton /></div>}

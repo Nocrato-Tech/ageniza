@@ -422,7 +422,15 @@ describe('invitation HTTP module', () => {
 
       // The password login stays closed to an unconfirmed account, invited or not, and answers like a
       // wrong password (#706): the session above is the only one this account gets before confirming.
-      const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email, password: 'a secure activation password' } });
+      // It never reaches the sign-in either: the time of a refusal is the same for every account (#722, B2).
+      const signIn = vi.spyOn(app.auth.api, 'signInEmail');
+      let login: Awaited<ReturnType<typeof app.app.inject>>;
+      try {
+        login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email, password: 'a secure activation password' } });
+        expect(signIn, item.purpose).not.toHaveBeenCalled();
+      } finally {
+        signIn.mockRestore();
+      }
       expect(login.statusCode, item.purpose).toBe(401);
       expect(login.json(), item.purpose).toMatchObject({ error: { code: 'INVALID_CREDENTIALS' } });
 
@@ -465,6 +473,72 @@ describe('invitation HTTP module', () => {
     expect((await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie } })).statusCode).toBe(401);
     expect(await owner.knex('auth.session').where({ userId: created.id }).select('id')).toEqual([]);
   });
+
+  describe.each(['agency_activation', 'collaborator_invite', 'client_invite'] as const)(
+    '#706: the session of an unconfirmed account that accepted a %s invitation',
+    (purpose) => {
+      // An app of its own: seven acceptances here would spend the shared app's per-IP budget of the whole file.
+      let own: TestApp;
+      beforeAll(async () => { own = await buildTestApp({ sender: createFakeEmailSender() }); });
+      afterAll(async () => { await own.close(); });
+
+      /** An agency and a client of their own, so that suspending or archiving them touches no other test. */
+      const acceptedSession = async () => {
+        const ownAgencyId = await createAgency(`Unconfirmed session ${purpose}`, null);
+        const ownClientId = randomUUID();
+        createdClientIds.push(ownClientId);
+        await owner.knex('clients').insert({ id: ownClientId, agency_id: ownAgencyId, name: `Unconfirmed session client ${purpose}` });
+        const email = `unconfirmed-session-${purpose}-${randomUUID()}@example.test`;
+        const invitation = await insertInvitation({
+          agencyId: ownAgencyId,
+          purpose,
+          email,
+          roleId: purpose === 'collaborator_invite' ? productionRoleId : null,
+          clientId: purpose === 'client_invite' ? ownClientId : null
+        });
+        const response = await own.app.inject({
+          method: 'POST',
+          url: `/invitations/${invitation.token}/accept-new-account`,
+          headers: origin,
+          payload: { name: 'Unconfirmed Invitee', password: 'a secure activation password', acceptTerms: true }
+        });
+        expect(response.statusCode).toBe(201);
+        const created = await owner.knex('auth.user').where({ email }).first('id');
+        createdUserIds.push(created.id as string);
+        const cookie = sessionCookieHeader(response.cookies);
+        expect((await own.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie } })).statusCode).toBe(200);
+        return { userId: created.id as string, agencyId: ownAgencyId, clientId: ownClientId, cookie };
+      };
+
+      const refused = async (session: { userId: string; cookie: string }): Promise<void> => {
+        expect((await own.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie: session.cookie } })).statusCode).toBe(401);
+        expect(await owner.knex('auth.session').where({ userId: session.userId }).select('id')).toEqual([]);
+      };
+
+      it('ends with the link the invitation gave it', async () => {
+        const session = await acceptedSession();
+        const lose = {
+          agency_activation: () => owner.knex('agencies').where({ id: session.agencyId }).update({ owner_user_id: null }),
+          collaborator_invite: () => owner.knex('agency_memberships').where({ agency_id: session.agencyId, user_id: session.userId }).update({ status: 'removed' }),
+          client_invite: () => owner.knex('client_memberships').where({ client_id: session.clientId, user_id: session.userId }).update({ status: 'removed' })
+        }[purpose];
+        await lose();
+        await refused(session);
+      });
+
+      it('ends when the agency is suspended, as its context would no longer be listed', async () => {
+        const session = await acceptedSession();
+        await owner.knex('agencies').where({ id: session.agencyId }).update({ status: 'suspended' });
+        await refused(session);
+      });
+
+      it.runIf(purpose === 'client_invite')('ends when the client is archived', async () => {
+        const session = await acceptedSession();
+        await owner.knex('clients').where({ id: session.clientId }).update({ status: 'archived', archived_at: new Date() });
+        await refused(session);
+      });
+    }
+  );
 
   /** An app of its own, so these requests do not spend the shared app's per-IP invitation budget. */
   const ownApp = async (): Promise<{ own: TestApp; ownSender: ReturnType<typeof createFakeEmailSender>; adminCookie: string }> => {

@@ -16,8 +16,8 @@ afterEach(cleanup);
 const AGENCY_A = '11111111-1111-4111-8111-111111111111';
 const AGENCY_B = '22222222-2222-4222-8222-222222222222';
 const agencyA = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência Um', roleKey: 'admin', roleName: 'Admin', isOwner: true };
-const agencyMe = { agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] };
-const agencyMeB = { agencyId: AGENCY_B, agencyName: 'Agência Dois', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] };
+const agencyMe = { agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] };
+const agencyMeB = { agencyId: AGENCY_B, agencyName: 'Agência Dois', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] };
 const sessionBody = { user: { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
 
 const json = (body: unknown, status = 200): Response =>
@@ -217,7 +217,7 @@ describe('LoginPage (/entrar)', () => {
   });
 
   it('goes to /contextos for select, and never stops on the workspace first', async () => {
-    const { impl } = makeFetch({ resolve: { decision: 'select', contexts: [agencyA], highlighted: null } });
+    const { impl } = makeFetch({ resolve: { decision: 'select', contexts: [agencyA], highlighted: null, canCreateAgency: false } });
     const { probe } = renderLogin(impl);
     submit('pessoa@example.test', 'a correct password');
 
@@ -316,7 +316,7 @@ describe('LoginPage (/entrar)', () => {
   });
 
   it('redirects a person who already has a session, through the resolve', async () => {
-    const { impl, calls } = makeFetch({ initiallyLoggedIn: true, resolve: { decision: 'select', contexts: [agencyA], highlighted: null } });
+    const { impl, calls } = makeFetch({ initiallyLoggedIn: true, resolve: { decision: 'select', contexts: [agencyA], highlighted: null, canCreateAgency: false } });
     const { probe } = renderLogin(impl);
     await waitFor(() => expect(probe.pathname).toBe('/contextos'));
     expect(calls.resolve).toBeGreaterThan(0);

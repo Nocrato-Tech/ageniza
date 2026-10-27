@@ -12,7 +12,7 @@ import {
 } from '@ageniza/contracts';
 import { Button, DatePicker, FieldMessage, Textarea } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import {
   ACTION_RULES,
@@ -71,6 +71,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
   const canApprove = useCan('conteudo.aprovar_pela_agencia');
   const canPublish = useCan('conteudo.publicar');
   const canCancel = useCan('conteudo.cancelar');
+  const blocked = useWriteBlocked();
   const permissions = new Set([
     ...(canOperate ? ['conteudo.operar'] : []),
     ...(canApprove ? ['conteudo.aprovar_pela_agencia'] : []),
@@ -157,6 +158,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
       loading={sending === action}
       disabled={waiting || disabled}
       aria-expanded={action === 'approve' || action === 'publish' || action === 'reschedule' ? panel === action : undefined}
+      blockedReason={blocked}
       onClick={handler}
     >{ACTION_RULES[action].label}</Button>
   );

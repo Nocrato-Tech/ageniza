@@ -2,7 +2,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
 import { AccountMenu } from './account-menu.js';
@@ -12,6 +12,19 @@ import { createSessionEndSignal, SessionEndRedirect, sessionDestination } from '
 import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
+
+const dialogDescriptors = ['showModal', 'close'].map((name) => [name, Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, name)] as const);
+beforeAll(() => {
+  // jsdom has no top layer; these stubs only model opening and closing.
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value(this: HTMLDialogElement) { this.open = true; } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value(this: HTMLDialogElement) { this.open = false; } });
+});
+afterAll(() => {
+  for (const [name, descriptor] of dialogDescriptors) {
+    if (descriptor === undefined) Reflect.deleteProperty(HTMLDialogElement.prototype, name);
+    else Object.defineProperty(HTMLDialogElement.prototype, name, descriptor);
+  }
+});
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const AGENCY_A = '11111111-1111-4111-8111-111111111111';
@@ -71,7 +84,7 @@ function renderAccountMenu(fetchImplementation: typeof fetch, options: RenderOpt
       body: init?.body === undefined ? undefined : JSON.parse(String(init.body))
     });
     if (url.endsWith('/me/contexts')) {
-      return options.contexts === undefined ? json({ contexts: [agencyA, agencyB, clientC] }) : options.contexts();
+      return options.contexts === undefined ? json({ canCreateAgency: false, contexts: [agencyA, agencyB, clientC] }) : options.contexts();
     }
     return fetchImplementation(input, init);
   };
@@ -247,7 +260,7 @@ describe('AccountMenu', () => {
     renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
       throw new Error('unexpected ' + String(input));
-    }, { contexts: () => json({ contexts: [agencyA] }) });
+    }, { contexts: () => json({ canCreateAgency: false, contexts: [agencyA] }) });
 
     fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
     await waitFor(() => expect(document.querySelector('.account-menu__loading')).toBeNull());
@@ -257,7 +270,7 @@ describe('AccountMenu', () => {
 
   it('shows a loading row while the context list loads', async () => {
     let release: (() => void) | undefined;
-    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ contexts: [agencyA, agencyB] })); });
+    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ canCreateAgency: false, contexts: [agencyA, agencyB] })); });
     renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
       throw new Error('unexpected ' + String(input));
@@ -281,7 +294,7 @@ describe('AccountMenu', () => {
         attempts += 1;
         return attempts <= 2
           ? json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500)
-          : json({ contexts: [agencyA, agencyB] });
+          : json({ canCreateAgency: false, contexts: [agencyA, agencyB] });
       }
     });
 
@@ -327,7 +340,7 @@ describe('AccountMenu', () => {
 
   it('focuses the context switcher when the list arrives after the menu opens', async () => {
     let release: (() => void) | undefined;
-    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ contexts: [agencyA, agencyB] })); });
+    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ canCreateAgency: false, contexts: [agencyA, agencyB] })); });
     renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
       throw new Error('unexpected ' + String(input));
@@ -345,7 +358,7 @@ describe('AccountMenu', () => {
 
   it('does not pull focus back to the first item when the person has already moved', async () => {
     let release: (() => void) | undefined;
-    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ contexts: [agencyA, agencyB] })); });
+    const pending = new Promise<Response>((resolve) => { release = () => resolve(json({ canCreateAgency: false, contexts: [agencyA, agencyB] })); });
     renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
       throw new Error('unexpected ' + String(input));
@@ -366,7 +379,7 @@ describe('AccountMenu', () => {
     renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
       throw new Error('unexpected ' + String(input));
-    }, { contexts: () => json({ contexts: [{ ...agencyA, agencyName: hostile }, agencyB] }) });
+    }, { contexts: () => json({ canCreateAgency: false, contexts: [{ ...agencyA, agencyName: hostile }, agencyB] }) });
 
     fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
     fireEvent.click(await screen.findByRole('menuitem', { name: /Trocar de contexto/ }));
@@ -409,6 +422,70 @@ describe('AccountMenu', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('Não foi possível trocar de contexto.');
     // The write failed, so the person stays where they were.
+    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`);
+  });
+});
+
+describe('"Criar agência" in the account menu (issue #714)', () => {
+  const NEW_AGENCY = '44444444-4444-4444-8444-444444444444';
+  const created = { type: 'agency', agencyId: NEW_AGENCY, agencyName: 'Agência Nova', roleKey: 'admin', roleName: 'Admin', isOwner: true };
+
+  it('is not offered when the account may not create one', async () => {
+    renderAccountMenu(async (input) => {
+      if (String(input).endsWith('/auth/session')) return json(sessionBody);
+      throw new Error('unexpected ' + String(input));
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    await screen.findByRole('menuitem', { name: /Trocar de contexto/ });
+    expect(screen.queryByRole('menuitem', { name: 'Criar agência' })).toBeNull();
+  });
+
+  it('creates the agency by its name, remembers it and enters it', async () => {
+    const { calls, probe } = renderAccountMenu(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/auth/session')) return json(sessionBody);
+      if (url.endsWith('/agencies')) return json({ context: created }, 201);
+      if (url.endsWith('/me/last-context')) return new Response(null, { status: 204 });
+      throw new Error('unexpected ' + url);
+    }, { contexts: () => json({ canCreateAgency: true, contexts: [agencyA, agencyB] }) });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Criar agência' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Criar agência' });
+    expect(dialog.textContent).toContain('14 dias de teste');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar agência' }));
+    expect(await within(dialog).findByText(/Informe o nome da agência/)).toBeTruthy();
+    expect(calls.some((call) => call.path === '/agencies')).toBe(false);
+
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nome da agência' }), { target: { value: 'Agência Nova' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar agência' }));
+
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${NEW_AGENCY}`));
+    expect(calls).toContainEqual({ path: '/agencies', method: 'POST', body: { name: 'Agência Nova' } });
+    expect(calls).toContainEqual({ path: '/me/last-context', method: 'PUT', body: { type: 'agency', agencyId: NEW_AGENCY } });
+  });
+
+  it.each([
+    ['TRIAL_ALREADY_EXISTS', 409, 'Sua conta já tem uma agência em período de teste.'],
+    ['EMAIL_NOT_VERIFIED', 403, 'Confirme o seu e-mail antes de criar uma agência.'],
+    ['INTERNAL_ERROR', 500, 'Não foi possível criar a agência. Tente de novo.']
+  ])('says why when the API answers %s, never with the server text, and stays put', async (code, status, text) => {
+    const { probe } = renderAccountMenu(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/auth/session')) return json(sessionBody);
+      if (url.endsWith('/agencies')) return json({ error: { code, message: 'MENSAGEM DO SERVIDOR' } }, status);
+      throw new Error('unexpected ' + url);
+    }, { contexts: () => json({ canCreateAgency: true, contexts: [agencyA, agencyB] }) });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Criar agência' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Criar agência' });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nome da agência' }), { target: { value: 'Agência Nova' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar agência' }));
+
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(text);
+    expect(dialog.textContent).not.toContain('MENSAGEM DO SERVIDOR');
     expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`);
   });
 });

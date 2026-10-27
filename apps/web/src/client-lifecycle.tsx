@@ -3,9 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { EllipsisVertical } from 'lucide-react';
 
 import { ClientSchema, type Client, type ClientDetailResponse } from '@ageniza/contracts';
-import { Button, FieldMessage, Menu, MenuItem, Modal, TextInput } from '@ageniza/ui';
+import { Button, FieldMessage, IconButton, Menu, MenuItem, Modal, TextInput } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -171,6 +171,7 @@ function ArchiveClientDialog({ client, onClose }: { client: ClientDetailResponse
 export function ClientLifecycleActions({ client }: { client: ClientDetailResponse }) {
   const httpClient = useApiClient();
   const canArchive = useCan('cliente.arquivar');
+  const blocked = useWriteBlocked();
   const { path, applyClient, refreshAll } = useClientWrite(client);
   const [closingOpen, setClosingOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -217,7 +218,9 @@ export function ClientLifecycleActions({ client }: { client: ClientDetailRespons
 
   return <div className="client-lifecycle">
     {client.status === 'archived'
-      ? <Button loading={reactivate.isPending} onClick={() => { setError(undefined); reactivate.mutate(); }}>Reativar</Button>
+      ? <Button loading={reactivate.isPending} blockedReason={blocked} onClick={() => { setError(undefined); reactivate.mutate(); }}>Reativar</Button>
+      : blocked !== undefined
+      ? <IconButton label="Ações do cliente" icon={<EllipsisVertical />} blockedReason={blocked} />
       : <Menu
           label="Ações do cliente"
           triggerLabel="Ações do cliente"

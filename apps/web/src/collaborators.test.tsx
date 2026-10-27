@@ -59,8 +59,10 @@ const PRODUCTION_ROLE_ID = SYSTEM_ROLES[3].id;
 const ADMIN_ROLE_ID = SYSTEM_ROLES[1].id;
 const rolesFor = (isOwner: boolean) => json({ data: isOwner ? SYSTEM_ROLES : SYSTEM_ROLES.filter((role) => role.key !== 'admin') });
 
-const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[], role: TestRole, isOwner: boolean) => ({
-  agencyId, agencyName, isOwner, membershipId: null, role, permissions
+const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[], role: TestRole, isOwner: boolean, readOnly = false) => ({
+  agencyId, agencyName, isOwner, membershipId: null, role,
+  plan: readOnly ? { kind: 'trial', trialEndsAt: '2026-10-01T12:00:00.000Z', readOnly: true } : { kind: 'isenta', trialEndsAt: null, readOnly: false },
+  permissions
 });
 const agencyDisplayName = (agencyId: string): string => agencyId === AGENCY_B ? 'Agência Dois' : 'Agência Um';
 
@@ -132,6 +134,8 @@ interface Scenario {
   readonly cancel?: (invitationId: string, agencyId: string) => Response | Promise<Response>;
   readonly updateProfile?: (body: unknown) => Response | Promise<Response>;
   readonly uploadPhoto?: (body: unknown) => Response | Promise<Response>;
+  /** The trial of the agency ended (issue #714). */
+  readonly readOnly?: boolean;
 }
 
 /** Behaves like the real API: 401 without a session, the listing and the job-titles contract shapes. */
@@ -159,7 +163,7 @@ const makeFetch = (scenario: Scenario = {}) => {
       return scenario.uploadPhoto(JSON.parse(String(init.body)));
     }
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
-    if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions, role, isOwner));
+    if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions, role, isOwner, scenario.readOnly));
     const roles = /\/agencies\/([^/]+)\/roles$/.exec(path);
     if (roles !== null && method === 'GET') {
       if (!isOwner && !permissions.includes('colaborador.convidar') && !permissions.includes('colaborador.alterar_papel')) {
@@ -3113,5 +3117,54 @@ describe('team screens in the Pauta language (#638)', () => {
       const own = await screen.findByRole('dialog', { name: 'Ana Prado' });
       expect(within(own).getByRole('button', { name: 'Trocar foto' }).querySelector('svg')).not.toBeNull();
     });
+  });
+});
+
+describe('a read-only agency (issue #714, decision 2026-10-27)', () => {
+  const REASON = 'O plano precisa ser renovado para usar esta opção.';
+  const invitesRegion = () => screen.findByRole('region', { name: 'Convites aguardando aceite' });
+  const expectBlocked = (button: HTMLElement) => {
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    const ids = (button.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
+    expect(ids.map((id) => document.getElementById(id)?.textContent).join(' ')).toBe(REASON);
+  };
+  const expectEnabled = (button: HTMLElement) => {
+    expect(button.getAttribute('aria-disabled')).toBeNull();
+    expect(button.hasAttribute('disabled')).toBe(false);
+  };
+
+  it('keeps Convidar and Reenviar on screen, disabled with the reason, and Cancelar convite enabled', async () => {
+    const { impl, calls } = makeFetch({ readOnly: true });
+    renderCollaborators(impl);
+    const invite = await screen.findByRole('button', { name: 'Convidar' });
+    expectBlocked(invite);
+    fireEvent.click(invite);
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    const region = await invitesRegion();
+    const resend = await within(region).findByRole('button', { name: 'Reenviar convite de ana@exemplo.com' });
+    expectBlocked(resend);
+    fireEvent.click(resend);
+    expect(calls.some((call) => call.includes('/resend'))).toBe(false);
+    expectEnabled(within(region).getByRole('button', { name: 'Cancelar convite de ana@exemplo.com' }));
+  });
+
+  it('keeps Remover do quadro enabled and the save of the role disabled with the reason', async () => {
+    const removed: string[] = [];
+    const { impl } = makeFetch({
+      readOnly: true,
+      permissions: ['colaborador.visualizar', 'colaborador.alterar_funcao', 'colaborador.alterar_papel', 'colaborador.remover'],
+      collaborators: () => json({ data: [marioCosta, juliaReis], meta: meta(1, 2, 1) }),
+      detail: () => json(marioCosta),
+      removeCollaborator: (membershipId) => { removed.push(membershipId); return json({ ...marioCosta, status: 'removed' }); }
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?colaborador=${marioCosta.membershipId}`);
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    expectBlocked(await within(dialog).findByRole('button', { name: 'Salvar' }));
+    const remove = within(dialog).getByRole('button', { name: 'Remover do quadro' });
+    expectEnabled(remove);
+    fireEvent.click(remove);
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).getByRole('button', { name: 'Remover' }));
+    await waitFor(() => expect(removed).toEqual([marioCosta.membershipId]));
   });
 });

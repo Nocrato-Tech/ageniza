@@ -31,7 +31,7 @@ const legalAccepted = {
 const portalClient = {
   id: CLIENT_ID, name: 'Padaria Central', status: 'active', photoUrl: null, legalName: null, taxId: null, segment: null, website: null,
   instagramHandle: null, contactName: null, contactPhone: null, contactEmail: null, closingDate: null, archivedAt: null,
-  agencyName: 'Agência Um', onboardingSeenAt: null, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0 }
+  agencyName: 'Agência Um', onboardingSeenAt: null, agencyReadOnly: false, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0 }
 };
 
 interface World {
@@ -73,10 +73,10 @@ const makeWorld = (): { world: World; impl: typeof fetch } => {
     if (path === '/auth/session' || path === '/auth/session/check') return json(sessionBody);
     if (path === '/me/legal-acceptances') return json(legalAccepted);
     if (path === '/me/contexts') {
-      return json({ contexts: [{ type: 'client', clientId: CLIENT_ID, clientName: 'Padaria Central', agencyId: AGENCY_ID, agencyName: 'Agência Um', onboardingPending: false }] });
+      return json({ canCreateAgency: false, contexts: [{ type: 'client', clientId: CLIENT_ID, clientName: 'Padaria Central', agencyId: AGENCY_ID, agencyName: 'Agência Um', onboardingPending: false }] });
     }
     if (path === `/agencies/${AGENCY_ID}/me`) {
-      return json({ agencyId: AGENCY_ID, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['cliente.visualizar'] });
+      return json({ agencyId: AGENCY_ID, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['cliente.visualizar'] });
     }
     if (path === `/clients/${CLIENT_ID}`) return json(portalClient);
     return json({ error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404);

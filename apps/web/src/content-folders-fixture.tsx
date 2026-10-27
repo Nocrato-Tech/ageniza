@@ -129,7 +129,7 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
   if (typeof init?.body === 'string') world.bodies.push({ method, path, body: JSON.parse(init.body) as unknown });
   if (path.endsWith('/auth/session')) return json(sessionBody);
   if (/\/agencies\/[^/]+\/me$/.test(path)) {
-    return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, permissions: world.permissions });
+    return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: world.permissions });
   }
   if (/\/agencies\/[^/]+\/clients$/.test(path)) return json({ data: [padaria], meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } });
   const detail = /\/agencies\/[^/]+\/clients\/([^/]+)$/.exec(path);

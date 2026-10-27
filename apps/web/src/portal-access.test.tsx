@@ -35,8 +35,10 @@ const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const noContent = (): Response => new Response(null, { status: 204 });
 
-const agencyMe = (permissions: readonly string[]) => ({
-  agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions
+const agencyMe = (permissions: readonly string[], readOnly = false) => ({
+  agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' },
+  plan: readOnly ? { kind: 'trial', trialEndsAt: '2026-10-01T12:00:00.000Z', readOnly: true } : { kind: 'isenta', trialEndsAt: null, readOnly: false },
+  permissions
 });
 
 const ADMIN_PERMISSIONS = ['cliente.visualizar', 'cliente.operar', 'cliente.cadastrar', 'cliente.arquivar', 'cliente.convidar_usuario', 'cliente.remover_usuario', 'convite.reenviar', 'convite.cancelar'];
@@ -132,6 +134,8 @@ interface Scenario {
   readonly resend?: (invitationId: string) => Response | Promise<Response>;
   readonly cancel?: (invitationId: string) => Response | Promise<Response>;
   readonly clients?: () => Response | Promise<Response>;
+  /** The trial of the agency ended (issue #714). */
+  readonly readOnly?: boolean;
 }
 
 /** Behaves like the real API: the #132 access routes plus the invitation routes that already exist. */
@@ -145,7 +149,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     calls.push(`${method} ${path}${url.search}`);
     if (path.endsWith('/auth/session')) return json(sessionBody);
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
-    if (me !== null) return json(agencyMe(permissions));
+    if (me !== null) return json(agencyMe(permissions, scenario.readOnly));
     const clients = /\/agencies\/([^/]+)\/clients$/.exec(path);
     if (clients !== null) return scenario.clients?.() ?? json(pageOf([]));
     const members = /\/agencies\/([^/]+)\/clients\/([^/]+)\/members$/.exec(path);
@@ -734,5 +738,41 @@ describe('portal access in the Pauta (#637)', () => {
     const expiry = invitation.querySelector('.ui-pill');
     expect(expiry?.querySelector('svg')).not.toBeNull();
     expect(expiry?.textContent).toMatch(/expira/);
+  });
+});
+
+describe('portal access of a read-only agency (issue #714, decision 2026-10-27)', () => {
+  const REASON = 'O plano precisa ser renovado para usar esta opção.';
+  const describedBy = (button: HTMLElement) => (button.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent).join(' ');
+
+  it('keeps Convidar and Reenviar disabled with the reason, and removing an access and cancelling an invitation enabled', async () => {
+    const removedIds: string[] = [];
+    const { impl, calls } = makeFetch({
+      readOnly: true,
+      members: (status) => json(pageOf(status === 'removed' ? [] : [maria, joao])),
+      clientInvitations: () => json(pageOf([carla])),
+      memberStatus: (membershipId, action) => { removedIds.push(`${action}:${membershipId}`); return json({ ...joao, status: 'removed' }); },
+      cancel: () => noContent()
+    });
+    renderAccess(impl);
+    await screen.findByText('João Lima');
+
+    for (const name of ['Convidar', 'Reenviar convite de carla@padaria.test']) {
+      const button = screen.getByRole('button', { name });
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(describedBy(button)).toBe(REASON);
+      fireEvent.click(button);
+    }
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(calls.some((call) => call.includes('/resend'))).toBe(false);
+
+    const remove = screen.getByRole('button', { name: 'Remover o acesso de João Lima' });
+    expect(remove.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(remove);
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remover acesso' }));
+    await waitFor(() => expect(removedIds).toEqual([`remove:${joao.membershipId}`]));
+
+    const cancel = screen.getByRole('button', { name: 'Cancelar convite de carla@padaria.test' });
+    expect(cancel.getAttribute('aria-disabled')).toBeNull();
   });
 });
