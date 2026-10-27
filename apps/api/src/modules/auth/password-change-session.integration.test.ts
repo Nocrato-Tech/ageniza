@@ -110,6 +110,10 @@ const passwordChangedAt = async (email: string): Promise<Date | null> =>
     [email]
   ))[0]?.at ?? null;
 
+/** Only the date on the user row, the one the takeover functions write. */
+const userPasswordChangedAt = async (email: string): Promise<Date | null> =>
+  (await queryAsOwner<{ at: Date | null }>('select "passwordChangedAt" as at from auth."user" where email = $1', [email]))[0]?.at ?? null;
+
 const sessionCountOf = async (email: string): Promise<number> =>
   (await queryAsOwner('select 1 from auth.session where "userId" = (select id from auth."user" where email = $1)', [email])).length;
 
@@ -117,7 +121,9 @@ describe('the date of a password change (#719)', () => {
   it('a reset stamps passwordChangedAt at the instant of the change, and a login after it is a valid session', async () => {
     const { app, sender } = await openApp();
     const user = await makeUser(app, 'stamp-reset');
-    expect(await passwordChangedAt(user.email)).toBeNull();
+    // The credential row was inserted with a password, which stamps the date too; the reset must move it.
+    const created = await passwordChangedAt(user.email);
+    expect(created).not.toBeNull();
     const old = await loginAs(app, user.email);
     const token = await requestReset(app, sender, user.email);
 
@@ -126,7 +132,7 @@ describe('the date of a password change (#719)', () => {
     const after = Date.now();
 
     const stamped = await passwordChangedAt(user.email);
-    expect(stamped).not.toBeNull();
+    expect(stamped?.getTime()).toBeGreaterThan(created?.getTime() ?? Infinity);
     expect(stamped?.getTime()).toBeGreaterThanOrEqual(before - 2000);
     expect(stamped?.getTime()).toBeLessThanOrEqual(after + 2000);
     expect(await sessionStatus(app, old.cookies)).toBe(401);
@@ -138,12 +144,13 @@ describe('the date of a password change (#719)', () => {
   it('the reset that takes an unconfirmed account over stamps the date too, and its first sessions are valid', async () => {
     const { app, sender } = await openApp();
     const { email, confirmationToken } = await signUp(app, sender, 'stamp-takeover');
-    expect(await passwordChangedAt(email)).toBeNull();
+    const created = await passwordChangedAt(email);
+    expect(created).not.toBeNull();
     const resetToken = await requestReset(app, sender, email);
 
     expect((await reset(app, resetToken)).statusCode).toBe(204);
 
-    expect(await passwordChangedAt(email)).not.toBeNull();
+    expect((await passwordChangedAt(email))?.getTime()).toBeGreaterThan(created?.getTime() ?? Infinity);
     expect((await verify(app, confirmationToken, newPassword)).statusCode).toBe(400);
     const fresh = await loginAs(app, email, newPassword);
     expect(fresh.statusCode).toBe(200);
@@ -160,9 +167,9 @@ describe('the date of a password change (#719)', () => {
     const untouched = await queryAsOwner<{ taken: boolean }>('select app_private.confirm_email_by_password_reset($1::uuid) as taken', [confirmed.id]);
 
     expect(result[0]?.taken).toBe(true);
-    expect(await passwordChangedAt(email)).not.toBeNull();
+    expect(await userPasswordChangedAt(email)).not.toBeNull();
     expect(untouched[0]?.taken).toBe(false);
-    expect(await passwordChangedAt(confirmed.email)).toBeNull();
+    expect(await userPasswordChangedAt(confirmed.email)).toBeNull();
   });
 
   it('replacing the password in the database stamps the date, and rewriting the same hash or another column does not', async () => {
@@ -170,12 +177,14 @@ describe('the date of a password change (#719)', () => {
     const user = await makeUser(app, 'stamp-trigger');
     const hash = (await queryAsOwner<{ password: string }>('select password from auth.account where "userId" = $1', [user.id]))[0]?.password;
 
+    const created = await passwordChangedAt(user.email);
+
     await queryAsOwner('update auth.account set password = $2 where "userId" = $1', [user.id, hash]);
     await queryAsOwner('update auth.account set "updatedAt" = now() where "userId" = $1', [user.id]);
-    expect(await passwordChangedAt(user.email)).toBeNull();
+    expect(await passwordChangedAt(user.email)).toEqual(created);
 
     await queryAsOwner('update auth.account set password = $2 where "userId" = $1', [user.id, `${hash ?? ''}x`]);
-    expect(await passwordChangedAt(user.email)).not.toBeNull();
+    expect((await passwordChangedAt(user.email))?.getTime()).toBeGreaterThan(created?.getTime() ?? Infinity);
   });
 
   it('the guard refuses a session created at or before the date and accepts one created after it, to the millisecond', async () => {
@@ -211,6 +220,28 @@ describe('the date of a password change (#719)', () => {
       expect(await sessionStatus(app, login.cookies), `offset ${offsetMs} ms`).toBe(status);
       await queryAsOwner('delete from auth.session where "userId" = $1', [user.id]);
     }
+  });
+
+  it('deleting the credential and inserting it again as the application role neither sets the date nor revives a session', async () => {
+    const { app } = await openApp();
+    const user = await makeUser(app, 'delete-and-insert');
+    const login = await loginAs(app, user.email);
+    expect(await sessionStatus(app, login.cookies)).toBe(200);
+    const [{ password: hash }] = await queryAsOwner<{ password: string }>(`select password from auth.account where "userId" = $1 and "providerId" = 'credential'`, [user.id]);
+    const asApp = async (statement: string, values: unknown[]): Promise<void> => {
+      const client = new Client({ connectionString: APPLICATION_DATABASE_URL });
+      await client.connect();
+      try { await client.query(statement, values); } finally { await client.end(); }
+    };
+    const insert = (columns: string, marks: string) =>
+      `insert into auth.account ("accountId", "providerId", "userId", password, "createdAt", "updatedAt"${columns}) values ($1::text, 'credential', $1::uuid, $2, now(), now()${marks})`;
+
+    await asApp(`delete from auth.account where "userId" = $1 and "providerId" = 'credential'`, [user.id]);
+    await expect(asApp(insert(', "passwordChangedAt"', ', null'), [user.id, hash])).rejects.toThrow(/permission denied/);
+    await asApp(insert('', ''), [user.id, hash]);
+
+    expect(await passwordChangedAt(user.email)).not.toBeNull();
+    expect(await sessionStatus(app, login.cookies)).toBe(401);
   });
 
   it('the application role cannot write either date, and still writes the other columns Better Auth writes', async () => {

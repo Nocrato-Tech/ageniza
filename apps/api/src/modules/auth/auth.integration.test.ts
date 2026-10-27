@@ -63,6 +63,13 @@ const loginPayload = (user: Pick<TestUserFixture, 'email' | 'password'>) => ({ e
 const sessionCookieHeader = (setCookies: readonly { name: string; value: string }[]): string =>
   setCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
 
+/**
+ * A password row carries the date it was set (issue #719), and a session created at or before that date is refused.
+ * These tests age a session by rewriting its `createdAt`; the credential was set "just now", so its date ages with it.
+ */
+const ageCredentialOfSession = (_app: TestApp, sessionId: string | undefined) =>
+  queryAsOwner(`update auth.account set "passwordChangedAt" = now() - interval '60 days' where "userId" = (select "userId" from auth.session where id = $1)`, [sessionId]);
+
 describe('POST /auth/login (#1, #2, #3)', () => {
   it('#1 logs in with correct credentials, returning 200 and an httpOnly, SameSite=Lax cookie; Secure is absent in test', async () => {
     const app = await openApp();
@@ -293,6 +300,7 @@ describe('GET /auth/session (#5, #6)', () => {
     const sessionId = sessionRow.rows[0]?.id;
     expect(sessionId).toBeDefined();
     await app.pool.query('update auth.session set "createdAt" = now() - interval \'31 days\' where id = $1', [sessionId]);
+    await ageCredentialOfSession(app, sessionId);
 
     const response = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie } });
     expect(response.statusCode).toBe(401);
@@ -397,6 +405,7 @@ describe('GET /auth/session (#5, #6)', () => {
       'update auth.session set "createdAt" = now() - interval \'29 days\', "updatedAt" = now() - interval \'2 days\', "expiresAt" = now() + interval \'5 days\' where id = $1',
       [sessionId]
     );
+    await ageCredentialOfSession(app, sessionId);
 
     const response = await app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie } });
     expect(response.statusCode).toBe(200);
@@ -478,6 +487,7 @@ describe('GET /auth/session/check applies every rule of the session guard withou
     const { cookie, sessionId } = await loginSession(app, user);
     // Recently used and far from its 7 days: only the 30 days since creation can reject it.
     await app.pool.query('update auth.session set "createdAt" = now() - interval \'31 days\', "updatedAt" = now(), "expiresAt" = now() + interval \'6 days\' where id = $1', [sessionId]);
+    await ageCredentialOfSession(app, sessionId);
 
     const response = await check(app, cookie);
 
@@ -494,6 +504,7 @@ describe('GET /auth/session/check applies every rule of the session guard withou
     const user = await makeUser(app, 'check-under-cap');
     const { cookie, sessionId } = await loginSession(app, user);
     await app.pool.query('update auth.session set "createdAt" = now() - interval \'29 days\', "updatedAt" = now(), "expiresAt" = now() + interval \'6 days\' where id = $1', [sessionId]);
+    await ageCredentialOfSession(app, sessionId);
 
     const response = await check(app, cookie);
 
@@ -577,6 +588,7 @@ describe('Cache-Control: no-store on the auth responses that carry session data 
     for (const url of ['/auth/session', '/auth/session/check']) {
       const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: loginPayload(user) });
       await app.pool.query('update auth.session set "createdAt" = now() - interval \'31 days\' where "userId" = $1', [user.id]);
+      await queryAsOwner(`update auth.account set "passwordChangedAt" = now() - interval '60 days' where "userId" = $1`, [user.id]);
 
       const response = await app.app.inject({ method: 'GET', url, headers: { cookie: sessionCookieHeader(login.cookies) } });
 

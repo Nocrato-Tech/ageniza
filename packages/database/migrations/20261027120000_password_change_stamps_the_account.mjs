@@ -11,9 +11,10 @@
 //    The session guard refuses a session created at or before the greater of this date and `auth."user"."passwordChangedAt"`.
 // 2. `app_private.confirm_email_by_password_reset` (the takeover by the reset) stamps the user's date itself as well: it is
 //    the moment the earlier holder of an unconfirmed account loses it. It already holds the user lock, so it takes no new one.
-// 3. The application role can no longer write either date: UPDATE on `auth."user"` and `auth."account"` becomes a grant by
-//    column, without `passwordChangedAt`. Only the trigger and the definer functions move it, so a compromised or buggy
-//    route cannot set it back and revive an old session.
+// 3. The application role can no longer write either date: UPDATE on `auth."user"` and `auth."account"`, and INSERT on
+//    `auth."account"`, become grants by column, without `passwordChangedAt`. Only the triggers and the definer functions
+//    move it, so a compromised or buggy route cannot set it back, nor delete a credential and insert it again, to revive
+//    an old session (the BEFORE INSERT trigger stamps the new row).
 
 export async function up(knex) {
   await knex.raw(`
@@ -34,6 +35,14 @@ export async function up(knex) {
     before update of password on auth."account"
     for each row
     when (new."providerId" = 'credential' and new.password is distinct from old.password)
+    execute function app_private.stamp_password_changed_at();
+
+    -- A credential that is created with a password is a password set: the account with only Google that asks for
+    -- "Esqueci a senha", and the row put back after the credential was deleted. The date comes from here, never from the insert.
+    create trigger account_new_password_stamps_the_date
+    before insert on auth."account"
+    for each row
+    when (new."providerId" = 'credential' and new.password is not null)
     execute function app_private.stamp_password_changed_at();
 
     create or replace function app_private.confirm_email_by_password_reset(p_user_id uuid)
@@ -77,6 +86,12 @@ export async function up(knex) {
       revoke update on auth."${table}" from ageniza_app;
       grant update (${columns}) on auth."${table}" to ageniza_app;
     `);
+    if (table === 'account') {
+      await knex.raw(`
+        revoke insert on auth."account" from ageniza_app;
+        grant insert (${columns}) on auth."account" to ageniza_app;
+      `);
+    }
   }
 }
 

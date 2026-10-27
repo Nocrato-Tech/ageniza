@@ -86,7 +86,7 @@ the legal acceptances recorded at sign-up.
 hash, so the reset and any later writer are covered. The trigger writes no other row: one that updated `auth.user`
 would lock the account row before the user row, the reverse of the order the confirmation link, the Google takeover
 and the purge use, and deadlock. `confirm_email_by_password_reset` (the takeover by the reset) stamps the user's
-date too, and the application role cannot write either date (UPDATE on both tables is by column).
+date too. A credential inserted with a password is stamped as well (the account with only Google that sets one, a credential put back after a delete), and the application role cannot write either date (UPDATE on both tables and INSERT on `auth.account` are by column).
 `session-guard.ts` refuses, and deletes, a session whose `createdAt` is at or before the greater of the user's date and the credential's. The date alone
 does not close the race: a login that checked the old hash creates its session after the reset committed, with a
 `createdAt` later than the date. So `/auth/login` and `/auth/email/verify` read the credential again after
