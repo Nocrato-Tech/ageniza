@@ -213,6 +213,17 @@ export interface ClientContentEmailInput {
   readonly items: readonly ContentNotificationItem[];
 }
 
+/**
+ * The e-mail "contents to approve" carries the approval link of the person (issue #712) instead of the portal: it opens the contents of
+ * this batch and nothing else, without a login. The token is in the fragment (`#`), which the browser never sends to a server.
+ */
+export interface ClientApprovalEmailInput {
+  readonly agencyName: string;
+  readonly clientName: string;
+  readonly approvalUrl: string;
+  readonly items: readonly ContentNotificationItem[];
+}
+
 const formatPlannedDate = (publishOn: string | null): string | undefined => {
   const match = publishOn === null ? null : /^(\d{4})-(\d{2})-(\d{2})$/.exec(publishOn);
   return match === null ? undefined : `${match[3]}/${match[2]}/${match[1]}`;
@@ -220,10 +231,15 @@ const formatPlannedDate = (publishOn: string | null): string | undefined => {
 
 const countOf = (count: number): string => count === 1 ? 'um conteúdo' : `${count} conteúdos`;
 
-const clientContentEmail = (subject: string, introduction: string, invitation: string, input: ClientContentEmailInput): EmailMessage => {
+const clientContentEmail = (
+  subject: string,
+  introduction: string,
+  invitation: string,
+  input: Pick<ClientContentEmailInput, 'agencyName' | 'clientName' | 'items'> & { readonly actionUrl: string; readonly closing?: string }
+): EmailMessage => {
   assertDisplayName('O nome da agência', input.agencyName);
   assertDisplayName('O nome do cliente', input.clientName);
-  assertHttpsUrl(input.portalUrl);
+  assertHttpsUrl(input.actionUrl);
   if (input.items.length === 0) throw new Error('O e-mail precisa de ao menos um conteúdo.');
   const lines = input.items.map((item) => {
     const date = formatPlannedDate(item.publishOn);
@@ -231,25 +247,39 @@ const clientContentEmail = (subject: string, introduction: string, invitation: s
   });
   return {
     subject,
-    text: [introduction, lines.map((line) => `- ${line}`).join('\n'), `${invitation}\n${input.portalUrl}`].join('\n\n'),
+    text: [introduction, lines.map((line) => `- ${line}`).join('\n'), `${invitation}\n${input.actionUrl}`, ...(input.closing === undefined ? [] : [input.closing])].join('\n\n'),
     html: [
       `<p>${escapeHtml(introduction)}</p>`,
       `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`,
       `<p>${escapeHtml(invitation)}</p>`,
-      `<p><a href="${escapeHtml(input.portalUrl)}">${escapeHtml(input.portalUrl)}</a></p>`
+      `<p><a href="${escapeHtml(input.actionUrl)}">${escapeHtml(input.actionUrl)}</a></p>`,
+      ...(input.closing === undefined ? [] : [`<p>${escapeHtml(input.closing)}</p>`])
     ].join('\n')
   };
 };
 
-/** "Contents to approve": one e-mail per person and client, with everything the agency sent in the burst. */
-export const contentsAwaitingApprovalEmail = (input: ClientContentEmailInput): EmailMessage => {
+// The token of an approval link lives in the fragment. A link with a query would carry it to the server, its logs and the proxies,
+// and one with no fragment would carry nothing to exchange.
+const assertApprovalUrl = (approvalUrl: string): void => {
+  assertHttpsUrl(approvalUrl);
+  const parsed = new URL(approvalUrl);
+  if (parsed.search !== '' || parsed.hash.length < 2) throw new Error('O link de aprovação leva o token no fragmento (#), sem consulta (?).');
+};
+
+/** "Contents to approve": one e-mail per person and client, with everything the agency sent in the burst, and the link that approves them. */
+export const contentsAwaitingApprovalEmail = (input: ClientApprovalEmailInput): EmailMessage => {
+  assertApprovalUrl(input.approvalUrl);
   const agencyName = oneLine(input.agencyName);
   const clientName = oneLine(input.clientName);
   return clientContentEmail(
     `${countOf(input.items.length)} para você aprovar: ${clientName}`,
     `${agencyName} enviou ${countOf(input.items.length)} de ${clientName} para a sua aprovação.`,
-    'Abra o portal para aprovar ou pedir ajuste:',
-    input
+    'Abra o link para ver os conteúdos e aprovar ou pedir ajuste:',
+    {
+      ...input,
+      actionUrl: input.approvalUrl,
+      closing: 'O link vale por 7 dias e é só seu: quem o abrir pode aprovar ou pedir ajuste em seu nome. Não o encaminhe.'
+    }
   );
 };
 
@@ -261,6 +291,6 @@ export const contentsPublishedEmail = (input: ClientContentEmailInput): EmailMes
     `${countOf(input.items.length)} publicado${input.items.length === 1 ? '' : 's'}: ${clientName}`,
     `${agencyName} publicou ${countOf(input.items.length)} de ${clientName}.`,
     'Veja no portal:',
-    input
+    { ...input, actionUrl: input.portalUrl }
   );
 };

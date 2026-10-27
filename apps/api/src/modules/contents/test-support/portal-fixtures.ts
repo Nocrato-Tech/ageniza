@@ -100,6 +100,7 @@ export const createPortalFixtures = (w: ContentsWorld) => {
     async cleanup(): Promise<void> {
       const owner = w.getOwner().knex;
       const clients = (await owner('clients').whereIn('agency_id', [w.agencyA, w.agencyB]).select('id')).map((row) => row.id as string);
+      await owner('client_portal_approval_links').whereIn('client_id', clients).delete();
       await owner('client_thread_comments').whereIn('client_id', clients).delete();
       await owner('client_threads').whereIn('client_id', clients).delete();
       await owner('content_media').whereIn('client_id', clients).delete();

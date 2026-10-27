@@ -14,6 +14,8 @@ import { createEmailService } from './modules/auth/email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requireAnyPermission, requirePermission } from './modules/tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import type { ClientModuleDependencies } from './modules/clients/routes.js';
+import { approvalCookiePath } from './modules/approval-links/policy.js';
+import type { ApprovalLinkModuleDependencies } from './modules/approval-links/routes.js';
 import type { ContentPortalModuleDependencies } from './modules/contents/portal-routes.js';
 import type { ContentModuleDependencies } from './modules/contents/routes.js';
 import { createIdentityStorageClient } from './modules/identity-storage/storage-client.js';
@@ -122,6 +124,11 @@ export const startApi = async (): Promise<void> => {
     requireClientAccess: createRequireClientAccess({ database }),
     ...(mediaDependencies === undefined ? {} : { media: { storage: mediaDependencies.storage, downloadUrlExpirySeconds: mediaDependencies.config.downloadUrlExpirySeconds } })
   };
+  const approvalLinkDependencies: ApprovalLinkModuleDependencies = {
+    database,
+    cookie: { path: approvalCookiePath(config.environment), secure: config.appPublicUrl.startsWith('https:') },
+    ...(mediaDependencies === undefined ? {} : { media: { storage: mediaDependencies.storage, downloadUrlExpirySeconds: mediaDependencies.config.downloadUrlExpirySeconds } })
+  };
   // Identity storage (issue #100) is separate from media: the profile photo (issue #101) is a
   // global user's, never counted against any agency's quota.
   const profileDependencies: ProfileModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
@@ -175,6 +182,7 @@ export const startApi = async (): Promise<void> => {
     clients: clientDependencies,
     contents: contentDependencies,
     contentPortal: contentPortalDependencies,
+    approvalLinks: approvalLinkDependencies,
     collaborators: collaboratorDependencies,
     media: mediaDependencies,
     profile: profileDependencies,
