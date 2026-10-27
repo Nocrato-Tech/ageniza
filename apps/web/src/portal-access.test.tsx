@@ -61,33 +61,37 @@ const padaria = {
 };
 
 interface MemberFixture {
-  membershipId: string;
-  name: string;
+  accessId: string;
+  name: string | null;
   email: string;
   status: 'active' | 'removed';
+  entered: boolean;
   since: string;
 }
 
 const maria: MemberFixture = {
-  membershipId: 'aaaa1111-1111-4111-8111-111111111111',
+  accessId: 'aaaa1111-1111-4111-8111-111111111111',
   name: 'Maria Souza',
   email: 'maria@padaria.test',
   status: 'active',
+  entered: true,
   // 01:30 UTC of the 3rd is 22:30 of the 2nd in São Paulo: the label must read 02/09.
   since: '2026-09-03T01:30:00.000Z'
 };
 const joao: MemberFixture = {
-  membershipId: 'eeee5555-5555-4555-8555-555555555555',
+  accessId: 'eeee5555-5555-4555-8555-555555555555',
   name: 'João Lima',
   email: 'joao@padaria.test',
   status: 'active',
+  entered: true,
   since: '2026-09-10T12:00:00.000Z'
 };
 const pedro: MemberFixture = {
-  membershipId: 'bbbb2222-2222-4222-8222-222222222222',
+  accessId: 'bbbb2222-2222-4222-8222-222222222222',
   name: 'Pedro Alves',
   email: 'pedro@padaria.test',
   status: 'removed',
+  entered: true,
   since: '2026-09-01T12:00:00.000Z'
 };
 
@@ -127,7 +131,7 @@ interface Scenario {
   readonly client?: () => Response | Promise<Response>;
   readonly members?: (status: string | null, page: number) => Response | Promise<Response>;
   readonly clientInvitations?: (page: number) => Response | Promise<Response>;
-  readonly memberStatus?: (membershipId: string, action: string) => Response | Promise<Response>;
+  readonly memberStatus?: (accessId: string, action: string) => Response | Promise<Response>;
   readonly invite?: (body: unknown) => Response | Promise<Response>;
   readonly resend?: (invitationId: string) => Response | Promise<Response>;
   readonly cancel?: (invitationId: string) => Response | Promise<Response>;
@@ -513,12 +517,12 @@ describe('portal access tab (#140)', () => {
       client: () => json(detailData),
       members: (status) => (status === 'removed' ? json(pageOf(removed)) : json(pageOf(active))),
       clientInvitations: () => json(pageOf([])),
-      memberStatus: (membershipId, action) => {
+      memberStatus: (accessId, action) => {
         if (action !== 'remove') throw new Error(`unexpected ${action}`);
-        removedIds.push(membershipId);
-        const person = active.find((member) => member.membershipId === membershipId);
+        removedIds.push(accessId);
+        const person = active.find((member) => member.accessId === accessId);
         if (person === undefined) throw new Error('unknown member');
-        active = active.filter((member) => member.membershipId !== membershipId);
+        active = active.filter((member) => member.accessId !== accessId);
         removed = [...removed, { ...person, status: 'removed' }];
         detailData = { ...detailData, summary: { ...detailData.summary, activePortalMembers: active.length + 0 } };
         return json({ ...person, status: 'removed' });
@@ -533,7 +537,7 @@ describe('portal access tab (#140)', () => {
     fireEvent.click(within(confirm).getByRole('button', { name: 'Remover acesso' }));
 
     // The right id travelled, and only that person moved.
-    await waitFor(() => expect(removedIds).toEqual([joao.membershipId]));
+    await waitFor(() => expect(removedIds).toEqual([joao.accessId]));
     await waitFor(() => expect(screen.queryByText('João Lima')).toBeNull());
     expect(screen.getByText('Maria Souza')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Removidas (1)' })).toBeTruthy();
@@ -547,7 +551,7 @@ describe('portal access tab (#140)', () => {
   });
 
   it('reactivates the removed person that was clicked and updates the General counter', async () => {
-    const ana = { ...maria, membershipId: 'ffff6666-6666-4666-8666-666666666666', name: 'Ana Prado', email: 'ana@padaria.test' };
+    const ana = { ...maria, accessId: 'ffff6666-6666-4666-8666-666666666666', name: 'Ana Prado', email: 'ana@padaria.test' };
     let detailData = padaria;
     let active: MemberFixture[] = [maria];
     let removed: MemberFixture[] = [pedro, { ...ana, status: 'removed' }];
@@ -556,10 +560,10 @@ describe('portal access tab (#140)', () => {
       client: () => json(detailData),
       members: (status) => (status === 'removed' ? json(pageOf(removed)) : json(pageOf(active))),
       clientInvitations: () => json(pageOf([])),
-      memberStatus: (membershipId, action) => {
+      memberStatus: (accessId, action) => {
         if (action !== 'reactivate') throw new Error(`unexpected ${action}`);
-        reactivated.push(membershipId);
-        removed = removed.filter((member) => member.membershipId !== membershipId);
+        reactivated.push(accessId);
+        removed = removed.filter((member) => member.accessId !== accessId);
         active = [...active, { ...ana, status: 'active' }];
         detailData = { ...detailData, summary: { ...detailData.summary, activePortalMembers: active.length } };
         return json({ ...ana, status: 'active' });
@@ -572,7 +576,7 @@ describe('portal access tab (#140)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reativar o acesso de Ana Prado' }));
 
     // The right id travelled, and only that person moved: Pedro stays in the removed list.
-    await waitFor(() => expect(reactivated).toEqual([ana.membershipId]));
+    await waitFor(() => expect(reactivated).toEqual([ana.accessId]));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Removidas (1)' })).toBeTruthy());
     expect(screen.getByText('Pedro Alves')).toBeTruthy();
     // The General tab counter follows the invalidated detail summary, without a reload.

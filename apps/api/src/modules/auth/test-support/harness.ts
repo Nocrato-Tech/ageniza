@@ -250,10 +250,11 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
   const agencies: AgencyModuleDependencies = { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }) };
   const clients: ClientModuleDependencies = config.identityStorage === undefined
-    ? { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }), requirePermission, requireClientAccess, photoUrlExpirySeconds: 300 }
+    ? { database, auth, emailService, requireAgencyAccess: createRequireAgencyAccess({ database }), requirePermission, requireClientAccess, photoUrlExpirySeconds: 300 }
     : {
         database,
         auth,
+        emailService,
         requireAgencyAccess: createRequireAgencyAccess({ database }),
         requirePermission,
         requireClientAccess,

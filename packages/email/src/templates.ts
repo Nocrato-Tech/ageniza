@@ -129,6 +129,30 @@ export const clientInvitationEmail = (input: ClientInvitationEmailInput): EmailM
   ], input);
 };
 
+/**
+ * "Adicionar pessoa": the access is already given, so there is nothing to accept and the link does not expire. It opens the
+ * sign-in screen; the person creates an account with this address or enters with the one that has it.
+ */
+export const clientPortalWelcomeEmail = (input: Omit<ClientInvitationEmailInput, 'expiresInMinutes'>): EmailMessage => {
+  const agencyName = displayName('O nome da agência', input.agencyName);
+  const clientName = displayName('O nome do cliente', input.clientName);
+  assertHttpsUrl(input.actionUrl);
+  const lines = [
+    `A ${agencyName} deu a você acesso ao portal de ${clientName} no Ageniza.`,
+    'Para entrar, crie uma conta com este e-mail ou use a que você já tem.'
+  ];
+  const closing = 'Se você não esperava este e-mail, ignore-o.';
+  return {
+    subject: 'Você tem acesso ao portal no Ageniza',
+    text: [...lines, input.actionUrl, closing].join('\n\n'),
+    html: [
+      ...lines.map((line) => `<p>${escapeHtml(line)}</p>`),
+      `<p><a href="${escapeHtml(input.actionUrl)}">Entrar no portal</a></p>`,
+      `<p>${escapeHtml(closing)}</p>`
+    ].join('\n')
+  };
+};
+
 export const emailVerificationEmail = (input: ActionEmailInput): EmailMessage =>
   compose('Confirme seu e-mail no Ageniza', ['Confirme este e-mail para concluir a configuração da sua conta.'], input);
 

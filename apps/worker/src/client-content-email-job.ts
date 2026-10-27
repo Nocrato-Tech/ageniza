@@ -61,7 +61,7 @@ interface Group {
 const groupsOf = (claimed: readonly ClaimedNotification[]): Group[] => {
   const groups = new Map<string, Group>();
   for (const item of claimed) {
-    const key = [item.claimToken, item.recipientUserId, item.clientId, item.notificationType].join('|');
+    const key = [item.claimToken, item.recipientPortalAccessId, item.clientId, item.notificationType].join('|');
     const group = groups.get(key) ?? { claimToken: item.claimToken, type: item.notificationType, items: [] };
     group.items.push(item);
     groups.set(key, group);

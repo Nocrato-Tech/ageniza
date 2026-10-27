@@ -255,32 +255,48 @@ da requisição, e nenhuma consulta daqui lê `auth."user"`: o portal não mostr
 
 Decisão: `2026-10-07-portal-le-o-cadastro-inteiro-e-o-inicio-conta-so-o-que-o`.
 
-## Acessos ao portal, pela agência (#132)
+## Acessos ao portal, pela agência (#132, #711)
 
 | método | rota | permissão |
 |---|---|---|
 | `GET` | `/agencies/:agencyId/clients/:clientId/members` | `cliente.convidar_usuario` |
-| `POST` | `…/members/:membershipId/remove` | `cliente.remover_usuario` |
-| `POST` | `…/members/:membershipId/reactivate` | `cliente.remover_usuario` |
+| `POST` | `/agencies/:agencyId/clients/:clientId/members` ("Adicionar pessoa") | `cliente.convidar_usuario` |
+| `POST` | `…/members/:accessId/remove` | `cliente.remover_usuario` |
+| `POST` | `…/members/:accessId/reactivate` | `cliente.remover_usuario` |
 | `GET` | `/agencies/:agencyId/clients/:clientId/invitations` | `cliente.convidar_usuario` |
 
 Em `access-routes.ts` e `access-service.ts`. Reenviar e cancelar convite são as rotas do módulo
-`invitations`, sem mudança. `POST …/clients/:clientId/invitations` passa a responder `409
-CLIENT_ARCHIVED` para cliente arquivado da própria agência (antes, o `404` genérico).
+`invitations`; o convite de portal deixou de ser criado e o reenvio dele responde `409
+PORTAL_INVITATION_DISCONTINUED` (decisão `2026-10-27-o-convite-de-portal-pendente-nao-se-reenvia`).
 
-- **Pessoas**: 20 por página, por nome sem diferenciar maiúsculas nem acento, comparado byte a byte
-  (`collate "C"`) com o id do vínculo de desempate; `status=active` (padrão) ou `removed`. Item:
-  `membershipId`, `name`, `email`, `status`, `since`. A consulta parte de `client_memberships` filtrado
-  pelo cliente e pela agência e chega em `auth."user"` só pelo `user_id` do vínculo.
+**Uma pessoa é um acesso dado a um e-mail** (`client_portal_accesses`, decisão
+`2026-10-26-estrutural-o-acesso-ao-portal-e-por-e-mail-e-a-conta-e-opcional`), com conta ou sem ela. A aplicação
+não escreve na tabela: cada rota chama a função de banco do seu efeito, e o estado de `client_memberships` acompanha o do
+acesso (`2026-10-27-o-estado-do-membership-do-portal-acompanha-o-acesso`). O acesso passa à conta no login, quando uma
+conta com aquele e-mail verificado carrega os contextos (`app_private.link_client_portal_accesses`, chamada por
+`listValidContexts`), e **nunca** em "Adicionar pessoa".
+
+- **Pessoas**: 20 por página, por nome (o e-mail, enquanto a pessoa não entrou) sem diferenciar maiúsculas nem acento,
+  comparado byte a byte (`collate "C"`) com o id do acesso de desempate; `status=active` (padrão) ou `removed`. Item:
+  `accessId`, `name` (nulo até a conta entrar), `email` (como foi gravado), `status`, `entered` ("ainda não entrou"
+  quando `false`) e `since`. A consulta parte de `client_portal_accesses` filtrado pelo cliente e pela agência e chega em
+  `auth."user"` só pelo `user_id` do acesso, num `LEFT JOIN`. **Nada na lista diz se um e-mail tem conta.**
+- **Adicionar pessoa**: só o e-mail. Dá o acesso na hora, sem conta e sem aceite, e manda o e-mail de boas-vindas
+  ("Entrar no portal"). O mesmo e-mail de novo reativa a mesma linha (`409 ACCESS_EXISTS` se já estava ativo). Se a conta
+  que tinha o endereço já trocou de e-mail, ela é solta e as sessões dela terminam
+  (`2026-10-27-adicionar-pessoa-de-novo-solta-a-conta-que-trocou-de-e-mail`). O limite diário de e-mails da agência
+  entra com o #725 (`TODO(#725)` na rota).
 - **Convites**: 20 por página, o que expira primeiro no topo (`id` de desempate), só
   `purpose = 'client_invite'` **daquele cliente**, não aceitos, não revogados e não expirados. A policy
   `invitations_select` deixa quem tem `cliente.convidar_usuario` ler convite de colaborador também
   (`docs/business/structural-changes.md`, "Permissões de convite compartilhadas entre tipos"); o filtro
   é da consulta e um teste prova que convite de colaborador, de ativação e de outro cliente não saem.
-- **Remover e reativar** chamam `app_private.set_client_membership_status`. A rota confere antes que o
-  cliente é da agência e não está arquivado (`409`) e que o vínculo é **daquele cliente** (`404`); a pessoa
-  perde ou recupera o acesso na requisição seguinte, e só deste cliente. Repetir a operação é idempotente.
-  Se a função recusar depois das checagens (cliente arquivado, vínculo sumido ou permissão perdida no
+- **Remover e reativar** chamam `app_private.remove_client_portal_access` e `reactivate_client_portal_access`. A rota
+  confere antes que o cliente é da agência e não está arquivado (`409`) e que o acesso é **daquele cliente** (`404`);
+  a pessoa perde ou recupera o acesso na requisição seguinte, e só deste cliente. Remover avança a geração do acesso (o
+  que mata os links de aprovação dele), tira o membership junto e, quando há conta, encerra as sessões dela; reativar não
+  devolve a geração. Repetir a operação é idempotente: a função diz se escreveu, e só a remoção que escreveu encerra sessão.
+  Se a função recusar depois das checagens (cliente arquivado, acesso sumido ou permissão perdida no
   meio), a recusa é relida numa transação nova e dá o `409`, o `404` ou o `403` que a checagem teria dado.
 - Cliente arquivado é só leitura: as duas listas respondem; remover e reativar, `409`.
 

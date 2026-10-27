@@ -16,12 +16,13 @@ import {
 import type { DatabaseClient } from '@ageniza/database';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
 import { registerClientModule } from './routes.js';
+import { setPortalAccessStatusById } from './test-support/portal-access.js';
 
-// Issue #132: the agency's side of a client's portal access. `invitations_select` lets whoever holds
-// `cliente.convidar_usuario` read invitations of every kind of the agency, and `client_memberships_select`
-// lets every member of the agency read every link of its clients; neither says which client or which
-// kind a route means. Every list below is therefore checked against rows that are readable and
-// must not be listed, and every permission is held alone by a custom role.
+// Issues #132 and #711: the agency's side of a client's portal access. `invitations_select` lets whoever holds
+// `cliente.convidar_usuario` read invitations of every kind of the agency, and `client_portal_accesses_select`
+// every access of every client of the agency; neither says which client or which kind a route means. Every list
+// below is therefore checked against rows that are readable and must not be listed, and every permission is held
+// alone by a custom role. A person is an access, so the ids of the routes are the ids of the access.
 const origin = { origin: TEST_APP_PUBLIC_URL };
 
 let owner: DatabaseClient;
@@ -73,18 +74,23 @@ const call = async (method: 'GET' | 'POST' | 'DELETE', url: string, cookie?: str
 
 const membersUrl = (agencyId: string, clientId: string): string => `/agencies/${agencyId}/clients/${clientId}/members`;
 const invitationsUrl = (agencyId: string, clientId: string): string => `/agencies/${agencyId}/clients/${clientId}/invitations`;
-const removeUrl = (agencyId: string, clientId: string, membershipId: string): string => `${membersUrl(agencyId, clientId)}/${membershipId}/remove`;
-const reactivateUrl = (agencyId: string, clientId: string, membershipId: string): string => `${membersUrl(agencyId, clientId)}/${membershipId}/reactivate`;
+const removeUrl = (agencyId: string, clientId: string, accessId: string): string => `${membersUrl(agencyId, clientId)}/${accessId}/remove`;
+const reactivateUrl = (agencyId: string, clientId: string, accessId: string): string => `${membersUrl(agencyId, clientId)}/${accessId}/reactivate`;
 const portalClient = (clientId: string): string => `/clients/${clientId}`;
 
-const membershipOf = async (clientId: string, userKey: string): Promise<{ id: string; status: string; updated_at: Date; created_at: Date }> => {
-  const row = await owner.knex('client_memberships').where({ client_id: clientId, user_id: users[userKey]!.id }).first();
-  if (row === undefined) throw new Error(`No link of ${userKey} to ${clientId}.`);
+// The access of the person to the client: its id is the id the routes take.
+const membershipOf = async (clientId: string, userKey: string): Promise<{ id: string; status: string; updated_at: Date; created_at: Date; generation: number }> => {
+  const row = await owner.knex('client_portal_accesses').where({ client_id: clientId, user_id: users[userKey]!.id }).first();
+  if (row === undefined) throw new Error(`No access of ${userKey} to ${clientId}.`);
   return row;
 };
 
-const statusOf = async (membershipId: string): Promise<string> =>
-  (await owner.knex('client_memberships').where({ id: membershipId }).first('status')).status as string;
+const statusOf = async (accessId: string): Promise<string> =>
+  (await owner.knex('client_portal_accesses').where({ id: accessId }).first('status')).status as string;
+
+// What the person sees of the portal follows the membership of the access, which follows the access.
+const membershipStatusOf = async (accessId: string): Promise<string | undefined> =>
+  (await owner.knex('client_memberships').where({ portal_access_id: accessId }).first('status'))?.status as string | undefined;
 
 const auditCount = async (action: string, targetId: string): Promise<number> =>
   Number((await owner.knex('audit.events').where({ action, target_id: targetId }).count<{ count: string }[]>('id as count'))[0]?.count ?? 0);
@@ -161,7 +167,7 @@ const withRacingApp = async <T>(beforeFunction: () => Promise<void>, run: (racin
             get(target, property, receiver) {
               if (property === 'raw') {
                 return async (statement: string, bindings?: readonly unknown[]) => {
-                  if (statement.trim().startsWith('select app_private.set_client_membership_status')) await beforeFunction();
+                  if (/^select \* from app_private\.(remove|reactivate)_client_portal_access/.test(statement.trim())) await beforeFunction();
                   return target.raw(statement, bindings as never);
                 };
               }
@@ -172,6 +178,7 @@ const withRacingApp = async <T>(beforeFunction: () => Promise<void>, run: (racin
         })
     } as DatabaseClient,
     auth: app.auth,
+    emailService: app.emailService,
     requireAgencyAccess: createRequireAgencyAccess({ database: app.database }),
     requirePermission,
     requireClientAccess: createRequireClientAccess({ database: app.database }),
@@ -188,7 +195,7 @@ const withRacingApp = async <T>(beforeFunction: () => Promise<void>, run: (racin
 const postOn = async (target: FastifyInstance, url: string, cookie: string): Promise<Reply> =>
   (await target.inject({ method: 'POST', url, headers: { ...origin, cookie } })) as unknown as Reply;
 
-const MEMBER_KEYS = ['membershipId', 'name', 'email', 'status', 'since'];
+const MEMBER_KEYS = ['accessId', 'name', 'email', 'status', 'entered', 'since'];
 
 describe('CLIENTS portal access, agency side (#132)', () => {
   beforeAll(async () => {
@@ -306,7 +313,7 @@ describe('CLIENTS portal access, agency side (#132)', () => {
     ];
     for (const key of loginKeys) cookies[key] = await login(users[key]!);
     // A person whose only link is removed has no context to log in with: it is removed after the logins.
-    await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.removed!.id }).update({ status: 'removed' });
+    await setPortalAccessStatusById(owner.knex, (await membershipOf(clientA1, 'removed')).id, 'removed');
   });
 
   afterAll(async () => {
@@ -340,10 +347,11 @@ describe('CLIENTS portal access, agency side (#132)', () => {
 
       const ana = await membershipOf(clientA1, 'ana');
       expect(body.data.find((item: { name: string }) => item.name === 'Ana Portal')).toEqual({
-        membershipId: ana.id,
+        accessId: ana.id,
         name: 'Ana Portal',
         email: users.ana!.email,
         status: 'active',
+        entered: true,
         since: new Date(ana.created_at).toISOString()
       });
     });
@@ -376,11 +384,11 @@ describe('CLIENTS portal access, agency side (#132)', () => {
       expect(second.data).toHaveLength(3);
       expect(first.meta).toEqual({ page: 1, pageSize: 20, totalItems: 23, totalPages: 2 });
       expect(second.meta).toEqual({ page: 2, pageSize: 20, totalItems: 23, totalPages: 2 });
-      const ids = [...first.data, ...second.data].map((item: { membershipId: string }) => item.membershipId);
+      const ids = [...first.data, ...second.data].map((item: { accessId: string }) => item.accessId);
       expect(new Set(ids).size).toBe(23);
       const names = [...first.data, ...second.data].map((item: { name: string }) => item.name);
       expect(names).toEqual([...names].sort());
-      const sameName = first.data.slice(0, 6).map((item: { membershipId: string }) => item.membershipId);
+      const sameName = first.data.slice(0, 6).map((item: { accessId: string }) => item.accessId);
       expect(first.data.slice(0, 6).map((item: { name: string }) => item.name)).toEqual(Array(6).fill('Membro 01'));
       expect(sameName).toEqual([...sameName].sort());
 
@@ -464,15 +472,19 @@ describe('CLIENTS portal access, agency side (#132)', () => {
       expect((await call('GET', invitationsUrl(agencyA, clientBare), cookies.admin!)).json().data).toEqual([]);
     });
 
-    it('drops an invitation the moment it is revoked, expires or is replaced by a resend, and a cancel removes it', async () => {
+    it('drops an invitation the moment it is revoked or expires, a cancel removes it, and a resend is refused: a portal invitation is no longer renewed', async () => {
+      await app.emailService.drain();
+      const sentBefore = sender.sent.length;
       const resend = await call('POST', `/agencies/${agencyA}/invitations/${ids.later}/resend`, cookies.admin!);
-      expect(resend.statusCode).toBe(200);
-      const resentId = resend.json().invitationId as string;
-      expect(resentId).not.toBe(ids.later);
+      expect(resend.statusCode).toBe(409);
+      expect(resend.json().error.code).toBe('PORTAL_INVITATION_DISCONTINUED');
+      await app.emailService.drain();
+      expect(sender.sent.length).toBe(sentBefore);
       const afterResend = (await call('GET', invitationsUrl(agencyA, clientA1), cookies.admin!)).json().data;
-      expect(afterResend.map((item: { invitationId: string }) => item.invitationId)).toEqual([ids.soon, resentId]);
+      expect(afterResend.map((item: { invitationId: string }) => item.invitationId)).toEqual([ids.soon, ids.later]);
+      expect(await owner.knex('invitations').where({ id: ids.later }).first('revoked_at')).toEqual({ revoked_at: null });
 
-      const cancel = await call('DELETE', `/agencies/${agencyA}/invitations/${resentId}`, cookies.admin!);
+      const cancel = await call('DELETE', `/agencies/${agencyA}/invitations/${ids.later}`, cookies.admin!);
       expect(cancel.statusCode).toBe(204);
       expect((await call('GET', invitationsUrl(agencyA, clientA1), cookies.admin!)).json().data.map((item: { invitationId: string }) => item.invitationId)).toEqual([ids.soon]);
 
@@ -502,11 +514,11 @@ describe('CLIENTS portal access, agency side (#132)', () => {
   });
 
   describe('authorization', () => {
-    const everyRoute = (membershipId: string): { method: 'GET' | 'POST'; url: string; label: string; permission: string }[] => [
+    const everyRoute = (accessId: string): { method: 'GET' | 'POST'; url: string; label: string; permission: string }[] => [
       { method: 'GET', url: membersUrl(agencyA, clientA1), label: 'list members', permission: 'cliente.convidar_usuario' },
       { method: 'GET', url: invitationsUrl(agencyA, clientA1), label: 'list invitations', permission: 'cliente.convidar_usuario' },
-      { method: 'POST', url: removeUrl(agencyA, clientA1, membershipId), label: 'remove', permission: 'cliente.remover_usuario' },
-      { method: 'POST', url: reactivateUrl(agencyA, clientA1, membershipId), label: 'reactivate', permission: 'cliente.remover_usuario' }
+      { method: 'POST', url: removeUrl(agencyA, clientA1, accessId), label: 'remove', permission: 'cliente.remover_usuario' },
+      { method: 'POST', url: reactivateUrl(agencyA, clientA1, accessId), label: 'reactivate', permission: 'cliente.remover_usuario' }
     ];
 
     it('answers 403 on every route to the account manager and to every role without the portal permissions, changing nothing', async () => {
@@ -538,7 +550,7 @@ describe('CLIENTS portal access, agency side (#132)', () => {
       expect((await call('GET', invitationsUrl(agencyA, clientA1), cookies.removeOnly!)).statusCode).toBe(403);
       const removed = await call('POST', removeUrl(agencyA, clientA1, ana.id), cookies.removeOnly!);
       expect(removed.statusCode).toBe(200);
-      expect(removed.json()).toMatchObject({ membershipId: ana.id, status: 'removed' });
+      expect(removed.json()).toMatchObject({ accessId: ana.id, status: 'removed' });
       expect(await statusOf(ana.id)).toBe('removed');
       expect(await sessionCount(users.ana!.id)).toBe(0);
       const reactivated = await call('POST', reactivateUrl(agencyA, clientA1, ana.id), cookies.removeOnly!);
@@ -609,17 +621,17 @@ describe('CLIENTS portal access, agency side (#132)', () => {
       const otherClient = await membershipOf(clientA2, 'portalOther');
       const otherAgency = await membershipOf(clientB1, 'portalB');
       const anaOnA2 = await membershipOf(clientA2, 'ana');
-      for (const [label, membershipId] of [
+      for (const [label, accessId] of [
         ['link of another client of the agency', otherClient.id],
         ['the same person\'s link to another client', anaOnA2.id],
         ['link of another agency', otherAgency.id],
         ['absent link', randomUUID()],
         ['malformed link', 'not-a-uuid']
       ] as const) {
-        const removed = await call('POST', removeUrl(agencyA, clientA1, membershipId), cookies.admin!);
+        const removed = await call('POST', removeUrl(agencyA, clientA1, accessId), cookies.admin!);
         expect(removed.statusCode, `remove ${label}`).toBe(404);
         expect(removed.json().error.code).toBe('NOT_FOUND');
-        expect((await call('POST', reactivateUrl(agencyA, clientA1, membershipId), cookies.admin!)).statusCode, `reactivate ${label}`).toBe(404);
+        expect((await call('POST', reactivateUrl(agencyA, clientA1, accessId), cookies.admin!)).statusCode, `reactivate ${label}`).toBe(404);
       }
       expect(await statusOf(otherClient.id)).toBe('active');
       expect(await statusOf(anaOnA2.id)).toBe('active');
@@ -641,12 +653,16 @@ describe('CLIENTS portal access, agency side (#132)', () => {
       const removed = await call('POST', removeUrl(agencyA, clientA1, ana.id), cookies.admin!);
       expect(removed.statusCode).toBe(200);
       expect(removed.json()).toEqual({
-        membershipId: ana.id,
+        accessId: ana.id,
         name: 'Ana Portal',
         email: users.ana!.email,
         status: 'removed',
+        entered: true,
         since: new Date(ana.created_at).toISOString()
       });
+      // The generation of the approval links advances with the removal, and the membership of the person goes with the access.
+      expect((await membershipOf(clientA1, 'ana')).generation).toBe(ana.generation + 1);
+      expect(await membershipStatusOf(ana.id)).toBe('removed');
       expect(await statusOf(ana.id)).toBe('removed');
       expect(await auditCount('client_member.removed', ana.id)).toBe(removedAuditBefore + 1);
 
@@ -672,8 +688,11 @@ describe('CLIENTS portal access, agency side (#132)', () => {
 
       const reactivated = await call('POST', reactivateUrl(agencyA, clientA1, ana.id), cookies.admin!);
       expect(reactivated.statusCode).toBe(200);
-      expect(reactivated.json()).toMatchObject({ membershipId: ana.id, status: 'active' });
+      expect(reactivated.json()).toMatchObject({ accessId: ana.id, status: 'active' });
       expect(await statusOf(ana.id)).toBe('active');
+      expect(await membershipStatusOf(ana.id)).toBe('active');
+      // Reactivating does not give the generation back: a link of the earlier life of the access stays dead.
+      expect((await membershipOf(clientA1, 'ana')).generation).toBe(ana.generation + 1);
       expect(await auditCount('client_member.reactivated', ana.id)).toBe(reactivatedAuditBefore + 1);
       // Reactivating creates no session and ends none: the session of the new login is the one that serves it.
       expect(await sessionCount(users.ana!.id)).toBe(sessionsAfterLogin);
@@ -708,8 +727,8 @@ describe('CLIENTS portal access, agency side (#132)', () => {
     });
 
     it('does not end the session of whoever removes, not even when they remove their own portal link (#411)', async () => {
-      const own = await owner.knex('client_memberships').insert({ client_id: clientA1, user_id: users.removeOnly!.id }).returning('id');
-      const ownId = own[0].id as string;
+      await owner.knex('client_memberships').insert({ client_id: clientA1, user_id: users.removeOnly!.id });
+      const ownId = (await membershipOf(clientA1, 'removeOnly')).id;
       try {
         const otherDevice = await login(users.removeOnly!);
         const before = await sessionCount(users.removeOnly!.id);
@@ -724,7 +743,8 @@ describe('CLIENTS portal access, agency side (#132)', () => {
         expect(await sessionCount(users.removeOnly!.id)).toBe(1);
         expect((await call('GET', '/me/contexts', otherDevice)).statusCode).toBe(401);
       } finally {
-        await owner.knex('client_memberships').where({ id: ownId }).delete();
+        await owner.knex('client_memberships').where({ portal_access_id: ownId }).delete();
+        await owner.knex('client_portal_accesses').where({ id: ownId }).delete();
       }
     });
 
@@ -780,7 +800,7 @@ describe('CLIENTS portal access, agency side (#132)', () => {
     it('a reactivation that lands between the route\'s reading and the function still ends the sessions: the transaction decides by what it wrote (#411)', async () => {
       const ana = await membershipOf(clientA1, 'ana');
       // Ana is removed from this client and still works in the other one, with a session.
-      await owner.knex('client_memberships').where({ id: ana.id }).update({ status: 'removed' });
+      await setPortalAccessStatusById(owner.knex, ana.id, 'removed');
       const sessionsBefore = await sessionCount(users.ana!.id);
       expect(sessionsBefore).toBeGreaterThanOrEqual(1);
       const removedEvents = await auditCount('client_member.removed', ana.id);
@@ -788,7 +808,7 @@ describe('CLIENTS portal access, agency side (#132)', () => {
         // The route reads the link as removed; a reactivation commits before the function runs; the
         // function then finds it active, removes it and audits it.
         const response = await withRacingApp(
-          async () => { await owner.knex('client_memberships').where({ id: ana.id }).update({ status: 'active' }); },
+          async () => { await setPortalAccessStatusById(owner.knex, ana.id, 'active'); },
           (racingApp) => postOn(racingApp, removeUrl(agencyA, clientA1, ana.id), cookies.admin!)
         );
         expect(response.statusCode).toBe(200);
@@ -797,7 +817,7 @@ describe('CLIENTS portal access, agency side (#132)', () => {
         expect(await sessionCount(users.ana!.id)).toBe(0);
         expect((await call('GET', portalClient(clientA2), cookies.ana!)).statusCode).toBe(401);
       } finally {
-        await owner.knex('client_memberships').where({ id: ana.id }).update({ status: 'active' });
+        await setPortalAccessStatusById(owner.knex, ana.id, 'active');
         cookies.ana = await login(users.ana!);
       }
     });
@@ -830,12 +850,12 @@ describe('CLIENTS portal access, agency side (#132)', () => {
       expect(await auditCount('client_member.removed', member.id)).toBe(0);
 
       // A removed link of an archived client cannot come back either: the only action there is to reactivate the client.
-      await owner.knex('client_memberships').where({ id: member.id }).update({ status: 'removed' });
+      await setPortalAccessStatusById(owner.knex, member.id, 'removed');
       try {
         expect((await call('POST', reactivateUrl(agencyA, clientArchived, member.id), cookies.admin!)).statusCode).toBe(409);
         expect(await statusOf(member.id)).toBe('removed');
       } finally {
-        await owner.knex('client_memberships').where({ id: member.id }).update({ status: 'active' });
+        await setPortalAccessStatusById(owner.knex, member.id, 'active');
       }
     });
 
@@ -853,12 +873,18 @@ describe('CLIENTS portal access, agency side (#132)', () => {
 
       // The link vanishes in between: 404.
       const target = await membershipOf(clientA1, 'removed');
-      await withRacingApp(async () => { await owner.knex('client_memberships').where({ id: target.id }).delete(); }, async (racingApp) => {
+      await withRacingApp(async () => {
+        await owner.knex('client_memberships').where({ portal_access_id: target.id }).delete();
+        await owner.knex('client_portal_accesses').where({ id: target.id }).delete();
+      }, async (racingApp) => {
         const response = await postOn(racingApp, reactivateUrl(agencyA, clientA1, target.id), cookies.racer!);
         expect(response.statusCode).toBe(404);
         expect(response.json().message).toBe('Member not found.');
       });
-      await owner.knex('client_memberships').insert({ id: target.id, client_id: clientA1, user_id: users.removed!.id, status: 'removed', created_at: target.created_at });
+      await owner.knex('client_portal_accesses').insert({
+        id: target.id, client_id: clientA1, email: users.removed!.email, user_id: users.removed!.id, status: 'removed', created_at: target.created_at
+      });
+      await owner.knex('client_memberships').insert({ client_id: clientA1, user_id: users.removed!.id, portal_access_id: target.id, status: 'removed' });
 
       // The caller loses the permission in between: 403.
       const roles = await owner.knex('roles').whereNull('agency_id').select('id', 'key');
@@ -873,36 +899,28 @@ describe('CLIENTS portal access, agency side (#132)', () => {
     });
   });
 
-  describe('POST .../invitations on an archived client', () => {
-    it('answers 409 and neither stores an invitation nor sends an e-mail', async () => {
-      const email = `convite-arquivado@access-integration.test`;
+  describe('POST .../members on an archived client (Adicionar pessoa)', () => {
+    it('answers 409, neither stores an access nor sends an e-mail', async () => {
+      const email = 'convite-arquivado@access-integration.test';
       await app.emailService.drain();
       const sentBefore = sender.sent.length;
-      const response = await call('POST', invitationsUrl(agencyA, clientArchived), cookies.admin!, { email });
+      const response = await call('POST', membersUrl(agencyA, clientArchived), cookies.admin!, { email });
       expect(response.statusCode).toBe(409);
       expect(response.json().error.code).toBe('CLIENT_ARCHIVED');
       await app.emailService.drain();
       expect(sender.sent.length).toBe(sentBefore);
-      expect(await owner.knex('invitations').where({ client_id: clientArchived }).first()).toBeUndefined();
+      expect(await owner.knex('client_portal_accesses').where({ client_id: clientArchived, email }).first()).toBeUndefined();
     });
 
     it('still answers 404, and not 409, for an archived client of another agency', async () => {
       await owner.knex('clients').where({ id: clientB1 }).update({ status: 'archived', archived_at: new Date() });
       try {
-        const response = await call('POST', invitationsUrl(agencyA, clientB1), cookies.twoAgencies!, { email: 'x@access-integration.test' });
+        const response = await call('POST', membersUrl(agencyA, clientB1), cookies.twoAgencies!, { email: 'x@access-integration.test' });
         expect(response.statusCode).toBe(404);
         expect(response.json().error.code).toBe('NOT_FOUND');
       } finally {
         await owner.knex('clients').where({ id: clientB1 }).update({ status: 'active', archived_at: null });
       }
-    });
-
-    it('invites normally once the client is active, and the invitation then shows in the list', async () => {
-      const email = `convite-normal@access-integration.test`;
-      const response = await call('POST', invitationsUrl(agencyA, clientBare), cookies.admin!, { email });
-      expect(response.statusCode).toBe(201);
-      const listed = (await call('GET', invitationsUrl(agencyA, clientBare), cookies.admin!)).json().data;
-      expect(listed).toEqual([{ invitationId: response.json().invitationId, email, expiresAt: response.json().expiresAt }]);
     });
   });
 });

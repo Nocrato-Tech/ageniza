@@ -10,13 +10,13 @@ from the tenancy module so the invitation module does not duplicate tenant guard
 
 - `POST /agencies/:agencyId/invitations/collaborators` creates a collaborator invitation and answers,
   this once, the link it e-mailed (`invitationUrl`, `no-store`), for the inviter to copy (issue #710).
-- `POST /agencies/:agencyId/clients/:clientId/invitations` creates a client invitation. An archived
-  client of the agency answers `409 CLIENT_ARCHIVED` (the invitation would be born dead); one of
-  another agency, or a missing one, is still the same `404`. The pending ones are listed by
-  `GET …/clients/:clientId/invitations`, in the `clients` module.
-- `POST /agencies/:agencyId/invitations/:invitationId/resend` replaces a pending invitation; for a
-  collaborator one it answers the new link the same way only to a caller who also holds
-  `colaborador.convidar` (`null` otherwise, and for a portal one), and the old link dies.
+- A portal invitation is **no longer created** (issue #711, decision 2026-10-26): "Adicionar pessoa", in the
+  `clients` module, gives the access to an e-mail address at once. The ones still pending are listed by
+  `GET …/clients/:clientId/invitations`, can be cancelled, and are accepted until they expire; accepting one creates
+  or links the access of its address in the same transaction (`app_private.accept_invitation`). Resending one answers
+  `409 PORTAL_INVITATION_DISCONTINUED`.
+- `POST /agencies/:agencyId/invitations/:invitationId/resend` replaces a pending collaborator invitation and answers the
+  new link the same way only to a caller who also holds `colaborador.convidar` (`null` otherwise), and the old link dies.
 - `DELETE /agencies/:agencyId/invitations/:invitationId` revokes a pending invitation.
 - `GET /invitations/:token` previews a valid invitation.
 - `POST /invitations/:token/accept-new-account` atomically creates the credential account and

@@ -80,11 +80,7 @@ export const CollaboratorInvitationRequestSchema = z.object({
   roleId: z.string().uuid()
 }).strict();
 
-export const ClientInvitationRequestSchema = z.object({
-  email: AuthEmailSchema
-}).strict();
-
-/** Client creation and resend answer with the invitation id and its expiry; never with the token. */
+/** Collaborator creation and resend answer with the invitation id and its expiry. */
 export const InvitationCreatedResponseSchema = z.object({
   invitationId: z.string().uuid(),
   expiresAt: z.string().datetime()
@@ -133,7 +129,6 @@ export type InvitationContext = z.infer<typeof InvitationContextSchema>;
 export type InvitationAcceptNewAccountRequest = z.infer<typeof InvitationAcceptNewAccountRequestSchema>;
 export type InvitationAcceptNewAccountResponse = z.infer<typeof InvitationAcceptNewAccountResponseSchema>;
 export type CollaboratorInvitationRequest = z.infer<typeof CollaboratorInvitationRequestSchema>;
-export type ClientInvitationRequest = z.infer<typeof ClientInvitationRequestSchema>;
 export type InvitationCreatedResponse = z.infer<typeof InvitationCreatedResponseSchema>;
 export type CollaboratorInvitationCreatedResponse = z.infer<typeof CollaboratorInvitationCreatedResponseSchema>;
 export type InvitationResentResponse = z.infer<typeof InvitationResentResponseSchema>;

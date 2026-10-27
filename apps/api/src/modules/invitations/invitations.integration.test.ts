@@ -310,17 +310,8 @@ describe('invitation HTTP module', () => {
   });
 
   it('keeps a valid client invitation through forgot/reset, and the login that follows accepts it', async () => {
-    const adminLogin = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: admin.email, password: admin.password } });
-    const adminCookie = sessionCookieHeader(adminLogin.cookies);
-    const created = await app.app.inject({
-      method: 'POST',
-      url: `/agencies/${agencyId}/clients/${clientId}/invitations`,
-      headers: { ...origin, cookie: adminCookie },
-      payload: { email: invitee.email }
-    });
-    expect(created.statusCode).toBe(201);
-    const inviteToken = sender.sent.at(-1)?.text.match(/\/convite\/([^\s]+)/)?.[1];
-    expect(inviteToken).toBeDefined();
+    // A portal invitation is no longer created (#711), but one that was pending keeps working until it expires.
+    const { token: inviteToken } = await insertInvitation({ agencyId, purpose: 'client_invite', roleId: null, clientId, email: invitee.email });
 
     const forgot = await app.app.inject({
       method: 'POST',
@@ -476,17 +467,24 @@ describe('invitation HTTP module', () => {
     await own.close();
   });
 
-  it('#710: a portal invitation resend answers no link to copy', async () => {
+  it('#711: a portal invitation is not resent: 409, no e-mail, and the invitation stays pending as it was', async () => {
     const { own, ownSender, adminCookie } = await ownApp();
     const invitation = await insertInvitation({ agencyId, purpose: 'client_invite', roleId: null, clientId, email: `portal-resend-${randomUUID()}@example.test` });
+    const sentBefore = ownSender.sent.length;
     const resent = await own.app.inject({
       method: 'POST',
       url: `/agencies/${agencyId}/invitations/${invitation.invitationId}/resend`,
       headers: { ...origin, cookie: adminCookie }
     });
-    expect(resent.statusCode).toBe(200);
-    expect(resent.json<{ invitationUrl: string | null }>().invitationUrl).toBeNull();
-    expect(resent.body).not.toContain(invitationTokenFromLatestEmail(ownSender));
+    expect(resent.statusCode).toBe(409);
+    expect(resent.json()).toMatchObject({ error: { code: 'PORTAL_INVITATION_DISCONTINUED' } });
+    await own.emailService.drain();
+    expect(ownSender.sent).toHaveLength(sentBefore);
+    await expect(owner.knex('invitations').where({ agency_id: agencyId, email: (await owner.knex('invitations').where({ id: invitation.invitationId }).first('email')).email })
+      .select('id', 'revoked_at', 'used_at')).resolves.toEqual([{ id: invitation.invitationId, revoked_at: null, used_at: null }]);
+    // The same invitation is still accepted afterwards.
+    const stillValid = await app.app.inject({ method: 'GET', url: `/invitations/${invitation.token}` });
+    expect(stillValid.statusCode).toBe(200);
     await own.close();
   });
 
@@ -1075,57 +1073,6 @@ describe('invitation HTTP module', () => {
       }
     }, 20_000);
 
-    it('answers 409 TRY_AGAIN when a client-invitation creation loses a deadlock, and changes nothing', async () => {
-      const raceOwner = await makeUser('invitations-deadlock-client-owner');
-      const raceAgencyId = await createAgency('Invitations deadlock client agency', raceOwner.id);
-      const raceClientId = randomUUID();
-      createdClientIds.push(raceClientId);
-      await owner.knex('clients').insert({ id: raceClientId, agency_id: raceAgencyId, name: 'Deadlock client' });
-      const cookie = await loginFromLockOrderIp(raceOwner);
-      const email = `deadlock-client-${randomUUID()}@example.test`;
-      const invitation = await insertInvitation({ agencyId: raceAgencyId, purpose: 'client_invite', clientId: raceClientId, roleId: null, email });
-
-      const holder = await owner.knex.transaction();
-      let released = false;
-      try {
-        // Same cycle as the collaborator creation, and the client slot key carries the clientId.
-        const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
-        if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
-        const holderPid = await backendPid(holder);
-        const created = app.app.inject({
-          method: 'POST',
-          url: `/agencies/${raceAgencyId}/clients/${raceClientId}/invitations`,
-          remoteAddress: LOCK_ORDER_IP,
-          headers: { ...origin, cookie },
-          payload: { email }
-        });
-        await waitForBlockedQueryStart(owner, holderPid);
-        await holder.raw('select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?, 0))', [
-          `${raceAgencyId}:client_invite:${email}:${raceClientId}`
-        ]);
-        await holder.commit();
-        released = true;
-
-        const response = await created;
-        expect(response.statusCode).toBe(409);
-        expect(response.json().error?.code).toBe('TRY_AGAIN');
-        expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
-        await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
-        await expect(owner.knex('invitations').where({ agency_id: raceAgencyId }).select('id')).resolves.toHaveLength(1);
-
-        const retried = await app.app.inject({
-          method: 'POST',
-          url: `/agencies/${raceAgencyId}/clients/${raceClientId}/invitations`,
-          remoteAddress: LOCK_ORDER_IP,
-          headers: { ...origin, cookie },
-          payload: { email }
-        });
-        expect(retried.statusCode).toBe(201);
-      } finally {
-        if (!released) await holder.rollback();
-      }
-    }, 20_000);
-
     it('answers 409 TRY_AGAIN when a cancellation loses a deadlock, and the invitation stays pending', async () => {
       const raceOwner = await makeUser('invitations-deadlock-cancel-owner');
       const raceAgencyId = await createAgency('Invitations deadlock cancel agency', raceOwner.id);
@@ -1377,34 +1324,6 @@ describe('invitation HTTP module', () => {
       url: `/agencies/${agencyId}/invitations/collaborators`,
       headers: { ...origin, cookie: await loginCookie(admin) },
       payload: { email, roleId: productionRoleId, isAdmin: true }
-    });
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
-    await expect(owner.knex('invitations').where({ email }).first('id')).resolves.toBeUndefined();
-  });
-
-  it('rejects an extra field in the client invitation body (.strict())', async () => {
-    // The client-invite body is the route the #187 re-review mutated to `.passthrough()` and stayed
-    // green; this test is what turns that drift red in behavior, alongside the schema-identity
-    // check in `routeBody` and the harness response validation.
-    // A distinct source IP keeps this login and rejected invite out of the shared per-IP rate limit
-    // buckets the rest of the suite runs against (login and invitation are both per-IP).
-    const login = await app.app.inject({
-      method: 'POST',
-      url: '/auth/login',
-      remoteAddress: '127.0.0.2',
-      headers: origin,
-      payload: { email: admin.email, password: admin.password }
-    });
-    expect(login.statusCode).toBe(200);
-
-    const email = `extra-field-client-${randomUUID()}@example.test`;
-    const response = await app.app.inject({
-      method: 'POST',
-      url: `/agencies/${agencyId}/clients/${clientId}/invitations`,
-      remoteAddress: '127.0.0.2',
-      headers: { ...origin, cookie: sessionCookieHeader(login.cookies) },
-      payload: { email, leakedRoleId: productionRoleId }
     });
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
@@ -2009,15 +1928,8 @@ describe('invitation HTTP module', () => {
     const logClientId = randomUUID();
     createdClientIds.push(logClientId);
     await owner.knex('clients').insert({ id: logClientId, agency_id: logAgencyId, name: 'Invitation log client' });
-    const clientInvite = await logApp.app.inject({
-      method: 'POST',
-      url: `/agencies/${logAgencyId}/clients/${logClientId}/invitations`,
-      headers: { ...origin, cookie: adminCookie },
-      payload: { email: logInvitee.email }
-    });
-    expect(clientInvite.statusCode).toBe(201);
-    const clientToken = logSender.sent.at(-1)?.text.match(/\/convite\/([^\s]+)/)?.[1];
-    expect(clientToken).toBeDefined();
+    // A portal invitation is no longer created (#711); one that was pending is a row.
+    const clientToken = (await insertInvitation({ agencyId: logAgencyId, purpose: 'client_invite', roleId: null, clientId: logClientId, email: logInvitee.email })).token;
     const forgot = await logApp.app.inject({ method: 'POST', url: '/auth/password/forgot', headers: origin, payload: { email: logInvitee.email, inviteToken: clientToken } });
     expect(forgot.statusCode).toBe(202);
     await logApp.emailService.drain();
@@ -2257,43 +2169,6 @@ describe('invitation HTTP module', () => {
     });
 
     describe('client invitations', () => {
-      const inviteClient = (cookie: string, email: string): Promise<Injection> => app.app.inject({
-        method: 'POST',
-        url: `/agencies/${agencyId}/clients/${clientId}/invitations`,
-        remoteAddress: MEMBER_IP,
-        headers: { ...origin, cookie },
-        payload: { email }
-      });
-
-      it('refuses an invitation to an active portal member of the client, writing nothing and sending nothing', async () => {
-        const cookie = await loginFromMemberIp(admin);
-        const active = await addPortalMembership(clientId, 'invitation-client-active-member', 'active');
-        const emailsBefore = sender.sent.length;
-        const invitationsBefore = await owner.knex('invitations').where({ agency_id: agencyId }).select('id');
-
-        const response = await inviteClient(cookie, active.email);
-        expect(response.statusCode).toBe(409);
-        expect(response.json().error).toMatchObject({ code: 'MEMBERSHIP_EXISTS' });
-        expect(sender.sent).toHaveLength(emailsBefore);
-        await expect(owner.knex('invitations').where({ agency_id: agencyId }).select('id')).resolves.toHaveLength(invitationsBefore.length);
-      });
-
-      it('accepts an invitation to a removed portal member of the client', async () => {
-        const cookie = await loginFromMemberIp(admin);
-        const removed = await addPortalMembership(clientId, 'invitation-client-removed-member', 'removed');
-        const emailsBefore = sender.sent.length;
-
-        const response = await inviteClient(cookie, removed.email);
-        expect(response.statusCode).toBe(201);
-        expect(sender.sent.length).toBeGreaterThan(emailsBefore);
-        const pending = await owner.knex('invitations')
-          .where({ agency_id: agencyId, purpose: 'client_invite', email: removed.email, client_id: clientId })
-          .whereNull('revoked_at')
-          .whereNull('used_at')
-          .first('id');
-        expect(pending).toBeDefined();
-      });
-
       it('#469: a removed portal member who accepts a new invitation gets the same link back, and no other link of theirs changes', async () => {
         const removed = await addPortalMembership(clientId, 'invitation-client-removed-accepts', 'removed');
         const otherClients = [randomUUID(), randomUUID()];
@@ -2329,22 +2204,6 @@ describe('invitation HTTP module', () => {
         expect(othersAfter.map((row) => row.status).sort()).toEqual(['active', 'removed']);
       });
 
-      it('accepts an invitation to a portal member active only in another client of the caller', async () => {
-        const cookie = await loginFromMemberIp(admin);
-        const otherClientId = randomUUID();
-        createdClientIds.push(otherClientId);
-        await owner.knex('clients').insert({ id: otherClientId, agency_id: agencyId, name: 'Other active member client' });
-        const other = await addPortalMembership(otherClientId, 'invitation-other-client-member', 'active');
-
-        const response = await inviteClient(cookie, other.email);
-        expect(response.statusCode).toBe(201);
-        const pending = await owner.knex('invitations')
-          .where({ agency_id: agencyId, purpose: 'client_invite', email: other.email, client_id: clientId })
-          .whereNull('revoked_at')
-          .whereNull('used_at')
-          .first('id');
-        expect(pending).toBeDefined();
-      });
     });
   });
 });

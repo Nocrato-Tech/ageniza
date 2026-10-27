@@ -1,6 +1,7 @@
 import { captureUnexpectedError, type CoreLogger } from '@ageniza/core';
 import {
   clientInvitationEmail,
+  clientPortalWelcomeEmail,
   collaboratorInvitationEmail,
   emailChangedEmail,
   emailChangeRequestedEmail,
@@ -38,6 +39,12 @@ export interface SendClientInvitationEmailInput extends SendInvitationEmailInput
   readonly clientName: string;
 }
 
+export interface SendClientPortalWelcomeEmailInput {
+  readonly to: string;
+  readonly agencyName: string;
+  readonly clientName: string;
+}
+
 export interface SendAccountNoticeInput {
   readonly to: string;
 }
@@ -53,6 +60,8 @@ export interface EmailService {
   sendCollaboratorInvitation(input: SendInvitationEmailInput): Promise<void>;
   /** Sends an administrative client invitation and waits for SMTP delivery. */
   sendClientInvitation(input: SendClientInvitationEmailInput): Promise<void>;
+  /** To the person "Adicionar pessoa" gave an access to (issue #711): nothing to accept, a link to the sign-in screen. Waits for SMTP delivery. */
+  sendClientPortalWelcome(input: SendClientPortalWelcomeEmailInput): Promise<void>;
   /** Waits for in-flight delivery for at most ten seconds. */
   drain(): Promise<void>;
   /** Alias for drain for shutdown manager integrations. */
@@ -112,8 +121,8 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
   };
 
   const sendInvitation = async (
-    input: SendInvitationEmailInput | SendClientInvitationEmailInput,
-    message: ReturnType<typeof collaboratorInvitationEmail> | ReturnType<typeof clientInvitationEmail>,
+    input: { readonly to: string },
+    message: ReturnType<typeof collaboratorInvitationEmail> | ReturnType<typeof clientInvitationEmail> | ReturnType<typeof clientPortalWelcomeEmail>,
     template: string
   ): Promise<void> => {
     try {
@@ -209,6 +218,13 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
         agencyName: input.agencyName,
         clientName: input.clientName
       }), 'client-invitation');
+    },
+    sendClientPortalWelcome(input): Promise<void> {
+      return sendInvitation(input, clientPortalWelcomeEmail({
+        actionUrl: `${options.config.appPublicUrl.replace(/\/$/, '')}/entrar`,
+        agencyName: input.agencyName,
+        clientName: input.clientName
+      }), 'client-portal-welcome');
     },
     drain,
     shutdown: drain

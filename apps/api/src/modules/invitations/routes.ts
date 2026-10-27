@@ -1,17 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
 import {
-  AgencyClientPathParamsSchema,
   AgencyInvitationPathParamsSchema,
   AgencyPathParamsSchema,
-  ClientInvitationRequestSchema,
-  CollaboratorInvitationCreatedResponseSchema,
+    CollaboratorInvitationCreatedResponseSchema,
   CollaboratorInvitationRequestSchema,
   InvitationAcceptNewAccountRequestSchema,
   InvitationAcceptNewAccountResponseSchema,
   InvitationAcceptRequestSchema,
   InvitationAcceptResponseSchema,
-  InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
   InvitationResentResponseSchema,
   PaginationInputSchema,
@@ -22,7 +19,7 @@ import {
   type ResolvedPagination
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { databaseErrorCode, raw, isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { raw, isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import {
   createInvitationToken,
   hashInvitationToken,
@@ -118,23 +115,16 @@ const INVITATION_INVALID = {
   message: 'Este link não é mais válido.'
 } as const;
 
+const portalInvitationDiscontinued = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'PORTAL_INVITATION_DISCONTINUED',
+  message: 'O convite de portal não é mais reenviado: adicione a pessoa na aba Acessos.'
+});
+
 const invitationNotPending = (): HttpError => new HttpError({
   statusCode: 409,
   code: 'INVITATION_NOT_PENDING',
   message: 'O convite não está pendente.'
-});
-
-/**
- * The code `app_private.lock_active_client_for_invitation` raises when the client was archived between
- * the route's read and the insert (20261006000400): a portal invitation for a client that is no longer
- * active, the same answer as reading it archived.
- */
-const isClientNoLongerActive = (error: unknown): boolean => databaseErrorCode(error) === 'A0020';
-
-const clientArchived = (): HttpError => new HttpError({
-  statusCode: 409,
-  code: 'CLIENT_ARCHIVED',
-  message: 'Cliente arquivado não pode receber convites.'
 });
 
 const membershipExists = (): HttpError => new HttpError({
@@ -372,74 +362,6 @@ const createCollaboratorInvitation = async (
   }
 };
 
-const createClientInvitation = async (
-  dependencies: InvitationModuleDependencies,
-  request: FastifyRequest,
-  email: string,
-  agencyId: string,
-  clientId: string
-): Promise<{ invitationId: string; expiresAt: Date; token: InvitationToken; agencyName: string; clientName: string }> => {
-  const auth = request.auth;
-  if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
-  const token = tokenForInsert(dependencies.config.appPublicUrl);
-  return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
-    const clientResult = await raw<RawRows<{ client_name: string; agency_name: string; client_status: 'active' | 'archived' }>>(transaction, `
-      select client.name as client_name, agency.name as agency_name, client.status as client_status
-      from public.clients client
-      join public.agencies agency on agency.id = client.agency_id
-      where client.id = ?::uuid and client.agency_id = ?::uuid
-        and agency.status = 'active'
-    `, [clientId, agencyId]);
-    const client = clientResult.rows[0];
-    if (client === undefined) throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Client not found.' });
-    // The client exists in this agency, so saying it is archived reveals nothing; the invitation
-    // would be born dead, and `invitations_insert` refuses it anyway (specs/clientes.md rule 6).
-    if (client.client_status === 'archived') throw clientArchived();
-
-    const memberResult = await raw<RawRows<{ id: string }>>(transaction, `
-      select membership.id
-      from public.client_memberships membership
-      join auth."user" invited_user on invited_user.id = membership.user_id
-      where membership.client_id = ?::uuid and membership.status = 'active' and invited_user.email = ?
-      limit 1
-    `, [clientId, email]);
-    if (memberResult.rows[0] !== undefined) throw membershipExists();
-
-    await lockPendingInvitationSlot(transaction, agencyId, 'client_invite', email, clientId);
-    const revoked = await raw<RawRows<{ id: string }>>(transaction, `
-      update public.invitations
-         set revoked_at = now()
-       where agency_id = ?::uuid and purpose = 'client_invite' and email = ? and client_id = ?::uuid
-         and used_at is null and revoked_at is null
-      returning id
-    `, [agencyId, email, clientId]);
-    for (const old of revoked.rows) {
-      await auditInTransaction(transaction, { action: 'invitation.revoked', actorUserId: auth.userId, agencyId, targetId: old.id });
-    }
-
-    const result = await raw<RawRows<{ id: string; expires_at: Date }>>(transaction, `
-      insert into public.invitations
-        (agency_id, purpose, email, client_id, token_hash, expires_at, invited_by_user_id)
-      values (?, 'client_invite', ?, ?, ?, ?, ?)
-      returning id, expires_at
-    `, [agencyId, email, clientId, token.tokenHash, token.expiresAt, auth.userId]);
-    const row = result.rows[0];
-    if (row === undefined) throw new Error('Invitation insert did not return a row.');
-    await auditInTransaction(transaction, { action: 'invitation.sent', actorUserId: auth.userId, agencyId, targetId: row.id });
-    return {
-      invitationId: row.id,
-      expiresAt: new Date(row.expires_at),
-      token,
-      agencyName: client.agency_name,
-      clientName: client.client_name
-    };
-  }).catch((error: unknown) => {
-    if (isRetryableConflict(error)) throw tryAgain();
-    if (isClientNoLongerActive(error)) throw clientArchived();
-    throw error;
-  });
-};
-
 const resendInvitation = async (
   dependencies: InvitationModuleDependencies,
   request: FastifyRequest,
@@ -465,6 +387,8 @@ const resendInvitation = async (
     `, [invitationId, agencyId]);
     const current = currentResult.rows[0];
     if (current === undefined || current.purpose === 'agency_activation') throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Invitation not found.' });
+    // A portal invitation is no longer created (decision 2026-10-26): the ones still pending run out, they are not renewed.
+    if (current.purpose === 'client_invite') throw portalInvitationDiscontinued();
     // A resend inserts a new invitation, so it hands the role out again: `invitations_insert` refuses
     // an admin one to anyone without the grant, and without this check that refusal is a 500.
     if (current.role_id !== null && !tenantHolds(tenant, GRANT_ADMIN_PERMISSION)) {
@@ -505,7 +429,6 @@ const resendInvitation = async (
     };
   }).catch((error: unknown) => {
     if (isRetryableConflict(error)) throw tryAgain();
-    if (isClientNoLongerActive(error)) throw clientArchived();
     if (isInsufficientPrivilegeError(error)) throw forbidden();
     throw error;
   });
@@ -689,11 +612,6 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     responseStatus: 201,
     schemas: { params: AgencyPathParamsSchema, body: CollaboratorInvitationRequestSchema, response: CollaboratorInvitationCreatedResponseSchema }
   } satisfies DocumentedRouteConfig;
-  const clientInviteDocs = {
-    permission: 'cliente.convidar_usuario',
-    responseStatus: 201,
-    schemas: { params: AgencyClientPathParamsSchema, body: ClientInvitationRequestSchema, response: InvitationCreatedResponseSchema }
-  } satisfies DocumentedRouteConfig;
   const resendDocs = {
     permission: 'convite.reenviar',
     responseStatus: 200,
@@ -754,44 +672,16 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     }));
   });
 
-  app.post('/agencies/:agencyId/clients/:clientId/invitations', authenticated(clientInviteDocs), async (request, reply) => {
-    const params = routeParams(clientInviteDocs, request);
-    const body = routeBody(clientInviteDocs, request);
-    const result = await createClientInvitation(dependencies, request, body.email, params.agencyId, params.clientId);
-    try {
-      await dependencies.emailService.sendClientInvitation({
-        to: body.email,
-        actionUrl: result.token.actionUrl,
-        expiresInMinutes: invitationExpiresInMinutes(result.expiresAt),
-        agencyName: result.agencyName,
-        clientName: result.clientName
-      });
-    } catch {
-      throw emailDeliveryFailed();
-    }
-    return reply.status(201).send(routeResponse(clientInviteDocs, request, { invitationId: result.invitationId, expiresAt: result.expiresAt.toISOString() }));
-  });
-
   app.post('/agencies/:agencyId/invitations/:invitationId/resend', { onRequest: noStore, ...authenticated(resendDocs) }, async (request, reply) => {
     const params = routeParams(resendDocs, request);
     const result = await resendInvitation(dependencies, request, params.agencyId, params.invitationId);
     try {
-      if (result.purpose === 'client_invite' && result.clientName !== null) {
-        await dependencies.emailService.sendClientInvitation({
-          to: result.email,
-          actionUrl: result.token.actionUrl,
-          expiresInMinutes: invitationExpiresInMinutes(result.expiresAt),
-          agencyName: result.agencyName,
-          clientName: result.clientName
-        });
-      } else {
-        await dependencies.emailService.sendCollaboratorInvitation({
-          to: result.email,
-          actionUrl: result.token.actionUrl,
-          expiresInMinutes: invitationExpiresInMinutes(result.expiresAt),
-          agencyName: result.agencyName
-        });
-      }
+      await dependencies.emailService.sendCollaboratorInvitation({
+        to: result.email,
+        actionUrl: result.token.actionUrl,
+        expiresInMinutes: invitationExpiresInMinutes(result.expiresAt),
+        agencyName: result.agencyName
+      });
     } catch {
       throw emailDeliveryFailed();
     }

@@ -7,6 +7,7 @@ import { TEST_APP_PUBLIC_URL } from '../auth/test-support/harness.js';
 import { backendPid, archiveBeforeStatement, archiveWhileRouteWaits, waitForBackendBlockedBy } from './test-support/race.js';
 import { createPortalFixtures, DUAL_PEOPLE, type PortalPerson } from './test-support/portal-fixtures.js';
 import { createContentsWorld, type Reply } from './test-support/world.js';
+import { setPortalAccessStatus } from '../clients/test-support/portal-access.js';
 
 // Issue #257: the contents of a client in the portal, and the two moves of the person of the portal, approve and request
 // changes. Every scenario that proves isolation uses a person the policy WOULD let read the row (a collaborator with a link, a
@@ -1185,7 +1186,7 @@ describe('what the database answers is never a 500', () => {
       }
 
       w.runBeforeStatement(statement, async () => {
-        await w.getOwner().knex('client_memberships').where({ client_id: clientId, user_id: p.people.portalOne.id }).update({ status: 'removed' });
+        await setPortalAccessStatus(w.getOwner().knex, clientId, p.people.portalOne.id, 'removed');
         throw dbError('42501');
       });
       try {

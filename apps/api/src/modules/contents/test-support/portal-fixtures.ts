@@ -104,7 +104,7 @@ export const createPortalFixtures = (w: ContentsWorld) => {
       await owner('client_threads').whereIn('client_id', clients).delete();
       await owner('content_media').whereIn('client_id', clients).delete();
       await owner('content_tasks').whereIn('client_id', clients).delete();
-      await owner('notification_queue').whereIn('recipient_user_id', userIds).delete();
+      await owner('notification_queue').whereIn('client_id', clients).delete();
       await owner('contents').whereIn('client_id', clients).delete();
       await owner('client_memberships').whereIn('user_id', userIds).delete();
       await owner('agency_memberships').whereIn('user_id', userIds).delete();

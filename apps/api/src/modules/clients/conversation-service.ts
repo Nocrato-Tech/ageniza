@@ -96,14 +96,17 @@ export interface ThreadRow {
 export interface CommentRow {
   readonly id: string;
   readonly body: string;
-  readonly author_user_id: string;
+  /** The author is an account or, for a person of the portal with none, an access (exactly one of the two). */
+  readonly author_user_id: string | null;
+  readonly author_portal_access_id: string | null;
   readonly author_side: ConversationSide;
   readonly created_at: Date;
 }
 
 interface AuthorRow {
   readonly thread_id: string;
-  readonly author_user_id: string;
+  readonly author_user_id: string | null;
+  readonly author_portal_access_id: string | null;
   readonly author_side: ConversationSide;
   readonly name: string;
   readonly photo_key: string | null;
@@ -117,10 +120,16 @@ export interface ConversationAuthor {
 /** Authors of a set of threads, keyed by thread, side and user: the side is part of who someone signed as. */
 export type ConversationAuthors = ReadonlyMap<string, ConversationAuthor>;
 
-const authorKey = (threadId: string, side: ConversationSide, userId: string): string => `${threadId}:${side}:${userId}`;
+const authorKey = (threadId: string, side: ConversationSide, userId: string | null, accessId: string | null): string =>
+  `${threadId}:${side}:${userId ?? `access:${accessId ?? ''}`}`;
 
-export const authorOf = (authors: ConversationAuthors, threadId: string, side: ConversationSide, userId: string): ConversationAuthor | undefined =>
-  authors.get(authorKey(threadId, side, userId));
+export const authorOf = (
+  authors: ConversationAuthors,
+  threadId: string,
+  side: ConversationSide,
+  userId: string | null,
+  accessId: string | null = null
+): ConversationAuthor | undefined => authors.get(authorKey(threadId, side, userId, accessId));
 
 /**
  * Names and photo keys come from `app_private.thread_comment_authors`, which reads the link of each
@@ -130,13 +139,13 @@ export const authorOf = (authors: ConversationAuthors, threadId: string, side: C
 export const loadAuthors = async (transaction: ClientTransaction, threadIds: readonly string[]): Promise<ConversationAuthors> => {
   if (threadIds.length === 0) return new Map();
   const result = await raw<RawRows<AuthorRow>>(transaction, `
-    select thread.id as thread_id, author.author_user_id, author.author_side, author.name, author.photo_key
+    select thread.id as thread_id, author.author_user_id, author.author_portal_access_id, author.author_side, author.name, author.photo_key
     from public.client_threads thread
     cross join lateral app_private.thread_comment_authors(thread.id) author
     where thread.id in (${threadIds.map(() => '?::uuid').join(', ')})
   `, [...threadIds]);
   return new Map(result.rows.map((row) => [
-    authorKey(row.thread_id, row.author_side, row.author_user_id),
+    authorKey(row.thread_id, row.author_side, row.author_user_id, row.author_portal_access_id),
     { name: row.name, photoKey: row.photo_key }
   ]));
 };
@@ -595,7 +604,7 @@ export const listComments = async (
   if (refusal !== undefined) return { kind: refusal };
 
   const result = await raw<RawRows<CommentRow & { readonly total: string | number }>>(transaction, `
-    select comment.id, comment.body, comment.author_user_id, comment.author_side, comment.created_at, count(*) over () as total
+    select comment.id, comment.body, comment.author_user_id, comment.author_portal_access_id, comment.author_side, comment.created_at, count(*) over () as total
     from public.client_thread_comments comment
     where comment.thread_id = ?::uuid and comment.client_id = ?::uuid
     order by comment.created_at asc, comment.id asc
@@ -618,7 +627,7 @@ export const loadComment = async (
   input: { readonly clientId: string; readonly threadId: string; readonly commentId: string }
 ): Promise<CommentRow | undefined> => {
   const result = await raw<RawRows<CommentRow>>(transaction, `
-    select comment.id, comment.body, comment.author_user_id, comment.author_side, comment.created_at
+    select comment.id, comment.body, comment.author_user_id, comment.author_portal_access_id, comment.author_side, comment.created_at
     from public.client_thread_comments comment
     where comment.id = ?::uuid and comment.thread_id = ?::uuid and comment.client_id = ?::uuid
   `, [input.commentId, input.threadId, input.clientId]);
