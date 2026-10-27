@@ -125,7 +125,8 @@ describe('accepting a copied invitation link', () => {
     fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: 'Criar conta e entrar' }));
 
-    await screen.findByRole('heading', { name: PENDING_TITLE });
+    const heading = await screen.findByRole('heading', { name: PENDING_TITLE });
+    expect(heading.querySelector('.auth-nowrap')?.textContent).toBe('e-mail');
     expect(probe.pathname).toBe('/confirme-seu-email');
     expect(screen.getByText(/convidada@example\.test/)).toBeTruthy();
     expect(calls).not.toContain('PUT /me/last-context');

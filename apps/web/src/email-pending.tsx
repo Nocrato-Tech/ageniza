@@ -38,7 +38,7 @@ export function EmailPendingPage() {
 
   return <AuthPanel
     titleId="email-pending-title"
-    title="Confirme seu e-mail para entrar"
+    title={<>Confirme seu <span className="auth-nowrap">e-mail</span> para entrar</>}
     lead={`Enviamos um link para ${session.user?.email ?? 'o seu e-mail'}. Abra o e-mail e clique no link para entrar na agência. Ele vale por 24 horas.`}
   >
     <ResendVerification email={session.user?.email} idPrefix="pending" lead="Não chegou? Peça um novo link. O anterior deixa de valer." />
