@@ -40,12 +40,11 @@ Entrega **o cliente e a casca**: cadastro, estudo de marca com conversa em threa
 | Editar cadastro e foto, editar estudo e personas, abrir, responder e resolver thread | `cliente.operar` | ✅ | ✅ | — | — | — |
 | Cadastrar cliente novo | `cliente.cadastrar` | ✅ | ✅ | — | — | — |
 | Agendar ou desmarcar encerramento, arquivar e reativar | `cliente.arquivar` | ✅ | — | — | — | — |
-| Ver acessos e convidar pessoa para o portal | `cliente.convidar_usuario` ¹ | ✅ | — | — | — | — |
-| Reenviar convite de portal | `convite.reenviar` ¹ | ✅ | — | — | — | — |
+| Ver acessos, adicionar pessoa, reenviar o e-mail de quem não entrou e reenviar convite antigo de portal (que vira acesso) | `cliente.convidar_usuario` ¹ | ✅ | — | — | — | — |
 | Cancelar convite de portal | `convite.cancelar` ¹ | ✅ | — | — | — | — |
 | Remover e reativar pessoa do portal | `cliente.remover_usuario` | ✅ | — | — | — | — |
 
-¹ já existe no catálogo e já é concedida ao `admin`. `convite.reenviar` e `convite.cancelar` valem para convite de colaborador **e** de cliente — por isso nenhum outro preset recebe gestão de portal (seção 10).
+¹ já existe no catálogo e já é concedida ao `admin`. `convite.cancelar` vale para convite de colaborador **e** de cliente — por isso nenhum outro preset recebe gestão de portal (seção 10). O reenvio do convite de portal é `cliente.convidar_usuario`, porque dá o acesso (decisão de 2026-10-27, "acessos pendentes ... reenviados e removidos").
 
 **Todo colaborador vê todos os clientes.** Não há restrição por atribuição.
 
@@ -477,15 +476,17 @@ Só para `cliente.convidar_usuario`. O mesmo desenho da seção de convites de C
 ```
 │  Pessoas com acesso ao portal        [ + Adicionar pessoa ] │
 │  Maria Souza   maria@padaria.com   desde 02/09   [remover]  │
-│  ainda não entrou   joao@padaria.com  desde 10/09 [remover] │
+│  ainda não entrou   joao@padaria.com  desde 10/09           │
+│                     [reenviar e-mail] [remover]             │
 │  Removidas (1) ▾                                            │
 │                                                             │
 │  Convites aguardando aceite                                 │
-│  carla@padaria.com   expira em 5 dias            [cancelar] │
+│  carla@padaria.com   expira em 5 dias   [reenviar] [cancelar] │
 ```
 
 - **Adicionar pessoa**: modal só com o e-mail e o botão **Adicionar**. *Pela decisão de 2026-10-26 ([acesso ao portal por e-mail](../docs/business/decisions/2026-10-26-estrutural-o-acesso-ao-portal-e-por-e-mail-e-a-conta-e-opcional.md)), substitui o Convidar. O acesso vale na hora, sem conta e sem aceite, e a pessoa aprova pelo link do e-mail. O acesso passa à conta **no login**, quando uma conta com aquele e-mail verificado entra, e nunca na hora de adicionar. A lista mostra o nome da conta ou "ainda não entrou" e **nunca diz se o e-mail tem conta no Ageniza**. Um e-mail digitado errado ganha o acesso: é risco aceito, corrigido com Remover. Adicionar de novo um e-mail removido reativa a mesma linha. A lista, Remover e Reativar usam o id do acesso, e toda remoção, inclusive a da própria pessoa, passa pela função do acesso, que avança a geração e mata os links de aprovação. Adicionar conta no limite diário de e-mails da agência.* No sucesso o modal fecha; em erro ele fica aberto com o e-mail digitado (409 de quem já tem acesso, 429 do limite diário, 502 de falha no e-mail, que deixa o acesso criado). A tela está em [`2026-10-27-adicionar-pessoa-na-aba-acessos-como-a-tela-responde`](../docs/business/decisions/2026-10-27-adicionar-pessoa-na-aba-acessos-como-a-tela-responde.md).
-- **Convites aguardando aceite**: são os convites de portal de antes de 2026-10-26, que valem até vencer e só se **cancelam** (o reenvio é recusado, decisão de 2026-10-27). A seção some quando o último vence ou é cancelado.
+- **Reenviar e-mail** (só na linha de quem **ainda não entrou**): manda de novo o e-mail de boas-vindas, conta no limite diário de e-mails da agência (429 diz "Limite diário de envios atingido. Tente amanhã.") e é recusado em agência somente leitura. Cada botão mostra o estado de envio só na linha clicada, e o sucesso diz "E-mail reenviado para <e-mail>.". Quem já entrou não tem o botão, e a API recusa (409 `ACCESS_NOT_PENDING`). *Proposta pendente de validação: um reenvio por pessoa por minuto (429 `RESEND_TOO_SOON`), em [`2026-10-27-reenvio-do-e-mail-de-acesso-no-maximo-um-por-minuto-por-pessoa`](../docs/business/decisions/2026-10-27-reenvio-do-e-mail-de-acesso-no-maximo-um-por-minuto-por-pessoa.md).*
+- **Convites aguardando aceite**: são os convites de portal de antes de 2026-10-26, que valem até vencer. **Reenviar** transforma o convite em acesso direto, com o mesmo efeito de Adicionar pessoa para aquele e-mail (acesso na hora, e-mail de boas-vindas, um lugar no limite diário), e revoga o convite antigo na mesma transação; o endereço que já tem acesso responde 409 e o convite fica. **Cancelar** cancela o convite, como antes. Em somente leitura **Reenviar** fica desabilitado com o motivo e **Cancelar** continua habilitado. A seção some quando o último vence, é convertido ou é cancelado. Decisão [`2026-10-27-acessos-pendentes-podem-ser-reenviados-e-removidos`](../docs/business/decisions/2026-10-27-acessos-pendentes-podem-ser-reenviados-e-removidos.md).
 - **Remover** pede confirmação: a pessoa perde o acesso ao portal deste cliente e é deslogada de tudo na hora, porque a sessão é global (2026-10-08, #411); as outras pessoas não são afetadas, e os vínculos dela com outros clientes continuam. Removidas ficam num filtro, com **Reativar**, que não cria sessão: a pessoa entra de novo. Em agência somente leitura, **Adicionar pessoa** e **Reativar** ficam desabilitados com o motivo; **Remover** continua habilitado.
 - **Vazio**: "Ninguém deste cliente acessa o portal ainda", com **Adicionar pessoa**.
 - Convites vazios: a seção some.
