@@ -240,13 +240,13 @@ describe('app_private.purge_unconfirmed_accounts: an account with a tie is never
   });
 
   it('reads a session against the instant it is given: it is live at one and expired at another', async () => {
-    const id = await abandoned();
-    await session(id, new Date(NOW.getTime() + 3 * DAY_MS));
+    const id = await abandoned({ createdAt: ago(10) });
+    await session(id, ago(1));
 
-    await purge(new Date(NOW.getTime() + DAY_MS));
+    await purge(ago(2));
     expect(await exists(id)).toBe(true);
 
-    await purge(new Date(NOW.getTime() + 4 * DAY_MS));
+    await purge(NOW);
     expect(await exists(id)).toBe(false);
   });
 });
@@ -283,6 +283,68 @@ describe('app_private.purge_unconfirmed_accounts: a tie that lands while it runs
 
     expect(await exists(id)).toBe(true);
     expect(await exists(other)).toBe(false);
+  });
+});
+
+describe('app_private.purge_unconfirmed_accounts: the instant never looks ahead (review of PR #732, B1)', () => {
+  it.each([['2 minutes', 2 * 60_000], ['10 years', 3650 * DAY_MS]])('refuses an instant %s ahead, and deletes nothing', async (_name, ahead) => {
+    const young = await abandoned({ createdAt: ago(1) });
+    await session(young, new Date(Date.now() + 30 * DAY_MS));
+    const due = await abandoned();
+
+    await expect(purge(new Date(Date.now() + ahead))).rejects.toMatchObject({ code: '22023' });
+
+    expect(await exists(young)).toBe(true);
+    expect(await exists(due)).toBe(true);
+  });
+
+  it('tolerates the skew of a few seconds between the caller and the database', async () => {
+    const due = await abandoned();
+    await expect(purge(new Date(Date.now() + 30_000))).resolves.toBeGreaterThanOrEqual(1);
+    expect(await exists(due)).toBe(false);
+  });
+});
+
+describe('app_private.issue_email_confirmation: the link never outlives the purge (review of PR #732, B2)', () => {
+  const issueLink = async (userId: string): Promise<boolean> =>
+    (await raw<{ rows: readonly { issued: boolean }[] }>(getApplication().knex, 'select app_private.issue_email_confirmation(?::uuid, ?) as issued', [userId, createHash('sha256').update(randomUUID()).digest('hex')])).rows[0]!.issued;
+  /** Seconds between the creation of the account and the expiry of its pending link, and between now and that expiry. */
+  const lifeOf = async (userId: string): Promise<{ sinceCreation: number; fromNow: number } | undefined> =>
+    (await getOwner().knex.raw<{ rows: Array<{ since_creation: number; from_now: number }> }>(
+      `select extract(epoch from (link.expires_at - account."createdAt"))::float8 as since_creation, extract(epoch from (link.expires_at - now()))::float8 as from_now
+       from public.email_confirmations link join auth."user" account on account.id = link.user_id where link.user_id = ? and link.consumed_at is null`, [userId]
+    )).rows.map((row) => ({ sinceCreation: row.since_creation, fromNow: row.from_now }))[0];
+
+  it('keeps the 24 hours for a new account', async () => {
+    const id = await newUser({ createdAt: ago(0) });
+    await expect(issueLink(id)).resolves.toBe(true);
+    expect((await lifeOf(id))!.fromNow).toBeCloseTo(86_400, -1);
+  });
+
+  it('ends a link asked for on the 6th day no later than the 7th day after the creation, which is when the purge may delete the account', async () => {
+    const id = await newUser({ createdAt: ago(6.5) });
+
+    await expect(issueLink(id)).resolves.toBe(true);
+
+    const life = (await lifeOf(id))!;
+    expect(life.sinceCreation).toBeCloseTo(7 * 86_400, -1);
+    expect(life.fromNow).toBeLessThan(0.51 * 86_400);
+    expect(life.fromNow).toBeGreaterThan(0.49 * 86_400);
+  });
+
+  it('issues no link to an account that is already past the 7 days, and leaves the one it had', async () => {
+    const id = await newUser({ createdAt: ago(8) });
+    await expect(issueLink(id)).resolves.toBe(false);
+    expect(await lifeOf(id)).toBeUndefined();
+  });
+
+  it('does not shorten the link of an account that has a tie, which the purge never deletes', async () => {
+    const id = await newUser({ createdAt: ago(30) });
+    await getOwner().knex('agency_memberships').insert({ agency_id: await agency(), user_id: id, role_id: adminRoleId, status: 'active' });
+
+    await expect(issueLink(id)).resolves.toBe(true);
+
+    expect((await lifeOf(id))!.fromNow).toBeCloseTo(86_400, -1);
   });
 });
 
