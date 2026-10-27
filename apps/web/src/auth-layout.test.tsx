@@ -331,7 +331,8 @@ describe('the credential fields of the e-mail change request', () => {
 
   it('fixes type, autocomplete and name on the new e-mail and the current password', () => {
     const client = new HttpClient('http://127.0.0.1:3001', visitorFetch());
-    render(<ApiClientProvider client={client}><EmailChangeDialog onClose={() => undefined} /></ApiClientProvider>);
+    // The dialog now asks the server whether Google is on, so it needs the query client too; the assertions are unchanged.
+    render(<QueryClientProvider client={createQueryClient()}><ApiClientProvider client={client}><EmailChangeDialog onClose={() => undefined} /></ApiClientProvider></QueryClientProvider>);
 
     expectCredentialField({ label: 'Novo e-mail', type: 'email', autocomplete: 'email', name: 'newEmail' });
     expectCredentialField({ label: 'Senha atual', type: 'password', autocomplete: 'current-password', name: 'currentPassword' });

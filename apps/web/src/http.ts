@@ -153,6 +153,17 @@ export class HttpClient {
   private sessionGeneration = 0;
   private sessionArmed = false;
 
+  /**
+   * The address the *browser* is sent to for an API route that is a navigation, not a request (the start of the Google
+   * sign-in). It keeps the path of the configured base (`https://<domain>/api`), which the address of a request does not,
+   * and it goes through the same check as a request path.
+   */
+  public browserUrl(path: string): string {
+    assertSafeRequestPath(path);
+    const base = new URL(this.baseUrl);
+    return `${base.origin}${base.pathname.replace(/\/+$/, '')}${path}`;
+  }
+
   /** Called once the API has proven a session exists; requests sent from now on can end it. */
   public confirmSession(): void {
     this.sessionGeneration += 1;
