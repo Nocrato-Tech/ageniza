@@ -13,7 +13,7 @@ import {
 } from '@ageniza/contracts';
 import { Button, DatePicker, FieldMessage, Select, Skeleton, Textarea, TextInput } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import {
   canDeliver,
@@ -56,6 +56,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
   const canOperate = useCan('conteudo.operar');
   const canApprove = useCan('conteudo.aprovar_pela_agencia');
   const canSeeTeam = useCan('colaborador.visualizar');
+  const blocked = useWriteBlocked();
   // `null` for an owner by possession, who has no link: the permissions decide for her.
   const self = agency.membershipId;
   const writable = !archived && !isClosed(content.status);
@@ -207,7 +208,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
           />
           {ownerError !== undefined && <FieldMessage role="alert">{ownerError}</FieldMessage>}
           <div className="form-actions">
-            <Button variant="secondary" loading={sending === 'owner'} disabled={busy} onClick={() => { void changeOwner(); }}>Trocar responsável</Button>
+            <Button variant="secondary" loading={sending === 'owner'} disabled={busy} blockedReason={blocked} onClick={() => { void changeOwner(); }}>Trocar responsável</Button>
           </div>
         </div>
         : teamBlocked)}
@@ -245,6 +246,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
                 aria-label={`Entregar “${task.title}”`}
                 loading={sending === `${task.id}:deliver`}
                 disabled={busy}
+                blockedReason={blocked}
                 onClick={() => { void move(task, 'deliver'); }}
               >Entregar</Button>}
               {judge && <Button
@@ -253,6 +255,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
                 aria-label={`Aprovar “${task.title}”`}
                 loading={sending === `${task.id}:approve`}
                 disabled={busy}
+                blockedReason={blocked}
                 onClick={() => { void move(task, 'approve'); }}
               >Aprovar</Button>}
               {judge && <Button
@@ -261,6 +264,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
                 aria-label={`Devolver “${task.title}”`}
                 aria-expanded={open}
                 disabled={busy}
+                blockedReason={blocked}
                 onClick={() => { setEditing(null); setReturning(open ? null : { taskId: task.id, comment: '' }); }}
               >Devolver</Button>}
               {editable && <Button
@@ -269,6 +273,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
                 aria-label={`Editar “${task.title}”`}
                 aria-expanded={form !== null}
                 disabled={busy}
+                blockedReason={blocked}
                 onClick={() => startEdit(task)}
               >Editar</Button>}
             </div>}
@@ -397,7 +402,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
             </div>
             : teamBlocked)
           : <div className="form-actions">
-            <Button variant="secondary" disabled={busy} onClick={() => { setCreating(true); }}>Nova subtarefa</Button>
+            <Button variant="secondary" disabled={busy} blockedReason={blocked} onClick={() => { setCreating(true); }}>Nova subtarefa</Button>
           </div>)}
     </section>
   </div>;

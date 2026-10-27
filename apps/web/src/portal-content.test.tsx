@@ -318,11 +318,23 @@ describe('the post of the portal (#270)', () => {
   });
 
   describe('Aprovar', () => {
-    it('is not offered while the agency is read-only, the content still is (issue #714)', async () => {
-      await open({ title: 'Lançamento da primavera' }, { agencyReadOnly: true });
+    it('stays on screen, disabled with the reason, while the agency is read-only, and sends nothing (issue #714)', async () => {
+      const { contents } = await open({ title: 'Lançamento da primavera' }, { agencyReadOnly: true });
       expect(await title('Lançamento da primavera')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Pedir ajuste' })).toBeNull();
+      const describedBy = (button: HTMLElement) => (button.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent).join(' ');
+      for (const name of ['Aprovar', 'Pedir ajuste']) {
+        const button = await screen.findByRole('button', { name });
+        expect(button.getAttribute('aria-disabled')).toBe('true');
+        expect(describedBy(button)).toBe('O plano precisa ser renovado para usar esta opção.');
+        fireEvent.click(button);
+      }
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(sentBodies(contents, 'approve')).toEqual([]);
+      // Commenting is a write too: the button that opens the conversation is there, disabled with the same reason.
+      const conversation = await screen.findByRole('region', { name: /Conversa sobre/ });
+      const start = await within(conversation).findByRole('button');
+      expect(start.getAttribute('aria-disabled')).toBe('true');
+      expect(describedBy(start)).toBe('O plano precisa ser renovado para usar esta opção.');
     });
 
     it('sends the revision that was read, shows Aprovado and takes the decision away', async () => {

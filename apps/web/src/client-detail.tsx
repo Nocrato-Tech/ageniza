@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { ClientDetailResponseSchema, ClientSchema, type ClientDetailResponse } from '@ageniza/contracts';
 import { Avatar, Button, ButtonLink, EmptyState, Pill, Realce, Skeleton } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { ClientLifecycleActions } from './client-lifecycle.js';
 import { useDocumentTitle } from './document-title.js';
@@ -78,6 +78,7 @@ export const useClientDetail = (): ClientDetailResponse => {
 
 function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit: () => void }) {
   const canOperate = useCan('cliente.operar');
+  const blocked = useWriteBlocked();
   const active = client.status === 'active';
 
   return <header className="client-detail__header">
@@ -91,7 +92,7 @@ function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit
       </ul>
     </div>
     <div className="client-detail__actions">
-      {canOperate && active && <Button variant="secondary" leadingIcon={<Pencil />} onClick={onEdit}>Editar</Button>}
+      {canOperate && active && <Button variant="secondary" leadingIcon={<Pencil />} blockedReason={blocked} onClick={onEdit}>Editar</Button>}
       <ClientLifecycleActions client={client} />
     </div>
   </header>;

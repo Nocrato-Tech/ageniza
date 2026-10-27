@@ -11,18 +11,26 @@ export const trialDaysLeft = (trialEndsAt: string, now: Date = new Date()): numb
 const endDate = (trialEndsAt: string): string =>
   new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', timeZone: 'America/Sao_Paulo' }).format(new Date(trialEndsAt));
 
-export const AGENCY_READ_ONLY_TEXT = 'O período de teste terminou e a agência ficou somente leitura: tudo continua visível, mas nada pode ser criado, alterado ou enviado. Para continuar, fale com a equipe do Ageniza.';
+/** The reason a blocked action shows on hover and focus (decision 2026-10-27, the owner's choice). */
+export const PLAN_RENEWAL_REASON = 'O plano precisa ser renovado para usar esta opção.';
+
+export const AGENCY_READ_ONLY_TEXT = 'O seu plano precisa ser renovado para usar as opções bloqueadas. Os seus dados estão guardados.';
 
 /**
- * The top of the agency during and after the trial (issue #714). The database refuses the writes; this only says why
- * the actions are gone. Nothing is shown for an agency out of trial.
+ * The top of the agency during and after the trial (issue #714). After it, a banner that stays: the blocked actions
+ * remain on screen, disabled, and this says why; the contact appears only when the operation configured one.
+ * Nothing is shown for an agency out of trial.
  */
 export function TrialNotice({ plan, now }: { plan: AgencyPlan; now?: Date }) {
   if (plan.kind !== 'trial' || plan.trialEndsAt === null) return null;
   if (plan.readOnly) {
-    return <section className="shell-notice trial-notice" aria-label="Período de teste">
+    const contact = plan.supportContactEmail ?? null;
+    return <section className="shell-notice trial-notice" aria-label="Plano">
       <CircleAlert className="shell-notice__icon" aria-hidden="true" />
-      <p className="shell-notice__text" role="status"><strong>Somente leitura.</strong> {AGENCY_READ_ONLY_TEXT}</p>
+      <p className="shell-notice__text" role="status">
+        {AGENCY_READ_ONLY_TEXT}
+        {contact !== null && <>{' '}Para renovar, escreva para <a href={`mailto:${contact}`}>{contact}</a>.</>}
+      </p>
     </section>;
   }
   const days = trialDaysLeft(plan.trialEndsAt, now);
@@ -40,7 +48,7 @@ export function PortalReadOnlyNotice({ agencyName }: { agencyName: string }) {
   return <section className="shell-notice trial-notice" aria-label="Portal somente leitura">
     <CircleAlert className="shell-notice__icon" aria-hidden="true" />
     <p className="shell-notice__text" role="status">
-      <strong>Somente leitura.</strong> Você continua vendo tudo, mas por enquanto não é possível aprovar, pedir ajustes nem comentar. Fale com {agencyName}.
+      O plano de {agencyName} precisa ser renovado para aprovar, pedir ajustes e comentar. Tudo continua visível.
     </p>
   </section>;
 }

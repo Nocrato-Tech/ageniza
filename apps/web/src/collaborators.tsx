@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { CollaboratorListResponseSchema } from '@ageniza/contracts';
 import { BadgeCard, Button, EmptyState, FilterBar, FilterBarItem, FilterBarSelect, Pagination, Skeleton, TextInput } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { CollaboratorDetailDialog } from './collaborator-detail.js';
 import { useDocumentTitle } from './document-title.js';
@@ -85,7 +85,8 @@ export function CollaboratorsPage() {
   // Seeing removed links is the administrative permission of the SPEC; reactivating needs the role
   // permission, because the route asks for it (specs/colaboradores.md §5 rule 9, issue #98/#105).
   const canSeeRemoved = agency.isOwner || canRemove || canChangeRole;
-  const canReactivate = (agency.isOwner || canChangeRole) && !agency.plan.readOnly;
+  const canReactivate = agency.isOwner || canChangeRole;
+  const blocked = useWriteBlocked();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [reactivating, setReactivating] = useState<{ membershipId: string; name: string } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -183,7 +184,7 @@ export function CollaboratorsPage() {
       <header className="collaborators__header">
         <h1 id="collaborators-title">Colaboradores</h1>
         {canInvite && (
-          <Button size="lg" leadingIcon={<Plus />} onClick={() => setInviteOpen(true)}>Convidar</Button>
+          <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setInviteOpen(true)}>Convidar</Button>
         )}
       </header>
 
@@ -267,6 +268,7 @@ export function CollaboratorsPage() {
                     variant="secondary"
                     leadingIcon={<RotateCcw />}
                     aria-label={`Reativar ${collaborator.name}`}
+                    blockedReason={blocked}
                     onClick={() => setReactivating({ membershipId: collaborator.membershipId, name: collaborator.name })}
                   >Reativar</Button>
                 )}

@@ -18,7 +18,7 @@ import {
 } from '@ageniza/contracts';
 import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, LiveStatus, Modal, Pagination, Pill, Skeleton, TextInput, useFormErrors } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth, useClientDetail } from './client-detail.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -195,8 +195,9 @@ export function ClientAccessTab() {
   const canResend = useCan('convite.reenviar');
   const canCancel = useCan('convite.cancelar');
   const activeClient = client.status === 'active';
-  // Removing and cancelling reduce access and stay in a read-only agency; inviting and reactivating do not.
-  const writable = activeClient && !agency.plan.readOnly;
+  // Removing and cancelling reduce access and stay enabled in a read-only agency; inviting, reactivating and resending
+  // stay on screen, disabled, with the reason.
+  const blocked = useWriteBlocked();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const [removedOpen, setRemovedOpen] = useState(false);
@@ -319,7 +320,7 @@ export function ClientAccessTab() {
   return <section className="portal-access" aria-labelledby="portal-access-title">
     <header className="portal-access__header">
       <h2 id="portal-access-title">Pessoas com acesso ao portal</h2>
-      {writable && <Button variant={emptyList ? 'secondary' : 'primary'} leadingIcon={<Plus />} onClick={() => setInviteOpen(true)}>Convidar</Button>}
+      {activeClient && <Button variant={emptyList ? 'secondary' : 'primary'} leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setInviteOpen(true)}>Convidar</Button>}
     </header>
 
     {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
@@ -342,7 +343,7 @@ export function ClientAccessTab() {
         headingLevel={3}
         title="Ninguém deste cliente acessa o portal ainda"
         description={activeClient ? INVITE_HINT : undefined}
-        action={writable ? <Button leadingIcon={<Plus />} onClick={() => setInviteOpen(true)}>Convidar</Button> : undefined}
+        action={activeClient ? <Button leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setInviteOpen(true)}>Convidar</Button> : undefined}
       />
     ) : <>
       <ul className="portal-access__list">
@@ -388,10 +389,11 @@ export function ClientAccessTab() {
                 <span className="portal-access__email">{member.email}</span>
               </span>
               <span className="portal-access__since">removido</span>
-              {writable && canRemove && <Button
+              {activeClient && canRemove && <Button
                 size="sm"
                 variant="secondary"
                 aria-label={`Reativar o acesso de ${member.name}`}
+                blockedReason={blocked}
                 loading={changeMemberStatus.isPending && changeMemberStatus.variables?.id === member.membershipId}
                 onClick={() => { setActionError(undefined); changeMemberStatus.mutate({ kind: 'reactivate', id: member.membershipId, name: member.name }); }}
               >Reativar</Button>}
@@ -427,6 +429,7 @@ export function ClientAccessTab() {
                 size="sm"
                 variant="secondary"
                 aria-label={`Reenviar convite de ${invitation.email}`}
+                blockedReason={blocked}
                 loading={resend.isPending && resend.variables?.invitationId === invitation.invitationId}
                 onClick={() => { setResentEmail(null); resend.mutate(invitation); }}
               >Reenviar</Button>}

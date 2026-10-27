@@ -366,13 +366,24 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
       expect((await screen.findByRole('region', { name: 'Período de teste' })).textContent).toContain('falta 1 dia');
     });
 
-    it('turns the agency read-only when it ended: the list stays, the create action goes', async () => {
+    it('keeps the list and the create action when it ended: the action disabled with the reason, under a fixed banner', async () => {
       renderClients(makeFetch({ plan: { kind: 'trial', trialEndsAt: new Date(Date.now() - DAY).toISOString(), readOnly: true } }).impl);
-      const notice = await screen.findByRole('region', { name: 'Período de teste' });
-      expect(notice.textContent).toContain('Somente leitura.');
-      expect(notice.textContent).toContain('fale com a equipe do Ageniza');
+      const notice = await screen.findByRole('region', { name: 'Plano' });
+      expect(notice.textContent).toBe('O seu plano precisa ser renovado para usar as opções bloqueadas. Os seus dados estão guardados.');
+      expect(within(notice).queryByRole('link')).toBeNull();
       expect(await screen.findByText('Padaria Central')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Cadastrar cliente' })).toBeNull();
+      const create = await screen.findByRole('button', { name: 'Cadastrar cliente' });
+      expect(create.getAttribute('aria-disabled')).toBe('true');
+      const description = (create.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent).join(' ');
+      expect(description).toBe('O plano precisa ser renovado para usar esta opção.');
+      fireEvent.click(create);
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('names the contact of the operation only when it is configured', async () => {
+      renderClients(makeFetch({ plan: { kind: 'trial', trialEndsAt: new Date(Date.now() - DAY).toISOString(), readOnly: true, supportContactEmail: 'suporte@ageniza.test' } }).impl);
+      const notice = await screen.findByRole('region', { name: 'Plano' });
+      expect(within(notice).getByRole('link', { name: 'suporte@ageniza.test' }).getAttribute('href')).toBe('mailto:suporte@ageniza.test');
     });
 
     it('shows nothing for an exempt or active agency', async () => {

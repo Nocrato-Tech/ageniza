@@ -19,7 +19,7 @@ import {
 } from '@ageniza/contracts';
 import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, Modal, Pill, Select, Skeleton, TextInput, Textarea, useFormErrors } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey, formatAgencyDayMonth, useClientDetail } from './client-detail.js';
 import { Conversation } from './conversation.js';
@@ -66,12 +66,13 @@ const EMPTY_HINTS: Record<Exclude<SectionKey, 'personas'>, string> = {
 
 /** The empty section: what is missing and the one way to fill it. Without permission it only says it is missing. */
 function EmptySection({ sectionKey, canEdit, onFill }: { sectionKey: Exclude<SectionKey, 'personas'>; canEdit: boolean; onFill: () => void }) {
+  const blocked = useWriteBlocked();
   return <EmptyState
     className="brand-section__empty"
     headingLevel={4}
     title={EMPTY_SECTION}
     description={canEdit ? EMPTY_HINTS[sectionKey] : undefined}
-    action={canEdit ? <Button size="sm" variant="secondary" leadingIcon={<Plus />} aria-label={`Preencher ${SECTION_LABELS[sectionKey]}`} onClick={onFill}>Preencher</Button> : undefined}
+    action={canEdit ? <Button size="sm" variant="secondary" leadingIcon={<Plus />} aria-label={`Preencher ${SECTION_LABELS[sectionKey]}`} blockedReason={blocked} onClick={onFill}>Preencher</Button> : undefined}
   />;
 }
 
@@ -120,6 +121,7 @@ function StudyConversation({ client, subject, subjectLabel, readOnly, headingLev
   readOnly: boolean;
   headingLevel?: 3 | 4;
 }) {
+  const blocked = useWriteBlocked();
   const agency = useAgencyContext();
   const queryClient = useQueryClient();
   const canOperate = useCan('cliente.operar');
@@ -129,6 +131,7 @@ function StudyConversation({ client, subject, subjectLabel, readOnly, headingLev
     subjectLabel={subjectLabel}
     canWrite={canOperate}
     readOnly={readOnly || client.status !== 'active'}
+    planBlockedReason={blocked}
     headingLevel={headingLevel}
     onWritten={() => {
       void queryClient.invalidateQueries({ queryKey: clientDetailQueryKey(agency.agencyId, client.id) });
@@ -144,6 +147,7 @@ function TextSection({ client, sectionKey, section, canEdit }: {
   section: { body: string | null };
   canEdit: boolean;
 }) {
+  const blocked = useWriteBlocked();
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const { formRef, summary } = useFormErrors();
@@ -189,7 +193,7 @@ function TextSection({ client, sectionKey, section, canEdit }: {
     return <>
       <p className="brand-section__body">{section.body}</p>
       {canEdit && <div className="brand-section__actions">
-        <Button size="sm" variant="secondary" leadingIcon={<Pencil />} aria-label={`Editar ${label}`} onClick={startEditing}>Editar</Button>
+        <Button size="sm" variant="secondary" leadingIcon={<Pencil />} aria-label={`Editar ${label}`} blockedReason={blocked} onClick={startEditing}>Editar</Button>
       </div>}
     </>;
   }
@@ -223,6 +227,7 @@ function TextSection({ client, sectionKey, section, canEdit }: {
 
 /** The colors list: swatch, name and hex, up to 24 (the API cap). */
 function ColorsSection({ client, colors, canEdit }: { client: ClientDetailResponse; colors: BrandColor[] | null; canEdit: boolean }) {
+  const blocked = useWriteBlocked();
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
@@ -273,7 +278,7 @@ function ColorsSection({ client, colors, canEdit }: { client: ClientDetailRespon
         </li>)}
       </ul>
       {canEdit && <div className="brand-section__actions">
-        <Button size="sm" variant="secondary" leadingIcon={<Pencil />} aria-label="Editar Cores" onClick={startEditing}>Editar</Button>
+        <Button size="sm" variant="secondary" leadingIcon={<Pencil />} aria-label="Editar Cores" blockedReason={blocked} onClick={startEditing}>Editar</Button>
       </div>}
     </>;
   }
@@ -326,6 +331,7 @@ function ColorsSection({ client, colors, canEdit }: { client: ClientDetailRespon
 
 /** The archetype: one of the twelve, chosen by the Portuguese label. */
 function ArchetypeSection({ client, archetype, canEdit }: { client: ClientDetailResponse; archetype: string | null; canEdit: boolean }) {
+  const blocked = useWriteBlocked();
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const { formRef, summary } = useFormErrors();
@@ -362,7 +368,7 @@ function ArchetypeSection({ client, archetype, canEdit }: { client: ClientDetail
     return <>
       <p className="brand-section__body">{label}</p>
       {canEdit && <div className="brand-section__actions">
-        <Button size="sm" variant="secondary" leadingIcon={<Pencil />} aria-label="Editar Arquétipo" onClick={startEditing}>Editar</Button>
+        <Button size="sm" variant="secondary" leadingIcon={<Pencil />} aria-label="Editar Arquétipo" blockedReason={blocked} onClick={startEditing}>Editar</Button>
       </div>}
     </>;
   }
@@ -505,6 +511,7 @@ function CreatePersonaDialog({ client, onClose }: { client: ClientDetailResponse
 
 /** The persona detail: read the four fields, edit in place, archive with confirmation. */
 function PersonaDialog({ client, persona, onClose }: { client: ClientDetailResponse; persona: Persona; onClose: () => void }) {
+  const blocked = useWriteBlocked();
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const { formRef, summary } = useFormErrors();
@@ -599,8 +606,8 @@ function PersonaDialog({ client, persona, onClose }: { client: ClientDetailRespo
         <StudyConversation client={client} subject={{ personaId: persona.id }} subjectLabel={persona.name} readOnly={persona.status === 'archived'} headingLevel={3} />
         {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
         {canEdit && <div className="brand-persona__actions">
-          <Button size="sm" variant="secondary" leadingIcon={<Pencil />} onClick={() => { setDraft(draftFromPersona(persona)); setEditing(true); setNameError(undefined); }}>Editar</Button>
-          <Button size="sm" variant="secondary" onClick={() => { setFormError(undefined); setConfirmingArchive(true); }}>Arquivar</Button>
+          <Button size="sm" variant="secondary" leadingIcon={<Pencil />} blockedReason={blocked} onClick={() => { setDraft(draftFromPersona(persona)); setEditing(true); setNameError(undefined); }}>Editar</Button>
+          <Button size="sm" variant="secondary" blockedReason={blocked} onClick={() => { setFormError(undefined); setConfirmingArchive(true); }}>Arquivar</Button>
         </div>}
         <ConfirmDialog
           open={confirmingArchive}
@@ -618,6 +625,7 @@ function PersonaDialog({ client, persona, onClose }: { client: ClientDetailRespo
 
 /** The personas block: active cards, create, and the collapsed archived list with Desarquivar. */
 function PersonasSection({ client, personas, canEdit }: { client: ClientDetailResponse; personas: Persona[]; canEdit: boolean }) {
+  const blocked = useWriteBlocked();
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
@@ -648,7 +656,7 @@ function PersonasSection({ client, personas, canEdit }: { client: ClientDetailRe
   // The open modal reads the persona from the refetched list, so it never shows a stale copy.
   const currentOpen = openPersona === null ? null : personas.find((persona) => persona.id === openPersona.id) ?? null;
 
-  const addPersona = <Button size="sm" variant="secondary" leadingIcon={<Plus />} aria-label="Adicionar persona" onClick={() => setCreating(true)}>Persona</Button>;
+  const addPersona = <Button size="sm" variant="secondary" leadingIcon={<Plus />} aria-label="Adicionar persona" blockedReason={blocked} onClick={() => setCreating(true)}>Persona</Button>;
 
   return <div className="brand-personas">
     {active.length === 0
@@ -685,6 +693,7 @@ function PersonasSection({ client, personas, canEdit }: { client: ClientDetailRe
               size="sm"
               variant="secondary"
               aria-label={`Desarquivar ${persona.name}`}
+              blockedReason={blocked}
               loading={unarchive.isPending && unarchive.variables === persona.id}
               onClick={() => unarchive.mutate(persona.id)}
             >Desarquivar</Button>}

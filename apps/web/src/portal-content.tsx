@@ -23,6 +23,7 @@ import { HttpClientError, useApiClient } from './http.js';
 import { portalClientQueryKey, usePortalClient, uuidPattern } from './portal.js';
 import { PortalMediaCarousel } from './portal-content-media.js';
 import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS } from './portal-status.js';
+import { PLAN_RENEWAL_REASON } from './plan-notice.js';
 import { NotFoundPage } from './status-pages.js';
 
 /**
@@ -261,18 +262,19 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
           subject={{ contentId: content.id }}
           subjectLabel={content.title}
           canWrite
-          readOnly={client.agencyReadOnly}
+          readOnly={false}
+          planBlockedReason={client.agencyReadOnly ? PLAN_RENEWAL_REASON : undefined}
           onWritten={refresh}
           headingLevel={3}
         />
       </section>
     </div>
-    {awaiting && !client.agencyReadOnly && <section className="portal-post__bar" aria-labelledby="portal-post-decision">
+    {awaiting && <section className="portal-post__bar" aria-labelledby="portal-post-decision">
       <h2 id="portal-post-decision" className="visually-hidden">Sua decisão</h2>
       {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
       <div className="portal-post__actions">
-        <Button variant="secondary" size="lg" leadingIcon={<Pencil />} disabled={reloading || approve.isPending} onClick={() => { setRequestError(undefined); setStateChanged(undefined); setAsking(true); }}>Pedir ajuste</Button>
-        <Button size="lg" leadingIcon={<Check />} loading={approve.isPending} disabled={reloading || requestChanges.isPending} onClick={() => { setActionError(undefined); setStateChanged(undefined); setNotice(undefined); send(() => { approve.mutate(); }); }}>Aprovar</Button>
+        <Button variant="secondary" size="lg" leadingIcon={<Pencil />} disabled={reloading || approve.isPending} blockedReason={client.agencyReadOnly ? PLAN_RENEWAL_REASON : undefined} onClick={() => { setRequestError(undefined); setStateChanged(undefined); setAsking(true); }}>Pedir ajuste</Button>
+        <Button size="lg" leadingIcon={<Check />} loading={approve.isPending} disabled={reloading || requestChanges.isPending} blockedReason={client.agencyReadOnly ? PLAN_RENEWAL_REASON : undefined} onClick={() => { setActionError(undefined); setStateChanged(undefined); setNotice(undefined); send(() => { approve.mutate(); }); }}>Aprovar</Button>
       </div>
     </section>}
     {asking && <RequestChangesDialog

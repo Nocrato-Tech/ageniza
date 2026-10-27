@@ -18,7 +18,7 @@ import {
 } from '@ageniza/contracts';
 import { Avatar, Button, ConfirmDialog, FieldMessage, LiveStatus, Modal, Select, Skeleton, Tabs, TextInput } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { useOptionalAuthSessionStore } from './auth.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -289,6 +289,7 @@ function AdminEditFields({ collaborator, membershipId, canChangeJobTitle, canCha
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const canGrantAdmin = useCan('colaborador.atribuir_admin');
+  const blocked = useWriteBlocked();
   const jobTitleId = useId();
   const jobTitleErrorId = useId();
   const roleErrorId = useId();
@@ -406,7 +407,7 @@ function AdminEditFields({ collaborator, membershipId, canChangeJobTitle, canCha
     {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
 
     <div className="form-actions">
-      <Button type="submit" disabled={!jobTitleChanged && !roleChanged} loading={save.isPending}>Salvar</Button>
+      <Button type="submit" disabled={!jobTitleChanged && !roleChanged && blocked === undefined} loading={save.isPending} blockedReason={blocked}>Salvar</Button>
     </div>
   </form>;
 }

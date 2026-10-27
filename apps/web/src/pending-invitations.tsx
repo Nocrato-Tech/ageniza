@@ -10,7 +10,7 @@ import {
 } from '@ageniza/contracts';
 import { Button, ConfirmDialog, EmptyState, LiveStatus, Pagination, Pill, Skeleton } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { CopyInvitationLinkButton } from './copy-invitation-link.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -75,6 +75,7 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
   const canInvite = useCan('colaborador.convidar');
   const canResend = useCan('convite.reenviar');
   const canCancel = useCan('convite.cancelar');
+  const blocked = useWriteBlocked();
   const [confirming, setConfirming] = useState<PendingInvitation | null>(null);
   const [resent, setResent] = useState<{ email: string; invitationUrl: string | null } | null>(null);
 
@@ -153,7 +154,7 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
       mascot={mascot}
       title="Nenhum convite aguardando aceite"
       description="Convide por e-mail e escolha o papel: a pessoa entra na equipe assim que aceitar."
-      action={<Button variant="secondary" leadingIcon={<Plus />} onClick={onInvite}>Convidar</Button>}
+      action={<Button variant="secondary" leadingIcon={<Plus />} blockedReason={blocked} onClick={onInvite}>Convidar</Button>}
     />;
   } else {
     body = <>
@@ -169,6 +170,7 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
               variant="secondary"
               leadingIcon={<Send />}
               aria-label={`Reenviar convite de ${invitation.email}`}
+              blockedReason={blocked}
               loading={resend.isPending && resend.variables?.id === invitation.id}
               onClick={() => { setResent(null); resend.mutate(invitation); }}
             >

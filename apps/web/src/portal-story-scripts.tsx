@@ -9,6 +9,7 @@ import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth } from './client-detail.js';
 import { todayInSaoPaulo } from './content-dates.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { PLAN_RENEWAL_REASON } from './plan-notice.js';
 import { usePortalClient } from './portal.js';
 
 const LIST_PATH = '/clients/:clientId/story-scripts';
@@ -42,11 +43,12 @@ function Script({ script, number, several, sending, onRecord }: {
       </li>)}
     </ol>
     {script.status === 'sent'
-      ? readOnly ? null : <Button
+      ? <Button
         variant="secondary"
         aria-label={several ? `Já gravei o roteiro ${number}` : undefined}
         loading={sending === script.id}
         disabled={sending !== null}
+        blockedReason={readOnly ? PLAN_RENEWAL_REASON : undefined}
         leadingIcon={<Check />}
         onClick={() => onRecord(script)}
       >Já gravei</Button>

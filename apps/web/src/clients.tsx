@@ -6,7 +6,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { ClientListResponseSchema } from '@ageniza/contracts';
 import { Button, ButtonLink, EmptyState, FilterBar, FilterBarItem, FilterBarSelect, Pagination, Pill, Skeleton, TextInput } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { ClientCard } from './client-card.js';
 import { triageSentence } from './clients-triage.js';
@@ -59,6 +59,7 @@ export function ClientsPage() {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   const canCreate = useCan('cliente.cadastrar');
+  const blocked = useWriteBlocked();
   const canSeeInvitations = useCan('cliente.convidar_usuario');
   const canSeeContents = useCan('conteudo.visualizar');
   const [createOpen, setCreateOpen] = useState(false);
@@ -147,7 +148,7 @@ export function ClientsPage() {
       <header className="clients__header">
         <h1 id="clients-title">Clientes</h1>
         {canCreate && !firstVisit && (
-          <Button size="lg" leadingIcon={<Plus />} onClick={() => setCreateOpen(true)}>Cadastrar cliente</Button>
+          <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setCreateOpen(true)}>Cadastrar cliente</Button>
         )}
       </header>
 
@@ -158,7 +159,7 @@ export function ClientsPage() {
           title="Nenhum cliente ainda"
           description={canCreate ? 'Com o cliente cadastrado você monta o calendário do mês e convida quem aprova os posts. Só o nome é obrigatório: o resto você completa depois.' : undefined}
           action={<>
-            {canCreate && <Button size="lg" leadingIcon={<Plus />} onClick={() => setCreateOpen(true)}>Cadastrar cliente</Button>}
+            {canCreate && <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setCreateOpen(true)}>Cadastrar cliente</Button>}
             <ButtonLink as={Link} to={otherStatusHref} replace variant="secondary" size="lg">Ver arquivados</ButtonLink>
           </>}
         />
