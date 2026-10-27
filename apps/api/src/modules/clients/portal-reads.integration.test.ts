@@ -267,7 +267,7 @@ describe('CLIENTS portal reads (#129)', () => {
         home: { threadsAnsweredByAgency: 0, brandStudyFilled: 4 }
       });
       expect(Object.keys(body).sort()).toEqual([
-        'agencyName', 'archivedAt', 'closingDate', 'contactEmail', 'contactName', 'contactPhone', 'home', 'id',
+        'agencyName', 'agencyReadOnly', 'archivedAt', 'closingDate', 'contactEmail', 'contactName', 'contactPhone', 'home', 'id',
         'instagramHandle', 'legalName', 'name', 'onboardingSeenAt', 'photoUrl', 'segment', 'status', 'taxId', 'website'
       ]);
     });

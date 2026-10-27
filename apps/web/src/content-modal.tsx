@@ -13,7 +13,7 @@ import {
 } from '@ageniza/contracts';
 import { Button, DatePicker, Dialog, Field, FieldMessage, FormatTag, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { useContentsAddress } from './content-address.js';
 import { todayInSaoPaulo } from './content-dates.js';
@@ -88,6 +88,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const agency = useAgencyContext();
   const queryClient = useQueryClient();
   const canOperate = useCan('conteudo.operar');
+  const blocked = useWriteBlocked();
   const ids = useId();
   const { clientId } = context;
 
@@ -103,7 +104,8 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const [formError, setFormError] = useState<string | undefined>();
 
   const closed = saved !== null && isClosed(saved.status);
-  const writable = context.canEdit && !closed;
+  const editable = context.canEdit && !closed;
+  const writable = editable && blocked === undefined;
   const changes = saved === null ? null : changesOf(valuesOf(saved), form);
   const dirty = saved === null || (changes !== null && Object.keys(changes).length > 0);
   const approvalWarning = saved?.status === 'approved' && changes !== null && resetsApproval(changes);
@@ -191,7 +193,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const locked = saved !== null && (saved.media.length > 0 || saved.coverAssetId !== null);
   const note = !context.canEdit
     ? (context.archived ? 'Cliente arquivado: o conteúdo é só leitura.' : 'Você pode ver este conteúdo, mas não editar.')
-    : closed ? 'Este conteúdo já foi publicado ou cancelado e não pode mais ser editado.' : undefined;
+    : closed ? 'Este conteúdo já foi publicado ou cancelado e não pode mais ser editado.' : blocked;
   const captionError = errors.caption;
   const formId = `${ids}-form`;
   const conversation = useRef<HTMLDivElement>(null);
@@ -239,7 +241,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
 
   const formActions = <div className="content-modal__form-actions">
     <Button variant="ghost" disabled={busy} onClick={onDone}>Fechar</Button>
-    {writable && <Button type="submit" form={formId} variant={dirty ? 'primary' : 'secondary'} leadingIcon={<Save />} loading={busy} disabled={busy || !dirty}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
+    {editable && <Button type="submit" form={formId} variant={dirty ? 'primary' : 'secondary'} leadingIcon={<Save />} loading={busy} disabled={busy || (!dirty && blocked === undefined)} blockedReason={blocked}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
   </div>;
 
   return <div className="content-modal">
@@ -272,7 +274,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
           value={form.folderId}
           locked={locked}
           disabled={busy || !writable}
-          canCreate={context.canEdit}
+          canCreate={context.canEdit && blocked === undefined}
           error={errors.folderId}
           onChange={(folderId) => edit({ folderId, mediaAssetIds: [], coverAssetId: null }, 'folderId')}
         />
@@ -325,6 +327,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
         canWrite={canOperate}
         readOnly={context.archived}
         blockedReason={NOT_OPEN_REASONS[saved.status]}
+        planBlockedReason={blocked}
         headingLevel={3}
         onWritten={refreshContents}
         onStale={refreshContents}

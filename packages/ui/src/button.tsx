@@ -1,4 +1,4 @@
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { forwardRef, useId, type ButtonHTMLAttributes, type ReactNode } from 'react';
 
 import { IconSlot } from './icon.js';
 
@@ -14,26 +14,36 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   /** A lucide icon before or after the label; decorative, so the label still names the button. */
   leadingIcon?: ReactNode;
   trailingIcon?: ReactNode;
+  /**
+   * Why the action is unavailable right now (a plan to renew): the button stays visible and focusable, answers nothing,
+   * and shows the reason on hover and on keyboard focus, as its description.
+   */
+  blockedReason?: string | undefined;
 };
 
 /** A semantic button with a stable focus indicator supplied by the consumer stylesheet. */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, variant = 'primary', size = 'md', loading = false, type = 'button', disabled, leadingIcon, trailingIcon, children, onClick, ...props },
+  { className, variant = 'primary', size = 'md', loading = false, type = 'button', disabled, leadingIcon, trailingIcon, blockedReason, children, onClick, 'aria-describedby': describedBy, ...props },
   ref
 ) {
+  const tipId = useId();
+  const blocked = blockedReason !== undefined;
+  const description = blocked ? [describedBy, tipId].filter(Boolean).join(' ') : describedBy;
   return (
     <button
       ref={ref}
       type={type}
       disabled={disabled}
       aria-busy={loading || undefined}
-      aria-disabled={loading || undefined}
-      onClick={loading ? (event) => event.preventDefault() : onClick}
+      aria-disabled={loading || blocked || undefined}
+      aria-describedby={description}
+      onClick={loading || blocked ? (event) => event.preventDefault() : onClick}
       className={[
         'ui-button',
         `ui-button--${variant}`,
         `ui-button--${size}`,
         loading && 'ui-button--loading',
+        blocked && 'ui-button--blocked',
         className
       ]
         .filter(Boolean)
@@ -43,6 +53,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {leadingIcon !== undefined && <IconSlot>{leadingIcon}</IconSlot>}
       {children !== undefined && <span className="ui-button__label">{children}</span>}
       {trailingIcon !== undefined && <IconSlot>{trailingIcon}</IconSlot>}
+      {/* Hidden from the name, read as the description; CSS shows it on hover and focus. */}
+      {blocked && <span id={tipId} aria-hidden="true" className="ui-button__tip">{blockedReason}</span>}
     </button>
   );
 });

@@ -2,7 +2,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
@@ -13,6 +13,19 @@ import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
+
+const dialogDescriptors = ['showModal', 'close'].map((name) => [name, Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, name)] as const);
+beforeAll(() => {
+  // jsdom has no top layer; these stubs only model opening and closing.
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value(this: HTMLDialogElement) { this.open = true; } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value(this: HTMLDialogElement) { this.open = false; } });
+});
+afterAll(() => {
+  for (const [name, descriptor] of dialogDescriptors) {
+    if (descriptor === undefined) Reflect.deleteProperty(HTMLDialogElement.prototype, name);
+    else Object.defineProperty(HTMLDialogElement.prototype, name, descriptor);
+  }
+});
 
 const AGENCY_A = '11111111-1111-4111-8111-111111111111';
 const AGENCY_B = '22222222-2222-4222-8222-222222222222';
@@ -58,7 +71,7 @@ const renderContexts = (
   return { probe, store };
 };
 
-const selectResponse = { decision: 'select', contexts: [agencyA, agencyB, clientC], highlighted: agencyB };
+const selectResponse = { decision: 'select', contexts: [agencyA, agencyB, clientC], highlighted: agencyB, canCreateAgency: false };
 
 const cardTexts = (): string[] => screen.getAllByRole('button')
   .filter((element) => element.classList.contains('ui-choice-card'))
@@ -122,6 +135,17 @@ describe('ContextSelectPage (/contextos)', () => {
     expect(urls.every((url) => url.endsWith('/me/contexts/resolve'))).toBe(true);
   });
 
+  it('offers "Criar agência" only when the resolve says the account may create one (issue #714)', async () => {
+    renderContexts(async () => json(selectResponse));
+    await screen.findByText('Área da agência · Admin');
+    expect(screen.queryByRole('button', { name: /Criar agência/ })).toBeNull();
+    cleanup();
+
+    renderContexts(async () => json({ ...selectResponse, canCreateAgency: true }));
+    fireEvent.click(await screen.findByRole('button', { name: /Criar agência/ }));
+    expect((await screen.findByRole('dialog', { name: 'Criar agência' })).textContent).toContain('14 dias de teste');
+  });
+
   it('writes the chosen context to last-context and enters the workspace', async () => {
     const putBodies: unknown[] = [];
     renderContexts(async (input, init) => {
@@ -147,7 +171,7 @@ describe('ContextSelectPage (/contextos)', () => {
   it('reloads the list on a 404 instead of resending the context that vanished', async () => {
     let resolveCalls = 0;
     let putCalls = 0;
-    const withoutB = { decision: 'select', contexts: [agencyA, clientC], highlighted: null };
+    const withoutB = { decision: 'select', contexts: [agencyA, clientC], highlighted: null, canCreateAgency: false };
     renderContexts(async (input, init) => {
       const url = String(input);
       if (url.endsWith('/me/contexts/resolve')) { resolveCalls += 1; return json(resolveCalls === 1 ? selectResponse : withoutB); }
@@ -201,7 +225,7 @@ describe('ContextSelectPage (/contextos)', () => {
       if (url.endsWith('/me/contexts/resolve')) return json({ decision: 'enter', context: agencyA });
       if (url.endsWith('/me/last-context') && init?.method === 'PUT') { putBodies.push(JSON.parse(String(init.body))); return noContent(); }
       if (url.endsWith(`/agencies/${AGENCY_A}/me`)) {
-        return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
+        return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
       }
       throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`);
     });

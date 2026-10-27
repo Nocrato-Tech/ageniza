@@ -604,4 +604,11 @@ describe('server configuration', () => {
       IDENTITY_STORAGE_BUCKET: 'ageniza-identity-local'
     }).identityStorage).toMatchObject({ endpoint: 'http://localstack:4566', publicEndpoint: 'http://127.0.0.1:9000' });
   });
+
+  it('loads the optional public support contact, absent when blank, and refuses one that is not an e-mail', () => {
+    expect(loadApiConfig(localEnvironment).supportContactEmail).toBeUndefined();
+    expect(loadApiConfig({ ...localEnvironment, SUPPORT_CONTACT_EMAIL: '  ' }).supportContactEmail).toBeUndefined();
+    expect(loadApiConfig({ ...localEnvironment, SUPPORT_CONTACT_EMAIL: ' suporte@ageniza.com.br ' }).supportContactEmail).toBe('suporte@ageniza.com.br');
+    expect(() => loadApiConfig({ ...localEnvironment, SUPPORT_CONTACT_EMAIL: 'suporte' })).toThrow(ConfigValidationError);
+  });
 });

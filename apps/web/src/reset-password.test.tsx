@@ -198,7 +198,7 @@ describe('ResetPasswordPage (/senha/redefinir)', () => {
     const { impl } = makeFetch({ authenticated: true });
     const { probe, queryClient } = renderReset(impl);
     await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
-    queryClient.setQueryData(['contexts', 'resolve', null], { decision: 'select', contexts: [], highlighted: null });
+    queryClient.setQueryData(['contexts', 'resolve', null], { decision: 'select', contexts: [], highlighted: null, canCreateAgency: false });
 
     submit('a new correct password');
 

@@ -27,7 +27,7 @@ const invalidAgencyId = (): Response => json({ error: { code: 'VALIDATION_ERROR'
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[]) => ({
-  agencyId, agencyName, isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions
+  agencyId, agencyName, isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions
 });
 
 interface Scenario {

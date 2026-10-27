@@ -24,7 +24,7 @@ const json = (body: unknown, status = 200): Response =>
 const notFound = (): Response => json({ error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404);
 
 const agencyMe = (permissions: readonly string[]) => ({
-  agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Custom' }, permissions
+  agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Custom' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions
 });
 
 const makeFetch = (permissions: readonly string[], gate?: Promise<void>, logoutGate?: Promise<void>) => {
