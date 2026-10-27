@@ -4,6 +4,7 @@ import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import type { OutgoingEmail } from '@ageniza/email';
 
 import {
+  APPLICATION_DATABASE_URL,
   buildTestApp,
   createFakeEmailSender,
   insertTestUser,
@@ -216,7 +217,7 @@ describe('the date of a password change (#719)', () => {
     const { app } = await openApp();
     const user = await makeUser(app, 'grant-by-column');
     const asApp = async (statement: string): Promise<void> => {
-      const client = new Client({ connectionString: process.env.DATABASE_URL });
+      const client = new Client({ connectionString: APPLICATION_DATABASE_URL });
       await client.connect();
       try { await client.query(statement, [user.id]); } finally { await client.end(); }
     };
