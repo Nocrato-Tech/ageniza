@@ -38,6 +38,8 @@ export const createAuthSessionStore = (client: HttpClient, options: AuthSessionS
   // previous generation must never publish over the current one.
   let generation = 0;
   const listeners = new Set<() => void>();
+  // The read of the newest generation: a refresh whose own read was superseded still has to wait for it.
+  let latest: Promise<void> = Promise.resolve();
 
   const publish = (next: AuthSessionSnapshot): void => {
     snapshot = next;
@@ -62,7 +64,8 @@ export const createAuthSessionStore = (client: HttpClient, options: AuthSessionS
   const initialize = (): void => {
     if (initialized) return;
     initialized = true;
-    void load(++generation);
+    latest = load(++generation);
+    void latest;
   };
 
   const teardown = (): void => {
@@ -81,7 +84,18 @@ export const createAuthSessionStore = (client: HttpClient, options: AuthSessionS
     },
     getSnapshot: () => snapshot,
     /** Re-reads the session after login, logout, or any action that can end it server-side. */
-    refresh: async () => { await load(++generation); },
+    refresh: async () => {
+      const own = load(++generation);
+      latest = own;
+      await own;
+      // A newer read can start while this one is on its way (a screen that asks for a session before the app subscribed to the
+      // store): this one is then dropped without publishing, and returning now would hand the caller the snapshot of before.
+      let waited = own;
+      while (latest !== waited) {
+        waited = latest;
+        await waited.catch(() => undefined);
+      }
+    },
     end() {
       generation += 1;
       publish({ status: 'ready', isAuthenticated: false, user: null });

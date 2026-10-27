@@ -181,8 +181,8 @@ export function LoginPage() {
       </div>}
       {formError !== undefined && <AuthMessage tone="danger" role="alert">{formError}</AuthMessage>}
       <Button type="submit" className="auth-submit" loading={submitting}>Entrar</Button>
-      {/* A sign-in that carries an invitation is the invited e-mail's own; Google cannot carry it. */}
-      {inviteToken === undefined && <GoogleSignInBlock />}
+      {/* The invitation crosses the trip to Google in this tab and is accepted on the way back, on its own screen. */}
+      <GoogleSignInBlock {...(inviteToken === undefined ? {} : { inviteToken })} />
       <p className="auth-note">Ainda não tem conta? <Link to="/criar-conta">Criar conta</Link></p>
     </form>
     {refusedEmail !== undefined && <ResendVerification email={refusedEmail} idPrefix="login" lead="Criou a conta e não confirmou?" buttonLabel="Reenviar o link de confirmação" />}

@@ -54,9 +54,14 @@ export interface AccountMenuProps {
   user?: AuthUser | null;
   /** `sidebar` is the foot of the agency navigation: the person as the trigger and Sair beside it. */
   variant?: 'header' | 'sidebar';
+  /**
+   * Whether this menu is the one that reopens the e-mail change when the person comes back from Google. The menus of the loading
+   * skeletons say no: they are gone as soon as the area loads, and one that spent the mark would leave the real menu without it.
+   */
+  reopensEmailChange?: boolean;
 }
 
-export function AccountMenu({ activeContext, onReviewTour, user: userOverride, variant = 'header' }: AccountMenuProps) {
+export function AccountMenu({ activeContext, onReviewTour, user: userOverride, variant = 'header', reopensEmailChange = true }: AccountMenuProps) {
   const httpClient = useApiClient();
   const authStore = useOptionalAuthSessionStore();
   const session = useAuthSession(userOverride === undefined ? (authStore ?? fallbackAuthStore) : fallbackAuthStore);
@@ -67,7 +72,7 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
   const [panel, setPanel] = useState<AccountMenuPanel>('root');
   const [confirmOpen, setConfirmOpen] = useState(false);
   // Coming back from the Google confirmation of an e-mail change (`GoogleLandingPage`): the dialog reopens in its Google mode.
-  const [reopenedViaGoogle, setReopenedViaGoogle] = useState(() => (location.state as { reopenEmailChange?: unknown } | null)?.reopenEmailChange === true);
+  const [reopenedViaGoogle, setReopenedViaGoogle] = useState(() => reopensEmailChange && (location.state as { reopenEmailChange?: unknown } | null)?.reopenEmailChange === true);
   const [emailChangeOpen, setEmailChangeOpen] = useState(reopenedViaGoogle);
   const [createAgencyOpen, setCreateAgencyOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<LogoutAction | null>(null);

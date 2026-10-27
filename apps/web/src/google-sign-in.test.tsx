@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { AccountMenu } from './account-menu.js';
@@ -38,6 +38,15 @@ const AGENCY_B = '33333333-3333-4333-8333-333333333333';
 const agencyA = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência Um', roleKey: 'admin', roleName: 'Admin', isOwner: true };
 const agencyB = { type: 'agency', agencyId: AGENCY_B, agencyName: 'Agência Dois', roleKey: 'admin', roleName: 'Admin', isOwner: true };
 const agencyMe = { agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] };
+const INVITE_TOKEN = 'tok-invite-0123456789abcdef';
+const INVITE_KEY = 'ageniza.google-invite-return';
+const CLIENT_ID = '44444444-4444-4444-8444-444444444444';
+const portalClient = {
+  id: CLIENT_ID, name: 'Padaria Central', status: 'active', photoUrl: null, legalName: null, taxId: null, segment: null, website: null,
+  instagramHandle: null, contactName: null, contactPhone: null, contactEmail: null, closingDate: null, archivedAt: null,
+  agencyName: 'Agência Um', onboardingSeenAt: '2026-10-01T12:00:00.000Z', agencyReadOnly: false,
+  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0 }
+};
 const sessionBody = { user: { id: USER_ID, name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
 const legalAccepted = { required: false, documents: [
   { document: 'terms', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false },
@@ -57,7 +66,16 @@ interface Scenario {
   readonly loggedIn?: boolean;
   /** Holds `GET /auth/session` until released, to see the landing page while it waits. */
   readonly sessionGate?: Promise<void>;
+  /**
+   * Every `GET /auth/session` answers only after this many milliseconds, a task of its own: the answers come in the order of the
+   * calls and never in the same microtask run, as in a browser (a fake that answers at once hides the order of the reads).
+   */
+  readonly sessionDelayMs?: number;
+  /** Holds `GET /agencies/:id/me` and `GET /clients/:id` until released, to see the loading skeleton of the area. */
+  readonly areaGate?: Promise<void>;
   readonly resolve?: unknown;
+  /** The invitation `INVITE_TOKEN` names; `gone` is asked at every call, so a test can end it while the person is away. */
+  readonly invitation?: { readonly email: string; readonly accountExists?: boolean; readonly gone?: () => boolean };
   /** What `POST /me/email-change` answers, from the body the contract accepted. */
   readonly emailChange?: (body: { newEmail: string; currentPassword?: string }) => Response;
 }
@@ -77,14 +95,27 @@ const makeFetch = (scenario: Scenario = {}) => {
     if (path === '/auth/providers') return scenario.providers === undefined ? json({ google: true }) : scenario.providers();
     if (path === '/auth/session') {
       await scenario.sessionGate;
+      if (scenario.sessionDelayMs !== undefined) await new Promise((resolve) => setTimeout(resolve, scenario.sessionDelayMs));
       return scenario.loggedIn === true ? json(sessionBody) : apiError(401, 'UNAUTHENTICATED');
     }
     if (path === '/auth/login') return apiError(401, 'INVALID_CREDENTIALS');
+    const invitation = scenario.invitation;
+    if (invitation !== undefined && path === `/invitations/${INVITE_TOKEN}`) {
+      if (invitation.gone?.() === true) return apiError(410, 'INVITATION_INVALID');
+      return json({ purpose: 'collaborator_invite', email: invitation.email, agency: { name: 'Agência Um' }, client: null, accountExists: invitation.accountExists ?? true });
+    }
     if (scenario.loggedIn !== true) return apiError(401, 'UNAUTHENTICATED');
+    if (invitation !== undefined && path === `/invitations/${INVITE_TOKEN}/accept` && method === 'POST') {
+      // Like the API: a gone invitation is 410, and only the account of the invited address accepts.
+      if (invitation.gone?.() === true) return apiError(410, 'INVITATION_INVALID');
+      if (sessionBody.user.email !== invitation.email) return apiError(403, 'INVITATION_ACCOUNT_MISMATCH');
+      return json({ status: 'accepted', context: { agencyId: AGENCY_A, clientId: null } });
+    }
     if (path === '/me/legal-acceptances') return json(legalAccepted);
     if (path === '/me/contexts/resolve') return json(scenario.resolve ?? { decision: 'enter', context: agencyA });
     if (path === '/me/last-context' && method === 'PUT') return new Response(null, { status: 204 });
-    if (path === `/agencies/${AGENCY_A}/me`) return json(agencyMe);
+    if (path === `/agencies/${AGENCY_A}/me`) { await scenario.areaGate; return json(agencyMe); }
+    if (path === `/clients/${CLIENT_ID}`) { await scenario.areaGate; return json(portalClient); }
     if (path === '/me/contexts') return json({ canCreateAgency: false, contexts: [] });
     if (path === '/me/email-change' && method === 'POST') {
       const request = body as { newEmail?: unknown; currentPassword?: unknown };
@@ -103,13 +134,25 @@ function SessionHarness({ store }: { store: AuthSessionStore }) {
   return <ApplicationRoutes session={session} />;
 }
 
-interface Probe { pathname: string; search: string; state: unknown }
+interface Probe {
+  pathname: string;
+  search: string;
+  state: unknown;
+  /** Every address the screen was at, in order: an address the person only passed through is a result too. */
+  visited: string[];
+  navigate: NavigateFunction;
+}
+
+const newProbe = (): Probe => ({ pathname: '', search: '', state: null, visited: [], navigate: () => undefined });
 
 function LocationProbe({ probe }: { probe: Probe }) {
-  useCommittedLocation((location) => {
+  useCommittedLocation((location, navigate) => {
     probe.pathname = location.pathname;
     probe.search = location.search;
     probe.state = location.state;
+    probe.navigate = navigate;
+    const address = `${location.pathname}${location.search}`;
+    if (probe.visited[probe.visited.length - 1] !== address) probe.visited.push(address);
   });
   return null;
 }
@@ -119,7 +162,7 @@ const renderApp = (impl: typeof fetch, entry: string | { pathname: string; state
   const client = new HttpClient(baseUrl, impl, { onSessionEnded: sessionEnd.notify });
   const queryClient = createQueryClient();
   const store = createAuthSessionStore(client, { onSessionStarted: () => queryClient.clear() });
-  const probe: Probe = { pathname: '', search: '', state: null };
+  const probe = newProbe();
   render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={queryClient}>
@@ -220,14 +263,14 @@ describe('the Google button on /entrar and /criar-conta (issue #713)', () => {
     expect(screen.queryByRole('link', { name: 'Entrar com o Google' })).toBeNull();
   });
 
-  it('shows no button on a sign-in that carries an invitation, which Google cannot carry, and asks nothing about Google', async () => {
-    const { impl, count } = makeFetch();
-    renderApp(impl, { pathname: '/entrar', state: { inviteToken: 'invite-token' } });
-    await screen.findByRole('button', { name: 'Entrar' });
-    await settle();
+  it('shows the button on a sign-in that carries an invitation (the owner decided it, 2026-10-26), with no token in the address', async () => {
+    const { impl } = makeFetch();
+    renderApp(impl, { pathname: '/entrar', state: { inviteToken: INVITE_TOKEN } });
 
-    expect(screen.queryByRole('link', { name: 'Entrar com o Google' })).toBeNull();
-    expect(count('/auth/providers')).toBe(0);
+    const link = await screen.findByRole('link', { name: 'Entrar com o Google' });
+    expect(link.getAttribute('href')).toBe(START);
+    expect(clickAndReportCancelled(link)).toBe(false);
+    expect(window.sessionStorage.getItem(INVITE_KEY)).toBe(INVITE_TOKEN);
   });
 });
 
@@ -351,10 +394,246 @@ describe('the landing /entrar/google (issue #713)', () => {
   });
 });
 
+describe('the return from Google when the page loads from scratch (review of #736)', () => {
+  // The landing asks for the session before the app subscribes to the store, and the app then asks again: the first read is
+  // dropped. The answers come one task apart, as in a browser, so the return must wait for the read that publishes.
+  const REFUSED = '/entrar?erro=google';
+
+  it('with a session never passes through the refusal on the way in', async () => {
+    const { impl } = makeFetch({ loggedIn: true, sessionDelayMs: 15 });
+    const { probe } = renderApp(impl, '/entrar/google');
+
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    expect(probe.visited).not.toContain(REFUSED);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('after a reauthentication goes back to the screen that asked and reopens the dialog, never through the refusal', async () => {
+    window.sessionStorage.setItem(REAUTH_KEY, '/contextos');
+    const { impl } = makeFetch({ loggedIn: true, resolve: selectBoth, sessionDelayMs: 15 });
+    const { probe } = renderApp(impl, '/entrar/google?intent=reauth');
+
+    expect(await screen.findByRole('dialog', { name: 'Pedir troca de e-mail' })).toBeTruthy();
+    expect(probe.pathname).toBe('/contextos');
+    expect(probe.visited).not.toContain(REFUSED);
+    expect(window.sessionStorage.getItem(REAUTH_KEY)).toBeNull();
+  });
+
+  it('without a session is still the refusal, once the reads are done', async () => {
+    const { impl } = makeFetch({ loggedIn: false, sessionDelayMs: 15 });
+    const { probe } = renderApp(impl, '/entrar/google');
+
+    expect((await screen.findByRole('alert')).textContent).toBe('E-mail ou senha incorretos.');
+    expect(probe.visited).toContain(REFUSED);
+  });
+
+  it('does not take the person back when the screen was left before the session answered', async () => {
+    let release: () => void = () => undefined;
+    const sessionGate = new Promise<void>((resolve) => { release = resolve; });
+    const { impl } = makeFetch({ loggedIn: false, sessionGate });
+    const { probe } = renderApp(impl, '/entrar/google');
+    await screen.findByRole('heading', { name: 'Entrando com o Google' });
+
+    act(() => { probe.navigate('/criar-conta'); });
+    await screen.findByRole('heading', { name: 'Criar conta' });
+    release();
+    await settle();
+
+    expect(probe.pathname).toBe('/criar-conta');
+    expect(probe.visited).not.toContain(REFUSED);
+  });
+});
+
+describe('Google on the invitation screen (review of #736; owner decision 2026-10-26)', () => {
+  const INVITED = sessionBody.user.email;
+  const OTHER = 'outra.pessoa@example.test';
+  const acceptPosts = (calls: readonly Call[]) => calls.filter((call) => call.method === 'POST' && call.path === `/invitations/${INVITE_TOKEN}/accept`);
+
+  /** Clicks the button on the invitation, then loads the app from scratch at the return, as the browser does after Google. */
+  const goToGoogleAndBack = async (before: ReturnType<typeof makeFetch>, after: ReturnType<typeof makeFetch>) => {
+    renderApp(before.impl, `/convite/${INVITE_TOKEN}`);
+    const link = await screen.findByRole('link', { name: 'Entrar com o Google' });
+    expect(link.getAttribute('href')).toBe(START);
+    expect(clickAndReportCancelled(link)).toBe(false);
+    cleanup();
+    return renderApp(after.impl, '/entrar/google');
+  };
+
+  it('offers the button to a visitor, to whoever has an account and to whoever has not, and only while Google is on', async () => {
+    for (const accountExists of [true, false]) {
+      const { impl } = makeFetch({ invitation: { email: INVITED, accountExists } });
+      renderApp(impl, `/convite/${INVITE_TOKEN}`);
+      expect(await screen.findByRole('link', { name: 'Entrar com o Google' })).toBeTruthy();
+      cleanup();
+    }
+    const off = makeFetch({ invitation: { email: INVITED }, providers: () => json({ google: false }) });
+    renderApp(off.impl, `/convite/${INVITE_TOKEN}`);
+    await screen.findByRole('button', { name: 'Aceitar convite' });
+    await waitFor(() => expect(off.count('/auth/providers')).toBe(1));
+    await settle();
+    expect(screen.queryByRole('link', { name: 'Entrar com o Google' })).toBeNull();
+  });
+
+  it('does not offer it to a person who is already connected', async () => {
+    const { impl, count } = makeFetch({ loggedIn: true, invitation: { email: INVITED } });
+    renderApp(impl, `/convite/${INVITE_TOKEN}`);
+    await screen.findByRole('button', { name: 'Aceitar convite' });
+    await settle();
+
+    expect(screen.queryByRole('link', { name: 'Entrar com o Google' })).toBeNull();
+    expect(count('/auth/providers')).toBe(0);
+  });
+
+  it('accepts on the way back when the Google address is the invited one, through the screen of the invitation', async () => {
+    const before = makeFetch({ invitation: { email: INVITED } });
+    const after = makeFetch({ loggedIn: true, invitation: { email: INVITED } });
+    const { probe } = await goToGoogleAndBack(before, after);
+
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    expect(acceptPosts(after.calls)).toHaveLength(1);
+    expect(probe.visited).toEqual([`/entrar/google`, `/convite/${INVITE_TOKEN}`, `/agencia/${AGENCY_A}`]);
+    // Spent: nothing of the invitation stays in the tab.
+    expect(window.sessionStorage.getItem(INVITE_KEY)).toBeNull();
+  });
+
+  it('accepts nothing and links nothing when the Google address is another one, and shows the error the invitation already shows', async () => {
+    const before = makeFetch({ invitation: { email: OTHER } });
+    const after = makeFetch({ loggedIn: true, invitation: { email: OTHER } });
+    const { probe } = await goToGoogleAndBack(before, after);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(`Você está conectado com outra conta. O convite foi enviado para ${OTHER}.`);
+    expect(screen.getByRole('button', { name: 'Entrar com outra conta' })).toBeTruthy();
+    await settle();
+    expect(acceptPosts(after.calls)).toHaveLength(0);
+    expect(after.calls.filter((call) => call.method === 'PUT' || call.path === '/me/contexts/resolve')).toEqual([]);
+    expect(probe.pathname).toBe(`/convite/${INVITE_TOKEN}`);
+  });
+
+  it('shows the invitation as no longer valid when it expired or was revoked while the person was away, and accepts nothing', async () => {
+    let gone = false;
+    const before = makeFetch({ invitation: { email: INVITED, gone: () => gone } });
+    const after = makeFetch({ loggedIn: true, invitation: { email: INVITED, gone: () => gone } });
+    renderApp(before.impl, `/convite/${INVITE_TOKEN}`);
+    clickAndReportCancelled(await screen.findByRole('link', { name: 'Entrar com o Google' }));
+    cleanup();
+    gone = true;
+    renderApp(after.impl, '/entrar/google');
+
+    expect(await screen.findByRole('heading', { name: 'Este convite não é mais válido' })).toBeTruthy();
+    await settle();
+    expect(acceptPosts(after.calls)).toHaveLength(0);
+  });
+
+  it('never puts the token in an address sent to the server: the link is the bare start, and only the invitation routes carry it', async () => {
+    const before = makeFetch({ invitation: { email: INVITED } });
+    const after = makeFetch({ loggedIn: true, invitation: { email: INVITED } });
+    const { probe } = await goToGoogleAndBack(before, after);
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+
+    const withToken = [...before.calls, ...after.calls].map((call) => call.path).filter((path) => path.includes(INVITE_TOKEN));
+    expect(new Set(withToken)).toEqual(new Set([`/invitations/${INVITE_TOKEN}`, `/invitations/${INVITE_TOKEN}/accept`]));
+  });
+
+  it('uses the kept invitation once: a later return goes on through the sign-in screen', async () => {
+    window.sessionStorage.setItem(INVITE_KEY, INVITE_TOKEN);
+    const first = makeFetch({ loggedIn: true, invitation: { email: INVITED } });
+    const firstRun = renderApp(first.impl, '/entrar/google');
+    await waitFor(() => expect(firstRun.probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    cleanup();
+
+    const second = makeFetch({ loggedIn: true, invitation: { email: INVITED } });
+    const secondRun = renderApp(second.impl, '/entrar/google');
+    await waitFor(() => expect(secondRun.probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    expect(secondRun.probe.visited).not.toContain(`/convite/${INVITE_TOKEN}`);
+    expect(acceptPosts(second.calls)).toHaveLength(0);
+  });
+
+  it('forgets a refused return: without a session the kept invitation goes too', async () => {
+    window.sessionStorage.setItem(INVITE_KEY, INVITE_TOKEN);
+    const { impl } = makeFetch({ loggedIn: false });
+    renderApp(impl, '/entrar/google');
+
+    await screen.findByRole('alert');
+    expect(window.sessionStorage.getItem(INVITE_KEY)).toBeNull();
+  });
+
+  it('does not follow a kept value that is not a token', async () => {
+    window.sessionStorage.setItem(INVITE_KEY, 'x'.repeat(2_049));
+    const { impl } = makeFetch({ loggedIn: true });
+    const { probe } = renderApp(impl, '/entrar/google');
+
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+    expect(probe.visited.some((address) => address.startsWith('/convite/'))).toBe(false);
+  });
+
+  it('does not let an abandoned invitation ride on a later sign-in that has none', async () => {
+    window.sessionStorage.setItem(INVITE_KEY, INVITE_TOKEN);
+    const { impl } = makeFetch();
+    renderApp(impl, '/entrar');
+
+    clickAndReportCancelled(await screen.findByRole('link', { name: 'Entrar com o Google' }));
+
+    expect(window.sessionStorage.getItem(INVITE_KEY)).toBeNull();
+  });
+
+  it('never takes a reauthentication to an invitation, even when one was left in the tab', async () => {
+    window.sessionStorage.setItem(INVITE_KEY, INVITE_TOKEN);
+    window.sessionStorage.setItem(REAUTH_KEY, '/contextos');
+    const { impl } = makeFetch({ loggedIn: true, resolve: selectBoth, invitation: { email: INVITED } });
+    const { probe } = renderApp(impl, '/entrar/google?intent=reauth');
+
+    expect(await screen.findByRole('dialog', { name: 'Pedir troca de e-mail' })).toBeTruthy();
+    expect(probe.pathname).toBe('/contextos');
+    expect(probe.visited.some((address) => address.startsWith('/convite/'))).toBe(false);
+  });
+
+  it('does not keep the invitation for the reauthentication of an e-mail change', async () => {
+    window.sessionStorage.setItem(INVITE_KEY, INVITE_TOKEN);
+    const { impl } = makeFetch({ loggedIn: true, emailChange: () => apiError(403, 'REAUTH_REQUIRED') });
+    renderMenu(impl);
+    const dialog = await openDialog();
+    fireEvent.click(await within(dialog).findByRole('button', { name: GOOGLE_TOGGLE }));
+    fireEvent.change(within(dialog).getByLabelText('Novo e-mail'), { target: { value: 'novo@exemplo.test' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar pedido' }));
+    clickAndReportCancelled(await within(dialog).findByRole('link', { name: 'Confirmar com o Google' }));
+
+    expect(window.sessionStorage.getItem(INVITE_KEY)).toBeNull();
+  });
+});
+
+describe('the dialog of the e-mail change reopens in the real menu of the area (review of #736)', () => {
+  // The menus of the loading skeletons are gone when the area loads: if one of them spent the mark, the real one would not find it.
+  const back = async (area: string) => {
+    window.sessionStorage.setItem(REAUTH_KEY, area);
+    let release: () => void = () => undefined;
+    const areaGate = new Promise<void>((resolve) => { release = resolve; });
+    const { impl } = makeFetch({ loggedIn: true, areaGate });
+    const { probe } = renderApp(impl, '/entrar/google?intent=reauth');
+
+    await waitFor(() => expect(probe.pathname).toBe(area));
+    // On the skeleton: the mark is still there, nothing opened.
+    expect((probe.state as { reopenEmailChange?: unknown } | null)?.reopenEmailChange).toBe(true);
+    expect(screen.queryByRole('dialog', { name: 'Pedir troca de e-mail' })).toBeNull();
+    release();
+    const dialog = await screen.findByRole('dialog', { name: 'Pedir troca de e-mail' });
+    expect(within(dialog).queryByLabelText('Senha atual')).toBeNull();
+    await waitFor(() => expect(probe.state).toBeNull());
+  };
+
+  it('back to the agency area', async () => {
+    await back(`/agencia/${AGENCY_A}`);
+  });
+
+  it('back to the client portal', async () => {
+    await back(`/portal/${CLIENT_ID}/inicio`);
+  });
+});
+
 const renderMenu = (impl: typeof fetch, entry: string | { pathname: string; state: unknown } = `/agencia/${AGENCY_A}`) => {
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: createSessionEndSignal().notify });
   const store = createAuthSessionStore(client);
-  const probe: Probe = { pathname: '', search: '', state: null };
+  const probe = newProbe();
   render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={createQueryClient()}>

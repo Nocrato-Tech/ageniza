@@ -2,16 +2,18 @@ import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
-import { AuthProvidersResponseSchema } from '@ageniza/contracts';
+import { AuthInvitationTokenSchema, AuthProvidersResponseSchema } from '@ageniza/contracts';
 import { ButtonLink } from '@ageniza/ui';
 
 import { useAuthSessionStore } from './auth.js';
 import { AuthPanel } from './auth-layout.js';
 import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
+import { ownPathOrNull } from './own-path.js';
 
 const PROVIDERS_KEY = ['auth-providers'] as const;
 const REAUTH_RETURN_KEY = 'ageniza.google-reauth-return';
+const INVITE_RETURN_KEY = 'ageniza.google-invite-return';
 
 /** Where the person goes after a reauthentication when the screen that asked was not kept. */
 const REAUTH_FALLBACK = '/contextos';
@@ -49,8 +51,10 @@ function GoogleMark() {
  * A real link to the API route that sends the browser to Google: a navigation, so it opens like any link and works without a
  * script. It is not there while Google is off.
  */
-export function GoogleLink({ intent, children = 'Entrar com o Google', className = 'auth-submit', onNavigate }: {
+export function GoogleLink({ intent, inviteToken, children = 'Entrar com o Google', className = 'auth-submit', onNavigate }: {
   intent?: 'reauth';
+  /** The invitation the sign-in is for: kept in this browser tab across the trip (never in the address sent to the server). */
+  inviteToken?: string;
   children?: string;
   className?: string;
   /** Runs before the browser leaves, to keep what the page must find again when it comes back. */
@@ -60,19 +64,42 @@ export function GoogleLink({ intent, children = 'Entrar com o Google', className
   const enabled = useGoogleEnabled();
   if (!enabled) return null;
   const path = intent === undefined ? '/auth/google/start' : `/auth/google/start?intent=${intent}`;
+  const onClick = (): void => {
+    // Set or cleared on every start, so what an abandoned invitation left cannot ride on a later, unrelated sign-in.
+    rememberGoogleInvite(inviteToken);
+    onNavigate?.();
+  };
   return <ButtonLink variant="secondary" className={className} href={httpClient.browserUrl(path)} leadingIcon={<GoogleMark />}
-    {...(onNavigate === undefined ? {} : { onClick: onNavigate })}>{children}</ButtonLink>;
+    onClick={onClick}>{children}</ButtonLink>;
 }
 
-/** "ou" and the Google button under the form of `/entrar` and `/criar-conta`; nothing at all while Google is off. */
-export function GoogleSignInBlock() {
+/** "ou" and the Google button under the form of `/entrar` and `/criar-conta`, and on the invitation; nothing at all while Google is off. */
+export function GoogleSignInBlock({ inviteToken }: { inviteToken?: string }) {
   const enabled = useGoogleEnabled();
   if (!enabled) return null;
   return <div className="auth-alternative">
     <p className="auth-divider"><span>ou</span></p>
-    <GoogleLink />
+    <GoogleLink {...(inviteToken === undefined ? {} : { inviteToken })} />
   </div>;
 }
+
+/** Keeps the invitation across the trip to Google, or forgets any kept one when there is none. */
+const rememberGoogleInvite = (token: string | undefined): void => {
+  try {
+    if (token === undefined) window.sessionStorage.removeItem(INVITE_RETURN_KEY);
+    else window.sessionStorage.setItem(INVITE_RETURN_KEY, token);
+  } catch { /* storage refused: the person comes back to the sign-in screen and opens the invitation again */ }
+};
+
+/** Reads and forgets the invitation: it is used once, and only a token the API could have issued is followed. */
+const takeGoogleInvite = (): string | null => {
+  let stored: string | null = null;
+  try {
+    stored = window.sessionStorage.getItem(INVITE_RETURN_KEY);
+    window.sessionStorage.removeItem(INVITE_RETURN_KEY);
+  } catch { /* nothing kept */ }
+  return stored !== null && AuthInvitationTokenSchema.safeParse(stored).success ? stored : null;
+};
 
 /** Remembers the address a reauthentication must come back to, when the browser can keep it. */
 export const rememberReauthReturn = (path: string): void => {
@@ -86,7 +113,7 @@ const takeReauthReturn = (): string => {
     stored = window.sessionStorage.getItem(REAUTH_RETURN_KEY);
     window.sessionStorage.removeItem(REAUTH_RETURN_KEY);
   } catch { /* nothing kept */ }
-  return stored !== null && stored.startsWith('/') && !stored.startsWith('//') && !stored.includes('\\') ? stored : REAUTH_FALLBACK;
+  return ownPathOrNull(stored) ?? REAUTH_FALLBACK;
 };
 
 /**
@@ -107,7 +134,13 @@ export function GoogleLandingPage() {
     void (async () => {
       try { await authStore.refresh(); } catch { /* an unreadable session is no session */ }
       if (!current) return;
+      // Forgotten whatever the answer is: a kept invitation is used by this return and by no other. (After the guard above, so a
+      // run that was replaced, as Strict Mode does in development, leaves it for the one that goes on.)
+      const invitation = reauth ? null : takeGoogleInvite();
       if (!authStore.getSnapshot().isAuthenticated) { navigate('/entrar?erro=google', { replace: true }); return; }
+      // An invitation goes back to its own screen, which accepts it only when the session is the invited address (the same
+      // path as a password sign-in that carried the invitation).
+      if (invitation !== null) { navigate(`/convite/${encodeURIComponent(invitation)}`, { replace: true, state: { inviteLogin: true } }); return; }
       if (!reauth) { navigate('/entrar', { replace: true }); return; }
       navigate(takeReauthReturn(), { replace: true, state: { reopenEmailChange: true } });
     })();

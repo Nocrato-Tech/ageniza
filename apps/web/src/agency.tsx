@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { AgencyMeResponseSchema, type AgencyMeResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
+import { isTermsNotAccepted, TermsRedirect } from './acceptance.js';
 import { AgencySidebar, AgencySidebarSkeleton } from './agency-nav.js';
 import { Button, ButtonLink, EmptyState, Logo, Skeleton } from '@ageniza/ui';
 
@@ -106,6 +107,8 @@ export function AgencyAreaLayout() {
 
   if (!validAgencyId) return <AgencyContextlessShell><NotFoundPage as="section" home="/contextos" /></AgencyContextlessShell>;
   if (error !== null) {
+    // An account that has not accepted the Terms and the Privacy Policy is sent to accept them and comes back here.
+    if (isTermsNotAccepted(error)) return <TermsRedirect />;
     if (isNotFound(error)) return <AgencyContextlessShell><NotFoundPage as="section" home="/contextos" /></AgencyContextlessShell>;
     return <AgencyContextlessShell><AgencyUnavailable onRetry={() => { void refetch(); }} /></AgencyContextlessShell>;
   }

@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { LegalAcceptancesResponseSchema, type LegalDocumentKind } from '@ageniza/contracts';
@@ -9,6 +9,7 @@ import { AuthMessage } from './auth-layout.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient, type HttpClient } from './http.js';
 import { LEGAL_KEY } from './legal-notice.js';
+import { ownPathOrNull } from './own-path.js';
 import { StatusPanel } from './status-panel.js';
 import { LoadingPage } from './status-pages.js';
 
@@ -22,6 +23,16 @@ const DOCUMENTS: Record<LegalDocumentKind, { readonly name: string; readonly to:
 
 const readStatus = (httpClient: HttpClient) =>
   httpClient.request({ path: '/me/legal-acceptances', response: LegalAcceptancesResponseSchema });
+
+/** The answer of an agency or portal route to an account that has not accepted the Terms and the Privacy Policy (`TERMS_NOT_ACCEPTED`). */
+export const isTermsNotAccepted = (error: unknown): boolean =>
+  error instanceof HttpClientError && error.status === 403 && error.code === 'TERMS_NOT_ACCEPTED';
+
+/** To `/aceite` from a screen the account cannot open yet, carrying the address to come back to once it has accepted. */
+export function TermsRedirect() {
+  const location = useLocation();
+  return <Navigate to="/aceite" replace state={{ returnTo: `${location.pathname}${location.search}` }} />;
+}
 
 /**
  * The block before the first use (specs/auth.md section 13): an account that has Google and has not accepted the Terms and the
@@ -48,6 +59,10 @@ export function AcceptancePage() {
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Where an agency or portal screen that was refused for the acceptance asked to come back to (`TermsRedirect`); only an
+  // address of this app is followed, and without one the person goes on through the sign-in screen, which resolves where.
+  const returnTo = ownPathOrNull((location.state as { returnTo?: unknown } | null)?.returnTo);
   const status = useQuery({ queryKey: LEGAL_KEY, queryFn: () => readStatus(httpClient) });
   const [checked, setChecked] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -63,7 +78,7 @@ export function AcceptancePage() {
       {READ_FAILED}
     </StatusPanel>;
   }
-  if (!status.data.required) return <Navigate to="/entrar" replace />;
+  if (!status.data.required) return <Navigate to={returnTo ?? '/entrar'} replace />;
 
   const pending = status.data.documents.filter((entry) => entry.pending).map((entry) => entry.document);
 
@@ -78,7 +93,7 @@ export function AcceptancePage() {
         const response = await httpClient.request({ path: '/me/legal-acceptances', method: 'POST', body: { document }, response: LegalAcceptancesResponseSchema });
         queryClient.setQueryData(LEGAL_KEY, response);
       }
-      navigate('/entrar', { replace: true });
+      navigate(returnTo ?? '/entrar', { replace: true });
     } catch (caught: unknown) {
       setError(caught instanceof HttpClientError && caught.status === 429 ? 'Muitas tentativas. Tente novamente mais tarde.' : ACCEPT_FAILED);
     } finally {

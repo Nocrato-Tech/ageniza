@@ -2607,6 +2607,16 @@ a.client-general__block:focus-visible {
   text-align: left;
 }
 
+/* `.status-panel p` greys every paragraph of the panel; the failure of the acceptance keeps the error color and the size of the sign-in screens. */
+.accept-form .auth-message {
+  max-width: none;
+  font: var(--body-md);
+}
+
+.accept-form .auth-message--danger {
+  color: var(--text-danger);
+}
+
 /* "Esqueci minha senha" sits on the label row of the password field, as in the artboard; the link stays after the input in the tab order. */
 .auth-field-link {
   position: relative;
