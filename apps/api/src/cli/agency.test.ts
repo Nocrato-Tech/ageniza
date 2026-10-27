@@ -143,6 +143,28 @@ describe('agency operator CLI', () => {
     expect(calls.filter((call) => call.statement.includes('insert into audit.events'))).toHaveLength(3);
   });
 
+  it('files the emailed activation token as the e-mail token, so accepting it confirms the e-mail (decision 2026-10-27)', async () => {
+    const query: AgencyCliTransaction['query'] = async <TRow extends object>(statement: string) => {
+      if (statement.startsWith('select id, name, status, owner_user_id')) return { rows: [{ id: agencyId, name: 'Acme', status: 'active', owner_user_id: null } as TRow] };
+      if (statement.startsWith('select id, email, expires_at')) return { rows: [{ id: invitationId, email: 'owner@example.com', expires_at: '2030-01-01T12:00:00.000Z' } as TRow] };
+      if (statement.includes('insert into public.invitations')) return { rows: [{ id: nextInvitationId, email: 'owner@example.com', expires_at: '2030-01-08T12:00:00.000Z' } as TRow] };
+      return { rows: [] as TRow[] };
+    };
+    const { database, calls } = fakeDatabase(query);
+    const { mailer, sent } = fakeMailer();
+    await createAgencyCommandService({ database, mailer, appPublicUrl: 'https://app.example.com' }).resendActivation(agencyId);
+
+    const token = decodeURIComponent(sent[0]!.actionUrl.split('/convite/')[1]!);
+    const insert = calls.find((call) => call.statement.includes('insert into public.invitations'))!;
+    expect(insert.statement).toContain('email_token_hash');
+    // The bindings are (agency, e-mail, token_hash, email_token_hash): the hash of the mailed token is the
+    // e-mail one, and the column of the token to copy holds a hash that matches nothing anyone received.
+    const [, , tokenHash, emailTokenHash] = insert.bindings.map(String);
+    expect(emailTokenHash).toBe(hashInvitationToken(token));
+    expect(tokenHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(tokenHash).not.toBe(emailTokenHash);
+  });
+
   it('refuses to resend the activation of a suspended agency and keeps the pending invitation', async () => {
     const query: AgencyCliTransaction['query'] = async <TRow extends object>(statement: string) => {
       if (statement.startsWith('select id, name, status, owner_user_id')) return { rows: [{ id: agencyId, name: 'Acme', status: 'suspended', owner_user_id: null } as TRow] };

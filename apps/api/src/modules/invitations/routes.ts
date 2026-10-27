@@ -22,6 +22,7 @@ import { HttpError } from '@ageniza/core';
 import { raw, isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import {
   createInvitationToken,
+  createInvitationTokenPair,
   hashInvitationToken,
   type InvitationToken
 } from './tokens.js';
@@ -302,12 +303,13 @@ const createCollaboratorInvitation = async (
   email: string,
   roleId: string,
   agencyId: string
-): Promise<{ invitationId: string; expiresAt: Date; token: InvitationToken; agencyName: string; supersededInvitationId: string | null }> => {
+): Promise<{ invitationId: string; expiresAt: Date; token: InvitationToken; emailToken: InvitationToken; agencyName: string; supersededInvitationId: string | null }> => {
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   const tenant = request.tenant;
   if (tenant === undefined) throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Agency not found.' });
-  const token = tokenForInsert(dependencies.config.appPublicUrl);
+  // The token of the e-mail never leaves the server but in the e-mail; the one to copy is the response's.
+  const { copy: token, email: emailToken } = createInvitationTokenPair({ appPublicUrl: dependencies.config.appPublicUrl });
   try {
   return await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
       const roleResult = await raw<RawRows<{ id: string; is_admin: boolean }>>(transaction, `
@@ -346,14 +348,14 @@ const createCollaboratorInvitation = async (
 
       const result = await raw<RawRows<{ id: string; expires_at: Date }>>(transaction, `
         insert into public.invitations
-          (agency_id, purpose, email, role_id, token_hash, expires_at, invited_by_user_id)
-        values (?, 'collaborator_invite', ?, ?, ?, ?, ?)
+          (agency_id, purpose, email, role_id, token_hash, email_token_hash, expires_at, invited_by_user_id)
+        values (?, 'collaborator_invite', ?, ?, ?, ?, ?, ?)
         returning id, expires_at
-      `, [agencyId, email, roleId, token.tokenHash, token.expiresAt, auth.userId]);
+      `, [agencyId, email, roleId, token.tokenHash, emailToken.tokenHash, token.expiresAt, auth.userId]);
       const row = result.rows[0];
       if (row === undefined) throw new Error('Invitation insert did not return a row.');
       await auditInTransaction(transaction, { action: 'invitation.sent', actorUserId: auth.userId, agencyId, targetId: row.id });
-      return { invitationId: row.id, expiresAt: new Date(row.expires_at), token, agencyName: agency.agencyName, supersededInvitationId };
+      return { invitationId: row.id, expiresAt: new Date(row.expires_at), token, emailToken, agencyName: agency.agencyName, supersededInvitationId };
     });
   } catch (error) {
     if (isRetryableConflict(error)) throw tryAgain();
@@ -368,12 +370,12 @@ const resendInvitation = async (
   request: FastifyRequest,
   agencyId: string,
   invitationId: string
-): Promise<{ invitationId: string; expiresAt: Date; token: InvitationToken; agencyName: string; clientName: string | null; purpose: InvitationLookup['purpose']; email: string }> => {
+): Promise<{ invitationId: string; expiresAt: Date; token: InvitationToken; emailToken: InvitationToken | null; agencyName: string; clientName: string | null; purpose: InvitationLookup['purpose']; email: string }> => {
   const auth = request.auth;
   if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
   const tenant = request.tenant;
   if (tenant === undefined) throw new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Agency not found.' });
-  const token = tokenForInsert(dependencies.config.appPublicUrl);
+  const { copy: token, email: emailToken } = createInvitationTokenPair({ appPublicUrl: dependencies.config.appPublicUrl });
   return withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
     // The identity fields never change, so they can be read without the row lock; the slot lock
     // must come before it, the order the creation also uses, or the two transactions deadlock
@@ -410,12 +412,14 @@ const resendInvitation = async (
     // A silently filtered UPDATE would otherwise report success while the invitation stays live.
     if (revoked.rows[0] === undefined) throw invitationNotPending();
     await auditInTransaction(transaction, { action: 'invitation.revoked', actorUserId: auth.userId, agencyId, targetId: invitationId });
+    // Only a collaborator invitation has the token of the e-mail apart from the one to copy (a portal one keeps its single token).
+    const hasEmailToken = current.purpose === 'collaborator_invite';
     const inserted = await raw<RawRows<{ id: string; expires_at: Date }>>(transaction, `
       insert into public.invitations
-        (agency_id, purpose, email, role_id, client_id, token_hash, expires_at, invited_by_user_id)
-      values (?, ?, ?, ?, ?, ?, ?, ?)
+        (agency_id, purpose, email, role_id, client_id, token_hash, email_token_hash, expires_at, invited_by_user_id)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?)
       returning id, expires_at
-      `, [agencyId, current.purpose, current.email, current.role_id, current.client_id, token.tokenHash, token.expiresAt, auth.userId]);
+      `, [agencyId, current.purpose, current.email, current.role_id, current.client_id, token.tokenHash, hasEmailToken ? emailToken.tokenHash : null, token.expiresAt, auth.userId]);
     const next = inserted.rows[0];
     if (next === undefined) throw new Error('Invitation insert did not return a row.');
     await auditInTransaction(transaction, { action: 'invitation.resent', actorUserId: auth.userId, agencyId, targetId: next.id });
@@ -423,6 +427,7 @@ const resendInvitation = async (
       invitationId: next.id,
       expiresAt: new Date(next.expires_at),
       token,
+      emailToken: hasEmailToken ? emailToken : null,
       agencyName: current.agency_name,
       clientName: current.client_name,
       purpose: current.purpose,
@@ -658,7 +663,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     try {
       await dependencies.emailService.sendCollaboratorInvitation({
         to: body.email,
-        actionUrl: result.token.actionUrl,
+        actionUrl: result.emailToken.actionUrl,
         expiresInMinutes: invitationExpiresInMinutes(result.expiresAt),
         agencyName: result.agencyName
       });
@@ -679,7 +684,7 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     try {
       await dependencies.emailService.sendCollaboratorInvitation({
         to: result.email,
-        actionUrl: result.token.actionUrl,
+        actionUrl: (result.emailToken ?? result.token).actionUrl,
         expiresInMinutes: invitationExpiresInMinutes(result.expiresAt),
         agencyName: result.agencyName
       });
@@ -728,11 +733,13 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
     let confirmationToken: string | undefined;
     try {
       confirmationToken = await dependencies.database.transaction(async (transaction) => {
-        // The inviter can copy the link (decision 2026-10-26), so accepting it proves nothing about
-        // the mailbox: the address stays unconfirmed until the confirmation of #706 proves it.
+        // The inviter can copy the link (decision 2026-10-26), so a copied token proves nothing about the
+        // mailbox: that account stays unconfirmed until the confirmation of #706 proves it. The token
+        // that only travels in the e-mail does prove it (decision 2026-10-27): that account is born confirmed.
         await raw(transaction, `
-          insert into auth."user" (id, name, email, "emailVerified") values (?, ?, ?, false)
-        `, [userId, body.name, invitation.email]);
+          insert into auth."user" (id, name, email, "emailVerified")
+          values (?, ?, ?, app_private.invitation_token_came_by_email(?))
+        `, [userId, body.name, invitation.email, hashInvitationToken(token)]);
         await raw(transaction, `
           insert into auth."account" (id, "accountId", "providerId", "userId", password, "updatedAt")
           values (?, ?, 'credential', ?, ?, now())
@@ -741,7 +748,8 @@ export const registerInvitationModule = (app: FastifyInstance, dependencies: Inv
           select * from app_private.accept_invitation(?, ?, ?, ?, true)
         `, [hashInvitationToken(token), userId, dependencies.config.authTermsVersion, dependencies.config.authPrivacyVersion]);
         if (result.rows[0] === undefined) throw new HttpError(INVITATION_INVALID);
-        // Same transaction: the account never exists without its confirmation link.
+        // Same transaction: an unconfirmed account never exists without its confirmation link, and a
+        // confirmed one (the token of the e-mail) gets none.
         return issueEmailConfirmation(transaction, userId);
       });
     } catch (error) {

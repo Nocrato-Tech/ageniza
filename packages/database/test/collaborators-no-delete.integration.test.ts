@@ -118,8 +118,20 @@ describe('ageniza_app cannot delete memberships or invitations (issue #356)', ()
           has_table_privilege('ageniza_app', ?::regclass, 'delete') as can_delete,
           has_table_privilege('ageniza_app', ?::regclass, 'truncate') as can_truncate
       `, [`public.${table}`, `public.${table}`, `public.${table}`]);
-      expect({ table, ...rows[0] }).toEqual({ table, can_select: true, can_delete: false, can_truncate: false });
+      // `invitations` is read by column since the e-mail token (20261027050000): the table-level SELECT is
+      // gone on purpose, and the next test says which column is the one left out.
+      expect({ table, ...rows[0] }).toEqual({ table, can_select: table !== 'invitations', can_delete: false, can_truncate: false });
     }
+  });
+
+  it('reads every column of invitations but the hash of the token that only goes in the e-mail', async () => {
+    const { rows } = await getOwner().knex.raw<{ rows: Array<{ attname: string; can_select: boolean }> }>(`
+      select attname::text as attname, has_column_privilege('ageniza_app', 'public.invitations', attname, 'select') as can_select
+      from pg_attribute where attrelid = 'public.invitations'::regclass and attnum > 0 and not attisdropped
+      order by attnum
+    `);
+    expect(rows.filter((row) => !row.can_select).map((row) => row.attname)).toEqual(['email_token_hash']);
+    expect(rows.filter((row) => row.can_select)).not.toHaveLength(0);
   });
 
   it('refuses the DELETE of a membership its own actor can see, at the privilege layer, leaving the row', async () => {
