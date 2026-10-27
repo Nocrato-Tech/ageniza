@@ -472,7 +472,7 @@ As outras nove são `aguardando-design`: nascem escritas a partir do esboço da 
 
 ## 13. Entrada aberta (2026-10-26)
 
-Decidida em sessão pelo dono do produto. As regras de segurança derivadas pelo maestro estão **pendentes de validação**. Cada decisão tem o seu arquivo, e esta seção junta o que muda neste módulo. Onde ela contradiz as seções 1 a 12, vale esta seção. As seções antigas são reescritas quando cada parte for implementada.
+Decidida em sessão pelo dono do produto. As regras de segurança derivadas pelo maestro estão **pendentes de validação**. Épico [#718](https://github.com/Nocrato-Tech/ageniza/issues/718), tasks #706 a #717. Cada decisão tem o seu arquivo, e esta seção junta o que muda neste módulo. Onde ela contradiz as seções 1 a 12, vale esta seção. As seções antigas são reescritas quando cada parte for implementada.
 
 | decisão | o que muda aqui |
 |---|---|
