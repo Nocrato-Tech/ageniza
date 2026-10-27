@@ -176,9 +176,17 @@ describe('accepting through the copied token', () => {
     expect(confirmationMessagesTo(w, invitation.email)).toHaveLength(1);
     expect(await owner.knex('email_confirmations').where({ user_id: account!.id }).select('consumed_at')).toEqual([{ consumed_at: null }]);
 
-    const contexts = await w.app.app.inject({ method: 'GET', url: '/me/contexts', headers: { cookie: cookieHeader(accepted.cookies) } });
+    // The session of the acceptance exists, and opens nothing until the e-mail is confirmed (decision 2026-10-27).
+    const cookie = cookieHeader(accepted.cookies);
+    const session = await w.app.app.inject({ method: 'GET', url: '/auth/session', headers: { cookie } });
+    expect(session.statusCode).toBe(200);
+    expect(session.json()).toMatchObject({ emailVerified: false });
+    const contexts = await w.app.app.inject({ method: 'GET', url: '/me/contexts', headers: { cookie } });
     expect(contexts.statusCode).toBe(200);
-    expect(contexts.body).toContain(agencyId);
+    expect(contexts.json()).toEqual({ contexts: [], canCreateAgency: false });
+    const agencyRoute = await w.app.app.inject({ method: 'GET', url: `/agencies/${agencyId}/me`, headers: { cookie } });
+    expect(agencyRoute.statusCode).toBe(403);
+    expect(agencyRoute.json()).toMatchObject({ error: { code: 'EMAIL_NOT_CONFIRMED' } });
 
     const attempt = await login(w, invitation.email);
     expect(attempt.statusCode).toBe(401);
@@ -307,8 +315,9 @@ describe('/auth/email/verify with no password', () => {
     expect(confirmed.statusCode).toBe(200);
     expect((await owner.knex('auth.user').where({ id: mine.userId }).first('emailVerified'))?.emailVerified).toBe(true);
     expect((await owner.knex('email_confirmations').where({ user_id: mine.userId }).first('consumed_at'))?.consumed_at).not.toBeNull();
-    // The session it had keeps working and the password login is open now.
-    expect((await w.app.app.inject({ method: 'GET', url: '/me/contexts', headers: { cookie: mine.cookie } })).statusCode).toBe(200);
+    // The session it had keeps working, now opens the agency of the invitation, and the password login is open too.
+    expect((await w.app.app.inject({ method: 'GET', url: `/agencies/${agencyId}/me`, headers: { cookie: mine.cookie } })).statusCode).toBe(200);
+    expect((await w.app.app.inject({ method: 'GET', url: '/me/contexts', headers: { cookie: mine.cookie } })).body).toContain(agencyId);
     expect((await login(w, mine.email)).statusCode).toBe(200);
     // The link is spent: the same click again is refused like any dead link.
     const again = await verify(w, mine.link, { cookie: mine.cookie });

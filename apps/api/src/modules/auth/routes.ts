@@ -127,7 +127,9 @@ const verificationFailedError = {
  * globally by `registerOriginProtection`; nothing here repeats that check.
  */
 export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModuleDependencies): void => {
-  const requireSession = createRequireSession({ auth: dependencies.auth });
+  // The session guard of this module answers an account whose e-mail is not confirmed, so it is named for it: the four routes
+  // below opt in one by one, and a route added here that needs a session gets the plain `createRequireSession`, which refuses it.
+  const requireSessionUnconfirmedAllowed = createRequireSession({ auth: dependencies.auth }, { allowUnconfirmed: true });
 
   registerGoogleRoutes(app, { auth: dependencies.auth, ...(dependencies.google === undefined ? {} : { google: dependencies.google }) });
 
@@ -300,7 +302,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     });
   });
 
-  app.post('/auth/logout', { preHandler: requireSession, config: logoutDocs }, async (request, reply) => {
+  app.post('/auth/logout', { preHandler: requireSessionUnconfirmedAllowed, config: logoutDocs }, async (request, reply) => {
     try {
       const { headers } = await dependencies.auth.api.signOut({ headers: toAuthHeaders(request), returnHeaders: true });
       applyAuthCookies(reply, headers);
@@ -310,7 +312,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     return reply.status(204).send();
   });
 
-  app.post('/auth/logout-all', { preHandler: requireSession, config: logoutDocs }, async (request, reply) => {
+  app.post('/auth/logout-all', { preHandler: requireSessionUnconfirmedAllowed, config: logoutDocs }, async (request, reply) => {
     const userId = requireAuthenticatedUserId(request);
     try {
       await dependencies.auth.api.revokeSessions({ headers: toAuthHeaders(request) });
@@ -327,14 +329,15 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     return reply.status(204).send();
   });
 
-  app.get('/auth/session', { onRequest: noStore, preHandler: requireSession, config: sessionDocs }, async (request) => {
-    // The `requireSession` preHandler above already called Better Auth's `getSession` once
+  app.get('/auth/session', { onRequest: noStore, preHandler: requireSessionUnconfirmedAllowed, config: sessionDocs }, async (request) => {
+    // The `requireSessionUnconfirmedAllowed` preHandler above already called Better Auth's `getSession` once
     // (with `returnHeaders: true`, so a renewed cookie was already applied to the reply, M1) and
     // populated `request.auth`; a second `getSession` call here would be redundant and would
     // discard the renewed cookie the guard already resolved.
     if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
     return routeResponse(sessionDocs, request, {
       user: request.auth.user,
+      emailVerified: request.auth.emailVerified,
       session: { expiresAt: request.auth.expiresAt }
     });
   });
@@ -343,12 +346,13 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
   // session, so a forgotten tab does not keep it alive past the 7 days without use.
   app.get('/auth/session/check', {
     onRequest: noStore,
-    preHandler: createRequireSession({ auth: dependencies.auth }, { renew: false }),
+    preHandler: createRequireSession({ auth: dependencies.auth }, { renew: false, allowUnconfirmed: true }),
     config: sessionCheckDocs
   }, async (request) => {
     if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
     return routeResponse(sessionCheckDocs, request, {
       user: request.auth.user,
+      emailVerified: request.auth.emailVerified,
       session: { expiresAt: request.auth.expiresAt }
     });
   });

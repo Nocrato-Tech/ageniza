@@ -365,6 +365,7 @@ describe('GET /auth/session (#5, #6)', () => {
     expect(check.statusCode).toBe(200);
     expect(check.json()).toEqual({
       user: { id: user.id, name: user.name, email: user.email },
+      emailVerified: true,
       session: { expiresAt: new Date(before.expiresAt).toISOString() }
     });
     expect(check.headers['set-cookie']).toBeUndefined();

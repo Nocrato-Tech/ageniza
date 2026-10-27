@@ -20,6 +20,7 @@ import { ContentCreateRoute, ContentModalRoute } from './content-modal.js';
 import { ContentsClientPage, ContentsPage } from './contents.js';
 import { ContextSelectPage } from './contexts.js';
 import { ConfirmEmailChangePage } from './email-change.js';
+import { EmailPendingPage } from './email-pending.js';
 import { VerifyEmailPage } from './email-verification.js';
 import { ForgotPasswordPage } from './forgot-password.js';
 import { GoogleLandingPage } from './google-sign-in.js';
@@ -120,6 +121,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="convite/:token" element={<InvitationPage />} />
       <Route path="email/confirmar" element={<ConfirmEmailChangePage />} />
       <Route path="email/verificar" element={<VerifyEmailPage />} />
+      <Route path="confirme-seu-email" element={<EmailPendingPage />} />
       <Route path="criar-conta" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <SignUpPage />} />
     </Route>
     <Route path="agencia/:agenciaId" element={<DarkArea><SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate></DarkArea>}>
