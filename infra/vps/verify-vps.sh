@@ -29,7 +29,16 @@ done
 id "$DEPLOY_USER" >/dev/null 2>&1 && pass "deploy user exists: $DEPLOY_USER" || fail "deploy user missing: $DEPLOY_USER"
 [[ -s "/home/$DEPLOY_USER/.ssh/authorized_keys" ]] && pass 'deploy public key installed' || fail 'deploy public key missing'
 
-for service in docker.service containerd.service systemd-timesyncd.service unattended-upgrades.service; do
+# Ubuntu 25.10 and newer ship chrony as the time daemon; older releases use systemd-timesyncd.
+time_service() {
+  if systemctl cat chrony.service >/dev/null 2>&1; then
+    printf 'chrony.service\n'
+  else
+    printf 'systemd-timesyncd.service\n'
+  fi
+}
+
+for service in docker.service containerd.service "$(time_service)" unattended-upgrades.service; do
   systemctl is-enabled --quiet "$service" && pass "$service enabled" || fail "$service not enabled"
   systemctl is-active --quiet "$service" && pass "$service active" || fail "$service not active"
 done
@@ -38,9 +47,11 @@ command -v docker >/dev/null && docker compose version >/dev/null && pass 'Docke
 [[ "$(timedatectl show --property=Timezone --value 2>/dev/null)" == UTC ]] && pass 'timezone is UTC' || fail 'timezone is not UTC'
 [[ "$(timedatectl show --property=NTPSynchronized --value 2>/dev/null)" == yes ]] && pass 'NTP synchronized' || warn 'NTP has not synchronized yet'
 
-sshd -T 2>/dev/null | grep -qx "port $SSH_PORT" && pass "effective SSH port is $SSH_PORT" || fail "effective SSH port is not $SSH_PORT"
+EFFECTIVE_SSH_PORTS="$(sshd -T 2>/dev/null | grep '^port ' || true)"
+[[ "$EFFECTIVE_SSH_PORTS" == "port $SSH_PORT" ]] && pass "effective SSH port is $SSH_PORT" || fail "effective SSH port is not only $SSH_PORT"
 sshd -T 2>/dev/null | grep -qx 'permitrootlogin no' && pass 'root SSH login disabled' || fail 'root SSH login is not disabled'
 sshd -T 2>/dev/null | grep -qx 'passwordauthentication no' && pass 'SSH password login disabled' || fail 'SSH password login is not disabled'
+sshd -T 2>/dev/null | grep -qx 'kbdinteractiveauthentication no' && pass 'SSH keyboard-interactive login disabled' || fail 'SSH keyboard-interactive login is not disabled'
 
 ufw status | grep -q 'Status: active' && pass 'UFW active' || fail 'UFW inactive'
 if ufw status | grep -Eq "^${SSH_PORT}/tcp[[:space:]]+ALLOW"; then

@@ -32,12 +32,22 @@ sudo bash ./infra/vps/verify-vps.sh --user <DEPLOY_USER> --ssh-port <SSH_PORT>
 sudo ufw status numbered
 ```
 
-If key login fails, keep the original session open. The SSH drop-in is `/etc/ssh/sshd_config.d/90-ageniza.conf`; correct or remove it, run `sudo sshd -t`, and only then run `sudo systemctl reload ssh`. The bootstrap retains a prior drop-in at `/etc/ssh/sshd_config.d/90-ageniza.conf.pre-ageniza` when one existed. Provider console access remains the last-resort recovery path.
+If key login fails, keep the original session open. The SSH drop-in is `/etc/ssh/sshd_config.d/00-ageniza.conf`; correct or remove it, run `sudo sshd -t`, and only then run `sudo systemctl reload ssh`. The bootstrap retains a prior drop-in at `/etc/ssh/sshd_config.d/00-ageniza.conf.pre-ageniza` when one existed. Provider console access remains the last-resort recovery path.
+
+### Drop-in order
+
+`sshd` keeps the **first** value it reads for each option (except `Port`, which accumulates), and `sshd_config.d/*.conf` is read in alphabetical order, before the rest of `sshd_config`. The Hostinger image ships `50-cloud-init.conf` with `PasswordAuthentication yes`, so a baseline file named `90-ageniza.conf` lost to it and left password login on. The baseline therefore lives in `00-ageniza.conf`, which is read first. The bootstrap:
+
+- moves a `90-ageniza.conf` from an earlier run to `90-ageniza.conf.pre-ageniza` (a leftover `Port` line there would keep a second port open), and puts it back if `sshd -t` rejects the new file;
+- never edits or deletes the image's own files; it logs each of them that sets `Port`, `PermitRootLogin`, `PasswordAuthentication` or `KbdInteractiveAuthentication`, and whether the baseline value wins over it;
+- ends by reading `sshd -T` and requires `permitrootlogin no`, `passwordauthentication no`, `kbdinteractiveauthentication no` and the configured port as the only `port`. If any of them differs it exits with an error and does not print the success message: keep the root session open and inspect `sshd -T` and the drop-ins it listed.
+
+`verify-vps.sh` checks the same four settings.
 
 ## Host policy
 
 - Docker Engine and the Compose plugin come from Docker's official signed Ubuntu APT repository. The deploy user is not added to the Docker group by default because that group is root-equivalent; use narrowly approved sudo access until ADR #10 defines deployment automation.
-- The host uses UTC, `systemd-timesyncd`, and unattended security updates. Automatic reboot is off: reboots remain a scheduled, verified operation.
+- The host uses UTC, unattended security updates and the time daemon of its release: chrony on Ubuntu 25.10 and newer (including 26.04), `systemd-timesyncd` before. The bootstrap and `verify-vps.sh` use `chrony.service` when `systemctl cat chrony.service` finds it, and `systemd-timesyncd.service` otherwise. Automatic reboot is off: reboots remain a scheduled, verified operation.
 - The deploy user is key-only. Keep the SSH port and public key in the protected bootstrap config; do not put passwords, private keys, Cloudflare tokens, or application secrets in any script, image, compose file, or Git checkout.
 - **No service publishes a port.** The Cloudflare Tunnel connects outbound ([ADR 0012](../adr/0012-cloudflare-tunnel-edge.md)), so every application, worker, cache, queue, and database service stays on an internal Docker network with no `ports:` mapping. Use `expose:` only when service-to-service documentation benefits from it. Remember that Docker-published ports bypass UFW, which is exactly why none exist.
 - Every non-job container needs a healthcheck and `restart: unless-stopped` (or a more intentional approved policy). Image tags must be immutable/digested for releases; logs need bounded rotation; deploys must wait for healthy services before traffic changes.
@@ -88,4 +98,4 @@ Complete this manually in the approved Cloudflare account after ADR #10 defines 
 
 ## Verification limits
 
-The included verifier confirms the host prerequisites, effective SSH configuration, UFW rules, Docker/Compose availability, time sync, updates service, and accidental all-interface Docker port mappings. It cannot prove a remote key login, Hostinger console recovery, DNS propagation, Cloudflare proxy/TLS/origin protection, image health endpoints, backups, or a restore: those require an approved environment and are intentionally out of scope for this local-only task.
+The included verifier confirms the host prerequisites, effective SSH configuration (root, password and keyboard-interactive login, and the port), UFW rules, Docker/Compose availability, time sync, updates service, and accidental all-interface Docker port mappings. It cannot prove a remote key login, Hostinger console recovery, DNS propagation, Cloudflare proxy/TLS/origin protection, image health endpoints, backups, or a restore: those require an approved environment and are intentionally out of scope for this local-only task.

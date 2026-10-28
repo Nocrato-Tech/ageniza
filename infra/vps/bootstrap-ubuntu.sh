@@ -20,6 +20,100 @@ USAGE
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 note() { printf '==> %s\n' "$*"; }
 
+# Ubuntu 25.10 and newer ship chrony as the time daemon; older releases use systemd-timesyncd.
+time_service() {
+  if systemctl cat chrony.service >/dev/null 2>&1; then
+    printf 'chrony.service\n'
+  else
+    printf 'systemd-timesyncd.service\n'
+  fi
+}
+
+# sshd keeps the FIRST value of each option and reads the drop-ins in alphabetical order, so a file from the
+# image (Hostinger's 50-cloud-init.conf sets PasswordAuthentication yes) beats a later 90-ageniza.conf.
+write_ssh_dropin() {
+  local dir="$1" port="$2" dropin legacy backup legacy_backup temp had_dropin=false had_legacy=false
+  dropin="$dir/00-ageniza.conf"
+  legacy="$dir/90-ageniza.conf"
+  backup="${dropin}.pre-ageniza"
+  legacy_backup="${legacy}.pre-ageniza"
+  if [[ -e "$dropin" ]]; then
+    cp -a "$dropin" "$backup"
+    had_dropin=true
+  fi
+  # Port is additive: leaving the old file behind would keep listening on the port it names.
+  if [[ -e "$legacy" ]]; then
+    mv -f "$legacy" "$legacy_backup"
+    had_legacy=true
+  fi
+  temp="$(mktemp "$dir/.00-ageniza.XXXXXX")"
+  cat > "$temp" <<EOF
+# Managed by $SCRIPT_NAME. Keep an established root session open until a new key-based login succeeds.
+Port $port
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM yes
+X11Forwarding no
+MaxAuthTries 3
+LoginGraceTime 30
+EOF
+  install -m 0600 "$temp" "$dropin"
+  rm -f "$temp"
+  if ! sshd -t; then
+    note "sshd validation failed; restoring previous SSH drop-ins"
+    if [[ "$had_dropin" == "true" ]]; then
+      mv -f "$backup" "$dropin"
+    else
+      rm -f "$dropin"
+    fi
+    if [[ "$had_legacy" == "true" ]]; then
+      mv -f "$legacy_backup" "$legacy"
+    fi
+    sshd -t || true
+    die "SSH configuration was not applied. Existing SSH daemon was not reloaded."
+  fi
+}
+
+# Logs every other drop-in that sets an option the baseline owns, and whether it wins.
+report_ssh_overrides() {
+  local dir="$1" ours="$2" file lines
+  for file in "$dir"/*.conf; do
+    [[ -e "$file" && "$file" != "$ours" ]] || continue
+    lines="$(grep -inE '^[[:space:]]*(Port|PermitRootLogin|PasswordAuthentication|KbdInteractiveAuthentication)[[:space:]=]' "$file" || true)"
+    [[ -n "$lines" ]] || continue
+    if [[ "${file##*/}" < "${ours##*/}" ]]; then
+      note "WARNING: $file is read before ${ours##*/} and its first value wins:"
+    else
+      note "$file is read after ${ours##*/}, so the baseline values win over:"
+    fi
+    printf '    %s\n' "${lines//$'\n'/$'\n'    }"
+  done
+}
+
+# Checks the configuration sshd would load, not the file this script wrote: another file can still override it.
+assert_effective_sshd() {
+  local port="$1" effective ports setting key failed=0
+  if ! effective="$(sshd -T)"; then
+    printf 'ERROR: sshd -T failed; the effective SSH configuration could not be read.\n' >&2
+    return 1
+  fi
+  for setting in 'permitrootlogin no' 'passwordauthentication no' 'kbdinteractiveauthentication no'; do
+    key="${setting% *}"
+    if ! grep -qxF -- "$setting" <<<"$effective"; then
+      printf 'ERROR: effective SSH setting is "%s", expected "%s".\n' "$(grep -m1 -- "^$key " <<<"$effective" || printf '%s <unset>' "$key")" "$setting" >&2
+      failed=1
+    fi
+  done
+  ports="$(grep -- '^port ' <<<"$effective" || true)"
+  if [[ "$ports" != "port $port" ]]; then
+    printf 'ERROR: effective SSH ports are "%s", expected only "port %s".\n' "${ports//$'\n'/, }" "$port" >&2
+    failed=1
+  fi
+  return "$failed"
+}
+
 while (($#)); do
   case "$1" in
     --config) CONFIG_FILE="${2:-}"; shift 2 ;;
@@ -68,7 +162,8 @@ ssh-keygen -l -f <(printf '%s\n' "$DEPLOY_PUBLIC_KEY") >/dev/null 2>&1 || die "D
 
 note "Configuring UTC and time synchronization"
 timedatectl set-timezone UTC
-systemctl enable --now systemd-timesyncd.service
+TIME_SERVICE="$(time_service)"
+systemctl enable --now "$TIME_SERVICE"
 
 note "Creating or updating deploy account: $DEPLOY_USER"
 if ! id "$DEPLOY_USER" >/dev/null 2>&1; then
@@ -131,35 +226,15 @@ fi
 ufw --force enable
 
 note "Writing a validated SSH hardening drop-in"
-SSH_DROPIN=/etc/ssh/sshd_config.d/90-ageniza.conf
-SSH_BACKUP="${SSH_DROPIN}.pre-ageniza"
-[[ -e "$SSH_DROPIN" ]] && cp -a "$SSH_DROPIN" "$SSH_BACKUP"
-TEMP_SSH_CONFIG="$(mktemp /etc/ssh/sshd_config.d/.90-ageniza.XXXXXX)"
-cat > "$TEMP_SSH_CONFIG" <<EOF
-# Managed by $SCRIPT_NAME. Keep an established root session open until a new key-based login succeeds.
-Port $SSH_PORT
-PermitRootLogin no
-PubkeyAuthentication yes
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-UsePAM yes
-X11Forwarding no
-MaxAuthTries 3
-LoginGraceTime 30
-EOF
-install -m 0600 "$TEMP_SSH_CONFIG" "$SSH_DROPIN"
-rm -f "$TEMP_SSH_CONFIG"
-if ! sshd -t; then
-  note "sshd validation failed; restoring previous SSH drop-in"
-  if [[ -e "$SSH_BACKUP" ]]; then
-    mv -f "$SSH_BACKUP" "$SSH_DROPIN"
-  else
-    rm -f "$SSH_DROPIN"
-  fi
-  sshd -t || true
-  die "SSH configuration was not applied. Existing SSH daemon was not reloaded."
-fi
+SSH_DROPIN_DIR=/etc/ssh/sshd_config.d
+write_ssh_dropin "$SSH_DROPIN_DIR" "$SSH_PORT"
+report_ssh_overrides "$SSH_DROPIN_DIR" "$SSH_DROPIN_DIR/00-ageniza.conf"
 systemctl reload ssh.service
+
+note "Checking the effective SSH configuration"
+if ! assert_effective_sshd "$SSH_PORT"; then
+  die "The effective SSH configuration does not match the baseline: another sshd option source still wins (see the drop-ins reported above and 'sshd -T'). The baseline was NOT installed successfully. Keep this root session open."
+fi
 
 cat <<EOF
 
