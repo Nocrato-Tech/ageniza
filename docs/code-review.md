@@ -26,6 +26,15 @@ Um por item, do mais grave ao menos grave:
 - Gosto pessoal, alternativa equivalente e "eu faria diferente" não são achados.
 - Lista vazia é um resultado válido. Não procure achado para justificar a revisão.
 
+## Estrutura e acoplamento
+
+Estes casos seguem a mesma regra: o achado traz o cenário concreto de falha, não só o padrão.
+
+- SDK de ferramenta externa (armazenamento, e-mail, OAuth, pagamento) importado fora do pacote dela é achado. A aplicação usa o pacote de `packages/`.
+- Importar arquivo interno de outro módulo é achado. A dependência passa pelo que o módulo exporta (`register<Nome>Module`, guardas injetadas).
+- Regra repetida em dois lugares é achado. Fica uma cópia só, injetada (ver `docs/module-anatomy.md`).
+- Arquivo grande só é achado quando mistura responsabilidades, e o achado diz quais e como separar (serviço de domínio, subcomponente, repositório). O tamanho sozinho não é achado: `pnpm quality:file-size` só lista para revisão.
+
 ## Quando parar
 
 - A re-revisão confere só os achados pedidos e se a correção trouxe regressão, no head novo. Ela não vira uma revisão nova do PR inteiro.

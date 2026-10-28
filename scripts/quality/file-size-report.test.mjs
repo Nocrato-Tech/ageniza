@@ -1,60 +1,60 @@
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { analyze, countLines, isGatedSource } from './file-size-report.mjs';
+import { analyze, countLines, isReviewed, THRESHOLD } from './file-size-report.mjs';
 
-const baseline = { max: 3, files: ['apps/api/src/big.ts', 'apps/api/src/shrunk.ts', 'apps/api/src/gone.ts'] };
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 
 describe('countLines', () => {
-  it('não conta a linha vazia depois da última quebra, como o max-lines do ESLint', () => {
+  it('não conta a linha vazia depois da última quebra, como o contador do ESLint', () => {
     expect(countLines('a\nb\nc\n')).toBe(3);
     expect(countLines('a\r\nb\r\nc')).toBe(3);
     expect(countLines('a\n\n')).toBe(2);
   });
 });
 
-describe('isGatedSource', () => {
-  it('vale para código de src e deixa testes de fora', () => {
-    expect(isGatedSource('apps/api/src/modules/clients/routes.ts')).toBe(true);
-    expect(isGatedSource('apps/web/src/contents.test.tsx')).toBe(false);
-    expect(isGatedSource('packages/database/test/clients.integration.test.ts')).toBe(false);
-    expect(isGatedSource('packages/database/test/support/db.ts')).toBe(false);
-    expect(isGatedSource('docs/README.md')).toBe(false);
+describe('isReviewed', () => {
+  it('vale para código de src', () => {
+    expect(isReviewed('apps/api/src/modules/clients/routes.ts')).toBe(true);
+    expect(isReviewed('packages/email/src/index.ts')).toBe(true);
+  });
+
+  it('deixa de fora testes, pastas test, código gerado, dist e o que não é src', () => {
+    expect(isReviewed('apps/web/src/contents.test.tsx')).toBe(false);
+    expect(isReviewed('apps/web/src/test/fixtures.ts')).toBe(false);
+    expect(isReviewed('packages/database/test/support/db.ts')).toBe(false);
+    expect(isReviewed('apps/api/src/schema.gen.ts')).toBe(false);
+    expect(isReviewed('apps/api/src/generated/types.ts')).toBe(false);
+    expect(isReviewed('apps/web/dist/assets/index.js')).toBe(false);
+    expect(isReviewed('packages/database/migrations/20261007001200_contents.mjs')).toBe(false);
+    expect(isReviewed('docs/README.md')).toBe(false);
   });
 });
 
 describe('analyze', () => {
   const report = analyze({
-    baseline,
-    sizes: {
-      'apps/api/src/big.ts': 10,
-      'apps/api/src/shrunk.ts': 3,
-      'apps/api/src/new.ts': 5,
-      'apps/web/src/screen.test.tsx': 9
-    }
+    'apps/api/src/at-limit.ts': THRESHOLD,
+    'apps/api/src/over-limit.ts': THRESHOLD + 1,
+    'apps/api/src/huge.ts': 4000,
+    'apps/web/src/screen.test.tsx': 3000,
+    'apps/api/src/schema.gen.ts': 3000,
+    'apps/web/dist/index.js': 3000
   });
 
-  it('soma o excesso só do código sujeito à regra', () => {
-    expect(report.overBudget).toBe(2);
-    expect(report.excessLines).toBe(7 + 2);
-    expect(report.testsOverBudget).toBe(1);
-    expect(report.testExcessLines).toBe(6);
-  });
-
-  it('aponta arquivo acima do limite fora do baseline', () => {
-    expect(report.notInBaseline).toEqual(['apps/api/src/new.ts']);
-  });
-
-  it('marca para sair do baseline o arquivo que voltou ao limite ou foi apagado', () => {
-    expect(report.prunable).toEqual(['apps/api/src/shrunk.ts', 'apps/api/src/gone.ts']);
+  it('lista só o código de src acima do limite, do maior para o menor', () => {
+    expect(report.threshold).toBe(800);
+    expect(report.count).toBe(2);
+    expect(report.files).toEqual([
+      { path: 'apps/api/src/huge.ts', lines: 4000 },
+      { path: 'apps/api/src/over-limit.ts', lines: 801 }
+    ]);
   });
 });
 
-describe('max-lines-baseline.json', () => {
-  it('não repete arquivo e segue ordenado', () => {
-    const { files } = JSON.parse(readFileSync(new URL('./max-lines-baseline.json', import.meta.url), 'utf8'));
-    expect(new Set(files).size).toBe(files.length);
-    expect([...files].sort()).toEqual(files);
+describe('pnpm quality:file-size', () => {
+  it('sai com 0 mesmo quando há arquivos acima do limite', () => {
+    expect(() => execFileSync(process.execPath, ['scripts/quality/file-size-report.mjs'], { cwd: repoRoot })).not.toThrow();
   });
 });
