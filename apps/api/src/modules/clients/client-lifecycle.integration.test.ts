@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { createVerifiedUserClaims, raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { createVerifiedUserClaims, raw, requestLockOnceBlocked, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -245,40 +245,6 @@ const waitForBackendBlockedBy = async (blockerPid: number): Promise<number> => {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error(`No backend ever waited on a lock held by ${blockerPid}.`);
-};
-
-/**
- * Makes the holder ask for the client's share lock from inside the database, the moment another backend is blocked by
- * the holder. The deadlock detector aborts the backend whose `deadlock_timeout` (1s) expires with the cycle already
- * closed, which is the one that waited first only if the other closes the cycle within that second. A poll from Node
- * (`waitForBackendBlockedBy`) followed by the holder's own statement can be late by more than a second whenever the
- * test process stalls, and then the holder is the one the database aborts (#745). The wait runs in the holder's
- * transaction, so no step of Node sits between the lock wait of the route and the holder's request. Start it BEFORE
- * the route.
- */
-const askForClientOnceBlocked = (holder: Holder, clientId: string): Promise<unknown> => {
-  if (!/^[0-9a-f-]{36}$/.test(clientId)) throw new Error('The holder takes the client by its uuid.');
-  return raw(holder, `
-    do $barrier$
-    declare
-      v_deadline timestamptz := pg_catalog.clock_timestamp() + interval '20 seconds';
-    begin
-      loop
-        perform pg_catalog.pg_stat_clear_snapshot();
-        exit when exists (
-          select 1 from pg_catalog.pg_stat_activity activity
-          where activity.datname = pg_catalog.current_database()
-            and pg_catalog.pg_backend_pid() = any (pg_catalog.pg_blocking_pids(activity.pid))
-        );
-        if pg_catalog.clock_timestamp() > v_deadline then
-          raise exception 'No backend ever waited on a lock held by this transaction.';
-        end if;
-        perform pg_catalog.pg_sleep(0.005);
-      end loop;
-      perform 1 from public.clients client where client.id = '${clientId}'::uuid for share;
-    end
-    $barrier$
-  `, []);
 };
 
 const NO_DATABASE_DETAIL = /deadlock|40P01|pg_|relation|process|A002/i;
@@ -823,7 +789,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
         const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.invitations where id = ?::uuid for update', [invitations.raceArchive]);
         if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
 
-        const holderAsks = askForClientOnceBlocked(holder, cRaceArchive);
+        const holderAsks = requestLockOnceBlocked(holder, 'select 1 from public.clients where id = %L::uuid for share', [cRaceArchive]);
         const archiving = call('POST', archiveUrl(cRaceArchive), cookies.racer, undefined, '127.0.0.31');
         const [response] = await Promise.all([archiving, holderAsks]);
         await holder.rollback();

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { integrationDatabaseEnvironment } from '@ageniza/database';
+import { integrationDatabaseEnvironment, requestLockOnceBlocked } from '@ageniza/database';
 
 import { createAgencyCliDatabase } from '../../cli/agency.js';
 import { runEmailChangeCli, type EmailChangeConfirmationEmail, type EmailChangeMailer } from '../../cli/email-change.js';
@@ -148,46 +148,12 @@ interface RequestLockHolder {
   readonly done: Promise<void>;
 }
 
-const sqlLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
-
-/**
- * The deadlock detector aborts the backend whose `deadlock_timeout` (1s) expires with the cycle already closed, and
- * that is the one that waited first only if the other one closes the cycle within that second. A holder that is told
- * from Node, after a poll, that the transaction under test is blocked can be late by more than a second whenever the
- * test process stalls (GC, a busy machine); the holder is then the one the database aborts and the test fails with
- * the holder's own 40P01 (#745). So the wait for the transaction under test runs inside the holder's transaction,
- * in the database, a few milliseconds apart from the moment the lock is requested, and never through Node.
- */
-const askAccountOnceBlockedSql = (userId: string, statementPattern: string): string => `
-  do $barrier$
-  declare
-    v_deadline timestamptz := pg_catalog.clock_timestamp() + interval '20 seconds';
-  begin
-    loop
-      perform pg_catalog.pg_stat_clear_snapshot();
-      exit when exists (
-        select 1 from pg_catalog.pg_stat_activity activity
-        where activity.datname = pg_catalog.current_database()
-          and activity.wait_event_type = 'Lock'
-          and pg_catalog.pg_backend_pid() = any (pg_catalog.pg_blocking_pids(activity.pid))
-          and activity.query ilike ${sqlLiteral(statementPattern)}
-      );
-      if pg_catalog.clock_timestamp() > v_deadline then
-        raise exception 'No backend running ${statementPattern.replace(/'/g, "''").replace(/%/g, '%%')} ever waited on a lock held by this transaction.';
-      end if;
-      perform pg_catalog.pg_sleep(0.005);
-    end loop;
-    perform 1 from auth."user" account where account.id = ${sqlLiteral(userId)}::uuid for update;
-  end
-  $barrier$`;
-
 /**
  * Holds the row lock of one request in a real owner transaction, so the transactions under test
  * line up behind it in a known order. With `wantAccountOnceBlocked` it then asks for the account's lock, the
  * other half of a deadlock against whoever holds the account and waits for the request.
  */
 const holdRequestLock = (requestId: string, userId: string): RequestLockHolder => {
-  if (!/^[0-9a-f-]{36}$/.test(userId)) throw new Error('The holder takes the account by its uuid.');
   let proceed: (statementPattern: string | false) => void = () => undefined;
   const gate = new Promise<string | false>((resolve) => { proceed = resolve; });
   let markLocked: () => void = () => undefined;
@@ -197,7 +163,9 @@ const holdRequestLock = (requestId: string, userId: string): RequestLockHolder =
     if (locking.rows.length !== 1) throw new Error('The holder did not lock exactly one request.');
     markLocked();
     const statementPattern = await gate;
-    if (statementPattern !== false) await transaction.raw(askAccountOnceBlockedSql(userId, statementPattern));
+    if (statementPattern !== false) {
+      await requestLockOnceBlocked(transaction, 'select 1 from auth."user" account where account.id = %L::uuid for update', [userId], { blockedStatement: statementPattern });
+    }
   });
   return {
     locked, release: () => proceed(false), wantAccountOnceBlocked: (statementPattern) => proceed(statementPattern),
@@ -547,7 +515,7 @@ describe('account e-mail change by request (issue #80)', () => {
       expect(await emailOf(rejected.id)).toBe(rejected.email);
 
       expect((await confirmLink(secondLink)).status).toBe(200);
-    });
+    }, 30_000);
 
     it('does not swap into an address another account took after the approval, and answers like any dead link', async () => {
       const user = await makeUser('late');

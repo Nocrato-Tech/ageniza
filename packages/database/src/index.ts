@@ -228,6 +228,8 @@ export const createLocalTestDatabaseClient = (connectionString: string): Databas
   return createDatabaseClient({ connectionString });
 };
 
+export { requestLockOnceBlocked, type LockBarrierOptions } from './lock-barrier.js';
+
 /**
  * Creates a narrow capability after an authentication boundary has verified the user's token.
  * Only a user id is carried into SQL: agency/tenant identity is intentionally never accepted here.

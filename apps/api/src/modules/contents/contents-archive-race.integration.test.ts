@@ -1,4 +1,4 @@
-import { raw, type DatabaseClient } from '@ageniza/database';
+import { raw, requestLockOnceBlocked, type DatabaseClient } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createContentsWorld, type Reply } from './test-support/world.js';
@@ -173,24 +173,22 @@ describe('a content written while another transaction holds the client (issue #2
     const contentId = await w.seedContent(clientId, { publishOn: '2026-10-20', title: 'Original' });
 
     const holder = await w.getOwner().knex.transaction();
-    let held: Promise<unknown> | undefined;
+    let pending: Promise<Reply> | undefined;
+    let holderAsks: Promise<void> | undefined;
     try {
       const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.clients where id = ?::uuid for update', [clientId]);
       if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one client.');
-      const holderPid = await backendPid(holder);
 
-      const pending = w.call('PATCH', people.production.cookie, `${urlOf(clientId)}/${contentId}`, { publishOn: '2026-12-01' });
-      await waitForBackendBlockedBy(holderPid);
-      held = raw(holder, "update public.contents set title = 'Holder' where id = ?::uuid", [contentId]).then(() => undefined, () => undefined);
-
-      const reply = await pending;
+      holderAsks = requestLockOnceBlocked(holder, "update public.contents set title = 'Holder' where id = %L::uuid", [contentId]);
+      pending = w.call('PATCH', people.production.cookie, `${urlOf(clientId)}/${contentId}`, { publishOn: '2026-12-01' });
+      const [reply] = await Promise.all([pending, holderAsks]);
 
       expect(reply.statusCode).toBe(409);
       expect(reply.json().error).toEqual({ code: 'TRY_AGAIN', message: 'Houve um conflito momentâneo. Tente de novo.' });
       expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
     } finally {
       await holder.rollback();
-      await held;
+      await Promise.allSettled([pending, holderAsks]);
     }
     expect(await w.publishOnOf(contentId)).toBe('2026-10-20');
     expect((await w.contentRow(contentId)).title).toBe('Original');
