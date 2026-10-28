@@ -104,9 +104,13 @@ ${functionsOf(bootstrap, 'listening_ssh_ports', 'assert_listening_ssh_port')}`;
 });
 
 describe('restart_ssh_socket_if_enabled follows the port in the configuration', () => {
-  const restart = (socketEnabled) =>
-    run(`set -Eeuo pipefail\n${functionsOf(bootstrap, 'note', 'restart_ssh_socket_if_enabled')}
-systemctl() { echo "systemctl $*" >&2; [[ "$1" != is-enabled ]] || return ${socketEnabled ? 0 : 1}; }
+  const restart = (socketEnabled, failing = null) =>
+    run(`set -Eeuo pipefail\nSSH_PORT=2222\n${functionsOf(bootstrap, 'die', 'note', 'restart_ssh_socket_if_enabled')}
+systemctl() {
+  echo "systemctl $*" >&2
+  [[ "$1" != is-enabled ]] || return ${socketEnabled ? 0 : 1}
+  if [[ "$1" == "${failing}" || "\${2:-}" == "${failing}" ]]; then echo 'Job for ssh.socket failed.' >&2; return 1; fi
+}
 restart_ssh_socket_if_enabled`);
 
   it('reloads the units and restarts ssh.socket, in that order, when it is enabled', () => {
@@ -120,6 +124,77 @@ restart_ssh_socket_if_enabled`);
 
     expect(result.status).toBe(0);
     expect(result.stderr.trim().split('\n')).toEqual(['systemctl is-enabled --quiet ssh.socket']);
+  });
+
+  it('stops with a clear message, not a bare Job failed, when ssh.socket cannot restart', () => {
+    const result = restart(true, 'restart');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('Could not restart ssh.socket');
+    expect(result.stderr).toContain('TCP 2222');
+    expect(result.stderr).toContain('NOT installed successfully');
+    expect(result.stderr).toContain('Keep this root session open');
+  });
+
+  it('stops with a clear message when daemon-reload fails, and does not restart the socket', () => {
+    const result = restart(true, 'daemon-reload');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('systemctl daemon-reload failed');
+    expect(result.stderr).toContain('Keep this root session open');
+    expect(result.stderr).not.toContain('systemctl restart');
+  });
+});
+
+describe('assert_ssh_port_free refuses a port that another process holds, before anything is written', () => {
+  const portFree = (env, port = 2222) =>
+    run(`set -Eeuo pipefail\nIFS=$'\\n\\t'\n${fakeSockets}\n${functionsOf(bootstrap, 'die', 'assert_ssh_port_free')}\nassert_ssh_port_free ${port}`, env);
+  const holder = (address, process) => sshLine(address, process);
+
+  it('passes when nothing listens on the port', () => {
+    expect(portFree({ SS_LINES: holder('0.0.0.0:22', 'sshd') }).status).toBe(0);
+    expect(portFree({ SS_LINES: '' }).status).toBe(0);
+  });
+
+  it('passes when sshd itself holds the port (a re-run)', () => {
+    expect(portFree({ SS_LINES: [holder('0.0.0.0:22', 'sshd'), holder('[::]:22', 'sshd')].join('\n') }, 22).status).toBe(0);
+  });
+
+  it.each([
+    ['IPv4', '0.0.0.0:2222'],
+    ['IPv6', '[::]:2222'],
+  ])('refuses the port when another process listens on it (%s) and says to keep the root session', (_family, address) => {
+    const result = portFree({ SS_LINES: holder(address, 'nginx') });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('TCP port 2222 is already in use by another process');
+    expect(result.stderr).toContain('nginx');
+    expect(result.stderr).toContain('Keep this root session open');
+  });
+
+  it('refuses the port when sshd and another process both hold it', () => {
+    const result = portFree({ SS_LINES: [holder('0.0.0.0:2222', 'sshd'), holder('127.0.0.1:2222', 'postgres')].join('\n') });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('postgres');
+  });
+
+  it('ignores what other programs listen on at other ports', () => {
+    expect(portFree({ SS_LINES: [holder('[::]:80', 'nginx'), holder('0.0.0.0:22222', 'nginx')].join('\n') }).status).toBe(0);
+  });
+
+  it('accepts systemd holding the port for ssh.socket, and refuses systemd holding it for something else', () => {
+    const lines = holder('0.0.0.0:22', 'systemd');
+
+    expect(portFree({ SS_LINES: lines, SOCKET_LISTEN: '0.0.0.0:22 (Stream)\n[::]:22 (Stream)' }, 22).status).toBe(0);
+    expect(portFree({ SS_LINES: lines, SOCKET_LISTEN: '' }, 22).status).not.toBe(0);
+    expect(portFree({ SS_LINES: lines, SOCKET_LISTEN: '0.0.0.0:2200 (Stream)' }, 22).status).not.toBe(0);
+  });
+});
+
+describe('the shell harness gives up on a script that never returns', () => {
+  it('fails instead of holding the suite', () => {
+    expect(() => run('exec sleep 20', {}, { timeout: 300 })).toThrow(/did not finish within 300 ms/);
   });
 });
 
@@ -243,6 +318,7 @@ describe('the bootstrap only reports success after the effective SSH configurati
   };
 
   it('writes the drop-in, reloads sshd and the socket, checks both, and only then prints the success message', () => {
+    const free = at('assert_ssh_port_free "$SSH_PORT"\n');
     const write = at('write_ssh_dropin "$SSH_DROPIN_DIR" "$SSH_PORT"');
     const reload = at('systemctl reload ssh.service');
     const socket = at('restart_ssh_socket_if_enabled\n');
@@ -250,6 +326,7 @@ describe('the bootstrap only reports success after the effective SSH configurati
     const listening = at('if ! assert_listening_ssh_port "$SSH_PORT"; then');
     const success = at('Baseline installed successfully.');
 
+    expect(free).toBeLessThan(write);
     expect(write).toBeLessThan(reload);
     expect(reload).toBeLessThan(socket);
     expect(socket).toBeLessThan(check);

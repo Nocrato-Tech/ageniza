@@ -112,9 +112,25 @@ report_ssh_overrides() {
 restart_ssh_socket_if_enabled() {
   if systemctl is-enabled --quiet ssh.socket; then
     note "ssh.socket is enabled: reloading units and restarting it so the listening port follows the configuration"
-    systemctl daemon-reload
-    systemctl restart ssh.socket
+    systemctl daemon-reload || die "systemctl daemon-reload failed. The baseline was NOT installed successfully. Keep this root session open."
+    systemctl restart ssh.socket || die "Could not restart ssh.socket (see 'systemctl status ssh.socket'; is TCP $SSH_PORT in use?). The baseline was NOT installed successfully. Keep this root session open."
   fi
+}
+
+# Refuses a port that another process already holds: the ssh.socket restart would fail with a bare 'Job failed'.
+# The listeners that count as ours are sshd itself and systemd while it holds the sockets of ssh.socket.
+assert_ssh_port_free() {
+  local port="$1" socket_ports="" owners line
+  if systemctl is-active --quiet ssh.socket; then
+    socket_ports="$(systemctl show ssh.socket --property=Listen --value | awk 'NF { n = split($1, parts, ":"); print parts[n] }')"
+  fi
+  owners="$(ss -Htlnp 2>/dev/null | awk -v port="$port" '{ n = split($4, parts, ":"); if (parts[n] == port) print }' || true)"
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    [[ "$line" != *'users:(("sshd"'* ]] || continue
+    if [[ "$line" == *'users:(("systemd"'* ]] && grep -qxF -- "$port" <<<"$socket_ports"; then continue; fi
+    die "TCP port $port is already in use by another process (${line##* }). Free it or choose another SSH_PORT; the SSH configuration was not changed. Keep this root session open."
+  done <<<"$owners"
 }
 
 # Checks the configuration sshd would load, not the file this script wrote: another file can still override it.
@@ -284,6 +300,7 @@ else
 fi
 ufw --force enable
 
+assert_ssh_port_free "$SSH_PORT"
 note "Writing a validated SSH hardening drop-in"
 SSH_DROPIN_DIR=/etc/ssh/sshd_config.d
 write_ssh_dropin "$SSH_DROPIN_DIR" "$SSH_PORT"

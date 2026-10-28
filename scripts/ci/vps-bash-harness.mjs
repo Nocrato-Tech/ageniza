@@ -23,8 +23,10 @@ export function extractFunction(source, name) {
   return lines.slice(start, end + 1).join('\n');
 }
 
-export function run(script, env = {}) {
-  const result = spawnSync(bash, ['-c', script], { encoding: 'utf8', env: { ...process.env, ...env } });
+// A script that never returns (a mutation that turns a retry loop into an endless one) must fail the test, not hold the suite.
+export function run(script, env = {}, { timeout = 60_000 } = {}) {
+  const result = spawnSync(bash, ['-c', script], { encoding: 'utf8', env: { ...process.env, ...env }, timeout, killSignal: 'SIGKILL' });
+  if (result.error) throw new Error(`bash did not finish within ${timeout} ms: ${result.error.message}`);
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
