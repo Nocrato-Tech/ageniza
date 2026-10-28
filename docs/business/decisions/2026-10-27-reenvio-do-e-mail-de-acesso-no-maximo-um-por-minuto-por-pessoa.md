@@ -10,4 +10,4 @@
 
 **Origem.** Proposta da implementação, ao registrar a decisão "acessos pendentes na aba Acessos podem ser reenviados e removidos" (limite extra por pessoa pedido pelo maestro).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-28.
