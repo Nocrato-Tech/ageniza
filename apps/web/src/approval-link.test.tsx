@@ -726,6 +726,8 @@ describe('the page of the approval link (#717)', () => {
 
     it('with a fragment that is not a token, shows the one screen of the wrong link, asks nothing and erases it', async () => {
       const { api } = await loaded([A]);
+      // The card draws its media after the lot is on screen: the count is taken once that request has left, or it lands after the count (issue #746).
+      await waitFor(() => { expect(mediaOf(api)).toHaveLength(1); });
       const before = api.calls.length;
       await openAgain('curto');
       expect(await screen.findByText('Este link não vale mais')).toBeTruthy();
@@ -820,6 +822,7 @@ describe('the page of the approval link (#717)', () => {
 
     it('does nothing when the fragment is taken away (the person went back to the bare address)', async () => {
       const { api } = await loaded([A]);
+      await waitFor(() => { expect(mediaOf(api)).toHaveLength(1); });
       const before = api.calls.length;
       act(() => { window.dispatchEvent(new HashChangeEvent('hashchange')); });
       await new Promise<void>((resolve) => { setTimeout(resolve, 60); });
