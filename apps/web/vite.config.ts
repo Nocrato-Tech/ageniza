@@ -26,6 +26,10 @@ export default defineConfig(({ command, mode }) => ({
     // America/Sao_Paulo (the client archiving day, review of #379) cannot silently
     // pass on a machine whose local zone happens to be the production one.
     env: { TZ: 'UTC' },
+    // `vitest.setup.ts` lifts the wait of `findBy*`/`waitFor` to 8 s; the test must outlast it, or a screen that
+    // never shows up ends as "Test timed out" and not as the Testing Library error with the DOM it dumps.
+    setupFiles: ['./vitest.setup.ts'],
+    testTimeout: 20_000,
     // The design-system page reads the token stylesheets as text (`?raw`); vitest would otherwise stub every CSS file as empty.
     css: { include: [/\.css\?raw$/] }
   }
