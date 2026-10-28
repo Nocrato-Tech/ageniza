@@ -143,15 +143,18 @@ describe('the portal reads no content table, whatever the state (issue #249, acc
 
   it('shows a person of the portal of an archived client and of a suspended agency nothing at all', async () => {
     const archived = await w.seedContent(ids.clientArchived, { status: 'awaiting_approval' });
+    // Seen while the agency is active, so the empty answers below are the suspension and not a client with nothing in it.
+    await w.withSuspendedAgencyActive(async () => {
+      const id = await w.seedContent(ids.clientSuspended, { status: 'awaiting_approval', owner: ids.adminSuspended });
+      expect((await portal(ids.portalSuspended, ids.clientSuspended)).map((row) => row.id)).toEqual([id]);
+    });
     await w.archiveClient(ids.clientArchived);
-    await w.getOwner().knex('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' });
 
     try {
       expect(await visible(ids.portalArchived, 'contents', 'id', [archived])).toEqual([]);
       expect(await portal(ids.portalArchived, ids.clientArchived)).toEqual([]);
       expect(await portal(ids.portalSuspended, ids.clientSuspended)).toEqual([]);
     } finally {
-      await w.getOwner().knex('agencies').where({ id: ids.agencySuspended }).update({ status: 'active' });
       await w.reactivateClient(ids.clientArchived);
     }
   });

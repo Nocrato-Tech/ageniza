@@ -118,6 +118,12 @@ const itemsOf = (contentId: string) => knex()('notification_queue as item')
   .where('item.content_id', contentId)
   .orderBy('access.user_id')
   .select('item.*', 'access.user_id as recipient_user_id') as unknown as Promise<Array<Record<string, unknown>>>;
+// `every` on an empty list passes, so a content that never queued an item would prove nothing.
+const expectDiscardedUnsent = async (contentId: string): Promise<void> => {
+  const items = await itemsOf(contentId);
+  expect(items.length).toBeGreaterThan(0);
+  expect(items.every((row) => row.discarded_at !== null && row.sent_at === null)).toBe(true);
+};
 const sentItems = async (): Promise<number> =>
   Number((await knex()('notification_queue').whereIn('client_id', clients).whereNotNull('sent_at').count<Array<{ count: string }>>('* as count'))[0]!.count);
 
@@ -416,7 +422,7 @@ describe('no e-mail for what stopped being true (issue #260)', () => {
     }
 
     expect(box.sent).toEqual([]);
-    expect((await itemsOf(content)).every((row) => row.discarded_at !== null)).toBe(true);
+    await expectDiscardedUnsent(content);
   });
 
   it('sends nothing for an agency whose trial ended, and discards the items (issue #708)', async () => {
@@ -434,7 +440,7 @@ describe('no e-mail for what stopped being true (issue #260)', () => {
     }
 
     expect(box.sent).toEqual([]);
-    expect((await itemsOf(content)).every((row) => row.discarded_at !== null)).toBe(true);
+    await expectDiscardedUnsent(content);
   });
 
   it('sends nothing for an agency that was already suspended', async () => {
@@ -452,6 +458,7 @@ describe('no e-mail for what stopped being true (issue #260)', () => {
     }
 
     expect(box.sent).toEqual([]);
+    await expectDiscardedUnsent(content);
   });
 
   it('drops only the person who was removed from the portal after the claim, and still sends to the other', async () => {

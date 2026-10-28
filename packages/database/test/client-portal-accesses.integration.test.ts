@@ -26,9 +26,8 @@ const owner = (): Knex => w.getOwner().knex;
 beforeAll(async () => {
   await w.setup();
   worker = createLocalTestDatabaseClient(applicationUrl);
-  // The world has them active; the tests of the archive and of the suspension need them closed.
+  // The world has the archived client active; the tests of the archive need it closed. The suspended agency is already suspended.
   await w.archiveClient(ids.clientArchived);
-  await owner()('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' });
 });
 
 afterAll(async () => {

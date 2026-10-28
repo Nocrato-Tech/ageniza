@@ -194,15 +194,13 @@ describe('who creates a content, and what the row may carry (issue #249)', () =>
 
   it('refuses a content for a client of another agency, for an archived client and for a suspended agency', async () => {
     await w.archiveClient(ids.clientArchived);
-    await w.getOwner().knex('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' });
     try {
       const archivedFolder = await w.folderOf(ids.clientArchived);
       const suspendedFolder = await w.folderOf(ids.clientSuspended);
       await expect(insertContent(ids.adminA, { client_id: ids.clientB, folder_id: await w.folderOf(ids.clientB), owner_user_id: ids.adminB })).rejects.toMatchObject(rlsViolation);
       await expect(insertContent(ids.adminA, { client_id: ids.clientArchived, folder_id: archivedFolder })).rejects.toMatchObject(rlsViolation);
-      await expect(insertContent(ids.adminSuspended, { client_id: ids.clientSuspended, folder_id: suspendedFolder, owner_user_id: ids.adminSuspended })).rejects.toBeDefined();
+      await expect(insertContent(ids.adminSuspended, { client_id: ids.clientSuspended, folder_id: suspendedFolder, owner_user_id: ids.adminSuspended })).rejects.toMatchObject({ code: 'A0073' });
     } finally {
-      await w.getOwner().knex('agencies').where({ id: ids.agencySuspended }).update({ status: 'active' });
       await w.reactivateClient(ids.clientArchived);
     }
 
@@ -773,15 +771,15 @@ describe('approve: awaiting approval to approved, by an active person of the por
 
   it('does not approve for a client that is archived, or for an agency that is suspended', async () => {
     const archived = await w.seedContent(ids.clientArchived, { status: 'awaiting_approval' });
-    const suspended = await w.seedContent(ids.clientSuspended, { status: 'awaiting_approval', folderId: await w.folderOf(ids.clientSuspended), owner: ids.adminSuspended });
+    const suspended = await w.withSuspendedAgencyActive(async () =>
+      w.seedContent(ids.clientSuspended, { status: 'awaiting_approval', folderId: await w.folderOf(ids.clientSuspended), owner: ids.adminSuspended })
+    );
     await w.archiveClient(ids.clientArchived);
-    await w.getOwner().knex('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' });
 
     try {
       await expect(approveAs(ids.portalArchived, archived, 1)).rejects.toMatchObject(NOT_FOUND);
       await expect(approveAs(ids.portalSuspended, suspended, 1)).rejects.toMatchObject(NOT_FOUND);
     } finally {
-      await w.getOwner().knex('agencies').where({ id: ids.agencySuspended }).update({ status: 'active' });
       await w.reactivateClient(ids.clientArchived);
     }
 
