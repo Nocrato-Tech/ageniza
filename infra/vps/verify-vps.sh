@@ -47,11 +47,60 @@ command -v docker >/dev/null && docker compose version >/dev/null && pass 'Docke
 [[ "$(timedatectl show --property=Timezone --value 2>/dev/null)" == UTC ]] && pass 'timezone is UTC' || fail 'timezone is not UTC'
 [[ "$(timedatectl show --property=NTPSynchronized --value 2>/dev/null)" == yes ]] && pass 'NTP synchronized' || warn 'NTP has not synchronized yet'
 
-EFFECTIVE_SSH_PORTS="$(sshd -T 2>/dev/null | grep '^port ' || true)"
-[[ "$EFFECTIVE_SSH_PORTS" == "port $SSH_PORT" ]] && pass "effective SSH port is $SSH_PORT" || fail "effective SSH port is not only $SSH_PORT"
-sshd -T 2>/dev/null | grep -qx 'permitrootlogin no' && pass 'root SSH login disabled' || fail 'root SSH login is not disabled'
-sshd -T 2>/dev/null | grep -qx 'passwordauthentication no' && pass 'SSH password login disabled' || fail 'SSH password login is not disabled'
-sshd -T 2>/dev/null | grep -qx 'kbdinteractiveauthentication no' && pass 'SSH keyboard-interactive login disabled' || fail 'SSH keyboard-interactive login is not disabled'
+# sshd -T is read once into a variable: with pipefail, `sshd -T | grep -q` dies of SIGPIPE when grep exits at the first match
+# and the 4 KiB of output is still being written, so the check would fail even on a correct configuration.
+# Plain 'sshd -T' ignores Match blocks, so the settings are read for the global scope, for root and for the deploy user.
+check_effective_ssh() {
+  local target scope effective ports setting
+  local -a args
+  for target in "" root "$DEPLOY_USER"; do
+    args=(-T)
+    scope=""
+    if [[ -n "$target" ]]; then
+      args+=(-C "user=$target,host=localhost,addr=127.0.0.1")
+      scope=" for user $target"
+    fi
+    effective="$(sshd "${args[@]}" 2>/dev/null || true)"
+    for setting in 'permitrootlogin no' 'passwordauthentication no' 'kbdinteractiveauthentication no'; do
+      if grep -qxF -- "$setting" <<<"$effective"; then
+        pass "effective SSH $setting$scope"
+      else
+        fail "effective SSH setting is not '$setting'$scope"
+      fi
+    done
+    if [[ -z "$target" ]]; then
+      ports="$(grep '^port ' <<<"$effective" || true)"
+      if [[ "$ports" == "port $SSH_PORT" ]]; then
+        pass "effective SSH port is $SSH_PORT"
+      else
+        fail "effective SSH port is not only $SSH_PORT"
+      fi
+    fi
+  done
+}
+
+# TCP ports where sshd listens, one per line: sshd's own sockets and, when it is active, the ones of ssh.socket.
+listening_ssh_ports() {
+  {
+    ss -Htlnp 2>/dev/null | awk '/users:\(\("sshd"/ { n = split($4, parts, ":"); print parts[n] }' || true
+    if systemctl is-active --quiet ssh.socket; then
+      systemctl show ssh.socket --property=Listen --value | awk 'NF { n = split($1, parts, ":"); print parts[n] }'
+    fi
+  } | sort -un
+}
+
+check_listening_ssh() {
+  local listening
+  listening="$(listening_ssh_ports | paste -sd, -)"
+  if [[ "$listening" == "$SSH_PORT" ]]; then
+    pass "sshd listens only on TCP $SSH_PORT"
+  else
+    fail "sshd listens on '${listening:-nothing}', expected only $SSH_PORT"
+  fi
+}
+
+check_effective_ssh
+check_listening_ssh
 
 ufw status | grep -q 'Status: active' && pass 'UFW active' || fail 'UFW inactive'
 if ufw status | grep -Eq "^${SSH_PORT}/tcp[[:space:]]+ALLOW"; then

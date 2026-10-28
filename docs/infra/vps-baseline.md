@@ -38,11 +38,13 @@ If key login fails, keep the original session open. The SSH drop-in is `/etc/ssh
 
 `sshd` keeps the **first** value it reads for each option (except `Port`, which accumulates), and `sshd_config.d/*.conf` is read in alphabetical order, before the rest of `sshd_config`. The Hostinger image ships `50-cloud-init.conf` with `PasswordAuthentication yes`, so a baseline file named `90-ageniza.conf` lost to it and left password login on. The baseline therefore lives in `00-ageniza.conf`, which is read first. The bootstrap:
 
-- moves a `90-ageniza.conf` from an earlier run to `90-ageniza.conf.pre-ageniza` (a leftover `Port` line there would keep a second port open), and puts it back if `sshd -t` rejects the new file;
-- never edits or deletes the image's own files; it logs each of them that sets `Port`, `PermitRootLogin`, `PasswordAuthentication` or `KbdInteractiveAuthentication`, and whether the baseline value wins over it;
-- ends by reading `sshd -T` and requires `permitrootlogin no`, `passwordauthentication no`, `kbdinteractiveauthentication no` and the configured port as the only `port`. If any of them differs it exits with an error and does not print the success message: keep the root session open and inspect `sshd -T` and the drop-ins it listed.
+- ends `00-ageniza.conf` with a `Match all` block that repeats `PermitRootLogin`, `PasswordAuthentication` and `KbdInteractiveAuthentication` as `no`. A `Match` block in a later drop-in (`Match User root` with `PasswordAuthentication yes`) beats the global options whatever the file order, and plain `sshd -T` does not evaluate `Match`; among the blocks that match, the first value wins, so the `Match all` read first keeps them off;
+- moves a `90-ageniza.conf` from an earlier run to `90-ageniza.conf.pre-ageniza` (a leftover `Port` line there would keep a second port open) only after the new file is written, and puts it back if `sshd -t` rejects the new file;
+- never edits or deletes the image's own files; it logs each of them that sets `Port`, `PermitRootLogin`, `PasswordAuthentication` or `KbdInteractiveAuthentication`, warns about the ones with a `Match` block, and says whether the baseline value wins over the global ones;
+- when `ssh.socket` is enabled (the Ubuntu 24.04 and newer default), runs `systemctl daemon-reload` and `systemctl restart ssh.socket` after the reload. Under socket activation `sshd` ignores `Port`: without the restart the socket keeps listening on the old port, the UFW rule opens only the new one and a new login is refused;
+- ends by reading `sshd -T`, and `sshd -T -C user=root,host=localhost,addr=127.0.0.1` and the same for the deploy user, and requires `permitrootlogin no`, `passwordauthentication no` and `kbdinteractiveauthentication no` in all three, plus the configured port as the only `port`. It then reads `ss -tlnp` (and the sockets of `ssh.socket` when it is active) and requires that `sshd` listens only on that port, so the port of a migrated `90` file cannot stay open. If any of this differs it exits with an error and does not print the success message: keep the root session open and inspect `sshd -T`, `ss -tlnp` and the drop-ins it listed.
 
-`verify-vps.sh` checks the same four settings.
+`verify-vps.sh` checks the same settings and the listening port. It reads each `sshd -T` once into a variable: `sshd -T | grep -q` under `pipefail` dies of SIGPIPE when `grep` exits at the first match while `sshd` is still writing its roughly 4 KiB, and the check would fail on a correct configuration.
 
 ## Host policy
 

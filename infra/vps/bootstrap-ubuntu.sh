@@ -41,12 +41,9 @@ write_ssh_dropin() {
     cp -a "$dropin" "$backup"
     had_dropin=true
   fi
-  # Port is additive: leaving the old file behind would keep listening on the port it names.
-  if [[ -e "$legacy" ]]; then
-    mv -f "$legacy" "$legacy_backup"
-    had_legacy=true
-  fi
   temp="$(mktemp "$dir/.00-ageniza.XXXXXX")"
+  # A later drop-in can turn password and root login back on inside a Match block, which beats the global options
+  # whatever the file order; 'Match all' here is read first, and the first value of a matching Match wins.
   cat > "$temp" <<EOF
 # Managed by $SCRIPT_NAME. Keep an established root session open until a new key-based login succeeds.
 Port $port
@@ -58,9 +55,22 @@ UsePAM yes
 X11Forwarding no
 MaxAuthTries 3
 LoginGraceTime 30
+Match all
+  PermitRootLogin no
+  PasswordAuthentication no
+  KbdInteractiveAuthentication no
 EOF
-  install -m 0600 "$temp" "$dropin"
+  if ! install -m 0600 "$temp" "$dropin"; then
+    rm -f "$temp"
+    die "Could not write $dropin. The SSH configuration was not changed."
+  fi
   rm -f "$temp"
+  # Moved only after the new file is in place, so a failure above cannot leave the host without a baseline.
+  # Port is additive: leaving the old file behind would keep listening on the port it names.
+  if [[ -e "$legacy" ]]; then
+    mv -f "$legacy" "$legacy_backup"
+    had_legacy=true
+  fi
   if ! sshd -t; then
     note "sshd validation failed; restoring previous SSH drop-ins"
     if [[ "$had_dropin" == "true" ]]; then
@@ -78,10 +88,16 @@ EOF
 
 # Logs every other drop-in that sets an option the baseline owns, and whether it wins.
 report_ssh_overrides() {
-  local dir="$1" ours="$2" file lines
+  local dir="$1" ours="$2" file lines match
   for file in "$dir"/*.conf; do
     [[ -e "$file" && "$file" != "$ours" ]] || continue
-    lines="$(grep -inE '^[[:space:]]*(Port|PermitRootLogin|PasswordAuthentication|KbdInteractiveAuthentication)[[:space:]=]' "$file" || true)"
+    match="$(grep -inEm1 '^[[:space:]]*Match[[:space:]]' "$file" || true)"
+    if [[ -n "$match" ]]; then
+      note "WARNING: $file has a Match block (line ${match%%:*}); its options can override the baseline for the users it matches."
+    fi
+    # Options after a Match line belong to that block, not to the global scope the baseline wins in.
+    lines="$({ if [[ -n "$match" ]]; then head -n "$(( ${match%%:*} - 1 ))" "$file"; else cat "$file"; fi; } |
+      grep -inE '^[[:space:]]*(Port|PermitRootLogin|PasswordAuthentication|KbdInteractiveAuthentication)[[:space:]=]' || true)"
     [[ -n "$lines" ]] || continue
     if [[ "${file##*/}" < "${ours##*/}" ]]; then
       note "WARNING: $file is read before ${ours##*/} and its first value wins:"
@@ -92,26 +108,69 @@ report_ssh_overrides() {
   done
 }
 
-# Checks the configuration sshd would load, not the file this script wrote: another file can still override it.
-assert_effective_sshd() {
-  local port="$1" effective ports setting key failed=0
-  if ! effective="$(sshd -T)"; then
-    printf 'ERROR: sshd -T failed; the effective SSH configuration could not be read.\n' >&2
-    return 1
+# Restarts ssh.socket when it is enabled: under socket activation sshd ignores Port and the socket keeps the old one.
+restart_ssh_socket_if_enabled() {
+  if systemctl is-enabled --quiet ssh.socket; then
+    note "ssh.socket is enabled: reloading units and restarting it so the listening port follows the configuration"
+    systemctl daemon-reload
+    systemctl restart ssh.socket
   fi
-  for setting in 'permitrootlogin no' 'passwordauthentication no' 'kbdinteractiveauthentication no'; do
-    key="${setting% *}"
-    if ! grep -qxF -- "$setting" <<<"$effective"; then
-      printf 'ERROR: effective SSH setting is "%s", expected "%s".\n' "$(grep -m1 -- "^$key " <<<"$effective" || printf '%s <unset>' "$key")" "$setting" >&2
-      failed=1
+}
+
+# Checks the configuration sshd would load, not the file this script wrote: another file can still override it.
+# Plain 'sshd -T' ignores Match blocks, so the settings are also read as root and as the deploy user.
+assert_effective_sshd() {
+  local port="$1" deploy_user="$2" effective ports setting key target scope failed=0
+  local -a args
+  for target in "" root "$deploy_user"; do
+    args=(-T)
+    scope="globally"
+    if [[ -n "$target" ]]; then
+      args+=(-C "user=$target,host=localhost,addr=127.0.0.1")
+      scope="for user $target"
+    fi
+    if ! effective="$(sshd "${args[@]}")"; then
+      printf 'ERROR: sshd %s failed; the effective SSH configuration could not be read %s.\n' "${args[*]}" "$scope" >&2
+      return 1
+    fi
+    for setting in 'permitrootlogin no' 'passwordauthentication no' 'kbdinteractiveauthentication no'; do
+      key="${setting% *}"
+      if ! grep -qxF -- "$setting" <<<"$effective"; then
+        printf 'ERROR: effective SSH setting %s is "%s", expected "%s".\n' "$scope" "$(grep -m1 -- "^$key " <<<"$effective" || printf '%s <unset>' "$key")" "$setting" >&2
+        failed=1
+      fi
+    done
+    if [[ -z "$target" ]]; then
+      ports="$(grep -- '^port ' <<<"$effective" || true)"
+      if [[ "$ports" != "port $port" ]]; then
+        printf 'ERROR: effective SSH ports are "%s", expected only "port %s".\n' "${ports//$'\n'/, }" "$port" >&2
+        failed=1
+      fi
     fi
   done
-  ports="$(grep -- '^port ' <<<"$effective" || true)"
-  if [[ "$ports" != "port $port" ]]; then
-    printf 'ERROR: effective SSH ports are "%s", expected only "port %s".\n' "${ports//$'\n'/, }" "$port" >&2
-    failed=1
-  fi
   return "$failed"
+}
+
+# TCP ports where sshd listens, one per line: sshd's own sockets and, when it is active, the ones of ssh.socket.
+listening_ssh_ports() {
+  {
+    ss -Htlnp 2>/dev/null | awk '/users:\(\("sshd"/ { n = split($4, parts, ":"); print parts[n] }' || true
+    if systemctl is-active --quiet ssh.socket; then
+      systemctl show ssh.socket --property=Listen --value | awk 'NF { n = split($1, parts, ":"); print parts[n] }'
+    fi
+  } | sort -un
+}
+
+# Waits briefly for the daemon to bind, then requires that it listens only on the configured port.
+assert_listening_ssh_port() {
+  local port="$1" attempts="${2:-10}" attempt listening=""
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    listening="$(listening_ssh_ports | paste -sd, -)"
+    [[ "$listening" != "$port" ]] || return 0
+    if ((attempt < attempts)); then sleep 0.5; fi
+  done
+  printf 'ERROR: sshd listens on "%s", expected only "%s".\n' "${listening:-nothing}" "$port" >&2
+  return 1
 }
 
 while (($#)); do
@@ -230,10 +289,14 @@ SSH_DROPIN_DIR=/etc/ssh/sshd_config.d
 write_ssh_dropin "$SSH_DROPIN_DIR" "$SSH_PORT"
 report_ssh_overrides "$SSH_DROPIN_DIR" "$SSH_DROPIN_DIR/00-ageniza.conf"
 systemctl reload ssh.service
+restart_ssh_socket_if_enabled
 
 note "Checking the effective SSH configuration"
-if ! assert_effective_sshd "$SSH_PORT"; then
-  die "The effective SSH configuration does not match the baseline: another sshd option source still wins (see the drop-ins reported above and 'sshd -T'). The baseline was NOT installed successfully. Keep this root session open."
+if ! assert_effective_sshd "$SSH_PORT" "$DEPLOY_USER"; then
+  die "The effective SSH configuration does not match the baseline: another sshd option source still wins (see the drop-ins reported above and 'sshd -T -C user=root,host=localhost,addr=127.0.0.1'). The baseline was NOT installed successfully. Keep this root session open."
+fi
+if ! assert_listening_ssh_port "$SSH_PORT"; then
+  die "sshd is not listening only on TCP $SSH_PORT (see 'ss -tlnp' and 'systemctl status ssh.socket'). The baseline was NOT installed successfully. Keep this root session open."
 fi
 
 cat <<EOF
