@@ -140,27 +140,69 @@ interface RequestLockHolder {
   readonly locked: Promise<void>;
   /** Releases the row lock without ever asking for the account. */
   release(): void;
-  /** Asks for the account's row lock while still holding the request's, which closes the cycle. */
-  wantAccount(): void;
+  /**
+   * Makes the holder ask for the account's row lock the moment a backend running a statement that matches the
+   * pattern is blocked by the holder, which closes the cycle. Call it BEFORE starting the transaction under test.
+   */
+  wantAccountOnceBlocked(statementPattern: string): void;
   readonly done: Promise<void>;
 }
 
+const sqlLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
+
+/**
+ * The deadlock detector aborts the backend whose `deadlock_timeout` (1s) expires with the cycle already closed, and
+ * that is the one that waited first only if the other one closes the cycle within that second. A holder that is told
+ * from Node, after a poll, that the transaction under test is blocked can be late by more than a second whenever the
+ * test process stalls (GC, a busy machine); the holder is then the one the database aborts and the test fails with
+ * the holder's own 40P01 (#745). So the wait for the transaction under test runs inside the holder's transaction,
+ * in the database, a few milliseconds apart from the moment the lock is requested, and never through Node.
+ */
+const askAccountOnceBlockedSql = (userId: string, statementPattern: string): string => `
+  do $barrier$
+  declare
+    v_deadline timestamptz := pg_catalog.clock_timestamp() + interval '20 seconds';
+  begin
+    loop
+      perform pg_catalog.pg_stat_clear_snapshot();
+      exit when exists (
+        select 1 from pg_catalog.pg_stat_activity activity
+        where activity.datname = pg_catalog.current_database()
+          and activity.wait_event_type = 'Lock'
+          and pg_catalog.pg_backend_pid() = any (pg_catalog.pg_blocking_pids(activity.pid))
+          and activity.query ilike ${sqlLiteral(statementPattern)}
+      );
+      if pg_catalog.clock_timestamp() > v_deadline then
+        raise exception 'No backend running ${statementPattern.replace(/'/g, "''").replace(/%/g, '%%')} ever waited on a lock held by this transaction.';
+      end if;
+      perform pg_catalog.pg_sleep(0.005);
+    end loop;
+    perform 1 from auth."user" account where account.id = ${sqlLiteral(userId)}::uuid for update;
+  end
+  $barrier$`;
+
 /**
  * Holds the row lock of one request in a real owner transaction, so the transactions under test
- * line up behind it in a known order. With `wantAccount` it then asks for the account's lock, the
+ * line up behind it in a known order. With `wantAccountOnceBlocked` it then asks for the account's lock, the
  * other half of a deadlock against whoever holds the account and waits for the request.
  */
 const holdRequestLock = (requestId: string, userId: string): RequestLockHolder => {
-  let proceed: (account: boolean) => void = () => undefined;
-  const gate = new Promise<boolean>((resolve) => { proceed = resolve; });
+  if (!/^[0-9a-f-]{36}$/.test(userId)) throw new Error('The holder takes the account by its uuid.');
+  let proceed: (statementPattern: string | false) => void = () => undefined;
+  const gate = new Promise<string | false>((resolve) => { proceed = resolve; });
   let markLocked: () => void = () => undefined;
   const locked = new Promise<void>((resolve) => { markLocked = resolve; });
   const done = owner.knex.transaction(async (transaction) => {
-    await transaction.raw('select id from public.email_change_requests where id = ? for update', [requestId]);
+    const locking = await transaction.raw('select id from public.email_change_requests where id = ? for update', [requestId]);
+    if (locking.rows.length !== 1) throw new Error('The holder did not lock exactly one request.');
     markLocked();
-    if (await gate) await transaction.raw('select id from auth."user" where id = ? for update', [userId]);
+    const statementPattern = await gate;
+    if (statementPattern !== false) await transaction.raw(askAccountOnceBlockedSql(userId, statementPattern));
   });
-  return { locked, release: () => proceed(false), wantAccount: () => proceed(true), done: done.then(() => undefined) };
+  return {
+    locked, release: () => proceed(false), wantAccountOnceBlocked: (statementPattern) => proceed(statementPattern),
+    done: done.then(() => undefined)
+  };
 };
 
 /** Waits until a backend running a statement that matches the pattern is blocked on a lock. */
@@ -597,9 +639,9 @@ describe('account e-mail change by request (issue #80)', () => {
       await holder.locked;
       const noticesBefore = (await sentTo(user.email)).length;
 
+      // Armed before the request starts: the holder asks for the account from inside the database as soon as the request waits.
+      holder.wantAccountOnceBlocked('%request_email_change%');
       const asked = requestChange(cookie, { newEmail: newAddress('deadlock-next'), currentPassword: user.password });
-      await waitUntilBlocked('%request_email_change%');
-      holder.wantAccount();
       const [lost] = await Promise.all([asked, holder.done]);
 
       expect(lost.status).toBe(409);
@@ -619,9 +661,8 @@ describe('account e-mail change by request (issue #80)', () => {
       const holder = holdRequestLock(requestId, user.id);
       await holder.locked;
 
+      holder.wantAccountOnceBlocked('%confirm_email_change%');
       const confirming = confirmLink(token);
-      await waitUntilBlocked('%confirm_email_change%');
-      holder.wantAccount();
       const [lost] = await Promise.all([confirming, holder.done]);
 
       expect(lost.status).toBe(409);
@@ -641,9 +682,8 @@ describe('account e-mail change by request (issue #80)', () => {
       await holder.locked;
       const mailedBefore = mailed.length;
 
+      holder.wantAccountOnceBlocked(LOCKED_READ_OF_A_REQUEST);
       const approval = operate('approve', '--request-id', requestId);
-      await waitUntilBlocked(LOCKED_READ_OF_A_REQUEST);
-      holder.wantAccount();
       const [lost] = await Promise.all([approval, holder.done]);
 
       expect(lost.code).toBe(1);
