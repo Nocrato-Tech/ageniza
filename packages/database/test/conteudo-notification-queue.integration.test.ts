@@ -33,6 +33,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await w.getOwner().knex('notification_queue').whereIn('client_id', worldClients()).delete();
+  await w.getOwner().knex('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' });
 });
 
 afterAll(async () => {
@@ -617,24 +618,22 @@ describe('who is enqueued, and by what (issue #252)', () => {
   });
 
   it('enqueues nothing for a suspended agency, but does for the same flow on an active one', async () => {
-    // Both are seeded while the agency is active: a suspended agency has no collaborator who may own a content.
-    const control = await w.seedContent(ids.clientSuspended, { owner: ids.adminSuspended });
-    const suspended = await w.seedContent(ids.clientSuspended, { owner: ids.adminSuspended });
     const moveToApproval = (id: string): Promise<void> =>
       owner().transaction(async (t) => {
         await t.raw('select app_private.bind_actor(?::uuid)', [ids.adminSuspended]);
         await t('contents').where({ id }).update({ status: 'awaiting_approval' });
       });
 
-    await moveToApproval(control);
+    // Both are seeded while the agency is active: a suspended agency has no collaborator who may own a content.
+    const { control, suspended } = await w.withSuspendedAgencyActive(async () => {
+      const control = await w.seedContent(ids.clientSuspended, { owner: ids.adminSuspended });
+      const suspended = await w.seedContent(ids.clientSuspended, { owner: ids.adminSuspended });
+      await moveToApproval(control);
+      return { control, suspended };
+    });
     expect(await openRecipients(control)).toEqual([ids.portalSuspended]);
 
-    await owner()('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' });
-    try {
-      await moveToApproval(suspended);
-    } finally {
-      await owner()('agencies').where({ id: ids.agencySuspended }).update({ status: 'active' });
-    }
+    await moveToApproval(suspended);
     expect(await openRecipients(suspended)).toEqual([]);
   });
 });
@@ -1204,14 +1203,12 @@ describe('claiming a batch (issue #252)', () => {
     });
 
     it('an agency suspended after the item was queued', async () => {
-      const id = await readyContent(ids.clientSuspended, 'in_production', undefined, ids.adminSuspended);
-      await sendDue(ids.adminSuspended, id);
-      await owner()('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' });
-      try {
-        expect(await claim()).toEqual([]);
-      } finally {
-        await owner()('agencies').where({ id: ids.agencySuspended }).update({ status: 'active' });
-      }
+      const id = await w.withSuspendedAgencyActive(async () => {
+        const id = await readyContent(ids.clientSuspended, 'in_production', undefined, ids.adminSuspended);
+        await sendDue(ids.adminSuspended, id);
+        return id;
+      });
+      expect(await claim()).toEqual([]);
       expect(await discardedOf(id)).toEqual([ids.portalSuspended]);
     });
 
@@ -1449,12 +1446,13 @@ describe('rechecking what a claim handed over, right before the send (issue #260
       return { content, people: [ids.portalA1, ids.portalA1Second].sort(), dropped: [ids.portalA1, ids.portalA1Second].sort(), change: () => w.archiveClient(client) };
     }],
     ['the agency is suspended', async () => {
+      // Active from the build to the change, suspended again by it and by the beforeEach of the next test.
+      await owner()('agencies').where({ id: ids.agencySuspended }).update({ status: 'active' });
       const content = await readyContent(ids.clientSuspended, 'in_production', undefined, ids.adminSuspended);
       await sendDue(ids.adminSuspended, content);
       return {
         content, people: [ids.portalSuspended], dropped: [ids.portalSuspended],
-        change: async () => { await owner()('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' }); },
-        undo: async () => { await owner()('agencies').where({ id: ids.agencySuspended }).update({ status: 'active' }); }
+        change: async () => { await owner()('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' }); }
       };
     }],
     ['one person is removed from the portal: only that person is dropped', async () => {

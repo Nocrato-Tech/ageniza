@@ -59,6 +59,8 @@ export interface ContentWorld {
   tablePrivileges(table: string): Promise<Record<string, boolean>>;
   waitUntilSomeoneWaitsOnALock(): Promise<void>;
   reactivateClient(clientId: string): Promise<void>;
+  /** The suspended agency rests suspended; a test that needs it active for a while gets it back suspended afterwards. */
+  withSuspendedAgencyActive<TResult>(work: () => Promise<TResult>): Promise<TResult>;
   setup(): Promise<void>;
   teardown(): Promise<void>;
 }
@@ -301,6 +303,14 @@ export const createContentWorld = (label: string): ContentWorld => {
     reactivateClient: async (clientId) => {
       await getOwner().knex('clients').where({ id: clientId }).update({ status: 'active', archived_at: null });
     },
+    withSuspendedAgencyActive: async (work) => {
+      await getOwner().knex('agencies').where({ id: ids.agencySuspended }).update({ status: 'active' });
+      try {
+        return await work();
+      } finally {
+        await getOwner().knex('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' });
+      }
+    },
     setup: async () => {
       owner = createLocalTestDatabaseClient(ownerUrl);
       application = createLocalTestDatabaseClient(applicationUrl);
@@ -347,6 +357,8 @@ export const createContentWorld = (label: string): ContentWorld => {
           { client_id: ids.clientArchived, user_id: ids.portalArchived },
           { client_id: ids.clientSuspended, user_id: ids.portalSuspended }
         ]);
+        // Suspended last, after its children exist: the guards refuse to add to a suspended agency.
+        await transaction('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' });
       });
     },
     teardown: async () => {

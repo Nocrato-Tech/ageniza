@@ -487,17 +487,25 @@ describe('request changes: awaiting approval to adjusting, with a comment (issue
 
   it('does not ask for changes for a client that is archived, or for an agency that is suspended', async () => {
     const archived = await w.seedContent(ids.clientArchived, { status: 'awaiting_approval' });
+    // The control asks for changes while the agency is active, so the refusal below is the suspension and not a content that is missing.
+    const { control, suspended } = await w.withSuspendedAgencyActive(async () => {
+      const control = await w.seedContent(ids.clientSuspended, { status: 'awaiting_approval', owner: ids.adminSuspended });
+      const suspended = await w.seedContent(ids.clientSuspended, { status: 'awaiting_approval', owner: ids.adminSuspended });
+      await requestChanges(ids.portalSuspended, control, 1, 'x');
+      return { control, suspended };
+    });
+    expect((await w.contentRow(control)).status).toBe('adjusting');
     await w.archiveClient(ids.clientArchived);
-    await w.getOwner().knex('agencies').where({ id: ids.agencySuspended }).update({ status: 'suspended' });
 
     try {
       await expect(requestChanges(ids.portalArchived, archived, 1, 'x')).rejects.toMatchObject({ code: 'A0060' });
-      await expect(requestChanges(ids.portalSuspended, randomUUID(), 1, 'x')).rejects.toMatchObject({ code: 'A0060' });
+      await expect(requestChanges(ids.portalSuspended, suspended, 1, 'x')).rejects.toMatchObject({ code: 'A0060' });
     } finally {
-      await w.getOwner().knex('agencies').where({ id: ids.agencySuspended }).update({ status: 'active' });
       await w.reactivateClient(ids.clientArchived);
     }
     expect((await w.contentRow(archived)).status).toBe('awaiting_approval');
+    expect((await w.contentRow(suspended)).status).toBe('awaiting_approval');
+    expect(await w.getOwner().knex('client_threads').where({ content_id: suspended }).select('id')).toHaveLength(0);
   });
 
   it('waits for an edit that holds the row, then refuses the revision the person saw', async () => {
