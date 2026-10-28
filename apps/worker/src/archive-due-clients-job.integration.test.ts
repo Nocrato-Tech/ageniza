@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { PassThrough } from 'node:stream';
 
 import { createLogger } from '@ageniza/core';
-import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, type DatabaseClient, resolveIntegrationDatabaseUrls } from '@ageniza/database';
+import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, requestLockOnceBlocked, type DatabaseClient, resolveIntegrationDatabaseUrls } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ARCHIVE_DUE_CLIENTS_JOB_NAME, ARCHIVE_DUE_CLIENTS_SCHEDULE, archiveDueClientsJob } from './archive-due-clients-job.js';
@@ -249,17 +249,10 @@ describe('clients.archive-due on the durable queue', { timeout: 60_000 }, () => 
       // waits for that invitation; when the holder asks for the client, the job, which waited first, loses.
       const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.invitations where id = ?::uuid for update', [invitationId]);
       if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
-      const holderPid = Number((await raw<{ rows: Array<{ pid: number }> }>(holder, 'select pg_catalog.pg_backend_pid() as pid', [])).rows[0]!.pid);
 
+      const holderAsks = requestLockOnceBlocked(holder, 'select 1 from public.clients where id = %L::uuid for share', [racing]);
       const first = await queue.send(jobName, {});
-      await vi.waitFor(async () => {
-        const blocked = await raw<{ rows: Array<{ pid: number }> }>(getOwner().knex, `
-          select activity.pid from pg_catalog.pg_stat_activity activity
-          where activity.datname = pg_catalog.current_database() and pg_catalog.pg_blocking_pids(activity.pid) @> array[?::int]
-        `, [holderPid]);
-        expect(blocked.rows.length).toBeGreaterThan(0);
-      }, { timeout: 15_000, interval: 25 });
-      await holder.raw('select id from public.clients where id = ?::uuid for share', [racing]);
+      await holderAsks;
       await holder.rollback();
       released = true;
 

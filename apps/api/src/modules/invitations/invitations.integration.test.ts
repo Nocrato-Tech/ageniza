@@ -12,7 +12,7 @@ import {
 } from '../auth/test-support/harness.js';
 import { createInvitationToken, hashInvitationToken } from './tokens.js';
 import { setPortalAccessStatus } from '../clients/test-support/portal-access.js';
-import { raw, type DatabaseClient } from '@ageniza/database';
+import { raw, requestLockOnceBlocked, type DatabaseClient } from '@ageniza/database';
 import { createHash, randomUUID } from 'node:crypto';
 
 const origin = { origin: TEST_APP_PUBLIC_URL };
@@ -1057,6 +1057,8 @@ describe('invitation HTTP module', () => {
       expect(login.statusCode).toBe(200);
       return sessionCookieHeader(login.cookies);
     };
+    const LOCK_THE_INVITATION = 'select 1 from public.invitations where id = %L::uuid for update';
+    const TAKE_THE_SLOT = 'select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(%L, 0))';
     /** The pid of one backend currently blocked by the given database backend, in this database. */
     const backendBlockedBy = async (blockerPid: number): Promise<number | undefined> => {
       const result = await raw<{ rows: Array<{ pid: number }> }>(owner.knex, `
@@ -1140,22 +1142,18 @@ describe('invitation HTTP module', () => {
         // same slot from the holder: the two wait on each other and the resend, waiting first, loses.
         const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
         if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
-        const holderPid = await backendPid(holder);
+        // The exact advisory key `lockPendingInvitationSlot` takes (clientId null -> nil uuid).
+        const holderAsks = requestLockOnceBlocked(holder, TAKE_THE_SLOT, [`${raceAgencyId}:collaborator_invite:${email}:00000000-0000-0000-0000-000000000000`]);
         const resent = app.app.inject({
           method: 'POST',
           url: `/agencies/${raceAgencyId}/invitations/${invitation.invitationId}/resend`,
           remoteAddress: LOCK_ORDER_IP,
           headers: { ...origin, cookie }
         });
-        await waitForBlockedQueryStart(owner, holderPid);
-        // The exact advisory key `lockPendingInvitationSlot` takes (clientId null -> nil uuid).
-        await holder.raw('select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?, 0))', [
-          `${raceAgencyId}:collaborator_invite:${email}:00000000-0000-0000-0000-000000000000`
-        ]);
+        const [response] = await Promise.all([resent, holderAsks]);
         await holder.commit();
         released = true;
 
-        const response = await resent;
         expect(response.statusCode).toBe(409);
         expect(response.json().error?.code).toBe('TRY_AGAIN');
         expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
@@ -1189,7 +1187,7 @@ describe('invitation HTTP module', () => {
         // slot, blocks on the revoke, and the holder closes the cycle by asking for the slot.
         const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
         if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one invitation.');
-        const holderPid = await backendPid(holder);
+        const holderAsks = requestLockOnceBlocked(holder, TAKE_THE_SLOT, [`${raceAgencyId}:collaborator_invite:${email}:00000000-0000-0000-0000-000000000000`]);
         const created = app.app.inject({
           method: 'POST',
           url: `/agencies/${raceAgencyId}/invitations/collaborators`,
@@ -1197,14 +1195,10 @@ describe('invitation HTTP module', () => {
           headers: { ...origin, cookie },
           payload: { email, roleId: productionRoleId }
         });
-        await waitForBlockedQueryStart(owner, holderPid);
-        await holder.raw('select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(?, 0))', [
-          `${raceAgencyId}:collaborator_invite:${email}:00000000-0000-0000-0000-000000000000`
-        ]);
+        const [response] = await Promise.all([created, holderAsks]);
         await holder.commit();
         released = true;
 
-        const response = await created;
         expect(response.statusCode).toBe(409);
         expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
         await expect(owner.knex('invitations').where({ id: invitation.invitationId }).first('revoked_at')).resolves.toEqual({ revoked_at: null });
@@ -1236,19 +1230,17 @@ describe('invitation HTTP module', () => {
         // The audit insert is the cancellation's last target: holding that table makes it wait
         // there while it holds the invitation row, and the holder then asks for that row.
         await holder.raw('lock table audit.events in access exclusive mode');
-        const holderPid = await backendPid(holder);
+        const holderAsks = requestLockOnceBlocked(holder, LOCK_THE_INVITATION, [invitation.invitationId]);
         const canceled = app.app.inject({
           method: 'DELETE',
           url: `/agencies/${raceAgencyId}/invitations/${invitation.invitationId}`,
           remoteAddress: LOCK_ORDER_IP,
           headers: { ...origin, cookie }
         });
-        await waitForBlockedQueryStart(owner, holderPid);
-        await raw(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
+        const [response] = await Promise.all([canceled, holderAsks]);
         await holder.commit();
         released = true;
 
-        const response = await canceled;
         expect(response.statusCode).toBe(409);
         expect(response.json().error?.code).toBe('TRY_AGAIN');
         expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
@@ -1282,19 +1274,17 @@ describe('invitation HTTP module', () => {
         // wait there while it holds the invitation row, and the holder then asks for that row.
         const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.agencies where id = ?::uuid for update', [raceAgencyId]);
         if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one agency.');
-        const holderPid = await backendPid(holder);
+        const holderAsks = requestLockOnceBlocked(holder, LOCK_THE_INVITATION, [invitation.invitationId]);
         const accepted = app.app.inject({
           method: 'POST',
           url: `/invitations/${invitation.token}/accept`,
           remoteAddress: '127.0.0.5',
           headers: { ...origin, cookie }
         });
-        await waitForBlockedQueryStart(owner, holderPid);
-        await raw(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
+        const [response] = await Promise.all([accepted, holderAsks]);
         await holder.commit();
         released = true;
 
-        const response = await accepted;
         expect(response.statusCode).toBe(409);
         expect(response.json().error?.code).toBe('TRY_AGAIN');
         expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
@@ -1327,7 +1317,7 @@ describe('invitation HTTP module', () => {
         // invitation row and then waits for the agency the holder owns; the holder then asks for the row.
         const locked = await raw<{ rows: Array<{ id: string }> }>(holder, 'select id from public.agencies where id = ?::uuid for update', [raceAgencyId]);
         if (locked.rows.length !== 1) throw new Error('The holder did not lock exactly one agency.');
-        const holderPid = await backendPid(holder);
+        const holderAsks = requestLockOnceBlocked(holder, LOCK_THE_INVITATION, [invitation.invitationId]);
         const accepted = app.app.inject({
           method: 'POST',
           url: `/invitations/${invitation.token}/accept-new-account`,
@@ -1335,12 +1325,10 @@ describe('invitation HTTP module', () => {
           headers: origin,
           payload
         });
-        await waitForBlockedQueryStart(owner, holderPid);
-        await raw(holder, 'select id from public.invitations where id = ?::uuid for update', [invitation.invitationId]);
+        const [response] = await Promise.all([accepted, holderAsks]);
         await holder.commit();
         released = true;
 
-        const response = await accepted;
         expect(response.statusCode).toBe(409);
         expect(response.json().error).toEqual({ code: 'TRY_AGAIN', message: 'Houve um conflito momentâneo. Tente de novo.' });
         expect(JSON.stringify({ ...response.json(), meta: undefined })).not.toMatch(/deadlock|40P01|pg_|relation|process/i);
