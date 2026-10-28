@@ -20,6 +20,175 @@ USAGE
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 note() { printf '==> %s\n' "$*"; }
 
+# Ubuntu 25.10 and newer ship chrony as the time daemon; older releases use systemd-timesyncd.
+time_service() {
+  if systemctl cat chrony.service >/dev/null 2>&1; then
+    printf 'chrony.service\n'
+  else
+    printf 'systemd-timesyncd.service\n'
+  fi
+}
+
+# sshd keeps the FIRST value of each option and reads the drop-ins in alphabetical order, so a file from the
+# image (Hostinger's 50-cloud-init.conf sets PasswordAuthentication yes) beats a later 90-ageniza.conf.
+write_ssh_dropin() {
+  local dir="$1" port="$2" dropin legacy backup legacy_backup temp had_dropin=false had_legacy=false
+  dropin="$dir/00-ageniza.conf"
+  legacy="$dir/90-ageniza.conf"
+  backup="${dropin}.pre-ageniza"
+  legacy_backup="${legacy}.pre-ageniza"
+  if [[ -e "$dropin" ]]; then
+    cp -a "$dropin" "$backup"
+    had_dropin=true
+  fi
+  temp="$(mktemp "$dir/.00-ageniza.XXXXXX")"
+  # A later drop-in can turn password and root login back on inside a Match block, which beats the global options
+  # whatever the file order; 'Match all' here is read first, and the first value of a matching Match wins.
+  cat > "$temp" <<EOF
+# Managed by $SCRIPT_NAME. Keep an established root session open until a new key-based login succeeds.
+Port $port
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM yes
+X11Forwarding no
+MaxAuthTries 3
+LoginGraceTime 30
+Match all
+  PermitRootLogin no
+  PasswordAuthentication no
+  KbdInteractiveAuthentication no
+EOF
+  if ! install -m 0600 "$temp" "$dropin"; then
+    rm -f "$temp"
+    die "Could not write $dropin. The SSH configuration was not changed."
+  fi
+  rm -f "$temp"
+  # Moved only after the new file is in place, so a failure above cannot leave the host without a baseline.
+  # Port is additive: leaving the old file behind would keep listening on the port it names.
+  if [[ -e "$legacy" ]]; then
+    mv -f "$legacy" "$legacy_backup"
+    had_legacy=true
+  fi
+  if ! sshd -t; then
+    note "sshd validation failed; restoring previous SSH drop-ins"
+    if [[ "$had_dropin" == "true" ]]; then
+      mv -f "$backup" "$dropin"
+    else
+      rm -f "$dropin"
+    fi
+    if [[ "$had_legacy" == "true" ]]; then
+      mv -f "$legacy_backup" "$legacy"
+    fi
+    sshd -t || true
+    die "SSH configuration was not applied. Existing SSH daemon was not reloaded."
+  fi
+}
+
+# Logs every other drop-in that sets an option the baseline owns, and whether it wins.
+report_ssh_overrides() {
+  local dir="$1" ours="$2" file lines match
+  for file in "$dir"/*.conf; do
+    [[ -e "$file" && "$file" != "$ours" ]] || continue
+    match="$(grep -inEm1 '^[[:space:]]*Match[[:space:]]' "$file" || true)"
+    if [[ -n "$match" ]]; then
+      note "WARNING: $file has a Match block (line ${match%%:*}); its options can override the baseline for the users it matches."
+    fi
+    # Options after a Match line belong to that block, not to the global scope the baseline wins in.
+    lines="$({ if [[ -n "$match" ]]; then head -n "$(( ${match%%:*} - 1 ))" "$file"; else cat "$file"; fi; } |
+      grep -inE '^[[:space:]]*(Port|PermitRootLogin|PasswordAuthentication|KbdInteractiveAuthentication)[[:space:]=]' || true)"
+    [[ -n "$lines" ]] || continue
+    if [[ "${file##*/}" < "${ours##*/}" ]]; then
+      note "WARNING: $file is read before ${ours##*/} and its first value wins:"
+    else
+      note "$file is read after ${ours##*/}, so the baseline values win over:"
+    fi
+    printf '    %s\n' "${lines//$'\n'/$'\n'    }"
+  done
+}
+
+# Restarts ssh.socket when it is enabled: under socket activation sshd ignores Port and the socket keeps the old one.
+restart_ssh_socket_if_enabled() {
+  if systemctl is-enabled --quiet ssh.socket; then
+    note "ssh.socket is enabled: reloading units and restarting it so the listening port follows the configuration"
+    systemctl daemon-reload || die "systemctl daemon-reload failed. The baseline was NOT installed successfully. Keep this root session open."
+    systemctl restart ssh.socket || die "Could not restart ssh.socket (see 'systemctl status ssh.socket'; is TCP $SSH_PORT in use?). The baseline was NOT installed successfully. Keep this root session open."
+  fi
+}
+
+# Refuses a port that another process already holds: the ssh.socket restart would fail with a bare 'Job failed'.
+# The listeners that count as ours are sshd itself and systemd while it holds the sockets of ssh.socket.
+assert_ssh_port_free() {
+  local port="$1" socket_ports="" owners line
+  if systemctl is-active --quiet ssh.socket; then
+    socket_ports="$(systemctl show ssh.socket --property=Listen --value | awk 'NF { n = split($1, parts, ":"); print parts[n] }')"
+  fi
+  owners="$(ss -Htlnp 2>/dev/null | awk -v port="$port" '{ n = split($4, parts, ":"); if (parts[n] == port) print }' || true)"
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    [[ "$line" != *'users:(("sshd"'* ]] || continue
+    if [[ "$line" == *'users:(("systemd"'* ]] && grep -qxF -- "$port" <<<"$socket_ports"; then continue; fi
+    die "TCP port $port is already in use by another process (${line##* }). Free it or choose another SSH_PORT; the SSH configuration was not changed. Keep this root session open."
+  done <<<"$owners"
+}
+
+# Checks the configuration sshd would load, not the file this script wrote: another file can still override it.
+# Plain 'sshd -T' ignores Match blocks, so the settings are also read as root and as the deploy user.
+assert_effective_sshd() {
+  local port="$1" deploy_user="$2" effective ports setting key target scope failed=0
+  local -a args
+  for target in "" root "$deploy_user"; do
+    args=(-T)
+    scope="globally"
+    if [[ -n "$target" ]]; then
+      args+=(-C "user=$target,host=localhost,addr=127.0.0.1")
+      scope="for user $target"
+    fi
+    if ! effective="$(sshd "${args[@]}")"; then
+      printf 'ERROR: sshd %s failed; the effective SSH configuration could not be read %s.\n' "${args[*]}" "$scope" >&2
+      return 1
+    fi
+    for setting in 'permitrootlogin no' 'passwordauthentication no' 'kbdinteractiveauthentication no'; do
+      key="${setting% *}"
+      if ! grep -qxF -- "$setting" <<<"$effective"; then
+        printf 'ERROR: effective SSH setting %s is "%s", expected "%s".\n' "$scope" "$(grep -m1 -- "^$key " <<<"$effective" || printf '%s <unset>' "$key")" "$setting" >&2
+        failed=1
+      fi
+    done
+    if [[ -z "$target" ]]; then
+      ports="$(grep -- '^port ' <<<"$effective" || true)"
+      if [[ "$ports" != "port $port" ]]; then
+        printf 'ERROR: effective SSH ports are "%s", expected only "port %s".\n' "${ports//$'\n'/, }" "$port" >&2
+        failed=1
+      fi
+    fi
+  done
+  return "$failed"
+}
+
+# TCP ports where sshd listens, one per line: sshd's own sockets and, when it is active, the ones of ssh.socket.
+listening_ssh_ports() {
+  {
+    ss -Htlnp 2>/dev/null | awk '/users:\(\("sshd"/ { n = split($4, parts, ":"); print parts[n] }' || true
+    if systemctl is-active --quiet ssh.socket; then
+      systemctl show ssh.socket --property=Listen --value | awk 'NF { n = split($1, parts, ":"); print parts[n] }'
+    fi
+  } | sort -un
+}
+
+# Waits briefly for the daemon to bind, then requires that it listens only on the configured port.
+assert_listening_ssh_port() {
+  local port="$1" attempts="${2:-10}" attempt listening=""
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    listening="$(listening_ssh_ports | paste -sd, -)"
+    [[ "$listening" != "$port" ]] || return 0
+    if ((attempt < attempts)); then sleep 0.5; fi
+  done
+  printf 'ERROR: sshd listens on "%s", expected only "%s".\n' "${listening:-nothing}" "$port" >&2
+  return 1
+}
+
 while (($#)); do
   case "$1" in
     --config) CONFIG_FILE="${2:-}"; shift 2 ;;
@@ -68,7 +237,8 @@ ssh-keygen -l -f <(printf '%s\n' "$DEPLOY_PUBLIC_KEY") >/dev/null 2>&1 || die "D
 
 note "Configuring UTC and time synchronization"
 timedatectl set-timezone UTC
-systemctl enable --now systemd-timesyncd.service
+TIME_SERVICE="$(time_service)"
+systemctl enable --now "$TIME_SERVICE"
 
 note "Creating or updating deploy account: $DEPLOY_USER"
 if ! id "$DEPLOY_USER" >/dev/null 2>&1; then
@@ -130,36 +300,21 @@ else
 fi
 ufw --force enable
 
+assert_ssh_port_free "$SSH_PORT"
 note "Writing a validated SSH hardening drop-in"
-SSH_DROPIN=/etc/ssh/sshd_config.d/90-ageniza.conf
-SSH_BACKUP="${SSH_DROPIN}.pre-ageniza"
-[[ -e "$SSH_DROPIN" ]] && cp -a "$SSH_DROPIN" "$SSH_BACKUP"
-TEMP_SSH_CONFIG="$(mktemp /etc/ssh/sshd_config.d/.90-ageniza.XXXXXX)"
-cat > "$TEMP_SSH_CONFIG" <<EOF
-# Managed by $SCRIPT_NAME. Keep an established root session open until a new key-based login succeeds.
-Port $SSH_PORT
-PermitRootLogin no
-PubkeyAuthentication yes
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-UsePAM yes
-X11Forwarding no
-MaxAuthTries 3
-LoginGraceTime 30
-EOF
-install -m 0600 "$TEMP_SSH_CONFIG" "$SSH_DROPIN"
-rm -f "$TEMP_SSH_CONFIG"
-if ! sshd -t; then
-  note "sshd validation failed; restoring previous SSH drop-in"
-  if [[ -e "$SSH_BACKUP" ]]; then
-    mv -f "$SSH_BACKUP" "$SSH_DROPIN"
-  else
-    rm -f "$SSH_DROPIN"
-  fi
-  sshd -t || true
-  die "SSH configuration was not applied. Existing SSH daemon was not reloaded."
-fi
+SSH_DROPIN_DIR=/etc/ssh/sshd_config.d
+write_ssh_dropin "$SSH_DROPIN_DIR" "$SSH_PORT"
+report_ssh_overrides "$SSH_DROPIN_DIR" "$SSH_DROPIN_DIR/00-ageniza.conf"
 systemctl reload ssh.service
+restart_ssh_socket_if_enabled
+
+note "Checking the effective SSH configuration"
+if ! assert_effective_sshd "$SSH_PORT" "$DEPLOY_USER"; then
+  die "The effective SSH configuration does not match the baseline: another sshd option source still wins (see the drop-ins reported above and 'sshd -T -C user=root,host=localhost,addr=127.0.0.1'). The baseline was NOT installed successfully. Keep this root session open."
+fi
+if ! assert_listening_ssh_port "$SSH_PORT"; then
+  die "sshd is not listening only on TCP $SSH_PORT (see 'ss -tlnp' and 'systemctl status ssh.socket'). The baseline was NOT installed successfully. Keep this root session open."
+fi
 
 cat <<EOF
 
