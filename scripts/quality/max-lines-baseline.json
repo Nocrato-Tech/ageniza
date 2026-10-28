@@ -29,7 +29,6 @@
     "apps/web/src/design-system/components.tsx",
     "apps/web/src/edit-client.tsx",
     "apps/web/src/portal-access.tsx",
-    "apps/web/src/portal-content.tsx",
     "apps/web/src/story-script-modal.tsx",
     "packages/config/src/server.ts",
     "packages/contracts/src/clients.ts"
