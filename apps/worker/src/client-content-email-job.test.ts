@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { PassThrough } from 'node:stream';
 
 import { createLogger } from '@ageniza/core';
@@ -5,6 +6,7 @@ import type { OutgoingEmail } from '@ageniza/email';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  approvalUrlFor,
   CLIENT_CONTENT_EMAIL_JOB_NAME,
   CLIENT_CONTENT_EMAIL_SCHEDULE,
   clientContentEmailJob,
@@ -30,7 +32,7 @@ const item = (overrides: Partial<ClaimedNotification> = {}): ClaimedNotification
     clientId: CLIENT_A,
     clientName: 'Padaria Sol',
     agencyName: 'Agência Aurora',
-    recipientUserId: PERSON_1,
+    recipientPortalAccessId: PERSON_1,
     recipientEmail: 'ana@padaria.test',
     contentId: `00000000-0000-4000-8000-c${String(counter).padStart(11, '0')}`,
     contentTitle: `Post ${counter}`,
@@ -42,14 +44,30 @@ const item = (overrides: Partial<ClaimedNotification> = {}): ClaimedNotification
 // The queue answers as the database does: a claim hands over what is waiting, once; the recheck returns what still holds and
 // what the claim handed over under that token; the answers to `markSent` and `fail` count what the token still holds. The
 // test says only what in the world changed (`stopsHolding`), never what the job should compute.
-const fakeQueue = (waiting: ClaimedNotification[][], options: { stopsHolding?: (itemId: string) => boolean; markFails?: number } = {}) => {
+const fakeQueue = (
+  waiting: ClaimedNotification[][],
+  options: { stopsHolding?: (itemId: string) => boolean; markFails?: number; issueFails?: boolean } = {}
+) => {
   const claimsLeft = [...waiting];
   const calls: Array<{ call: string; itemIds?: readonly string[]; token?: string; code?: string }> = [];
   const held = new Map<string, ClaimedNotification>();
   const sent = new Set<string>();
   const released = new Map<string, string>();
+  // What the database keeps of a link: the hash it was handed and the items it was handed it for. Never the token.
+  const issued: Array<{ tokenHash: string; itemIds: readonly string[] }> = [];
   let markFails = options.markFails ?? 0;
   const queue: NotificationQueue = {
+    issueApprovalLink: async (itemIds, token, tokenHash) => {
+      calls.push({ call: 'issueApprovalLink', itemIds, token });
+      // The function refuses what is not a live claim of items "awaiting approval" and a hash that is not a sha256 in hex.
+      const live = itemIds.length > 0 && itemIds.every((id) => {
+        const claimed = held.get(id);
+        return claimed !== undefined && claimed.claimToken === token && claimed.notificationType === 'content_awaiting_approval' && !sent.has(id) && !released.has(id);
+      });
+      if (!live || !/^[0-9a-f]{64}$/.test(tokenHash)) throw Object.assign(new Error('The items and the claim do not describe one e-mail.'), { code: 'A0101' });
+      if (options.issueFails === true) throw Object.assign(new Error('The agency is read-only: its trial has ended.'), { code: 'A0090' });
+      issued.push({ tokenHash, itemIds });
+    },
     claim: async (limit) => {
       calls.push({ call: 'claim' });
       expect(limit).toBe(10);
@@ -81,8 +99,12 @@ const fakeQueue = (waiting: ClaimedNotification[][], options: { stopsHolding?: (
       return failed.length;
     }
   };
-  return { queue, calls, sent, released };
+  return { queue, calls, sent, released, issued };
 };
+
+const sha256 = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
+/** The approval link of an e-mail: the one link in its text. */
+const linkOf = (email: OutgoingEmail): string => /https?:\/\/\S+/.exec(email.text)![0];
 
 const captureLogger = () => {
   const destination = new PassThrough();
@@ -137,7 +159,7 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
 
   it('sends ONE e-mail per person, client and type, with every content of the group, and stamps exactly what it sent', async () => {
     const group = [item(), item(), item()];
-    const otherPerson = [item({ recipientUserId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
+    const otherPerson = [item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
     const otherClient = [item({ clientId: CLIENT_B, clientName: 'Loja Lua' })];
     const published = [item({ notificationType: 'content_published' })];
     const { queue, sent } = fakeQueue([[...group, ...otherPerson, ...otherClient, ...published]]);
@@ -159,13 +181,31 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
     expect([...sent].sort()).toEqual([...group, ...otherPerson, ...otherClient, ...published].map((claimed) => claimed.itemId).sort());
   });
 
-  it('points each e-mail to the portal of its own client, with nothing of the person in the link', async () => {
-    const { queue } = fakeQueue([[item(), item({ clientId: CLIENT_B, clientName: 'Loja Lua' })]]);
+  it('sends ONE e-mail to a mailbox that two accesses of the client resolve to, with the content once, and stamps both items', async () => {
+    const shared = item({ recipientPortalAccessId: PERSON_1, recipientEmail: 'ana@padaria.test' });
+    const twin = item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'ana@padaria.test', contentId: shared.contentId, contentTitle: shared.contentTitle });
+    const { queue, sent } = fakeQueue([[shared, twin]]);
     const { sender, emails } = senderThatRecords();
 
     await run(queue, sender);
 
-    const links = emails.map((email) => /https?:\/\/\S+/.exec(email.text)![0]);
+    expect(emails).toHaveLength(1);
+    expect(emails[0]!.to).toBe('ana@padaria.test');
+    expect(emails[0]!.subject).toBe('um conteúdo para você aprovar: Padaria Sol');
+    expect(emails[0]!.text.split(shared.contentTitle)).toHaveLength(2);
+    expect([...sent].sort()).toEqual([shared.itemId, twin.itemId].sort());
+  });
+
+  it('points the e-mail of the summary of published to the portal of its own client, with nothing of the person in the link', async () => {
+    const { queue } = fakeQueue([[
+      item({ notificationType: 'content_published' }),
+      item({ notificationType: 'content_published', clientId: CLIENT_B, clientName: 'Loja Lua' })
+    ]]);
+    const { sender, emails } = senderThatRecords();
+
+    await run(queue, sender);
+
+    const links = emails.map(linkOf);
     expect(links.sort()).toEqual([`${ORIGIN}/portal/${CLIENT_A}/calendario`, `${ORIGIN}/portal/${CLIENT_B}/calendario`].sort());
     for (const link of links) {
       expect(new URL(link).search).toBe('');
@@ -173,6 +213,107 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
       expect(link).not.toMatch(/token|invite|sessao|session/i);
     }
     expect(portalUrlFor('http://127.0.0.1:5173', CLIENT_A)).toBe(`http://127.0.0.1:5173/portal/${CLIENT_A}/calendario`);
+  });
+
+  describe('the approval link of the e-mail "contents to approve" (issue #712)', () => {
+    it('carries a link of its own in each e-mail: the token in the fragment, never in the query, and the database holds only its hash', async () => {
+      const first = [item(), item()];
+      const second = [item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
+      const { queue, issued } = fakeQueue([[...first, ...second]]);
+      const { sender, emails } = senderThatRecords();
+
+      await run(queue, sender);
+
+      const links = emails.map(linkOf);
+      expect(links).toHaveLength(2);
+      for (const link of links) {
+        const url = new URL(link);
+        expect(url.origin + url.pathname).toBe(`${ORIGIN}/aprovar`);
+        expect(url.search).toBe('');
+        expect(url.hash).toMatch(/^#[A-Za-z0-9_-]{43}$/);
+      }
+      expect(new Set(links.map((link) => new URL(link).hash)).size).toBe(2);
+      // The hash the database was handed is the hash of the token that went into the e-mail: computed here, not handed to the fake.
+      expect(issued.map((link) => link.tokenHash).sort()).toEqual(links.map((link) => sha256(new URL(link).hash.slice(1))).sort());
+      expect(emails.map((email) => email.html).join('')).toContain('/aprovar#');
+    });
+
+    it('issues the link for the items that still hold after the recheck, and only for them', async () => {
+      const group = [item(), item(), item()];
+      const gone = group[1]!.itemId;
+      const { queue, calls, issued } = fakeQueue([group], { stopsHolding: (id) => id === gone });
+      const { sender } = senderThatRecords();
+
+      await run(queue, sender);
+
+      expect(issued).toHaveLength(1);
+      expect([...issued[0]!.itemIds].sort()).toEqual([group[0]!.itemId, group[2]!.itemId].sort());
+      // The link exists before the e-mail leaves and the claim is stamped after it.
+      expect(calls.map((call) => call.call)).toEqual(['claim', 'recheck', 'issueApprovalLink', 'markSent', 'claim']);
+    });
+
+    it('issues no link for the summary of published, which carries the portal', async () => {
+      const { queue, calls } = fakeQueue([[item({ notificationType: 'content_published' })]]);
+      const { sender, emails } = senderThatRecords();
+
+      await run(queue, sender);
+
+      expect(emails).toHaveLength(1);
+      expect(calls.map((call) => call.call)).not.toContain('issueApprovalLink');
+    });
+
+    it('sends nothing and releases the items with a code when the link cannot be issued, and says nothing of why', async () => {
+      const group = [item(), item()];
+      const { queue, calls, released, sent } = fakeQueue([group], { issueFails: true });
+      const { sender, send } = senderThatRecords();
+
+      const captured = await run(queue, sender);
+
+      expect(send).not.toHaveBeenCalled();
+      expect(sent.size).toBe(0);
+      expect([...released.entries()].sort()).toEqual(group.map((claimed) => [claimed.itemId, 'approval_link_failed']).sort());
+      expect(calls.filter((call) => call.call === 'markSent')).toEqual([]);
+      const text = await captured.text();
+      for (const secret of ['read-only', 'trial', 'A0090', 'ana@padaria.test', TOKEN, group[0]!.itemId]) expect(text).not.toContain(secret);
+      expect(await captured.records()).toContainEqual(expect.objectContaining({ errorCode: 'approval_link_failed', items: 2 }));
+    });
+
+    it('goes on to the next group when the link of one cannot be issued', async () => {
+      const first = [item({ recipientPortalAccessId: PERSON_1 })];
+      const second = [item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
+      const { queue, released, sent } = fakeQueue([[...first, ...second]]);
+      const failing: NotificationQueue = {
+        ...queue,
+        issueApprovalLink: async (itemIds, token, tokenHash) => {
+          if (itemIds.includes(first[0]!.itemId)) throw new Error('lock timeout');
+          await queue.issueApprovalLink(itemIds, token, tokenHash);
+        }
+      };
+      const { sender, emails } = senderThatRecords();
+
+      await run(failing, sender);
+
+      expect(emails.map((email) => email.to)).toEqual(['bia@padaria.test']);
+      expect([...released.entries()]).toEqual([[first[0]!.itemId, 'approval_link_failed']]);
+      expect([...sent]).toEqual([second[0]!.itemId]);
+    });
+
+    it('never writes the token, the link or its hash to the log', async () => {
+      const { queue, issued } = fakeQueue([[item()]]);
+      const { sender, emails } = senderThatRecords();
+
+      const captured = await run(queue, sender);
+
+      const token = new URL(linkOf(emails[0]!)).hash.slice(1);
+      const text = await captured.text();
+      for (const secret of [token, issued[0]!.tokenHash, '/aprovar', '#']) expect(text).not.toContain(secret);
+    });
+
+    it('builds the link of the page from the origin: the token after the hash, whatever the origin carries', () => {
+      expect(approvalUrlFor('https://app.ageniza.example', 'abc_DEF-123')).toBe('https://app.ageniza.example/aprovar#abc_DEF-123');
+      expect(approvalUrlFor('https://app.ageniza.example/ignored?x=1#y', 'tok')).toBe('https://app.ageniza.example/aprovar#tok');
+      expect(approvalUrlFor('http://127.0.0.1:5173', 'tok')).toBe('http://127.0.0.1:5173/aprovar#tok');
+    });
   });
 
   it('escapes what comes from the content in the HTML of the e-mail', async () => {
@@ -204,7 +345,7 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
     const markCall = calls.find((call) => call.call === 'markSent');
     expect(markCall?.itemIds).toEqual([group[0]!.itemId, group[2]!.itemId]);
     // the recheck comes after the claim and before the send, for this group's items
-    expect(calls.map((call) => call.call)).toEqual(['claim', 'recheck', 'markSent', 'claim']);
+    expect(calls.map((call) => call.call)).toEqual(['claim', 'recheck', 'issueApprovalLink', 'markSent', 'claim']);
   });
 
   it('sends nothing, and stamps nothing, when nothing of the group holds any more', async () => {
@@ -236,8 +377,8 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
   });
 
   it('goes on to the next group after a failure, and a group that failed is not sent again in the same run', async () => {
-    const first = [item({ recipientUserId: PERSON_1 })];
-    const second = [item({ recipientUserId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
+    const first = [item({ recipientPortalAccessId: PERSON_1 })];
+    const second = [item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
     const { queue, released, sent } = fakeQueue([[...first, ...second]]);
     const { sender, emails } = senderThatRecords([new Error('socket hang up')]);
 
@@ -280,7 +421,7 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
   });
 
   it('claims again until nothing is left, at most six times, ten groups at a time', async () => {
-    const batches = Array.from({ length: 8 }, (_unused, index) => [item({ recipientUserId: `00000000-0000-4000-8000-0000000001${String(index).padStart(2, '0')}`, recipientEmail: `p${index}@padaria.test` })]);
+    const batches = Array.from({ length: 8 }, (_unused, index) => [item({ recipientPortalAccessId: `00000000-0000-4000-8000-0000000001${String(index).padStart(2, '0')}`, recipientEmail: `p${index}@padaria.test` })]);
     const { queue, calls } = fakeQueue(batches);
     const { sender, emails } = senderThatRecords();
 
@@ -291,7 +432,7 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
   });
 
   it('stops claiming after four minutes of a run, so its last group is rechecked well inside the lease', async () => {
-    const batches = [[item()], [item({ recipientUserId: PERSON_2, recipientEmail: 'bia@padaria.test' })]];
+    const batches = [[item()], [item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'bia@padaria.test' })]];
     const { queue, calls } = fakeQueue(batches);
     const { sender, emails } = senderThatRecords();
     const clock = [0, 1_000, 4 * 60 * 1000 + 1];
@@ -316,8 +457,8 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
 
   it('releases the groups it had claimed and did not reach when the worker stops in the middle', async () => {
     const controller = new AbortController();
-    const first = [item({ recipientUserId: PERSON_1 })];
-    const second = [item({ recipientUserId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
+    const first = [item({ recipientPortalAccessId: PERSON_1 })];
+    const second = [item({ recipientPortalAccessId: PERSON_2, recipientEmail: 'bia@padaria.test' })];
     const { queue, released, sent } = fakeQueue([[...first, ...second]]);
     const { sender } = senderThatRecords();
     const stopping = { send: async (email: OutgoingEmail) => { await sender.send(email); controller.abort(); } };

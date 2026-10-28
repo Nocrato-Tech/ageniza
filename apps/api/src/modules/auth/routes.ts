@@ -1,22 +1,40 @@
+import { randomUUID } from 'node:crypto';
+
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import {
+  AuthEmailVerificationResendRequestSchema,
+  AuthEmailVerificationResendResponseSchema,
+  AuthEmailVerifyRequestSchema,
+  AuthEmailVerifyResponseSchema,
   AuthLoginRequestSchema,
   AuthLoginResponseSchema,
   AuthPasswordForgotRequestSchema,
   AuthPasswordForgotResponseSchema,
   AuthPasswordResetRequestSchema,
-  AuthPasswordResetResponseSchema,
-  AuthSessionResponseSchema
+  AuthSessionResponseSchema,
+  AuthSignUpRequestSchema,
+  AuthSignUpResponseSchema
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
+import { createVerifiedUserClaims, raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import { APIError } from 'better-auth';
 
 import { runWithAuditRequestId, runWithPasswordResetInviteToken } from './audit-context.js';
 import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { InMemoryAuthLimiter } from './auth-limiter.js';
-import type { AuthInstance } from './better-auth.js';
+import { unconfirmedAccountMayHoldSession, type AuthInstance } from './better-auth.js';
 import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js';
+import { credentialIsStill } from './credential-recheck.js';
+import type { EmailService } from './email-service.js';
+import {
+  consumeEmailVerification,
+  findPendingVerification,
+  hashEmailConfirmationToken,
+  issueEmailConfirmation
+} from './email-verification.js';
+import { registerGoogleRoutes } from './google-routes.js';
+import { perIpRateLimit } from './per-ip-rate-limit.js';
 import { AUTH_RATE_LIMITS } from './policy.js';
 import { createRequireSession } from './session-guard.js';
 import { noStore } from '../../plugins/infra/no-store.js';
@@ -31,37 +49,14 @@ export interface AuthModuleDependencies {
   readonly auditRecorder: AuthAuditRecorder;
   /** Optional B4 adapter; keeping this as a port avoids auth/invitation repository coupling. */
   readonly invitationTokenLookup?: InvitationTokenLookup;
-  /**
-   * Injected by the contexts module so login never reimplements its context-counting query
-   * (issue #68). Counts every agency/client context the given user currently has valid access to.
-   */
-  readonly countValidContexts: (userId: string) => Promise<number>;
+  /** The public sign-up writes the account, its acceptances and its confirmation link (issue #706). */
+  readonly database: DatabaseClient;
+  readonly emailService: EmailService;
+  /** The versions in force, recorded at sign-up exactly like the invitation's new account. */
+  readonly legalVersions: { readonly terms: string; readonly privacy: string };
+  /** Present only when Google sign-in is configured (issue #707); without it the Google routes answer 404. */
+  readonly google?: { readonly appPublicUrl: string };
 }
-
-/** No informative headers on any auth 429 (B6): a client must not be able to tell, from the
- * response shape alone, whether a per-IP limit or an in-memory dimension tripped. */
-const noRateLimitHeaders = {
-  addHeaders: {
-    'x-ratelimit-limit': false,
-    'x-ratelimit-remaining': false,
-    'x-ratelimit-reset': false,
-    'retry-after': false
-  },
-  addHeadersOnExceeding: {
-    'x-ratelimit-limit': false,
-    'x-ratelimit-remaining': false,
-    'x-ratelimit-reset': false
-  }
-} as const;
-
-const perIpRateLimit = (limit: { readonly max: number; readonly windowMs: number }, docs: DocumentedRouteConfig) => ({
-  config: {
-    rateLimit: { max: limit.max, timeWindow: limit.windowMs, ...noRateLimitHeaders },
-    permission: docs.permission,
-    responseStatus: docs.responseStatus,
-    schemas: docs.schemas
-  }
-});
 
 // Declared once per route: the same object is the documentation metadata and the source of the
 // schemas the handler validates with.
@@ -88,8 +83,24 @@ const forgotDocs = {
 } satisfies DocumentedRouteConfig;
 const resetDocs = {
   permission: null,
+  responseStatus: 204,
+  schemas: { body: AuthPasswordResetRequestSchema }
+} satisfies DocumentedRouteConfig;
+
+const signUpDocs = {
+  permission: null,
+  responseStatus: 202,
+  schemas: { body: AuthSignUpRequestSchema, response: AuthSignUpResponseSchema }
+} satisfies DocumentedRouteConfig;
+const resendVerificationDocs = {
+  permission: null,
+  responseStatus: 202,
+  schemas: { body: AuthEmailVerificationResendRequestSchema, response: AuthEmailVerificationResendResponseSchema }
+} satisfies DocumentedRouteConfig;
+const verifyEmailDocs = {
+  permission: null,
   responseStatus: 200,
-  schemas: { body: AuthPasswordResetRequestSchema, response: AuthPasswordResetResponseSchema }
+  schemas: { body: AuthEmailVerifyRequestSchema, response: AuthEmailVerifyResponseSchema }
 } satisfies DocumentedRouteConfig;
 
 const requireAuthenticatedUserId = (request: FastifyRequest): string => {
@@ -101,28 +112,56 @@ const requireAuthenticatedUserId = (request: FastifyRequest): string => {
 
 const unauthenticatedFallback = { statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' } as const;
 
-/**
- * A correct credential that resolves to zero contexts (2026-09-24 decision in decisions.md): the
- * account exists and the password is right, but there is nothing to enter. Distinct from
- * `INVALID_CREDENTIALS` on purpose, since by this point the caller already proved they know the
- * password — the message says so, instead of repeating the generic invalid-credential text.
- */
-const noContextAccessError = {
-  statusCode: 403,
-  code: 'NO_CONTEXT_ACCESS',
-  message: 'Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite.'
+const invalidCredentials = { statusCode: 401, code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } as const;
+
+/** One answer for a link that is not valid and for a wrong password: neither tells the other apart. */
+const verificationFailedError = {
+  statusCode: 400,
+  code: 'INVALID_LINK_OR_PASSWORD',
+  message: 'O link não é mais válido ou a senha está incorreta.'
 } as const;
 
+
 /**
- * Registers the six public auth routes (issue #31 section 6). CSRF/origin checking is handled
+ * Registers the public auth routes (issue #31 section 6, and the sign-up of issue #706). CSRF/origin checking is handled
  * globally by `registerOriginProtection`; nothing here repeats that check.
  */
 export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModuleDependencies): void => {
-  const requireSession = createRequireSession({ auth: dependencies.auth });
+  // The session guard of this module answers an account whose e-mail is not confirmed, so it is named for it: the four routes
+  // below opt in one by one, and a route added here that needs a session gets the plain `createRequireSession`, which refuses it.
+  const requireSessionUnconfirmedAllowed = createRequireSession({ auth: dependencies.auth }, { allowUnconfirmed: true });
+
+  registerGoogleRoutes(app, { auth: dependencies.auth, ...(dependencies.google === undefined ? {} : { google: dependencies.google }) });
+
+  /** Issues and sends a new link when the address has an account waiting; nothing otherwise. */
+  const sendConfirmationIfPending = async (email: string): Promise<void> => {
+    const token = await dependencies.database.transaction(async (transaction) => {
+      const pending = await raw<{ rows: Array<{ id: string }> }>(transaction, `
+        select id from auth."user" where email = ? and "emailVerified" = false
+      `, [email]);
+      const user = pending.rows[0];
+      return user === undefined ? undefined : issueEmailConfirmation(transaction, user.id);
+    });
+    if (token !== undefined) dependencies.emailService.sendEmailVerification({ to: email, token });
+  };
 
   app.post('/auth/login', { ...perIpRateLimit(AUTH_RATE_LIMITS.login.ip, loginDocs), onRequest: noStore }, async (request, reply) => {
     const body = routeBody(loginDocs, request);
     dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), body.email);
+
+    // The password is checked here first, and an unconfirmed account answers exactly like a wrong
+    // password, even with the right one: whoever signed up chose that password, so telling the two
+    // apart would say whether the address already had an account (security review of PR #722). Every
+    // refusal costs one password check (a decoy one when there is no credential), and none has a side
+    // effect: a link sent from here would spend a counter the public resend answers 429 on (second
+    // review of PR #722). The account an invitation created is no exception here: its only session is
+    // the one `accept-new-account` created, so the login never tells it apart either.
+    const hasher = (await dependencies.auth.$context).password;
+    const credential = await loginCredentialOf(dependencies.database, body.email);
+    const passwordMatches = credential === undefined
+      ? await verifyAgainstDecoy(hasher, body.password)
+      : await hasher.verify({ hash: credential.passwordHash, password: body.password });
+    if (!passwordMatches || credential?.emailVerified !== true) throw new HttpError(invalidCredentials);
 
     let headers: Headers;
     let response: { readonly token: string; readonly user: { readonly id: string; readonly name: string; readonly email: string } };
@@ -133,20 +172,23 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
         returnHeaders: true
       }));
     } catch (error) {
-      throw toPublicAuthError(error, { statusCode: 401, code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' });
+      throw toPublicAuthError(error, invalidCredentials);
     }
 
-    // Credential correct; deny only now, per the 2026-09-24 decision (autenticar primeiro, negar
-    // depois). A zero-context account still gets a session when `inviteToken` continues straight
-    // into accepting an existing-account invitation addressed to it (2026-09-29 decision) — the
-    // invite screen (issue #76) must call `POST /invitations/:token/accept` with that same session
-    // before ever calling `resolve`, which ends a still-zero-context session on sight. Otherwise
-    // the session Better Auth just created above is revoked before it ever reaches the client: no
-    // cookie is ever applied on this path, and no row survives in `auth."session"`.
-    const contextCount = await dependencies.countValidContexts(response.user.id);
-    if (contextCount === 0 && !(await grantsZeroContextAccessViaInvite(dependencies, body.inviteToken, body.email))) {
+    // A reset that landed after the hash was read has already deleted the sessions, so the one just created would outlive
+    // it (issue #719). A hash that is still the one checked means the reset's deletion has yet to run and takes this
+    // session too; anything else, a failed read included, ends it here.
+    if (!await credentialIsStill(() => loginCredentialOf(dependencies.database, body.email).then((current) => current?.passwordHash), credential?.passwordHash)) {
       await revokeJustCreatedSession(dependencies.auth, response.token, request);
-      throw new HttpError(noContextAccessError);
+      throw new HttpError(invalidCredentials);
+    }
+
+    // A confirmed account gets its session even with zero contexts and lands on `/comecar`
+    // (2026-10-26 decision, which changes rule 3). The check above already refused an unconfirmed one;
+    // the rule is held here too, so a change of the account in between cannot hand one a cookie.
+    if ((response.user as { emailVerified?: unknown }).emailVerified !== true) {
+      await revokeJustCreatedSession(dependencies.auth, response.token, request);
+      throw new HttpError(invalidCredentials);
     }
 
     applyAuthCookies(reply, headers);
@@ -155,7 +197,112 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     });
   });
 
-  app.post('/auth/logout', { preHandler: requireSession, config: logoutDocs }, async (request, reply) => {
+  app.post('/auth/sign-up', { ...perIpRateLimit(AUTH_RATE_LIMITS.signUp.ip, signUpDocs), onRequest: noStore }, async (request, reply) => {
+    const body = routeBody(signUpDocs, request);
+    dependencies.limiter.consume('signUp', normalizeRateLimitIp(request.ip), body.email);
+
+    // Hashed on both paths, so a taken address costs the same time as a new one.
+    const passwordHash = await (await dependencies.auth.$context).password.hash(body.password);
+    const userId = randomUUID();
+    // The actor of the transaction is the account being created: `accept_legal_document` records for
+    // the actor only, and the account exists by the time it runs.
+    const token = await withAuthenticatedUserTransaction(dependencies.database, createVerifiedUserClaims({ userId }), async (transaction) => {
+      const inserted = await raw<{ rows: Array<{ id: string }> }>(transaction, `
+        insert into auth."user" (id, name, email, "emailVerified") values (?, ?, ?, false)
+        on conflict (email) do nothing
+        returning id
+      `, [userId, body.name, body.email]);
+      if (inserted.rows.length === 0) return undefined;
+      await raw(transaction, `
+        insert into auth."account" (id, "accountId", "providerId", "userId", password, "updatedAt")
+        values (?, ?, 'credential', ?, ?, now())
+      `, [randomUUID(), userId, userId, passwordHash]);
+      await raw(transaction, 'select app_private.accept_legal_document(?, ?)', ['terms', dependencies.legalVersions.terms]);
+      await raw(transaction, 'select app_private.accept_legal_document(?, ?)', ['privacy', dependencies.legalVersions.privacy]);
+      const issued = await issueEmailConfirmation(transaction, userId);
+      if (issued === undefined) throw new Error('A new account must get a confirmation link.');
+      return issued;
+    });
+
+    // A taken address, confirmed or not, gets a notice and never a link (finding A1 of the review of
+    // PR #720), and the response is the same either way.
+    if (token !== undefined) dependencies.emailService.sendEmailVerification({ to: body.email, token });
+    else dependencies.emailService.sendSignUpWithExistingAccount({ to: body.email });
+    return reply.status(202).send(routeResponse(signUpDocs, request, {}));
+  });
+
+  app.post('/auth/email/verification/resend', perIpRateLimit(AUTH_RATE_LIMITS.resendVerification.ip, resendVerificationDocs), async (request, reply) => {
+    const body = routeBody(resendVerificationDocs, request);
+    dependencies.limiter.consume('resendVerification', normalizeRateLimitIp(request.ip), body.email);
+
+    await sendConfirmationIfPending(body.email);
+    return reply.status(202).send(routeResponse(resendVerificationDocs, request, {}));
+  });
+
+  // Finding A1 of the review of PR #720: the link alone confirms nothing, because whoever signed up
+  // with someone else's address chose the password. Only a live link plus the account's password
+  // confirms the e-mail, and only then is there a session. A wrong password changes nothing and
+  // answers exactly like a link that is not valid.
+  //
+  // One exception (decision 2026-10-27): the account an invitation created through the copied link has
+  // a session already, and that session proves the password. With no password, the request must carry
+  // the session of the very account the link belongs to, and that account must still hold it through the
+  // invitation. Without it, or with the session of another account, the answer is the same one.
+  app.post('/auth/email/verify', { ...perIpRateLimit(AUTH_RATE_LIMITS.verifyEmail.ip, verifyEmailDocs), onRequest: noStore }, async (request, reply) => {
+    const body = routeBody(verifyEmailDocs, request);
+    const pending = await findPendingVerification(dependencies.database.knex, body.token);
+    // The login's counters: guessing the password here costs the same attempts as at `/entrar`.
+    dependencies.limiter.consume('login', normalizeRateLimitIp(request.ip), pending?.email ?? `email-confirmation:${hashEmailConfirmationToken(body.token)}`);
+
+    const credential = pending === undefined ? undefined : await credentialHashOf(dependencies.database, pending.userId);
+    let sessionUser: { readonly id: string; readonly name: string; readonly email: string } | undefined;
+    let proven: boolean;
+    if (body.password === undefined) {
+      sessionUser = await sessionAccountOf(dependencies.auth, request);
+      proven = pending !== undefined && sessionUser?.id === pending.userId && await unconfirmedAccountMayHoldSession(dependencies.auth, pending.userId);
+    } else {
+      const password = (await dependencies.auth.$context).password;
+      proven = credential !== undefined && await password.verify({ hash: credential, password: body.password });
+      if (credential === undefined) await verifyAgainstDecoy(password, body.password);
+    }
+    if (pending === undefined || credential === undefined || !proven) throw new HttpError(verificationFailedError);
+
+    const confirmed = await dependencies.database.transaction((transaction) =>
+      consumeEmailVerification(transaction, body.token, credential));
+    if (!confirmed) throw new HttpError(verificationFailedError);
+
+    // The session that proved the password stays: the account is the same, now confirmed, and there is
+    // nothing to sign in with (the request carried no password).
+    if (body.password === undefined) {
+      if (sessionUser === undefined) throw new HttpError(verificationFailedError);
+      return routeResponse(verifyEmailDocs, request, { user: { id: sessionUser.id, name: sessionUser.name, email: sessionUser.email } });
+    }
+
+    let headers: Headers;
+    let response: { readonly token: string; readonly user: { readonly id: string; readonly name: string; readonly email: string } };
+    try {
+      ({ headers, response } = await dependencies.auth.api.signInEmail({
+        body: { email: pending.email, password: body.password },
+        headers: toAuthHeaders(request),
+        returnHeaders: true
+      }));
+    } catch {
+      // The e-mail is confirmed, but the password changed in between (a reset that landed after the
+      // link was consumed): the person signs in at `/entrar` with the new one. Never a 500.
+      throw new HttpError(verificationFailedError);
+    }
+    // The same window as the login's (issue #719).
+    if (!await credentialIsStill(() => credentialHashOf(dependencies.database, pending.userId), credential)) {
+      await revokeJustCreatedSession(dependencies.auth, response.token, request);
+      throw new HttpError(verificationFailedError);
+    }
+    applyAuthCookies(reply, headers);
+    return routeResponse(verifyEmailDocs, request, {
+      user: { id: response.user.id, name: response.user.name, email: response.user.email }
+    });
+  });
+
+  app.post('/auth/logout', { preHandler: requireSessionUnconfirmedAllowed, config: logoutDocs }, async (request, reply) => {
     try {
       const { headers } = await dependencies.auth.api.signOut({ headers: toAuthHeaders(request), returnHeaders: true });
       applyAuthCookies(reply, headers);
@@ -165,7 +312,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     return reply.status(204).send();
   });
 
-  app.post('/auth/logout-all', { preHandler: requireSession, config: logoutDocs }, async (request, reply) => {
+  app.post('/auth/logout-all', { preHandler: requireSessionUnconfirmedAllowed, config: logoutDocs }, async (request, reply) => {
     const userId = requireAuthenticatedUserId(request);
     try {
       await dependencies.auth.api.revokeSessions({ headers: toAuthHeaders(request) });
@@ -182,14 +329,15 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     return reply.status(204).send();
   });
 
-  app.get('/auth/session', { onRequest: noStore, preHandler: requireSession, config: sessionDocs }, async (request) => {
-    // The `requireSession` preHandler above already called Better Auth's `getSession` once
+  app.get('/auth/session', { onRequest: noStore, preHandler: requireSessionUnconfirmedAllowed, config: sessionDocs }, async (request) => {
+    // The `requireSessionUnconfirmedAllowed` preHandler above already called Better Auth's `getSession` once
     // (with `returnHeaders: true`, so a renewed cookie was already applied to the reply, M1) and
     // populated `request.auth`; a second `getSession` call here would be redundant and would
     // discard the renewed cookie the guard already resolved.
     if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
     return routeResponse(sessionDocs, request, {
       user: request.auth.user,
+      emailVerified: request.auth.emailVerified,
       session: { expiresAt: request.auth.expiresAt }
     });
   });
@@ -198,12 +346,13 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
   // session, so a forgotten tab does not keep it alive past the 7 days without use.
   app.get('/auth/session/check', {
     onRequest: noStore,
-    preHandler: createRequireSession({ auth: dependencies.auth }, { renew: false }),
+    preHandler: createRequireSession({ auth: dependencies.auth }, { renew: false, allowUnconfirmed: true }),
     config: sessionCheckDocs
   }, async (request) => {
     if (request.auth === undefined) throw new HttpError(unauthenticatedFallback);
     return routeResponse(sessionCheckDocs, request, {
       user: request.auth.user,
+      emailVerified: request.auth.emailVerified,
       session: { expiresAt: request.auth.expiresAt }
     });
   });
@@ -240,7 +389,6 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     // purely so a B10 recovery below has a user id to act on; a lookup failure never blocks the
     // reset itself.
     const userIdForRecovery = await identifyUserIdForResetToken(dependencies.auth, body.token);
-    const resetInviteContinuation = await resolveResetInviteContinuation(dependencies, body.inviteToken, userIdForRecovery);
 
     try {
       await runWithAuditRequestId(request.id, () => dependencies.auth.api.resetPassword({
@@ -266,166 +414,59 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
       throw toPublicAuthError(error, { statusCode: 400, code: 'INVALID_LINK', message: 'Este link não é mais válido.' });
     }
 
-    // A reset always authenticates (issue #175, 2026-09-29 decision "O reset de senha sempre
-    // autentica, exceto sem nenhum contexto"), reusing the same mechanism as the invite-login
-    // branch above: sign in with the new password, then decide whether the session survives.
-    //
-    // `signedIn: false` carries two distinct reasons (2026-09-29 security review of PR #176,
-    // achado 1): `NO_CONTEXT_ACCESS` only when the context count is confirmed to be **zero**;
-    // anything else that stops a session from being created — the user vanishing between the
-    // lookup and now, the context count failing, or `signInEmail` itself failing (including the
-    // race of two valid reset tokens for the same account) — is `SIGN_IN_REQUIRED` instead, so the
-    // client never tells someone who *does* have access that their account has none.
-    const signInFailedResponse = () => reply.status(200).send(
-      routeResponse(resetDocs, request, { signedIn: false, reason: 'SIGN_IN_REQUIRED' })
-    );
-
-    if (resetInviteContinuation !== undefined) {
-      // With a valid invite continuation the session is kept unconditionally, same as before
-      // (regra 3a): it stays contextless until `POST /invitations/:token/accept` runs. A valid
-      // continuation already proves this is not the zero-context case, so a sign-in failure here
-      // is always `SIGN_IN_REQUIRED`, never `NO_CONTEXT_ACCESS`.
-      const signedIn = await signInAfterReset(dependencies, request, resetInviteContinuation.userId, body.newPassword);
-      if (signedIn !== undefined) {
-        applyAuthCookies(reply, signedIn.headers);
-        return reply.status(200).send(routeResponse(resetDocs, request, { signedIn: true }));
-      }
-      return signInFailedResponse();
-    }
-
-    if (userIdForRecovery === undefined) {
-      // Extremely rare: the reset itself succeeded (the token was valid), but this route's own,
-      // separate, non-destructive lookup of the same verification row failed. The account cannot
-      // be identified at all, so nothing more can be attempted; log it (achado 1) and respond.
-      request.log.error({
-        operation: 'auth.password_reset_sign_in',
-        status: 'failed',
-        error: { name: 'UnresolvedUser', code: 'PASSWORD_RESET_SIGN_IN_USER_UNKNOWN' }
-      }, 'Password reset succeeded but the affected user could not be identified for sign-in');
-      return signInFailedResponse();
-    }
-
-    // Counted **before** signing in (2026-09-29 security review, achado 2): this is what lets a
-    // confirmed zero-context account never have a session created and revoked at all -- it simply
-    // never gets one -- and what keeps a count failure from leaving an orphaned session behind
-    // (the old order could sign in, then fail to count, and leave a live session nobody revoked).
-    let contextCount: number;
-    try {
-      contextCount = await dependencies.countValidContexts(userIdForRecovery);
-    } catch (error) {
-      request.log.error({
-        operation: 'auth.password_reset_context_count',
-        status: 'failed',
-        error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'PASSWORD_RESET_CONTEXT_COUNT_FAILED' }
-      }, 'Failed to count contexts after a successful password reset; no session was created');
-      return signInFailedResponse();
-    }
-
-    // Same rule as `POST /auth/login` (2026-09-24 decision): a correct credential resolving to
-    // zero contexts never gets a session. This is the only path that may respond
-    // `NO_CONTEXT_ACCESS` -- everywhere else in this route that stops short of a session is
-    // `SIGN_IN_REQUIRED`.
-    if (contextCount === 0) {
-      return reply.status(200).send(
-        routeResponse(resetDocs, request, { signedIn: false, reason: 'NO_CONTEXT_ACCESS' })
-      );
-    }
-
-    const signedIn = await signInAfterReset(dependencies, request, userIdForRecovery, body.newPassword);
-    if (signedIn !== undefined) {
-      applyAuthCookies(reply, signedIn.headers);
-      return reply.status(200).send(routeResponse(resetDocs, request, { signedIn: true }));
-    }
-    return signInFailedResponse();
+    // No session is created: the reset ended every one, and the person signs in again with the new
+    // password (2026-10-16 decision), so the invitation continues through the login, not here.
+    return reply.status(204).send();
   });
 };
 
 /**
- * Signs a user back in right after a successful password reset — the mechanism both branches of
- * `POST /auth/password/reset` share (issue #175). Returns `undefined` on any failure (a user that
- * can no longer be found, or `signInEmail` itself failing — including the race of two valid reset
- * tokens for the same account, where the current hash no longer matches this call's `newPassword`
- * by the time it runs), so callers fall back to a `SIGN_IN_REQUIRED` response instead of turning an
- * already-successful reset into a public error. Every failure is logged here, structured and
- * without the password, the reset token, or the e-mail (2026-09-29 security review of PR #176,
- * achado 1: this catch was previously silent).
+ * The account of the session the request carries, read without renewing it and without any side effect, or
+ * undefined. It is not the guard: it answers who, and the caller decides whether that account may act.
  */
-const signInAfterReset = async (
-  dependencies: AuthModuleDependencies,
-  request: FastifyRequest,
-  userId: string,
-  newPassword: string
-): Promise<{ readonly headers: Headers; readonly response: { readonly token: string } } | undefined> => {
+const sessionAccountOf = async (auth: AuthInstance, request: FastifyRequest): Promise<{ readonly id: string; readonly name: string; readonly email: string } | undefined> => {
   try {
-    const context = await dependencies.auth.$context;
-    const user = await context.internalAdapter.findUserById(userId);
-    if (user === null || user === undefined) {
-      request.log.error({
-        operation: 'auth.password_reset_sign_in',
-        status: 'failed',
-        error: { name: 'UnresolvedUser', code: 'PASSWORD_RESET_SIGN_IN_USER_NOT_FOUND' }
-      }, 'Password reset succeeded but the account could not be found for sign-in');
-      return undefined;
-    }
-    const { headers, response } = await dependencies.auth.api.signInEmail({
-      body: { email: user.email, password: newPassword },
-      headers: toAuthHeaders(request),
-      returnHeaders: true
-    });
-    return { headers, response };
-  } catch (error) {
-    request.log.error({
-      operation: 'auth.password_reset_sign_in',
-      status: 'failed',
-      error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'PASSWORD_RESET_SIGN_IN_FAILED' }
-    }, 'Failed to sign the account back in after a successful password reset');
-    return undefined;
-  }
-};
-
-/**
- * Whether a zero-context login may still get a session because it continues straight into
- * accepting an existing-account invitation (2026-09-29 decision, complementing the 2026-09-24
- * "credencial correta sem nenhum contexto não cria sessão"): an account removed from every agency
- * and re-invited has zero contexts until it accepts, and accepting needs a session. Reuses the
- * same `app_private.invitation_by_token_hash` validity check (`invitationTokenLookup`, also used
- * by `password/forgot` and `password/reset` above) the invitations module itself relies on — never
- * re-implemented here: not used, not revoked, not expired, agency active, and client active when
- * the invite is one. An invalid, mismatched-email, or absent token is indistinguishable from one
- * another (B1): none of them ever changes the response the caller sees.
- */
-const grantsZeroContextAccessViaInvite = async (
-  dependencies: AuthModuleDependencies,
-  inviteToken: string | undefined,
-  email: string
-): Promise<boolean> => {
-  if (inviteToken === undefined || dependencies.invitationTokenLookup === undefined) return false;
-  const invitation = await dependencies.invitationTokenLookup(inviteToken).catch(() => undefined);
-  return invitation?.valid === true && invitation.email === email;
-};
-
-/**
- * A reset continuation is enabled only when the invite is still valid and its e-mail belongs to
- * the user identified by Better Auth's verification row. Invalid/mismatched optional tokens are
- * intentionally ignored, preserving the ordinary reset response (`signedIn` decided by context
- * count, same as no `inviteToken` at all) and avoiding enumeration.
- */
-const resolveResetInviteContinuation = async (
-  dependencies: AuthModuleDependencies,
-  inviteToken: string | undefined,
-  userId: string | undefined
-): Promise<{ userId: string } | undefined> => {
-  if (inviteToken === undefined || userId === undefined || dependencies.invitationTokenLookup === undefined) return undefined;
-  const invitation = await dependencies.invitationTokenLookup(inviteToken).catch(() => undefined);
-  if (invitation?.valid !== true || invitation.email === undefined) return undefined;
-
-  try {
-    const context = await dependencies.auth.$context;
-    const user = await context.internalAdapter.findUserById(userId);
-    return user?.email === invitation.email ? { userId } : undefined;
+    const result = await auth.api.getSession({ headers: toAuthHeaders(request), query: { disableRefresh: true } });
+    return result === null ? undefined : { id: result.user.id, name: result.user.name, email: result.user.email };
   } catch {
     return undefined;
   }
+};
+
+const credentialHashOf = async (database: DatabaseClient, userId: string): Promise<string | undefined> => {
+  const result = await raw<{ rows: Array<{ password: string | null }> }>(database.knex, `
+    select password from auth.account where "userId" = ? and "providerId" = 'credential' limit 1
+  `, [userId]);
+  return result.rows[0]?.password ?? undefined;
+};
+
+interface LoginCredential {
+  readonly passwordHash: string;
+  readonly emailVerified: boolean;
+}
+
+/** The password credential of the account with this address, and whether its e-mail is confirmed. */
+const loginCredentialOf = async (database: DatabaseClient, email: string): Promise<LoginCredential | undefined> => {
+  const result = await raw<{ rows: Array<{ password: string | null; email_verified: boolean }> }>(database.knex, `
+    select credential.password, account."emailVerified" as email_verified
+    from auth."user" account
+    join auth.account credential on credential."userId" = account.id and credential."providerId" = 'credential'
+    where account.email = ?
+    limit 1
+  `, [email]);
+  const row = result.rows[0];
+  return row?.password === undefined || row.password === null ? undefined : { passwordHash: row.password, emailVerified: row.email_verified };
+};
+
+type PasswordHasher = Awaited<AuthInstance['$context']>['password'];
+
+let decoyHash: Promise<string> | undefined;
+
+/** A link that resolves to no account still pays for one password check, so the time tells nothing. */
+const verifyAgainstDecoy = async (password: PasswordHasher, candidate: string): Promise<false> => {
+  decoyHash ??= password.hash(randomUUID());
+  await password.verify({ hash: await decoyHash, password: candidate });
+  return false;
 };
 
 /**
@@ -445,9 +486,9 @@ const identifyUserIdForResetToken = async (auth: AuthInstance, token: string): P
 };
 
 /**
- * Deletes the session `signInEmail` just created for a login that turned out to resolve to zero
- * contexts (issue #68), via the same `internalAdapter.deleteSession` Better Auth's own
- * `revoke-session` endpoint uses. Never throws: the client already gets `NO_CONTEXT_ACCESS`
+ * Deletes the session `signInEmail` just created for a login of an account that is not confirmed,
+ * via the same `internalAdapter.deleteSession` Better Auth's own
+ * `revoke-session` endpoint uses. Never throws: the client already gets `INVALID_CREDENTIALS`
  * either way, and a failure here must not replace or mask that response with an unrelated 500.
  */
 const revokeJustCreatedSession = async (auth: AuthInstance, token: string, request: FastifyRequest): Promise<void> => {
@@ -456,10 +497,10 @@ const revokeJustCreatedSession = async (auth: AuthInstance, token: string, reque
     await context.internalAdapter.deleteSession(token);
   } catch (error) {
     request.log.error({
-      operation: 'auth.login_no_context_revoke',
+      operation: 'auth.login_unverified_revoke',
       status: 'failed',
-      error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'LOGIN_NO_CONTEXT_SESSION_REVOKE_FAILED' }
-    }, 'Failed to revoke the session created for a login that resolved to zero contexts');
+      error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'LOGIN_UNVERIFIED_SESSION_REVOKE_FAILED' }
+    }, 'Failed to revoke the session created for a login of an unconfirmed account');
   }
 };
 

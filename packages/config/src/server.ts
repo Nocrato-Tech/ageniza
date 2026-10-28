@@ -92,6 +92,11 @@ export interface ApiConfig extends ServerConfig {
   authPrivacyVersion: string;
   /** Trusted browser application origin used for auth redirects and cookies. */
   appPublicUrl: string;
+  /**
+   * The address the browser reaches the API on, with its path and without a trailing slash (`https://<domain>/api`): the
+   * path under which a cookie restricted to a route of the API is sent back. `API_PUBLIC_URL`, or `APP_PUBLIC_URL/api`.
+   */
+  apiPublicUrl: string;
   host: string;
   port: number;
   corsOrigins: readonly string[];
@@ -104,6 +109,18 @@ export interface ApiConfig extends ServerConfig {
    * `/docs` viewer must check this before trying to load.
    */
   containerLocal: boolean;
+  /** Public contact the read-only agency is pointed to (`SUPPORT_CONTACT_EMAIL`); not a secret. Undefined: no contact. */
+  supportContactEmail?: string;
+  /**
+   * Google OAuth (issue #707). Undefined turns "Entrar com o Google" off: the routes answer 404 and the web hides the
+   * button. `clientSecret` is server-only and never leaves the API; `callbackUrl` is the address registered with Google.
+   */
+  google?: GoogleOAuthConfig;
+}
+export interface GoogleOAuthConfig {
+  readonly clientId: string;
+  readonly clientSecret: string;
+  readonly callbackUrl: string;
 }
 /** Object storage the worker talks to directly (issue #24): download the confirmed original,
  * upload the generated thumbnail/preview. Unlike `StorageConfig`, the worker never presigns a
@@ -150,6 +167,11 @@ type ServerEnvironment = Record<string, string | undefined>;
 const optionalUrl = (message: string) => z.preprocess(
   (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
   z.string().trim().url(message).optional()
+);
+
+const optionalText = () => z.preprocess(
+  (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+  z.string().trim().max(512).optional()
 );
 
 const sharedServerSchema = z.object({
@@ -255,6 +277,14 @@ const apiSchema = sharedServerSchema.extend({
   API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
   API_BODY_LIMIT_BYTES: z.coerce.number().int().min(1_024).max(50 * 1024 * 1024).default(1_048_576),
   API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues),
+  GOOGLE_CLIENT_ID: optionalText(),
+  GOOGLE_CLIENT_SECRET: optionalText(),
+  GOOGLE_CALLBACK_URL: optionalUrl('must be a valid URL; supplied values are redacted'),
+  API_PUBLIC_URL: optionalUrl('must be a valid URL; supplied values are redacted'),
+  SUPPORT_CONTACT_EMAIL: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().trim().max(320).email('must be a valid e-mail address').optional()
+  ),
   // Object storage (issue #21): R2 in production, LocalStack locally. All required together.
   ...storageEnvironmentShape,
   R2_PUBLIC_ENDPOINT: optionalUrl('must be a valid storage endpoint URL'),
@@ -421,6 +451,48 @@ const validateIdentityStorageEnvironment = (
   return allPresent;
 };
 
+/**
+ * Google sign-in is all or nothing: without the id and the secret it is off, with only one of them the API refuses to
+ * start (a half-set value would otherwise switch the button off with no explanation). The callback is the address the
+ * browser reaches the API on, which the web container serves under `/api`; `GOOGLE_CALLBACK_URL` replaces it where the
+ * API is on its own origin, as in the local stack.
+ */
+const loadGoogleConfig = (
+  environment: ServerConfig['environment'],
+  values: { APP_PUBLIC_URL: string; GOOGLE_CLIENT_ID?: string | undefined; GOOGLE_CLIENT_SECRET?: string | undefined; GOOGLE_CALLBACK_URL?: string | undefined }
+): GoogleOAuthConfig | undefined => {
+  const { GOOGLE_CLIENT_ID: clientId, GOOGLE_CLIENT_SECRET: clientSecret } = values;
+  if ((clientId === undefined) !== (clientSecret === undefined)) {
+    throw new ConfigValidationError('API', [{ path: 'GOOGLE_CLIENT_ID', message: 'must be set together with GOOGLE_CLIENT_SECRET; supplied values are redacted' }]);
+  }
+  if (clientId === undefined || clientSecret === undefined) return undefined;
+  const callbackUrl = values.GOOGLE_CALLBACK_URL ?? `${values.APP_PUBLIC_URL}/api/auth/callback/google`;
+  assertRuntimeUrlSafety(environment, 'GOOGLE_CALLBACK_URL', callbackUrl, { requireHttpsInProduction: true });
+  return { clientId, clientSecret, callbackUrl };
+};
+
+/**
+ * Where the browser reaches the API, path included: it is the path a cookie of one route is restricted to, and it is the
+ * `VITE_API_BASE_URL` the web build was given. The web container serves the API under `/api` of `APP_PUBLIC_URL`, which is
+ * the default (as for `GOOGLE_CALLBACK_URL`); `API_PUBLIC_URL` replaces it where the API has its own address, as in the local
+ * stack. It is an address without credentials, query or fragment, and HTTPS in production.
+ */
+const loadApiPublicUrl = (environment: ServerConfig['environment'], appPublicUrl: string, configured: string | undefined): string => {
+  const value = configured ?? `${appPublicUrl}/api`;
+  const parsed = new URL(value);
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new ConfigValidationError('API', [{ path: 'API_PUBLIC_URL', message: 'must be an address without credentials, query or fragment; supplied values are redacted' }]);
+  }
+  // The path is written into a `Path=` attribute: `;` or `,` would end the attribute, a space or a quote would be read as part of
+  // another one, and `%` is not decoded there. Only unreserved characters are a path segment here.
+  const path = parsed.pathname.replace(/\/+$/, '');
+  if (path !== '' && !/^(?:\/[A-Za-z0-9._~-]+)+$/.test(path)) {
+    throw new ConfigValidationError('API', [{ path: 'API_PUBLIC_URL', message: 'must have a path of segments made of letters, digits, ".", "_", "~" and "-"; supplied values are redacted' }]);
+  }
+  assertRuntimeUrlSafety(environment, 'API_PUBLIC_URL', value, { requireHttpsInProduction: true });
+  return `${parsed.origin}${path}`;
+};
+
 /** Loads server-only API settings. Never import this module from browser code. */
 export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   const result = apiSchema.safeParse(env);
@@ -431,6 +503,7 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     throw new ConfigValidationError('API', [{ path: 'APP_PUBLIC_URL', message: 'must be an origin without paths; supplied values are redacted' }]);
   }
   assertRuntimeUrlSafety(serverConfig.environment, 'APP_PUBLIC_URL', result.data.APP_PUBLIC_URL, { requireHttpsInProduction: true });
+  const apiPublicUrl = loadApiPublicUrl(serverConfig.environment, result.data.APP_PUBLIC_URL, result.data.API_PUBLIC_URL);
   if (serverConfig.environment === 'production' && containsExampleSecretMarker(result.data.BETTER_AUTH_SECRET)) {
     throw new ConfigValidationError('API', [{
       path: 'BETTER_AUTH_SECRET',
@@ -461,6 +534,8 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   if (result.data.API_TRUSTED_PROXY_CIDRS.some((value) => !isIpOrCidr(value))) {
     throw new ConfigValidationError('API', [{ path: 'API_TRUSTED_PROXY_CIDRS', message: 'must contain only valid IP addresses or CIDR networks; supplied values are redacted' }]);
   }
+
+  const google = loadGoogleConfig(serverConfig.environment, result.data);
 
   // Object storage (issue #21): the four secrets/identifiers are required together, exactly like
   // SMTP_URL/EMAIL_FROM above, and required in production because direct-to-bucket upload is core
@@ -503,12 +578,15 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     authTermsVersion: result.data.AUTH_TERMS_VERSION,
     authPrivacyVersion: result.data.AUTH_PRIVACY_VERSION,
     appPublicUrl: result.data.APP_PUBLIC_URL,
+    apiPublicUrl,
     host: result.data.API_HOST,
     port: result.data.PORT,
     corsOrigins: result.data.API_CORS_ORIGINS,
     bodyLimitBytes: result.data.API_BODY_LIMIT_BYTES,
     trustedProxyCidrs: result.data.API_TRUSTED_PROXY_CIDRS,
     containerLocal: result.data.APP_CONTAINER_LOCAL === 'true',
+    ...(result.data.SUPPORT_CONTACT_EMAIL === undefined ? {} : { supportContactEmail: result.data.SUPPORT_CONTACT_EMAIL }),
+    ...(google === undefined ? {} : { google }),
     storage: allStoragePresent ? {
       endpoint: result.data.R2_ENDPOINT!,
       publicEndpoint: result.data.R2_PUBLIC_ENDPOINT ?? result.data.R2_ENDPOINT!,

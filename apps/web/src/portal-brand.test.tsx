@@ -48,6 +48,7 @@ const json = (body: unknown, status = 200): Response =>
 
 const sessionBody = { user: { id: USER_ID, name: 'Maria', email: 'maria@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
 const legalAccepted = {
+  required: false,
   documents: [
     { document: 'terms', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false },
     { document: 'privacy', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false }
@@ -116,6 +117,7 @@ const makeWorld = (scenario: Scenario = {}) => {
     if (path.endsWith('/me/legal-acceptances')) return json(legalAccepted);
     if (path.endsWith('/me/contexts')) {
       return json({
+        canCreateAgency: false,
         contexts: [
           ...Object.entries(names).map(([clientId, clientName]) => ({ type: 'client', clientId, clientName, agencyId: AGENCY_ID, agencyName: 'Agência Um', onboardingPending: false })),
           ...(scenario.alsoCollaborator === true ? [{ type: 'agency', agencyId: AGENCY_ID, agencyName: 'Agência Um', role: { key: 'admin', name: 'Admin' }, isOwner: false }] : [])
@@ -123,7 +125,7 @@ const makeWorld = (scenario: Scenario = {}) => {
       });
     }
     if (path === `/agencies/${AGENCY_ID}/me`) {
-      return json({ agencyId: AGENCY_ID, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['cliente.visualizar', 'cliente.operar', 'cliente.arquivar'] });
+      return json({ agencyId: AGENCY_ID, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['cliente.visualizar', 'cliente.operar', 'cliente.arquivar'] });
     }
     for (const clientId of Object.keys(names)) {
       if (path === `/clients/${clientId}`) return json(portalClientBody(clientId, names[clientId]!));

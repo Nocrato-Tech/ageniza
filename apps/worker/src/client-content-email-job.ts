@@ -1,3 +1,6 @@
+import { createHash, randomBytes } from 'node:crypto';
+
+import { PORTAL_APPROVAL_PAGE_PATH } from '@ageniza/contracts';
 import { contentsAwaitingApprovalEmail, contentsPublishedEmail, type EmailMessage, type EmailSender } from '@ageniza/email';
 
 import type { ClaimedNotification, NotificationQueue } from './notification-queue.js';
@@ -28,8 +31,8 @@ export interface ClientContentEmailJobDependencies {
 }
 
 const TEMPLATES = {
-  content_awaiting_approval: { template: 'contents-awaiting-approval', compose: contentsAwaitingApprovalEmail },
-  content_published: { template: 'contents-published', compose: contentsPublishedEmail }
+  content_awaiting_approval: 'contents-awaiting-approval',
+  content_published: 'contents-published'
 } as const;
 
 type KnownType = keyof typeof TEMPLATES;
@@ -38,6 +41,16 @@ const isKnownType = (type: string): type is KnownType => Object.hasOwn(TEMPLATES
 /** The portal of the client. Signing in is what authorizes opening it, so the link carries nothing of the person. */
 export const portalUrlFor = (appPublicUrl: string, clientId: string): string =>
   new URL(`/portal/${encodeURIComponent(clientId)}/calendario`, appPublicUrl).toString();
+
+/** The page of the approval link. The token is in the fragment: the browser never sends it to a server, a log or a proxy. */
+export const approvalUrlFor = (appPublicUrl: string, token: string): string => {
+  const url = new URL(PORTAL_APPROVAL_PAGE_PATH, appPublicUrl);
+  url.hash = token;
+  return url.toString();
+};
+
+const generateApprovalToken = (): string => randomBytes(32).toString('base64url');
+const hashApprovalToken = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
 
 /**
  * A machine token for the queue, never the text of the provider: that carries the address the e-mail went to. The numeric
@@ -56,12 +69,12 @@ interface Group {
   readonly items: ClaimedNotification[];
 }
 
-// The claim returns the rows of one person and client and type together; the key says so again, so a row of another group
+// The claim returns the rows of one address and client and type (two accesses can resolve to the same mailbox) together; the key says so again, so a row of another group
 // never rides in someone else's e-mail.
 const groupsOf = (claimed: readonly ClaimedNotification[]): Group[] => {
   const groups = new Map<string, Group>();
   for (const item of claimed) {
-    const key = [item.claimToken, item.recipientUserId, item.clientId, item.notificationType].join('|');
+    const key = [item.claimToken, item.recipientEmail, item.clientId, item.notificationType].join('|');
     const group = groups.get(key) ?? { claimToken: item.claimToken, type: item.notificationType, items: [] };
     group.items.push(item);
     groups.set(key, group);
@@ -83,14 +96,17 @@ const markSentWithRetry = async (queue: NotificationQueue, itemIds: readonly str
 
 interface Totals { claimedGroups: number; sent: number; droppedItems: number; failedGroups: number; releasedGroups: number }
 
-const messageOf = (type: KnownType, items: readonly ClaimedNotification[], appPublicUrl: string): EmailMessage => {
+const messageOf = (type: KnownType, items: readonly ClaimedNotification[], appPublicUrl: string, approvalUrl: string | undefined): EmailMessage => {
   const first = items[0]!;
-  return TEMPLATES[type].compose({
+  const common = {
     agencyName: first.agencyName,
     clientName: first.clientName,
-    portalUrl: portalUrlFor(appPublicUrl, first.clientId),
-    items: items.map((item) => ({ title: item.contentTitle, publishOn: item.contentPublishOn }))
-  });
+    // The same content queued for two accesses of one mailbox is one line of the e-mail.
+    items: [...new Map(items.map((item) => [item.contentId, item])).values()].map((item) => ({ title: item.contentTitle, publishOn: item.contentPublishOn }))
+  };
+  if (type === 'content_published') return contentsPublishedEmail({ ...common, portalUrl: portalUrlFor(appPublicUrl, first.clientId) });
+  if (approvalUrl === undefined) throw new Error('The e-mail of contents to approve needs its approval link.');
+  return contentsAwaitingApprovalEmail({ ...common, approvalUrl });
 };
 
 /**
@@ -144,8 +160,24 @@ export const clientContentEmailJob = (
         if (kept.length === 0) continue;
 
         const keptIds = kept.map((item) => item.itemId);
+        // The link is issued from the items this claim still holds, right after the recheck: it is tied to the contents of the e-mail, and
+        // the token it carries exists nowhere but here and in the e-mail. A link that cannot be issued (the agency went read-only in the
+        // meantime) releases the group like a failed send, with a code and a delay.
+        let approvalUrl: string | undefined;
+        if (group.type === 'content_awaiting_approval') {
+          const token = generateApprovalToken();
+          try {
+            await queue.issueApprovalLink(keptIds, group.claimToken, hashApprovalToken(token));
+          } catch {
+            totals.failedGroups += 1;
+            await queue.fail(keptIds, group.claimToken, 'approval_link_failed');
+            context.logger.warn({ notificationType: group.type, items: kept.length, errorCode: 'approval_link_failed' }, 'The approval link of the e-mail was not issued and its items were released');
+            continue;
+          }
+          approvalUrl = approvalUrlFor(appPublicUrl, token);
+        }
         try {
-          await sender.send({ ...messageOf(group.type, kept, appPublicUrl), to: kept[0]!.recipientEmail, template: TEMPLATES[group.type].template });
+          await sender.send({ ...messageOf(group.type, kept, appPublicUrl, approvalUrl), to: kept[0]!.recipientEmail, template: TEMPLATES[group.type] });
         } catch (error) {
           const errorCode = failureCodeOf(error);
           totals.failedGroups += 1;

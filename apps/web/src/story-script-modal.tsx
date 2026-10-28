@@ -14,10 +14,11 @@ import {
   type StoryScript,
   type UpdateStoryScriptRequest
 } from '@ageniza/contracts';
-import { Button, Dialog, Field, FieldMessage, IconButton, Skeleton, Textarea, TextInput, useFormErrors } from '@ageniza/ui';
+import { Button, DatePicker, Dialog, Field, FieldMessage, IconButton, Skeleton, Textarea, useFormErrors } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
+import { todayInSaoPaulo } from './content-dates.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { StoryScriptStatusTag } from './story-script-status.js';
 
@@ -289,12 +290,12 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
     <p className="story-script__status"><StoryScriptStatusTag status={status} /></p>
     <Field id={dayId} label="Dia dos stories" error={errors.scriptOn}>
       {(control) => (
-        <TextInput
+        <DatePicker
           {...control}
-          type="date"
+          today={todayInSaoPaulo()}
           value={form.scriptOn}
           disabled={busy}
-          onChange={(event) => { setForm({ ...form, scriptOn: event.target.value }); setErrors((current) => ({ scenes: current.scenes })); setFormError(undefined); }}
+          onChange={(day) => { setForm({ ...form, scriptOn: day }); setErrors((current) => ({ scenes: current.scenes })); setFormError(undefined); }}
         />
       )}
     </Field>

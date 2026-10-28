@@ -1,18 +1,17 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronLeft, Pencil } from 'lucide-react';
 
 import {
   CalendarDaySchema,
-  CommentBodySchema,
   PortalContentDetailSchema,
   type ContentFormat,
   type PortalApproveContentRequest,
   type PortalContentDetail,
   type PortalRequestContentChangesRequest
 } from '@ageniza/contracts';
-import { Button, Field, FieldMessage, FormatTag, LiveStatus, Modal, Skeleton, StatusTag, Textarea, useFormErrors } from '@ageniza/ui';
+import { Button, FieldMessage, FormatTag, LiveStatus, Skeleton, StatusTag } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { Conversation } from './conversation.js';
@@ -23,6 +22,8 @@ import { HttpClientError, useApiClient } from './http.js';
 import { portalClientQueryKey, usePortalClient, uuidPattern } from './portal.js';
 import { PortalMediaCarousel } from './portal-content-media.js';
 import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS } from './portal-status.js';
+import { PLAN_RENEWAL_REASON } from './plan-notice.js';
+import { COMMENT_MESSAGES, RequestChangesDialog, type RequestError } from './request-changes-dialog.js';
 import { NotFoundPage } from './status-pages.js';
 
 /**
@@ -53,23 +54,11 @@ const MESSAGES = {
   requestFailed: 'Não foi possível enviar o pedido. Tente de novo.',
   approved: 'Conteúdo aprovado. Obrigado!',
   requested: 'Pedido de ajuste enviado. A agência vai ver a sua mensagem na conversa abaixo.',
-  empty: 'Escreva o que precisa mudar.',
-  tooLong: 'O pedido pode ter no máximo 5.000 bytes.',
-  invalidCharacters: 'O texto contém caracteres que não são aceitos.'
+  ...COMMENT_MESSAGES
 } as const;
 
 const isStatus = (error: unknown, status: number): boolean => error instanceof HttpClientError && error.status === status;
 const isCode = (error: unknown, code: string): boolean => error instanceof HttpClientError && error.code === code;
-
-/** The rule of the API, not a copy of it: the screen asks the contract's own schema and only words the answer. */
-const commentProblem = (comment: string): string | undefined => {
-  const parsed = CommentBodySchema.safeParse(comment);
-  if (parsed.success) return undefined;
-  const message = parsed.error.issues[0]?.message;
-  if (message === 'must not be empty') return MESSAGES.empty;
-  if (message === 'must be at most 5000 bytes') return MESSAGES.tooLong;
-  return MESSAGES.invalidCharacters;
-};
 
 /** A day is read as text and never through a `Date`: the planned day is São Paulo's, whatever the browser's zone. */
 const dayText = (day: string): string => CalendarDaySchema.safeParse(day).success ? fullDayLabel(day) : day;
@@ -91,52 +80,6 @@ function PostMeta({ content }: { content: PortalContent }) {
     </li>
     {'publishedOn' in content && content.publishedOn !== null && <li>Publicado em <time dateTime={content.publishedOn}>{dayText(content.publishedOn)}</time></li>}
   </ul>;
-}
-
-/** What went wrong with the request: `field` when it is the text itself (the server refused its characters), otherwise the request as a whole. */
-interface RequestError {
-  readonly message: string;
-  readonly field: boolean;
-}
-
-function RequestChangesDialog({ draft, onDraft, pending, error, onSubmit, onClose }: {
-  draft: string;
-  onDraft: (value: string) => void;
-  pending: boolean;
-  error: RequestError | undefined;
-  onSubmit: (comment: string) => void;
-  onClose: () => void;
-}) {
-  const [problem, setProblem] = useState<string | undefined>();
-  const { formRef, summary } = useFormErrors();
-  const fieldProblem = problem ?? (error?.field === true ? error.message : undefined);
-
-  const submit = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-    const found = commentProblem(draft);
-    if (found !== undefined) { setProblem(found); return; }
-    onSubmit(draft.trim());
-  };
-
-  return <Modal title="Pedir ajuste" closeLabel="Fechar pedido de ajuste" onClose={onClose}>
-    <form ref={formRef} className="portal-post__request" onSubmit={submit} noValidate>
-      {summary}
-      <Field label="O que precisa mudar?" hint="A agência vai ver a sua mensagem e responder na conversa deste conteúdo." error={fieldProblem}>
-        {(control) => <Textarea
-          {...control}
-          value={draft}
-          rows={5}
-          placeholder="Escreva aqui"
-          readOnly={pending}
-          onChange={(event) => { onDraft(event.target.value); setProblem(undefined); }}
-        />}
-      </Field>
-      {error?.field === false && <FieldMessage role="alert">{error.message}</FieldMessage>}
-      <div className="portal-post__actions">
-        <Button type="submit" loading={pending}>Enviar pedido</Button>
-      </div>
-    </form>
-  </Modal>;
 }
 
 /** `reloading` holds the buttons while the post is read again, so a click never carries a revision already replaced. */
@@ -262,6 +205,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
           subjectLabel={content.title}
           canWrite
           readOnly={false}
+          planBlockedReason={client.agencyReadOnly ? PLAN_RENEWAL_REASON : undefined}
           onWritten={refresh}
           headingLevel={3}
         />
@@ -271,11 +215,12 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
       <h2 id="portal-post-decision" className="visually-hidden">Sua decisão</h2>
       {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
       <div className="portal-post__actions">
-        <Button variant="secondary" size="lg" leadingIcon={<Pencil />} disabled={reloading || approve.isPending} onClick={() => { setRequestError(undefined); setStateChanged(undefined); setAsking(true); }}>Pedir ajuste</Button>
-        <Button size="lg" leadingIcon={<Check />} loading={approve.isPending} disabled={reloading || requestChanges.isPending} onClick={() => { setActionError(undefined); setStateChanged(undefined); setNotice(undefined); send(() => { approve.mutate(); }); }}>Aprovar</Button>
+        <Button variant="secondary" size="lg" leadingIcon={<Pencil />} disabled={reloading || approve.isPending} blockedReason={client.agencyReadOnly ? PLAN_RENEWAL_REASON : undefined} onClick={() => { setRequestError(undefined); setStateChanged(undefined); setAsking(true); }}>Pedir ajuste</Button>
+        <Button size="lg" leadingIcon={<Check />} loading={approve.isPending} disabled={reloading || requestChanges.isPending} blockedReason={client.agencyReadOnly ? PLAN_RENEWAL_REASON : undefined} onClick={() => { setActionError(undefined); setStateChanged(undefined); setNotice(undefined); send(() => { approve.mutate(); }); }}>Aprovar</Button>
       </div>
     </section>}
     {asking && <RequestChangesDialog
+      hint="A agência vai ver a sua mensagem e responder na conversa deste conteúdo."
       draft={draft}
       onDraft={(value) => { setDraft(value); setRequestError(undefined); }}
       pending={requestChanges.isPending}

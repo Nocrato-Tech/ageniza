@@ -36,6 +36,12 @@ export interface ListValidContextsResult {
   readonly lastUsedContext: Context | null;
 }
 
+/** Whether the actor may create an agency in trial now, by the database's own rule (issue #709). */
+export const canCreateAgency = async (transaction: ContextTransaction): Promise<boolean> => {
+  const result = await raw<RawRows<{ allowed: boolean }>>(transaction, 'select app_private.can_create_trial_agency() as allowed', []);
+  return result.rows[0]?.allowed === true;
+};
+
 /** Stable per-context key used for equality/sort tie-breaking; never exposed on the wire. */
 const contextKey = (context: Context): string => context.type === 'agency'
   ? `agency:${context.agencyId}`
@@ -148,11 +154,23 @@ const fetchLastUsedKey = async (transaction: ContextTransaction): Promise<string
 
 /**
  * Lists every context (agency or client) the authenticated user currently has valid access to,
- * ordered per issue #33 section 6.1. Must run inside `withAuthenticatedUserTransaction`; the
+ * ordered per issue #33 section 6.1. First links the active accesses of the account's verified address
+ * that no account has taken yet (`app_private.link_client_portal_accesses`). Must run inside `withAuthenticatedUserTransaction`; the
  * queries rely on transaction-local `app_private.current_user_id()`, matching the RLS boundary
  * exactly.
  */
 export const listValidContexts = async (transaction: ContextTransaction): Promise<ListValidContextsResult> => {
+  // An account that has not confirmed its e-mail has no context, whatever it was given (decision 2026-10-27).
+  const unconfirmed = await raw<RawRows<{ unconfirmed: boolean }>>(transaction, 'select app_private.email_not_confirmed(app_private.current_user_id()) as unconfirmed', []);
+  if (unconfirmed.rows[0]?.unconfirmed !== false) return { contexts: [], lastUsedContext: null };
+
+  // A Google account that has not accepted the Terms and the Privacy Policy has no context until it does (issue #707).
+  const blocked = await raw<RawRows<{ blocked: boolean }>>(transaction, 'select app_private.legal_acceptance_blocks_access(app_private.current_user_id()) as blocked', []);
+  if (blocked.rows[0]?.blocked === true) return { contexts: [], lastUsedContext: null };
+
+  // The account that enters takes the accesses given to its verified address before its contexts are read (decision
+  // 2026-10-26, item 3). It is done here, where every login, resolve and list passes, and not in the sign-in route.
+  await raw(transaction, 'select app_private.link_client_portal_accesses()', []);
   const [agencyContexts, clientContexts, lastUsedKey] = await Promise.all([
     fetchAgencyContexts(transaction),
     fetchClientContexts(transaction),
@@ -172,6 +190,14 @@ export const countValidContexts = async (database: DatabaseClient, userId: strin
   const claims = createVerifiedUserClaims({ userId });
   const { contexts } = await withAuthenticatedUserTransaction(database, claims, (transaction) => listValidContexts(transaction));
   return contexts.length;
+};
+
+/**
+ * The account enters the portal of a client (it resolved or selected it): the first time is recorded on its access, and it is
+ * what the agency's list shows as "entrou" and the name. Must run inside `withAuthenticatedUserTransaction`.
+ */
+export const markClientPortalEntered = async (transaction: ContextTransaction, clientId: string): Promise<void> => {
+  await raw(transaction, 'select app_private.mark_client_portal_entered(?::uuid)', [clientId]);
 };
 
 /** Finds the context matching a raw `preferred=agency:<uuid>` / `client:<uuid>` query value. */

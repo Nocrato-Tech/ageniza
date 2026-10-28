@@ -148,3 +148,24 @@ O registro detalhado vive no ai-memory, em `notes/licoes-seguranca-rls.md`. As r
 - Teto de página é **limitar**, e `page` gigante não pode virar 500.
 - Upload validado pelo conteúdo; URL assinada com tipo forçado.
 - Mudança de ambiente entra na allowlist do deploy.
+- Trocar a credencial (redefinir a senha, o Google assumir a conta) invalida a sessão **pela data da troca**, não só apagando as sessões uma vez: um login com a senha antiga em andamento grava a sessão depois do apagamento e sobrevive (#705, #719). Quem revisa roda logins com a credencial antiga em paralelo com a troca e conta as sessões que sobram.
+- Um contador compartilhado entre caminhos (por exemplo, o de reenvio de confirmação usado pelo login e pelo cadastro) vira oráculo de existência de conta: quem chama um caminho lê o efeito do outro pelo limite. Contador de limite fica por caminho, ou o caminho público não o consome (#722).
+- Quando a regra está em duas camadas (rota e banco), cada camada precisa de um teste que espione só ela, com a outra desligada; senão a mutação de uma camada fica verde, porque a outra segura (#722).
+- Lógica que usa `now()` no banco vira uma função pura com o instante como parâmetro (`p_at`), chamada com `now()` por quem usa. Assim os testes fixam o instante e não ficam cegos em parte do dia, e `p_at` no futuro é recusado (#730, #732, #738).
+- Coluna que a aplicação escreve e não pode ler (como o hash do token do e-mail) tem prova: `SELECT` como `ageniza_app` dá 42501, e nenhuma rota devolve a coluna (#731).
+- Esconder um campo também esconde a **ordenação** e os **agregados** que o revelam: ordenar ou contar por um campo oculto o vaza (#728).
+- Prefixo de migration segue a ordem de merge, não a de despacho. Uma migration que entra depois de outras com prefixo maior roda numa ordem num banco novo e em outra num banco existente. Quem revisa aplica o develop num banco limpo, aplica a branch por cima e compara o esquema com o de um banco do zero (#728, #733).
+- Teste de 401 depois de invalidar sessão usa o cookie **assinado**; com cookie sem assinatura, o 401 vem da assinatura e não prova que a sessão morreu (#733).
+- A mutação roda contra o arquivo de teste **inteiro**, não só contra o teste escrito para ela; e o mutante que o autor declara equivalente é rodado por quem revisa (#741).
+- Quando uma regra se repete em duas funções, cada cópia ganha a sua mutação (#740).
+- Nome vindo de provedor externo (o perfil do Google) passa pela mesma validação do formulário (#733).
+- Decisão de implementação não revoga decisão do dono; o desvio vira achado (#736).
+- Estado de uso único guardado no navegador para uma viagem externa (OAuth) morre em **todas** as saídas da viagem, inclusive na falha que a API manda para outra tela. Quem revisa roda o cancelamento seguido de outra entrada na mesma aba (#736).
+- Tela que chama `refresh()` do store ao montar uma página que carrega do zero (a volta do OAuth) é testada com o fake respondendo em macrotarefa (`setTimeout`) ou no navegador real; o fake síncrono do jsdom esconde a corrida de gerações (#736).
+- Marca de uso único no estado da navegação: conferir se um esqueleto monta o mesmo componente antes e gasta a marca (#736).
+- O parser WHATWG URL apara espaço e C0 das pontas da string antes de resolver `..`; checagem de segmento feita no texto cru recusa espaço nas pontas, senão `/x/.. ` vira o pai (#741).
+- Valor de configuração que entra num cabeçalho (o `Path` de cookie) aceita só caracteres seguros (`[A-Za-z0-9._~-]` por segmento) e é recusado no boot; um `;` no valor muda o cookie (#741).
+- Regra de guarda de sessão se prova com um teste de varredura. Ele percorre as rotas registradas (`onRoute` ou `printRoutes`) com a sessão restrita e exige recusa em toda rota fora de **duas** listas fixas: as liberadas e as públicas. Classificar a rota pela resposta ao anônimo deixa escapar a rota que valida o corpo ou responde 404 antes da sessão (#749).
+- Guarda de sessão nasce fail-closed. A liberação é opcional, por nome explícito na rota (por exemplo, `requireSessionUnconfirmedAllowed`), nunca padrão de um módulo inteiro (#749).
+- Consulta em `audit.events` leva `agency_id` no predicado. Sem ele, não usa o índice `events_agency_action_occurred_idx` e varre os eventos de todas as agências, e isso dentro de uma trava de linha (#750).
+- A fixture `agencySuspended` do content-world não grava `status='suspended'`. Teste de "agência suspensa" precisa gravar o status de verdade e conferir que a recusa veio do A0020 (#750).

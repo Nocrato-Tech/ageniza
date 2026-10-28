@@ -3,7 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { HttpError } from '@ageniza/core';
 import { createVerifiedUserClaims, type VerifiedUserClaims } from '@ageniza/database';
 
-import type { AuthInstance } from './better-auth.js';
+import { unconfirmedAccountMayHoldSession, type AuthInstance } from './better-auth.js';
 import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js';
 import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
 
@@ -15,6 +15,8 @@ declare module 'fastify' {
       readonly sessionId: string;
       readonly claims: VerifiedUserClaims;
       readonly user: { readonly id: string; readonly name: string; readonly email: string };
+      /** False only for the account an invitation created, holding the session of its acceptance (see `allowUnconfirmed`). */
+      readonly emailVerified: boolean;
       /** ISO timestamp; the exact session expiry `getSession` resolved for this request (M1). */
       readonly expiresAt: string;
     };
@@ -32,11 +34,31 @@ export interface SessionGuardOptions {
    * issued. A tab that only asks "is my session still alive?" must not keep it alive.
    */
   readonly renew?: boolean;
+  /**
+   * Whether the session of an account that has not confirmed its e-mail passes. Off by default: such an account opens nothing
+   * (decision 2026-10-27, "a conta de convite só entra depois de confirmar"), so a route has to name itself to answer it.
+   */
+  readonly allowUnconfirmed?: boolean;
 }
+
+/** The latest instant the credential of the account was replaced, from the user row and from its credential rows. */
+const passwordChangedAtOf = async (auth: AuthInstance, user: { readonly id: string; readonly passwordChangedAt?: Date | string | null }): Promise<number | undefined> => {
+  const accounts = await (await auth.$context).internalAdapter.findAccounts(user.id);
+  const instants = [user.passwordChangedAt, ...accounts.map((account) => (account as { passwordChangedAt?: Date | string | null }).passwordChangedAt)]
+    .filter((instant): instant is Date | string => instant != null)
+    .map((instant) => new Date(instant).getTime());
+  return instants.length === 0 ? undefined : Math.max(...instants);
+};
 
 const unauthenticatedFallback = { statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' } as const;
 
 const unauthenticated = (): HttpError => new HttpError(unauthenticatedFallback);
+
+const emailNotConfirmed = (): HttpError => new HttpError({
+  statusCode: 403,
+  code: 'EMAIL_NOT_CONFIRMED',
+  message: 'Confirme o seu e-mail para entrar.'
+});
 
 const sessionExpired = (): HttpError => new HttpError({
   statusCode: 401,
@@ -76,6 +98,22 @@ export const createRequireSession = (dependencies: SessionGuardDependencies, opt
     applyAuthCookies(reply, responseHeaders);
 
     const { session, user } = result;
+    // A session older than the last time the account's credential was replaced under the person (a reset, Google taking
+    // the account over) is not theirs, even if its row survived the deletion that came with the replacement (issue #719).
+    // The date is the greater of the user's and the credential's own: the reset stamps the latter, in its own statement.
+    const changedAt = await passwordChangedAtOf(dependencies.auth, user);
+    if (changedAt !== undefined && new Date(session.createdAt).getTime() <= changedAt) {
+      await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => undefined);
+      throw unauthenticated();
+    }
+    // "Sem confirmar, não há sessão" (2026-10-26), with one explicit exception: the account created by accepting an
+    // invitation keeps the session of the acceptance while it keeps the link its invitation gave it, only to be told
+    // to confirm and to confirm with a click. It opens nothing (decision 2026-10-27). Any other unconfirmed
+    // account's session is revoked here.
+    if (user.emailVerified !== true && !(await unconfirmedAccountMayHoldSession(dependencies.auth, user.id))) {
+      await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => undefined);
+      throw unauthenticated();
+    }
     const ageMs = Date.now() - new Date(session.createdAt).getTime();
     if (ageMs > AUTH_SESSION_MAX_AGE_MS) {
       await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => {
@@ -83,12 +121,15 @@ export const createRequireSession = (dependencies: SessionGuardDependencies, opt
       });
       throw sessionExpired();
     }
+    // After the age: a session past its 30 days is a 401 and is revoked, whatever the account has confirmed.
+    if (user.emailVerified !== true && options.allowUnconfirmed !== true) throw emailNotConfirmed();
 
     request.auth = {
       userId: user.id,
       sessionId: session.id,
       claims: createVerifiedUserClaims({ userId: user.id }),
       user: { id: user.id, name: user.name, email: user.email },
+      emailVerified: user.emailVerified === true,
       expiresAt: new Date(session.expiresAt).toISOString()
     };
   };

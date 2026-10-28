@@ -4,7 +4,6 @@ import { resolve } from 'node:path';
 
 import { z } from 'zod';
 
-import { createDisplayNameSchema, hasInvisibleCharacters } from '@ageniza/contracts';
 import { createLogger } from '@ageniza/core';
 import { createDatabaseClient, raw, type SqlBinding } from '@ageniza/database';
 import { agencyActivationEmail, assertEmailAddress, createEmailSender, type EmailSender } from '@ageniza/email';
@@ -70,27 +69,6 @@ export const normalizeEmail = (value: string): string => {
     throw new AgencyCliError('owner-email must be a valid email address.');
   }
   return email;
-};
-
-export const normalizeAgencyName = (value: string): string => {
-  const name = value.trim();
-  if (name.length === 0) throw new AgencyCliError('name must not be blank.');
-  // Matches the database constraint, which bounds bytes so the templates' UTF-16 limit always
-  // holds; a longer name would create the agency and only then fail every invitation (issue #38).
-  if (Buffer.byteLength(name, 'utf8') > 256) throw new AgencyCliError('name must be at most 256 bytes.');
-  // The same rule as a person's display name: the name goes into the e-mails as text, and an invisible or bidi character in it
-  // would be read as something else. The CLI is the only way the name comes in, so it is checked here.
-  const parsed = createDisplayNameSchema(256).safeParse(name);
-  if (!parsed.success) {
-    throw new AgencyCliError(`name ${parsed.error.issues[0]?.message ?? 'is not a valid display name'}.`);
-  }
-  // The agency name is not in the decision of 2026-10-08 that keeps the person's name as it is, and it goes into the client's e-mail,
-  // so the CLI also refuses what the one rule of invisible characters refuses (variation selectors, the combining grapheme joiner,
-  // the Braille blank and the rest). A whole emoji sequence is still accepted, as the rule reads it.
-  if (hasInvisibleCharacters(parsed.data)) {
-    throw new AgencyCliError('name must not contain invisible characters.');
-  }
-  return parsed.data;
 };
 
 export const assertUuid = (value: string, optionName = 'agency-id'): string => {
@@ -163,15 +141,18 @@ const createInvitation = async (
   agencyId: string,
   email: string
 ): Promise<{ invitation: InvitationRow; token: string }> => {
+  // The link only exists in the e-mail (nobody sees it, the operator included), so it is the token of the
+  // e-mail: accepting through it confirms the account (decision 2026-10-27). The column of the token to
+  // copy is required, so it holds the hash of a random token that no one ever receives.
   const token = createInvitationToken();
-  const tokenHash = hashInvitationToken(token);
+  const tokenHash = hashInvitationToken(createInvitationToken());
   const result = await transaction.query<InvitationRow>(
     `insert into public.invitations
-       (agency_id, purpose, email, role_id, client_id, token_hash, expires_at,
+       (agency_id, purpose, email, role_id, client_id, token_hash, email_token_hash, expires_at,
         invited_by_user_id, accepted_by_user_id)
-     values (?, 'agency_activation', ?, null, null, ?, now() + interval '7 days', null, null)
+     values (?, 'agency_activation', ?, null, null, ?, ?, now() + interval '7 days', null, null)
      returning id, email, expires_at`,
-    [agencyId, email, tokenHash]
+    [agencyId, email, tokenHash, hashInvitationToken(token)]
   );
   return { invitation: oneRow(result.rows, 'The activation invitation could not be created.'), token };
 };
@@ -186,12 +167,54 @@ export interface AgencyStatusResult {
   readonly status: 'active' | 'suspended';
 }
 
+export type AgencyPlan = 'trial' | 'ativo' | 'isenta';
+
 export interface AgencyCommandService {
-  create(input: { readonly name: string; readonly ownerEmail: string }): Promise<AgencyCreateResult>;
   suspend(agencyId: string): Promise<AgencyStatusResult>;
   reactivate(agencyId: string): Promise<AgencyStatusResult>;
   resendActivation(agencyId: string): Promise<AgencyCreateResult>;
+  setPlan(agencyId: string, plan: AgencyPlan, endsAt?: string): Promise<AgencyPlanResult>;
+  setEmailLimit(agencyId: string, perDay: number | null): Promise<AgencyEmailLimitResult>;
 }
+
+export interface AgencyPlanResult {
+  readonly agencyId: string;
+  readonly plan: AgencyPlan;
+  readonly trialEndsAt: string | null;
+}
+
+export interface AgencyEmailLimitResult {
+  readonly agencyId: string;
+  /** Null: the plan's default (20 a day in trial, 200 otherwise). */
+  readonly dailyEmailLimit: number | null;
+}
+
+export const AGENCY_PLANS: readonly AgencyPlan[] = ['trial', 'ativo', 'isenta'];
+
+/** `--per-day`: a whole number from 0 to 100000, or `padrao` for the plan's default. */
+export const parseDailyEmailLimit = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (trimmed === 'padrao') return null;
+  if (!/^\d{1,6}$/.test(trimmed) || Number(trimmed) > 100_000) {
+    throw new AgencyCliError('per-day must be a whole number from 0 to 100000, or padrao for the default of the plan.');
+  }
+  return Number(trimmed);
+};
+
+/** The trial's storage quota, which `upgrade` lifts back to the deployment default. */
+const TRIAL_STORAGE_BYTES = 2 * 1024 * 1024 * 1024;
+
+/** A bare date ends at the last second of that day in Brasília. */
+export const parseTrialEnd = (value: string, now: Date = new Date()): Date => {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/.test(trimmed)) {
+    throw new AgencyCliError('ends-at must be an ISO 8601 date, such as 2026-12-31 or 2026-12-31T23:59:00-03:00.');
+  }
+  const date = new Date(trimmed.length === 10 ? `${trimmed}T23:59:59-03:00` : trimmed);
+  if (Number.isNaN(date.getTime())) throw new AgencyCliError('ends-at must be a valid date.');
+  if (date.getTime() <= now.getTime()) throw new AgencyCliError('ends-at must be in the future.');
+  return date;
+};
 
 export interface CreateAgencyCommandServiceOptions {
   readonly database: AgencyCliDatabase;
@@ -200,40 +223,6 @@ export interface CreateAgencyCommandServiceOptions {
 }
 
 export const createAgencyCommandService = (options: CreateAgencyCommandServiceOptions): AgencyCommandService => {
-  const create = async (input: { readonly name: string; readonly ownerEmail: string }): Promise<AgencyCreateResult> => {
-    const name = normalizeAgencyName(input.name);
-    const email = normalizeEmail(input.ownerEmail);
-    const persisted = await options.database.transaction(async (transaction): Promise<PersistedInvitation> => {
-      const agencyResult = await transaction.query<AgencyRow>(
-        `insert into public.agencies (name, status, owner_user_id)
-         values (?, 'active', null)
-         returning id, name`,
-        [name]
-      );
-      const agency = oneRow(agencyResult.rows, 'The agency could not be created.');
-      const { invitation, token } = await createInvitation(transaction, agency.id, email);
-      await recordAudit(transaction, 'agency.created', agency.id, 'agency', agency.id);
-      await recordAudit(transaction, 'invitation.sent', agency.id, 'invitation', invitation.id);
-      return {
-        agencyId: agency.id,
-        agencyName: name,
-        email,
-        token,
-        expiresAt: asIsoDate(invitation.expires_at)
-      };
-    });
-
-    // The transaction is committed before this await. A delivery failure leaves the invitation
-    // valid and therefore retryable through resend-activation.
-    await options.mailer.sendActivationEmail({
-      to: persisted.email,
-      agencyName: persisted.agencyName,
-      actionUrl: appUrlFor(options.appPublicUrl, persisted.token),
-      expiresAt: persisted.expiresAt
-    });
-    return { agencyId: persisted.agencyId, expiresAt: persisted.expiresAt };
-  };
-
   const changeStatus = async (
     agencyIdInput: string,
     status: 'active' | 'suspended',
@@ -313,8 +302,73 @@ export const createAgencyCommandService = (options: CreateAgencyCommandServiceOp
     return { agencyId: persisted.agencyId, expiresAt: persisted.expiresAt };
   };
 
+  /**
+   * The one internal change of the plan (decision 2026-10-27, the agency is only born through the product): `isenta` pays
+   * nothing and has everything, `ativo` is an agency that upgraded, `trial` gives the agency a trial with another end. It runs
+   * as the owner role, which the triggers of the plan do not govern; the one-trial-per-e-mail and per-owner indexes still
+   * hold for a trial. The application role never writes `plan`.
+   */
+  const setPlan = async (agencyIdInput: string, plan: AgencyPlan, endsAtInput?: string): Promise<AgencyPlanResult> => {
+    const agencyId = assertUuid(agencyIdInput);
+    if (!AGENCY_PLANS.includes(plan)) throw new AgencyCliError('plan must be one of isenta, ativo or trial.');
+    if ((plan === 'trial') !== (endsAtInput !== undefined)) {
+      throw new AgencyCliError(plan === 'trial' ? 'Option --ends-at is required for the trial plan.' : 'Option --ends-at is only for the trial plan.');
+    }
+    const endsAt = endsAtInput === undefined ? null : parseTrialEnd(endsAtInput).toISOString();
+    return options.database.transaction(async (transaction) => {
+      const result = await transaction.query<AgencyRow>('select id, owner_user_id from public.agencies where id = ? for update', [agencyId]);
+      const agency = oneRow(result.rows, 'Agency not found.');
+      if (plan === 'trial' && (agency.owner_user_id === null || agency.owner_user_id === undefined)) {
+        throw new AgencyCliError('A trial needs the agency to have an owner.');
+      }
+      try {
+        await transaction.query(
+          `update public.agencies
+              set plan = ?, trial_ends_at = ?, updated_at = now(),
+                  trial_owner_email_key = case when ? = 'trial'
+                    then (select app_private.trial_email_key(person.email) from auth."user" person where person.id = public.agencies.owner_user_id)
+                    else null end
+            where id = ?`,
+          [plan, endsAt, plan, agencyId]
+        );
+      } catch (error) {
+        if (typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '23505') {
+          throw new AgencyCliError('The owner of this agency, or an account with the same e-mail, already has another agency in trial.');
+        }
+        throw error;
+      }
+      if (plan === 'trial') {
+        await transaction.query(
+          `insert into public.agency_storage_quotas (agency_id, quota_bytes) values (?, ?)
+           on conflict (agency_id) do update set quota_bytes = excluded.quota_bytes, updated_at = now()`,
+          [agencyId, TRIAL_STORAGE_BYTES]
+        );
+      } else {
+        await transaction.query(
+          'update public.agency_storage_quotas set quota_bytes = null, updated_at = now() where agency_id = ? and quota_bytes = ?',
+          [agencyId, TRIAL_STORAGE_BYTES]
+        );
+      }
+      await recordAudit(transaction, `agency.plan_${plan}`, agencyId, 'agency', agencyId);
+      return { agencyId, plan, trialEndsAt: endsAt };
+    });
+  };
+
+  /** The daily e-mail limit the operation sets for one agency (decision 2026-10-26, item 8); null returns to the default. */
+  const setEmailLimit = async (agencyIdInput: string, perDay: number | null): Promise<AgencyEmailLimitResult> => {
+    const agencyId = assertUuid(agencyIdInput);
+    return options.database.transaction(async (transaction) => {
+      const result = await transaction.query<AgencyRow>('select id from public.agencies where id = ? for update', [agencyId]);
+      oneRow(result.rows, 'Agency not found.');
+      await transaction.query('update public.agencies set daily_email_limit = ?, updated_at = now() where id = ?', [perDay, agencyId]);
+      await recordAudit(transaction, 'agency.email_limit_changed', agencyId, 'agency', agencyId);
+      return { agencyId, dailyEmailLimit: perDay };
+    });
+  };
+
   return {
-    create,
+    setPlan,
+    setEmailLimit,
     suspend: (agencyId) => changeStatus(agencyId, 'suspended', 'agency.suspended'),
     reactivate: (agencyId) => changeStatus(agencyId, 'active', 'agency.reactivated'),
     resendActivation
@@ -407,28 +461,35 @@ export const createAgencyActivationMailer = (input: {
   };
 };
 
-type CreateArguments = { readonly command: 'create'; readonly name: string; readonly ownerEmail: string };
 type AgencyIdArguments = { readonly command: 'suspend' | 'reactivate' | 'resend-activation'; readonly agencyId: string };
-export type AgencyCliArguments = CreateArguments | AgencyIdArguments;
+type SetPlanArguments = { readonly command: 'set-plan'; readonly agencyId: string; readonly plan: AgencyPlan; readonly endsAt?: string };
+type SetEmailLimitArguments = { readonly command: 'set-email-limit'; readonly agencyId: string; readonly perDay: number | null };
+export type AgencyCliArguments = AgencyIdArguments | SetPlanArguments | SetEmailLimitArguments;
 
+// An agency is only born through the product ("Criar agência"); there is no command that creates one.
 const usage = [
   'Usage:',
-  '  node dist/cli/agency.js create --name "<name>" --owner-email "<email>"',
+  '  node dist/cli/agency.js set-plan --agency-id <uuid> --plan isenta|ativo|trial [--ends-at <ISO 8601 date>]',
+  '  node dist/cli/agency.js set-email-limit --agency-id <uuid> --per-day <0-100000|padrao>',
   '  node dist/cli/agency.js suspend --agency-id <uuid>',
   '  node dist/cli/agency.js reactivate --agency-id <uuid>',
   '  node dist/cli/agency.js resend-activation --agency-id <uuid>'
 ].join('\n');
 
 const expectedOptions: Record<AgencyCliArguments['command'], readonly string[]> = {
-  create: ['name', 'owner-email'],
+  'set-plan': ['agency-id', 'plan', 'ends-at'],
+  'set-email-limit': ['agency-id', 'per-day'],
   suspend: ['agency-id'],
   reactivate: ['agency-id'],
   'resend-activation': ['agency-id']
 };
 
+const isCommand = (value: string | undefined): value is AgencyCliArguments['command'] =>
+  value !== undefined && Object.hasOwn(expectedOptions, value);
+
 export const parseAgencyCliArguments = (argv: readonly string[]): AgencyCliArguments => {
   const command = argv[0];
-  if (command !== 'create' && command !== 'suspend' && command !== 'reactivate' && command !== 'resend-activation') {
+  if (!isCommand(command)) {
     throw new AgencyCliError(usage);
   }
   const options: Record<string, string> = {};
@@ -446,19 +507,27 @@ export const parseAgencyCliArguments = (argv: readonly string[]): AgencyCliArgum
     }
     options[key] = value;
   }
-  if (command === 'create') {
-    const name = options.name;
-    const ownerEmail = options['owner-email'];
-    if (name === undefined) throw new AgencyCliError('Option --name is required.');
-    if (ownerEmail === undefined) throw new AgencyCliError('Option --owner-email is required.');
-    return { command, name, ownerEmail };
-  }
   const agencyId = options['agency-id'];
   if (agencyId === undefined) throw new AgencyCliError('Option --agency-id is required.');
+  if (command === 'set-plan') {
+    const plan = options.plan;
+    if (plan === undefined) throw new AgencyCliError('Option --plan is required.');
+    if (!(AGENCY_PLANS as readonly string[]).includes(plan)) throw new AgencyCliError('Option --plan must be isenta, ativo or trial.');
+    const endsAt = options['ends-at'];
+    if ((plan === 'trial') !== (endsAt !== undefined)) {
+      throw new AgencyCliError(plan === 'trial' ? 'Option --ends-at is required for the trial plan.' : 'Option --ends-at is only for the trial plan.');
+    }
+    return endsAt === undefined ? { command, agencyId, plan: plan as AgencyPlan } : { command, agencyId, plan: plan as AgencyPlan, endsAt };
+  }
+  if (command === 'set-email-limit') {
+    const perDay = options['per-day'];
+    if (perDay === undefined) throw new AgencyCliError('Option --per-day is required.');
+    return { command, agencyId, perDay: parseDailyEmailLimit(perDay) };
+  }
   return { command, agencyId };
 };
 
-export const formatAgencyCliOutput = (result: AgencyCreateResult | AgencyStatusResult): string =>
+export const formatAgencyCliOutput = (result: AgencyCreateResult | AgencyStatusResult | AgencyPlanResult | AgencyEmailLimitResult): string =>
   `${JSON.stringify(result)}\n`;
 
 export interface AgencyCliIo {
@@ -484,8 +553,9 @@ export const runAgencyCli = async (options: RunAgencyCliOptions = {}): Promise<n
     database ??= createAgencyCliDatabase(environment.migrationDatabaseUrl);
     mailer ??= createAgencyActivationMailer({ smtpUrl: environment.smtpUrl, emailFrom: environment.emailFrom });
     const service = createAgencyCommandService({ database, mailer, appPublicUrl: environment.appPublicUrl });
-    let result: AgencyCreateResult | AgencyStatusResult;
-    if (args.command === 'create') result = await service.create({ name: args.name, ownerEmail: args.ownerEmail });
+    let result: AgencyCreateResult | AgencyStatusResult | AgencyPlanResult | AgencyEmailLimitResult;
+    if (args.command === 'set-plan') result = await service.setPlan(args.agencyId, args.plan, args.endsAt);
+    else if (args.command === 'set-email-limit') result = await service.setEmailLimit(args.agencyId, args.perDay);
     else if (args.command === 'suspend') result = await service.suspend(args.agencyId);
     else if (args.command === 'reactivate') result = await service.reactivate(args.agencyId);
     else result = await service.resendActivation(args.agencyId);

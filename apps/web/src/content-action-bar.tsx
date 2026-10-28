@@ -10,9 +10,9 @@ import {
   type PublishContentRequest,
   type RescheduleContentRequest
 } from '@ageniza/contracts';
-import { Button, FieldMessage, Textarea, TextInput } from '@ageniza/ui';
+import { Button, DatePicker, FieldMessage, Textarea } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import {
   ACTION_RULES,
@@ -71,6 +71,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
   const canApprove = useCan('conteudo.aprovar_pela_agencia');
   const canPublish = useCan('conteudo.publicar');
   const canCancel = useCan('conteudo.cancelar');
+  const blocked = useWriteBlocked();
   const permissions = new Set([
     ...(canOperate ? ['conteudo.operar'] : []),
     ...(canApprove ? ['conteudo.aprovar_pela_agencia'] : []),
@@ -157,6 +158,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
       loading={sending === action}
       disabled={waiting || disabled}
       aria-expanded={action === 'approve' || action === 'publish' || action === 'reschedule' ? panel === action : undefined}
+      blockedReason={blocked}
       onClick={handler}
     >{ACTION_RULES[action].label}</Button>
   );
@@ -199,14 +201,14 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
       </div>}
       {panel === 'publish' && available.includes('publish') && <div className="form-field content-actions__panel">
         <label htmlFor={`${ids}-published`}>Dia real da publicação</label>
-        <TextInput
+        <DatePicker
           id={`${ids}-published`}
-          type="date"
+          today={todayInSaoPaulo()}
           max={todayInSaoPaulo()}
           value={publishedOn}
           disabled={busy}
-          onChange={(event) => { setPublishedOn(event.target.value); setProblem(undefined); }}
-          aria-invalid={problem !== undefined}
+          onChange={(day) => { setPublishedOn(day); setProblem(undefined); }}
+          aria-invalid={problem === undefined ? undefined : true}
           aria-describedby={problem === undefined ? undefined : `${ids}-problem`}
         />
         {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}
@@ -216,13 +218,13 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
       </div>}
       {panel === 'reschedule' && available.includes('reschedule') && <div className="form-field content-actions__panel">
         <label htmlFor={`${ids}-reschedule`}>Novo dia da publicação</label>
-        <TextInput
+        <DatePicker
           id={`${ids}-reschedule`}
-          type="date"
+          today={todayInSaoPaulo()}
           value={publishOn}
           disabled={busy}
-          onChange={(event) => { setPublishOn(event.target.value); setProblem(undefined); }}
-          aria-invalid={problem !== undefined}
+          onChange={(day) => { setPublishOn(day); setProblem(undefined); }}
+          aria-invalid={problem === undefined ? undefined : true}
           aria-describedby={problem === undefined ? undefined : `${ids}-problem`}
         />
         {problem !== undefined && <FieldMessage id={`${ids}-problem`} role="alert">{problem}</FieldMessage>}

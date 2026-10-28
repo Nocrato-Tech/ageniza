@@ -11,12 +11,11 @@ import { HttpError } from '@ageniza/core';
 import { raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 
 import type { AuthInstance } from '../auth/better-auth.js';
-import { applyAuthCookies, toAuthHeaders } from '../auth/bridge.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import { noStore } from '../../plugins/infra/no-store.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
-import { findPreferredContext, isValidAgencyContext, isValidClientContext, listValidContexts } from './service.js';
+import { canCreateAgency, findPreferredContext, isValidAgencyContext, isValidClientContext, listValidContexts, markClientPortalEntered } from './service.js';
 
 export type ContextPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -37,28 +36,12 @@ const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth'
   return auth;
 };
 
-/**
- * Ends the current request's session (issue #68) by calling the same Better Auth `signOut`
- * `/auth/logout` uses, forwarding the request's own cookie so it revokes exactly that session.
- * Never throws: a failure here must not turn an otherwise-normal `decision: 'none'` response into
- * an unrelated 500, and the cleared cookie (when it succeeds) is applied to the reply either way.
- */
-const endSessionForNoContext = async (auth: AuthInstance, request: FastifyRequest, reply: FastifyReply): Promise<void> => {
-  try {
-    const { headers } = await auth.api.signOut({ headers: toAuthHeaders(request), returnHeaders: true });
-    applyAuthCookies(reply, headers);
-  } catch (error) {
-    request.log.error({
-      operation: 'contexts.resolve_no_context_end_session',
-      status: 'failed',
-      error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'RESOLVE_NO_CONTEXT_SESSION_END_FAILED' }
-    }, 'Failed to end the session for a resolve that found zero contexts');
-  }
-};
-
 /** Registers `/me/contexts*` and the client onboarding-seen route (issue #33). */
 export const registerContextModule = (app: FastifyInstance, dependencies: ContextModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
+  // An account that has not confirmed its e-mail asks where to go and is told there is nowhere (decision 2026-10-27):
+  // `listValidContexts` answers it empty, so the screen can say "confirme seu e-mail" instead of a bare 403.
+  const requireSessionUnconfirmedAllowed = createRequireSession({ auth: dependencies.auth }, { allowUnconfirmed: true });
 
   // Declared once per route: the same object is the documentation metadata and the source of the
   // schemas the handler validates with.
@@ -83,48 +66,53 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
     schemas: { params: ClientPathParamsSchema }
   } satisfies DocumentedRouteConfig;
 
-  app.get('/me/contexts', { onRequest: noStore, preHandler: requireSession, config: listDocs }, async (request, reply) => {
+  app.get('/me/contexts', { onRequest: noStore, preHandler: requireSessionUnconfirmedAllowed, config: listDocs }, async (request, reply) => {
     const auth = requireAuth(request);
-    const { contexts } = await withAuthenticatedUserTransaction(
+    const { contexts, allowed } = await withAuthenticatedUserTransaction(
       dependencies.database,
       auth.claims,
-      (transaction) => listValidContexts(transaction)
+      async (transaction) => ({ ...(await listValidContexts(transaction)), allowed: await canCreateAgency(transaction) })
     );
-    return reply.send(routeResponse(listDocs, request, { contexts }));
+    return reply.send(routeResponse(listDocs, request, { contexts, canCreateAgency: allowed }));
   });
 
-  app.get('/me/contexts/resolve', { preHandler: requireSession, config: resolveDocs }, async (request, reply) => {
+  app.get('/me/contexts/resolve', { preHandler: requireSessionUnconfirmedAllowed, config: resolveDocs }, async (request, reply) => {
     const auth = requireAuth(request);
     const query = routeQuery(resolveDocs, request);
-    const { contexts, lastUsedContext } = await withAuthenticatedUserTransaction(
+    const { contexts, lastUsedContext, allowed } = await withAuthenticatedUserTransaction(
       dependencies.database,
       auth.claims,
-      (transaction) => listValidContexts(transaction)
+      async (transaction) => ({ ...(await listValidContexts(transaction)), allowed: await canCreateAgency(transaction) })
     );
 
-    // Step 2: no valid context. Per the 2026-09-24 decision, this ends the session instead of
-    // leaving the caller authenticated inside an app with nothing to do — the person who lost
-    // their last context mid-use is signed out on the very next pass through `resolve`.
+    // Step 2: no valid context. The session stays: only a confirmed account has one, and it goes to
+    // `/comecar` (2026-10-26 decision on the public sign-up, which replaced ending the session here).
     if (contexts.length === 0) {
-      await endSessionForNoContext(dependencies.auth, request, reply);
       return reply.send(routeResponse(resolveDocs, request, { decision: 'none' }));
     }
+    // The portal is entered when the decision is to enter it; the list of contexts alone enters nothing.
+    const enter = async (context: (typeof contexts)[number]): Promise<void> => {
+      if (context.type !== 'client') return;
+      await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) => markClientPortalEntered(transaction, context.clientId));
+    };
     // Step 3: exactly one valid context.
     if (contexts.length === 1) {
+      await enter(contexts[0]!);
       return reply.send(routeResponse(resolveDocs, request, { decision: 'enter', context: contexts[0]! }));
     }
     // Step 4: an explicit, valid `preferred` context wins over the last-used preference. An
     // invalid/inaccessible `preferred` is ignored in silence and the algorithm falls through.
     const preferred = query.preferred === undefined ? undefined : findPreferredContext(contexts, query.preferred);
     if (preferred !== undefined) {
-      return reply.send(routeResponse(resolveDocs, request, { decision: 'select', contexts, highlighted: preferred }));
+      return reply.send(routeResponse(resolveDocs, request, { decision: 'select', contexts, highlighted: preferred, canCreateAgency: allowed }));
     }
     // Step 5: the last-used context, if still valid.
     if (lastUsedContext !== null) {
+      await enter(lastUsedContext);
       return reply.send(routeResponse(resolveDocs, request, { decision: 'enter', context: lastUsedContext }));
     }
     // Step 6: no signal to prefer any one context.
-    return reply.send(routeResponse(resolveDocs, request, { decision: 'select', contexts, highlighted: null }));
+    return reply.send(routeResponse(resolveDocs, request, { decision: 'select', contexts, highlighted: null, canCreateAgency: allowed }));
   });
 
   app.put('/me/last-context', { preHandler: requireSession, config: lastContextDocs }, async (request, reply) => {
@@ -136,6 +124,7 @@ export const registerContextModule = (app: FastifyInstance, dependencies: Contex
         ? await isValidAgencyContext(transaction, body.agencyId)
         : await isValidClientContext(transaction, body.clientId);
       if (!valid) throw contextNotFound();
+      if (body.type === 'client') await markClientPortalEntered(transaction, body.clientId);
 
       await raw(transaction, `
         insert into public.user_context_preferences (user_id, context_type, agency_id, client_id, updated_at)

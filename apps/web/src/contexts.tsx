@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -7,12 +7,13 @@ import {
   PutLastContextResponseSchema,
   type Context
 } from '@ageniza/contracts';
-import { Briefcase, CircleAlert, LogOut, Store } from 'lucide-react';
+import { Briefcase, CircleAlert, LogOut, Plus, Store } from 'lucide-react';
 import { Button, ChoiceCard, LiveStatus, Skeleton } from '@ageniza/ui';
 
 import { useAuthSessionStore } from './auth.js';
 import { contextDestination, contextTarget, rememberContext } from './context-destination.js';
 import { contextDescription, contextKey, contextTitle } from './context-labels.js';
+import { CREATE_AGENCY_LABEL, CreateAgencyDialog } from './create-agency.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 
@@ -47,6 +48,8 @@ export function ContextSelectPage() {
     })
   });
 
+  const [createOpen, setCreateOpen] = useState(false);
+
   const choose = useMutation({
     mutationFn: (context: Context) => httpClient.request({
       path: '/me/last-context',
@@ -78,15 +81,12 @@ export function ContextSelectPage() {
 
   const decision = resolve.data?.decision;
   const enteredContext = resolve.data?.decision === 'enter' ? resolve.data.context : null;
-  // `resolve` already ended the session on the server. Calling `logout` here would answer 401
-  // without a session and trigger the session-ended redirect to `/entrar`; so only drop the client
-  // session and the cache, then go to the "no access" screen.
+  // No context at all: the session stays and the person goes to `/comecar` (2026-10-26 decision on the public sign-up).
   useEffect(() => {
     if (decision !== 'none') return;
-    authStore.end();
-    queryClient.clear();
-    navigate('/sem-acesso', { replace: true });
-  }, [decision, authStore, queryClient, navigate]);
+    queryClient.removeQueries({ queryKey: ['contexts'] });
+    navigate('/comecar', { replace: true });
+  }, [decision, queryClient, navigate]);
 
   // Entering records the context as the last one and goes to its area (`/agencia/...` or
   // `/portal/...`), never `/app`.
@@ -115,7 +115,7 @@ export function ContextSelectPage() {
 
   // Exactly one valid context is entered without asking; none at all is handled by the effect above.
   if (resolve.data.decision === 'enter') return <LiveStatus>Entrando…</LiveStatus>;
-  if (resolve.data.decision === 'none') return <LiveStatus>Encerrando a sessão…</LiveStatus>;
+  if (resolve.data.decision === 'none') return <LiveStatus>Abrindo…</LiveStatus>;
 
   const { contexts, highlighted } = resolve.data;
   const highlightedKey = highlighted === null ? null : contextKey(highlighted);
@@ -155,7 +155,17 @@ export function ContextSelectPage() {
           />
         </li>;
       })}
+      {resolve.data.canCreateAgency && <li>
+        <ChoiceCard
+          title={CREATE_AGENCY_LABEL}
+          description="Comece com 14 dias de teste, sendo a dona ou o dono da agência."
+          icon={<Plus />}
+          disabled={choose.isPending}
+          onClick={() => { setCreateOpen(true); }}
+        />
+      </li>}
     </ul>
+    {createOpen && <CreateAgencyDialog onClose={() => { setCreateOpen(false); }} />}
     <Button variant="ghost" leadingIcon={<LogOut />} onClick={() => signOut.mutate()} disabled={signOut.isPending}>Sair</Button>
   </section>;
 }

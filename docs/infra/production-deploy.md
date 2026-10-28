@@ -106,6 +106,20 @@ PostgreSQL 17 runs on the VPS as the internal `postgres` container ([ADR 0011](.
 - **Backups are not optional:** set up the [backup and restore runbook](backup-restore.md) (encrypted daily dumps to R2, with a rehearsed restore) before production holds real data.
 - `BETTER_AUTH_SECRET` signs and encrypts Better Auth sessions and tokens (issue #31); it must be at least 32 characters and is never logged. Generate one with `openssl rand -base64 48` and store only in `/etc/ageniza/runtime.env`. `APP_PUBLIC_URL` is the trusted browser origin (`https://<domain>`, no path) used for cookies, CSRF/origin checks, and reset-password links; it must be HTTPS in production. Both are required for the API to start.
 
+### Public address of the API (`API_PUBLIC_URL`)
+
+The browser reaches the API on `https://<domain>/api` (the web container proxies `/api`), and the cookie of the approval link (issue #712) is restricted to `<that path>/portal-approval`, so it only comes back if the API knows that path. `API_PUBLIC_URL` in `runtime.env` is that address, **the same value as `PRODUCTION_VITE_API_BASE_URL`** (HTTPS, no query or fragment, no credentials, and a path made only of letters, digits, `.`, `_`, `~` and `-`: the API refuses to start with anything else). Leave it empty for the default, `APP_PUBLIC_URL` plus `/api`; set it only if the web build was given another base. A mismatch does not break the API: the cookie is sent to a path the browser never asks for, and the link of the e-mail stops working.
+
+### Sign in with Google (optional)
+
+Google sign-in (issue #707) is **off** until `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set in `/etc/ageniza/runtime.env`; with both empty or absent, `GET /auth/providers` answers `{ "google": false }`, the Google routes answer 404 and the web build shows no button. Setting only one of the two makes the API refuse to start. To turn it on:
+
+1. In the Google Cloud Console create an OAuth client of type "Web application" and an OAuth consent screen with the scopes `openid`, `email` and `profile` only.
+2. Authorize the redirect URI `https://<domain>/api/auth/callback/google`: it is `APP_PUBLIC_URL` plus `/api/auth/callback/google`, because the web container proxies `/api` to the API. Use `GOOGLE_CALLBACK_URL` only for a callback that is not that one (it must be HTTPS in production and the same as the one authorized at Google).
+3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `runtime.env` (mode 600, like the other secrets). The secret is never sent to the browser, never logged, and not part of any image or build argument.
+
+Rotate the secret by creating a new one at Google, updating `runtime.env` and redeploying; turning Google off again does not touch the accounts that already signed in with it (they keep the second way in only while Google is on, and can still use "Esqueci a senha" to get a password).
+
 ### 3. Transactional email
 
 Invitations, email verification, and password resets need SMTP before the authentication work (issue #20) ships. Any provider with SMTP works; the application has no provider SDK.
@@ -203,7 +217,8 @@ sudo docker compose -p ageniza logs --tail=200 worker
 
 ### Agency operator CLI
 
-Agency creation and lifecycle commands are operator-only actions. Run them on the VPS with the
+An agency is created only through the product ("Criar agência", in a 14-day trial); no command creates one. The plan
+and lifecycle commands are operator-only actions. Run them on the VPS with the
 production API image, the application runtime settings, and the owner-only migration connection;
 the `api` service inherits `production-private`, the internal network shared with PostgreSQL.
 `MIGRATION_DATABASE_URL` must remain in `/etc/ageniza/migrations.env` and must never be added to
@@ -211,11 +226,24 @@ the `api` service inherits `production-private`, the internal network shared wit
 when applicable, the activation expiration; it never prints the activation token or link.
 
 ```bash
-docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js create --name "<agency name>" --owner-email "<owner@example.com>"
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js set-plan --agency-id <agency UUID> --plan <isenta|ativo|trial> [--ends-at <YYYY-MM-DD or ISO 8601 instant>]
+docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js set-email-limit --agency-id <agency UUID> --per-day <0-100000|padrao>
 docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js suspend --agency-id <agency UUID>
 docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js reactivate --agency-id <agency UUID>
 docker compose -p ageniza run --rm --env-file /etc/ageniza/runtime.env --env-file /etc/ageniza/migrations.env api node dist/cli/agency.js resend-activation --agency-id <agency UUID>
 ```
+
+`set-plan` is the only way to change the plan, and the application never writes `plan` (decision 2026-10-27, "a agência
+só nasce pelo produto e o plano isenta"). `isenta` is an agency that pays nothing and uses everything (ours, by the
+backfill); `ativo` is one that upgraded: neither has limits nor a read-only state, and the 2 GiB trial quota goes back to
+the deployment default. `trial` gives it a new trial end (`--ends-at` is required; a bare date ends at 23:59:59 in
+Brasília) and refuses when the owner, or an account with the same normalized e-mail, already has another agency in
+trial. Every change is audited (`agency.plan_<plan>`). `set-email-limit` overrides the daily cap of invitation e-mails of
+the agency (20 in trial, 200 otherwise; `padrao` returns to that default); the refused send answers `429
+DAILY_EMAIL_LIMIT`.
+
+`SUPPORT_CONTACT_EMAIL` in `runtime.env` is optional: a public e-mail, not a secret, that the API serves in
+`GET /agencies/:agencyId/me` so the plan notice can name a contact. Unset, the notice names none.
 
 Account e-mail changes are operator-only too, with the same image and files. A person asks from the
 account menu; nothing notifies the operation, so `list` is how open requests are found. `approve`

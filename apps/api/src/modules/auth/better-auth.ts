@@ -8,11 +8,12 @@ import { captureUnexpectedError, type CoreLogger } from '@ageniza/core';
 import { currentAuditRequestId, currentPasswordResetInviteToken } from './audit-context.js';
 import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { EmailService } from './email-service.js';
+import { createGoogleUserInfo } from './google.js';
 import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
 
 export interface CreateAuthDependencies {
   readonly pool: Pool;
-  readonly config: Pick<ApiConfig, 'authSecret' | 'appPublicUrl' | 'environment'>;
+  readonly config: Pick<ApiConfig, 'authSecret' | 'appPublicUrl' | 'environment' | 'google'>;
   readonly sender: EmailService;
   readonly logger: CoreLogger;
   readonly auditRecorder: AuthAuditRecorder;
@@ -59,7 +60,44 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
       updateAge: 60 * 60 * 24,
       cookieCache: { enabled: false }
     },
+    user: {
+      // The day the credential of the account was last replaced (a reset, Google taking an account over): a session
+      // created at or before it is refused by the guard (issue #719). Read-only here; the database writes it.
+      additionalFields: { passwordChangedAt: { type: 'date', required: false, input: false } }
+    },
+    ...(dependencies.config.google === undefined ? {} : {
+      socialProviders: {
+        google: {
+          clientId: dependencies.config.google.clientId,
+          clientSecret: dependencies.config.google.clientSecret,
+          redirectURI: dependencies.config.google.callbackUrl,
+          // Only openid, email and profile (decision 2026-10-26, item 7): no scope Google already granted to the client is added.
+          includeGrantedScopes: false,
+          getUserInfo: createGoogleUserInfo({ clientId: dependencies.config.google.clientId, pool: dependencies.pool, logger: dependencies.logger })
+        }
+      }
+    }),
+    account: {
+      // The day the password of this credential was last replaced (issue #719). Set by a database trigger; read-only here.
+      additionalFields: { passwordChangedAt: { type: 'date', required: false, input: false } },
+      // The only provider is Google, and it links to a confirmed account only when it says the address is verified
+      // (Better Auth's `requireLocalEmailVerified` stays on); no provider is trusted without that.
+      accountLinking: { enabled: true, trustedProviders: [] },
+      // A later sign-in changes nothing in the account row, and the first one stores no token either (the hook below).
+      updateAccountOnSignIn: false
+    },
     databaseHooks: {
+      account: {
+        create: {
+          before: async (account) => {
+            if (account.providerId !== 'credential' && account.providerId !== 'google') return false;
+            // The product never calls Google again after the sign-in, so nothing of the grant is kept (decision, item 7).
+            return {
+              data: { ...account, accessToken: null, refreshToken: null, idToken: null, accessTokenExpiresAt: null, refreshTokenExpiresAt: null }
+            };
+          }
+        }
+      },
       session: {
         update: {
           // B8: the absolute session lifetime must not depend solely on `session-guard.ts`
@@ -82,7 +120,14 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
     verification: { storeIdentifier: 'hashed' },
     emailAndPassword: {
       enabled: true,
+      // The public sign-up is `POST /auth/sign-up` (routes.ts), never Better Auth's own endpoint.
       disableSignUp: true,
+      // Off on purpose: `POST /auth/login` checks the password itself and refuses an unconfirmed
+      // account before it ever calls `signInEmail` (routes.ts), so the login of any unconfirmed account
+      // answers like invalid credentials. `signInEmail` must still sign in the one unconfirmed account
+      // that gets a session, the one `accept-new-account` just created (2026-10-26 decision on the
+      // copyable invitation link, item 2); the session guard then holds the rest of the rule.
+      requireEmailVerification: false,
       minPasswordLength: 10,
       autoSignIn: false,
       resetPasswordTokenExpiresIn: 60 * 30,
@@ -91,6 +136,20 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
         dependencies.sender.sendPasswordReset({ to: user.email, token, inviteToken: currentPasswordResetInviteToken() });
       },
       onPasswordReset: async ({ user }): Promise<void> => {
+        // The reset link reached the mailbox, so it confirms an unconfirmed account and voids its
+        // pending confirmation links and the Terms acceptance recorded at sign-up: whoever signed up with
+        // someone else's address loses it here (finding A1 of the review of PR #720). If this fails the account stays unconfirmed, and its
+        // links still ask for the password, which is now the new one.
+        try {
+          await dependencies.pool.query('select app_private.confirm_email_by_password_reset($1::uuid)', [user.id]);
+        } catch (error) {
+          dependencies.logger.error({
+            operation: 'auth.email_verification_by_reset',
+            status: 'failed',
+            error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'EMAIL_VERIFICATION_BY_RESET_FAILED' }
+          }, 'Failed to confirm the e-mail after a password reset');
+          captureUnexpectedError(error, { operation: 'auth.email_verification_by_reset' });
+        }
         // The notice about an account e-mail change tells the person to change the password if the
         // request was not theirs, so this is where that request dies (issue #80, security review of
         // PR #325). It never undoes the reset: if it fails, the request is still refused when it is
@@ -122,4 +181,26 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
 
 export type AuthInstance = ReturnType<typeof buildAuth>;
 
-export const createAuth = (dependencies: CreateAuthDependencies): AuthInstance => buildAuth(dependencies);
+const poolsByAuth = new WeakMap<AuthInstance, Pool>();
+
+export const createAuth = (dependencies: CreateAuthDependencies): AuthInstance => {
+  const auth = buildAuth(dependencies);
+  poolsByAuth.set(auth, dependencies.pool);
+  return auth;
+};
+
+/**
+ * Whether an unconfirmed account may keep a session: only the account created by accepting an
+ * invitation, while it keeps the link that invitation gave it (migration 20261027010300). Any
+ * failure answers no.
+ */
+export const unconfirmedAccountMayHoldSession = async (auth: AuthInstance, userId: string): Promise<boolean> => {
+  const pool = poolsByAuth.get(auth);
+  if (pool === undefined) return false;
+  try {
+    const result = await pool.query<{ allowed: boolean }>('select app_private.unconfirmed_account_may_hold_session($1::uuid) as allowed', [userId]);
+    return result.rows[0]?.allowed === true;
+  } catch {
+    return false;
+  }
+};

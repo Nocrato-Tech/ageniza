@@ -18,6 +18,7 @@ import { contextDestination, rememberContext, type ContextTarget } from './conte
 import { useDocumentTitle } from './document-title.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { forgetGoogleInvite, GoogleSignInBlock } from './google-sign-in.js';
 import { invitationNoticeState } from './invitation-notice.js';
 
 const INVITATION_INVALID = 'Este convite não é mais válido';
@@ -78,6 +79,11 @@ export function InvitationPage() {
     // The new session may belong to a different account; drop the previous account's cache first.
     queryClient.clear();
     await authStore.refresh();
+    // The account of a copied link has a session that opens nothing until its e-mail is confirmed (decision 2026-10-27).
+    if (authStore.getSnapshot().emailUnconfirmed === true) {
+      navigate('/confirme-seu-email', { replace: true });
+      return;
+    }
     const target = invitationTarget(context);
     await rememberContext(httpClient, target);
     navigate(contextDestination(target), { replace: true, state: noticeState() });
@@ -127,6 +133,7 @@ export function InvitationPage() {
   const enterWithAnotherAccount = async (): Promise<void> => {
     if (session.isAuthenticated) {
       try { await httpClient.request({ path: '/auth/logout', method: 'POST', response: AuthLogoutResponseSchema }); } catch { /* best effort */ }
+      forgetGoogleInvite();
       authStore.end();
       queryClient.clear();
     }
@@ -177,6 +184,8 @@ export function InvitationPage() {
   const { agency, client, email, accountExists } = preview.data;
   const connectedWithAnotherAccount = session.user !== null && session.user.email !== email;
   const showMismatch = mismatch || (fromInviteLogin && connectedWithAnotherAccount);
+  // Google is a way in for a visitor; whoever is already connected has no use for it here.
+  const googleBlock = session.status === 'ready' && !session.isAuthenticated ? <GoogleSignInBlock inviteToken={token} /> : null;
 
   return <AuthPanel titleId="invite-title" title="Você foi convidado">
     <dl className="auth-details">
@@ -199,6 +208,7 @@ export function InvitationPage() {
             loading={accept.isPending}
           >Aceitar convite</Button>
           <Button variant="ghost" className="auth-submit" onClick={() => { void enterWithAnotherAccount(); }}>Entrar com outra conta</Button>
+          {googleBlock}
         </div>
       : <form ref={formRef} className="auth-form" onSubmit={onSubmitNewAccount} noValidate>
         {summary}
@@ -218,6 +228,7 @@ export function InvitationPage() {
         </label>
         {formError !== undefined && <AuthMessage tone="danger" role="alert">{formError}</AuthMessage>}
         <Button type="submit" className="auth-submit" loading={createAccount.isPending} disabled={!acceptedTerms}>Criar conta e entrar</Button>
+        {googleBlock}
       </form>}
   </AuthPanel>;
 }

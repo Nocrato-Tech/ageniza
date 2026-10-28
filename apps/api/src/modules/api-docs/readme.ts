@@ -8,12 +8,14 @@ import {
   type ApiModule,
   type DocumentedRoute
 } from './catalog.js';
+import { routeErrors } from './document.js';
 
 const jsonBlock = (value: unknown): string => `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
 
 const errorList = (route: DocumentedRoute): string => {
-  if (route.errors.length === 0) return 'Nenhum.';
-  return [...route.errors]
+  const errors = routeErrors(route);
+  if (errors.length === 0) return 'Nenhum.';
+  return [...errors]
     .sort((a, b) => a.status - b.status || a.code.localeCompare(b.code))
     .map((error) => `\`${error.status} ${error.code}\``)
     .join(' · ');
@@ -89,6 +91,13 @@ export const renderApiSummary = (): string => {
     `\`${COMMON_ERRORS.internal.status} ${COMMON_ERRORS.internal.code}\`, as de escrita também \`${COMMON_ERRORS.csrf.status} ${COMMON_ERRORS.csrf.code}\`, e as que`,
     `recebem corpo \`${COMMON_ERRORS.payloadTooLarge.status} ${COMMON_ERRORS.payloadTooLarge.code}\`. As mensagens em português são as que o`,
     'produto mostra; as demais são internas.',
+    '',
+    'As de escrita de uma agência ou do portal também podem responder `409 AGENCY_READ_ONLY` quando o período de teste',
+    'da agência terminou (só o que reduz acesso continua: remover colaborador, remover acesso ao portal e cancelar convite),',
+    'e as que criam cliente, convidam colaborador ou reativam um deles, `409 TRIAL_CLIENT_LIMIT` ou',
+    '`409 TRIAL_COLLABORATOR_LIMIT` durante o teste. Os convites (criar e reenviar, de colaborador e de portal) podem',
+    'responder `429 DAILY_EMAIL_LIMIT` quando a agência passou do limite diário de e-mails (20 no teste e 200 nos demais',
+    'planos, ajustável pela operação). Todos vêm do banco, valem em toda rota e não são repetidos em cada uma.',
     '',
     '## Rotas por módulo',
     '',

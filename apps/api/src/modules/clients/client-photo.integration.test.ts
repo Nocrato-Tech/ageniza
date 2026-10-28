@@ -22,6 +22,7 @@ import { createIdentityStorageClient } from '../identity-storage/storage-client.
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
 import { CLIENT_PHOTO_RATE_LIMIT } from './policy.js';
 import { registerClientModule } from './routes.js';
+import { unusedEmailService } from './test-support/email-service.js';
 
 // Issue #126 acceptance, against the real local database (`pnpm db:migrate`) and the LocalStack
 // identity bucket started by `pnpm storage:start`. Every assertion that an object is (or is not)
@@ -402,6 +403,7 @@ describe('client photo (issue #126)', () => {
       requirePermission,
       requireClientAccess: createRequireClientAccess({ database: app.database }),
       identityStorage: { ...real, uploadIdentityImage: (input) => { uploads += 1; return real.uploadIdentityImage(input); } },
+      emailService: unusedEmailService,
       photoUrlExpirySeconds: TEST_IDENTITY_STORAGE_CONFIG.downloadUrlExpirySeconds,
       photoMaxImageBytes: TEST_IDENTITY_STORAGE_CONFIG.maxImageBytes
     });
@@ -446,6 +448,7 @@ describe('client photo (issue #126)', () => {
       requirePermission,
       requireClientAccess: createRequireClientAccess({ database }),
       identityStorage: createIdentityStorageClient(TEST_IDENTITY_STORAGE_CONFIG),
+      emailService: unusedEmailService,
       photoUrlExpirySeconds: TEST_IDENTITY_STORAGE_CONFIG.downloadUrlExpirySeconds,
       photoMaxImageBytes: TEST_IDENTITY_STORAGE_CONFIG.maxImageBytes
     });
@@ -487,6 +490,7 @@ describe('client photo (issue #126)', () => {
       requirePermission,
       requireClientAccess: createRequireClientAccess({ database }),
       identityStorage: createIdentityStorageClient(TEST_IDENTITY_STORAGE_CONFIG),
+      emailService: unusedEmailService,
       photoUrlExpirySeconds: TEST_IDENTITY_STORAGE_CONFIG.downloadUrlExpirySeconds,
       photoMaxImageBytes: TEST_IDENTITY_STORAGE_CONFIG.maxImageBytes
     });
@@ -623,6 +627,7 @@ describe('client photo (issue #126)', () => {
           requirePermission,
           requireClientAccess: createRequireClientAccess({ database }),
           identityStorage: createIdentityStorageClient(TEST_IDENTITY_STORAGE_CONFIG),
+          emailService: unusedEmailService,
           photoUrlExpirySeconds: TEST_IDENTITY_STORAGE_CONFIG.downloadUrlExpirySeconds,
           photoMaxImageBytes: TEST_IDENTITY_STORAGE_CONFIG.maxImageBytes
         });

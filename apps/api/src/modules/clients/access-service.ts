@@ -5,14 +5,17 @@ import { foldTextSql } from '../../plugins/infra/sql-text.js';
 import type { ClientTransaction } from './service.js';
 
 /**
- * Access to a client's portal, seen from the agency (specs/clientes.md sections 4 and 6; issue #132).
+ * Access to a client's portal, seen from the agency (specs/clientes.md sections 4 and 6; issues #132 and #711).
  *
- * `auth."user"` has no RLS, so every statement starts from `client_memberships` filtered by the
- * client of the route and by that client's agency, and reaches the person only through the link's
- * `user_id`. The RLS of `client_memberships` lets any member of the agency read the links of its
- * clients, and `invitations_select` lets whoever holds `cliente.convidar_usuario` read the
- * invitations of every kind of the agency; neither says which client or which kind a route means, so
- * the client, the agency and the purpose are conditions of each statement here.
+ * A person is an access given to an e-mail address (`client_portal_accesses`), with an account or without one. The table has
+ * no INSERT or UPDATE for the application: every change goes through a `security definer` function of the access, so this
+ * file only reads the table and calls those functions. `auth."user"` has no RLS, so every statement starts from the access
+ * filtered by the client of the route and by that client's agency, and reaches the account only through the access's own
+ * `user_id`, with a LEFT join: an access nobody has entered is a row, not a gap.
+ *
+ * Nothing here says whether an address has an account. The name is the account's, and only once that account has entered the
+ * portal of THIS client (`first_entered_at`): the link happens at any load of the contexts, even of someone who only works in
+ * another agency, and the list must not turn that into a name.
  */
 
 interface RawRows<TResult> {
@@ -20,38 +23,41 @@ interface RawRows<TResult> {
 }
 
 export interface ClientMemberRow {
-  readonly membership_id: string;
-  /** Never part of the contract: the route needs it to end the sessions of a person it removes. */
-  readonly user_id: string;
-  /** Whether this very transaction wrote the link (`updated_at` is the transaction's `now()`); never part of the contract. */
-  readonly written_by_this_transaction: boolean;
-  readonly name: string;
+  readonly access_id: string;
+  readonly name: string | null;
   readonly email: string;
   readonly status: ClientMemberStatus;
+  readonly entered: boolean;
   readonly created_at: Date;
 }
 
+/**
+ * The name the agency sees: the account's own, and only after the person entered THIS portal (the link at the login is not an entry).
+ * The list shows it and the order uses it, so neither tells the agency that an address has an account.
+ */
+const SHOWN_NAME_SQL = 'case when access.first_entered_at is not null then member.name end';
+
 const MEMBER_COLUMNS = `
-  membership.id as membership_id,
-  membership.user_id as user_id,
-  (membership.updated_at = now()) as written_by_this_transaction,
-  member.name as name,
-  member.email as email,
-  membership.status as status,
-  membership.created_at as created_at
+  access.id as access_id,
+  ${SHOWN_NAME_SQL} as name,
+  access.email as email,
+  access.status as status,
+  (access.first_entered_at is not null and access.user_id is not null) as entered,
+  access.created_at as created_at
 `;
 
 const MEMBER_FROM = `
-  from public.client_memberships membership
-  join public.clients client on client.id = membership.client_id
-  join auth."user" member on member.id = membership.user_id
+  from public.client_portal_accesses access
+  join public.clients client on client.id = access.client_id
+  left join auth."user" member on member.id = access.user_id
 `;
 
 export const clientMemberFromRow = (row: ClientMemberRow): ClientMember => ({
-  membershipId: row.membership_id,
+  accessId: row.access_id,
   name: row.name,
   email: row.email,
   status: row.status,
+  entered: row.entered,
   since: new Date(row.created_at).toISOString()
 });
 
@@ -61,9 +67,9 @@ export interface ClientMemberPage {
 }
 
 /**
- * One page of the people of a client in one status, by name ascending (accent and case folded, then
- * compared byte by byte like the collaborators, so the order does not depend on the database
- * collation) with the link id as the tie-break. `count(*) over ()` rides the page's own snapshot.
+ * One page of the people of a client in one status, by name ascending (the account's name once the person entered, the address before;
+ * accent and case folded, then compared byte by byte like the collaborators, so the order does not depend on the database
+ * collation) with the access id as the tie-break. `count(*) over ()` rides the page's own snapshot.
  */
 export const listClientMembers = async (
   transaction: ClientTransaction,
@@ -71,13 +77,13 @@ export const listClientMembers = async (
   filters: { readonly status: ClientMemberStatus },
   pagination: { readonly pageSize: number; readonly offset: number }
 ): Promise<ClientMemberPage> => {
-  const where = 'membership.client_id = ?::uuid and client.agency_id = ?::uuid and membership.status = ?';
+  const where = 'access.client_id = ?::uuid and client.agency_id = ?::uuid and access.status = ?';
   const bindings = [scope.clientId, scope.agencyId, filters.status];
   const result = await raw<RawRows<ClientMemberRow & { readonly total: string | number }>>(transaction, `
     select ${MEMBER_COLUMNS}, count(*) over () as total
     ${MEMBER_FROM}
     where ${where}
-    order by ${foldTextSql('member.name')} collate "C" asc, membership.id asc
+    order by ${foldTextSql(`coalesce(${SHOWN_NAME_SQL}, access.email)`)} collate "C" asc, access.id asc
     limit ? offset ?
   `, [...bindings, pagination.pageSize, pagination.offset]);
   if (result.rows.length > 0) return { items: result.rows, totalItems: Number(result.rows[0]?.total ?? 0) };
@@ -88,36 +94,151 @@ export const listClientMembers = async (
   return { items: [], totalItems: Number(count.rows[0]?.total ?? 0) };
 };
 
-/** A link of this client, of this agency, in any status; a link of another client is not a row here. */
+/** An access of this client, of this agency, in any status; an access of another client is not a row here. */
 export const loadClientMember = async (
   transaction: ClientTransaction,
-  input: { readonly agencyId: string; readonly clientId: string; readonly membershipId: string }
+  input: { readonly agencyId: string; readonly clientId: string; readonly accessId: string }
 ): Promise<ClientMemberRow | undefined> => {
   const result = await raw<RawRows<ClientMemberRow>>(transaction, `
     select ${MEMBER_COLUMNS}
     ${MEMBER_FROM}
-    where membership.id = ?::uuid and membership.client_id = ?::uuid and client.agency_id = ?::uuid
-  `, [input.membershipId, input.clientId, input.agencyId]);
+    where access.id = ?::uuid and access.client_id = ?::uuid and client.agency_id = ?::uuid
+  `, [input.accessId, input.clientId, input.agencyId]);
   return result.rows[0];
 };
 
-/** The code `app_private.set_client_membership_status` raises for every refusal it can give. */
-const MEMBERSHIP_FUNCTION_REFUSED = 'A0020';
+/** The code the functions of the access raise for every refusal they can give (client or access absent, archived, or no permission). */
+const ACCESS_FUNCTION_REFUSED = 'A0020';
 
-export const isMembershipFunctionRefusal = (error: unknown): boolean =>
-  typeof error === 'object' && error !== null && (error as { code?: unknown }).code === MEMBERSHIP_FUNCTION_REFUSED;
+export const isAccessFunctionRefusal = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && (error as { code?: unknown }).code === ACCESS_FUNCTION_REFUSED;
+
+export interface AddedClientAccess {
+  readonly accessId: string;
+  /** `created`: a new row. `reactivated`: the removed row of the address, or the row of an account that no longer has it. `already_active`: nothing written. */
+  readonly outcome: 'created' | 'reactivated' | 'already_active';
+  /** The account that lost the access because the address changed hands; its sessions end like any removal. */
+  readonly unlinkedUserId: string | null;
+}
 
 /**
- * Removes or reactivates a link through the one function that may write `status` (`ageniza_app` has
- * no `UPDATE` on the column). The function checks `cliente.remover_usuario` on the client's own
- * agency, locks, audits, and writes nothing when the link is already in the status.
+ * "Adicionar pessoa": the one function that may insert an access. It checks `cliente.convidar_usuario` on the client's own
+ * agency, locks the client, and gives the access on the spot, or reactivates the row of the same address.
+ */
+export const addClientMember = async (
+  transaction: ClientTransaction,
+  clientId: string,
+  email: string
+): Promise<AddedClientAccess> => {
+  const result = await raw<RawRows<{ access_id: string; outcome: AddedClientAccess['outcome']; unlinked_user_id: string | null }>>(
+    transaction,
+    'select * from app_private.add_client_portal_access(?::uuid, ?)',
+    [clientId, email]
+  );
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('The access just added could not be read back.');
+  return { accessId: row.access_id, outcome: row.outcome, unlinkedUserId: row.unlinked_user_id };
+};
+
+const databaseCode = (error: unknown): string | undefined =>
+  typeof error === 'object' && error !== null && typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : undefined;
+
+/** Nothing to resend: the access was removed or its person already entered, or the old invitation is no longer pending. */
+export const isNothingToResend = (error: unknown): boolean => databaseCode(error) === 'A0097';
+
+/** The same access was mailed less than a minute ago. */
+export const isResendTooSoon = (error: unknown): boolean => databaseCode(error) === 'A0099';
+
+/**
+ * "Reenviar e-mail": the function checks `cliente.convidar_usuario`, the plan of the agency, the state of the access and the minute
+ * of the person, takes a place in the daily limit and writes the event the count reads. It writes nothing else: the access, its
+ * generation and the approval links stay as they are.
+ */
+export const resendClientMemberEmail = async (transaction: ClientTransaction, accessId: string): Promise<void> => {
+  const result = await raw<RawRows<{ access_id: string }>>(transaction, 'select * from app_private.resend_client_portal_access(?::uuid)', [accessId]);
+  if (result.rows[0] === undefined) throw new Error('The resend of the access could not be read back.');
+};
+
+export interface ConvertedClientInvitation extends AddedClientAccess {
+  /** `false` when the address already had an active access: nothing was written and the invitation stays pending. */
+  readonly invitationRevoked: boolean;
+}
+
+/**
+ * "Reenviar" of an old portal invitation: the access of its address as "Adicionar pessoa" gives it, and the revocation of the
+ * invitation, in the one call and so in the one transaction.
+ */
+export const convertClientInvitation = async (
+  transaction: ClientTransaction,
+  clientId: string,
+  invitationId: string
+): Promise<ConvertedClientInvitation> => {
+  const result = await raw<RawRows<{ access_id: string; outcome: AddedClientAccess['outcome']; unlinked_user_id: string | null; invitation_revoked: boolean }>>(
+    transaction,
+    'select * from app_private.convert_client_portal_invitation(?::uuid, ?::uuid)',
+    [clientId, invitationId]
+  );
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('The invitation just converted could not be read back.');
+  return { accessId: row.access_id, outcome: row.outcome, unlinkedUserId: row.unlinked_user_id, invitationRevoked: row.invitation_revoked };
+};
+
+/**
+ * Whether the invitation is still pending now, read after the conversion answered `already_active`: the address had the access
+ * because somebody accepted this very invitation while the conversion waited, or because it was given another way.
+ */
+export const clientInvitationPending = async (
+  transaction: ClientTransaction,
+  scope: { readonly agencyId: string; readonly clientId: string; readonly invitationId: string }
+): Promise<boolean> => {
+  const result = await raw<RawRows<{ id: string }>>(
+    transaction,
+    `select id from public.invitations
+     where id = ?::uuid and agency_id = ?::uuid and client_id = ?::uuid and purpose = 'client_invite'
+       and used_at is null and revoked_at is null and expires_at > clock_timestamp()`,
+    [scope.invitationId, scope.agencyId, scope.clientId]
+  );
+  return result.rows[0] !== undefined;
+};
+
+/** Whether an invitation of this portal exists for the agency to see; the permission is asked by the caller before. */
+export const clientInvitationExists = async (
+  transaction: ClientTransaction,
+  scope: { readonly agencyId: string; readonly clientId: string; readonly invitationId: string }
+): Promise<boolean> => {
+  const result = await raw<RawRows<{ id: string }>>(
+    transaction,
+    `select id from public.invitations
+     where id = ?::uuid and agency_id = ?::uuid and client_id = ?::uuid and purpose = 'client_invite'`,
+    [scope.invitationId, scope.agencyId, scope.clientId]
+  );
+  return result.rows[0] !== undefined;
+};
+
+export interface ChangedClientAccess {
+  /** The account linked to the access, whose sessions end when the access is removed; `null` for an access nobody has entered. */
+  readonly accountUserId: string | null;
+  /** Whether this call changed the state; removing a removed access, or reactivating an active one, writes nothing. */
+  readonly changed: boolean;
+}
+
+/**
+ * Removes or reactivates an access through the one function that may write its state (`ageniza_app` has no `UPDATE` on the
+ * table). The function checks `cliente.remover_usuario` on the client's own agency, locks, audits, takes the membership along,
+ * and on a removal advances the generation that the approval links carry.
  */
 export const setClientMemberStatus = async (
   transaction: ClientTransaction,
-  membershipId: string,
+  accessId: string,
   status: ClientMemberStatus
-): Promise<void> => {
-  await raw(transaction, 'select app_private.set_client_membership_status(?::uuid, ?)', [membershipId, status]);
+): Promise<ChangedClientAccess> => {
+  const statement = status === 'removed'
+    ? 'select * from app_private.remove_client_portal_access(?::uuid)'
+    : 'select * from app_private.reactivate_client_portal_access(?::uuid)';
+  const result = await raw<RawRows<{ account_user_id: string | null; changed: boolean }>>(transaction, statement, [accessId]);
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('The access whose state just changed could not be read back.');
+  return { accountUserId: row.account_user_id, changed: row.changed };
 };
 
 export interface PendingClientInvitationRow {
@@ -142,9 +263,10 @@ const PENDING_CLIENT_INVITATIONS = `
 `;
 
 /**
- * The pending portal invitations of one client, the one that expires first on top. Only
- * `client_invite` of this client: an invitation of a collaborator, of another client or of the
- * agency's own activation is the agency's to read by policy and none of this route's.
+ * The pending portal invitations of one client, the one that expires first on top. A portal invitation is no longer created
+ * (decision 2026-10-26), so this is what is left of the old ones, until the last of them expires. Only `client_invite` of this
+ * client: an invitation of a collaborator, of another client or of the agency's own activation is the agency's to read by
+ * policy and none of this route's.
  */
 export const listPendingClientInvitations = async (
   transaction: ClientTransaction,

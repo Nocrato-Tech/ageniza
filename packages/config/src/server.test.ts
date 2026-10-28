@@ -604,4 +604,111 @@ describe('server configuration', () => {
       IDENTITY_STORAGE_BUCKET: 'ageniza-identity-local'
     }).identityStorage).toMatchObject({ endpoint: 'http://localstack:4566', publicEndpoint: 'http://127.0.0.1:9000' });
   });
+
+  it('loads the optional public support contact, absent when blank, and refuses one that is not an e-mail', () => {
+    expect(loadApiConfig(localEnvironment).supportContactEmail).toBeUndefined();
+    expect(loadApiConfig({ ...localEnvironment, SUPPORT_CONTACT_EMAIL: '  ' }).supportContactEmail).toBeUndefined();
+    expect(loadApiConfig({ ...localEnvironment, SUPPORT_CONTACT_EMAIL: ' suporte@ageniza.com.br ' }).supportContactEmail).toBe('suporte@ageniza.com.br');
+    expect(() => loadApiConfig({ ...localEnvironment, SUPPORT_CONTACT_EMAIL: 'suporte' })).toThrow(ConfigValidationError);
+  });
+
+  describe('the public address of the API (issue #737)', () => {
+    const production = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      ...productionEmailSettings,
+      ...productionStorageSettings,
+      ...productionIdentityStorageSettings
+    };
+
+    it('is the /api of the public URL by default, where the web container serves the API', () => {
+      expect(loadApiConfig(localEnvironment).apiPublicUrl).toBe('http://127.0.0.1:5173/api');
+      expect(loadApiConfig(production).apiPublicUrl).toBe('https://app.ageniza.example/api');
+      expect(loadApiConfig({ ...production, API_PUBLIC_URL: '  ' }).apiPublicUrl).toBe('https://app.ageniza.example/api');
+    });
+
+    it('takes the address given, path included, without a trailing slash', () => {
+      expect(loadApiConfig({ ...localEnvironment, API_PUBLIC_URL: 'http://127.0.0.1:3001' }).apiPublicUrl).toBe('http://127.0.0.1:3001');
+      expect(loadApiConfig({ ...localEnvironment, API_PUBLIC_URL: 'http://127.0.0.1:3001/' }).apiPublicUrl).toBe('http://127.0.0.1:3001');
+      expect(loadApiConfig({ ...production, API_PUBLIC_URL: 'https://app.ageniza.example/api/' }).apiPublicUrl).toBe('https://app.ageniza.example/api');
+      expect(loadApiConfig({ ...production, API_PUBLIC_URL: 'https://api.ageniza.example/v1//' }).apiPublicUrl).toBe('https://api.ageniza.example/v1');
+    });
+
+    it('refuses an address with credentials, a query or a fragment, without printing it', () => {
+      for (const value of ['https://user:pass@app.ageniza.example/api', 'https://app.ageniza.example/api?x=1', 'https://app.ageniza.example/api#x', 'not a url']) {
+        expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: value }), value).toThrow(ConfigValidationError);
+        expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: value }), value).not.toThrow(/pass|x=1/);
+      }
+    });
+
+    it('refuses a path that cannot be the Path of a cookie: only letters, digits, ".", "_", "~" and "-" make a segment', () => {
+      for (const path of ['/;', '/api;', '/;/x', '/a,b', '/a b', '/a%20b', '/a%3Bb', '/a"b', "/a'b", '/a=b', '/a(b)', '/a@b', '/a:b', '/ä']) {
+        const value = 'https://app.ageniza.example' + path;
+        expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: value }), value).toThrow(ConfigValidationError);
+        expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: value }), value).not.toThrow(/%20|%3B|ä/);
+      }
+      expect(loadApiConfig({ ...production, API_PUBLIC_URL: 'https://app.ageniza.example/a.b_c~d-e/v2' }).apiPublicUrl).toBe('https://app.ageniza.example/a.b_c~d-e/v2');
+    });
+
+    it('requires HTTPS and a non-loopback host in production', () => {
+      expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: 'http://app.ageniza.example/api' })).toThrow('must use HTTPS');
+      expect(() => loadApiConfig({ ...production, API_PUBLIC_URL: 'https://127.0.0.1/api' })).toThrow('loopback');
+    });
+  });
+
+  describe('Google sign-in (issue #707)', () => {
+    const google = { GOOGLE_CLIENT_ID: 'client-id.apps.googleusercontent.com', GOOGLE_CLIENT_SECRET: 'google-client-secret-value' };
+    const production = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      ...productionEmailSettings,
+      ...productionStorageSettings,
+      ...productionIdentityStorageSettings
+    };
+
+    it('is off without the variables, blank ones included, and the config carries no google key', () => {
+      expect(loadApiConfig(localEnvironment)).not.toHaveProperty('google');
+      expect(loadApiConfig({ ...localEnvironment, GOOGLE_CLIENT_ID: '  ', GOOGLE_CLIENT_SECRET: '' })).not.toHaveProperty('google');
+    });
+
+    it('is on with both, and the callback comes from the public URL under the /api prefix of the web container', () => {
+      expect(loadApiConfig({ ...localEnvironment, ...google }).google).toEqual({
+        clientId: google.GOOGLE_CLIENT_ID,
+        clientSecret: google.GOOGLE_CLIENT_SECRET,
+        callbackUrl: 'http://127.0.0.1:5173/api/auth/callback/google'
+      });
+      expect(loadApiConfig({ ...production, ...google }).google?.callbackUrl).toBe('https://app.ageniza.example/api/auth/callback/google');
+    });
+
+    it('takes an explicit callback, for the local stack where the API has its own origin', () => {
+      expect(loadApiConfig({ ...localEnvironment, ...google, GOOGLE_CALLBACK_URL: 'http://127.0.0.1:3001/auth/callback/google' }).google?.callbackUrl)
+        .toBe('http://127.0.0.1:3001/auth/callback/google');
+    });
+
+    it('refuses a half-set pair, and never prints the values it was given', () => {
+      const idOnly = () => loadApiConfig({ ...localEnvironment, GOOGLE_CLIENT_ID: google.GOOGLE_CLIENT_ID });
+      const secretOnly = () => loadApiConfig({ ...localEnvironment, GOOGLE_CLIENT_SECRET: google.GOOGLE_CLIENT_SECRET });
+      expect(idOnly).toThrow(ConfigValidationError);
+      expect(secretOnly).toThrow(ConfigValidationError);
+      for (const load of [idOnly, secretOnly]) {
+        try { load(); } catch (error) {
+          expect(String(error)).not.toContain(google.GOOGLE_CLIENT_SECRET);
+          expect(String(error)).not.toContain(google.GOOGLE_CLIENT_ID);
+        }
+      }
+    });
+
+    it('requires an HTTPS, non-loopback callback in production', () => {
+      expect(() => loadApiConfig({ ...production, ...google, GOOGLE_CALLBACK_URL: 'http://app.ageniza.example/api/auth/callback/google' })).toThrow('must use HTTPS');
+      expect(() => loadApiConfig({ ...production, ...google, GOOGLE_CALLBACK_URL: 'https://127.0.0.1/api/auth/callback/google' })).toThrow('loopback');
+    });
+  });
 });

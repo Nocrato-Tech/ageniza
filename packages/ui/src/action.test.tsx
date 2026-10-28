@@ -98,6 +98,35 @@ describe('Button with an icon', () => {
   });
 });
 
+describe('Button with a blocked reason (issue #714)', () => {
+  const describedBy = (button: HTMLElement) => (button.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent).join(' ');
+
+  it('stays focusable, answers nothing, and reads the reason as its description, never as its name', () => {
+    const onClick = vi.fn();
+    render(<Button blockedReason="O plano precisa ser renovado." aria-describedby="other" onClick={onClick}>Convidar</Button>);
+    const button = screen.getByRole('button', { name: 'Convidar' });
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    expect(button.getAttribute('aria-describedby')?.split(' ')[0]).toBe('other');
+    expect(describedBy(button)).toContain('O plano precisa ser renovado.');
+    expect(button.className).toContain('ui-button--blocked');
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    fireEvent.click(button);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('is an ordinary button without one', () => {
+    const onClick = vi.fn();
+    render(<Button onClick={onClick}>Convidar</Button>);
+    const button = screen.getByRole('button', { name: 'Convidar' });
+    expect(button.getAttribute('aria-disabled')).toBeNull();
+    expect(button.getAttribute('aria-describedby')).toBeNull();
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+});
+
 describe('IconButton', () => {
   it('is named by its label, shows it as the tooltip and hides the glyph', () => {
     render(<IconButton label="Fechar" icon={<Plus />} />);

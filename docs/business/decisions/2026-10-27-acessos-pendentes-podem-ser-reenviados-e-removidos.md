@@ -1,0 +1,25 @@
+# Acessos pendentes na aba Acessos podem ser reenviados e removidos
+
+**Data.** 2026-10-27
+
+**Contexto.** A decisão de 2026-10-27 "o convite de portal pendente não se reenvia" fechou o Reenviar do convite antigo, e a de "o e-mail que falha não desfaz o acesso" mandou a agência remover e adicionar de novo para repetir o e-mail de boas-vindas. O dono quer outra coisa na lista de pendentes da aba Acessos: poder **reenviar** e **remover**, tanto a pessoa adicionada que ainda não entrou quanto o convite antigo que ainda não foi aceito.
+
+**Decisão.**
+
+1. **Pessoa adicionada que "ainda não entrou" no portal.**
+   - **Reenviar e-mail** manda de novo o e-mail de boas-vindas. Só vale para acesso **ativo que ainda não entrou**: quem já entrou, ou foi removido, não tem o que reenviar, e a API responde 409 `ACCESS_NOT_PENDING` (a tela também não mostra o botão). Não muda o estado do acesso nem os links de aprovação dele.
+   - O reenvio **amplia o alcance**, como Adicionar pessoa: agência em somente leitura recusa (A0090, 409 `AGENCY_READ_ONLY`). Pede a permissão `cliente.convidar_usuario`.
+   - O reenvio conta no limite diário de e-mails **no mesmo orçamento e sob a mesma trava** da decisão "o acesso ao portal no somente leitura e no limite diário de e-mails": passado o limite, 429 `DAILY_EMAIL_LIMIT` e nada é gravado. Cada reenvio gasta um lugar, também o repetido; a contagem lê o evento de auditoria `client_member.resent`, que entra junto de `client_member.added` e `client_member.readded`.
+   - **Remover** é o que já existe: tira o acesso e mata o link de aprovação (`cliente.remover_usuario`, livre no somente leitura).
+2. **Convite de portal antigo, ainda pendente.**
+   - **Reenviar** transforma o convite em **acesso direto**: o mesmo efeito de Adicionar pessoa para aquele e-mail, com o e-mail de boas-vindas, e **revoga o convite antigo na mesma transação**. O link do convite deixa de valer. Se a transação falha, o convite continua pendente e nada é gravado. Gasta um lugar no limite diário, recusa o somente leitura e pede `cliente.convidar_usuario`, porque dar acesso é o que a permissão de Adicionar pessoa cobre.
+   - Se o endereço **já tem acesso ativo**, a rota responde 409 `ACCESS_EXISTS` e não grava nada: o convite fica como está e a agência o cancela. Convite que deixou de estar pendente (aceito, cancelado ou vencido) responde 409 `INVITATION_NOT_PENDING`.
+   - **Remover** é **Cancelar convite**, como hoje (`convite.cancelar`, livre no somente leitura).
+3. **Rotas.** Duas rotas novas, sob o cliente: `POST /agencies/:agencyId/clients/:clientId/members/:accessId/resend` (o e-mail da pessoa que não entrou) e `POST /agencies/:agencyId/clients/:clientId/invitations/:invitationId/resend` (a conversão do convite antigo). Ambas respondem 200 com a pessoa (`ClientMember`). A rota `POST /agencies/:agencyId/invitations/:invitationId/resend`, que respondia 409 `PORTAL_INVITATION_DISCONTINUED`, **continua respondendo 409** para convite de portal, e só a mensagem passa a apontar a aba Acessos. Escolhi rota nova em vez de fazer a antiga converter por três razões: a antiga é guardada por `convite.reenviar`, que não cobre dar acesso (a conversão é Adicionar pessoa, `cliente.convidar_usuario`, e o banco confere a permissão de novo); a resposta é a pessoa com acesso, não um link de convite com `invitationUrl`; e deixar a rota antiga recusar mantém o contrato que o convite de colaborador e os testes dele já têm.
+4. **Na tela.** Na linha de quem ainda não entrou: **Reenviar e-mail** e **Remover**. Na linha do convite antigo: **Reenviar** e **Cancelar**. Cada botão tem estado de envio (só o da linha clicada), sucesso (uma frase de status com o e-mail) e erro (429 diz "Limite diário de envios atingido. Tente amanhã."; somente leitura e sem permissão têm a mensagem de cada caso). Em somente leitura os dois reenvios ficam desabilitados com o motivo; Remover e Cancelar continuam habilitados. A mensagem do 502 do Adicionar pessoa deixa de mandar remover e adicionar de novo e passa a dizer que a agência usa **Reenviar e-mail** na linha da pessoa.
+
+**Consequência.** Substitui [o convite de portal pendente não se reenvia: espera vencer](2026-10-27-o-convite-de-portal-pendente-nao-se-reenvia.md) (itens 4 e 5 da decisão "Adicionar pessoa na aba Acessos como a tela responde" e a frase da decisão "o e-mail que falha não desfaz o acesso" sobre remover e adicionar de novo). Duas funções novas no banco e o evento de auditoria `client_member.resent`; a contagem diária (`agency_emails_sent_on_day`) passa a lê-lo. Nenhuma tabela ou coluna muda. A `specs/clientes.md` (aba Acessos) passa a descrever o desenho acima. A seção de convites aguardando aceite continua sumindo quando o último convite antigo vence, é convertido ou é cancelado.
+
+**Origem.** Decisão do dono em 2026-10-27, repassada pelo maestro (issue do épico #718). A escolha das rotas, do código 409 `ACCESS_NOT_PENDING` e do que acontece com o endereço que já tem acesso é da implementação.
+
+**Validação.** Validada pelo dono em 2026-10-27.

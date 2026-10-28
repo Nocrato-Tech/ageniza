@@ -81,6 +81,8 @@ export const createContentsWorld = (label: string) => {
         if (property === 'transaction') {
           return (work: (transaction: Transaction) => Promise<unknown>) => target.transaction((transaction) => work(recording(transaction)));
         }
+        // Knex is itself a function with properties (`raw`): bound, it would lose them.
+        if (property === 'knex') return target.knex;
         const value = Reflect.get(target, property, receiver) as unknown;
         return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
       }
@@ -274,13 +276,20 @@ export const createContentsWorld = (label: string) => {
     },
     mentionsContents: (): boolean => statements.some((statement) => /public\.contents\b/.test(statement)),
 
-    async setup(options: { readonly contentsClock?: () => Date; readonly wrapMediaStorage?: TestAppOptions['wrapMediaStorage'] } = {}): Promise<void> {
+    async setup(options: {
+      readonly contentsClock?: () => Date;
+      readonly wrapMediaStorage?: TestAppOptions['wrapMediaStorage'];
+      readonly logger?: TestAppOptions['logger'];
+      readonly config?: TestAppOptions['config'];
+    } = {}): Promise<void> {
       owner = ownerClient();
       app = await buildTestApp({
         sender: createFakeEmailSender(),
         wrapDatabase: instrument,
         ...(options.contentsClock === undefined ? {} : { contentsClock: options.contentsClock }),
-        ...(options.wrapMediaStorage === undefined ? {} : { wrapMediaStorage: options.wrapMediaStorage })
+        ...(options.wrapMediaStorage === undefined ? {} : { wrapMediaStorage: options.wrapMediaStorage }),
+        ...(options.logger === undefined ? {} : { logger: options.logger }),
+        ...(options.config === undefined ? {} : { config: options.config })
       });
 
       const system = await owner.knex('roles').whereNull('agency_id').whereIn('key', ['admin', 'account_manager', 'production', 'sales', 'finance']).select('id', 'key');
@@ -325,6 +334,7 @@ export const createContentsWorld = (label: string) => {
 
     async teardown(): Promise<void> {
       const clients = createdClientIds;
+      await owner.knex('client_portal_approval_links').whereIn('client_id', clients).delete();
       await owner.knex('client_thread_comments').whereIn('client_id', clients).delete();
       await owner.knex('client_threads').whereIn('client_id', clients).delete();
       await owner.knex('content_media').whereIn('client_id', clients).delete();

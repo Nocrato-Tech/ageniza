@@ -1,7 +1,7 @@
-import { Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import {
   ClientDetailResponseSchema,
@@ -13,16 +13,15 @@ import {
   type ContentListItem,
   type UpdateContentRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, ClientStrip, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, ClientStrip, IconButton, Segmented, Skeleton } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { contentsAddress, ContentsHomeContext } from './content-address.js';
 import { ContentCalendar } from './content-calendar.js';
 import type { ContentsOutletContext } from './content-modal.js';
 import { ContentFeed, ContentFeedSkeleton } from './content-feed.js';
-import { ContentFolders } from './content-folders.js';
 import { daysOf, parseAnchor, periodOf, periodTitle, shiftAnchor, todayInSaoPaulo, type CalendarView } from './content-dates.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -136,16 +135,14 @@ const moveErrorMessage = (error: unknown): string => {
 
 const parseView = (raw: string | null): CalendarView => (raw === 'semana' ? 'week' : 'month');
 
-type Vista = 'calendar' | 'feed' | 'folders';
-
-/** The client's views: the calendar (the default, so absent from the URL), the grid of the feed or the folders. */
-const parseVista = (raw: string | null): Vista => (raw === 'feed' ? 'feed' : raw === 'pastas' ? 'folders' : 'calendar');
+/** The address the folders had here (`?vista=pastas`) before they became the Mídias tab of the client's detail. */
+const isLegacyFolders = (searchParams: URLSearchParams): boolean => searchParams.get('vista') === 'pastas';
 
 /**
  * `/agencia/:agenciaId/conteudos/:clienteId`: the calendar of one client. The client is in the
  * path; the view (`visao`) and the day the period is built around (`data`) are in the query, so a
- * reload lands on the same period. The Feed and Pastas views are chosen by `vista`, and the folder open in the
- * Pastas view is in the query too (`content-folders.tsx`).
+ * reload lands on the same period. The feed is the phone beside the calendar, not a view of its own, and the folders
+ * are the Mídias tab of the client's detail: the old `?vista=pastas` address goes there, with the folder it had open.
  *
  * `pinned` is the same view inside the tab of the client's detail (`/clientes/:clienteId/conteudos`): the client is the
  * one of the page around it, so there are no stories and no client header, and every address it builds stays in the tab.
@@ -160,7 +157,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
   const validId = ClientSchema.shape.id.safeParse(normalizedId).success;
   const today = todayInSaoPaulo();
   const view = parseView(searchParams.get('visao'));
-  const vista = parseVista(searchParams.get('vista'));
+  const legacyFolders = isLegacyFolders(searchParams);
   const anchor = parseAnchor(searchParams.get('data'), today);
   const period = periodOf(view, anchor);
 
@@ -181,7 +178,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
       response: ContentPeriodResponseSchema,
       signal
     }),
-    enabled: validId && vista !== 'folders',
+    enabled: validId && !legacyFolders,
     // The previous period stays while the next loads, but never another client's or agency's.
     placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey[1] === agency.agencyId && previousQuery.queryKey[3] === normalizedId ? previous : undefined
@@ -189,6 +186,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
 
   const queryClient = useQueryClient();
   const canOperate = useCan('conteudo.operar');
+  const blocked = useWriteBlocked();
   const [moveError, setMoveError] = useState<string | null>(null);
   const move = useMutation({
     mutationFn: ({ content, day }: { content: ContentListItem; day: string }) => httpClient.request({
@@ -214,7 +212,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
   };
   const scriptLayer = useStoryScriptLayer({
     clientId: normalizedId,
-    canOperate: canWriteScripts,
+    canOperate: canWriteScripts && blocked === undefined,
     scripts: contents.data?.data.storyScripts ?? [],
     today,
     onCreateContent: startContent
@@ -234,23 +232,26 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
     setSearchParams(next, { replace: true });
   };
 
-  const setVista = (next: Vista): void => {
-    const params = new URLSearchParams(searchParams);
-    if (next === 'feed') params.set('vista', 'feed'); else if (next === 'folders') params.set('vista', 'pastas'); else params.delete('vista');
-    for (const name of ['pasta', 'subpasta', 'pagina']) params.delete(name);
-    setSearchParams(params, { replace: true });
-  };
-
-  if (!validId || (client.isError && isNotVisible(client.error)) || (vista !== 'folders' && contents.isError && isNotVisible(contents.error))) {
+  if (legacyFolders && validId) {
+    const folder = new URLSearchParams();
+    for (const name of ['pasta', 'subpasta', 'pagina']) {
+      const value = searchParams.get(name);
+      if (value !== null) folder.set(name, value);
+    }
+    const search = folder.toString();
+    return <Navigate to={{ pathname: `/agencia/${agency.agencyId}/clientes/${normalizedId}/midias`, search: search === '' ? '' : `?${search}` }} state={location.state} replace />;
+  }
+  if (!validId || (client.isError && isNotVisible(client.error)) || (contents.isError && isNotVisible(contents.error))) {
     return <NotFoundPage as="section" />;
   }
   // The answer must be about the client in the address, or it is not shown at all.
   const clientData = client.data?.id.toLowerCase() === normalizedId ? client.data : undefined;
-  const failed = (client.isError && clientData === undefined) || (vista !== 'folders' && contents.isError && contents.data === undefined);
+  const failed = (client.isError && clientData === undefined) || (contents.isError && contents.data === undefined);
   const loaded = contents.data;
   const unitLabel = view === 'week' ? 'semana' : 'mês';
   const archived = clientData?.status === 'archived';
-  const canMove = canOperate && clientData !== undefined && !archived;
+  const canEdit = canOperate && clientData !== undefined && !archived;
+  const canMove = canEdit && blocked === undefined;
 
   const Title = pinned ? 'h2' : 'h1';
   // The other home of the same view, on the same client and period, and with the roster's address carried along.
@@ -287,76 +288,64 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
             <p className="contents__subtitle">Planeje, agende e acompanhe todas as publicações.</p>
           </div>}
           <div className="contents__actions">
-            <div className="contents__views" role="tablist" aria-label="Visão do cliente">
-              <Button role="tab" aria-selected={vista === 'calendar'} variant={vista === 'calendar' ? 'secondary' : 'ghost'} onClick={() => setVista('calendar')}>Calendário</Button>
-              <Button role="tab" aria-selected={vista === 'feed'} variant={vista === 'feed' ? 'secondary' : 'ghost'} onClick={() => setVista('feed')}>Feed</Button>
-              <Button role="tab" aria-selected={vista === 'folders'} variant={vista === 'folders' ? 'secondary' : 'ghost'} onClick={() => setVista('folders')}>Pastas</Button>
-            </div>
-            {canWriteScripts && <Button size="lg" leadingIcon={<Plus />} onClick={() => startContent(today)}>Nova publicação</Button>}
+            {canWriteScripts && <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => startContent(today)}>Nova publicação</Button>}
           </div>
         </div>
-        {vista !== 'folders' && archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
-        {vista !== 'folders' && moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
-        {vista !== 'folders' && move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
-        {vista === 'folders'
-          ? <ContentFolders clientId={normalizedId} canWrite={clientData?.status === 'active'} />
-          : <div className="contents__panel">
-            <div className="contents__panel-head">
-              <div className="contents__period" role="group" aria-label="Período">
-                <h2 className="contents__period-title" aria-live="polite">{periodTitle(view, anchor)}</h2>
-                <Button variant="secondary" aria-label={`${unitLabel === 'mês' ? 'Mês' : 'Semana'} anterior`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, -1))}>
-                  <span aria-hidden="true">‹</span>
-                </Button>
-                <Button variant="ghost" onClick={() => setPeriod(view, null)}>Hoje</Button>
-                <Button variant="secondary" aria-label={`Próxim${view === 'week' ? 'a semana' : 'o mês'}`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, 1))}>
-                  <span aria-hidden="true">›</span>
-                </Button>
-              </div>
-              <div className="contents__toggle" role="group" aria-label="Escala do calendário">
-                <Button variant={view === 'month' ? 'secondary' : 'ghost'} aria-pressed={view === 'month'} onClick={() => setPeriod('month', searchParams.get('data'))}>Mês</Button>
-                <Button variant={view === 'week' ? 'secondary' : 'ghost'} aria-pressed={view === 'week'} onClick={() => setPeriod('week', searchParams.get('data'))}>Semana</Button>
-              </div>
+        {archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
+        {moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
+        {move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
+        <div className="contents__panel">
+          <div className="contents__panel-head">
+            <div className="contents__period" role="group" aria-label="Período">
+              <h2 className="contents__period-title" aria-live="polite">{periodTitle(view, anchor)}</h2>
+              <IconButton variant="secondary" icon={<ChevronLeft />} label={`${unitLabel === 'mês' ? 'Mês' : 'Semana'} anterior`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, -1))} />
+              <Button variant="ghost" onClick={() => setPeriod(view, null)}>Hoje</Button>
+              <IconButton variant="secondary" icon={<ChevronRight />} label={`Próxim${view === 'week' ? 'a semana' : 'o mês'}`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, 1))} />
             </div>
-            {loaded === undefined
-              ? (vista === 'feed' ? <ContentFeedSkeleton /> : <div className="contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>)
-              : <>
-                {contents.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
-                {vista === 'feed'
-                  ? <section aria-label="Prévia do feed"><ContentFeed contents={loaded.data.contents} today={today} handle={clientData?.instagramHandle ?? null} /></section>
-                  : <>
-                    {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
-                    <ContentCalendar
-                      clientId={normalizedId}
-                      view={view}
-                      anchor={anchor}
-                      today={today}
-                      days={daysOf(period)}
-                      contents={loaded.data.contents}
-                      canMove={canMove}
-                      movingId={move.isPending ? move.variables.content.id : null}
-                      onMove={(content, day) => move.mutate({ content, day })}
-                      dayExtras={scriptLayer.dayExtras}
-                    />
-                  </>}
-              </>}
-          </div>}
-        {vista === 'calendar' && loaded !== undefined && scriptLayer.list}
+            <Segmented<CalendarView>
+              label="Escala do calendário"
+              value={view}
+              onChange={(next) => setPeriod(next, searchParams.get('data'))}
+              options={[{ value: 'month', label: 'Mês' }, { value: 'week', label: 'Semana' }]}
+            />
+          </div>
+          {loaded === undefined
+            ? <div className="contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
+            : <>
+              {contents.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
+              {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
+              <ContentCalendar
+                clientId={normalizedId}
+                view={view}
+                anchor={anchor}
+                today={today}
+                days={daysOf(period)}
+                contents={loaded.data.contents}
+                canMove={canMove}
+                movingId={move.isPending ? move.variables.content.id : null}
+                onMove={(content, day) => move.mutate({ content, day })}
+                dayExtras={scriptLayer.dayExtras}
+              />
+            </>}
+        </div>
+        {loaded !== undefined && scriptLayer.list}
       </div>
-      {vista === 'calendar' && <aside className="contents__feed" aria-label="Prévia do feed">
+      <aside className="contents__feed" aria-label="Prévia do feed">
         {loaded === undefined
           ? <ContentFeedSkeleton />
           : <ContentFeed
+            scope={`${normalizedId}|${period.from}|${period.to}`}
             contents={loaded.data.contents}
             today={today}
             handle={clientData?.instagramHandle ?? null}
             profile={clientData === undefined ? undefined : { name: clientData.name, photoUrl: clientData.photoUrl }}
           />}
-      </aside>}
+      </aside>
     </div>}
     {scriptLayer.modal}
     <Outlet context={{
       clientId: normalizedId,
-      canEdit: canMove,
+      canEdit,
       ready: clientData !== undefined || client.isError,
       archived,
       handle: clientData?.instagramHandle ?? null

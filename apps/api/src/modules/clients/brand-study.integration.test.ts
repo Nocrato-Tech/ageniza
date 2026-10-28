@@ -16,6 +16,7 @@ import type { DatabaseClient } from '@ageniza/database';
 import { revokeInsertId } from '../auth/test-support/insert-id-revoked.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
 import { registerClientModule } from './routes.js';
+import { unusedEmailService } from './test-support/email-service.js';
 
 const origin = { origin: TEST_APP_PUBLIC_URL };
 
@@ -131,6 +132,7 @@ const withRacingApp = async <T>(
     requireAgencyAccess: createRequireAgencyAccess({ database: app.database }),
     requirePermission,
     requireClientAccess: createRequireClientAccess({ database: app.database }),
+    emailService: unusedEmailService,
     photoUrlExpirySeconds: 300
   });
   await racingApp.ready();

@@ -5,7 +5,7 @@ import {
   PortalClientResponseSchema
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
-import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AuthInstance } from '../auth/better-auth.js';
@@ -75,6 +75,8 @@ export const registerPortalReadRoutes = (app: FastifyInstance, dependencies: Por
     const result = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
       const row = await loadPortalClient(transaction, { clientId: clientContext.clientId, clientMembershipId: clientContext.clientMembershipId });
       if (row === undefined) return undefined;
+      // Opening the portal of the client is entering it: the first time is recorded for the list of the agency.
+      await raw(transaction, 'select app_private.mark_client_portal_entered(?::uuid)', [clientContext.clientId]);
       return { row, home: await loadPortalHome(transaction, clientContext.clientId) };
     });
     if (result === undefined) throw clientNotFound();
@@ -84,7 +86,8 @@ export const registerPortalReadRoutes = (app: FastifyInstance, dependencies: Por
       ...clientFromRow(result.row, photoUrl),
       agencyName: result.row.agency_name,
       onboardingSeenAt: result.row.onboarding_seen_at === null ? null : new Date(result.row.onboarding_seen_at).toISOString(),
-      home: result.home
+      home: result.home,
+      agencyReadOnly: result.row.agency_read_only === true
     }));
   });
 

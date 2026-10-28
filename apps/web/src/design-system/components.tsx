@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowRight, LayoutGrid, List, Plus, Store } from 'lucide-react';
 import {
-  Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, ClientStrip, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, ErrorSummary, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
+  Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, ClientStrip, DatePicker, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, ErrorSummary, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
   Modal, Pagination, Popover, Realce, Segmented, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput
 } from '@ageniza/ui';
 
@@ -66,6 +66,13 @@ function FilterBarDemo({ disabled, loading }: { disabled: boolean; loading: bool
       options={[{ value: 'c1', label: 'Padaria Central' }, { value: 'c2', label: 'Clínica Viver Bem' }]} />
     <FilterBarItem label="Buscar">{(control) => <TextInput {...control} defaultValue="pão" disabled={disabled} />}</FilterBarItem>
   </FilterBar>;
+}
+
+function DatePickerDemo({ disabled }: { disabled: boolean }) {
+  const [day, setDay] = useState('2026-10-20');
+  return <Field label="Dia dos stories" error={day === '' ? 'Informe o dia dos stories.' : undefined}>
+    {(control) => <DatePicker {...control} today="2026-10-16" value={day} onChange={setDay} disabled={disabled} />}
+  </Field>;
 }
 
 function SegmentedDemo({ disabled, loading }: { disabled: boolean; loading: boolean }) {
@@ -199,6 +206,12 @@ export const componentEntries: readonly ComponentEntry[] = [
     name: 'Textarea',
     covers: ['Textarea'],
     examples: [{ label: 'padrão', render: (state) => stateOnly(state, ['default', 'disabled'], <Textarea aria-label="Observação" defaultValue="Texto de exemplo" disabled={state === 'disabled'} />) }]
+  },
+  {
+    id: 'date-picker',
+    name: 'DatePicker',
+    covers: ['DatePicker'],
+    examples: [{ label: 'dia digitado ou escolhido no calendário (apague para ver o erro)', render: (state) => stateOnly(state, ['default', 'disabled'], <DatePickerDemo disabled={state === 'disabled'} />) }]
   },
   {
     id: 'select',

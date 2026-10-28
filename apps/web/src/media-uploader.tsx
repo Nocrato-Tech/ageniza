@@ -4,7 +4,7 @@ import { Check, CircleAlert, Image as ImageIcon, RotateCcw, Upload, Video } from
 
 import { Button, FieldMessage } from '@ageniza/ui';
 
-import { useAgencyContext } from './agency.js';
+import { useAgencyContext, useWriteBlocked } from './agency.js';
 import { useApiClient } from './http.js';
 import { UPLOAD_FAILURE_TEXT, UploadError, uploadMedia, type UploadFailure } from './media-upload.js';
 
@@ -30,6 +30,7 @@ export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel, headi
   triggerHidden?: boolean;
 }) {
   const agency = useAgencyContext();
+  const blocked = useWriteBlocked();
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const inputId = useId();
@@ -68,7 +69,7 @@ export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel, headi
   return <div className="media-uploader">
     <div className="content-folders__heading">
       {heading}
-      {!triggerHidden && <Button variant="secondary" leadingIcon={<Upload />} disabled={sending} onClick={() => inputRef.current?.click()}>Enviar mídia</Button>}
+      {!triggerHidden && <Button variant="secondary" leadingIcon={<Upload />} disabled={sending} blockedReason={blocked} onClick={() => inputRef.current?.click()}>Enviar mídia</Button>}
     </div>
     <label htmlFor={inputId} className="visually-hidden">Enviar mídia</label>
     <input

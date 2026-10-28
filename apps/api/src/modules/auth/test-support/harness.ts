@@ -21,10 +21,11 @@ import { createEmailService, type EmailService } from '../email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requireAnyPermission, requirePermission } from '../../tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from '../../invitations/routes.js';
 import type { ClientModuleDependencies } from '../../clients/routes.js';
+import { approvalCookieOptions } from '../../approval-links/policy.js';
+import type { ApprovalLinkModuleDependencies } from '../../approval-links/routes.js';
 import type { ContentPortalModuleDependencies } from '../../contents/portal-routes.js';
 import type { ContentModuleDependencies } from '../../contents/routes.js';
 import type { ContextModuleDependencies } from '../../contexts/routes.js';
-import { countValidContexts } from '../../contexts/service.js';
 import { createRequireSession } from '../session-guard.js';
 import { createMediaJobDispatcher, type MediaJobDispatcher } from '../../media/job-dispatcher.js';
 import type { MediaModuleDependencies } from '../../media/routes.js';
@@ -145,6 +146,7 @@ export const buildTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig =
   deployVersion: 'test',
   authSecret: TEST_AUTH_SECRET,
   appPublicUrl: TEST_APP_PUBLIC_URL,
+  apiPublicUrl: 'http://127.0.0.1:3001',
   host: '127.0.0.1',
   port: 0,
   corsOrigins: [TEST_APP_PUBLIC_URL],
@@ -171,12 +173,6 @@ export interface TestAppOptions {
    * `requireAgencyAccess`/`requireClientAccess` prehandlers without a bespoke fixture.
    */
   readonly registerExtraRoutes?: (app: FastifyInstance, guards: TestGuardBuilders) => void | Promise<void>;
-  /**
-   * Overrides the real `countValidContexts` the auth module is normally wired with. Exists so a
-   * test can deterministically simulate the context-count lookup failing (2026-09-29 security
-   * review of PR #176, achado 2) without relying on a real, hard-to-trigger database error.
-   */
-  readonly countValidContexts?: (userId: string) => Promise<number>;
   /** Test-only route observer, forwarded to `buildApp` (issue #182 route-inventory test). */
   readonly onRoute?: ApiAppOptions['onRoute'];
   /**
@@ -201,6 +197,8 @@ export interface TestAppOptions {
 /** Real prehandler builders, wired to this test app's own `auth`/`database`, for `registerExtraRoutes`. */
 export interface TestGuardBuilders {
   readonly requireSession: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  /** The session guard of the routes that answer an account whose e-mail is not confirmed, to test a later guard alone. */
+  readonly requireSessionUnconfirmedAllowed: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   readonly requireAgencyAccess: (request: FastifyRequest) => Promise<void>;
   readonly requireClientAccess: (request: FastifyRequest) => Promise<void>;
 }
@@ -248,12 +246,18 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   };
   const requireClientAccess = createRequireClientAccess({ database });
   const contexts: ContextModuleDependencies = { database, auth, requireClientAccess };
-  const agencies: AgencyModuleDependencies = { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }) };
+  const agencies: AgencyModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    ...(config.supportContactEmail === undefined ? {} : { supportContactEmail: config.supportContactEmail })
+  };
   const clients: ClientModuleDependencies = config.identityStorage === undefined
-    ? { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }), requirePermission, requireClientAccess, photoUrlExpirySeconds: 300 }
+    ? { database, auth, emailService, requireAgencyAccess: createRequireAgencyAccess({ database }), requirePermission, requireClientAccess, photoUrlExpirySeconds: 300 }
     : {
         database,
         auth,
+        emailService,
         requireAgencyAccess: createRequireAgencyAccess({ database }),
         requirePermission,
         requireClientAccess,
@@ -300,6 +304,11 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     requireClientAccess,
     ...(media === undefined ? {} : { media: { storage: media.storage, downloadUrlExpirySeconds: media.config.downloadUrlExpirySeconds } })
   };
+  const approvalLinks: ApprovalLinkModuleDependencies = {
+    database,
+    cookie: approvalCookieOptions(config.apiPublicUrl),
+    ...(media === undefined ? {} : { media: { storage: media.storage, downloadUrlExpirySeconds: media.config.downloadUrlExpirySeconds } })
+  };
   const profile: ProfileModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
     database,
     auth,
@@ -327,7 +336,10 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     limiter,
     auditRecorder,
     invitationTokenLookup,
-    countValidContexts: options.countValidContexts ?? ((userId: string) => countValidContexts(database, userId))
+    database,
+    emailService,
+    legalVersions: { terms: config.authTermsVersion, privacy: config.authPrivacyVersion },
+    ...(config.google === undefined ? {} : { google: { appPublicUrl: config.appPublicUrl } })
   };
   const app = await buildApp({
     config,
@@ -339,6 +351,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     clients,
     contents,
     contentPortal,
+    approvalLinks,
     collaborators,
     media,
     profile,
@@ -353,6 +366,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   if (options.registerExtraRoutes !== undefined) {
     const guards: TestGuardBuilders = {
       requireSession: createRequireSession({ auth }),
+      requireSessionUnconfirmedAllowed: createRequireSession({ auth }, { allowUnconfirmed: true }),
       requireAgencyAccess: createRequireAgencyAccess({ database }),
       requireClientAccess
     };
@@ -392,6 +406,8 @@ export interface InsertTestUserOptions {
   readonly email?: string;
   readonly password?: string;
   readonly name?: string;
+  /** Confirmed by default, like every account but a fresh public sign-up (issue #706). */
+  readonly emailVerified?: boolean;
 }
 
 /** Inserts a credential user directly into `auth.user`/`auth.account`, exactly as issue #31 prescribes. */
@@ -402,7 +418,7 @@ export const insertTestUser = async (pool: Pool, auth: AuthInstance, options: In
   const name = options.name ?? 'Integration Test User';
   const passwordHash = await (await auth.$context).password.hash(password);
 
-  await pool.query('insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, false)', [id, name, email]);
+  await pool.query('insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, $4)', [id, name, email, options.emailVerified ?? true]);
   await pool.query(
     'insert into auth."account" (id, "accountId", "providerId", "userId", password, "updatedAt") values ($1, $2, $3, $4, $5, now())',
     [randomUUID(), id, 'credential', id, passwordHash]

@@ -1,11 +1,14 @@
 import { captureUnexpectedError, type CoreLogger } from '@ageniza/core';
 import {
   clientInvitationEmail,
+  clientPortalWelcomeEmail,
   collaboratorInvitationEmail,
   emailChangedEmail,
   emailChangeRequestedEmail,
+  emailVerificationEmail,
   maskEmailAddress,
   passwordResetEmail,
+  signUpWithExistingAccountEmail,
   type EmailSender
 } from '@ageniza/email';
 
@@ -38,9 +41,23 @@ export interface SendClientInvitationEmailInput extends SendInvitationEmailInput
   readonly clientName: string;
 }
 
+export interface SendClientPortalWelcomeEmailInput {
+  readonly to: string;
+  readonly agencyName: string;
+  readonly clientName: string;
+}
+
 export interface SendAccountNoticeInput {
   readonly to: string;
 }
+
+export interface SendEmailVerificationInput {
+  readonly to: string;
+  readonly token: string;
+}
+
+/** The sign-up confirmation link lives this long (2026-10-26 decision on the public sign-up). */
+export const EMAIL_VERIFICATION_EXPIRES_IN_MINUTES = 24 * 60;
 
 export interface EmailService {
   /** Schedules delivery and returns without waiting for the email transport. */
@@ -49,10 +66,16 @@ export interface EmailService {
   sendEmailChangeRequested(input: SendAccountNoticeInput): void;
   /** To the old address, after the swap. Detached like a reset. */
   sendEmailChanged(input: SendAccountNoticeInput): void;
+  /** The sign-up confirmation link. Detached like a reset, so a sign-up answers the same for a taken address. */
+  sendEmailVerification(input: SendEmailVerificationInput): void;
+  /** To an address that already has an account, instead of a link, when someone signs up with it. Detached. */
+  sendSignUpWithExistingAccount(input: SendAccountNoticeInput): void;
   /** Sends an administrative collaborator invitation and waits for SMTP delivery. */
   sendCollaboratorInvitation(input: SendInvitationEmailInput): Promise<void>;
   /** Sends an administrative client invitation and waits for SMTP delivery. */
   sendClientInvitation(input: SendClientInvitationEmailInput): Promise<void>;
+  /** To the person "Adicionar pessoa" gave an access to (issue #711): nothing to accept, a link to the sign-in screen. Waits for SMTP delivery. */
+  sendClientPortalWelcome(input: SendClientPortalWelcomeEmailInput): Promise<void>;
   /** Waits for in-flight delivery for at most ten seconds. */
   drain(): Promise<void>;
   /** Alias for drain for shutdown manager integrations. */
@@ -70,6 +93,9 @@ const PASSWORD_RESET_OPERATION = 'auth.password_reset_email';
 
 const actionUrlFor = (appPublicUrl: string, token: string): string =>
   `${appPublicUrl.replace(/\/$/, '')}/senha/redefinir?token=${encodeURIComponent(token)}`;
+
+const verificationActionUrlFor = (appPublicUrl: string, token: string): string =>
+  `${appPublicUrl.replace(/\/$/, '')}/email/verificar?token=${encodeURIComponent(token)}`;
 
 const resetActionUrlFor = (appPublicUrl: string, token: string, inviteToken?: string): string => {
   const actionUrl = actionUrlFor(appPublicUrl, token);
@@ -112,8 +138,8 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
   };
 
   const sendInvitation = async (
-    input: SendInvitationEmailInput | SendClientInvitationEmailInput,
-    message: ReturnType<typeof collaboratorInvitationEmail> | ReturnType<typeof clientInvitationEmail>,
+    input: { readonly to: string },
+    message: ReturnType<typeof collaboratorInvitationEmail> | ReturnType<typeof clientInvitationEmail> | ReturnType<typeof clientPortalWelcomeEmail>,
     template: string
   ): Promise<void> => {
     try {
@@ -195,6 +221,15 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
     sendEmailChanged(input): void {
       sendNotice(input.to, emailChangedEmail(), 'email-changed');
     },
+    sendEmailVerification(input): void {
+      sendNotice(input.to, emailVerificationEmail({
+        actionUrl: verificationActionUrlFor(options.config.appPublicUrl, input.token),
+        expiresInMinutes: EMAIL_VERIFICATION_EXPIRES_IN_MINUTES
+      }), 'email-verification');
+    },
+    sendSignUpWithExistingAccount(input): void {
+      sendNotice(input.to, signUpWithExistingAccountEmail(), 'sign-up-existing-account');
+    },
     sendCollaboratorInvitation(input): Promise<void> {
       return sendInvitation(input, collaboratorInvitationEmail({
         actionUrl: invitationActionUrlFor(options.config.appPublicUrl, input),
@@ -209,6 +244,13 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
         agencyName: input.agencyName,
         clientName: input.clientName
       }), 'client-invitation');
+    },
+    sendClientPortalWelcome(input): Promise<void> {
+      return sendInvitation(input, clientPortalWelcomeEmail({
+        actionUrl: `${options.config.appPublicUrl.replace(/\/$/, '')}/entrar`,
+        agencyName: input.agencyName,
+        clientName: input.clientName
+      }), 'client-portal-welcome');
     },
     drain,
     shutdown: drain

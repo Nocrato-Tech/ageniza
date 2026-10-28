@@ -16,6 +16,8 @@ import type { DatabaseClient } from '@ageniza/database';
 import { revokeInsertId } from '../auth/test-support/insert-id-revoked.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requirePermission } from '../tenancy/guards.js';
 import { registerClientModule } from './routes.js';
+import { unusedEmailService } from './test-support/email-service.js';
+import { setPortalAccessStatus } from './test-support/portal-access.js';
 
 // Issues #128 (agency side) and #130 (portal side): the conversation between an agency and its
 // client, over one shared service. Every scenario that proves isolation uses a person who belongs
@@ -165,6 +167,7 @@ const withRacingApp = async <T>(
     requireAgencyAccess: createRequireAgencyAccess({ database: app.database }),
     requirePermission,
     requireClientAccess: createRequireClientAccess({ database: app.database }),
+    emailService: unusedEmailService,
     photoUrlExpirySeconds: 300
   });
   await racingApp.ready();
@@ -620,7 +623,7 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
         { author: 'portalOne', side: 'client', body: 'da cliente', at: '2026-06-01T10:01:00Z' },
         { author: 'portalRemoved', side: 'client', body: 'de quem saiu', at: '2026-06-01T10:02:00Z' }
       ]);
-      await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.portalRemoved!.id }).update({ status: 'removed' });
+      await setPortalAccessStatus(owner.knex, clientA1, users.portalRemoved!.id, 'removed');
       try {
         const data = (await call('GET', `${agencyThreads(agencyA, clientA1)}/${threadId}/comments`, cookies.manager!)).json().data as { body: string; side: string; author: { name: string; photoUrl: string | null } | null }[];
         expect(data.map((item) => [item.body, item.side, item.author?.name])).toEqual([
@@ -631,7 +634,7 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
         expect(data[0]!.author!.photoUrl).toContain(`users/${users.manager!.id}/avatar/photo.png`);
         expect(data[1]!.author!.photoUrl).toBeNull();
       } finally {
-        await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.portalRemoved!.id }).update({ status: 'active' });
+        await setPortalAccessStatus(owner.knex, clientA1, users.portalRemoved!.id, 'active');
         await app.pool.query('update auth."user" set image = null where id = $1', [users.manager!.id]);
       }
     });
@@ -947,7 +950,7 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
     it('answers 404 on every portal route once the link of a collaborator who also has one is removed, while the agency routes stay open', async () => {
       const threadId = await seedThread(clientA1, { sectionKey: 'branding' }, [{ author: 'portalOne', side: 'client', at: '2026-01-11T10:00:00Z' }]);
       expect(await portalRoutesAs(cookies.dual!, clientA1, threadId, { sectionKey: 'branding' })).toEqual([200, 201, 200, 201]);
-      await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.dual!.id }).update({ status: 'removed' });
+      await setPortalAccessStatus(owner.knex, clientA1, users.dual!.id, 'removed');
       try {
         const threadsBefore = await countThreads(clientA1);
         const commentsBefore = await countComments(clientA1);
@@ -956,7 +959,7 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
         expect(await countComments(clientA1)).toBe(commentsBefore);
         expect((await call('GET', `${agencyThreads(agencyA, clientA1)}?${section('branding')}`, cookies.dual!)).statusCode).toBe(200);
       } finally {
-        await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.dual!.id }).update({ status: 'active' });
+        await setPortalAccessStatus(owner.knex, clientA1, users.dual!.id, 'active');
       }
     });
 
@@ -974,14 +977,14 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
     it('answers 404 on the next request after the link is removed, without a new login', async () => {
       const cookie = cookies.portalRemoved!;
       expect((await call('GET', `${portalThreads(clientA1)}?${section('branding')}`, cookie)).statusCode).toBe(200);
-      await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.portalRemoved!.id }).update({ status: 'removed' });
+      await setPortalAccessStatus(owner.knex, clientA1, users.portalRemoved!.id, 'removed');
       try {
         const threadsBefore = await countThreads(clientA1);
         expect((await call('GET', `${portalThreads(clientA1)}?${section('branding')}`, cookie)).statusCode).toBe(404);
         expect((await openAs(cookie, portalThreads(clientA1), { sectionKey: 'branding' })).statusCode).toBe(404);
         expect(await countThreads(clientA1)).toBe(threadsBefore);
       } finally {
-        await owner.knex('client_memberships').where({ client_id: clientA1, user_id: users.portalRemoved!.id }).update({ status: 'active' });
+        await setPortalAccessStatus(owner.knex, clientA1, users.portalRemoved!.id, 'active');
       }
     });
 

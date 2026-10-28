@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronsUpDown, LogOut } from 'lucide-react';
@@ -16,7 +16,9 @@ import { Avatar, Button, ConfirmDialog, IconButton, Menu, MenuItem, MenuSeparato
 import { useAuthSession, useOptionalAuthSessionStore, type AuthSessionStore } from './auth.js';
 import { contextDestination, targetFromDestination, type ContextTarget } from './context-destination.js';
 import { contextDescription, contextKey, contextTitle } from './context-labels.js';
+import { CREATE_AGENCY_LABEL, CreateAgencyDialog } from './create-agency.js';
 import { EmailChangeDialog } from './email-change.js';
+import { forgetGoogleInvite } from './google-sign-in.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 type LogoutAction = 'logout' | 'logout-all';
@@ -53,9 +55,14 @@ export interface AccountMenuProps {
   user?: AuthUser | null;
   /** `sidebar` is the foot of the agency navigation: the person as the trigger and Sair beside it. */
   variant?: 'header' | 'sidebar';
+  /**
+   * Whether this menu is the one that reopens the e-mail change when the person comes back from Google. The menus of the loading
+   * skeletons say no: they are gone as soon as the area loads, and one that spent the mark would leave the real menu without it.
+   */
+  reopensEmailChange?: boolean;
 }
 
-export function AccountMenu({ activeContext, onReviewTour, user: userOverride, variant = 'header' }: AccountMenuProps) {
+export function AccountMenu({ activeContext, onReviewTour, user: userOverride, variant = 'header', reopensEmailChange = true }: AccountMenuProps) {
   const httpClient = useApiClient();
   const authStore = useOptionalAuthSessionStore();
   const session = useAuthSession(userOverride === undefined ? (authStore ?? fallbackAuthStore) : fallbackAuthStore);
@@ -65,7 +72,10 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
   const [menuOpen, setMenuOpen] = useState(false);
   const [panel, setPanel] = useState<AccountMenuPanel>('root');
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [emailChangeOpen, setEmailChangeOpen] = useState(false);
+  // Coming back from the Google confirmation of an e-mail change (`GoogleLandingPage`): the dialog reopens in its Google mode.
+  const [reopenedViaGoogle, setReopenedViaGoogle] = useState(() => reopensEmailChange && (location.state as { reopenEmailChange?: unknown } | null)?.reopenEmailChange === true);
+  const [emailChangeOpen, setEmailChangeOpen] = useState(reopenedViaGoogle);
+  const [createAgencyOpen, setCreateAgencyOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<LogoutAction | null>(null);
   const [failedAction, setFailedAction] = useState<LogoutAction | null>(null);
 
@@ -97,6 +107,11 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
 
   const currentTarget = targetFromDestination(location.pathname);
 
+  // The marker is spent on arrival, so a reload or a later visit to the same entry does not reopen the dialog.
+  useEffect(() => {
+    if (reopenedViaGoogle) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, []);
+
   if (user === null || (userOverride === undefined && session.status === 'loading')) {
     return <Skeleton className='account-menu__skeleton' />;
   }
@@ -111,6 +126,7 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
         response: action === 'logout' ? AuthLogoutResponseSchema : AuthLogoutAllResponseSchema
       });
       queryClient.clear();
+      forgetGoogleInvite();
       authStore?.end();
       navigate('/entrar', { replace: true });
     } catch (error: unknown) {
@@ -119,6 +135,7 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
       // redirect saved, so the next account is not sent back to the previous one's address.
       if (error instanceof HttpClientError && error.status === 401) {
         queryClient.clear();
+        forgetGoogleInvite();
         authStore?.end();
         navigate('/entrar', { replace: true });
         return;
@@ -171,6 +188,9 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
             <MenuItem onClick={(event) => { event.preventDefault(); setPanel('switch'); }}>
               {switchLabel} <span aria-hidden='true'>{'\u203A'}</span>
             </MenuItem>
+          )}
+          {contexts.data?.canCreateAgency === true && (
+            <MenuItem onClick={() => { setCreateAgencyOpen(true); }}>{CREATE_AGENCY_LABEL}</MenuItem>
           )}
           {onReviewTour !== undefined && <MenuItem onClick={onReviewTour}>Rever o tour</MenuItem>}
           <MenuItem onClick={() => { setEmailChangeOpen(true); }}>{emailChangeLabel}</MenuItem>
@@ -229,7 +249,8 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
           <Button size='sm' variant='ghost' onClick={() => { void startLogout(failedAction); }}>Tentar de novo</Button>
         </div>
       )}
-      {emailChangeOpen && <EmailChangeDialog onClose={() => { setEmailChangeOpen(false); }} />}
+      {emailChangeOpen && <EmailChangeDialog viaGoogle={reopenedViaGoogle} returnTo={`${location.pathname}${location.search}`}onClose={() => { setEmailChangeOpen(false); setReopenedViaGoogle(false); }} />}
+      {createAgencyOpen && <CreateAgencyDialog onClose={() => { setCreateAgencyOpen(false); }} />}
       <ConfirmDialog
         open={confirmOpen}
         title={`${logoutAllLabel}?`}

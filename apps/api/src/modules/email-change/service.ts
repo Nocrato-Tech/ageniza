@@ -35,6 +35,27 @@ export const loadCredentialHash = async (transaction: EmailChangeTransaction, us
 };
 
 /**
+ * The Google subject of an account with no password, or undefined (it has none, or it has a password). The subject
+ * is what a Google-only account's request is made under, in the place of the password hash (decision 2026-10-26, item 6).
+ */
+export const loadGoogleSubjectOfPasswordlessAccount = async (transaction: EmailChangeTransaction, userId: string): Promise<string | undefined> => {
+  const result = await raw<RawRows<{ account_id: string }>>(transaction, `
+    select google."accountId" as account_id
+    from auth.account google
+    where google."userId" = ?::uuid and google."providerId" = 'google'
+      and not exists (select 1 from auth.account credential where credential."userId" = google."userId" and credential."providerId" = 'credential')
+    limit 1
+  `, [userId]);
+  return result.rows[0]?.account_id;
+};
+
+/** When the session was created: a Google-only account's sessions all come from a Google sign-in, so this is when it last proved itself. */
+export const loadSessionCreatedAt = async (transaction: EmailChangeTransaction, sessionId: string): Promise<Date | undefined> => {
+  const result = await raw<RawRows<{ created_at: Date }>>(transaction, 'select "createdAt" as created_at from auth.session where id = ?::uuid', [sessionId]);
+  return result.rows[0]?.created_at;
+};
+
+/**
  * Records the request for the bound actor; the previous address comes from the database. The hash is
  * the one the password was just verified against: the request is recorded under that credential, and
  * refused if the account's has moved since.

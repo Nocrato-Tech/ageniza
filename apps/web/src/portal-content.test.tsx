@@ -41,8 +41,9 @@ const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 const sessionBody = { user: { id: '99999999-9999-4999-8999-999999999999', name: 'Maria', email: 'maria@example.test' }, session: { expiresAt: '2026-12-01T00:00:00.000Z' } };
-const contextsBody = { contexts: [{ type: 'client', clientId: CLIENT, clientName: 'Padaria Central', agencyId: AGENCY, agencyName: 'Agência Um', onboardingPending: false }] };
+const contextsBody = { canCreateAgency: false, contexts: [{ type: 'client', clientId: CLIENT, clientName: 'Padaria Central', agencyId: AGENCY, agencyName: 'Agência Um', onboardingPending: false }] };
 const legalAccepted = {
+  required: false,
   documents: [
     { document: 'terms', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false },
     { document: 'privacy', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false }
@@ -53,6 +54,7 @@ interface Options {
   readonly holdWrite?: Promise<void>;
   readonly holdRead?: Promise<void>;
   readonly mediaUrl?: (assetId: string, variant: string) => string;
+  readonly agencyReadOnly?: boolean;
 }
 
 const setup = (options: Options = {}) => {
@@ -66,7 +68,7 @@ const setup = (options: Options = {}) => {
     if (url.pathname.endsWith('/auth/session')) return json(sessionBody);
     if (url.pathname.endsWith('/me/contexts')) return json(contextsBody);
     if (url.pathname.endsWith('/me/legal-acceptances')) return json(legalAccepted);
-    if (url.pathname === `/clients/${CLIENT}`) { portalCalls.push(`${method} ${url.pathname}`); return json(portalClientBody(CLIENT, 'Padaria Central')); }
+    if (url.pathname === `/clients/${CLIENT}`) { portalCalls.push(`${method} ${url.pathname}`); return json({ ...portalClientBody(CLIENT, 'Padaria Central'), agencyReadOnly: options.agencyReadOnly ?? false }); }
     if (url.pathname.startsWith(`/clients/${CLIENT}/threads`)) {
       const answered = conversation.handle(url, method, body);
       if (answered !== undefined) return answered;
@@ -317,6 +319,25 @@ describe('the post of the portal (#270)', () => {
   });
 
   describe('Aprovar', () => {
+    it('stays on screen, disabled with the reason, while the agency is read-only, and sends nothing (issue #714)', async () => {
+      const { contents } = await open({ title: 'Lançamento da primavera' }, { agencyReadOnly: true });
+      expect(await title('Lançamento da primavera')).toBeTruthy();
+      const describedBy = (button: HTMLElement) => (button.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent).join(' ');
+      for (const name of ['Aprovar', 'Pedir ajuste']) {
+        const button = await screen.findByRole('button', { name });
+        expect(button.getAttribute('aria-disabled')).toBe('true');
+        expect(describedBy(button)).toBe('O plano precisa ser renovado para usar esta opção.');
+        fireEvent.click(button);
+      }
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(sentBodies(contents, 'approve')).toEqual([]);
+      // Commenting is a write too: the button that opens the conversation is there, disabled with the same reason.
+      const conversation = await screen.findByRole('region', { name: /Conversa sobre/ });
+      const start = await within(conversation).findByRole('button');
+      expect(start.getAttribute('aria-disabled')).toBe('true');
+      expect(describedBy(start)).toBe('O plano precisa ser renovado para usar esta opção.');
+    });
+
     it('sends the revision that was read, shows Aprovado and takes the decision away', async () => {
       const { contents, portalCalls } = await open({ revision: 7 });
       fireEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));

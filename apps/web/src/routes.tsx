@@ -3,7 +3,9 @@ import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from 'r
 import { useQuery } from '@tanstack/react-query';
 
 import type { AuthSessionSnapshot } from './auth.js';
+import { AcceptanceGate, AcceptancePage } from './acceptance.js';
 import { AccountMenu } from './account-menu.js';
+import { ApprovalLinkPage } from './approval-link.js';
 import { DarkArea } from './area-theme.js';
 import { AgencyAreaLayout, AgencyHomePage, AgencyPermissionRoute } from './agency.js';
 import { AuthLayout } from './auth-layout.js';
@@ -11,13 +13,17 @@ import { CircleAlert, CircleCheck } from 'lucide-react';
 import { Button, ButtonLink, LiveStatus, Logo } from '@ageniza/ui';
 import { ClientBrandStudyTab } from './brand-study.js';
 import { ClientDetailPage, ClientGeneralTab, ClientSkeletonTab } from './client-detail.js';
+import { ClientMediaTab } from './client-media.js';
 import { ClientsPage } from './clients.js';
 import { CollaboratorsPage } from './collaborators.js';
 import { ContentCreateRoute, ContentModalRoute } from './content-modal.js';
 import { ContentsClientPage, ContentsPage } from './contents.js';
 import { ContextSelectPage } from './contexts.js';
 import { ConfirmEmailChangePage } from './email-change.js';
+import { EmailPendingPage } from './email-pending.js';
+import { VerifyEmailPage } from './email-verification.js';
 import { ForgotPasswordPage } from './forgot-password.js';
+import { GoogleLandingPage } from './google-sign-in.js';
 import { getHealth } from './health.js';
 import { useApiClient } from './http.js';
 import { InvitationPage } from './invite.js';
@@ -34,6 +40,8 @@ import { PortalBrandPage } from './portal-brand.js';
 import { PortalContentPage } from './portal-content.js';
 import { ResetPasswordPage } from './reset-password.js';
 import { SessionWatch } from './session-watch.js';
+import { SignUpPage } from './sign-up.js';
+import { StartPage } from './start.js';
 import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
 
 /** Internal page of tokens and components: dev only. Vite replaces `import.meta.env.DEV` with `false` in the production build, which drops the branch and its chunk. */
@@ -96,6 +104,8 @@ function ServiceStatus() {
  */
 export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot }) {
   return <Routes>
+    {/* The page of the link in the e-mail "conteúdos para aprovar": no login, no shell of the product, its own header (#717). */}
+    <Route path="aprovar" element={<ApprovalLinkPage />} />
     <Route element={<PublicLayout />}>
       <Route index element={<PublicHome />} />
       <Route path="status" element={<ServiceStatus />} />
@@ -105,10 +115,14 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     </Route>
     <Route element={<AuthLayout />}>
       <Route path="entrar" element={<LoginPage />} />
+      <Route path="entrar/google" element={<GoogleLandingPage />} />
       <Route path="senha/esquecida" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <ForgotPasswordPage />} />
       <Route path="senha/redefinir" element={<ResetPasswordPage />} />
       <Route path="convite/:token" element={<InvitationPage />} />
       <Route path="email/confirmar" element={<ConfirmEmailChangePage />} />
+      <Route path="email/verificar" element={<VerifyEmailPage />} />
+      <Route path="confirme-seu-email" element={<EmailPendingPage />} />
+      <Route path="criar-conta" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <SignUpPage />} />
     </Route>
     <Route path="agencia/:agenciaId" element={<DarkArea><SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate></DarkArea>}>
       <Route index element={<AgencyHomePage />} />
@@ -152,6 +166,8 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
             <Route path="novo" element={<ContentCreateRoute />} />
             <Route path=":conteudoId" element={<ContentModalRoute />} />
           </Route>
+          {/* The media library of the client; the permission gate is in ClientDetailPage, like the Conteúdos tab's. */}
+          <Route path="midias" element={<ClientMediaTab />} />
           <Route path="tarefas" element={<ClientSkeletonTab title="Tarefas" description="Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis." />} />
           <Route path="estudo-de-marca" element={<ClientBrandStudyTab />} />
           <Route path="relatorios" element={<ClientSkeletonTab title="Relatórios" description="Aqui vai ficar o relatório deste cliente, com os resultados do trabalho." />} />
@@ -178,11 +194,15 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
     {DesignSystemPage !== null && <Route path="design-system" element={<Suspense fallback={<LoadingPage />}><DesignSystemPage /></Suspense>} />}
     <Route element={<ProtectedLayout session={session} />}>
       <Route path="contextos" element={<ContextSelectPage />} />
+      {/* An account that came in by Google and has not accepted the Terms and the Privacy Policy has no context, so the resolve
+          sends it here (`none`): this is where it is sent on to `/aceite`. The picker stays free of the legal read. */}
+      <Route path="comecar" element={<AcceptanceGate><StartPage /></AcceptanceGate>} />
+      <Route path="aceite" element={<AcceptancePage />} />
       {/* `/app` is not a destination anymore; the resolve decides where the person enters. */}
       <Route path="app" element={<Navigate to="/contextos" replace />} />
     </Route>
     <Route path="*" element={session.isAuthenticated
       ? <ProtectedLayout session={session}><NotFoundPage as="section" home="/contextos" /></ProtectedLayout>
-      : <NotFoundPage />} />
+      : <NotFoundPage home="/entrar" />} />
   </Routes>;
 }

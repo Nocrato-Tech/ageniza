@@ -29,6 +29,7 @@ const portalClient = {
   archivedAt: null,
   agencyName: 'Agência Exemplo',
   onboardingSeenAt: null,
+  agencyReadOnly: false,
   home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0, contentsAwaitingApproval: 0 }
 };
 
@@ -93,7 +94,7 @@ describe('the portal access lists (issue #132)', () => {
   });
 
   it('read a link id as a plain string, so a malformed one reaches the uniform 404', () => {
-    expect(AgencyClientMemberPathParamsSchema.safeParse({ agencyId: id, clientId: id, membershipId: 'not-a-uuid' }).success).toBe(true);
-    expect(AgencyClientMemberPathParamsSchema.safeParse({ agencyId: id, clientId: 'not-a-uuid', membershipId: id }).success).toBe(false);
+    expect(AgencyClientMemberPathParamsSchema.safeParse({ agencyId: id, clientId: id, accessId: 'not-a-uuid' }).success).toBe(true);
+    expect(AgencyClientMemberPathParamsSchema.safeParse({ agencyId: id, clientId: 'not-a-uuid', accessId: id }).success).toBe(false);
   });
 });

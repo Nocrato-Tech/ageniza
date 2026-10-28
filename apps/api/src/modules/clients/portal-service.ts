@@ -36,6 +36,7 @@ export interface PortalClientRow extends ClientRow {
   readonly agency_id: string;
   readonly agency_name: string;
   readonly onboarding_seen_at: Date | null;
+  readonly agency_read_only: boolean;
 }
 
 /**
@@ -54,7 +55,8 @@ export const loadPortalClient = async (
       client.segment, client.website, client.instagram_handle, client.contact_name, client.contact_phone,
       client.contact_email, client.closing_date::text as closing_date, client.archived_at,
       client.agency_id, agency.name as agency_name,
-      membership.onboarding_seen_at
+      membership.onboarding_seen_at,
+      (agency.plan = 'trial' and agency.trial_ends_at <= now()) as agency_read_only
     from public.clients client
     join public.agencies agency on agency.id = client.agency_id
     join public.client_memberships membership on membership.client_id = client.id

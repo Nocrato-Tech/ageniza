@@ -80,19 +80,27 @@ export const CollaboratorInvitationRequestSchema = z.object({
   roleId: z.string().uuid()
 }).strict();
 
-export const ClientInvitationRequestSchema = z.object({
-  email: AuthEmailSchema
-}).strict();
-
-/** Creation and resend answer with the invitation id and its expiry; never with the token. */
+/** Collaborator creation and resend answer with the invitation id and its expiry. */
 export const InvitationCreatedResponseSchema = z.object({
   invitationId: z.string().uuid(),
   expiresAt: z.string().datetime()
 }).strict();
 
-/** Collaborator creation answers the still-valid invitation it superseded, if any (issue #333). */
+/**
+ * Collaborator creation answers the still-valid invitation it superseded, if any (issue #333), and
+ * the link it just e-mailed, this once (issue #710): no other route ever returns it again.
+ */
 export const CollaboratorInvitationCreatedResponseSchema = InvitationCreatedResponseSchema.extend({
-  supersededInvitationId: z.string().uuid().nullable()
+  supersededInvitationId: z.string().uuid().nullable(),
+  invitationUrl: z.string().url()
+}).strict();
+
+/**
+ * A resend answers the new link of a collaborator invitation, this once, to copy again (issue #710);
+ * a portal invitation's is `null`, since the copyable link is a collaborator-invitation rule only.
+ */
+export const InvitationResentResponseSchema = InvitationCreatedResponseSchema.extend({
+  invitationUrl: z.string().url().nullable()
 }).strict();
 
 export const InvitationAcceptRequestSchema = AuthNoBodySchema;
@@ -121,8 +129,8 @@ export type InvitationContext = z.infer<typeof InvitationContextSchema>;
 export type InvitationAcceptNewAccountRequest = z.infer<typeof InvitationAcceptNewAccountRequestSchema>;
 export type InvitationAcceptNewAccountResponse = z.infer<typeof InvitationAcceptNewAccountResponseSchema>;
 export type CollaboratorInvitationRequest = z.infer<typeof CollaboratorInvitationRequestSchema>;
-export type ClientInvitationRequest = z.infer<typeof ClientInvitationRequestSchema>;
 export type InvitationCreatedResponse = z.infer<typeof InvitationCreatedResponseSchema>;
 export type CollaboratorInvitationCreatedResponse = z.infer<typeof CollaboratorInvitationCreatedResponseSchema>;
+export type InvitationResentResponse = z.infer<typeof InvitationResentResponseSchema>;
 export type InvitationAcceptRequest = z.infer<typeof InvitationAcceptRequestSchema>;
 export type InvitationAcceptResponse = z.infer<typeof InvitationAcceptResponseSchema>;

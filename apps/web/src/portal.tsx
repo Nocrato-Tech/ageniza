@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AuthNoContentResponseSchema, PortalClientResponseSchema, type PortalClientResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
+import { isTermsNotAccepted, TermsRedirect } from './acceptance.js';
 import { Avatar, Button, EmptyState, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
@@ -13,6 +14,7 @@ import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
+import { PortalReadOnlyNotice } from './plan-notice.js';
 import { PortalTour, type PortalTourTarget } from './portal-tour.js';
 import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
@@ -73,7 +75,7 @@ function PortalShellSkeleton() {
         <Skeleton className="portal-header__avatar-skeleton" />
         <div className="portal-header__labels"><Skeleton className="portal-header__name-skeleton" /><Skeleton /></div>
       </div>
-      <AccountMenu />
+      <AccountMenu reopensEmailChange={false} />
     </header>
     <main className="portal-content" id="main-content">
       <Skeleton className="portal-home__title-skeleton" />
@@ -128,6 +130,8 @@ export function PortalAreaLayout() {
 
   if (!validId) return <PortalContextlessShell><NotFoundPage as="section" home="/contextos" /></PortalContextlessShell>;
   if (error !== null) {
+    // An account that has not accepted the Terms and the Privacy Policy is sent to accept them and comes back here.
+    if (isTermsNotAccepted(error)) return <TermsRedirect />;
     if (isNotFound(error)) return <PortalContextlessShell><NotFoundPage as="section" home="/contextos" /></PortalContextlessShell>;
     return <PortalContextlessShell><PortalUnavailable onRetry={() => { void refetch(); }} /></PortalContextlessShell>;
   }
@@ -167,6 +171,7 @@ export function PortalAreaLayout() {
         <AccountMenu activeContext={data.name} onReviewTour={tourMode === null ? () => { setReviewingClientId(clienteId); } : undefined} />
       </header>
       <LegalNotice />
+      {data.agencyReadOnly && <PortalReadOnlyNotice agencyName={data.agencyName} />}
       <main className="portal-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/portal/${data.id}/inicio`}><Outlet /></NotFoundHomeContext.Provider></main>
       {/* The card lives in the bar so it sits right above it, whatever the bar's height becomes. */}
       <PortalNav clienteId={clienteId} tourTarget={tourTarget}>

@@ -8,6 +8,7 @@ import {
   AcceptLegalDocumentRequestSchema,
   AgencyClientMediaFolderAssetPathParamsSchema,
   AgencyClientMediaFolderPathParamsSchema,
+  AgencyClientInvitationPathParamsSchema,
   AgencyClientMemberPathParamsSchema,
   AgencyClientPathParamsSchema,
   AgencyClientContentPathParamsSchema,
@@ -19,26 +20,36 @@ import {
   AgencyCollaboratorPathParamsSchema,
   AgencyInvitationPathParamsSchema,
   AgencyMeResponseSchema,
+  CreateAgencyRequestSchema,
+  CreateAgencyResponseSchema,
   AgencyMediaAssetPathParamsSchema,
   AgencyPathParamsSchema,
   AgencyRolesQuerySchema,
   AgencyRolesResponseSchema,
+  AuthEmailVerificationResendRequestSchema,
+  AuthEmailVerificationResendResponseSchema,
+  AuthGoogleCallbackQuerySchema,
+  AuthGoogleStartQuerySchema,
+  AuthProvidersResponseSchema,
+  AuthEmailVerifyRequestSchema,
+  AuthEmailVerifyResponseSchema,
   AuthLoginRequestSchema,
   AuthLoginResponseSchema,
   AuthPasswordForgotRequestSchema,
   AuthPasswordForgotResponseSchema,
   AuthPasswordResetRequestSchema,
-  AuthPasswordResetResponseSchema,
   AuthSessionResponseSchema,
+  AuthSignUpRequestSchema,
+  AuthSignUpResponseSchema,
   BrandStudyResponseSchema,
   BrandStudySectionSchema,
   BrandStudySectionUpdateRequestSchema,
   ClientDetailResponseSchema,
   ClientInvitationListQuerySchema,
   ClientInvitationListResponseSchema,
-  ClientInvitationRequestSchema,
   ClientListQuerySchema,
   ClientListResponseSchema,
+  ClientMemberAddRequestSchema,
   ClientMemberListQuerySchema,
   ClientMemberListResponseSchema,
   ClientMemberSchema,
@@ -90,8 +101,8 @@ import {
   InvitationAcceptNewAccountResponseSchema,
   InvitationAcceptRequestSchema,
   InvitationAcceptResponseSchema,
-  InvitationCreatedResponseSchema,
   InvitationPreviewResponseSchema,
+  InvitationResentResponseSchema,
   LegalAcceptancesResponseSchema,
   MeContextsResponseSchema,
   MediaDownloadUrlQuerySchema,
@@ -102,6 +113,17 @@ import {
   MediaFolderSchema,
   MediaDownloadUrlResponseSchema,
   PaginationInputSchema,
+  PortalApprovalApproveRequestSchema,
+  PortalApprovalBatchSchema,
+  PortalApprovalContentPathParamsSchema,
+  PortalApprovalContentSchema,
+  PortalApprovalExchangeRequestSchema,
+  PortalApprovalExchangeResponseSchema,
+  PortalApprovalMediaPathParamsSchema,
+  PortalApprovalMediaUrlQuerySchema,
+  PortalApprovalMediaUrlResponseSchema,
+  PortalApprovalNoQuerySchema,
+  PortalApprovalRequestChangesRequestSchema,
   PortalApproveContentRequestSchema,
   PortalContentAwaitingQuerySchema,
   PortalContentAwaitingResponseSchema,
@@ -156,7 +178,7 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'approval-link' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
@@ -217,12 +239,13 @@ export const API_DOCUMENT_INFO = {
 
 export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   system: 'Saúde e prontidão do processo.',
-  auth: 'Login, sessão, logout e recuperação de senha.',
+  auth: 'Cadastro e confirmação do e-mail, login, sessão, logout e recuperação de senha.',
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
   clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.',
   contents: 'Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste.',
+  'approval-link': 'O link de aprovação do e-mail "conteúdos para aprovar": trocar o token, que vai no fragmento da URL, pela sessão de aprovação; ler o lote com a prévia de celular; assinar a mídia; Aprovar e Pedir ajuste. Sem login, sem conta e só o lote daquele link.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia; as pastas de mídia de um cliente, a listagem do que há nelas e a remoção.',
   profile: 'Edição do próprio nome e da própria foto de perfil.',
@@ -240,11 +263,19 @@ export const ERROR_MESSAGES: Record<string, string> = {
   NO_CONTEXT_ACCESS: 'Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite.',
   NOT_FOUND: 'Resource not found.',
   CSRF_REJECTED: 'Request origin is not allowed',
+  EMAIL_NOT_VERIFIED: 'Confirme o seu e-mail antes de criar uma agência.',
+  EMAIL_NOT_CONFIRMED: 'Confirme o seu e-mail para entrar.',
+  TRIAL_ALREADY_EXISTS: 'Sua conta já tem uma agência em período de teste.',
+  AGENCY_READ_ONLY: 'O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados.',
+  DAILY_EMAIL_LIMIT: 'Limite diário de envios atingido. Tente amanhã.',
+  TRIAL_CLIENT_LIMIT: 'O período de teste permite até 3 clientes ativos.',
+  TRIAL_COLLABORATOR_LIMIT: 'O período de teste permite até 3 colaboradores, contando quem criou a agência e os convites pendentes.',
   PAYLOAD_TOO_LARGE: 'Request payload is too large',
   RATE_LIMITED: 'Too many requests',
   NOT_READY: 'Service is not ready',
   INTERNAL_ERROR: 'An unexpected error occurred',
   INVALID_LINK: 'Este link não é mais válido.',
+  APPROVAL_LINK_INVALID: 'Este link não vale mais. Abra o e-mail mais recente ou peça um novo à agência.',
   ACCOUNT_EXISTS: 'Já existe uma conta para este endereço.',
   INVITATION_ACCOUNT_MISMATCH: 'A conta autenticada não corresponde ao convite.',
   INVITATION_NOT_PENDING: 'O convite não está pendente.',
@@ -275,6 +306,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   STORY_SCRIPT_STATE: 'O roteiro não está no estado que esta ação exige.',
   STORY_SCENES_MISMATCH: 'O roteiro mudou: recarregue e envie todas as cenas, na ordem desejada.',
   INVALID_PASSWORD: 'A senha atual não confere.',
+  REAUTH_REQUIRED: 'Confirme com o Google para continuar.',
+  TERMS_NOT_ACCEPTED: 'Aceite os Termos de Uso e a Política de Privacidade para continuar.',
   SAME_EMAIL: 'Informe um e-mail diferente do atual.',
   EMAIL_DELIVERY_FAILED: 'Não foi possível entregar o e-mail.',
   QUOTA_EXCEEDED: 'This agency has reached its storage quota.',
@@ -418,6 +451,20 @@ const portalContentDetailExample = {
   media: [{ id: assetId, position: 1, kind: 'image' }]
 } as const;
 
+const portalApprovalExchangeExample = {
+  sessionExpiresAt: '2026-10-27T14:00:00.000Z',
+  linkExpiresAt: '2026-11-03T12:00:00.000Z'
+} as const;
+
+const portalApprovalBatchExample = {
+  clientName: 'Padaria Central',
+  agencyName: 'Agência Exemplo',
+  personEmail: 'maria@padariacentral.exemplo.test',
+  sessionExpiresAt: '2026-10-27T14:00:00.000Z',
+  linkExpiresAt: '2026-11-03T12:00:00.000Z',
+  contents: [{ ...portalContentDetailExample, canDecide: true }]
+} as const;
+
 const agencyContextExample = {
   type: 'agency',
   agencyId,
@@ -428,6 +475,7 @@ const agencyContextExample = {
 } as const;
 
 const legalAcceptancesExample = {
+  required: false,
   documents: [
     { document: 'terms', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', pending: false },
     { document: 'privacy', currentVersion: '2026-10-01', acceptedVersion: '2026-02-01', pending: true }
@@ -516,13 +564,18 @@ const brandStudyExample = {
   personas: [personaExample]
 } as const;
 
+const accessId = '66666666-6666-4666-8666-666666666666';
+
 const clientMemberExample = {
-  membershipId,
+  accessId,
   name: 'Maria Souza',
   email: 'maria@padariacentral.exemplo.test',
   status: 'active',
+  entered: true,
   since: '2026-09-02T12:00:00.000Z'
 } as const;
+
+const clientMemberNotEnteredExample = { ...clientMemberExample, name: null, entered: false } as const;
 
 const portalBrandStudyExample = {
   filled: 3,
@@ -580,8 +633,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     module: 'auth',
     summary: 'Autentica com e-mail e senha',
     description: [
-      'Credencial correta sem nenhum contexto não cria sessão e responde 403 `NO_CONTEXT_ACCESS`,',
-      'salvo quando o corpo traz um `inviteToken` válido para o mesmo e-mail.'
+      'Conta com e-mail confirmado ganha sessão mesmo sem nenhum contexto (o `resolve` responde `none`).',
+      'Conta não confirmada responde o mesmo 401 `INVALID_CREDENTIALS`, com a senha certa ou não, e não cria sessão;',
+      'e não tem efeito colateral. `inviteToken` é aceito e não muda a resposta.'
     ].join('\n'),
     access: 'Público',
     permission: null,
@@ -598,7 +652,142 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'INVALID_CREDENTIALS' },
-      { status: 403, code: 'NO_CONTEXT_ACCESS' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/auth/sign-up',
+    operationId: 'postAuthSignUp',
+    module: 'auth',
+    summary: 'Cria uma conta com e-mail e senha',
+    description: [
+      'A conta nasce com o e-mail não confirmado, grava o aceite das versões em vigor de Termos e Privacidade',
+      'e recebe um link de confirmação de 24 h. Não cria sessão. Um e-mail que já tem conta, confirmada ou não,',
+      'recebe a mesma resposta, e o endereço recebe um aviso sem link.'
+    ].join('\n'),
+    access: 'Público',
+    permission: null,
+    body: AuthSignUpRequestSchema,
+    requestExample: { name: 'Pessoa Nova', email: 'nova@exemplo.test', password: '<senha-do-exemplo>', acceptTerms: true },
+    responses: [{ status: 202, description: 'Pedido aceito; o link segue por e-mail.', schema: AuthSignUpResponseSchema, example: {} }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/auth/providers',
+    operationId: 'getAuthProviders',
+    module: 'auth',
+    summary: 'Diz se o Google está ligado',
+    description: [
+      'Um campo só, sem segredo nem identificador do cliente OAuth: `google` é verdadeiro quando o servidor tem as',
+      'credenciais do Google. A interface esconde "Entrar com o Google" quando é falso.'
+    ].join('\n'),
+    access: 'Público',
+    permission: null,
+    responses: [{ status: 200, description: 'Provedores ligados.', schema: AuthProvidersResponseSchema, example: { google: true } }],
+    errors: [COMMON_ERRORS.internal]
+  },
+  {
+    method: 'get',
+    path: '/auth/google/start',
+    operationId: 'getAuthGoogleStart',
+    module: 'auth',
+    summary: 'Leva o navegador ao Google para entrar',
+    description: [
+      'Navegação, não chamada de API: o navegador é redirecionado (302) para a tela de consentimento do Google, com',
+      '`state`, PKCE (S256) e `nonce` próprios do fluxo e só os escopos `openid`, `email` e `profile`.',
+      '`intent=reauth` pede ao Google que autentique a pessoa de novo (`prompt=login`), para a conta que não tem senha',
+      'confirmar uma operação sensível; a volta cai em `/entrar/google?intent=reauth`. Com o Google desligado responde 404.'
+    ].join('\n'),
+    access: 'Público',
+    permission: null,
+    query: AuthGoogleStartQuerySchema,
+    responses: [{ status: 302, description: 'Redirecionamento ao Google; o estado do fluxo vai num cookie assinado.' }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 404, code: 'NOT_FOUND' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/auth/callback/google',
+    operationId: 'getAuthCallbackGoogle',
+    module: 'auth',
+    summary: 'Volta do Google: cria ou abre a sessão',
+    description: [
+      'É o endereço de retorno cadastrado no Google. Troca o código (com o segredo do cliente e o verificador PKCE),',
+      'confere o id token (assinatura, emissor, cliente, validade e `nonce`) e só aceita e-mail que o Google verificou. Depois',
+      'decide pela identidade (`sub`): cria a conta, abre a sessão da conta vinculada, vincula o Google a uma conta',
+      'confirmada ou assume uma conta não confirmada (a decisão de 2026-10-26 lista o que morre). Sempre 302: sucesso vai',
+      'a `/entrar/google` com o cookie de sessão, e **qualquer** falha vai a `/entrar?erro=google`, sem motivo, para a rota',
+      'nunca dizer se um e-mail tem conta. Com o Google desligado responde 404.'
+    ].join('\n'),
+    access: 'Público',
+    permission: null,
+    query: AuthGoogleCallbackQuerySchema,
+    responses: [{ status: 302, description: 'Para `/entrar/google` (entrou) ou `/entrar?erro=google` (recusado).' }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 404, code: 'NOT_FOUND' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/auth/email/verification/resend',
+    operationId: 'postAuthEmailVerificationResend',
+    module: 'auth',
+    summary: 'Reenvia o link de confirmação do e-mail',
+    description: 'Invalida o link anterior. Responde igual exista ou não uma conta não confirmada com o e-mail.',
+    access: 'Público',
+    permission: null,
+    body: AuthEmailVerificationResendRequestSchema,
+    requestExample: { email: 'nova@exemplo.test' },
+    responses: [{ status: 202, description: 'Pedido aceito.', schema: AuthEmailVerificationResendResponseSchema, example: {} }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/auth/email/verify',
+    operationId: 'postAuthEmailVerify',
+    module: 'auth',
+    summary: 'Confirma o e-mail com o link e a senha da conta, ou com a sessão dela',
+    description: [
+      'O link sozinho não confirma: pede a senha da conta. Link válido com a senha certa confirma o e-mail,',
+      'gasta o link e cria a sessão. Sem senha, só vale com a sessão da própria conta do link, que ainda',
+      'tenha o vínculo do convite: a conta criada pelo link copiado de um convite confirma com o clique,',
+      'e a sessão que ela já tem continua. Sem senha e sem essa sessão, ou com a sessão de outra conta, a',
+      'resposta é a mesma. Link inválido, usado ou vencido e senha errada respondem o mesmo',
+      '400 `INVALID_LINK_OR_PASSWORD`, sem mudar nada; as tentativas contam nos limites do login.'
+    ].join('\n'),
+    access: 'Pública, pelo token do link e a senha',
+    permission: null,
+    body: AuthEmailVerifyRequestSchema,
+    requestExample: { token: '<token-do-link>', password: '<senha-do-exemplo>' },
+    responses: [{
+      status: 200,
+      description: 'E-mail confirmado; com a senha, o cookie httpOnly da sessão vem na resposta. Sem a senha, a sessão que já existia continua e nenhum cookie novo vem.',
+      schema: AuthEmailVerifyResponseSchema,
+      example: { user: { id: userId, name: 'Pessoa Nova', email: 'nova@exemplo.test' } }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'INVALID_LINK_OR_PASSWORD' },
       { status: 429, code: 'RATE_LIMITED' }
     ]
   },
@@ -632,7 +821,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'getAuthSession',
     module: 'auth',
     summary: 'Devolve a sessão e a pessoa autenticada',
-    description: 'Usado pelo cliente para saber se a sessão continua válida e quando expira.',
+    description: 'Usado pelo cliente para saber se a sessão continua válida e quando expira. `emailVerified: false` é a conta criada por um convite que ainda não confirmou o e-mail: a sessão dela não abre agência nem portal, e a tela pede a confirmação.',
     access: 'Sessão',
     permission: null,
     responses: [{
@@ -641,6 +830,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       schema: AuthSessionResponseSchema,
       example: {
         user: { id: userId, name: 'Dono da Agência', email: 'dono@exemplo.test' },
+        emailVerified: true,
         session: { expiresAt: '2026-10-01T12:00:00.000Z' }
       }
     }],
@@ -661,6 +851,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       schema: AuthSessionResponseSchema,
       example: {
         user: { id: userId, name: 'Dono da Agência', email: 'dono@exemplo.test' },
+        emailVerified: true,
         session: { expiresAt: '2026-10-01T12:00:00.000Z' }
       }
     }],
@@ -690,23 +881,13 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     path: '/auth/password/reset',
     operationId: 'postAuthPasswordReset',
     module: 'auth',
-    summary: 'Redefine a senha e tenta autenticar de volta',
-    description: [
-      'A senha é sempre trocada e todas as sessões antigas encerradas. Com contexto confirmado,',
-      'a resposta é `signedIn: true`; com zero contextos confirmados, `signedIn: false` e',
-      '`reason: NO_CONTEXT_ACCESS`; se a sessão não puder ser criada por outro motivo,',
-      '`signedIn: false` e `reason: SIGN_IN_REQUIRED`.'
-    ].join('\n'),
+    summary: 'Redefine a senha',
+    description: 'Troca a senha e encerra todas as sessões da conta. Não cria sessão: a pessoa entra de novo com a senha nova.',
     access: 'Público',
     permission: null,
     body: AuthPasswordResetRequestSchema,
     requestExample: { token: '<token-do-exemplo>', newPassword: '<nova-senha-do-exemplo>' },
-    responses: [{
-      status: 200,
-      description: 'Senha redefinida; a sessão depende do resultado.',
-      schema: AuthPasswordResetResponseSchema,
-      example: { signedIn: true }
-    }],
+    responses: [{ status: 204, description: 'Senha redefinida; nenhuma sessão é criada.' }],
     errors: [
       COMMON_ERRORS.csrf,
       COMMON_ERRORS.internal,
@@ -759,7 +940,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'createCollaboratorInvitation',
     module: 'invitations',
     summary: 'Convida uma pessoa para a agência',
-    description: 'O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail e o token só existe nele. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). A resposta informa o convite pendente que esta criação revogou, quando havia um.',
+    description: 'O papel vem preso ao convite; o e-mail sai pelo serviço de e-mail. Convidar com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). A resposta informa o convite pendente que esta criação revogou, quando havia um, e traz uma única vez o link para copiar (`invitationUrl`, `Cache-Control: no-store`): nenhuma outra rota o devolve, e reenviar gera outro e invalida este. O convite tem dois tokens de uso único: o do e-mail, que só vai no e-mail e nunca sai numa resposta, e este. Usar qualquer um consome o convite.',
     access: 'Sessão + vínculo com a agência',
     permission: 'colaborador.convidar',
     params: AgencyPathParamsSchema,
@@ -769,7 +950,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       status: 201,
       description: 'Convite criado e enviado.',
       schema: CollaboratorInvitationCreatedResponseSchema,
-      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z', supersededInvitationId: null }
+      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z', supersededInvitationId: null, invitationUrl: 'https://app.ageniza.test/convite/<token-do-exemplo>' }
     }],
     errors: [
       COMMON_ERRORS.csrf,
@@ -786,53 +967,19 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
   },
   {
     method: 'post',
-    path: '/agencies/:agencyId/clients/:clientId/invitations',
-    operationId: 'createClientInvitation',
-    module: 'invitations',
-    summary: 'Convida uma pessoa para o portal de um cliente',
-    description: [
-      'Cria o convite de portal, que é independente do vínculo de colaborador. Cliente arquivado responde',
-      '409 `CLIENT_ARCHIVED`: o convite nasceria morto, porque arquivar revoga os pendentes e o aceite recusa.'
-    ].join('\n'),
-    access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.convidar_usuario',
-    params: AgencyClientPathParamsSchema,
-    body: ClientInvitationRequestSchema,
-    requestExample: { email: 'pessoa@exemplo.test' },
-    responses: [{
-      status: 201,
-      description: 'Convite criado e enviado.',
-      schema: InvitationCreatedResponseSchema,
-      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z' }
-    }],
-    errors: [
-      COMMON_ERRORS.csrf,
-      COMMON_ERRORS.internal,
-      { status: 400, code: 'VALIDATION_ERROR' },
-      { status: 401, code: 'UNAUTHENTICATED' },
-      { status: 403, code: 'FORBIDDEN' },
-      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
-      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode receber convites.' },
-      { status: 409, code: 'MEMBERSHIP_EXISTS' },
-      { status: 409, code: 'TRY_AGAIN' },
-      { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
-    ]
-  },
-  {
-    method: 'post',
     path: '/agencies/:agencyId/invitations/:invitationId/resend',
     operationId: 'resendInvitation',
     module: 'invitations',
     summary: 'Reenvia um convite pendente',
-    description: 'Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O reenvio de convite de portal de um cliente que acabou de ser arquivado responde 409 `CLIENT_ARCHIVED` e o convite segue como estava.',
+    description: 'Revoga o convite atual e cria outro com token novo, para o link antigo deixar de valer. A resposta traz uma única vez o link novo para copiar (`invitationUrl`, `Cache-Control: no-store`) a quem também tem `colaborador.convidar`; sem ela, `null`. O reenvio gera de novo os dois tokens do convite de colaborador (o do e-mail e o copiável) e invalida os anteriores. Reenviar um convite com o papel `admin` exige também `colaborador.atribuir_admin`, que só o Owner tem (403). O convite de portal não é mais criado nem renovado (decisão de 2026-10-26): os que ainda estão pendentes valem até vencer, e reenviar um deles por esta rota responde 409 `PORTAL_INVITATION_DISCONTINUED`, porque esta rota é guardada por `convite.reenviar`, que não cobre dar acesso. O Reenviar da aba Acessos é `POST /agencies/:agencyId/clients/:clientId/invitations/:invitationId/resend` (decisão de 2026-10-27, "acessos pendentes podem ser reenviados e removidos").',
     access: 'Sessão + vínculo com a agência',
     permission: 'convite.reenviar',
     params: AgencyInvitationPathParamsSchema,
     responses: [{
       status: 200,
       description: 'Convite reenviado.',
-      schema: InvitationCreatedResponseSchema,
-      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z' }
+      schema: InvitationResentResponseSchema,
+      example: { invitationId, expiresAt: '2026-10-02T12:00:00.000Z', invitationUrl: 'https://app.exemplo.test/convite/token-do-exemplo' }
     }],
     errors: [
       COMMON_ERRORS.csrf,
@@ -841,7 +988,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Invitation not found.' },
       { status: 409, code: 'INVITATION_NOT_PENDING' },
-      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode receber convites.' },
+      { status: 409, code: 'PORTAL_INVITATION_DISCONTINUED' },
       { status: 409, code: 'TRY_AGAIN' },
       { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
     ]
@@ -897,7 +1044,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'acceptInvitationNewAccount',
     module: 'invitations',
     summary: 'Cria a conta e aceita o convite',
-    description: 'A conta nasce com o e-mail do convite, verificado, e a sessão já vem no cookie da resposta.',
+    description: 'A conta nasce com o e-mail do convite; a sessão já vem no cookie da resposta e o contexto do convite vale na hora. Pelo token do e-mail (convite de colaborador ou de ativação de agência) a conta nasce com o e-mail confirmado e nenhum e-mail de confirmação sai. Pelo token copiado, ou num convite de portal, ela nasce não confirmada: o link de confirmação vai por e-mail, até confirmar o login por senha responde 401 e a sessão vale enquanto a conta tiver o vínculo que o convite deu.',
     access: 'Token do convite',
     permission: null,
     params: PublicInvitationTokenPathParamsSchema,
@@ -951,14 +1098,14 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     operationId: 'listMyContexts',
     module: 'contexts',
     summary: 'Lista os contextos válidos da pessoa',
-    description: 'Traz agências e portais de cliente ativos, já ordenados pela regra do resolve.',
+    description: 'Traz agências e portais de cliente ativos, já ordenados pela regra do resolve. A conta que não confirmou o e-mail recebe a lista vazia.',
     access: 'Sessão',
     permission: null,
     responses: [{
       status: 200,
       description: 'Contextos válidos.',
       schema: MeContextsResponseSchema,
-      example: { contexts: [agencyContextExample] }
+      example: { contexts: [agencyContextExample], canCreateAgency: true }
     }],
     errors: [COMMON_ERRORS.internal, { status: 401, code: 'UNAUTHENTICATED' }]
   },
@@ -969,8 +1116,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     module: 'contexts',
     summary: 'Resolve em qual contexto entrar',
     description: [
-      '`none` encerra a sessão quando não há contexto algum; `enter` traz o contexto único (ou o',
-      'último usado); `select` traz a lista para escolher. Um `preferred` inválido é ignorado em',
+      '`none` quando não há contexto algum (a sessão continua e a pessoa vai a `/comecar`; é também a resposta da conta que não confirmou o e-mail); `enter` traz o contexto único (ou o',
+      'último usado); `select` traz a lista para escolher e `canCreateAgency` (se a conta pode criar uma agência em teste). Um `preferred` inválido é ignorado em',
       'silêncio, nunca vira 400.'
     ].join('\n'),
     access: 'Sessão',
@@ -1049,7 +1196,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
         isOwner: false,
         membershipId,
         role: { key: 'admin', name: 'Admin' },
-        permissions: ['cliente.visualizar', 'colaborador.visualizar', 'midia.enviar']
+        permissions: ['cliente.visualizar', 'colaborador.visualizar', 'midia.enviar'],
+        plan: { kind: 'trial', trialEndsAt: '2026-11-09T12:00:00.000Z', readOnly: false }
       }
     }],
     errors: [
@@ -1057,6 +1205,38 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies',
+    operationId: 'createAgency',
+    module: 'agencies',
+    summary: 'Cria uma agência em período de teste',
+    description: [
+      'Quem chama vira Owner, com o vínculo Admin, de uma agência em teste por 14 dias, com até 3 clientes ativos,',
+      '3 colaboradores (contando o Owner e os convites pendentes) e 2 GB. Só conta com e-mail confirmado, e no máximo',
+      'uma agência em teste por conta, vencida ou não; o banco decide as duas coisas. Devolve o contexto novo.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    body: CreateAgencyRequestSchema,
+    requestExample: { name: 'Agência Exemplo' },
+    responses: [{
+      status: 201,
+      description: 'Agência criada.',
+      schema: CreateAgencyResponseSchema,
+      example: { context: { ...agencyContextExample, isOwner: true } }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_VERIFIED' },
+      { status: 403, code: 'TERMS_NOT_ACCEPTED' },
+      { status: 409, code: 'TRIAL_ALREADY_EXISTS' }
     ]
   },
 
@@ -2660,8 +2840,11 @@ path: '/agencies/:agencyId/roles',
     module: 'clients',
     summary: 'Lista as pessoas com acesso ao portal de um cliente',
     description: [
-      'Vinte por página, por nome, sem diferenciar maiúsculas nem acento. `status` é `active` (padrão) ou',
-      '`removed`. Nome e e-mail saem do vínculo da pessoa com o cliente. Cliente arquivado continua legível;',
+      'Vinte por página, por nome (o e-mail, enquanto a pessoa não entrou), sem diferenciar maiúsculas nem acento.',
+      '`status` é `active` (padrão) ou `removed`. Cada pessoa é um acesso dado a um e-mail, com conta ou sem ela:',
+      '`accessId` é o id que as rotas de Remover e Reativar usam, `email` é o endereço como foi gravado e `entered` é',
+      '`false` ("ainda não entrou") até uma conta com aquele e-mail verificado entrar. `name` é o da conta e só vem',
+      'depois disso. A lista nunca diz se um e-mail tem conta no Ageniza. Cliente arquivado continua legível;',
       'cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -2673,7 +2856,7 @@ path: '/agencies/:agencyId/roles',
       status: 200,
       description: 'Página de pessoas do portal.',
       schema: ClientMemberListResponseSchema,
-      example: { data: [clientMemberExample], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }
+      example: { data: [clientMemberExample, clientMemberNotEnteredExample], meta: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 } }
     }],
     errors: [
       COMMON_ERRORS.internal,
@@ -2685,24 +2868,137 @@ path: '/agencies/:agencyId/roles',
   },
   {
     method: 'post',
-    path: '/agencies/:agencyId/clients/:clientId/members/:membershipId/remove',
+    path: '/agencies/:agencyId/clients/:clientId/members',
+    operationId: 'addClientMember',
+    module: 'clients',
+    summary: 'Adiciona uma pessoa ao portal do cliente',
+    description: [
+      'Só o e-mail. O acesso vale na hora, sem conta e sem aceite, e a pessoa recebe um e-mail de boas-vindas com',
+      '"Entrar no portal". Ter um endereço com conta no Ageniza não muda nada aqui: o acesso passa à conta no login,',
+      'quando uma conta com aquele e-mail verificado entra, e nunca nesta rota. Adicionar de novo um e-mail removido',
+      'reativa a mesma linha (a geração dos links de aprovação continua onde a remoção a deixou). Se a conta que',
+      'tinha aquele endereço já trocou de e-mail, ela perde o acesso e as sessões dela são encerradas. Um endereço que',
+      'já tem acesso ativo responde 409 `ACCESS_EXISTS`. O e-mail de boas-vindas conta no limite diário de e-mails da agência,',
+      'junto com os convites: passado o limite, 429 `DAILY_EMAIL_LIMIT` e nada é gravado. Agência em somente leitura responde',
+      '409 `AGENCY_READ_ONLY`. Cliente arquivado responde 409; cliente de outra agência ou inexistente, 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.convidar_usuario',
+    params: AgencyClientPathParamsSchema,
+    body: ClientMemberAddRequestSchema,
+    requestExample: { email: 'maria@padariacentral.exemplo.test' },
+    responses: [{
+      status: 201,
+      description: 'Acesso dado e e-mail enviado.',
+      schema: ClientMemberSchema,
+      example: clientMemberNotEnteredExample
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 409, code: 'ACCESS_EXISTS', message: 'Este endereço já tem acesso ao portal deste cliente.' },
+      { status: 409, code: 'AGENCY_READ_ONLY' },
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 429, code: 'DAILY_EMAIL_LIMIT' },
+      { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/members/:accessId/resend',
+    operationId: 'resendClientMemberEmail',
+    module: 'clients',
+    summary: 'Reenvia o e-mail de boas-vindas de quem ainda não entrou no portal',
+    description: [
+      'Manda de novo o e-mail de boas-vindas de um acesso **ativo que ainda não entrou** (`entered: false`). Não muda o',
+      'acesso, a geração dele nem os links de aprovação. Quem já entrou ou foi removido responde 409 `ACCESS_NOT_PENDING`.',
+      'Reenviar amplia o alcance, como Adicionar pessoa: agência em somente leitura responde 409 `AGENCY_READ_ONLY`. Cada',
+      'reenvio gasta um lugar no limite diário de e-mails da agência, no mesmo orçamento dos convites e das boas-vindas:',
+      'passado o limite, 429 `DAILY_EMAIL_LIMIT` e nada é gravado. Um reenvio por minuto por pessoa (proposta pendente',
+      'de validação, decisão de 2026-10-27): o segundo antes disso responde 429 `RESEND_TOO_SOON` e não gasta lugar. Se a entrega',
+      'falhar, 502 `EMAIL_DELIVERY_FAILED` com o lugar já gasto. Cliente arquivado responde 409; acesso de outro cliente, de',
+      'outra agência ou `:accessId` inválido, 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.convidar_usuario',
+    params: AgencyClientMemberPathParamsSchema,
+    responses: [{ status: 200, description: 'E-mail reenviado.', schema: ClientMemberSchema, example: clientMemberNotEnteredExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Member not found.' },
+      { status: 409, code: 'ACCESS_NOT_PENDING', message: 'Esta pessoa já entrou no portal ou já não tem acesso: não há e-mail para reenviar.' },
+      { status: 409, code: 'AGENCY_READ_ONLY' },
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 429, code: 'DAILY_EMAIL_LIMIT' },
+      { status: 429, code: 'RESEND_TOO_SOON' },
+      { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/invitations/:invitationId/resend',
+    operationId: 'resendClientInvitation',
+    module: 'clients',
+    summary: 'Transforma um convite de portal antigo em acesso direto',
+    description: [
+      'O Reenviar de um convite de portal que ainda está pendente: faz o mesmo que Adicionar pessoa para o e-mail do convite',
+      '(acesso na hora, e-mail de boas-vindas) e **revoga o convite antigo na mesma transação**, o que mata o link dele.',
+      'Se algo falha, o convite continua pendente e nada é gravado. A resposta é a pessoa com acesso, não um link.',
+      'É uma rota própria, e não a de reenviar convite de colaborador, porque dar acesso pede `cliente.convidar_usuario`, e',
+      'não `convite.reenviar`. Se o endereço já tem acesso ativo, 409 `ACCESS_EXISTS` e nada é gravado (o convite fica, e a agência',
+      'o cancela). Convite aceito, cancelado ou vencido responde 409 `INVITATION_NOT_PENDING`. Gasta um lugar no limite diário',
+      '(429 `DAILY_EMAIL_LIMIT`) e agência em somente leitura responde 409 `AGENCY_READ_ONLY`. Cliente arquivado responde 409;',
+      'convite de outro cliente, de colaborador, de outra agência ou `:invitationId` inválido, 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'cliente.convidar_usuario',
+    params: AgencyClientInvitationPathParamsSchema,
+    responses: [{ status: 200, description: 'Convite convertido em acesso.', schema: ClientMemberSchema, example: clientMemberNotEnteredExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Invitation not found.' },
+      { status: 409, code: 'ACCESS_EXISTS', message: 'Este endereço já tem acesso ao portal deste cliente.' },
+      { status: 409, code: 'AGENCY_READ_ONLY' },
+      { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+      { status: 409, code: 'INVITATION_NOT_PENDING' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 429, code: 'DAILY_EMAIL_LIMIT' },
+      { status: 502, code: 'EMAIL_DELIVERY_FAILED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/members/:accessId/remove',
     operationId: 'removeClientMember',
     module: 'clients',
     summary: 'Remove uma pessoa do portal do cliente',
     description: [
       'A pessoa perde o acesso ao portal deste cliente na requisição seguinte; as demais pessoas do cliente',
-      'e os vínculos dela com outros clientes não mudam. Todas as sessões dela são encerradas na mesma',
-      'transação (a sessão é global): o cookie antigo recebe 401, e quem remove não perde a própria sessão.',
-      'O vínculo é preservado como `removed` e pode ser reativado, o que não cria sessão.',
-      'Remover quem já está removido não escreve nada, não encerra sessão e responde o vínculo como está. Cliente arquivado',
-      'responde 409; vínculo de outro cliente ou id inválido, 404.'
+      'e os acessos dela a outros clientes não mudam. Quando há conta vinculada, todas as sessões dela são encerradas',
+      'na mesma transação (a sessão é global): o cookie antigo recebe 401, e quem remove não perde a própria sessão.',
+      'A remoção avança a geração do acesso, o que mata os links de aprovação dele. O acesso é preservado como',
+      '`removed` e pode ser reativado, o que não cria sessão nem ressuscita link antigo.',
+      'Remover quem já está removido não escreve nada, não encerra sessão e responde o acesso como está. Cliente arquivado',
+      'responde 409; acesso de outro cliente ou id inválido, 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.remover_usuario',
     params: AgencyClientMemberPathParamsSchema,
     responses: [{
       status: 200,
-      description: 'Vínculo removido.',
+      description: 'Acesso removido.',
       schema: ClientMemberSchema,
       example: { ...clientMemberExample, status: 'removed' }
     }],
@@ -2718,19 +3014,20 @@ path: '/agencies/:agencyId/roles',
   },
   {
     method: 'post',
-    path: '/agencies/:agencyId/clients/:clientId/members/:membershipId/reactivate',
+    path: '/agencies/:agencyId/clients/:clientId/members/:accessId/reactivate',
     operationId: 'reactivateClientMember',
     module: 'clients',
     summary: 'Reativa uma pessoa do portal do cliente',
     description: [
-      'A pessoa volta a entrar no portal na requisição seguinte, sem convite novo. Reativar quem já está',
-      'ativo não escreve nada e responde o vínculo como está. Cliente arquivado responde 409; vínculo de',
-      'outro cliente ou id inválido, 404.'
+      'A pessoa volta a entrar no portal na requisição seguinte, sem convite novo, e a geração do acesso fica',
+      'como a remoção a deixou. Reativar quem já está ativo não escreve nada e responde o acesso como está.',
+      'Agência em somente leitura responde 409 `AGENCY_READ_ONLY`, ao contrário de Remover, que continua livre.',
+      'Cliente arquivado responde 409; acesso de outro cliente ou id inválido, 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.remover_usuario',
     params: AgencyClientMemberPathParamsSchema,
-    responses: [{ status: 200, description: 'Vínculo reativado.', schema: ClientMemberSchema, example: clientMemberExample }],
+    responses: [{ status: 200, description: 'Acesso reativado.', schema: ClientMemberSchema, example: clientMemberExample }],
     errors: [
       COMMON_ERRORS.csrf,
       COMMON_ERRORS.internal,
@@ -2738,6 +3035,7 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Member not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado: o acesso ao portal não pode ser alterado.' },
+      { status: 409, code: 'AGENCY_READ_ONLY' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },
@@ -2913,7 +3211,8 @@ path: '/agencies/:agencyId/roles',
         ...clientExample,
         agencyName: 'Agência Exemplo',
         onboardingSeenAt: '2026-10-01T12:00:00.000Z',
-        home: { threadsAnsweredByAgency: 2, brandStudyFilled: 3, contentsAwaitingApproval: 2 }
+        home: { threadsAnsweredByAgency: 2, brandStudyFilled: 3, contentsAwaitingApproval: 2 },
+        agencyReadOnly: false
       }
     }],
     errors: [
@@ -3281,7 +3580,11 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Uma entrada por documento, Termos primeiro: a versão em vigor no servidor, a versão mais nova',
       'que a conta aceitou (`null` se nunca aceitou) e se há aceite pendente. Pendente não bloqueia',
-      'nenhuma funcionalidade; só alimenta o aviso da interface.'
+      'nenhuma funcionalidade; só alimenta o aviso da interface.',
+      '',
+      '`required` é verdadeiro só para a conta que tem o Google e não tem o aceite dos dois documentos',
+      '(conta criada pelo Google, ou conta que o Google assumiu): sem o aceite essa conta não tem contexto',
+      'e não cria agência, e a interface a leva à tela de aceite antes do primeiro uso.'
     ].join('\n'),
     access: 'Sessão',
     permission: null,
@@ -3336,8 +3639,10 @@ path: '/agencies/:agencyId/roles',
     description: [
       'A pessoa não troca o e-mail sozinha: ela pede, e a operação da plataforma aprova pelo CLI',
       '(`cli:email-change`), porque a conta é global e o pedido não pertence a nenhuma agência. O',
-      'corpo traz só o e-mail novo e a senha atual; a conta é sempre a da sessão. Há um pedido',
-      'aberto por conta, e um novo substitui o anterior. O endereço atual recebe um aviso.',
+      'corpo traz só o e-mail novo e a senha atual; a conta é sempre a da sessão. A conta que só',
+      'tem o Google não tem senha: omite `currentPassword` e prova a identidade com um login pelo Google de até',
+      '5 minutos (`403 REAUTH_REQUIRED` quando passou disso; a interface leva a pessoa a `/auth/google/start?intent=reauth`).',
+      'Há um pedido aberto por conta, e um novo substitui o anterior. O endereço atual recebe um aviso.',
       'A resposta é a mesma 202 vazia quando o e-mail novo já pertence a outra conta: a rota não',
       'revela quais e-mails têm conta. O teto é de 5 pedidos por hora e por conta.'
     ].join('\n'),
@@ -3359,6 +3664,7 @@ path: '/agencies/:agencyId/roles',
       { status: 400, code: 'SAME_EMAIL' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'INVALID_PASSWORD' },
+      { status: 403, code: 'REAUTH_REQUIRED' },
       { status: 409, code: 'TRY_AGAIN' },
       { status: 429, code: 'RATE_LIMITED' }
     ]
@@ -3581,6 +3887,158 @@ path: '/agencies/:agencyId/roles',
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 404, code: 'NOT_FOUND', message: 'Story script not found.' },
       { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/portal-approval/session',
+    operationId: 'exchangePortalApprovalToken',
+    module: 'approval-link',
+    summary: 'Troca o token do link de aprovação pela sessão de aprovação',
+    description: [
+      'O e-mail "conteúdos para aprovar" leva um link com um token no fragmento (`#`), que o navegador não envia ao servidor. A tela lê o',
+      'fragmento, o apaga da barra de endereço e o manda aqui, **no corpo** (`token`, 43 caracteres base64url). Rota nenhuma do link aceita',
+      'consulta (`?`): qualquer parâmetro na URL, o token inclusive, é `400 VALIDATION_ERROR`. A resposta traz o cookie `ageniza_approval`',
+      '(`HttpOnly`, `SameSite=Strict`, `Secure` onde o app é HTTPS, restrito às rotas do link, de duas horas e nunca além do link), que não é',
+      'uma sessão de conta e só alcança o lote daquele link. Abrir o link não decide nada: esta rota só cria a sessão.',
+      'O link vale por 7 dias e **a cada uso** o banco confere: o acesso está ativo e na mesma geração do link (remover o acesso mata o link',
+      'para sempre, e reativá-lo não o traz de volta), o cliente não está arquivado, a agência não está suspensa nem somente leitura. Link',
+      'desconhecido, vencido ou revogado por qualquer um desses motivos devolve o mesmo `404 APPROVAL_LINK_INVALID`. Limites por IP (30 a cada 15',
+      'minutos) e por token (10 a cada 15 minutos): o excedente é `429 RATE_LIMITED`. A resposta é `Cache-Control: no-store`.'
+    ].join('\n'),
+    access: 'Pública: o token do link',
+    permission: null,
+    query: PortalApprovalNoQuerySchema,
+    body: PortalApprovalExchangeRequestSchema,
+    requestExample: { token: '<43 caracteres base64url do fragmento do link>' },
+    responses: [{ status: 200, description: 'Sessão criada; o cookie vai em `Set-Cookie`.', schema: PortalApprovalExchangeResponseSchema, example: portalApprovalExchangeExample }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 404, code: 'APPROVAL_LINK_INVALID' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/portal-approval/batch',
+    operationId: 'getPortalApprovalBatch',
+    module: 'approval-link',
+    summary: 'Lê o lote do link de aprovação',
+    description: [
+      'Os conteúdos do lote daquele e-mail, no estado de agora, com a legenda e a mídia da prévia de celular, na ordem do dia e da hora. Só o',
+      'lote: nada da marca, da conversa geral nem de outro conteúdo do cliente, e um conteúdo cancelado some. O que já foi decidido, por esta ou',
+      'por outra pessoa, aparece com o estado atual e `canDecide: false`; o que voltou a aguardar aprovação continua no lote enquanto o link',
+      'vale. Um conteúdo em produção traz só título, dia e formato. `canDecide` é o que manda desenhar Aprovar e Pedir ajuste: verdadeiro',
+      'exatamente quando o conteúdo aguarda aprovação. `personEmail` é o endereço que recebeu o acesso, para o link "Criar conta para ver o',
+      'portal" levar a `/criar-conta` com ele preenchido; a resposta nunca diz se o endereço já tem conta. Sem o cookie, ou com o link morto: `404',
+      'APPROVAL_LINK_INVALID`. Ler não decide nada. `Cache-Control: no-store`.'
+    ].join('\n'),
+    access: 'Cookie da sessão de aprovação',
+    permission: null,
+    query: PortalApprovalNoQuerySchema,
+    responses: [{ status: 200, description: 'O lote.', schema: PortalApprovalBatchSchema, example: portalApprovalBatchExample }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 404, code: 'APPROVAL_LINK_INVALID' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/portal-approval/contents/:contentId/media/:assetId/url',
+    operationId: 'getPortalApprovalMediaUrl',
+    module: 'approval-link',
+    summary: 'Emite a URL assinada de uma mídia do lote',
+    description: [
+      'Assina só a capa ou um item da mídia de um conteúdo do lote (de "aguardando aprovação" em diante). Conteúdo fora do lote, em produção ou',
+      'cancelado, e arquivo removido, não confirmado ou que não é deste conteúdo, devolvem 404, sem assinar nada. A URL é só GET e vale por',
+      'minutos (no máximo 5), nunca pelos 7 dias do link. `variant=thumbnail` devolve o próprio original para a imagem e a miniatura para o',
+      'vídeo processado, senão 409 `VARIANT_NOT_READY` (ou `VARIANT_PROCESSING_FAILED`). Não há conta, então não há evento de auditoria por pessoa.'
+    ].join('\n'),
+    access: 'Cookie da sessão de aprovação',
+    permission: null,
+    params: PortalApprovalMediaPathParamsSchema,
+    query: PortalApprovalMediaUrlQuerySchema,
+    requestExample: { variant: 'thumbnail' },
+    responses: [{ status: 200, description: 'URL assinada.', schema: PortalApprovalMediaUrlResponseSchema, example: { url: signedStorageUrl, expiresAt: '2026-09-29T12:05:00.000Z' } }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 404, code: 'APPROVAL_LINK_INVALID' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
+      { status: 409, code: 'VARIANT_NOT_READY' },
+      { status: 409, code: 'VARIANT_PROCESSING_FAILED' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/portal-approval/contents/:contentId/approve',
+    operationId: 'approvePortalApprovalContent',
+    module: 'approval-link',
+    summary: 'Aprova um conteúdo do lote, pelo link',
+    description: [
+      'O mesmo efeito da aprovação no portal: o conteúdo que aguarda aprovação passa a aprovado, uma pessoa basta, e aprovar um conteúdo já',
+      'aprovado não muda nada (quem aprovou primeiro continua sendo quem aprovou). A decisão é gravada **como aquele acesso**: a agência lê',
+      'quem aprovou como `{ name, side: "client" }` e vê que veio pelo link do e-mail. `revision` é a revisão que a pessoa leu',
+      '(`409 CONTENT_REVISION_CHANGED`). Fora de "aguardando aprovação" (em produção, em ajuste, publicado): `409',
+      'CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto, inclusive a agência em',
+      'somente leitura: `404 APPROVAL_LINK_INVALID`, e nada é gravado. Limites por IP (60 a cada 15 minutos) e por sessão (30 a cada 15 minutos).'
+    ].join('\n'),
+    access: 'Cookie da sessão de aprovação',
+    permission: null,
+    params: PortalApprovalContentPathParamsSchema,
+    query: PortalApprovalNoQuerySchema,
+    body: PortalApprovalApproveRequestSchema,
+    requestExample: { revision: 1 },
+    responses: [{ status: 200, description: 'Conteúdo aprovado.', schema: PortalApprovalContentSchema, example: { ...portalContentDetailExample, status: 'approved', canDecide: false } }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 404, code: 'APPROVAL_LINK_INVALID' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
+      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação é aprovado.' },
+      { status: 409, code: 'CONTENT_REVISION_CHANGED' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/portal-approval/contents/:contentId/request-changes',
+    operationId: 'requestPortalApprovalContentChanges',
+    module: 'approval-link',
+    summary: 'Pede ajuste de um conteúdo do lote, pelo link',
+    description: [
+      'O mesmo efeito do pedido de ajuste no portal: o conteúdo passa a "em ajuste" e o `comment`, obrigatório, entra na conversa do conteúdo',
+      'como comentário do cliente (a conversa é aberta se ainda não existe). O comentário e a abertura da conversa são gravados **como aquele',
+      'acesso**. O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de formato, nunca',
+      'vazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. `revision` é a revisão',
+      'que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de "aguardando aprovação": `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do',
+      'lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto: `404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.'
+    ].join('\n'),
+    access: 'Cookie da sessão de aprovação',
+    permission: null,
+    params: PortalApprovalContentPathParamsSchema,
+    query: PortalApprovalNoQuerySchema,
+    body: PortalApprovalRequestChangesRequestSchema,
+    requestExample: { revision: 1, comment: 'Trocar a foto da capa por uma com mais luz.' },
+    responses: [{ status: 200, description: 'Conteúdo em ajuste.', schema: PortalApprovalContentSchema, example: { ...portalContentDetailExample, status: 'adjusting', canDecide: false } }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_COMMENT_INVALID' },
+      { status: 404, code: 'APPROVAL_LINK_INVALID' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
+      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação recebe um pedido de ajuste.' },
+      { status: 409, code: 'CONTENT_REVISION_CHANGED' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 429, code: 'RATE_LIMITED' }
     ]
   }
 ];

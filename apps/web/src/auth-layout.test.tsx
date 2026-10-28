@@ -87,15 +87,29 @@ describe('the auth layout', () => {
     expect(container.querySelector('.app-shell')).not.toBeNull();
   });
 
-  it('hides the example week from assistive technology and gives it nothing to focus', async () => {
-    const { container } = renderAt('/entrar');
-    await screen.findByRole('heading', { name: 'Entrar' });
+  it.each(AUTH_PATHS)('puts the brand panel with the friendly mascot beside %s, hidden from assistive technology and with nothing to focus', async (path) => {
+    const { container } = renderAt(path);
+    await screen.findByRole('heading', { level: 1 });
 
-    const showcase = container.querySelector('.auth__showcase');
-    expect(showcase?.getAttribute('aria-hidden')).toBe('true');
-    expect(showcase?.textContent).toContain('O mês de cada cliente numa pauta só.');
-    expect(showcase?.textContent).toContain('exemplo');
-    expect(showcase?.querySelectorAll('a, button, input, h1, h2, h3, [tabindex]')).toHaveLength(0);
+    const visual = container.querySelector('.auth__visual');
+    expect(visual?.getAttribute('aria-hidden')).toBe('true');
+    expect(visual?.textContent).toContain('O mês de cada cliente numa pauta só.');
+    const mascot = visual?.querySelector('img');
+    expect(mascot?.getAttribute('src')).toBe('/brand/mascote-amigavel.webp');
+    expect(mascot?.getAttribute('alt')).toBe('');
+    expect(visual?.querySelectorAll('img')).toHaveLength(1);
+    expect(visual?.querySelectorAll('a, button, input, h1, h2, h3, [tabindex]')).toHaveLength(0);
+  });
+
+  it('puts the brand panel on the invitation as well', async () => {
+    const impl: typeof fetch = async (input) => {
+      if (String(input).endsWith('/auth/session')) return unauthenticated();
+      return json({ error: { code: 'INVALID_LINK', message: 'x' } }, 410);
+    };
+    const { container } = renderAt('/convite/abc', impl);
+    await screen.findByRole('heading', { name: 'Este convite não é mais válido' });
+
+    expect(container.querySelector('.auth__visual img')?.getAttribute('src')).toBe('/brand/mascote-amigavel.webp');
   });
 });
 
@@ -154,11 +168,11 @@ describe('the login screen in the new layout', () => {
     expect(primary.map((element) => element.textContent)).toEqual(['Entrar']);
   });
 
-  it('keeps the invitation note under the button', async () => {
+  it('keeps the "Criar conta" note under the button', async () => {
     renderAt('/entrar');
     await screen.findByRole('heading', { name: 'Entrar' });
 
-    const note = screen.getByText('O acesso ao Ageniza é por convite.');
+    const note = screen.getByRole('link', { name: 'Criar conta' });
     expect(screen.getByRole('button', { name: 'Entrar' }).compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
@@ -317,7 +331,8 @@ describe('the credential fields of the e-mail change request', () => {
 
   it('fixes type, autocomplete and name on the new e-mail and the current password', () => {
     const client = new HttpClient('http://127.0.0.1:3001', visitorFetch());
-    render(<ApiClientProvider client={client}><EmailChangeDialog onClose={() => undefined} /></ApiClientProvider>);
+    // The dialog now asks the server whether Google is on, so it needs the query client too; the assertions are unchanged.
+    render(<QueryClientProvider client={createQueryClient()}><ApiClientProvider client={client}><EmailChangeDialog onClose={() => undefined} /></ApiClientProvider></QueryClientProvider>);
 
     expectCredentialField({ label: 'Novo e-mail', type: 'email', autocomplete: 'email', name: 'newEmail' });
     expectCredentialField({ label: 'Senha atual', type: 'password', autocomplete: 'current-password', name: 'currentPassword' });

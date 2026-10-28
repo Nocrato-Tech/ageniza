@@ -48,3 +48,20 @@ export function createInvitationToken(inputOrUrl: CreateInvitationTokenInput | s
     actionUrl: invitationLink(appPublicUrl, token)
   };
 }
+
+/**
+ * The two tokens of an invitation that can be copied: the one that only travels in the e-mail and the one
+ * the inviter may copy. Same expiry, same row; using either consumes the invitation.
+ */
+export interface InvitationTokenPair {
+  readonly email: InvitationToken;
+  readonly copy: InvitationToken;
+}
+
+export const createInvitationTokenPair = (input: CreateInvitationTokenInput): InvitationTokenPair => {
+  const now = new Date(input.now ?? Date.now());
+  return {
+    email: createInvitationToken({ appPublicUrl: input.appPublicUrl, now }),
+    copy: createInvitationToken({ appPublicUrl: input.appPublicUrl, now })
+  };
+};

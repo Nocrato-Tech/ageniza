@@ -13,77 +13,125 @@ Origin/CSRF checking is global (see below); no route repeats it.
 
 | Method and route | Body | Success | Errors |
 | --- | --- | --- | --- |
-| `POST /auth/login` | `{ email, password, inviteToken? }` | `200 { user: { id, name, email } }` + session cookie | `401 INVALID_CREDENTIALS`; `403 NO_CONTEXT_ACCESS`; `429 RATE_LIMITED` |
+| `POST /auth/login` | `{ email, password, inviteToken? }` | `200 { user: { id, name, email } }` + session cookie | `401 INVALID_CREDENTIALS`; `429 RATE_LIMITED` |
+| `POST /auth/sign-up` | `{ name, email, password, acceptTerms: true }` | always `202 {}`, no cookie | `400 VALIDATION_ERROR`; `429 RATE_LIMITED` |
+| `POST /auth/email/verification/resend` | `{ email }` | always `202 {}` | `429 RATE_LIMITED` |
+| `POST /auth/email/verify` | `{ token, password }` | `200 { user }` + session cookie | `400 INVALID_LINK_OR_PASSWORD`; `429 RATE_LIMITED` |
 | `POST /auth/logout` | — (session cookie) | `204`, revokes only the current session | `401 UNAUTHENTICATED` |
 | `POST /auth/logout-all` | — (session cookie) | `204`, revokes every session for the user; audits `auth.logout_all` | `401 UNAUTHENTICATED` |
 | `GET /auth/session` | — (session cookie) | `200 { user: { id, name, email }, session: { expiresAt } }` | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
 | `GET /auth/session/check` | — (session cookie) | the same `200`, but the session is read with `disableRefresh`: no renewal, no cookie (#411) | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
 | `POST /auth/password/forgot` | `{ email }` | always `202 {}` | `429 RATE_LIMITED` |
-| `POST /auth/password/reset` | `{ token, newPassword, inviteToken? }` | `200 { signedIn: true }` (with a new session cookie) or `200 { signedIn: false, reason }` (no cookie; `reason` is `'NO_CONTEXT_ACCESS'` or `'SIGN_IN_REQUIRED'`); revokes every previous session for the user either way; audits `auth.password_reset` | `400 INVALID_LINK`; `400 VALIDATION_ERROR` |
+| `POST /auth/password/reset` | `{ token, newPassword }` | `204`, no body and no cookie: the password changes, every session of the user is revoked and none is created; audits `auth.password_reset` | `400 INVALID_LINK`; `400 VALIDATION_ERROR` (a stray `inviteToken` too) |
 
 Login failure (wrong password vs. unknown email) is byte-for-byte identical, so a client cannot
 enumerate accounts. `password/reset` returns the same `INVALID_LINK` whether the token is unknown,
-expired, already used, or belongs to a different purpose. There is no public sign-up endpoint:
-`emailAndPassword.disableSignUp` is `true` and no sign-up route is mounted, so any sign-up request
-gets the ordinary `404` route-not-found response.
+expired, already used, or belongs to a different purpose. Better Auth's own sign-up stays off
+(`emailAndPassword.disableSignUp` is `true`): the public sign-up is `POST /auth/sign-up`, ours.
 
 Every email is `trim()`ed and lower-cased before it is validated or handed to Better Auth
 (`AuthEmailSchema` in contracts), matching the `auth.user.email` normalized-value constraint
 enforced by the migration.
 
-**Zero contexts (issue #68).** A correct credential that resolves to zero agency/client contexts
-never gets a session: `routes.ts` authenticates first, then counts contexts through
-`countValidContexts` (injected from the `contexts` module, wired in `server.ts`/the test harness),
-and revokes the session Better Auth just created before it ever reaches the client if that count is
-zero. The response is `403 NO_CONTEXT_ACCESS`, a message distinct from `INVALID_CREDENTIALS`
-because by this point the caller already proved they know the password — see the 2026-09-24
-decision "Credencial correta sem nenhum contexto não cria sessão" in `docs/business/decisions.md`.
-The same rule ends the session on `GET /me/contexts/resolve`'s `decision: 'none'` (see the
-`contexts` module's README) — deliberately **not** in `session-guard.ts`: charging it on every
-authenticated request would cost an extra query for no benefit, since `requireAgencyAccess`/
-`requireClientAccess` already 404 anything a contextless session cannot reach.
+**Zero contexts (issue #706, replacing #68).** A confirmed account with zero contexts gets its
+session and lands on `/comecar`; `GET /me/contexts/resolve` answers `none` and keeps the session.
+`NO_CONTEXT_ACCESS` no longer exists. `inviteToken` on the login is still accepted (the reset link of
+an invitation carries it) but no longer changes the outcome.
 
-**Re-invited zero-context account (issue #76, 2026-09-29 decision, pending validation).** An
-account removed from every agency and then re-invited also has zero contexts, but the 2026-09-24
-decision itself says that case must keep working through the existing-account accept flow, and
-`POST /invitations/:token/accept` needs a session to run. `POST /auth/login` accepts an optional
-`inviteToken` for exactly this: when the credential is correct, contexts are zero, and `inviteToken`
-resolves (through the same `invitationTokenLookup`/`app_private.invitation_by_token_hash` validity
-check the invitations module itself uses — not re-implemented here) to a **valid** invitation
-addressed to the **same e-mail**, the session is kept instead of revoked. An invalid, expired,
-revoked, mismatched-email, or absent token is indistinguishable from one another: every one of them
-falls through to the ordinary `403 NO_CONTEXT_ACCESS`, byte-for-byte, so `inviteToken` can never be
-used to probe whether an invitation or an account exists.
+**Unconfirmed accounts (issue #706).** The login route checks the password itself (against a decoy hash
+when the e-mail has no credential) and refuses an account whose `emailVerified` is false before Better
+Auth signs in, so `requireEmailVerification` is off: Better Auth would refuse the sign-in that
+`accept-new-account` must make. The route answers it with the same `401 INVALID_CREDENTIALS` as a wrong password, byte for byte, with no cookie and no
+session row: whoever signs up with someone else's address chose the password, so a distinct answer
+would tell whether the address already had an account (security review of PR #722). It has no side
+effect either: a link reissued from here spent the public resend's counter, whose `429` told the same
+thing (second review of PR #722); the screen offers the resend instead. `routes.ts` checks
+`emailVerified` again on the response, and `session-guard.ts` revokes any session an unconfirmed
+account holds, with one explicit exception (decision on the copyable invitation link, 2026-10-26): the
+account created by `accept-new-account` keeps the session that route creates, which opens nothing (decision 2026-10-27, "a conta de
+convite só entra depois de confirmar"), while
+`app_private.unconfirmed_account_may_hold_session` finds the link its invitation gave it (the agency
+it owns, or an active membership in the invitation's agency or client) and that context would still be
+listed: a suspended agency or an archived client ends the session too, as in `contexts/service.ts`
+(migration `20261027010400`). That session answers only `/auth/session` (with `emailVerified: false`), `/auth/session/check`, the two sign-outs and the
+two context lists (empty, `none`); `createRequireSession` refuses it with `403 EMAIL_NOT_CONFIRMED` everywhere else unless a
+route passes `allowUnconfirmed`, `requireAgencyAccess` and `requireClientAccess` refuse it on their own, and
+`listValidContexts` lists nothing for it, all three through `app_private.email_not_confirmed` (migration `20261027130000`),
+so each layer holds alone. Confirming with the click gives the same session its agency. The exception only exists for the
+account born through the *copied* invitation token; through the e-mail token the account is born confirmed (decision 2026-10-27). The password login stays
+closed to it until it confirms, with the same 401, so an invited account is never told apart. While the person
+holds that session, `POST /auth/email/verify` takes the link with no password: it needs the session user to be
+the owner of the link *and* the account to still hold the exception, and any other case (no session, another
+account's session, a session that no longer stands) answers the same `400 INVALID_LINK_OR_PASSWORD` as a bad
+link, without consuming it. If the sign-in after a consumed link fails (the password changed in between),
+`/auth/email/verify` answers `400 INVALID_LINK_OR_PASSWORD`, never 500; consuming the link locks the
+credential row, so a reset either waits for it or makes it refuse.
 
-The session this creates is **still zero-context** until the invitation is actually accepted: the
-invite screen (issue #76, "já tem conta" state) **must** call `POST /invitations/:token/accept` with
-this same session **before** ever calling `GET /me/contexts/resolve`. Calling `resolve` first ends
-the session on sight (`decision: 'none'`, same as any other zero-context session), and the person
-would need to log in again with the token to retry. Once `accept` succeeds, the account has a real
-context and an ordinary login (no `inviteToken` needed) works from then on.
+**Sign-up and the confirmation link (issue #706, finding A1 of the review of PR #720, security
+review of PR #721).** `POST /auth/sign-up` creates the account unconfirmed, with the credential and
+both legal acceptances, and issues the link; it hashes the password on every path and sends e-mail in
+the background, so a taken address (confirmed or not) answers the same `202 {}` in the same time, and
+gets a notice with no link. The link is not Better Auth's e-mail verification (a stateless JWT with
+the address in it, replayable, not voided by a resend, confirming without the password): it is a
+random 32-byte token whose SHA-256 lives in `public.email_confirmations`, reached only through the
+`app_private` functions of migration `20261027010100`. `email-verification.ts` exposes
+`issueEmailConfirmation(executor, userId)`, which voids the earlier links and returns the token to
+send with `emailService.sendEmailVerification` (the invitation acceptance of #721 calls it too).
+`POST /auth/email/verify` takes the token **and the account password**, spends the login's attempt
+counters, and answers `400 INVALID_LINK_OR_PASSWORD` for a wrong password and for a dead link alike
+(checking a decoy hash when the link is dead); only both right consume the link (while the credential
+is still the one checked), confirm the e-mail and create the session. A password reset of an
+unconfirmed account takes it over: `onPasswordReset` calls
+`app_private.confirm_email_by_password_reset`, which voids the links, confirms the e-mail and revokes
+the legal acceptances recorded at sign-up.
 
-**`password/reset` always authenticates (issue #175, 2026-09-29 decision "O reset de senha sempre
-autentica, exceto sem nenhum contexto").** The reset already ended every previous session
-(`revokeSessionsOnPasswordReset`); after that, `routes.ts` signs the account back in with the new
-password, reusing the same `signInEmail` mechanism the invite-continuation branch always used, and
-applies the same zero-context gate login has (issue #68): with a valid `inviteToken` continuation
-the session is kept unconditionally (still contextless, same rule as login above); otherwise
-`countValidContexts` decides, **counted before signing in** — at least one context signs the
-account in and responds `200 { signedIn: true }` with a cookie; a **confirmed** zero count never
-attempts a sign-in at all and responds `200 { signedIn: false, reason: 'NO_CONTEXT_ACCESS' }`, no
-cookie. An invalid/expired/used reset token is unaffected: it still gets the generic
-`400 INVALID_LINK`, no session ever created.
+**A password change stamps `passwordChangedAt` (issue #719, decision 2026-10-27).** Migration
+`20261027120000` adds `auth.account."passwordChangedAt"` and a `BEFORE UPDATE OF password` trigger on
+`auth.account` (credential rows) that sets it on `NEW` to the database clock, in the statement that replaced the
+hash, so the reset and any later writer are covered. The trigger writes no other row: one that updated `auth.user`
+would lock the account row before the user row, the reverse of the order the confirmation link, the Google takeover
+and the purge use, and deadlock. `confirm_email_by_password_reset` (the takeover by the reset) stamps the user's
+date too. A credential inserted with a password is stamped as well (the account with only Google that sets one, a credential put back after a delete), and the application role cannot write either date (UPDATE on both tables and INSERT on `auth.account` are by column).
+`session-guard.ts` refuses, and deletes, a session whose `createdAt` is at or before the greater of the user's date and the credential's. The date alone
+does not close the race: a login that checked the old hash creates its session after the reset committed, with a
+`createdAt` later than the date. So `/auth/login` and `/auth/email/verify` read the credential again after
+`signInEmail` created the session and end it when the hash is no longer the one they checked (or the read fails);
+a hash that still matches means the reset's deletion of sessions has not run yet and takes the session too. The
+session clock is the API's and the date is the database's, one host (ADR 0011); a skew only refuses sessions
+created right after a reset, never accepts an old one.
 
-**`reason: 'SIGN_IN_REQUIRED'` (2026-09-29 security review of PR #176, achado 1 and 2).** Counting
-contexts before signing in matters for a second reason beyond avoiding a create-then-revoke: it
-keeps `NO_CONTEXT_ACCESS` reserved for a *confirmed* zero count. Anything else that stops a session
-from being created — the account no longer being identifiable, the context count itself failing, or
-`signInEmail` failing (including the race of two valid reset tokens for the same account, where the
-second call's `newPassword` no longer matches the hash the first call just wrote) — responds
-`200 { signedIn: false, reason: 'SIGN_IN_REQUIRED' }` instead. The password still changed in every
-one of these cases; the distinction is only ever about the client's next step: `/sem-acesso` for
-`NO_CONTEXT_ACCESS`, `/entrar` for `SIGN_IN_REQUIRED`. Every such failure is logged, structured,
-without the password, the reset token, or the e-mail.
+**`password/reset` creates no session (issue #699, 2026-10-16 decision "Redefinir a senha não entra
+direto: volta ao login").** The reset ends every previous session (`revokeSessionsOnPasswordReset`)
+and answers `204`, no body and no cookie, whether or not the account has a context: it never signs
+the account in and takes no `inviteToken`. The person signs in again with the new password. An
+invitation that started the recovery (`forgot` appends `invite=` to the link only for a valid invite
+addressed to that e-mail) continues through that login. An invalid/expired/used reset token gets the
+generic `400 INVALID_LINK`.
+
+**Sign in with Google (issue #707, decisions 2026-10-26 and 2026-10-27).** Off unless `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` are set (`config.google`): `GET /auth/providers` answers `{ google: false }` and the two routes
+below answer 404. `GET /auth/google/start[?intent=reauth]` calls `auth.api.signInSocial` (state in a signed cookie and a
+`verification` row, PKCE S256, scopes `openid email profile` only, no `include_granted_scopes`), puts a per-flow `nonce`
+in the state record's `additionalData` and in the URL (Better Auth has no nonce binding for Google's redirect flow),
+and redirects. `GET /auth/callback/google` calls `auth.api.callbackOAuth`; **every** failure, and any outcome that is
+not the landing `/entrar/google`, redirects to `/entrar?erro=google` with no body and no reason (the reason goes to the
+log), so the flow is no oracle for which address has a password account. `google.ts` is the one place the rules live:
+`verifyGoogleIdToken` (signature, `iss`, `aud`, expiry, `nonce`), `email_verified === true`, then
+`app_private.google_sign_in_admission(sub, email, name)` (the name is the Google profile name only when `DisplayNameSchema`,
+the schema of `PATCH /me/profile`, accepts it; otherwise the part of the address before the `@`), which decides in the database, locking the user: a linked `sub` enters
+only with the address of its account; an account holding another Google identity is refused; an **unconfirmed** account
+is taken over by `app_private.google_takes_over_account` (password, sessions, reset and confirmation links and open
+e-mail changes die; the legal acceptances are revoked; `passwordChangedAt` is set; the name the earlier holder typed gives
+way to the name of the Google profile); a confirmed account just gains the
+second way in (`accountLinking` is on, `trustedProviders` empty, and `requireLocalEmailVerified` is why the takeover is
+our code). The account is the `sub` (`auth.account.accountId`, unique per provider and one Google per user). No Google
+token is stored (`databaseHooks.account.create.before`), and no other provider can be linked. `session-guard.ts`
+refuses a session created at or before the user's `passwordChangedAt`. A Google-only account has no password: the
+e-mail change asks for a Google sign-in of the last 5 minutes (`GOOGLE_REAUTH_WINDOW_MS`, `403 REAUTH_REQUIRED`, and
+`intent=reauth` sends `prompt=login`), its credential fingerprint is the `sub`, and "Esqueci a senha" creates a
+password. An account with Google and without both acceptances is `required` on `GET /me/legal-acceptances`, has no
+contexts and cannot create an agency (`403 TERMS_NOT_ACCEPTED`) until it accepts. The simulated Google for the tests is
+`test-support/fake-google.ts`.
 
 ## Composition
 
@@ -99,6 +147,8 @@ without the password, the reset token, or the e-mail.
   authenticated request reuses (20B and 20C included). It calls `auth.api.getSession`, then enforces
   the 30-day absolute session lifetime described below, and attaches `request.auth`.
 - `routes.ts` wires the six routes above to `auth.api.*`, the rate limiter, and the audit recorder.
+- `google.ts` (the id token and admission rules) and `google-routes.ts` (providers, start, callback) are the Google
+  sign-in; `per-ip-rate-limit.ts` holds the per-address limiter `routes.ts` and `google-routes.ts` share.
 - `server.ts` (the process entry point) owns the Better Auth pool's lifetime and closes it during
   shutdown; `app.ts` composes everything through `buildApp`, which never touches process state.
 
@@ -109,8 +159,8 @@ without the password, the reset token, or the e-mail.
 - Session state is never cached in the cookie (`cookieCache.enabled: false`): revocation takes
   effect immediately, at the cost of one DB round trip per authenticated request.
 - The auth responses that carry session data (`GET /auth/session`, `GET /auth/session/check`,
-  `POST /auth/login`, and `POST /auth/password/reset`, which issues the cookie) answer
-  `Cache-Control: no-store`, set in `onRequest` so that a `401` from the guard carries it too (#423).
+  `POST /auth/login`) and `POST /auth/password/reset`, which carries the reset token and the new
+  password, answer `Cache-Control: no-store`, set in `onRequest` so that a `401` from the guard carries it too (#423).
   The same hook (`plugins/infra/no-store.ts`) covers `GET /invitations/:token`,
   `POST /invitations/:token/accept-new-account` and `GET /me/contexts` (#432). It runs before the
   route's rate-limit hook, so a `429` carries it as well; a header set inside the handler would miss
@@ -131,6 +181,9 @@ Three independent dimensions, matching issue #31 exactly. Every limit exceeded r
 | --- | --- | --- | --- |
 | `POST /auth/login` | 100 / 15 min | 10 / 15 min | 50 / 1 h |
 | `POST /auth/password/forgot` | 30 / 15 min | 3 / 15 min | 10 / 1 h |
+| `POST /auth/sign-up` | 30 / 15 min | 3 / 15 min | 10 / 1 h |
+| `POST /auth/email/verification/resend` | 30 / 15 min | 3 / 15 min | 10 / 1 h |
+| `POST /auth/email/verify` | 100 / 15 min | the login's counters, keyed by the link's e-mail | the login's |
 | `POST /auth/password/reset` | 30 / 15 min | — | — |
 
 - **Per IP** uses the already-registered `@fastify/rate-limit` plugin (`config: { rateLimit: {...} }`

@@ -18,7 +18,9 @@ describe('authentication contracts', () => {
       email: 'person@example.test',
       password: '1234567890'
     });
-    expect(() => AuthLoginRequestSchema.parse({ email: 'person@example.test', password: 'short' })).toThrow();
+    // Signing in presents a password, it does not create one: a short wrong password is a 401 for the server to give.
+    expect(AuthLoginRequestSchema.parse({ email: 'person@example.test', password: 'short' }).password).toBe('short');
+    expect(() => AuthLoginRequestSchema.parse({ email: 'person@example.test', password: '' })).toThrow();
     expect(() => AuthLoginRequestSchema.parse({ email: 'person@example.test', password: 'x'.repeat(129) })).toThrow();
   });
 
@@ -39,7 +41,7 @@ describe('authentication contracts', () => {
     expect(() => AuthPasswordResetRequestSchema.parse({ token: 'reset-token', newPassword: 'short' })).toThrow();
   });
 
-  it('accepts an opaque invitation continuation token on login/forgot/reset', () => {
+  it('accepts an opaque invitation continuation token on login/forgot, and refuses it on reset', () => {
     const inviteToken = 'invite-token';
     expect(AuthLoginRequestSchema.parse({ email: 'person@example.test', password: '1234567890', inviteToken })).toEqual({
       email: 'person@example.test', password: '1234567890', inviteToken
@@ -47,24 +49,15 @@ describe('authentication contracts', () => {
     expect(AuthPasswordForgotRequestSchema.parse({ email: 'person@example.test', inviteToken })).toEqual({
       email: 'person@example.test', inviteToken
     });
-    expect(AuthPasswordResetRequestSchema.parse({ token: 'reset-token', newPassword: 'new-password', inviteToken })).toEqual({
-      token: 'reset-token', newPassword: 'new-password', inviteToken
-    });
     expect(() => AuthPasswordForgotRequestSchema.parse({ email: 'person@example.test', inviteToken: '' })).toThrow();
+    // The reset ends no session in favour of a new one: the invitation continues through the login.
+    expect(() => AuthPasswordResetRequestSchema.parse({ token: 'reset-token', newPassword: 'new-password', inviteToken })).toThrow();
   });
 
-  it('models the three password/reset response shapes (issue #175, PR #176 security review)', () => {
-    expect(AuthPasswordResetResponseSchema.parse({ signedIn: true })).toEqual({ signedIn: true });
-    expect(AuthPasswordResetResponseSchema.parse({ signedIn: false, reason: 'NO_CONTEXT_ACCESS' })).toEqual({
-      signedIn: false, reason: 'NO_CONTEXT_ACCESS'
-    });
-    expect(AuthPasswordResetResponseSchema.parse({ signedIn: false, reason: 'SIGN_IN_REQUIRED' })).toEqual({
-      signedIn: false, reason: 'SIGN_IN_REQUIRED'
-    });
-    expect(() => AuthPasswordResetResponseSchema.parse({ signedIn: true, reason: 'NO_CONTEXT_ACCESS' })).toThrow();
-    expect(() => AuthPasswordResetResponseSchema.parse({ signedIn: false })).toThrow();
-    expect(() => AuthPasswordResetResponseSchema.parse({ signedIn: false, reason: 'SOMETHING_ELSE' })).toThrow();
-    expect(() => AuthPasswordResetResponseSchema.parse(undefined)).toThrow();
+  it('models the password/reset response as bodyless, like logout (2026-10-16)', () => {
+    expect(AuthPasswordResetResponseSchema.parse(undefined)).toBeUndefined();
+    expect(() => AuthPasswordResetResponseSchema.parse({ signedIn: true })).toThrow();
+    expect(() => AuthPasswordResetResponseSchema.parse({})).toThrow();
   });
 
   it('models logout requests and 204 responses as bodyless', () => {

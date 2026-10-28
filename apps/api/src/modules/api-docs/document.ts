@@ -49,6 +49,36 @@ const groupErrorsByStatus = (errors: readonly ApiErrorDoc[]): ReadonlyArray<read
   return [...grouped.entries()].sort(([a], [b]) => a - b);
 };
 
+const TERMS_NOT_ACCEPTED_ERROR: ApiErrorDoc = { status: 403, code: 'TERMS_NOT_ACCEPTED' };
+const EMAIL_NOT_CONFIRMED_ERROR: ApiErrorDoc = { status: 403, code: 'EMAIL_NOT_CONFIRMED' };
+
+/** The only session routes that answer an account whose e-mail is not confirmed: its session, its sign-out and the two context lists. */
+const UNCONFIRMED_ACCOUNT_ROUTES: ReadonlySet<string> = new Set([
+  '/auth/session',
+  '/auth/session/check',
+  '/auth/logout',
+  '/auth/logout-all',
+  '/me/contexts',
+  '/me/contexts/resolve'
+]);
+
+/**
+ * The agency and the portal guards refuse an account that still has to accept the Terms and the Privacy Policy (issue #707), so
+ * every route behind them can answer it; the catalog lists it here once instead of on each of those routes. The same goes for an
+ * account that has not confirmed its e-mail (decision 2026-10-27): the session guard refuses it on every route that needs a session
+ * except `UNCONFIRMED_ACCOUNT_ROUTES`.
+ */
+export const routeErrors = (route: { readonly path: string; readonly errors: readonly ApiErrorDoc[] }): readonly ApiErrorDoc[] => {
+  const errors = /^\/(agencies\/:agencyId|clients\/:clientId)(\/|$)/.test(route.path) && !route.errors.some((error) => error.code === TERMS_NOT_ACCEPTED_ERROR.code)
+    ? [...route.errors, TERMS_NOT_ACCEPTED_ERROR]
+    : route.errors;
+  return errors.some((error) => error.status === 401 && error.code === 'UNAUTHENTICATED')
+    && !UNCONFIRMED_ACCOUNT_ROUTES.has(route.path)
+    && !errors.some((error) => error.code === EMAIL_NOT_CONFIRMED_ERROR.code)
+    ? [...errors, EMAIL_NOT_CONFIRMED_ERROR]
+    : errors;
+};
+
 /**
  * Builds the OpenAPI 3.1 document from the route catalog. Every schema comes from
  * `@ageniza/contracts`; this module never restates one. Examples are validated against the schema
@@ -112,7 +142,7 @@ export const buildOpenApiDocument = (): Record<string, unknown> => {
       };
     }
 
-    for (const [status, errors] of groupErrorsByStatus(route.errors)) {
+    for (const [status, errors] of groupErrorsByStatus(routeErrors(route))) {
       const example = errorExample(errors[0]!);
       assertExample(ApiErrorResponseSchema, example, `${route.method.toUpperCase()} ${route.path} ${status}`);
       responses[String(status)] = {

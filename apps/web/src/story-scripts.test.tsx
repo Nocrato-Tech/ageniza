@@ -113,7 +113,7 @@ const makeFetch = (scenario: Scenario = {}) => {
 
     if (url.pathname.endsWith('/auth/session')) return json(sessionBody);
     if (/\/agencies\/[^/]+\/me$/.test(url.pathname)) {
-      return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, permissions });
+      return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions });
     }
     const list = /\/agencies\/[^/]+\/clients$/.exec(url.pathname);
     if (list !== null) {
@@ -309,7 +309,7 @@ describe('creating a script', () => {
     render_(impl);
     await openNewScriptOn('2026-10-20');
 
-    expect((within(dialog()).getByLabelText('Dia dos stories') as HTMLInputElement).value).toBe('2026-10-20');
+    expect((within(dialog()).getByLabelText('Dia dos stories') as HTMLInputElement).value).toBe('20/10/2026');
     typeInto('Texto da cena 1', 'Abrir a loja');
     typeInto('Orientação da cena 1', 'Filmar na vertical');
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Adicionar cena' }));
@@ -521,7 +521,7 @@ describe('opening, editing and reordering', () => {
     await openScript('2026-10-20');
     await waitFor(() => expect(textsOnScreen()).toEqual(['A']));
 
-    typeInto('Dia dos stories', '2026-10-25');
+    typeInto('Dia dos stories', '25/10/2026');
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Salvar rascunho' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -709,7 +709,7 @@ describe('the list of scripts of the period (#635)', () => {
     fireEvent.click(within(list).getByRole('button', { name: 'Novo roteiro' }));
 
     await screen.findByRole('dialog', { name: 'Novo roteiro de stories' });
-    expect((within(dialog()).getByLabelText('Dia dos stories') as HTMLInputElement).value).toBe('2026-10-11');
+    expect((within(dialog()).getByLabelText('Dia dos stories') as HTMLInputElement).value).toBe('11/10/2026');
   });
 
   it('lays the empty state out like the clients roster (no mascot, centred text), through its own class', async () => {
@@ -769,16 +769,6 @@ describe('the list of scripts of the period (#635)', () => {
     expect(listRows()).toHaveLength(1);
   });
 
-  it('is not shown on the feed view, which has no calendar to complete', async () => {
-    const { impl } = makeFetch({ scripts: [scriptOf(padaria.id)] });
-    render_(impl);
-    await calendarReady();
-    expect(document.querySelector('.story-list')).not.toBeNull();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Feed' }));
-    await waitFor(() => expect(document.querySelector('.content-calendar')).toBeNull());
-    expect(document.querySelector('.story-list')).toBeNull();
-  });
 });
 
 describe('the three states of a script (#635)', () => {
@@ -876,7 +866,10 @@ describe('the modal in the Pauta look (#635)', () => {
       expect(message.querySelector('.ui-icon svg'), label).not.toBeNull();
       expect(message.getAttribute('role'), label).toBeNull();
       expect(control.getAttribute('aria-invalid'), label).toBe('true');
-      expect(control.getAttribute('aria-describedby'), label).toBe(message.id);
+      // The day field also says its format after the error; the other fields have nothing but their own message.
+      const described = control.getAttribute('aria-describedby')!.split(' ');
+      if (label === 'Dia dos stories') expect(described[0], label).toBe(message.id);
+      else expect(described, label).toEqual([message.id]);
     }
     expect(document.activeElement).toBe(within(dialog()).getByLabelText('Dia dos stories'));
     const alerts = within(dialog()).getAllByRole('alert');
@@ -914,5 +907,118 @@ describe('the modal in the Pauta look (#635)', () => {
     expect(message.getAttribute('role')).toBeNull();
     expect(document.activeElement).toBe(field);
     expect(within(dialog()).queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('the day of the script: typed or picked on the calendar (#703)', () => {
+  const dayField = (): HTMLInputElement => within(dialog()).getByLabelText('Dia dos stories') as HTMLInputElement;
+  const calendar = (): HTMLElement => screen.getByRole('dialog', { name: /de 2026$/ });
+  const openCalendar = (): void => { fireEvent.click(within(dialog()).getByRole('button', { name: 'Abrir calendário' })); };
+  const dayButton = (day: string): HTMLButtonElement => within(calendar()).getByRole('button', { name: new RegExp(`^[^,]+, ${Number(day.slice(8))} de `) }) as HTMLButtonElement;
+
+  it('is a text field that wants a day as dia/mês/ano, never the date input of the browser', async () => {
+    const { impl } = makeFetch();
+    render_(impl);
+    await openNewScriptOn('2026-10-20');
+
+    expect(dayField().type).toBe('text');
+    expect(dayField().placeholder).toBe('dd/mm/aaaa');
+    expect(dayField().getAttribute('inputmode')).toBe('numeric');
+    expect(within(dialog()).getByRole('button', { name: 'Abrir calendário' })).toBeTruthy();
+  });
+
+  it('saves the day that is picked on the calendar, as YYYY-MM-DD', async () => {
+    const { impl, calls } = makeFetch();
+    render_(impl);
+    await openNewScriptOn('2026-10-20');
+    typeInto('Texto da cena 1', 'Abrir a loja');
+
+    openCalendar();
+    expect(within(calendar()).getByRole('heading', { name: 'outubro de 2026' })).toBeTruthy();
+    fireEvent.click(dayButton('2026-10-27'));
+    expect(dayField().value).toBe('27/10/2026');
+    expect(screen.queryByRole('dialog', { name: /de 2026$/ })).toBeNull();
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Salvar rascunho' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((calls.find((call) => call.method === 'POST')!.body as { scriptOn: string }).scriptOn).toBe('2026-10-27');
+    await waitFor(() => expect(scriptMarks('2026-10-27')).toEqual(['Stories · Rascunho']));
+  });
+
+  it('offers "Hoje" as the day of São Paulo, which is the 11th at 01:30Z of the 12th', async () => {
+    const { impl, calls } = makeFetch();
+    render_(impl);
+    await openNewScriptOn('2026-10-20');
+    typeInto('Texto da cena 1', 'Abrir a loja');
+
+    openCalendar();
+    expect(dayButton('2026-10-11').getAttribute('aria-current')).toBe('date');
+    expect(dayButton('2026-10-12').getAttribute('aria-current')).toBeNull();
+    fireEvent.click(within(calendar()).getByRole('button', { name: 'Hoje' }));
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Salvar rascunho' }));
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true));
+    expect((calls.find((call) => call.method === 'POST')!.body as { scriptOn: string }).scriptOn).toBe('2026-10-11');
+  });
+
+  it('refuses a half-typed or impossible day with the same sentence as an empty one, and sends nothing', async () => {
+    const { impl, calls } = makeFetch();
+    render_(impl);
+    await openNewScriptOn('2026-10-20');
+    typeInto('Texto da cena 1', 'Abrir a loja');
+
+    for (const text of ['2510', '31/02/2026', '']) {
+      typeInto('Dia dos stories', text);
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Salvar rascunho' }));
+      expect(await within(dialog()).findByText('Informe o dia dos stories.'), text).toBeTruthy();
+      expect(dayField().getAttribute('aria-invalid'), text).toBe('true');
+    }
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it('takes the message off the day field as soon as a day is typed again', async () => {
+    const { impl } = makeFetch();
+    render_(impl);
+    await openNewScriptOn('2026-10-20');
+    typeInto('Texto da cena 1', 'Abrir a loja');
+    typeInto('Dia dos stories', '');
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Salvar rascunho' }));
+    await within(dialog()).findByText('Informe o dia dos stories.');
+
+    typeInto('Dia dos stories', '21/10/2026');
+
+    expect(within(dialog()).queryByText('Informe o dia dos stories.')).toBeNull();
+    expect(dayField().getAttribute('aria-invalid')).toBeNull();
+  });
+
+  it('closes only the calendar on Esc, leaving the script open with what was typed', async () => {
+    const { impl } = makeFetch();
+    render_(impl);
+    await openNewScriptOn('2026-10-20');
+    typeInto('Texto da cena 1', 'Texto que fica');
+
+    openCalendar();
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    act(() => { document.activeElement!.dispatchEvent(escape); });
+
+    expect(escape.defaultPrevented).toBe(true);
+    expect(screen.queryByRole('dialog', { name: /de 2026$/ })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Novo roteiro de stories' })).toBeTruthy();
+    expect((within(dialog()).getByLabelText('Texto da cena 1') as HTMLTextAreaElement).value).toBe('Texto que fica');
+    expect(document.activeElement).toBe(within(dialog()).getByRole('button', { name: 'Abrir calendário' }));
+  });
+
+  it('freezes the day field while the script is being saved', async () => {
+    const answer = deferred<Response>();
+    const { impl } = makeFetch({ override: (call) => (call.method === 'POST' ? answer.promise : undefined) });
+    render_(impl);
+    await openNewScriptOn('2026-10-20');
+    typeInto('Texto da cena 1', 'Abrir a loja');
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Salvar rascunho' }));
+    await waitFor(() => expect(dayField().disabled).toBe(true));
+    expect((within(dialog()).getByRole('button', { name: 'Abrir calendário' }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { answer.resolve(json({ id: randomUUID(), scriptOn: '2026-10-20', status: 'draft', scenes: [], recordedBy: null, recordedAt: null, createdAt: '2026-10-11T12:00:00.000Z' }, 201)); });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

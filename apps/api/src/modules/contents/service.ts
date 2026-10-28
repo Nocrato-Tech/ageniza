@@ -37,6 +37,7 @@ interface ContentRow {
   readonly approver_name: string | null;
   readonly approved_at: Date | null;
   readonly approved_by_agency_reason: string | null;
+  readonly approved_via_link: boolean;
   readonly published_on: string | null;
   readonly cancelled_at: Date | null;
   readonly created_at: Date;
@@ -72,8 +73,9 @@ const CONTENT_COLUMNS = `
   content.publish_on::text as publish_on, to_char(content.publish_at_time, 'HH24:MI') as publish_at_time,
   content.caption, content.folder_id, content.cover_asset_id, content.owner_user_id, owner_link.id as owner_membership_id,
   owner_account.name as owner_name, content.status, content.revision,
-  case when content.approved_by is null then null when content.approved_by_agency_reason is not null then 'agency' else 'client' end as approver_side,
-  approver_account.name as approver_name, content.approved_at, content.approved_by_agency_reason,
+  case when content.approved_by is null and content.approved_by_portal_access_id is null then null when content.approved_by_agency_reason is not null then 'agency' else 'client' end as approver_side,
+  coalesce(approver_account.name, app_private.portal_access_label(content.approved_by_portal_access_id, content.client_id)) as approver_name,
+  (content.approved_by_portal_access_id is not null) as approved_via_link, content.approved_at, content.approved_by_agency_reason,
   content.published_on::text as published_on, content.cancelled_at, content.created_at
 `;
 
@@ -253,7 +255,7 @@ export const contentFromRow = (row: ContentRow): Content => ({
   owner: ownerOf(row),
   status: row.status,
   revision: Number(row.revision),
-  approvedBy: row.approver_side === null ? null : { name: row.approver_name ?? '', side: row.approver_side },
+  approvedBy: row.approver_side === null ? null : { name: row.approver_name ?? '', side: row.approver_side, ...(row.approved_via_link ? { viaLink: true as const } : {}) },
   approvedAt: row.approved_at === null ? null : new Date(row.approved_at).toISOString(),
   approvedByAgencyReason: row.approved_by_agency_reason,
   publishedOn: row.published_on,

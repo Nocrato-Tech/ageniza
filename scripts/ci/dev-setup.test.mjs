@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -30,6 +30,8 @@ describe('the web reads the design system from its source only in the dev server
   it('aliases @ageniza/ui to packages/ui/src when serving in development', () => {
     const config = webConfig({ command: 'serve', mode: 'development' });
     expect(config.resolve.alias).toEqual({ '@ageniza/ui': ui });
+    // The alias is only useful while it points at a file: moving the entry would leave both sides equal and the server broken.
+    expect(existsSync(ui)).toBe(true);
   });
 
   it.each([

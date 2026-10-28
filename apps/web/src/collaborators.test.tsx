@@ -59,8 +59,10 @@ const PRODUCTION_ROLE_ID = SYSTEM_ROLES[3].id;
 const ADMIN_ROLE_ID = SYSTEM_ROLES[1].id;
 const rolesFor = (isOwner: boolean) => json({ data: isOwner ? SYSTEM_ROLES : SYSTEM_ROLES.filter((role) => role.key !== 'admin') });
 
-const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[], role: TestRole, isOwner: boolean) => ({
-  agencyId, agencyName, isOwner, membershipId: null, role, permissions
+const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[], role: TestRole, isOwner: boolean, readOnly = false) => ({
+  agencyId, agencyName, isOwner, membershipId: null, role,
+  plan: readOnly ? { kind: 'trial', trialEndsAt: '2026-10-01T12:00:00.000Z', readOnly: true } : { kind: 'isenta', trialEndsAt: null, readOnly: false },
+  permissions
 });
 const agencyDisplayName = (agencyId: string): string => agencyId === AGENCY_B ? 'Agência Dois' : 'Agência Um';
 
@@ -97,6 +99,9 @@ const pendingInvite = (id: string, email: string, roleKey: string, roleName: str
 const inviteAna = pendingInvite('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'ana@exemplo.com', 'production', 'Produção', 5);
 const invitePaulo = pendingInvite('ffffffff-ffff-4fff-8fff-ffffffffffff', 'paulo@exemplo.com', 'admin', 'Admin', 1);
 const inviteJulia = pendingInvite('99999999-9999-4999-8999-999999999999', 'julia@exemplo.com', 'account_manager', 'Gestor de conta', 6);
+// The links an invitation creation and a resend answer once (#710); never anywhere else.
+const INVITE_URL = 'http://127.0.0.1:5173/convite/created-invitation-secret';
+const RENEWED_URL = 'http://127.0.0.1:5173/convite/renewed-invitation-secret';
 const defaultInvites = [inviteAna, invitePaulo, inviteJulia];
 
 const pageInvites = (from: number, count: number) => Array.from({ length: count }, (_value, index) => {
@@ -129,6 +134,8 @@ interface Scenario {
   readonly cancel?: (invitationId: string, agencyId: string) => Response | Promise<Response>;
   readonly updateProfile?: (body: unknown) => Response | Promise<Response>;
   readonly uploadPhoto?: (body: unknown) => Response | Promise<Response>;
+  /** The trial of the agency ended (issue #714). */
+  readonly readOnly?: boolean;
 }
 
 /** Behaves like the real API: 401 without a session, the listing and the job-titles contract shapes. */
@@ -156,7 +163,7 @@ const makeFetch = (scenario: Scenario = {}) => {
       return scenario.uploadPhoto(JSON.parse(String(init.body)));
     }
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
-    if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions, role, isOwner));
+    if (me !== null) return json(agencyMe(me[1]!, agencyDisplayName(me[1]!), permissions, role, isOwner, scenario.readOnly));
     const roles = /\/agencies\/([^/]+)\/roles$/.exec(path);
     if (roles !== null && method === 'GET') {
       if (!isOwner && !permissions.includes('colaborador.convidar') && !permissions.includes('colaborador.alterar_papel')) {
@@ -167,12 +174,12 @@ const makeFetch = (scenario: Scenario = {}) => {
     const createInvitation = /\/agencies\/([^/]+)\/invitations\/collaborators$/.exec(path);
     if (createInvitation !== null && method === 'POST') {
       if (!permissions.includes('colaborador.convidar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
-      return scenario.createInvitation?.(JSON.parse(String(init?.body)), createInvitation[1]!) ?? json({ invitationId: inviteAna.id, expiresAt: inviteAna.expiresAt, supersededInvitationId: null }, 201);
+      return scenario.createInvitation?.(JSON.parse(String(init?.body)), createInvitation[1]!) ?? json({ invitationId: inviteAna.id, expiresAt: inviteAna.expiresAt, supersededInvitationId: null, invitationUrl: INVITE_URL }, 201);
     }
     const resend = /\/agencies\/([^/]+)\/invitations\/([^/]+)\/resend$/.exec(path);
     if (resend !== null && method === 'POST') {
       if (!permissions.includes('convite.reenviar')) return json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
-      return scenario.resend?.(resend[2]!, resend[1]!) ?? json({ invitationId: inviteJulia.id, expiresAt: inviteJulia.expiresAt });
+      return scenario.resend?.(resend[2]!, resend[1]!) ?? json({ invitationId: inviteJulia.id, expiresAt: inviteJulia.expiresAt, invitationUrl: RENEWED_URL });
     }
     const cancel = /\/agencies\/([^/]+)\/invitations\/([^/]+)$/.exec(path);
     if (cancel !== null && method === 'DELETE') {
@@ -1414,7 +1421,7 @@ describe('pending invitations (#106)', () => {
       invitations: (query) => invitationsResponse(pending, query),
       resend: (invitationId) => {
         pending = pending.map((item) => item.id === invitationId ? { ...item, id: renewedId, expiresAt: renewedExpiry } : item);
-        return json({ invitationId: renewedId, expiresAt: renewedExpiry });
+        return json({ invitationId: renewedId, expiresAt: renewedExpiry, invitationUrl: RENEWED_URL });
       }
     });
     renderCollaborators(impl);
@@ -1443,7 +1450,7 @@ describe('pending invitations (#106)', () => {
           pending = [{ ...inviteAna, id: renewedId, expiresAt: renewedExpiry }];
           return json({ error: { code: 'EMAIL_DELIVERY_FAILED', message: 'private diagnostic' } }, 502);
         }
-        return json({ invitationId: renewedId, expiresAt: renewedExpiry });
+        return json({ invitationId: renewedId, expiresAt: renewedExpiry, invitationUrl: RENEWED_URL });
       }
     });
     renderCollaborators(impl);
@@ -1718,6 +1725,79 @@ describe('invite collaborator modal (#107)', () => {
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleId } });
   };
 
+  /** Every place a link could linger outside the component state: both caches, the URL and the page text. */
+  const expectLinkNowhere = (queryClient: ReturnType<typeof renderCollaborators>['queryClient'], probe: ReturnType<typeof renderCollaborators>['probe'], link: string): void => {
+    const cached = JSON.stringify([
+      queryClient.getQueryCache().getAll().map((query) => query.state.data),
+      queryClient.getMutationCache().getAll().map((mutation) => [mutation.state.data, mutation.state.variables])
+    ]);
+    expect(cached).not.toContain(link);
+    expect(`${probe.pathname}${probe.search}`).not.toContain('convite');
+    expect(document.body.textContent).not.toContain(link);
+  };
+
+  const mockClipboard = (writeText: (text: string) => Promise<void>) => {
+    const spy = vi.fn(writeText);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: spy }, configurable: true });
+    return spy;
+  };
+
+  it('#715: after sending, "Copiar link" copies the link of the e-mail, kept out of every cache and the URL, and gone once the modal closes', async () => {
+    const writeText = mockClipboard(async () => undefined);
+    const { impl } = makeFetch();
+    const { container, probe, queryClient } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    expect(within(dialog).queryByRole('button', { name: 'Copiar link' })).toBeNull();
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Copiar link' }));
+    await within(dialog).findByRole('button', { name: 'Link copiado' });
+    expect(writeText).toHaveBeenCalledWith(INVITE_URL);
+    expectLinkNowhere(queryClient, probe, INVITE_URL);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const reopened = await openInvite(container);
+    expect(within(reopened).queryByRole('button', { name: 'Copiar link' })).toBeNull();
+    expectLinkNowhere(queryClient, probe, INVITE_URL);
+  });
+
+  it('#715: says so when the browser refuses the copy', async () => {
+    mockClipboard(async () => { throw new Error('denied'); });
+    const { impl } = makeFetch();
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Copiar link' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toBe('Não foi possível copiar o link. Ele também está no e-mail enviado.');
+  });
+
+  it('#710: a resend offers "Copiar link" with the new link, kept out of every cache and the URL', async () => {
+    const writeText = mockClipboard(async () => undefined);
+    const { impl } = makeFetch();
+    const { probe, queryClient } = renderCollaborators(impl);
+    const region = await invitesRegion();
+    expect(within(region).queryByRole('button', { name: 'Copiar link' })).toBeNull();
+    fireEvent.click(await within(region).findByRole('button', { name: 'Reenviar convite de ana@exemplo.com' }));
+    fireEvent.click(await within(region).findByRole('button', { name: 'Copiar link' }));
+    await within(region).findByRole('button', { name: 'Link copiado' });
+    expect(writeText).toHaveBeenCalledWith(RENEWED_URL);
+    expectLinkNowhere(queryClient, probe, RENEWED_URL);
+  });
+
+  it('#721 review: a resend that answers no link (the caller lacks colaborador.convidar) offers no "Copiar link"', async () => {
+    const { impl } = makeFetch({ resend: () => json({ invitationId: inviteJulia.id, expiresAt: inviteJulia.expiresAt, invitationUrl: null }) });
+    renderCollaborators(impl);
+    const region = await invitesRegion();
+    fireEvent.click(await within(region).findByRole('button', { name: 'Reenviar convite de ana@exemplo.com' }));
+    expect((await within(region).findByRole('status')).textContent).toBe('Convite reenviado para ana@exemplo.com. O link anterior deixou de valer.');
+    expect(within(region).queryByRole('button', { name: 'Copiar link' })).toBeNull();
+  });
+
   it('opens with the e-mail and role fields, the role hint and no cargo or remuneration', async () => {
     const { impl } = makeFetch();
     const { container } = renderCollaborators(impl);
@@ -1820,7 +1900,7 @@ describe('invite collaborator modal (#107)', () => {
       createInvitation: (body) => {
         bodies.push(body);
         pending = [...pending, { ...created, email: (body as { email: string }).email }];
-        return json({ invitationId: created.id, expiresAt: created.expiresAt, supersededInvitationId: null }, 201);
+        return json({ invitationId: created.id, expiresAt: created.expiresAt, supersededInvitationId: null, invitationUrl: INVITE_URL }, 201);
       }
     });
     const { container, probe } = renderCollaborators(impl);
@@ -1854,7 +1934,7 @@ describe('invite collaborator modal (#107)', () => {
       invitations: (query) => invitationsResponse(pending, query),
       createInvitation: () => {
         pending = [invitePaulo, created];
-        return json({ invitationId: created.id, expiresAt: created.expiresAt, supersededInvitationId: superseded.id }, 201);
+        return json({ invitationId: created.id, expiresAt: created.expiresAt, supersededInvitationId: superseded.id, invitationUrl: INVITE_URL }, 201);
       }
     });
     const { container } = renderCollaborators(impl);
@@ -2031,7 +2111,7 @@ describe('invite collaborator modal (#107)', () => {
     await waitFor(() => expect(submit.getAttribute('aria-busy')).toBe('true'));
     expect(submit.getAttribute('aria-disabled')).toBe('true');
     expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).disabled).toBe(false);
-    await act(async () => { finish(json({ invitationId: inviteAna.id, expiresAt: expiryInDays(7), supersededInvitationId: null }, 201)); });
+    await act(async () => { finish(json({ invitationId: inviteAna.id, expiresAt: expiryInDays(7), supersededInvitationId: null, invitationUrl: INVITE_URL }, 201)); });
     expect(await within(dialog).findByText(/Convite enviado para nova@exemplo.com/)).toBeTruthy();
   });
 
@@ -3037,5 +3117,54 @@ describe('team screens in the Pauta language (#638)', () => {
       const own = await screen.findByRole('dialog', { name: 'Ana Prado' });
       expect(within(own).getByRole('button', { name: 'Trocar foto' }).querySelector('svg')).not.toBeNull();
     });
+  });
+});
+
+describe('a read-only agency (issue #714, decision 2026-10-27)', () => {
+  const REASON = 'O plano precisa ser renovado para usar esta opção.';
+  const invitesRegion = () => screen.findByRole('region', { name: 'Convites aguardando aceite' });
+  const expectBlocked = (button: HTMLElement) => {
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    const ids = (button.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
+    expect(ids.map((id) => document.getElementById(id)?.textContent).join(' ')).toBe(REASON);
+  };
+  const expectEnabled = (button: HTMLElement) => {
+    expect(button.getAttribute('aria-disabled')).toBeNull();
+    expect(button.hasAttribute('disabled')).toBe(false);
+  };
+
+  it('keeps Convidar and Reenviar on screen, disabled with the reason, and Cancelar convite enabled', async () => {
+    const { impl, calls } = makeFetch({ readOnly: true });
+    renderCollaborators(impl);
+    const invite = await screen.findByRole('button', { name: 'Convidar' });
+    expectBlocked(invite);
+    fireEvent.click(invite);
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    const region = await invitesRegion();
+    const resend = await within(region).findByRole('button', { name: 'Reenviar convite de ana@exemplo.com' });
+    expectBlocked(resend);
+    fireEvent.click(resend);
+    expect(calls.some((call) => call.includes('/resend'))).toBe(false);
+    expectEnabled(within(region).getByRole('button', { name: 'Cancelar convite de ana@exemplo.com' }));
+  });
+
+  it('keeps Remover do quadro enabled and the save of the role disabled with the reason', async () => {
+    const removed: string[] = [];
+    const { impl } = makeFetch({
+      readOnly: true,
+      permissions: ['colaborador.visualizar', 'colaborador.alterar_funcao', 'colaborador.alterar_papel', 'colaborador.remover'],
+      collaborators: () => json({ data: [marioCosta, juliaReis], meta: meta(1, 2, 1) }),
+      detail: () => json(marioCosta),
+      removeCollaborator: (membershipId) => { removed.push(membershipId); return json({ ...marioCosta, status: 'removed' }); }
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?colaborador=${marioCosta.membershipId}`);
+    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    expectBlocked(await within(dialog).findByRole('button', { name: 'Salvar' }));
+    const remove = within(dialog).getByRole('button', { name: 'Remover do quadro' });
+    expectEnabled(remove);
+    fireEvent.click(remove);
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).getByRole('button', { name: 'Remover' }));
+    await waitFor(() => expect(removed).toEqual([marioCosta.membershipId]));
   });
 });

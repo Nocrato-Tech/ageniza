@@ -334,7 +334,10 @@ describe('legal acceptance per document (issue #81)', () => {
       { document: 'privacy', version: PRIVACY_VERSION },
       { document: 'terms', version: TERMS_VERSION }
     ]);
+    // The session of the acceptance opens nothing until the e-mail is confirmed (decision 2026-10-27), the status included.
     const cookie = sessionCookieHeader(response.cookies);
+    expect((await app.app.inject({ method: 'GET', url: '/me/legal-acceptances', headers: { cookie } })).statusCode).toBe(403);
+    await owner.knex('auth.user').where({ id: userId }).update({ emailVerified: true });
     const { body } = await getStatus(cookie);
     expect(body.documents?.map((entry) => entry.pending)).toEqual([false, false]);
   });

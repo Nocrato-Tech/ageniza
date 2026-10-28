@@ -18,7 +18,7 @@ const json = (body: unknown, status = 200): Response =>
 const sessionBody = { user: { id: '11111111-1111-4111-8111-111111111111', name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
 const AGENCY_A = '11111111-1111-4111-8111-111111111111';
 const agencyA = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência Um', roleKey: 'admin', roleName: 'Admin', isOwner: true };
-const agencyMe = { agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: [] };
+const agencyMe = { agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: [] };
 
 // `/app` now lands on the context resolver, which reads the session store; the 401 here is the
 // ordinary answer for a visitor and keeps the boundary test deterministic.
@@ -93,7 +93,7 @@ describe('route boundaries', () => {
     expect(screen.getByRole('heading', { name: 'Página não encontrada', level: 1 })).toBeTruthy();
     expect(screen.getByText('Este endereço não corresponde a uma página do Ageniza.')).toBeTruthy();
     expect(document.title).toBe('Página não encontrada — Ageniza');
-    expect(screen.getByRole('link', { name: 'Voltar ao início' }).getAttribute('href')).toBe('/');
+    expect(screen.getByRole('link', { name: 'Voltar ao início' }).getAttribute('href')).toBe('/entrar');
     cleanup();
 
     renderRoute('/app', false);
@@ -136,6 +136,13 @@ describe('route boundaries', () => {
       </AuthSessionProvider>
     );
     expect(screen.getByText('Carregando…')).toBeTruthy();
+  });
+
+  it('sends a visitor without a session from the global not-found to the login, not to the public page', async () => {
+    const { probe } = renderRoute('/rota-inexistente', false);
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar ao início' }));
+    expect(probe.pathname).toBe('/entrar');
+    expect(await screen.findByRole('heading', { name: 'Entrar', level: 1 })).toBeTruthy();
   });
 
   it('sends a signed-in person from the global not-found to the context chooser', () => {

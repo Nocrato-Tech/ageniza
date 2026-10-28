@@ -214,9 +214,29 @@ jobs:
       - name: Start the local object storage
         run: pnpm storage:start
       # The worker image ships ffmpeg, but this job runs the suite on the runner, not in that image.
-      # The media tests exercise real ffmpeg/ffprobe on purpose, so the runner needs it too.
+      # The media tests exercise real ffmpeg/ffprobe on purpose, so the runner needs it too. A pinned static
+      # build is cached per version: apt-get from the runner's mirror stalled this job (issue #735).
+      - name: Restore the cached ffmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/ffmpeg-static
+          key: ${{ runner.os }}-ffmpeg-7.0.2-abda8d77ce83
       - name: Install ffmpeg for the media processing suite
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        env:
+          FFMPEG_SHA256: abda8d77ce8309141f83ab8edf0596834087c52467f6badf376a6a2a4c87cf67
+        run: |
+          curl -fsSL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 180             -o "$RUNNER_TEMP/ffmpeg.tar.xz" https://johnvansickle.com/ffmpeg/releases/ffmpeg-7.0.2-amd64-static.tar.xz
+          echo "$FFMPEG_SHA256  $RUNNER_TEMP/ffmpeg.tar.xz" | sha256sum --check --strict
+          mkdir -p ~/ffmpeg-static
+          tar -xJf "$RUNNER_TEMP/ffmpeg.tar.xz" -C ~/ffmpeg-static --strip-components=1             ffmpeg-7.0.2-amd64-static/ffmpeg ffmpeg-7.0.2-amd64-static/ffprobe
+      - name: Put ffmpeg on the PATH
+        run: |
+          echo "$HOME/ffmpeg-static" >> "$GITHUB_PATH"
+          "$HOME/ffmpeg-static/ffmpeg" -version | head -1
+          "$HOME/ffmpeg-static/ffprobe" -version | head -1
       - name: Build the worker's workspace dependencies
         run: pnpm exec turbo run build --filter=@ageniza/worker^...
       - name: Run the durable job queue suite as the application role

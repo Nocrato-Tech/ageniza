@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { ClientDetailResponseSchema, ClientSchema, type ClientDetailResponse } from '@ageniza/contracts';
 import { Avatar, Button, ButtonLink, EmptyState, Pill, Realce, Skeleton } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { ClientLifecycleActions } from './client-lifecycle.js';
 import { useDocumentTitle } from './document-title.js';
@@ -54,10 +54,11 @@ interface ClientTab {
   readonly label: string;
 }
 
-/** `specs/clientes.md` §7: six tabs, with Acessos only for whoever manages portal access. */
+/** `specs/clientes.md` §7: seven tabs, with Acessos only for whoever manages portal access. */
 const CLIENT_TABS: readonly ClientTab[] = [
   { slug: 'geral', label: 'Geral' },
   { slug: 'conteudos', label: 'Conteúdos' },
+  { slug: 'midias', label: 'Mídias' },
   { slug: 'tarefas', label: 'Tarefas' },
   { slug: 'estudo-de-marca', label: 'Estudo de marca' },
   { slug: 'relatorios', label: 'Relatórios' }
@@ -77,6 +78,7 @@ export const useClientDetail = (): ClientDetailResponse => {
 
 function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit: () => void }) {
   const canOperate = useCan('cliente.operar');
+  const blocked = useWriteBlocked();
   const active = client.status === 'active';
 
   return <header className="client-detail__header">
@@ -90,14 +92,14 @@ function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit
       </ul>
     </div>
     <div className="client-detail__actions">
-      {canOperate && active && <Button variant="secondary" leadingIcon={<Pencil />} onClick={onEdit}>Editar</Button>}
+      {canOperate && active && <Button variant="secondary" leadingIcon={<Pencil />} blockedReason={blocked} onClick={onEdit}>Editar</Button>}
       <ClientLifecycleActions client={client} />
     </div>
   </header>;
 }
 
 /**
- * The client page (`specs/clientes.md` §7): header, the six tabs and the tab content. The tab lives
+ * The client page (`specs/clientes.md` §7): header, the tabs and the tab content. The tab lives
  * in the URL so the link is shareable and the back button works. Geral and the three skeleton tabs
  * belong to #136; the content tabs belong to #138/#140, and the closing actions to #139.
  */
@@ -113,6 +115,7 @@ export function ClientDetailPage() {
   // the header never reveals the client behind a hidden tab (specs/clientes.md §7).
   const accessTab = useMatch('/agencia/:agenciaId/clientes/:clienteId/acessos');
   const contentsTab = useMatch('/agencia/:agenciaId/clientes/:clienteId/conteudos/*');
+  const mediaTab = useMatch('/agencia/:agenciaId/clientes/:clienteId/midias/*');
   const normalizedId = clienteId.toLowerCase();
   const validId = ClientSchema.shape.id.safeParse(normalizedId).success;
   const detail = useQuery({
@@ -130,7 +133,7 @@ export function ClientDetailPage() {
   const client = !notFound && detail.data?.id.toLowerCase() === normalizedId ? detail.data : undefined;
   useDocumentTitle(client === undefined ? 'Cliente — Ageniza' : `${client.name} — Ageniza`);
 
-  if (notFound || (accessTab !== null && !canSeeAccess) || (contentsTab !== null && !canSeeContents)) return <NotFoundPage as="section" />;
+  if (notFound || (accessTab !== null && !canSeeAccess) || ((contentsTab !== null || mediaTab !== null) && !canSeeContents)) return <NotFoundPage as="section" />;
 
   // The roster passes its own address (filters and page included) when it opens the detail
   // (review of #379, specs/clientes.md §7 "volta à carteira preservando busca, filtro e página").
@@ -170,8 +173,8 @@ export function ClientDetailPage() {
     </section>;
   }
 
-  // Vendas and Financeiro do not see Conteúdo, nor what Clientes shows of it (specs/conteudo.md section 2).
-  const visible = canSeeContents ? CLIENT_TABS : CLIENT_TABS.filter((tab) => tab.slug !== 'conteudos');
+  // Vendas and Financeiro do not see Conteúdo, nor what Clientes shows of it: the calendar and the media (specs/conteudo.md section 2).
+  const visible = canSeeContents ? CLIENT_TABS : CLIENT_TABS.filter((tab) => tab.slug !== 'conteudos' && tab.slug !== 'midias');
   const tabs = canSeeAccess ? [...visible, ACCESS_TAB] : visible;
   return <section className="client-detail" aria-labelledby="client-detail-title">
     {back}

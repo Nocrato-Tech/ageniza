@@ -15,7 +15,7 @@ import {
 import { createInvitationToken } from '../invitations/tokens.js';
 
 /**
- * Issue #339: the `inviteToken` continuation (rules 3, 3a and 8a) only applies to a valid
+ * Issue #339: the `inviteToken` continuation (rules 3 and 3a) only applies to a valid
  * invitation addressed to the same e-mail. Kept in its own file, with one app for every case: the
  * auth integration suite already builds a large number of apps, and each one costs database
  * connections (#167).
@@ -24,6 +24,8 @@ const origin = { origin: TEST_APP_PUBLIC_URL };
 const sender = createFakeEmailSender();
 const createdUsers: Array<{ app: TestApp; userId: string }> = [];
 const createdAgencyIds: string[] = [];
+const sessionCookieHeader = (setCookies: readonly { name: string; value: string }[]): string =>
+  setCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
 
 let app: TestApp;
 
@@ -87,15 +89,6 @@ const invitationFor = async (
   return { token: token.token };
 };
 
-const requestResetToken = async (email: string): Promise<string> => {
-  await app.app.inject({ method: 'POST', url: '/auth/password/forgot', headers: origin, payload: { email } });
-  await app.emailService.drain();
-  const message = sender.sent.filter((sent) => sent.to === email).at(-1)?.text ?? '';
-  const match = /senha\/redefinir\?token=([^\s"'&]+)/.exec(message);
-  if (!match?.[1]) throw new Error('Reset token was not found in the captured email.');
-  return decodeURIComponent(match[1]);
-};
-
 describe('inviteToken addressed to another e-mail (#339)', () => {
   it('does not attach an invite continuation for another e-mail to the reset message', async () => {
     const account = await makeUser('forgot-invite-other');
@@ -113,50 +106,36 @@ describe('inviteToken addressed to another e-mail (#339)', () => {
     expect(message).not.toContain('invite=');
   });
 
-  it.each(['valid', 'expired', 'revoked', 'suspended'] as const)(
-    'ignores a %s invite continuation addressed to another e-mail: NO_CONTEXT_ACCESS, no cookie, no session',
-    async (kind) => {
-      const user = await insertTestUser(app.pool, app.auth, { emailLabel: `reset-invite-other-${kind}` });
-      createdUsers.push({ app, userId: user.id });
-      const { token: inviteToken } = await invitationFor(uniqueTestEmail(`reset-invite-other-${kind}-target`), `reset-invite-other-${kind}`, kind);
+  it('a reset from a valid invite link leaves no session, and the login that follows still carries the invitation (rule 3a)', async () => {
+    const user = await insertTestUser(app.pool, app.auth, { emailLabel: 'reset-invite-continues' });
+    createdUsers.push({ app, userId: user.id });
+    const { token: inviteToken } = await invitationFor(user.email, 'reset-invite-continues', 'valid');
 
-      const token = await requestResetToken(user.email);
-      const reset = await app.app.inject({
-        method: 'POST', url: '/auth/password/reset', headers: origin,
-        payload: { token, newPassword: 'a brand new correct horse battery staple', inviteToken }
-      });
+    await app.app.inject({ method: 'POST', url: '/auth/password/forgot', headers: origin, payload: { email: user.email, inviteToken } });
+    await app.emailService.drain();
+    const message = sender.sent.filter((sent) => sent.to === user.email).at(-1)?.text ?? '';
+    expect(message).toContain(`invite=${inviteToken}`);
+    const resetToken = decodeURIComponent(/senha\/redefinir\?token=([^\s"'&]+)/.exec(message)?.[1] ?? '');
+    const newPassword = 'a brand new correct horse battery staple';
 
-      expect(reset.statusCode).toBe(200);
-      expect(reset.json()).toEqual({ signedIn: false, reason: 'NO_CONTEXT_ACCESS' });
-      expect(reset.cookies.length).toBe(0);
-      const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
-      expect(sessionRows.rowCount).toBe(0);
-    }
-  );
+    const reset = await app.app.inject({
+      method: 'POST', url: '/auth/password/reset', headers: origin, payload: { token: resetToken, newPassword }
+    });
+    expect(reset.statusCode).toBe(204);
+    expect(reset.cookies.length).toBe(0);
+    expect((await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id])).rowCount).toBe(0);
 
-  // The same invalid variants addressed to the account itself: the e-mail comparison no longer
-  // helps, so only the invitation's own validity (rules 3a and 8a say "a valid invitation") can
-  // stop the continuation.
-  it.each(['expired', 'revoked', 'suspended'] as const)(
-    'ignores an invalid %s invite continuation addressed to the account itself: NO_CONTEXT_ACCESS, no cookie, no session',
-    async (kind) => {
-      const user = await insertTestUser(app.pool, app.auth, { emailLabel: `reset-invite-own-${kind}` });
-      createdUsers.push({ app, userId: user.id });
-      const { token: inviteToken } = await invitationFor(user.email, `reset-invite-own-${kind}`, kind);
-
-      const token = await requestResetToken(user.email);
-      const reset = await app.app.inject({
-        method: 'POST', url: '/auth/password/reset', headers: origin,
-        payload: { token, newPassword: 'a brand new correct horse battery staple', inviteToken }
-      });
-
-      expect(reset.statusCode).toBe(200);
-      expect(reset.json()).toEqual({ signedIn: false, reason: 'NO_CONTEXT_ACCESS' });
-      expect(reset.cookies.length).toBe(0);
-      const sessionRows = await app.pool.query('select 1 from auth.session where "userId" = $1', [user.id]);
-      expect(sessionRows.rowCount).toBe(0);
-    }
-  );
+    // The confirmed account signs in with zero contexts (#706), and the invitation is accepted with that session.
+    const withInvite = await app.app.inject({
+      method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: newPassword, inviteToken }
+    });
+    expect(withInvite.statusCode).toBe(200);
+    const accepted = await app.app.inject({
+      method: 'POST', url: `/invitations/${inviteToken}/accept`,
+      headers: { ...origin, cookie: sessionCookieHeader(withInvite.cookies) }
+    });
+    expect(accepted.statusCode).toBe(200);
+  });
 
   it.each(['expired', 'revoked', 'suspended'] as const)(
     'does not attach an invalid %s invite continuation for the account itself to the reset message',

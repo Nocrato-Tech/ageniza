@@ -25,16 +25,15 @@ type ResetBody = { token?: string; newPassword?: string; inviteToken?: string };
 
 interface Scenario {
   readonly authenticated?: boolean;
-  readonly reset: (body: ResetBody) => Response;
-  readonly resolve?: unknown;
-  readonly resolveErrorOnce?: boolean;
+  readonly reset?: (body: ResetBody) => Response;
 }
 
-const makeFetch = (scenario: Scenario) => {
+const noContent = (): Response => new Response(null, { status: 204 });
+
+const makeFetch = (scenario: Scenario = {}) => {
   const calls = { reset: 0, resolve: 0, login: 0 };
   const resetBodies: ResetBody[] = [];
   const loginBodies: ResetBody[] = [];
-  const lastContextBodies: unknown[] = [];
   let serverLoggedIn = scenario.authenticated ?? false;
   const impl: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -44,29 +43,20 @@ const makeFetch = (scenario: Scenario) => {
       calls.reset += 1;
       const body = JSON.parse(String(init?.body)) as ResetBody;
       resetBodies.push(body);
-      const response = scenario.reset(body);
-      const data = await response.clone().json().catch(() => undefined) as { signedIn?: boolean } | undefined;
-      if (data?.signedIn === true) serverLoggedIn = true;
+      const response = (scenario.reset ?? noContent)(body);
+      // The API ends every session of the account on a successful reset, and creates none.
+      if (response.ok) serverLoggedIn = false;
       return response;
     }
     if (url.endsWith('/me/contexts/resolve')) {
       calls.resolve += 1;
-      if (!serverLoggedIn) return unauthenticated();
-      if (scenario.resolveErrorOnce === true && calls.resolve === 1) return json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500);
-      return json(scenario.resolve ?? { decision: 'enter', context: agencyA });
+      return serverLoggedIn ? json({ decision: 'enter', context: agencyA }) : unauthenticated();
     }
     // The login with the token returns to /convite/:token; this screen is out of scope here.
     if (url.includes('/invitations/')) return json({ error: { code: 'INVALID_LINK', message: 'x' } }, 410);
-    if (url.endsWith('/me/last-context') && init?.method === 'PUT') {
-      lastContextBodies.push(JSON.parse(String(init?.body)));
-      return new Response(null, { status: 204 });
-    }
-    if (url.endsWith(`/agencies/${AGENCY_A}/me`)) {
-      return json({ agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] });
-    }
     throw new Error(`unexpected ${url}`);
   };
-  return { impl, calls, resetBodies, loginBodies, lastContextBodies };
+  return { impl, calls, resetBodies, loginBodies };
 };
 
 function Harness({ store }: { store: AuthSessionStore }) {
@@ -115,7 +105,7 @@ const submit = (password: string): void => {
 
 describe('ResetPasswordPage (/senha/redefinir)', () => {
   it('shows the invalid state with no token, and strips the URL', async () => {
-    const { impl } = makeFetch({ reset: () => json({ signedIn: true }) });
+    const { impl } = makeFetch();
     const { probe } = renderReset(impl, '?invite=invite-value');
     await screen.findByRole('heading', { name: 'Este link não é mais válido' });
     await waitFor(() => expect(probe.search).toBe(''));
@@ -131,84 +121,111 @@ describe('ResetPasswordPage (/senha/redefinir)', () => {
     await waitFor(() => expect(probe.search).toBe(''));
   });
 
-  it('sends the token, the new password and the invite token in the body', async () => {
-    // Like the API: the invitation continuation only applies when the body carries the token.
-    const { impl, resetBodies } = makeFetch({ reset: (body) => body.inviteToken === 'invite-value' ? json({ signedIn: true }) : json({ signedIn: false, reason: 'NO_CONTEXT_ACCESS' }) });
-    const { probe } = renderReset(impl, '?token=reset-token&invite=invite-value');
-    submit('a new correct password');
-
-    await waitFor(() => expect(probe.pathname).toBe('/convite/invite-value'));
-    expect(resetBodies).toEqual([{ token: 'reset-token', newPassword: 'a new correct password', inviteToken: 'invite-value' }]);
-  });
-
-  it('authenticates, resolves and records the context it enters when there is no invitation', async () => {
-    const { impl, calls, lastContextBodies } = makeFetch({ reset: () => json({ signedIn: true }) });
-    const { probe } = renderReset(impl);
-    submit('a new correct password');
-    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
-    expect(calls.resolve).toBe(1);
-    expect(lastContextBodies).toEqual([{ type: 'agency', agencyId: AGENCY_A }]);
-  });
-
-  it('goes to /sem-acesso for NO_CONTEXT_ACCESS', async () => {
-    const { impl } = makeFetch({ reset: () => json({ signedIn: false, reason: 'NO_CONTEXT_ACCESS' }) });
-    const { probe } = renderReset(impl);
-    submit('a new correct password');
-    await waitFor(() => expect(probe.pathname).toBe('/sem-acesso'));
-  });
-
-  it('carries the invite token to the login on SIGN_IN_REQUIRED, so the login continues the invitation', async () => {
-    const { impl, loginBodies } = makeFetch({ reset: () => json({ signedIn: false, reason: 'SIGN_IN_REQUIRED' }) });
+  it('sends only the token and the new password, even when the link carries an invitation', async () => {
+    const { impl, resetBodies } = makeFetch();
     const { probe } = renderReset(impl, '?token=reset-token&invite=invite-value');
     submit('a new correct password');
 
     await waitFor(() => expect(probe.pathname).toBe('/entrar'));
-    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Senha redefinida. Entre com a nova senha.'));
+    expect(resetBodies).toEqual([{ token: 'reset-token', newPassword: 'a new correct password' }]);
+  });
+
+  it('goes to the login with the notice, and neither signs in nor resolves', async () => {
+    const { impl, calls } = makeFetch();
+    const { probe } = renderReset(impl);
+    submit('a new correct password');
+
+    await waitFor(() => expect(probe.pathname).toBe('/entrar'));
+    expect(screen.getByRole('status').textContent).toBe('Senha alterada. Entre com a nova senha.');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(calls.login).toBe(0);
+    expect(calls.resolve).toBe(0);
+  });
+
+  it('carries the invite token to the login, so the login continues the invitation', async () => {
+    const { impl, loginBodies } = makeFetch();
+    const { probe } = renderReset(impl, '?token=reset-token&invite=invite-value');
+    submit('a new correct password');
+
+    await waitFor(() => expect(probe.pathname).toBe('/entrar'));
+    expect(screen.getByRole('status').textContent).toBe('Senha alterada. Entre com a nova senha.');
     fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'pessoa@example.test' } });
     fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'a new correct password' } });
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
     await waitFor(() => expect(loginBodies).toEqual([{ email: 'pessoa@example.test', password: 'a new correct password', inviteToken: 'invite-value' }]));
+    await waitFor(() => expect(probe.pathname).toBe('/convite/invite-value'));
   });
 
-  it('offers a resolve-only retry when the resolve fails after a successful reset', async () => {
-    const { impl, calls } = makeFetch({ reset: () => json({ signedIn: true }), resolveErrorOnce: true });
+  it('does not carry an invitation to the login when the link has none', async () => {
+    const { impl, loginBodies } = makeFetch();
     const { probe } = renderReset(impl);
     submit('a new correct password');
 
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('Sua senha foi alterada');
-    expect(alert.textContent).not.toContain('Não foi possível salvar');
-    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
-    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
-    expect(calls.reset).toBe(1);
-    expect(calls.resolve).toBe(2);
+    await waitFor(() => expect(probe.pathname).toBe('/entrar'));
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'pessoa@example.test' } });
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'a new correct password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+    await waitFor(() => expect(loginBodies).toEqual([{ email: 'pessoa@example.test', password: 'a new correct password' }]));
   });
 
-  it('drops the previous account cache before the refresh, so no old context reaches /contextos', async () => {
-    // The previous session was authenticated, so `onSessionStarted` does not fire on refresh: only
-    // the explicit queryClient.clear() of this screen keeps account X's cache from rendering there.
-    const oldContext = { type: 'agency', agencyId: '22222222-2222-4222-8222-222222222222', agencyName: 'Agência ANTIGA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
-    const newContext = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência NOVA', roleKey: 'admin', roleName: 'Admin', isOwner: true };
-    const { impl, calls } = makeFetch({
-      authenticated: true,
-      reset: () => json({ signedIn: true }),
-      resolve: { decision: 'select', contexts: [newContext], highlighted: null }
-    });
-    const { probe, queryClient } = renderReset(impl);
+  it('treats an out-of-shape invitation in the link as a broken link, before any request', async () => {
+    const { impl, calls } = makeFetch();
+    const { probe } = renderReset(impl, `?token=reset-token&invite=${'i'.repeat(2_049)}`);
+    submit('a new correct password');
+
+    await screen.findByRole('heading', { name: 'Este link não é mais válido' });
+    expect(calls.reset).toBe(0);
+    await waitFor(() => expect(probe.search).toBe(''));
+  });
+
+  it('forgets the session this browser still held, so the login shows the notice instead of resolving', async () => {
+    // The reset revoked every session of the account, but the store still believes in one: without
+    // dropping it, the login screen would take it for valid and leave for the workspace.
+    const { impl, calls } = makeFetch({ authenticated: true });
+    const { probe } = renderReset(impl);
     await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
-    queryClient.setQueryData(['contexts', 'resolve', null], { decision: 'select', contexts: [oldContext], highlighted: null });
 
     submit('a new correct password');
 
-    await waitFor(() => expect(probe.pathname).toBe('/contextos'));
-    await screen.findByText('Agência NOVA');
-    expect(screen.queryByText('Agência ANTIGA')).toBeNull();
-    // With the cache dropped, /contextos loaded a fresh resolve instead of rendering the stale one.
-    expect(calls.resolve).toBe(2);
+    await waitFor(() => expect(probe.pathname).toBe('/entrar'));
+    expect(screen.getByRole('status').textContent).toBe('Senha alterada. Entre com a nova senha.');
+    await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
+    expect(calls.resolve).toBe(0);
+    expect(probe.pathname).toBe('/entrar');
+  });
+
+  it('drops the previous account cache, so nothing of it outlives the reset', async () => {
+    const { impl } = makeFetch({ authenticated: true });
+    const { probe, queryClient } = renderReset(impl);
+    await waitFor(() => expect(probe.sessionStatus).toBe('ready'));
+    queryClient.setQueryData(['contexts', 'resolve', null], { decision: 'select', contexts: [], highlighted: null, canCreateAgency: false });
+
+    submit('a new correct password');
+
+    await waitFor(() => expect(probe.pathname).toBe('/entrar'));
+    expect(queryClient.getQueryData(['contexts', 'resolve', null])).toBeUndefined();
+  });
+
+  it('keeps the form and says so when the rate limit is hit', async () => {
+    const { impl } = makeFetch({ reset: () => json({ error: { code: 'RATE_LIMITED', message: 'x' } }, 429) });
+    const { probe } = renderReset(impl);
+    submit('a new correct password');
+
+    expect((await screen.findByRole('alert')).textContent).toBe('Muitas tentativas. Tente novamente mais tarde.');
+    expect(probe.pathname).toBe('/senha/redefinir');
+  });
+
+  it('keeps the form and says the password was not saved on any other failure', async () => {
+    const { impl } = makeFetch({ reset: () => json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500) });
+    const { probe } = renderReset(impl);
+    submit('a new correct password');
+
+    expect((await screen.findByRole('alert')).textContent).toBe('Não foi possível salvar a nova senha. Tente de novo.');
+    expect(probe.pathname).toBe('/senha/redefinir');
   });
 
   it('reports a password over 128 characters as too long, not too short', () => {
-    const { impl, calls } = makeFetch({ reset: () => json({ signedIn: true }) });
+    const { impl, calls } = makeFetch();
     renderReset(impl);
     submit('a'.repeat(129));
     expect(screen.getByText('A senha pode ter no máximo 128 caracteres.')).toBeTruthy();
@@ -216,7 +233,7 @@ describe('ResetPasswordPage (/senha/redefinir)', () => {
   });
 
   it('puts the focus on the password when it is refused, with no alert besides its description', () => {
-    const { impl } = makeFetch({ reset: () => json({ signedIn: true }) });
+    const { impl } = makeFetch();
     renderReset(impl);
     submit('short');
 
@@ -225,7 +242,7 @@ describe('ResetPasswordPage (/senha/redefinir)', () => {
   });
 
   it('links the field error into the description', () => {
-    const { impl } = makeFetch({ reset: () => json({ signedIn: true }) });
+    const { impl } = makeFetch();
     renderReset(impl);
     submit('short');
     const input = screen.getByLabelText('Nova senha');

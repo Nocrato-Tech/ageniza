@@ -31,7 +31,7 @@ Conteúdo é onde a agência planeja, produz e aprova os posts de cada cliente, 
 
 > Owner tem acesso total por posse. Visibilidade de menu é UX; a autorização é validada no backend e no banco em toda operação.
 
-- **Vendas e Financeiro não veem Conteúdo**, nem o que Clientes mostra derivado dele: a aba Conteúdos do detalhe do cliente, os indicadores do card e a ordem da carteira por atraso. Para eles, a carteira mantém a ordem atual.
+- **Vendas e Financeiro não veem Conteúdo**, nem o que Clientes mostra derivado dele: as abas Conteúdos e Mídias do detalhe do cliente, os indicadores do card e a ordem da carteira por atraso. Para eles, a carteira mantém a ordem atual.
 - **Subtarefa** é aprovada pelo **responsável do conteúdo**; quem tem `conteudo.aprovar_pela_agencia` substitui. É autorização dependente do valor (seção 9).
 - Quem tem `conteudo.visualizar` vê o conteúdo de **todos** os clientes da agência, como em Clientes.
 
@@ -250,12 +250,14 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 | tela | rota | o que mostra | quem acessa |
 |---|---|---|---|
 | Conteúdos | `/agencia/:agenciaId/conteudos` | seletor de clientes em stories | `conteudo.visualizar` |
-| Conteúdos do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | calendário, feed 3×3 e Pastas | `conteudo.visualizar` |
+| Conteúdos do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | calendário e, ao lado, o celular com o feed 3×3 | `conteudo.visualizar` |
 | Modal do conteúdo | `/agencia/:agenciaId/conteudos/:clienteId/:conteudoId` | abas Geral e Atribuição | `conteudo.visualizar` |
 | Aba Conteúdos do cliente | `/agencia/:agenciaId/clientes/:clienteId/conteudos` | a mesma visão do cliente | `conteudo.visualizar` |
+| Aba Mídias do cliente | `/agencia/:agenciaId/clientes/:clienteId/midias` | as pastas e as mídias do cliente, com o envio; o endereço antigo `…/conteudos/:clienteId?vista=pastas` leva para cá | `conteudo.visualizar` (escrever: `conteudo.operar`) |
 | Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, calendário, feed | pessoa do portal |
 | Portal — post | `/portal/:clienteId/conteudos/:conteudoId` | post em tela cheia, Aprovar, Pedir ajuste, conversa | pessoa do portal |
 | Portal — Início | `/portal/:clienteId` | "N posts esperando sua aprovação", o roteiro de hoje e "Nesta semana" | pessoa do portal |
+| Link de aprovação | `/aprovar#<token>` (fora da casca; o fragmento é apagado ao abrir) | o lote do e-mail: o celular de cada post, Aprovar, Pedir ajuste (comentário obrigatório) e "Criar conta para ver o portal" com o e-mail preenchido | quem tem o link (7 dias), sem conta |
 
 ### Esboço — agência
 
@@ -267,8 +269,8 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 │ Padaria Ótica  Café   Moda   Pet       anel = algo pedindo ação   │
 ├──────────────────────────────────────┬────────────────────────────┤
 │ ‹ Outubro 2026 ›   [Mês|Semana]      │  @padariacentral           │
-│ [+ Criar conteúdo] [Calendário|Feed| │ ┌──┬──┬──┐                 │
-│                     Pastas]          │ │  │  │  │  feed 3×3       │
+│ [+ Criar conteúdo]                   │ ┌──┬──┬──┐                 │
+│                                      │ │  │  │  │  feed 3×3       │
 │ seg  ter  qua  qui  sex  sáb  dom    │ ├──┼──┼──┤  mais recente   │
 │      ┌─────┐       ┌─────┐           │ │  │  │  │  primeiro;      │
 │      │capa │       │capa │  +        │ ├──┼──┼──┤  futuros com    │
@@ -285,8 +287,8 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 | Calendário | mês, com opção de semana; criar pelo botão ou pelo **+** do dia (Conteúdo ou Roteiro de stories); arrastar o card para outra data |
 | Card | capa, título, formato, data e hora, status, alerta de prazo ou atraso, percentual das subtarefas |
 | Detalhe ao passar o mouse | começo da legenda, responsável, resumo das subtarefas, última mensagem da conversa |
-| Feed | grade 3×3 dos conteúdos de feed não cancelados, sincronizada com o período; vídeo longo e VSL só no calendário |
-| Pastas | biblioteca do cliente; subir mídia antes de existir o post (ensaio fotográfico) |
+| Feed | o celular ao lado do calendário, desenhado como um aparelho, com a grade 3×3 dos conteúdos de feed não cancelados, sincronizada com o período e **nove por página**: mais recente primeiro, "1–9 de N" e as setas Página anterior e Próxima página no pé; a página que não enche termina em quadros "nada neste dia" (moldura tracejada com ícone), nunca em espaço em branco; mudar de período ou de cliente volta à primeira página; vídeo longo e VSL só no calendário. Não é uma vista que troca o calendário (decisões de 2026-10-16) |
+| Mídias | a biblioteca do cliente fica na aba Mídias do detalhe do cliente (`specs/clientes.md`, seção 7); subir mídia antes de existir o post (ensaio fotográfico) |
 
 ### Esboço — modal do conteúdo
 
@@ -342,12 +344,12 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 | Admin, Owner | tudo |
 | Gestor de conta | tudo |
 | Produção | opera e publica; sem Aprovar pela agência, sem Cancelar |
-| Vendas, Financeiro | o item Conteúdos e a aba Conteúdos não existem; carteira sem indicadores de conteúdo |
+| Vendas, Financeiro | o item Conteúdos e as abas Conteúdos e Mídias não existem; carteira sem indicadores de conteúdo |
 | Pessoa do portal | aprova, pede ajuste, comenta a partir de aguardando aprovação, marca roteiro como gravado |
 
 ### Estados da tela
 
-- **Vazio:** calendário vazio com Criar para quem opera; feed com a grade marcada "planeje o primeiro post"; no portal, "Nenhum conteúdo planejado para este mês" (com "Ir para este mês" quando o mês aberto não é o de hoje), o filtro sem resultado com "Limpar o filtro" e o feed sem post dos formatos do feed com "Ver a lista".
+- **Vazio:** calendário vazio com Criar para quem opera; feed com os nove quadros "nada neste dia" e "planeje o primeiro post"; no portal, "Nenhum conteúdo planejado para este mês" (com "Ir para este mês" quando o mês aberto não é o de hoje), o filtro sem resultado com "Limpar o filtro" e o feed sem post dos formatos do feed com "Ver a lista".
 - **Carregando:** skeleton na primeira carga; revalidação não muda a tela.
 - **Erro:** mensagem com Tentar de novo.
 - **Sem permissão:** o item não aparece no menu, e a URL digitada cai no mesmo "não encontrado".
@@ -355,6 +357,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 ## 8. Infraestrutura
 
 - **E-mail ao cliente** por uma **fila de notificação** enviada pelo worker, para todas as pessoas ativas do portal: "conteúdos para aprovar" agrupado com espera de 15 minutos após o último envio; "publicado" em resumo diário. Nada para cliente arquivado ou agência suspensa.
+- **Link de aprovação sem login** (2026-10-26, [decisão](../docs/business/decisions/2026-10-26-estrutural-o-e-mail-de-aprovacao-leva-um-link-que-aprova-sem-login.md)): cada e-mail "conteúdos para aprovar" leva um link próprio da pessoa, válido por 7 dias, que abre só os conteúdos do lote, com a prévia de celular, Aprovar e Pedir ajuste. O token vai no fragmento (`#`) e é trocado por um cookie de sessão de aprovação; as respostas saem com `no-store` e as mídias da prévia por URL assinada de minutos. A decisão é registrada como aquele acesso ao portal, nas colunas de autoria que apontam para o acesso. A revogação é conferida a cada leitura e a cada decisão: acesso ativo, cliente não arquivado, agência não suspensa e aceitando escrita. O link guarda a geração do acesso, e reativar o acesso não ressuscita um link antigo. Com o trial vencido, o worker para os e-mails da agência, e a retenção continua. As pessoas com acesso ao portal e sem conta também recebem o e-mail (decisão de 2026-10-26 sobre o acesso ao portal por e-mail).
 - **Cancelamento** do conteúdo além da data de encerramento **dentro da função de arquivar o cliente** (job e rota), no molde de `archive_due_clients`.
 - **Mídia**: o upload direto e o processamento de vídeo existentes; o quadro automático serve de capa quando não há capa enviada; a remoção lógica entra no fluxo de retenção.
 - **Retenção da mídia removida** ([decisão](../docs/business/decisions/2026-10-11-midia-removida-sai-do-armazenamento-30-dias-depois-e-a-linha-fica.md), pendente do dono): um job diário do worker (`media.purge-removed`), 30 dias depois do `removed_at`, apaga do armazenamento o objeto, a chave de envio e a miniatura e o preview de vídeo, e carimba `purged_at`; a linha fica para a auditoria. Nunca toca mídia em uso por conteúdo aguardando aprovação, aprovado ou publicado (regra 12). A cota deixa de contar o que foi purgado e continua contando o que só foi removido. O banco é `app_private.media_due_for_purge` e `app_private.mark_media_purged`; o job é `apps/worker/src/media-purge-job.ts`.

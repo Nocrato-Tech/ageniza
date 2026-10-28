@@ -23,12 +23,14 @@ export const loadLegalStatus = async (
   const result = await raw<RawRows<{ document: LegalDocumentKind; version: string }>>(transaction, `
     select document, max(version collate "C") as version
     from public.legal_acceptances
-    where user_id = ?::uuid
+    where user_id = ?::uuid and revoked_at is null
     group by document
   `, [userId]);
   const accepted = new Map(result.rows.map((row) => [row.document, row.version]));
+  const blocking = await raw<RawRows<{ required: boolean }>>(transaction, 'select app_private.legal_acceptance_blocks_access(?::uuid) as required', [userId]);
 
   return {
+    required: blocking.rows[0]?.required === true,
     documents: LEGAL_DOCUMENTS.map((document) => {
       const acceptedVersion = accepted.get(document) ?? null;
       return {

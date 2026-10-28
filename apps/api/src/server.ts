@@ -14,11 +14,12 @@ import { createEmailService } from './modules/auth/email-service.js';
 import { createRequireAgencyAccess, createRequireClientAccess, requireAnyPermission, requirePermission } from './modules/tenancy/guards.js';
 import { createInvitationTokenLookup, type InvitationModuleDependencies } from './modules/invitations/routes.js';
 import type { ClientModuleDependencies } from './modules/clients/routes.js';
+import { approvalCookieOptions } from './modules/approval-links/policy.js';
+import type { ApprovalLinkModuleDependencies } from './modules/approval-links/routes.js';
 import type { ContentPortalModuleDependencies } from './modules/contents/portal-routes.js';
 import type { ContentModuleDependencies } from './modules/contents/routes.js';
 import { createIdentityStorageClient } from './modules/identity-storage/storage-client.js';
 import type { ContextModuleDependencies } from './modules/contexts/routes.js';
-import { countValidContexts } from './modules/contexts/service.js';
 import type { CollaboratorModuleDependencies } from './modules/collaborators/routes.js';
 import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
 import type { MediaModuleDependencies } from './modules/media/routes.js';
@@ -72,11 +73,13 @@ export const startApi = async (): Promise<void> => {
   const agencyDependencies: AgencyModuleDependencies = {
     database,
     auth,
+    ...(config.supportContactEmail === undefined ? {} : { supportContactEmail: config.supportContactEmail }),
     requireAgencyAccess: createRequireAgencyAccess({ database })
   };
   const clientDependencies: ClientModuleDependencies = {
     database,
     auth,
+    emailService,
     requireAgencyAccess: createRequireAgencyAccess({ database }),
     requirePermission,
     requireClientAccess: createRequireClientAccess({ database }),
@@ -121,6 +124,11 @@ export const startApi = async (): Promise<void> => {
     requireClientAccess: createRequireClientAccess({ database }),
     ...(mediaDependencies === undefined ? {} : { media: { storage: mediaDependencies.storage, downloadUrlExpirySeconds: mediaDependencies.config.downloadUrlExpirySeconds } })
   };
+  const approvalLinkDependencies: ApprovalLinkModuleDependencies = {
+    database,
+    cookie: approvalCookieOptions(config.apiPublicUrl),
+    ...(mediaDependencies === undefined ? {} : { media: { storage: mediaDependencies.storage, downloadUrlExpirySeconds: mediaDependencies.config.downloadUrlExpirySeconds } })
+  };
   // Identity storage (issue #100) is separate from media: the profile photo (issue #101) is a
   // global user's, never counted against any agency's quota.
   const profileDependencies: ProfileModuleDependencies | undefined = config.identityStorage === undefined ? undefined : {
@@ -158,13 +166,23 @@ export const startApi = async (): Promise<void> => {
     logger,
     readiness,
     dependencyChecks,
-    auth: { auth, limiter, auditRecorder, invitationTokenLookup, countValidContexts: (userId) => countValidContexts(database, userId) },
+    auth: {
+      auth,
+      limiter,
+      auditRecorder,
+      invitationTokenLookup,
+      database,
+      emailService,
+      legalVersions: { terms: config.authTermsVersion, privacy: config.authPrivacyVersion },
+      ...(config.google === undefined ? {} : { google: { appPublicUrl: config.appPublicUrl } })
+    },
     invitations: invitationDependencies,
     contexts: contextDependencies,
     agencies: agencyDependencies,
     clients: clientDependencies,
     contents: contentDependencies,
     contentPortal: contentPortalDependencies,
+    approvalLinks: approvalLinkDependencies,
     collaborators: collaboratorDependencies,
     media: mediaDependencies,
     profile: profileDependencies,

@@ -35,9 +35,11 @@ docker compose --env-file .local/storage.env up -d --wait mailpit
 
 ## Criando algo com que trabalhar
 
-**Aqui é onde todo mundo trava.** O banco recém-migrado está vazio: não há agência, não há conta, e **não existe cadastro público** — por decisão de produto, uma agência só nasce por comando interno da operação.
+**Aqui é onde todo mundo trava.** O banco recém-migrado está vazio: não há agência nem conta. Uma agência só nasce pelo produto: uma conta com e-mail verificado usa "Criar agência" e a agência nasce em teste de 14 dias (decisão 2026-10-27, "a agência só nasce pelo produto"). Não existe comando que crie agência.
 
-O comando é `cli:agency`, e ele roda o JavaScript compilado. Compile a API antes:
+O caminho mais curto é a semente de demonstração (seção [Dados de demonstração](#dados-de-demonstração)): ela cria duas agências com plano `isenta`, sem limites. Para ver o teste por dentro, entre com uma conta de e-mail verificado e use "Criar agência" no seletor de contexto ou em `/contextos`.
+
+O plano de uma agência que já existe é trocado pela operação com `cli:agency`, que roda o JavaScript compilado. Compile a API antes:
 
 ```sh
 pnpm --filter @ageniza/api build
@@ -50,22 +52,22 @@ MIGRATION_DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:54322/ageniza' 
 SMTP_URL='smtp://127.0.0.1:1025' \
 EMAIL_FROM='Ageniza <no-reply@ageniza.local>' \
 APP_PUBLIC_URL='http://127.0.0.1:5173' \
-pnpm --filter @ageniza/api cli:agency create --name "Agência Teste" --owner-email "dono@exemplo.test"
+pnpm --filter @ageniza/api cli:agency set-plan --agency-id <uuid> --plan ativo
 ```
 
-A saída é o identificador da agência e a validade do convite:
-
-```json
-{"agencyId":"741c4d6d-…","expiresAt":"2026-10-01T23:24:21.392Z"}
-```
-
-Os outros comandos do CLI:
+Os comandos do CLI:
 
 ```sh
+pnpm --filter @ageniza/api cli:agency set-plan --agency-id <uuid> --plan isenta|ativo|trial [--ends-at 2026-12-31]
+pnpm --filter @ageniza/api cli:agency set-email-limit --agency-id <uuid> --per-day 50|padrao
 pnpm --filter @ageniza/api cli:agency suspend --agency-id <uuid>
 pnpm --filter @ageniza/api cli:agency reactivate --agency-id <uuid>
 pnpm --filter @ageniza/api cli:agency resend-activation --agency-id <uuid>
 ```
+
+`set-plan` é a única troca de plano, e a aplicação nunca muda `plan`: `isenta` é a agência que não paga e usa tudo; `ativo` é a que fez upgrade; `trial` devolve um teste com outra data de fim (`--ends-at`, obrigatório; só a data termina às 23:59:59 de Brasília). Cada troca fica auditada. `set-email-limit` muda o limite diário de convites enviados pela agência (20 no teste e 200 nos outros planos; `padrao` volta ao do plano). Para testar o somente leitura na máquina, mude a data pelo banco: `update public.agencies set trial_ends_at = now() - interval '1 minute' where id = '<uuid>'`.
+
+O aviso de teste vencido mostra um contato só quando a API tem `SUPPORT_CONTACT_EMAIL` (um e-mail público, sem segredo). Sem ela, o aviso só diz que o teste acabou e que os dados estão guardados.
 
 ## Aprovando uma troca de e-mail
 
@@ -109,6 +111,8 @@ A suíte de integração que usa este comando (`seed-demo.integration.test.ts`) 
 
 ## Pegando o link de ativação
 
+Só uma agência que já existia com a ativação pendente tem esse convite, reenviado por `cli:agency resend-activation`; nenhuma agência nova nasce assim. Os convites de colaborador e de portal chegam ao Mailpit do mesmo jeito.
+
 O convite **não aparece em lugar nenhum além do e-mail**. O banco guarda apenas o hash do token: nem a operação recupera o token depois de enviado — é decisão de segurança, não limitação.
 
 Abra o Mailpit em <http://127.0.0.1:8025> e clique na mensagem "Ative sua agência no Ageniza". O link tem esta forma:
@@ -132,9 +136,19 @@ curl -s http://127.0.0.1:8025/api/v1/message/<ID>
 pnpm dev
 ```
 
-Sobe API, web e worker em modo de desenvolvimento, na máquina. Antes de subir, o turbo compila os pacotes internos (`packages/*`) de que cada app depende, então um clone com `dist` antigo ou ausente sobe sem passo manual. Durante o `dev`, o Vite lê o `@ageniza/ui` direto da fonte (`packages/ui/src`): uma edição ali aparece no web na hora. Os outros pacotes (`contracts`, `config`, `core`, `database`, `email`) seguem compilados: depois de editar um deles, rode `pnpm turbo run build --filter=./packages/*` e reinicie o `pnpm dev`. O build de produção e os testes continuam usando o pacote compilado.
+Sobe API, web e worker em modo de desenvolvimento, na máquina. Antes de subir, o turbo compila os pacotes internos (`packages/*`) de que cada app depende, então um clone com `dist` antigo ou ausente sobe sem passo manual. Durante o `dev`, o Vite lê o `@ageniza/ui` direto da fonte (`packages/ui/src`): uma edição ali aparece no web na hora. Os outros pacotes (`contracts`, `config`, `core`, `database`, `email`) seguem compilados: depois de editar um deles, reinicie o `pnpm dev`, que recompila o pacote antes de subir. Por isso, um erro de tipo em qualquer pacote interno impede o `pnpm dev` inteiro de subir, e não só o app que usa o pacote. O build de produção e os testes continuam usando o pacote compilado.
 
-As portas e o banco vêm do `.env`, porque o turbo não repassa variáveis do shell para as tarefas. Para subir ao lado de outra instância, mude no `.env` `PORT`, `WORKER_HEALTH_PORT`, `API_CORS_ORIGINS`, `VITE_API_BASE_URL` e as URLs do banco, e passe a porta do Vite: `pnpm dev -- --port 5273 --host 127.0.0.1 --strictPort`.
+As portas e o banco vêm do `.env`, porque o turbo não repassa variáveis do shell para as tarefas. `PORT=3100 pnpm dev` não muda nada: vale o `.env`. Para subir ao lado de outra instância, mude no `.env` `PORT`, `WORKER_HEALTH_PORT`, `API_CORS_ORIGINS`, `VITE_API_BASE_URL`, `APP_PUBLIC_URL` (senão os links de e-mail e de convite levam à instância do outro) e as URLs do banco, e passe a porta do Vite: `pnpm dev -- --port 5273 --host 127.0.0.1 --strictPort`. Os argumentos depois de `--` vão para todos os apps, mas só o Vite os lê.
+
+### O endereço público da API
+
+O cookie do link de aprovação (`ageniza_approval`) só volta para o caminho em que o **navegador** vê a API, e o cliente HTTP do web monta toda requisição a partir de `VITE_API_BASE_URL`, caminho incluso. Por isso o `.env` tem `API_PUBLIC_URL`, que tem de ser o mesmo endereço que `VITE_API_BASE_URL`: localmente a API tem a própria origem (`API_PUBLIC_URL=http://127.0.0.1:3001`, cookie em `/portal-approval`); em produção o contêiner web repassa `/api`, e vale o padrão, `APP_PUBLIC_URL` + `/api` (cookie em `/api/portal-approval`). Um `.env` antigo sem a variável cai no padrão de produção: o link de aprovação até abre, mas o cookie não volta e a troca do token parece não funcionar. Acrescente a linha do `.env.example`.
+
+### Entrar com o Google
+
+O Google fica **desligado** enquanto `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` estiverem vazios no `.env`: `GET /auth/providers` responde `{ "google": false }`, as rotas do Google respondem 404 e as telas não mostram o botão. Para ligar, crie no Google Cloud Console um cliente OAuth do tipo "Aplicativo da Web", autorize nele a URL de retorno abaixo e preencha as duas variáveis (as duas juntas: só uma recusa a subida da API). O segredo é só do servidor; nunca ponha `VITE_` nelas.
+
+Em desenvolvimento a API tem a própria origem (`VITE_API_BASE_URL=http://127.0.0.1:3001`), então a URL de retorno é a da API, e o `.env` a informa em `GOOGLE_CALLBACK_URL=http://127.0.0.1:3001/auth/callback/google`. Sem essa variável vale `APP_PUBLIC_URL` + `/api/auth/callback/google`, que é o caminho em produção, onde o contêiner web repassa `/api` à API. Os testes de integração não falam com o Google: simulam o endpoint de token e as chaves do id token (`apps/api/src/modules/auth/test-support/fake-google.ts`).
 
 A alternativa é rodar tudo em contêiner:
 

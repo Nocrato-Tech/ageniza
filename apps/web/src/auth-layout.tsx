@@ -1,12 +1,12 @@
 import type { ReactNode, Ref } from 'react';
-import { CircleAlert, CircleCheck, Clock, PencilLine } from 'lucide-react';
+import { CircleAlert, CircleCheck } from 'lucide-react';
 import { Link, Outlet } from 'react-router-dom';
-import { Logo } from '@ageniza/ui';
+import { Logo, Mascot } from '@ageniza/ui';
 
 /** An anchor wearing the primary Button, for a way forward that is a navigation. Swap for ButtonLink when #625 lands. */
 export const AUTH_LINK_BUTTON_CLASS = 'ui-button ui-button--primary ui-button--md auth-submit';
 
-/** Sign-in, recovery, invitation and e-mail confirmation: the logo, one column, the legal links, and the example week beside it on a wide screen. */
+/** Sign-in, recovery, invitation and e-mail confirmation: the logo, one column, the legal links, and the brand panel beside it on a wide screen. */
 export function AuthLayout() {
   return <div className="auth">
     <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
@@ -18,13 +18,13 @@ export function AuthLayout() {
         <Link to="/privacidade">Privacidade</Link>
       </footer>
     </div>
-    <AuthShowcase />
+    <AuthVisual />
   </div>;
 }
 
 export interface AuthPanelProps {
   titleId: string;
-  title: string;
+  title: ReactNode;
   /** One sentence under the title that says what the screen is for. */
   lead?: string;
   /** Lets a screen that swaps its form for a confirmation move focus to the new title. */
@@ -59,49 +59,11 @@ export function AuthMessage({ tone, role, children }: AuthMessageProps) {
   </p>;
 }
 
-/** Decoration only: a made-up week of a made-up client, so the screen shows what the product is for. Hidden from assistive technology and below the wide breakpoint. */
-function AuthShowcase() {
-  return <div className="auth__showcase" aria-hidden="true">
-    <p className="auth-showcase__title">O mês de cada cliente numa pauta só.</p>
-    <p className="auth-showcase__lead">Planeje, mande para o cliente aprovar pelo celular e veja o feed se montar antes de publicar.</p>
-    <div className="auth-week">
-      <div className="auth-week__head"><span>Padaria Central · semana de 12/10</span><span>exemplo</span></div>
-      <div className="auth-week__grid">
-        <div className="auth-day">
-          <span className="auth-day__label">SEG 12</span>
-          <div className="auth-post auth-post--reels">
-            <span>Dia das Crianças: sonho recheado</span>
-            <span className="auth-post__tags">
-              <span className="auth-tag auth-tag--reels">Reels</span>
-              <span className="auth-state"><CircleAlert className="auth-state__icon auth-state__icon--late" />Atrasado</span>
-            </span>
-          </div>
-        </div>
-        <div className="auth-day auth-day--today">
-          <span className="auth-day__label"><span className="auth-day__today">TER 13</span></span>
-          <span className="auth-day__note">Stories · roteiro enviado</span>
-        </div>
-        <div className="auth-day">
-          <span className="auth-day__label">QUA 14</span>
-          <div className="auth-post auth-post--carousel">
-            <span>Cardápio de outono</span>
-            <span className="auth-post__tags">
-              <span className="auth-tag auth-tag--carousel">Carrossel</span>
-              <span className="auth-state"><PencilLine className="auth-state__icon auth-state__icon--adjust" />Em ajuste</span>
-            </span>
-          </div>
-        </div>
-        <div className="auth-day">
-          <span className="auth-day__label">QUI 15</span>
-          <div className="auth-post auth-post--reels">
-            <span>Receita: bolo de fubá da vó</span>
-            <span className="auth-post__tags">
-              <span className="auth-tag auth-tag--reels">Reels</span>
-              <span className="auth-state"><Clock className="auth-state__icon auth-state__icon--waiting" />Aguardando</span>
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
+/** Decoration only: the friendly mascot, centred on the brand tint, with the one line the product stands for. Hidden from assistive technology and below the wide breakpoint. */
+function AuthVisual() {
+  return <div className="auth__visual" aria-hidden="true">
+    <Mascot variant="friendly" height={320} />
+    <p className="auth-visual__title">O mês de cada cliente numa pauta só.</p>
+    <p className="auth-visual__lead">Planeje, mande para o cliente aprovar pelo celular e veja o feed se montar antes de publicar.</p>
   </div>;
 }

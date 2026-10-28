@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { AgencyMeResponseSchema, type AgencyMeResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
+import { isTermsNotAccepted, TermsRedirect } from './acceptance.js';
 import { AgencySidebar, AgencySidebarSkeleton } from './agency-nav.js';
 import { Button, ButtonLink, EmptyState, Logo, Skeleton } from '@ageniza/ui';
 
@@ -13,6 +14,7 @@ import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
+import { PLAN_RENEWAL_REASON, TrialNotice } from './plan-notice.js';
 import { StatusPanel } from './status-panel.js';
 import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
@@ -36,6 +38,13 @@ export const useAgencyContext = (): AgencyMeResponse => {
 
 /** UX only: the backend validates every operation against the same source (specs/autorizacao.md 7). */
 export const useCan = (permission: string): boolean => useAgencyContext().permissions.includes(permission);
+
+/**
+ * Why a write is unavailable in this agency right now, or undefined when it is not (issue #714, decision 2026-10-27):
+ * after the trial the write actions stay on screen, disabled, with this reason. What reduces access (removing a
+ * collaborator or a portal access, cancelling an invitation) never asks: the database lets it through.
+ */
+export const useWriteBlocked = (): string | undefined => (useAgencyContext().plan.readOnly ? PLAN_RENEWAL_REASON : undefined);
 
 const isNotFound = (error: unknown): boolean => error instanceof HttpClientError && error.status === 404;
 
@@ -98,6 +107,8 @@ export function AgencyAreaLayout() {
 
   if (!validAgencyId) return <AgencyContextlessShell><NotFoundPage as="section" home="/contextos" /></AgencyContextlessShell>;
   if (error !== null) {
+    // An account that has not accepted the Terms and the Privacy Policy is sent to accept them and comes back here.
+    if (isTermsNotAccepted(error)) return <TermsRedirect />;
     if (isNotFound(error)) return <AgencyContextlessShell><NotFoundPage as="section" home="/contextos" /></AgencyContextlessShell>;
     return <AgencyContextlessShell><AgencyUnavailable onRetry={() => { void refetch(); }} /></AgencyContextlessShell>;
   }
@@ -110,6 +121,7 @@ export function AgencyAreaLayout() {
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
       <AgencySidebar agenciaId={agenciaId} agencyName={data.agencyName} permissions={data.permissions} />
       <div className="agency-body">
+        <TrialNotice plan={data.plan} />
         <LegalNotice />
         <main className="agency-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/agencia/${data.agencyId}`}><Outlet /></NotFoundHomeContext.Provider></main>
       </div>

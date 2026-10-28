@@ -132,7 +132,7 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
   });
 
   const commentFrom = async (request: FastifyRequest, row: CommentRow, threadId: string, authors: ConversationAuthors): Promise<ThreadComment> => {
-    const author = authorOf(authors, threadId, row.author_side, row.author_user_id);
+    const author = authorOf(authors, threadId, row.author_side, row.author_user_id, row.author_portal_access_id);
     return {
       id: row.id,
       body: row.body,
