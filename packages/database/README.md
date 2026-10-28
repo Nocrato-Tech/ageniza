@@ -4,6 +4,8 @@ Server-only PostgreSQL infrastructure ([ADR 0011](../../docs/adr/0011-self-hoste
 
 For the local Docker database, use `createLocalTestDatabaseClient`. It refuses a non-loopback PostgreSQL URL, so tests cannot silently target a remote database. Integration harnesses get their two URLs only from `resolveIntegrationDatabaseUrls()`: `DATABASE_URL` and `MIGRATION_DATABASE_URL` are both required, there is no default, and a database named exactly `ageniza` (the owner's development database) is refused before anything connects (issue #391). `raw(executor, statement, bindings)` keeps values separate from SQL text; SQL structure remains authored application code and user input must always be a binding.
 
+A race test that closes a lock cycle from its holder transaction asks for the second lock with `requestLockOnceBlocked(holder, statement, bindings)`, armed before the transaction under test starts. The wait for the blocked backend and the request run in one block inside the database, so a stall of the test process cannot make the holder the deadlock victim (issues #745 and #762); `docs/implementation-checklist.md` item 75 has the rule.
+
 ## Roles and RLS
 
 - `ageniza_app` is the only role the API and worker use. It is created when the data volume is initialised ([`infra/postgres/initdb`](../../infra/postgres/initdb)) and is neither superuser nor `BYPASSRLS`. Migrations grant it table privileges.

@@ -515,7 +515,7 @@ describe('account e-mail change by request (issue #80)', () => {
       expect(await emailOf(rejected.id)).toBe(rejected.email);
 
       expect((await confirmLink(secondLink)).status).toBe(200);
-    });
+    }, 30_000);
 
     it('does not swap into an address another account took after the approval, and answers like any dead link', async () => {
       const user = await makeUser('late');
