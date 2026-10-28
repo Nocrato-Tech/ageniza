@@ -28,6 +28,7 @@
     "deploy:validate": "node scripts/deploy/validate-production.mjs",
     "board:released": "node scripts/board/mark-released.mjs",
     "test:scripts": "vitest run --dir scripts",
+    "quality:file-size": "node scripts/quality/file-size-report.mjs",
     "clean": "turbo run clean && rimraf node_modules .turbo"
   },
   "devDependencies": {
