@@ -16,4 +16,4 @@
 
 **Origem.** Issue #789, decisão do dono de 2026-10-29. Os itens 2 a 4 são leituras do implementador onde a issue não dizia.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-29.
