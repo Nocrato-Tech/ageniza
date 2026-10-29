@@ -223,10 +223,23 @@ export const integrationDatabaseEnvironment = (
 };
 
 /** Creates a client for the Docker-backed local development database only. */
-export const createLocalTestDatabaseClient = (connectionString: string): DatabaseClient => {
+export const createLocalTestDatabaseClient = (connectionString: string, pool?: Partial<DatabasePoolSettings>): DatabaseClient => {
   assertLocalDatabaseUrl(connectionString);
-  return createDatabaseClient({ connectionString });
+  return createDatabaseClient({ connectionString, ...(pool === undefined ? {} : { pool }) });
 };
+
+export {
+  cloneIntegrationDatabase,
+  createIntegrationModel,
+  dropIntegrationDatabases,
+  integrationCloneName,
+  integrationModelName,
+  watchConnections,
+  withDatabaseName,
+  type ConnectionWatch,
+  type IntegrationClone,
+  type IntegrationModel
+} from './integration-clone.js';
 
 export { backendPid, requestLockOnceBlocked, waitForBackendsBlockedBy, type LockBarrierOptions, type WaitForBlockedOptions } from './lock-barrier.js';
 

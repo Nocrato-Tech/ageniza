@@ -65,7 +65,7 @@ Antes de abrir, com `DATABASE_URL` e `MIGRATION_DATABASE_URL` apontando para um 
 ```sh
 pnpm lint && pnpm typecheck && pnpm build && pnpm test
 pnpm db:test:local
-pnpm --filter @ageniza/api test:integration
+pnpm --filter @ageniza/api test:integration   # um banco clonado por arquivo, em paralelo; --maxWorkers=2 numa máquina compartilhada
 pnpm --filter @ageniza/worker test:integration
 ```
 

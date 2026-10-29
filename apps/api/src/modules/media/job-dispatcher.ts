@@ -23,13 +23,19 @@ export interface MediaJobDispatcher {
   stop(): Promise<void>;
 }
 
-export const createMediaJobDispatcher = (options: { readonly connectionString: string; readonly logger: CoreLogger }): MediaJobDispatcher => {
+export const createMediaJobDispatcher = (options: {
+  readonly connectionString: string;
+  readonly logger: CoreLogger;
+  /** pg-boss hands every other option to its `pg.Pool`, which closes a connection idle for this long (10s when absent). */
+  readonly poolIdleTimeoutMillis?: number;
+}): MediaJobDispatcher => {
   const logger = options.logger.child({ module: 'media-job-dispatcher' });
   const boss = new PgBoss({
     connectionString: options.connectionString,
     schema: 'pgboss',
     application_name: 'ageniza-api-queue-producer',
     max: 2,
+    ...(options.poolIdleTimeoutMillis === undefined ? {} : { idleTimeoutMillis: options.poolIdleTimeoutMillis }),
     migrate: false,
     createSchema: false,
     // This side only sends; it must never run supervision, REINDEX, or scheduling duties, which

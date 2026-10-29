@@ -1,5 +1,7 @@
 # Checklist do implementador
 
+> **Nível de risco:** use só a seção da área que o PR toca. As automutações valem para os níveis Médio (regra nova) e Alto; no Baixo não há mutação (ver a seção Níveis de risco do [AGENTS.md](../AGENTS.md)).
+
 Passe por este checklist antes de abrir ou atualizar um PR. Cada item nasceu de um
 achado real de revisão ou de uma regra de ambiente; o teste que continua verde sem a
 regra é o erro mais repetido.

@@ -27,7 +27,32 @@ The policy guards only `packages/database/migrations`: this is the canonical app
 
 `CI / PostgreSQL local database` starts the `postgres` service from `compose.yml` (which creates the `ageniza_app` role), creates its own database `ageniza_ci` (the harnesses have no default and refuse a database named `ageniza`, so the job exports `DATABASE_URL` and `MIGRATION_DATABASE_URL` for it), applies every migration to the empty database with `pnpm db:migrate`, then runs `pnpm db:test:local`. The suite proves Knex transactions and parameter binding, that the application role is neither superuser nor `BYPASSRLS`, and that a user of agency A cannot SELECT, INSERT, UPDATE, or DELETE agency B's rows. It uses no secret, remote URL, or production credential.
 
+### When the job is skipped (issue #789)
+
+The job takes about 14 minutes, so a pull request that cannot reach the database, the API or the worker does not need it. The rule is a fixed **allow list of what may skip it**, never a list of what needs it: a file nobody planned for, in a place nobody planned, is outside the list and runs the whole job (the lesson of issue #511).
+
+The job is skipped only when **every** file the pull request changes is one of:
+
+| Allowed path | Why it cannot matter to the job |
+| --- | --- |
+| `apps/web/**` | The SPA. The API, the worker and the packages do not import it (they only name `apps/web/public` in comments). |
+| `docs/**` | Documentation. The API only *writes* `docs/api` (`pnpm api:docs`), and `Quality gates` checks that it is current. |
+| `*.md` at the repository root | `README.md`, `AGENTS.md`, `CONTRIBUTING.md` and the like. A `.md` inside a code folder (`packages/database/README.md`, `specs/`) is **not** on the list. |
+
+Everything else runs the job, with no exception to list: `packages/**`, `apps/api/**`, `apps/worker/**`, `.github/**`, `scripts/**`, `infra/**`, `pnpm-lock.yaml`, `package.json`, `tsconfig*`, the root configs, and any new path. Also always run: a push to `develop` or `main` (what landed is what ships), an empty diff, and a diff that could not be computed.
+
+How it works, in `scripts/ci/decide-database-job.mjs` (the list is the `ALLOWED` constant):
+
+- The changed files come from git itself: `git diff --name-only -z --no-renames <base>...<head>`, with the pull request's base and head SHAs. No third-party action. `--no-renames` makes a rename count as a delete and an add, so moving a file from `apps/web` into `packages` lists the new path and runs the job.
+- The `database-local` job stays unconditional, so the check always ends **completed** and never reads as skipped or missing. Its first steps check out the history, decide (step id `area`) and, when skipping, run the step `Say why the database job was skipped`, which prints the reason in the log and in the run summary. Every later step carries `if: steps.area.outputs.run != 'false'`; the test requires `!= 'false'`, never `== 'true'`, so a decision that produced no output runs the job instead of skipping it.
+- The reason shows a file name JSON-quoted, because a path may contain a newline and the step output is one line.
+- The script and the workflow come from the pull request itself, as does the rest of `ci.yml`: a change to `scripts/**` or `.github/**` always runs the job, and the review of such a change is what protects the list. When branch protection is on (issue #778), keep the review of those two folders mandatory.
+
+To add a path to the list, first check that nothing the job runs reads it (the migrations, `pnpm db:test:local`, the worker and API integration suites, the build of their workspace dependencies), then add a case to `scripts/ci/decide-database-job.test.mjs` for it. To reproduce a decision locally: `node scripts/ci/decide-database-job.mjs --event pull_request --base origin/develop --head HEAD`.
+
 The local equivalents are `pnpm db:start`, `pnpm db:migrate`, and `pnpm db:test:local`; Docker must be running, and the two variables must point at a database of your own (see [Ambiente local](../local-environment.md#banco-dos-testes-de-integração)). `pnpm db:reset` removes the whole compose database volume (the owner's `ageniza` and every agent database), then starts the database again and recreates `ageniza` from migrations, so it belongs to the owner only; an agent starts over with `drop database` on its own database, as in [ambiente local](../local-environment.md#banco-dos-testes-de-integração).
+
+The API integration suite (`Run the authentication suite as the application role`) runs its files in parallel, 4 at a time (issue #792): a globalSetup migrates a model database once, and every file gets its own clone of it and drops it when it ends, so no file reads, writes or locks another's rows. The step, the job and the database `ageniza_ci` are unchanged; `ageniza_ci` only tells the suite which server to use. See [Ambiente local](../local-environment.md#um-banco-por-arquivo-na-suíte-da-api) for `--maxWorkers` and for what a killed run leaves behind.
 
 ## API production closure
 
