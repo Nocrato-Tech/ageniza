@@ -20,6 +20,14 @@ export interface SeedOptions {
   readonly provider?: 'simulado' | 'asaas';
 }
 
+export interface Request {
+  readonly charge_id: string | null;
+  readonly effect: string;
+  readonly monthly_cents: number;
+  readonly amount_cents: number;
+  readonly effective_at: Date;
+}
+
 export interface Harness {
   setup(): Promise<void>;
   teardown(): Promise<void>;
@@ -34,6 +42,10 @@ export interface Harness {
   trialAgency(): Promise<{ agencyId: string; ownerId: string }>;
   withRole(agencyId: string, roleKey: 'admin' | 'manager', userId?: string): Promise<string>;
   withPermissions(agencyId: string, ...permissions: string[]): Promise<string>;
+  request(userId: string, agencyId: string, plan: string, extraClients?: number, extraGib?: number): Promise<Request>;
+  confirm(chargeId: string, ref: string, cents: number, provider?: string): Promise<boolean>;
+  /** Request and confirm: the Owner's subscription as the simulated provider would approve it. */
+  subscribe(userId: string, agencyId: string, plan: string, extraClients?: number, extraGib?: number): Promise<Request>;
   /** A subscription as the schema owner would write it: the plan, the extras, and a period around the database clock. */
   seedSubscription(agencyId: string, plan: string, options?: SeedOptions): Promise<void>;
   /** A charge row as the schema owner would write it, to see how the application role reads it. */
@@ -111,6 +123,28 @@ export const createHarness = (label: string): Harness => {
       await transaction('agency_memberships').insert({ agency_id: agencyId, user_id: id, role_id: roleId });
     });
     return id;
+  };
+
+  const request: Harness['request'] = (userId, agencyId, plan, extraClients = 0, extraGib = 0) =>
+    asUser(userId, async (transaction) => {
+      const { rows } = await transaction.raw<{ rows: Request[] }>(
+        'select * from app_private.request_subscription_change(?::uuid, ?, ?::integer, ?::integer)', [agencyId, plan, extraClients, extraGib]
+      );
+      return rows[0]!;
+    });
+
+  const confirm: Harness['confirm'] = (chargeId, ref, cents, provider = 'simulado') =>
+    asNobody(async (transaction) => {
+      const { rows } = await transaction.raw<{ rows: Array<{ confirmed: boolean }> }>(
+        'select app_private.confirm_subscription_charge(?::uuid, ?, ?, ?::integer) as confirmed', [chargeId, provider, ref, cents]
+      );
+      return rows[0]!.confirmed;
+    });
+
+  const subscribe: Harness['subscribe'] = async (userId, agencyId, plan, extraClients = 0, extraGib = 0) => {
+    const requested = await request(userId, agencyId, plan, extraClients, extraGib);
+    await confirm(requested.charge_id!, `ref-${randomUUID()}`, requested.amount_cents);
+    return requested;
   };
 
   const seedSubscription: Harness['seedSubscription'] = async (agencyId, plan, options = {}) => {
@@ -209,6 +243,9 @@ export const createHarness = (label: string): Harness => {
     trialAgency,
     withRole,
     withPermissions,
+    request,
+    confirm,
+    subscribe,
     seedSubscription,
     seedCharge,
     insertClient,
