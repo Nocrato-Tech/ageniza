@@ -576,7 +576,7 @@ describe('renewing', () => {
 });
 
 describe('the simulated clock', () => {
-  it('ends the period now without changing its length, once', async () => {
+  it('ends the period now without changing its length, then the window after it, then nothing', async () => {
     const { agencyId, ownerId } = await h.trialAgency();
     await h.subscribe(ownerId, agencyId, 'essencial');
     const length = 'select (current_period_end - current_period_start)::text as length from public.agency_subscriptions where agency_id = ?';
@@ -586,9 +586,12 @@ describe('the simulated clock', () => {
       `select current_period_end <= now() as ended, (current_period_end - current_period_start)::text as length
        from public.agency_subscriptions where agency_id = ?`, [agencyId]);
     expect(rows).toEqual([{ ended: true, length: lengthBefore }]);
+    expect(await h.acceptsWrites(agencyId)).toBe(true);
+    await advance(ownerId, agencyId);
+    expect((await owner().raw<{ rows: Array<{ length: string }> }>(length, [agencyId])).rows[0]!.length).toBe(lengthBefore);
     expect(await h.acceptsWrites(agencyId)).toBe(false);
     await advance(ownerId, agencyId);
-    expect((await auditActions(agencyId)).filter((action) => action === 'subscription.simulated_period_ended')).toHaveLength(1);
+    expect((await auditActions(agencyId)).filter((action) => action === 'subscription.simulated_period_ended')).toHaveLength(2);
   });
 
   it('moves only a subscription of the simulated provider', async () => {
@@ -639,6 +642,7 @@ describe('the writes of an agency by its plan', () => {
       token_hash: `hash-${randomUUID()}`, expires_at: new Date(Date.now() + 86_400_000), invited_by_user_id: ownerId
     }).returning('id'))[0].id as string);
 
+    await advance(ownerId, agencyId);
     await advance(ownerId, agencyId);
     await expect(h.insertClient(ownerId, agencyId)).rejects.toMatchObject(READ_ONLY);
     await expect(h.asUser(ownerId, (t) => t('invitations').insert({
@@ -771,7 +775,7 @@ describe('the overview the screen reads', () => {
     await addClients(agencyId, 5);
     await owner().raw("update public.clients set status = 'archived', archived_at = now() where id = (select id from public.clients where agency_id = ? limit 1)", [agencyId]);
     await h.seedConfirmedBytes(agencyId, 3 * GIB);
-    const expected = { monthly_cents: 23900, next_monthly_cents: 23900, client_limit: 35, storage_bytes: String(130 * GIB), used_clients: '4', used_bytes: String(3 * GIB) };
+    const expected = { monthly_cents: 23900, next_monthly_cents: 23900, client_limit: 35, storage_bytes: String(130 * GIB), used_clients: '4', used_bytes: String(3 * GIB), grace_ends_on: null };
     expect(await overview(ownerId, agencyId)).toEqual([expected]);
     expect(await overview(admin, agencyId)).toEqual([expected]);
     expect(await overview(outsider, agencyId)).toEqual([]);
@@ -872,6 +876,30 @@ describe('the renewal in the isolation levels', () => {
       await transaction.rollback();
     }
     expect(await h.subscriptionOf(agencyId)).toEqual(before);
+  });
+});
+
+describe('two confirmations of the same charge', () => {
+  it('answers the second one false when it waited behind the first, and writes nothing twice', async () => {
+    const { agencyId, ownerId } = await h.trialAgency();
+    const quoted = await h.request(ownerId, agencyId, 'essencial');
+    const first = await h.openTransactionAsNobody();
+    try {
+      const { rows } = await first.raw<{ rows: Array<{ confirmed: boolean }> }>(
+        'select app_private.confirm_subscription_charge(?::uuid, ?, ?, ?::integer) as confirmed', [quoted.charge_id, 'simulado', 'ref-twice', quoted.amount_cents]);
+      expect(rows[0]!.confirmed).toBe(true);
+      let settled = false;
+      const second = h.confirm(quoted.charge_id!, 'ref-twice', quoted.amount_cents).finally(() => { settled = true; });
+      second.catch(() => undefined);
+      await waitForBlockedLock(() => settled);
+      expect(settled).toBe(false);
+      await first.commit();
+      expect(await second).toBe(false);
+    } finally {
+      if (!first.isCompleted()) await first.rollback();
+    }
+    expect(await chargesOf(agencyId)).toMatchObject([{ kind: 'subscribe', status: 'confirmed', provider_ref: 'ref-twice' }]);
+    expect(await auditActions(agencyId)).toEqual(['subscription.subscribed']);
   });
 });
 

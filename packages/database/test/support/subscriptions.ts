@@ -53,6 +53,8 @@ export interface Harness {
   insertClient(userId: string, agencyId: string): Promise<string>;
   /** Moves the period by the database clock. */
   setPeriod(agencyId: string, startedDaysAgo: number, endsInDays: number): Promise<void>;
+  /** Ends the period `endedSecondsAgo` seconds ago, a month after it started, by the database clock. */
+  endPeriod(agencyId: string, endedSecondsAgo: number): Promise<void>;
   subscriptionOf(agencyId: string): Promise<Record<string, unknown> | undefined>;
   quotaOf(agencyId: string): Promise<string | undefined>;
   /** A confirmed upload of the agency, written as the schema owner, in `on` when the write has to stay uncommitted. */
@@ -186,6 +188,13 @@ export const createHarness = (label: string): Harness => {
     );
   };
 
+  const endPeriod: Harness['endPeriod'] = async (agencyId, endedSecondsAgo) => {
+    await ownerKnex().raw(
+      "update public.agency_subscriptions set current_period_end = now() - make_interval(secs => ?::int), current_period_start = now() - make_interval(secs => ?::int) - interval '1 month' where agency_id = ?",
+      [endedSecondsAgo, endedSecondsAgo, agencyId]
+    );
+  };
+
   const subscriptionOf: Harness['subscriptionOf'] = async (agencyId) =>
     await ownerKnex()('agency_subscriptions').where({ agency_id: agencyId }).first() as Record<string, unknown> | undefined;
 
@@ -253,6 +262,7 @@ export const createHarness = (label: string): Harness => {
     seedCharge,
     insertClient,
     setPeriod,
+    endPeriod,
     subscriptionOf,
     quotaOf,
     seedConfirmedBytes,

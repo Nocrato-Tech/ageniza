@@ -159,6 +159,7 @@ describe('who may quote, ask, cancel and move the clock', () => {
     await expect(door("select app_private.assess_subscription_change(null, null, null, null, null, 'essencial', 0, 0, 0, 0, now())")).rejects.toMatchObject({ code: '42501' });
     await expect(door('select app_private.prorated_cents(100, now(), now() + interval \'1 day\', now())')).rejects.toMatchObject({ code: '42501' });
     await expect(door('select app_private.require_no_person()')).rejects.toMatchObject({ code: '42501' });
+    await expect(door('select app_private.payment_grace_period()')).rejects.toMatchObject({ code: '42501' });
     await expect(door('select app_private.next_renewal_terms(gen_random_uuid())')).rejects.toMatchObject({ code: '42501' });
     const { rows } = await owner().raw<{ rows: Array<{ proname: string; granted: boolean; definer: boolean; fixed_path: boolean }> }>(`
       select p.proname,
@@ -168,11 +169,13 @@ describe('who may quote, ask, cancel and move the clock', () => {
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'app_private'
         and p.proname in ('quote_subscription_change', 'request_subscription_change', 'confirm_subscription_charge', 'cancel_subscription',
-                          'renew_subscription', 'next_renewal_cents', 'agencies_due_for_renewal', 'advance_simulated_period', 'subscription_overview')
+                          'reactivate_subscription', 'renew_subscription', 'next_renewal_cents', 'agencies_due_for_renewal', 'advance_simulated_period',
+                          'subscription_overview')
     `);
     expect(rows.map((row) => row.proname).sort()).toEqual([
       'advance_simulated_period', 'agencies_due_for_renewal', 'cancel_subscription', 'confirm_subscription_charge',
-      'next_renewal_cents', 'quote_subscription_change', 'renew_subscription', 'request_subscription_change', 'subscription_overview'
+      'next_renewal_cents', 'quote_subscription_change', 'reactivate_subscription', 'renew_subscription', 'request_subscription_change',
+      'subscription_overview'
     ]);
     for (const row of rows) {
       expect(row.granted, row.proname).toBe(true);
@@ -183,8 +186,9 @@ describe('who may quote, ask, cancel and move the clock', () => {
       select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'app_private'
         and p.proname in ('quote_subscription_change', 'request_subscription_change', 'confirm_subscription_charge', 'cancel_subscription', 'renew_subscription',
-                          'next_renewal_cents', 'next_renewal_terms', 'agencies_due_for_renewal', 'advance_simulated_period', 'subscription_overview',
-                          'prorated_cents', 'assess_subscription_change', 'assess_agency_subscription_change', 'require_no_person', 'require_subscription_owner')
+                          'reactivate_subscription', 'next_renewal_cents', 'next_renewal_terms', 'agencies_due_for_renewal', 'advance_simulated_period',
+                          'subscription_overview', 'prorated_cents', 'assess_subscription_change', 'assess_agency_subscription_change', 'require_no_person',
+                          'require_subscription_owner', 'payment_grace_period', 'lock_subscription_change')
         and has_function_privilege('public', p.oid, 'execute')
     `);
     expect(publicRows).toEqual([]);

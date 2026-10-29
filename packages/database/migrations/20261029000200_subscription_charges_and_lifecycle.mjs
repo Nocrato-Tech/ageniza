@@ -16,6 +16,10 @@
 //    storage in use with a new ceiling (subscribe, raise, a decrease on request and on renewal) takes the upload confirmation's
 //    lock ('media-quota:<agency>', taken by the media service) before the agency's, always in that order, so a confirmation in
 //    flight is in the count or waits for the new quota.
+//  - An agency whose period ended without a confirmed renewal keeps writing for `payment_grace_period()` (3 days); a renewal, or a
+//    new subscription, confirmed in that window starts the new period where the old one ended, so the window is paid for. A
+//    canceled subscription has no window. The part of this that decides whether the agency writes (`agency_accepts_writes`) and
+//    the undoing of a cancellation (`reactivate_subscription`) are in 20261029000300.
 //
 // Error codes: A0110 the agency cannot take the operation in its state, A0111 the new limit is below the clients in use,
 // A0112 an increase and a decrease together, A0113 nothing changes, A0114 the confirmation does not match the charge,
@@ -25,6 +29,18 @@ const MAX_EXTRA = 10000;
 
 export async function up(knex) {
   await knex.raw(`
+    -- How long an agency keeps writing after its period ended with no renewal confirmed (decision of 2026-10-29). One copy: the
+    -- write check, the start of the renewal and the date the screen shows all read it.
+    create function app_private.payment_grace_period()
+    returns interval
+    language sql
+    immutable
+    set search_path = ''
+    as $function$
+      select interval '3 days'
+    $function$;
+    revoke all on function app_private.payment_grace_period() from public;
+
     -- The part of a monthly difference that falls on the days left of the period, whole days rounded up.
     create function app_private.prorated_cents(p_difference_cents integer, p_period_start timestamptz, p_period_end timestamptz, p_at timestamptz)
     returns integer
@@ -336,7 +352,12 @@ export async function up(knex) {
       end if;
 
       if v_charge.kind = 'subscribe' then
-        v_start := pg_catalog.now();
+        select * into v_subscription from public.agency_subscriptions subscription where subscription.agency_id = v_charge.agency_id;
+        -- Inside the window after an unpaid period the new one starts where the old one ended: the days of the window are paid.
+        -- No subscription and a courtesy have no end, so the comparison is null and the period starts now.
+        v_start := case when not v_subscription.cancel_at_period_end
+                         and v_subscription.current_period_end + app_private.payment_grace_period() > pg_catalog.now()
+                        then v_subscription.current_period_end else pg_catalog.now() end;
         v_end := v_start + interval '1 month';
         insert into public.agency_subscriptions (agency_id, plan_key, extra_clients, extra_storage_gib, provider, current_period_start, current_period_end)
         values (v_charge.agency_id, v_charge.plan_key, v_charge.extra_clients, v_charge.extra_storage_gib, p_provider, v_start, v_end)
@@ -468,7 +489,8 @@ export async function up(knex) {
     revoke all on function app_private.agencies_due_for_renewal(integer) from public;
     grant execute on function app_private.agencies_due_for_renewal(integer) to ageniza_app;
 
-    -- The provider charged the next period. The new period starts where the old one ended, or now when the renewal is late.
+    -- The provider charged the next period. The new period starts where the old one ended, or now when the renewal comes after the
+    -- window the agency keeps writing in (the days before it are paid, the days after it were read-only).
     create function app_private.renew_subscription(p_agency_id uuid, p_provider text, p_provider_ref text, p_charged_cents integer)
     returns boolean
     language plpgsql
@@ -507,7 +529,8 @@ export async function up(knex) {
         raise exception using errcode = 'A0114', message = 'The amount charged is not the amount of the next period.';
       end if;
 
-      v_start := greatest(v_subscription.current_period_end, pg_catalog.now());
+      v_start := case when v_subscription.current_period_end + app_private.payment_grace_period() > pg_catalog.now()
+                      then v_subscription.current_period_end else pg_catalog.now() end;
       v_end := v_start + interval '1 month';
       update public.agency_subscriptions
       set plan_key = v_terms.plan_key, extra_clients = v_terms.extra_clients, extra_storage_gib = v_terms.extra_storage_gib,
@@ -537,7 +560,8 @@ export async function up(knex) {
     revoke all on function app_private.renew_subscription(uuid, text, text, integer) from public;
     grant execute on function app_private.renew_subscription(uuid, text, text, integer) to ageniza_app;
 
-    -- Development only, and only for a subscription of the simulated provider: moves the period back so it ends now.
+    -- Development only, and only for a subscription of the simulated provider: moves the period back so it ends now; once it ended
+    -- (and the subscription was not canceled), moves it back again so the window the agency keeps writing in ends now.
     create function app_private.advance_simulated_period(p_agency_id uuid)
     returns void
     language plpgsql
@@ -557,7 +581,10 @@ export async function up(knex) {
       end if;
       v_shift := v_subscription.current_period_end - pg_catalog.now();
       if v_shift <= interval '0' then
-        return;
+        if v_subscription.cancel_at_period_end or v_subscription.current_period_end + app_private.payment_grace_period() <= pg_catalog.now() then
+          return;
+        end if;
+        v_shift := v_subscription.current_period_end + app_private.payment_grace_period() - pg_catalog.now();
       end if;
       update public.agency_subscriptions
       set current_period_start = current_period_start - v_shift, current_period_end = current_period_end - v_shift, updated_at = pg_catalog.now()
@@ -572,7 +599,10 @@ export async function up(knex) {
     -- What the screen shows, priced by the one place that prices: the cost of the period and of the next, the ceilings and the
     -- usage. Every member of the agency reads it.
     create function app_private.subscription_overview(p_agency_id uuid)
-    returns table (monthly_cents integer, next_monthly_cents integer, client_limit integer, storage_bytes bigint, used_clients bigint, used_bytes bigint)
+    returns table (
+      monthly_cents integer, next_monthly_cents integer, client_limit integer, storage_bytes bigint, used_clients bigint, used_bytes bigint,
+      grace_ends_on date
+    )
     language sql
     stable
     security definer
@@ -589,7 +619,13 @@ export async function up(knex) {
         app_private.subscription_client_limit(subscription.plan_key, subscription.extra_clients),
         app_private.subscription_storage_bytes(subscription.plan_key, subscription.extra_storage_gib),
         (select pg_catalog.count(*) from public.clients client where client.agency_id = subscription.agency_id and client.status = 'active'),
-        app_private.agency_storage_used_bytes(subscription.agency_id)
+        app_private.agency_storage_used_bytes(subscription.agency_id),
+        -- The last day to pay, in the day of São Paulo; null unless the period ended and the agency still writes in the window (a
+        -- courtesy has no end, so it never has one).
+        case when not subscription.cancel_at_period_end
+                  and subscription.current_period_end <= pg_catalog.now()
+                  and subscription.current_period_end + app_private.payment_grace_period() > pg_catalog.now()
+             then app_private.sao_paulo_date(subscription.current_period_end + app_private.payment_grace_period()) end
       from public.agency_subscriptions subscription
       where subscription.agency_id = p_agency_id and app_private.is_agency_member(p_agency_id)
     $function$;

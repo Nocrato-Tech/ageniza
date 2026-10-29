@@ -136,7 +136,10 @@ describe('the writes of an agency by its plan', () => {
     const paid = await h.trialAgency();
     await h.seedSubscription(paid.agencyId, 'essencial');
     expect(await h.acceptsWrites(paid.agencyId)).toBe(true);
+    // The owner's tolerance of 2026-10-29: three days of writes after the period ended, then read-only (see subscription-grace).
     await h.setPeriod(paid.agencyId, 31, 0);
+    expect(await h.acceptsWrites(paid.agencyId)).toBe(true);
+    await h.endPeriod(paid.agencyId, 3 * 86400 + 3600);
     expect(await h.acceptsWrites(paid.agencyId)).toBe(false);
     await h.setPeriod(paid.agencyId, 29, 1);
     expect(await h.acceptsWrites(paid.agencyId)).toBe(true);
@@ -157,7 +160,7 @@ describe('the writes of an agency by its plan', () => {
     await invite(ownerId, agencyId, role);
     const invitationId = (await owner()('invitations').where({ agency_id: agencyId }).first('id')).id as string;
 
-    await h.setPeriod(agencyId, 31, 0);
+    await h.endPeriod(agencyId, 3 * 86400 + 3600);
     await expect(h.insertClient(ownerId, agencyId)).rejects.toMatchObject(READ_ONLY);
     await expect(invite(ownerId, agencyId, role)).rejects.toMatchObject(READ_ONLY);
     expect(await h.asUser(ownerId, (t: Knex.Transaction) => t('invitations').where({ id: invitationId }).update({ revoked_at: new Date() }))).toBe(1);
