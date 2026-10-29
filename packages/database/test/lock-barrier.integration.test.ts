@@ -156,19 +156,30 @@ describe('waitForBackendsBlockedBy (#767)', () => {
   }, 30_000);
 
   it('ignores a wait of another database of the same server, which is the one a shared server shows', async () => {
-    const decoyKey = randomUUID();
-    const decoyHolder = await holdingIn(decoy, decoyKey);
-    const decoyBlocked = blockedBehindIn(decoy, decoyKey);
-    await waitForBackendsBlockedBy(decoy.knex, await backendPid(decoyHolder));
-    const stillWaiting = await owner.knex.raw<{ rows: Array<{ waiting: number }> }>("select count(*)::int as waiting from pg_catalog.pg_stat_activity where datname = ? and wait_event_type = 'Lock'", [decoyName]);
-    expect(stillWaiting.rows[0]?.waiting).toBe(1);
+    // A role is a row of a catalog every database shares, so a lock on it is the one lock a backend of ANOTHER database can wait
+    // behind: the pid of the holder alone does not tell the databases apart, only the `datname` of the helper does.
+    const role = `lock_barrier_role_${randomUUID().replace(/-/g, '')}`;
+    await owner.knex.raw(`create role ${role}`);
+    const holder = await owner.knex.transaction();
+    open.push(holder);
+    let decoyBlocked: Promise<void> = Promise.resolve();
+    try {
+      await holder.raw(`alter role ${role} password 'held-by-this-database'`);
+      const holderPid = await backendPid(holder);
+      decoyBlocked = decoy.knex.transaction(async (transaction) => {
+        await transaction.raw(`alter role ${role} password 'waiting-in-the-decoy'`);
+      });
+      decoyBlocked.catch(() => undefined);
+      // The decoy really waits behind this holder: seen from its own database the helper counts it.
+      expect(await waitForBackendsBlockedBy(decoy.knex, holderPid)).toHaveLength(1);
 
-    const idle = await holding(randomUUID());
-    await expect(waitForBackendsBlockedBy(owner.knex, await backendPid(idle), { timeoutMs: 300 })).rejects.toThrow(nobodyWaits);
-
-    await idle.rollback();
-    await decoyHolder.rollback();
-    await decoyBlocked;
+      await expect(waitForBackendsBlockedBy(owner.knex, holderPid, { timeoutMs: 300 })).rejects.toThrow(nobodyWaits);
+    } finally {
+      // The role cannot be dropped while the holder or the waiting decoy still touch it, and a failed assertion must not leave them there.
+      if (!holder.isCompleted()) await holder.rollback();
+      await decoyBlocked.catch(() => undefined);
+      await owner.knex.raw(`drop role if exists ${role}`);
+    }
   }, 30_000);
 
   it('ignores a blocked backend whose statement does not match the pattern, and takes the one that does', async () => {

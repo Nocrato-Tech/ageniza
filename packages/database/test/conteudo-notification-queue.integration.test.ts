@@ -175,6 +175,16 @@ const untilTheLeaseHasRunOut = async (contentId: string): Promise<void> => {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 };
+// The test above means "the lease runs out WHILE the recheck waits", and that holds only if the recheck began inside the lease. On a
+// machine that was late the lease is over before it begins, and `[]` comes out of any code: that is a red with its own reason.
+const assertTheRecheckBeganInsideTheLease = async (contentId: string, recheckPid: number): Promise<void> => {
+  const { rows } = await owner().raw<{ rows: Array<{ inside: boolean | null }> }>(
+    `select (select xact_start from pg_catalog.pg_stat_activity where pid = ?::int) < min(claimed_at) + interval '10 minutes' as inside
+     from public.notification_queue where content_id = ?::uuid and claimed_at is not null`,
+    [recheckPid, contentId]
+  );
+  if (rows[0]?.inside !== true) throw new Error('The machine was late: the lease had already run out when the recheck began, so this test would pass with any code.');
+};
 const peopleOf = (rows: readonly Claimed[]): string[] => rows.map((row) => row.recipient_user_id).sort();
 
 const freshClient = async (people: readonly string[] = [ids.portalA1, ids.portalA1Second]): Promise<string> => {
@@ -1675,7 +1685,8 @@ describe('rechecking what a claim handed over, right before the send (issue #260
         await holding('clients').where({ id: client }).update({ name: `Cliente ${client}` });
         const holdingPid = await backendPid(holding);
         outcome = recheck(batch);
-        await waitForBackendsBlockedBy(owner(), holdingPid);
+        const [recheckPid] = await waitForBackendsBlockedBy(owner(), holdingPid);
+        await assertTheRecheckBeganInsideTheLease(id, recheckPid!);
         await untilTheLeaseHasRunOut(id);
       } finally {
         await holding.commit();
