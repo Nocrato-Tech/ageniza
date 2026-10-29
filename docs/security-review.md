@@ -1,5 +1,7 @@
 # Revisão de segurança
 
+> **Nível de risco:** aplica-se só ao nível Alto (ver a seção Níveis de risco do [AGENTS.md](../AGENTS.md)).
+
 Todo pull request que toque **banco, autenticação, sessão, autorização, convite, armazenamento, upload, infraestrutura ou dado pessoal** passa por esta revisão antes do merge, feita por quem **não escreveu o código**. Este documento é o padrão da revisão. Ele vale para qualquer revisor: pessoa, agente no Claude Code (`.claude/agents/security-reviewer.md`), no Maestri ou em outra ferramenta.
 
 Não é uma lista para marcar. O revisor **tenta quebrar** o que o PR entrega e só afirma o que provou. A regra que sustenta tudo o resto é esta: **um achado sem cenário concreto não é achado, e uma aprovação sem ataque executado não é aprovação**.
