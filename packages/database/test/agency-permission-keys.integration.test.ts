@@ -79,6 +79,8 @@ const holds = (userId: string, agencyId: string, permission: string): Promise<bo
   });
 
 let catalog: string[];
+// No preset carries them: the Owner holds them by possession, and nobody else can.
+const OWNER_ONLY_KEYS = ['assinatura.gerenciar', 'colaborador.atribuir_admin'];
 
 beforeAll(async () => {
   owner = createLocalTestDatabaseClient(ownerUrl);
@@ -133,7 +135,7 @@ afterAll(async () => {
 
 describe('app_private.agency_permission_keys (issue #189)', () => {
   it('the owner holds the whole catalog, including the key no preset carries', async () => {
-    expect(catalog).toContain('colaborador.atribuir_admin');
+    expect(catalog).toEqual(expect.arrayContaining(OWNER_ONLY_KEYS));
     expect(await keysOf(ownerMember, agencyA)).toEqual(catalog);
   });
 
@@ -143,8 +145,8 @@ describe('app_private.agency_permission_keys (issue #189)', () => {
     expect(await keysOf(ownerB, agencyB)).toEqual(catalog);
   });
 
-  it('the Admin preset holds every key except colaborador.atribuir_admin, which only the owner holds', async () => {
-    expect(await keysOf(admin, agencyA)).toEqual(catalog.filter((key) => key !== 'colaborador.atribuir_admin'));
+  it('the Admin preset holds every key except the two only the owner holds', async () => {
+    expect(await keysOf(admin, agencyA)).toEqual(catalog.filter((key) => !OWNER_ONLY_KEYS.includes(key)));
   });
 
   it('a custom role of one key, and one of two, hold exactly those keys', async () => {
@@ -162,7 +164,7 @@ describe('app_private.agency_permission_keys (issue #189)', () => {
 
   it('a person of two agencies holds in each only what that agency gave', async () => {
     expect(await keysOf(dual, agencyA)).toEqual(['midia.enviar']);
-    expect(await keysOf(dual, agencyB)).toEqual(catalog.filter((key) => key !== 'colaborador.atribuir_admin'));
+    expect(await keysOf(dual, agencyB)).toEqual(catalog.filter((key) => !OWNER_ONLY_KEYS.includes(key)));
   });
 
   it('the owner and an Admin of a suspended agency hold nothing there', async () => {
@@ -180,7 +182,7 @@ describe('app_private.agency_permission_keys (issue #189)', () => {
     } finally {
       await getOwner().knex('agencies').where({ id: agencyA }).update({ status: 'active' });
     }
-    expect(await keysOf(admin, agencyA)).toHaveLength(catalog.length - 1);
+    expect(await keysOf(admin, agencyA)).toHaveLength(catalog.length - OWNER_ONLY_KEYS.length);
     expect(await holds(admin, agencyA, 'midia.enviar')).toBe(true);
     expect(await holds(ownerMember, agencyA, 'midia.enviar')).toBe(true);
   });
@@ -258,6 +260,8 @@ describe('app_private.has_agency_permission agrees with the keys, key by key (is
     expect(await holds(oneKey, agencyA, 'convite.reenviar')).toBe(false);
     expect(await holds(admin, agencyA, 'colaborador.atribuir_admin')).toBe(false);
     expect(await holds(ownerMember, agencyA, 'colaborador.atribuir_admin')).toBe(true);
+    expect(await holds(admin, agencyA, 'assinatura.gerenciar')).toBe(false);
+    expect(await holds(ownerMember, agencyA, 'assinatura.gerenciar')).toBe(true);
   });
 
   it('fails closed for a key outside the catalog, even for the owner (it used to answer true for any text)', async () => {
