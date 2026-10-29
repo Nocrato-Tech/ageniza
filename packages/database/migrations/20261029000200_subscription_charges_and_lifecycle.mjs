@@ -92,18 +92,25 @@ export async function up(knex) {
     set search_path = ''
     as $function$
     declare
-      v_target_monthly integer := app_private.subscription_monthly_cents(p_target_plan_key, p_target_extra_clients, p_target_extra_storage_gib);
-      v_target_clients integer := app_private.subscription_client_limit(p_target_plan_key, p_target_extra_clients);
-      v_target_bytes bigint := app_private.subscription_storage_bytes(p_target_plan_key, p_target_extra_storage_gib);
+      -- Checked before anything is priced: the price of an absurd quantity does not fit an integer.
+      -- (null when an extra is null, which the test below reads as out of range)
+      v_in_range boolean := p_target_extra_clients between 0 and ${MAX_EXTRA} and p_target_extra_storage_gib between 0 and ${MAX_EXTRA};
+      v_target_monthly integer;
+      v_target_clients integer;
+      v_target_bytes bigint;
       v_current_monthly integer;
       v_current_clients integer;
       v_current_bytes bigint;
     begin
-      if v_target_monthly is null
-         or p_target_extra_clients is null or p_target_extra_clients not between 0 and ${MAX_EXTRA}
-         or p_target_extra_storage_gib is null or p_target_extra_storage_gib not between 0 and ${MAX_EXTRA} then
+      if v_in_range then
+        v_target_monthly := app_private.subscription_monthly_cents(p_target_plan_key, p_target_extra_clients, p_target_extra_storage_gib);
+      end if;
+      -- Out of range leaves the price null, like a plan that does not exist.
+      if v_target_monthly is null then
         raise exception using errcode = 'A0116', message = 'The plan or the quantity of an extra is not valid.';
       end if;
+      v_target_clients := app_private.subscription_client_limit(p_target_plan_key, p_target_extra_clients);
+      v_target_bytes := app_private.subscription_storage_bytes(p_target_plan_key, p_target_extra_storage_gib);
       if p_used_clients > v_target_clients then
         raise exception using errcode = 'A0111', message = pg_catalog.format('The new limit of %s clients is below the %s active clients.', v_target_clients, p_used_clients);
       end if;
@@ -320,7 +327,8 @@ export async function up(knex) {
     begin
       perform app_private.require_read_committed();
       perform app_private.require_no_person();
-      if p_provider is null or p_provider not in ('simulado', 'asaas') or p_provider_ref is null or pg_catalog.btrim(p_provider_ref) = '' then
+      if p_provider is null or p_provider not in ('simulado', 'asaas') or p_provider_ref is null or pg_catalog.btrim(p_provider_ref) = ''
+         or pg_catalog.octet_length(p_provider_ref) > 200 then
         raise exception using errcode = 'A0114', message = 'The confirmation names no provider or no reference.';
       end if;
       select * into v_charge from public.subscription_charges charge where charge.id = p_charge_id;
@@ -368,6 +376,9 @@ export async function up(knex) {
           updated_at = pg_catalog.now();
       else
         select * into v_subscription from public.agency_subscriptions subscription where subscription.agency_id = v_charge.agency_id;
+        if v_subscription.provider is distinct from p_provider then
+          raise exception using errcode = 'A0114', message = 'The subscription is not of this provider.';
+        end if;
         v_start := v_subscription.current_period_start;
         v_end := v_subscription.current_period_end;
         update public.agency_subscriptions
@@ -509,7 +520,8 @@ export async function up(knex) {
     begin
       perform app_private.require_read_committed();
       perform app_private.require_no_person();
-      if p_provider is null or p_provider not in ('simulado', 'asaas') or p_provider_ref is null or pg_catalog.btrim(p_provider_ref) = '' then
+      if p_provider is null or p_provider not in ('simulado', 'asaas') or p_provider_ref is null or pg_catalog.btrim(p_provider_ref) = ''
+         or pg_catalog.octet_length(p_provider_ref) > 200 then
         raise exception using errcode = 'A0114', message = 'The confirmation names no provider or no reference.';
       end if;
       perform app_private.lock_subscription_change(p_agency_id);

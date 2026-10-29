@@ -96,6 +96,12 @@ describe('the pure assessment of a change', () => {
     await expect(assess({ target: { plan: 'essencial', clients: 0, gib: -1 } })).rejects.toMatchObject({ code: 'A0116' });
     expect(await assess({ target: { plan: 'essencial', clients: 10000, gib: 10000 } })).toHaveLength(1);
   });
+
+  it('refuses a quantity whose price would not fit an integer as invalid, not as an overflow', async () => {
+    for (const [clients, gib] of [[2147483647, 0], [3579141, 0], [0, 2147483647], [-2147483648, 0], [2147483647, 2147483647]] as const) {
+      await expect(assess({ target: { plan: 'essencial', clients, gib } }), `${clients} ${gib}`).rejects.toMatchObject({ code: 'A0116' });
+    }
+  });
 });
 
 describe('the proration', () => {

@@ -418,6 +418,50 @@ describe('renewing', () => {
     expect(await dueList()).toContain(agencyId);
   });
 
+  it('refuses an enormous quantity of an extra as invalid in the quote and in the request, and writes nothing', async () => {
+    const { agencyId, ownerId } = await h.trialAgency();
+    await expect(h.request(ownerId, agencyId, 'essencial', 2147483647, 0)).rejects.toMatchObject({ code: 'A0116' });
+    await expect(h.request(ownerId, agencyId, 'essencial', 0, 2147483647)).rejects.toMatchObject({ code: 'A0116' });
+    await expect(h.asUser(ownerId, (t) => t.raw('select * from app_private.quote_subscription_change(?::uuid, ?, ?, ?)', [agencyId, 'essencial', 2147483647, 0])))
+      .rejects.toMatchObject({ code: 'A0116' });
+    for (const [clients, gib] of [['null', '0'], ['0', 'null']] as const) {
+      await expect(h.asUser(ownerId, (t) => t.raw(`select * from app_private.request_subscription_change(?::uuid, ?, ${clients}::integer, ${gib}::integer)`, [agencyId, 'essencial'])), `${clients} ${gib}`)
+        .rejects.toMatchObject({ code: 'A0116' });
+    }
+    expect(await chargesOf(agencyId)).toHaveLength(0);
+  });
+
+  it('refuses a provider reference the table would not hold as a mismatch, in a confirmation and in a renewal', async () => {
+    const { agencyId, ownerId } = await h.trialAgency();
+    const quoted = await h.request(ownerId, agencyId, 'essencial');
+    // 201 bytes in 101 characters: the limit is the bytes of the table's own check.
+    for (const ref of ['x'.repeat(201), 'é'.repeat(101)]) {
+      await expect(h.confirm(quoted.charge_id!, ref, 9700), ref.length.toString()).rejects.toMatchObject({ code: 'A0114' });
+    }
+    expect(await h.confirm(quoted.charge_id!, 'x'.repeat(200), 9700)).toBe(true);
+
+    await h.setPeriod(agencyId, 29, 1);
+    for (const ref of ['x'.repeat(201), 'é'.repeat(101)]) {
+      await expect(renew(agencyId, ref, 9700), ref.length.toString()).rejects.toMatchObject({ code: 'A0114' });
+    }
+    expect(await renew(agencyId, 'y'.repeat(200), 9700)).toBe(true);
+  });
+
+  it('refuses to confirm a raise with another provider than the subscription\'s, in both directions', async () => {
+    for (const [subscribedWith, confirmedWith] of [['asaas', 'simulado'], ['simulado', 'asaas']] as const) {
+      const { agencyId, ownerId } = await h.trialAgency();
+      const first = await h.request(ownerId, agencyId, 'essencial');
+      await h.confirm(first.charge_id!, `ref-first-${subscribedWith}`, 9700, subscribedWith);
+      const raise = await h.request(ownerId, agencyId, 'profissional');
+      await expect(h.confirm(raise.charge_id!, `ref-raise-${confirmedWith}`, raise.amount_cents, confirmedWith), subscribedWith)
+        .rejects.toMatchObject({ code: 'A0114', message: expect.stringContaining('not of this provider') });
+      expect(await h.subscriptionOf(agencyId)).toMatchObject({ plan_key: 'essencial', provider: subscribedWith });
+      expect(await chargesOf(agencyId)).toMatchObject([{ kind: 'subscribe', status: 'confirmed' }, { kind: 'upgrade', status: 'pending', provider: null }]);
+      expect(await h.confirm(raise.charge_id!, `ref-raise-${subscribedWith}`, raise.amount_cents, subscribedWith)).toBe(true);
+      expect(await h.subscriptionOf(agencyId)).toMatchObject({ plan_key: 'profissional', provider: subscribedWith });
+    }
+  });
+
   it('refuses a renewal that names no valid provider or no reference, and writes nothing', async () => {
     const { agencyId, ownerId } = await h.trialAgency();
     await h.subscribe(ownerId, agencyId, 'essencial');
