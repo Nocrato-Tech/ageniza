@@ -17,7 +17,19 @@ export interface ServerConfig {
   /** Transactional email; both are required together and only once a flow sends mail (issue #20). */
   smtpUrl?: string;
   emailFrom?: string;
+  /** The payment provider (`PAYMENTS_PROVIDER`). Absent: nobody can pay. `simulado` never runs in production. */
+  paymentsProvider?: 'simulado';
+  /** Set only by `compose.dev.yml`: the shared dev environment, which runs with `APP_ENV=production` but is not production. */
+  deployTarget?: 'dev';
 }
+
+/**
+ * Whether this is the real production. The shared dev environment (ADR 0013) runs the production image with `APP_ENV=production`
+ * and `DEPLOY_TARGET=dev`, which only `compose.dev.yml` sets (the production deploy refuses both that key and `PAYMENTS_PROVIDER`
+ * in its `runtime.env`); it is the one place where the simulated payment provider is meant to run.
+ */
+export const runsAsProduction = (config: Pick<ServerConfig, 'environment' | 'deployTarget'>): boolean =>
+  config.environment === 'production' && config.deployTarget !== 'dev';
 
 /** S3-compatible object storage for direct-to-bucket media upload (issue #21). Cloudflare R2 in
  * production; LocalStack locally. All five are required together, and required in production. */
@@ -183,6 +195,7 @@ const sharedServerSchema = z.object({
     z.string().trim().min(1).max(320).optional()
   ),
   SENTRY_DSN: optionalUrl('must be a valid Sentry DSN'),
+  PAYMENTS_PROVIDER: z.preprocess((value) => typeof value === 'string' && value.trim() === '' ? undefined : value, z.enum(['simulado']).optional()),
   APP_VERSION: z.string().trim().min(1).max(128).optional().default('unknown'),
   APP_CONTAINER_LOCAL: z.enum(['true', 'false']).optional().default('false'),
   // Set only by compose.dev.yml: the shared dev environment may never deliver mail outside its Mailpit sink.
@@ -370,7 +383,14 @@ const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'
   if (environment === 'production' && config.SENTRY_DSN !== undefined && new URL(config.SENTRY_DSN).protocol !== 'https:') {
     throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{ path: 'SENTRY_DSN', message: 'must use HTTPS in production; supplied values are redacted' }]);
   }
-  return { environment, databaseUrl: config.DATABASE_URL, sentryDsn: config.SENTRY_DSN, deployVersion: config.APP_VERSION, smtpUrl: config.SMTP_URL, emailFrom: config.EMAIL_FROM };
+  if (runsAsProduction({ environment, deployTarget: config.DEPLOY_TARGET }) && config.PAYMENTS_PROVIDER === 'simulado') {
+    throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{ path: 'PAYMENTS_PROVIDER', message: 'the simulated payment provider must not run in production' }]);
+  }
+  return {
+    environment, databaseUrl: config.DATABASE_URL, sentryDsn: config.SENTRY_DSN, deployVersion: config.APP_VERSION, smtpUrl: config.SMTP_URL, emailFrom: config.EMAIL_FROM,
+    ...(config.PAYMENTS_PROVIDER === undefined ? {} : { paymentsProvider: config.PAYMENTS_PROVIDER }),
+    ...(config.DEPLOY_TARGET === undefined ? {} : { deployTarget: config.DEPLOY_TARGET })
+  };
 };
 
 interface StorageEnvironmentValues {
