@@ -185,7 +185,7 @@ cloudflared tunnel route dns ageniza-production app.example.com
 ```
 
 1. Put the UUID in `/etc/ageniza/deploy.env` as `AGENIZA_TUNNEL_ID`, and pin `AGENIZA_TUNNEL_IMAGE` to a reviewed `cloudflare/cloudflared` digest.
-2. Copy the credentials JSON to the VPS as `/etc/ageniza/cloudflared/credentials.json`, owned by root with mode 0600. It is a secret: it authorises running this tunnel.
+2. Copy the credentials JSON to the VPS as `/etc/ageniza/cloudflared/credentials.json`, owned by `root:65532` with mode 0640 (`sudo install -m 0640 -o root -g 65532 credentials.json /etc/ageniza/cloudflared/credentials.json`). The cloudflared container runs as uid and gid 65532, so the group reads the file and no one else does; a root-only 0600 file keeps the tunnel from starting (`open /etc/cloudflared/config.yml: permission denied`). The installer sets the same owner and mode on the directory (0750) and on `config.yml` and `credentials.json` each time it runs. It is a secret: it authorises running this tunnel.
 3. Start the tunnel with the command in the VPS section above, then confirm `https://<domain>/health` and `https://<domain>/api/health` answer.
 4. Check the origin is not reachable directly: the VPS has no inbound port open except SSH, and no DNS record points to its IP.
 
