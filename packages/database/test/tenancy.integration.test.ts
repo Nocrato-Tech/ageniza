@@ -3,9 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  backendPid,
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   raw,
+  waitForBackendsBlockedBy,
   withAuthenticatedUserTransaction,
   type DatabaseClient,
   resolveIntegrationDatabaseUrls
@@ -783,25 +785,36 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
   });
 
   // Finding 2: under READ COMMITTED, a sub-select's snapshot goes stale the moment a concurrent
-  // writer commits. T1 (the Owner) demotes the target and holds the row lock past its own commit
-  // via pg_sleep; T2 (a plain Admin, who never holds colaborador.atribuir_admin) tries to re-grant
+  // writer commits. T1 (the Owner) demotes the target and holds the row lock until T2 is seen
+  // blocked on it; T2 (a plain Admin, who never holds colaborador.atribuir_admin) tries to re-grant
   // admin on the very same row and blocks on the lock. Once T1 commits, Postgres's EvalPlanQual
   // reapplies T2's UPDATE against the row T1 just committed, and the trigger's OLD is that fresh
   // row -- not a stale sub-select -- so the re-grant is still refused.
   it('closes the concurrent-update race: a re-grant of admin cannot outlive a committed demotion', async () => {
     await getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).update({ role_id: adminRoleId });
 
+    let demoted!: (pid: number) => void;
+    const demotionHoldsTheRow = new Promise<number>((resolve) => { demoted = resolve; });
+    let releaseDemotion!: () => void;
+    const demotionMayCommit = new Promise<void>((resolve) => { releaseDemotion = resolve; });
+
     try {
       const ownerDemotion = asUser(ownerC, async (transaction) => {
         await transaction('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).update({ role_id: productionRoleId });
-        await raw(transaction, 'select pg_sleep(0.4)', []);
+        demoted(await backendPid(transaction));
+        await demotionMayCommit;
       });
+      const demotionPid = await demotionHoldsTheRow;
 
-      const adminReGrant = (async () => {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        return asUser(adminC, (transaction) => transaction('agency_memberships')
-          .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: adminRoleId, job_title: 'Re-grant attempt' }));
-      })();
+      let reGrantStarted!: (pid: number) => void;
+      const reGrantPid = new Promise<number>((resolve) => { reGrantStarted = resolve; });
+      const adminReGrant = asUser(adminC, async (transaction) => {
+        reGrantStarted(await backendPid(transaction));
+        return transaction('agency_memberships')
+          .where({ agency_id: agencyC, user_id: targetC }).update({ role_id: adminRoleId, job_title: 'Re-grant attempt' });
+      });
+      expect(await waitForBackendsBlockedBy(getOwner().knex, demotionPid)).toEqual([await reGrantPid]);
+      releaseDemotion();
 
       const [demotionResult, reGrantResult] = await Promise.allSettled([ownerDemotion, adminReGrant]);
       expect(demotionResult.status).toBe('fulfilled');
@@ -813,6 +826,7 @@ describe('COLAB-94 agency_memberships UPDATE policy and the admin-grant rule', (
       await expect(getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).first('role_id', 'job_title'))
         .resolves.toEqual({ role_id: productionRoleId, job_title: 'Original' });
     } finally {
+      releaseDemotion();
       await getOwner().knex('agency_memberships').where({ agency_id: agencyC, user_id: targetC }).update({ role_id: productionRoleId, job_title: 'Original' });
     }
   });

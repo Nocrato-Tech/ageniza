@@ -5,9 +5,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   createLocalTestDatabaseClient,
+  backendPid,
   createVerifiedUserClaims,
   raw,
   resolveIntegrationDatabaseUrls,
+  waitForBackendsBlockedBy,
   withAuthenticatedUserTransaction,
   type DatabaseClient
 } from '../src/index.js';
@@ -269,16 +271,9 @@ describe('app_private.purge_unconfirmed_accounts: a tie that lands while it runs
     try {
       await tie(holder, id);
 
+      const holderPid = await backendPid(holder);
       const running = purge();
-      let blocked = false;
-      for (let attempt = 0; attempt < 60 && !blocked; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        const { rows } = await getOwner().knex.raw<{ rows: Array<{ waiting: number }> }>(
-          `select count(*)::int as waiting from pg_stat_activity where wait_event_type = 'Lock' and query like '%purge_unconfirmed_accounts%' and pid <> pg_backend_pid()`
-        );
-        blocked = (rows[0]?.waiting ?? 0) > 0;
-      }
-      expect(blocked).toBe(true);
+      await waitForBackendsBlockedBy(getOwner().knex, holderPid, { blockedStatement: '%purge_unconfirmed_accounts%' });
 
       await holder.commit();
       await expect(running).resolves.toBeGreaterThanOrEqual(1);

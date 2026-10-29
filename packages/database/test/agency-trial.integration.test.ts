@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import type { Knex } from 'knex';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { backendPid, waitForBackendsBlockedBy } from '../src/index.js';
+
 import { createContentWorld } from './support/content-world.js';
 import { setPortalAccessStatus } from './support/portal-access.js';
 
@@ -199,14 +201,11 @@ describe('creating an agency in trial (issue #709)', () => {
     try {
       const { rows } = await holder.raw<{ rows: Array<{ id: string }> }>('select app_private.create_trial_agency(?) as id', ['Primeira']);
       extraAgencies.push(rows[0]!.id);
+      const holderPid = await backendPid(holder);
       let settled = false;
       const waiting = createTrial(alias.id).finally(() => { settled = true; });
       waiting.catch(() => undefined);
-      for (let attempt = 0; attempt < 40 && !settled; attempt += 1) {
-        const { rows: blocked } = await owner().raw<{ rows: unknown[] }>("select 1 from pg_locks where locktype = 'advisory' and not granted");
-        if (blocked.length > 0) break;
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
+      await waitForBackendsBlockedBy(owner(), holderPid);
       expect(settled).toBe(false);
       await holder.commit();
       await expect(waiting).rejects.toMatchObject({ code: 'A0094' });
@@ -419,14 +418,11 @@ describe('the limits of a trial (issue #708)', () => {
       const holder = await w.openTransactionAs(creator.id);
       try {
         await write(holder);
+        const holderPid = await backendPid(holder);
         let settled = false;
         const waiting = second().finally(() => { settled = true; });
         waiting.catch(() => undefined);
-        for (let attempt = 0; attempt < 200 && !settled; attempt += 1) {
-          const { rows } = await owner().raw<{ rows: unknown[] }>("select 1 from pg_locks where locktype = 'advisory' and not granted");
-          if (rows.length > 0) break;
-          await new Promise((resolve) => setTimeout(resolve, 25));
-        }
+        await waitForBackendsBlockedBy(owner(), holderPid);
         expect(settled).toBe(false);
         await holder.commit();
         await expect(waiting).rejects.toMatchObject({ code });
@@ -641,14 +637,11 @@ describe('the daily e-mail limit of an agency (review of #725)', () => {
     const holder = await w.openTransactionAs(creator.id);
     try {
       await holder('invitations').insert({ agency_id: agencyId, purpose: 'client_invite', client_id: clientId, email: `h-${randomUUID()}@agency-trial.test`, token_hash: `hash-${randomUUID()}`, expires_at: new Date(Date.now() + 86_400_000), invited_by_user_id: creator.id });
+      const holderPid = await backendPid(holder);
       let settled = false;
       const waiting = portalInvite(creator.id, agencyId, clientId).finally(() => { settled = true; });
       waiting.catch(() => undefined);
-      for (let attempt = 0; attempt < 200 && !settled; attempt += 1) {
-        const { rows } = await owner().raw<{ rows: unknown[] }>("select 1 from pg_locks where locktype = 'advisory' and not granted");
-        if (rows.length > 0) break;
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
+      await waitForBackendsBlockedBy(owner(), holderPid);
       expect(settled).toBe(false);
       await holder.commit();
       await expect(waiting).rejects.toMatchObject(DAILY_LIMIT);
