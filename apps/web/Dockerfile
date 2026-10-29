@@ -4,7 +4,9 @@ RUN corepack enable
 ARG VITE_API_BASE_URL
 ARG VITE_SENTRY_DSN
 ARG VITE_APP_VERSION=unknown
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL VITE_SENTRY_DSN=$VITE_SENTRY_DSN VITE_APP_VERSION=$VITE_APP_VERSION
+# Only the dev image passes `true`: it adds the /mobile page. Empty (production) leaves the page out of the bundle.
+ARG VITE_DEV_DOCS
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL VITE_SENTRY_DSN=$VITE_SENTRY_DSN VITE_APP_VERSION=$VITE_APP_VERSION VITE_DEV_DOCS=$VITE_DEV_DOCS
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY .pnpmfile.cjs ./
 COPY apps/web/package.json apps/web/package.json

@@ -2,6 +2,8 @@
 
 ## 1. Ambientes
 
+Esta documentação e a referência da API estão em **<https://dev.ageniza.com.br/mobile>** (só no dev; localmente, com `pnpm dev`, em `/mobile` do app web).
+
 | ambiente | API | para quê |
 |---|---|---|
 | dev | `https://dev.ageniza.com.br` | backend real do branch `develop`, atualizado a cada merge; contas de teste pedidas ao dono |
