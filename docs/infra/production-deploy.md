@@ -1,6 +1,6 @@
 # Production deploy and rollback
 
-This runbook operates [ADR 0010](../adr/0010-vps-edge-and-production-deployment.md) and its GitHub Free amendment. GitHub Actions builds immutable GHCR images and a release manifest. The Hostinger VPS verifies that release against GitHub itself, runs migrations, and replaces the `api`, `web`, and `worker` containers in place behind a Cloudflare Tunnel ([ADR 0012](../adr/0012-cloudflare-tunnel-edge.md)). A release causes a few seconds of downtime, which is accepted for the MVP. There is no remote staging environment.
+This runbook operates [ADR 0010](../adr/0010-vps-edge-and-production-deployment.md) and its GitHub Free amendment. GitHub Actions builds immutable GHCR images and a release manifest. The Hostinger VPS verifies that release against GitHub itself, runs migrations, and replaces the `api`, `web`, and `worker` containers in place behind a Cloudflare Tunnel ([ADR 0012](../adr/0012-cloudflare-tunnel-edge.md)). A release causes a few seconds of downtime, which is accepted for the MVP. There is no staging environment between `develop` and production, but `develop` is published to a separate, resource-capped **dev** environment on the same VPS ([dev environment runbook](dev-environment.md), [ADR 0013](../adr/0013-dev-environment-on-the-vps.md)); it shares no account, key, network, database or secret with production, and its key cannot apply a production release.
 
 When a production launch is scheduled, use the
 [production readiness checklist](production-readiness.md) as the single list of pending human
@@ -280,6 +280,6 @@ Add rulesets (see the [CI guide](../ci/README.md#branch-protections-and-promotio
 ## Local validation
 
 ```bash
-pnpm deploy:validate   # renders production Compose + tunnel Compose with placeholder digests (needs Docker)
+pnpm deploy:validate   # renders production Compose + tunnel Compose, then the dev model and its limits, with placeholder digests (needs Docker)
 pnpm test:scripts      # digest-reference and merged-pull-request checks
 ```

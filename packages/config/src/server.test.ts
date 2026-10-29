@@ -316,6 +316,53 @@ describe('server configuration', () => {
     expect(loadApiConfig(localEnvironment).smtpUrl).toBeUndefined();
   });
 
+  describe('the dev deploy target delivers mail only to the Mailpit sink (issue #774)', () => {
+    const dev = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DEPLOY_TARGET: 'dev',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://dev.ageniza.example',
+      API_CORS_ORIGINS: 'https://dev.ageniza.example',
+      ...productionStorageSettings,
+      ...productionIdentityStorageSettings,
+      SMTP_URL: 'smtp://mailpit:1025',
+      EMAIL_FROM: 'Ageniza Dev <no-reply@dev.ageniza.example>'
+    };
+
+    it('accepts the sink in the API and in the worker', () => {
+      expect(loadApiConfig(dev).smtpUrl).toBe('smtp://mailpit:1025');
+      expect(loadWorkerConfig(dev).smtpUrl).toBe('smtp://mailpit:1025');
+    });
+
+    it.each([
+      ['a real provider over TLS', 'smtps://user:key@smtp.ageniza.example:465'],
+      ['a real provider on the submission port', 'smtp://smtp.ageniza.example:587'],
+      ['the sink host with the wrong port', 'smtp://mailpit:2525'],
+      ['the sink host over TLS', 'smtps://mailpit:1025'],
+      ['a lookalike host', 'smtp://mailpit.attacker.example:1025'],
+      ['a real host smuggled behind the userinfo', 'smtp://mailpit:1025@smtp.ageniza.example:25'],
+      ['a private address', 'smtp://10.0.0.5:1025']
+    ])('refuses %s in the API and in the worker, without echoing the value', (_label, smtpUrl) => {
+      for (const load of [loadApiConfig, loadWorkerConfig]) {
+        const attempt = (): unknown => load({ ...dev, SMTP_URL: smtpUrl });
+        expect(attempt).toThrow('must be smtp://mailpit:1025 when DEPLOY_TARGET is dev');
+        expect(attempt).not.toThrow(/attacker|smtp\.ageniza|user:key/);
+      }
+    });
+
+    it('leaves every other deployment free to use a real provider', () => {
+      const withoutTarget = { ...dev, DEPLOY_TARGET: undefined, SMTP_URL: productionEmailSettings.SMTP_URL, EMAIL_FROM: productionEmailSettings.EMAIL_FROM };
+      expect(loadApiConfig(withoutTarget).smtpUrl).toBe(productionEmailSettings.SMTP_URL);
+      expect(loadApiConfig({ ...withoutTarget, DEPLOY_TARGET: '' }).smtpUrl).toBe(productionEmailSettings.SMTP_URL);
+    });
+
+    it('refuses a deploy target that is not dev', () => {
+      expect(() => loadApiConfig({ ...dev, DEPLOY_TARGET: 'staging' })).toThrow('DEPLOY_TARGET');
+    });
+  });
+
   it('rejects an example/placeholder-looking BETTER_AUTH_SECRET in production without exposing it (B11)', () => {
     const production = {
       ...localEnvironment,
