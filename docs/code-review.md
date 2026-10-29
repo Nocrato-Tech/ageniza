@@ -1,5 +1,7 @@
 # Revisão de código
 
+> **Nível de risco:** aplica-se aos níveis Médio e Alto. No Baixo, o maestro lê o diff (ver a seção Níveis de risco do [AGENTS.md](../AGENTS.md)).
+
 O padrão de toda revisão de código de PR, feita por pessoa ou por agente de qualquer modelo. Quando o PR toca banco, RLS, autenticação, sessão, convite, armazenamento ou dado pessoal, a revisão de segurança é outra e segue [security-review.md](security-review.md).
 
 A regra que sustenta o resto é a mesma da revisão de segurança: **um achado sem cenário concreto de falha não é achado**. Achado sem cenário é palpite, e palpite custa uma rodada inteira de correção e re-revisão sem proteger nada.
