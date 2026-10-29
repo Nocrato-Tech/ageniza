@@ -1,15 +1,16 @@
-// The API integration files run against one shared PostgreSQL database, and the local server's
-// connection budget is small: `max_connections=100` with three slots reserved for superusers, and
-// `ageniza_app` is not a superuser, so only 97 non-superuser connections are ever available
-// (`superuser_reserved_connections`). Every test file opens its own pools -- a `pg` Pool for
-// Better Auth and auditing, a Knex client for the domain routes, an owner client, and pg-boss's
-// producer -- roughly fourteen connections each. Eight files in parallel overshoot the budget and
-// new connections are refused with SQLSTATE 53300 ("remaining connection slots are reserved for
-// roles with the SUPERUSER attribute"), which surfaces as an intermittent 500 from whichever
-// request happens to need a connection at that moment. Running the files sequentially keeps the
-// footprint well inside the budget; see issue #167.
+// Every integration file runs against a database of its own, cloned from a model that is migrated once per run
+// (`integration-setup/`, issue #792), so the files run in parallel and none can read or lock another's rows. Each
+// file opens roughly a dozen connections, and the server allows 97 non-superuser ones (`max_connections=100` minus
+// three reserved, #167): `maxWorkers` is the knob. CI uses 4; a developer machine that shares its Postgres with
+// other agents passes `--maxWorkers=2`.
 export default {
   test: {
-    fileParallelism: false
+    globalSetup: ['./integration-setup/global-setup.ts'],
+    setupFiles: ['./integration-setup/per-file-database.ts'],
+    fileParallelism: true,
+    maxWorkers: 4,
+    // Files share the machine now, and a race test waits out the clone's deadlock_timeout (3s): the 5s and 10s defaults are too tight.
+    testTimeout: 30_000,
+    hookTimeout: 60_000
   }
 };
