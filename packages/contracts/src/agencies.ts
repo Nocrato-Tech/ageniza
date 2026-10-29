@@ -25,13 +25,20 @@ export const AgencyMeRoleSchema = z.object({
  * ownership alone: the screen compares it with the `owner.membershipId` of a content to know whether the person is in charge.
  */
 /**
- * The plan of the agency (issue #708). `readOnly` is decided by the database clock: the trial ended, so the database
- * refuses every write of the agency and of its portal except what reduces access. UX only, like the permissions.
+ * The plan of the agency (issue #708). `readOnly` is decided by the database clock: the trial ended, or the period of a
+ * paid plan ended without a renewal and the three days of grace are over, so the database refuses every write of the agency and of
+ * its portal except what reduces access. UX only, like the permissions.
  */
 export const AgencyPlanSchema = z.object({
   kind: z.enum(['trial', 'ativo', 'isenta']),
   trialEndsAt: z.string().datetime().nullable(),
   readOnly: z.boolean(),
+  /** The paid plan (`essencial`, `profissional`, `agencia`) of an `ativo` agency with a subscription, or a courtesy; else null. */
+  paidPlanKey: z.string().regex(/^[a-z]{3,20}$/).nullable().optional(),
+  /** The subscription was canceled: it runs to the end of the period and does not renew. */
+  canceled: z.boolean().optional(),
+  /** The last day to pay (`YYYY-MM-DD`, day of São Paulo) while the period ended and the agency still writes; else null. */
+  graceEndsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   /** The public contact of the operation (`SUPPORT_CONTACT_EMAIL`), or null when none is configured. */
   supportContactEmail: z.string().email().max(320).nullable().optional()
 }).strict();

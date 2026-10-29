@@ -61,6 +61,10 @@
     {
       "name": "story-scripts",
       "description": "Roteiros de stories de um cliente: a agência cria, edita e envia; o portal lê os enviados de um período e marca como gravado."
+    },
+    {
+      "name": "subscriptions",
+      "description": "Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar; e, só fora de produção, pagar com o provedor simulado e avançar o relógio."
     }
   ],
   "components": {
@@ -1299,6 +1303,23 @@
               },
               "readOnly": {
                 "type": "boolean"
+              },
+              "paidPlanKey": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-z]{3,20}$"
+              },
+              "canceled": {
+                "type": "boolean"
+              },
+              "graceEndsOn": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
               },
               "supportContactEmail": {
                 "type": [
@@ -6704,6 +6725,332 @@
             "additionalProperties": false
           }
         ]
+      },
+      "listSubscriptionPlansResponse": {
+        "type": "object",
+        "properties": {
+          "plans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "pattern": "^[a-z]{3,20}$"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "clientLimit": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "storageBytes": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "monthlyCents": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "key",
+                "name",
+                "clientLimit",
+                "storageBytes",
+                "monthlyCents"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "extraClientCents": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "extraStorageGibCents": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "maxExtra": {
+            "type": "number",
+            "enum": [
+              10000
+            ]
+          }
+        },
+        "required": [
+          "plans",
+          "extraClientCents",
+          "extraStorageGibCents",
+          "maxExtra"
+        ],
+        "additionalProperties": false
+      },
+      "getSubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "planKey": {
+                "type": "string",
+                "pattern": "^[a-z]{3,20}$"
+              },
+              "extraClients": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "extraStorageGib": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "simulado",
+                  "asaas",
+                  "cortesia"
+                ]
+              },
+              "currentPeriodEnd": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "cancelAtPeriodEnd": {
+                "type": "boolean"
+              },
+              "pending": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "planKey": {
+                    "type": "string",
+                    "pattern": "^[a-z]{3,20}$"
+                  },
+                  "extraClients": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "extraStorageGib": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "planKey",
+                  "extraClients",
+                  "extraStorageGib"
+                ],
+                "additionalProperties": false
+              },
+              "monthlyCents": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "nextMonthlyCents": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "clientLimit": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "storageBytes": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "usedClients": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "usedBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "graceEndsOn": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              }
+            },
+            "required": [
+              "planKey",
+              "extraClients",
+              "extraStorageGib",
+              "provider",
+              "currentPeriodEnd",
+              "cancelAtPeriodEnd",
+              "pending",
+              "monthlyCents",
+              "nextMonthlyCents",
+              "clientLimit",
+              "storageBytes",
+              "usedClients",
+              "usedBytes",
+              "graceEndsOn"
+            ],
+            "additionalProperties": false
+          },
+          "paymentProvider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "simulado"
+            ]
+          }
+        },
+        "required": [
+          "subscription",
+          "paymentProvider"
+        ],
+        "additionalProperties": false
+      },
+      "quoteSubscriptionChangeResponse": {
+        "type": "object",
+        "properties": {
+          "effect": {
+            "type": "string",
+            "enum": [
+              "subscribe",
+              "upgrade",
+              "downgrade"
+            ]
+          },
+          "monthlyCents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "amountCents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "effectiveAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "effect",
+          "monthlyCents",
+          "amountCents",
+          "effectiveAt"
+        ],
+        "additionalProperties": false
+      },
+      "quoteSubscriptionChangeRequest": {
+        "type": "object",
+        "properties": {
+          "planKey": {
+            "type": "string",
+            "pattern": "^[a-z]{3,20}$"
+          },
+          "extraClients": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "extraStorageGib": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "planKey",
+          "extraClients",
+          "extraStorageGib"
+        ],
+        "additionalProperties": false
+      },
+      "requestSubscriptionChargeResponse": {
+        "type": "object",
+        "properties": {
+          "effect": {
+            "type": "string",
+            "enum": [
+              "subscribe",
+              "upgrade",
+              "downgrade"
+            ]
+          },
+          "monthlyCents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "amountCents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "effectiveAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "chargeId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "effect",
+          "monthlyCents",
+          "amountCents",
+          "effectiveAt",
+          "chargeId"
+        ],
+        "additionalProperties": false
+      },
+      "payChargeSimulatedResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "declined"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "payChargeSimulatedRequest": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "declined"
+            ]
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -25732,6 +26079,1315 @@
                   "error": {
                     "code": "RATE_LIMITED",
                     "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/subscription/plans": {
+      "get": {
+        "operationId": "listSubscriptionPlans",
+        "summary": "Lista os planos pagos e o preço dos extras",
+        "description": "Os planos em ordem crescente, com o teto de clientes, o armazenamento em bytes e o preço mensal em centavos, e o preço\nde cada cliente e de cada GB extra. `maxExtra` é o máximo de cada extra por assinatura. Só o Owner: os preços são\nlinhas de tabela que a operação altera, então a tela nunca os copia.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "tags": [
+          "subscriptions"
+        ],
+        "x-permission": "assinatura.gerenciar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Planos e preços.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listSubscriptionPlansResponse"
+                },
+                "example": {
+                  "plans": [
+                    {
+                      "key": "essencial",
+                      "name": "Essencial",
+                      "clientLimit": 10,
+                      "storageBytes": 21474836480,
+                      "monthlyCents": 9700
+                    },
+                    {
+                      "key": "profissional",
+                      "name": "Profissional",
+                      "clientLimit": 30,
+                      "storageBytes": 107374182400,
+                      "monthlyCents": 19700
+                    }
+                  ],
+                  "extraClientCents": 600,
+                  "extraStorageGibCents": 40,
+                  "maxExtra": 10000
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/subscription": {
+      "get": {
+        "operationId": "getSubscription",
+        "summary": "Devolve a assinatura da agência, o uso e a tolerância",
+        "description": "A assinatura corrente (`subscription` é `null` enquanto a agência não tem uma, num teste por exemplo), o que ela custa neste período e no\npróximo, os tetos e o uso. `pending` é a descida agendada para o próximo período. `graceEndsOn` é o último dia para pagar, no dia de\nSão Paulo, só enquanto o período terminou sem renovação e a agência ainda escreve (3 dias); a assinatura cancelada não tem tolerância.\n`paymentProvider` é `simulado` onde o pagamento é simulado (nunca em produção) e `null` onde ninguém consegue pagar.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "tags": [
+          "subscriptions"
+        ],
+        "x-permission": "assinatura.gerenciar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Assinatura e uso.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getSubscriptionResponse"
+                },
+                "example": {
+                  "subscription": {
+                    "planKey": "essencial",
+                    "extraClients": 2,
+                    "extraStorageGib": 0,
+                    "provider": "simulado",
+                    "currentPeriodEnd": "2026-11-29T12:00:00.000Z",
+                    "cancelAtPeriodEnd": false,
+                    "pending": null,
+                    "monthlyCents": 10900,
+                    "nextMonthlyCents": 10900,
+                    "clientLimit": 12,
+                    "storageBytes": 21474836480,
+                    "usedClients": 4,
+                    "usedBytes": 1073741824,
+                    "graceEndsOn": null
+                  },
+                  "paymentProvider": "simulado"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/subscription/quote": {
+      "post": {
+        "operationId": "quoteSubscriptionChange",
+        "summary": "Calcula o que uma mudança de plano ou de extras faz e custa",
+        "description": "O total é calculado no servidor e nada é gravado. `effect` é `subscribe` (primeira assinatura, ou nova depois do fim), `upgrade`\n(sobe agora e cobra o proporcional dos dias que restam do período) ou `downgrade` (vale no próximo período e cobra nada;\n`effectiveAt` é o fim do período). Recusas: `409 SUBSCRIPTION_BELOW_CLIENTS` ou `409 SUBSCRIPTION_BELOW_STORAGE` quando o novo teto fica abaixo do\nuso; `409 SUBSCRIPTION_MIXED_CHANGE` quando sobe um limite e desce outro; `409 SUBSCRIPTION_UNCHANGED` quando nada muda;\n`409 SUBSCRIPTION_NOT_AVAILABLE` quando a agência não pode mudar de plano (isenta, cortesia, sem assinatura da operação ou cancelada);\n`400 SUBSCRIPTION_INVALID` para um plano que não existe.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "tags": [
+          "subscriptions"
+        ],
+        "x-permission": "assinatura.gerenciar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/quoteSubscriptionChangeRequest"
+              },
+              "example": {
+                "planKey": "profissional",
+                "extraClients": 0,
+                "extraStorageGib": 0
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "O que a mudança faz.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/quoteSubscriptionChangeResponse"
+                },
+                "example": {
+                  "effect": "upgrade",
+                  "monthlyCents": 19700,
+                  "amountCents": 6800,
+                  "effectiveAt": "2026-11-15T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | SUBSCRIPTION_INVALID: O plano ou a quantidade de extras informados não valem.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SUBSCRIPTION_NOT_AVAILABLE: Esta operação não está disponível para a assinatura da agência neste momento. | SUBSCRIPTION_BELOW_CLIENTS: O novo plano comporta menos clientes do que os ativos. Arquive clientes antes de reduzir. | SUBSCRIPTION_BELOW_STORAGE: O novo plano comporta menos armazenamento do que o usado. Remova arquivos antes de reduzir. | SUBSCRIPTION_MIXED_CHANGE: Aumentar um limite e reduzir outro não podem ir juntos. Faça uma mudança de cada vez. | SUBSCRIPTION_UNCHANGED: A assinatura já tem estas condições. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "SUBSCRIPTION_NOT_AVAILABLE",
+                    "message": "Esta operação não está disponível para a assinatura da agência neste momento."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/subscription/charges": {
+      "post": {
+        "operationId": "requestSubscriptionCharge",
+        "summary": "Pede a mudança de plano ou de extras e abre a cobrança",
+        "description": "As mesmas contas e recusas de `quote`. Uma subida ou assinatura abre uma cobrança (`chargeId`) que o provedor tem 30 minutos para\nconfirmar; um pedido novo, uma descida agendada ou um cancelamento a invalidam, e só existe uma por agência. **O plano e os tetos não mudam aqui:**\nsó mudam quando o provedor confirma essa cobrança. Uma descida é agendada para o próximo período, não cobra nada e devolve `chargeId` nulo.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "tags": [
+          "subscriptions"
+        ],
+        "x-permission": "assinatura.gerenciar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/quoteSubscriptionChangeRequest"
+              },
+              "example": {
+                "planKey": "profissional",
+                "extraClients": 0,
+                "extraStorageGib": 0
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Cobrança aberta, ou descida agendada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/requestSubscriptionChargeResponse"
+                },
+                "example": {
+                  "chargeId": "99999999-9999-4999-8999-999999999999",
+                  "effect": "upgrade",
+                  "monthlyCents": 19700,
+                  "amountCents": 6800,
+                  "effectiveAt": "2026-11-15T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | SUBSCRIPTION_INVALID: O plano ou a quantidade de extras informados não valem.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SUBSCRIPTION_NOT_AVAILABLE: Esta operação não está disponível para a assinatura da agência neste momento. | SUBSCRIPTION_BELOW_CLIENTS: O novo plano comporta menos clientes do que os ativos. Arquive clientes antes de reduzir. | SUBSCRIPTION_BELOW_STORAGE: O novo plano comporta menos armazenamento do que o usado. Remova arquivos antes de reduzir. | SUBSCRIPTION_MIXED_CHANGE: Aumentar um limite e reduzir outro não podem ir juntos. Faça uma mudança de cada vez. | SUBSCRIPTION_UNCHANGED: A assinatura já tem estas condições. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "SUBSCRIPTION_NOT_AVAILABLE",
+                    "message": "Esta operação não está disponível para a assinatura da agência neste momento."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/subscription/cancel": {
+      "post": {
+        "operationId": "cancelSubscription",
+        "summary": "Cancela a assinatura",
+        "description": "A assinatura segue valendo até o fim do período e não renova; a descida agendada e a cobrança pendente caem. Dentro dos 3 dias de tolerância\ndepois de um período sem renovação o Owner também cancela: nenhuma renovação é tentada e a agência fica somente leitura na hora. Cancelar\nde novo é inofensivo. Passada a tolerância, ou sem assinatura paga (teste, cortesia, isenta): `409 SUBSCRIPTION_NOT_AVAILABLE`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "tags": [
+          "subscriptions"
+        ],
+        "x-permission": "assinatura.gerenciar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Cancelada."
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SUBSCRIPTION_NOT_AVAILABLE: Esta operação não está disponível para a assinatura da agência neste momento. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "SUBSCRIPTION_NOT_AVAILABLE",
+                    "message": "Esta operação não está disponível para a assinatura da agência neste momento."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/subscription/reactivate": {
+      "post": {
+        "operationId": "reactivateSubscription",
+        "summary": "Desfaz o cancelamento até o fim do período",
+        "description": "Sem cobrança agora: a assinatura volta a renovar com as condições que tem (a descida que estava agendada não volta). Só vale com o\nperíodo em curso; depois do fim, inclusive na tolerância, a agência assina de novo: `409 SUBSCRIPTION_NOT_AVAILABLE`.\nReativar uma assinatura que não está cancelada é inofensivo.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "tags": [
+          "subscriptions"
+        ],
+        "x-permission": "assinatura.gerenciar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Reativada."
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SUBSCRIPTION_NOT_AVAILABLE: Esta operação não está disponível para a assinatura da agência neste momento. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "SUBSCRIPTION_NOT_AVAILABLE",
+                    "message": "Esta operação não está disponível para a assinatura da agência neste momento."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/subscription/charges/{chargeId}/simulated-payment": {
+      "post": {
+        "operationId": "payChargeSimulated",
+        "summary": "Paga uma cobrança com o provedor simulado (só fora de produção)",
+        "description": "Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). O cartão **nunca** viaja: a tela escolhe `outcome`\n(`approved`, ou `declined` para o número de cartão de teste fixo) e não manda mais nada do cartão. A cobrança precisa ser da agência do Owner que paga e\nestar aberta; a de outra agência responde `404 NOT_FOUND` e continua pendente. Aprovada, o provedor confirma ao banco, e só então o plano e os tetos\nmudam (`confirmed`); recusada (`declined`), nada muda e a cobrança segue aberta até vencer.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "tags": [
+          "subscriptions"
+        ],
+        "x-permission": "assinatura.gerenciar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "chargeId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/payChargeSimulatedRequest"
+              },
+              "example": {
+                "outcome": "approved"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado do pagamento.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/payChargeSimulatedResponse"
+                },
+                "example": {
+                  "status": "confirmed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Charge not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Charge not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CHARGE_NOT_OPEN: Esta cobrança não está mais aberta. Peça uma nova. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CHARGE_NOT_OPEN",
+                    "message": "Esta cobrança não está mais aberta. Peça uma nova."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "PAYMENT_PROVIDER_FAILED: O provedor de pagamento não respondeu como esperado. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYMENT_PROVIDER_FAILED",
+                    "message": "O provedor de pagamento não respondeu como esperado. Tente de novo."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/subscription/simulated-period-advance": {
+      "post": {
+        "operationId": "advanceSimulatedPeriod",
+        "summary": "Avança o relógio da assinatura simulada (só fora de produção)",
+        "description": "Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção. Numa assinatura do provedor simulado, a primeira chamada leva o fim do período para agora;\na segunda, se a assinatura não foi cancelada, leva o fim da tolerância para agora. Assinatura de outro provedor, ou sem assinatura:\n`409 SUBSCRIPTION_NOT_AVAILABLE`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "tags": [
+          "subscriptions"
+        ],
+        "x-permission": "assinatura.gerenciar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Período avançado."
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SUBSCRIPTION_NOT_AVAILABLE: Esta operação não está disponível para a assinatura da agência neste momento. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "SUBSCRIPTION_NOT_AVAILABLE",
+                    "message": "Esta operação não está disponível para a assinatura da agência neste momento."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

@@ -26,4 +26,5 @@ export * from './profile.js';
 export * from './search.js';
 export * from './sign-up.js';
 export * from './story-scripts.js';
+export * from './subscriptions.js';
 export * from './auth.js';

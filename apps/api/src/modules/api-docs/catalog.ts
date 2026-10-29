@@ -165,7 +165,15 @@ import {
   UpdateContentRequestSchema,
   UpdateContentTaskRequestSchema,
   UploadMyPhotoRequestSchema,
-  UploadMyPhotoResponseSchema
+  UploadMyPhotoResponseSchema,
+  SimulatedPaymentRequestSchema,
+  SimulatedPaymentResponseSchema,
+  SubscriptionChangeRequestSchema,
+  SubscriptionChargePathParamsSchema,
+  SubscriptionChargeResponseSchema,
+  SubscriptionOverviewResponseSchema,
+  SubscriptionPlansResponseSchema,
+  SubscriptionQuoteResponseSchema
 } from '@ageniza/contracts';
 
 /**
@@ -178,7 +186,7 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'approval-link' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'approval-link' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts' | 'subscriptions';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
@@ -251,7 +259,8 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   profile: 'Edição do próprio nome e da própria foto de perfil.',
   legal: 'Versão dos Termos e da Privacidade que a conta aceitou, e o aceite de um documento por vez.',
   'email-change': 'Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo.',
-  'story-scripts': 'Roteiros de stories de um cliente: a agência cria, edita e envia; o portal lê os enviados de um período e marca como gravado.'
+  'story-scripts': 'Roteiros de stories de um cliente: a agência cria, edita e envia; o portal lê os enviados de um período e marca como gravado.',
+  subscriptions: 'Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar; e, só fora de produção, pagar com o provedor simulado e avançar o relógio.'
 };
 
 export const ERROR_MESSAGES: Record<string, string> = {
@@ -269,6 +278,15 @@ export const ERROR_MESSAGES: Record<string, string> = {
   AGENCY_READ_ONLY: 'O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados.',
   DAILY_EMAIL_LIMIT: 'Limite diário de envios atingido. Tente amanhã.',
   TRIAL_CLIENT_LIMIT: 'O período de teste permite até 3 clientes ativos.',
+  PLAN_CLIENT_LIMIT: 'Você chegou ao limite de clientes do seu plano. Suba o plano ou compre clientes extras.',
+  SUBSCRIPTION_NOT_AVAILABLE: 'Esta operação não está disponível para a assinatura da agência neste momento.',
+  SUBSCRIPTION_BELOW_CLIENTS: 'O novo plano comporta menos clientes do que os ativos. Arquive clientes antes de reduzir.',
+  SUBSCRIPTION_BELOW_STORAGE: 'O novo plano comporta menos armazenamento do que o usado. Remova arquivos antes de reduzir.',
+  SUBSCRIPTION_MIXED_CHANGE: 'Aumentar um limite e reduzir outro não podem ir juntos. Faça uma mudança de cada vez.',
+  SUBSCRIPTION_UNCHANGED: 'A assinatura já tem estas condições.',
+  SUBSCRIPTION_INVALID: 'O plano ou a quantidade de extras informados não valem.',
+  CHARGE_NOT_OPEN: 'Esta cobrança não está mais aberta. Peça uma nova.',
+  PAYMENT_PROVIDER_FAILED: 'O provedor de pagamento não respondeu como esperado. Tente de novo.',
   TRIAL_COLLABORATOR_LIMIT: 'O período de teste permite até 3 colaboradores, contando quem criou a agência e os convites pendentes.',
   PAYLOAD_TOO_LARGE: 'Request payload is too large',
   RATE_LIMITED: 'Too many requests',
@@ -4039,6 +4057,285 @@ path: '/agencies/:agencyId/roles',
       { status: 409, code: 'CONTENT_REVISION_CHANGED' },
       { status: 409, code: 'TRY_AGAIN' },
       { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/subscription/plans',
+    operationId: 'listSubscriptionPlans',
+    module: 'subscriptions',
+    summary: 'Lista os planos pagos e o preço dos extras',
+    description: [
+      'Os planos em ordem crescente, com o teto de clientes, o armazenamento em bytes e o preço mensal em centavos, e o preço',
+      'de cada cliente e de cada GB extra. `maxExtra` é o máximo de cada extra por assinatura. Só o Owner: os preços são',
+      'linhas de tabela que a operação altera, então a tela nunca os copia.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Planos e preços.',
+      schema: SubscriptionPlansResponseSchema,
+      example: {
+        plans: [
+          { key: 'essencial', name: 'Essencial', clientLimit: 10, storageBytes: 21474836480, monthlyCents: 9700 },
+          { key: 'profissional', name: 'Profissional', clientLimit: 30, storageBytes: 107374182400, monthlyCents: 19700 }
+        ],
+        extraClientCents: 600,
+        extraStorageGibCents: 40,
+        maxExtra: 10000
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/subscription',
+    operationId: 'getSubscription',
+    module: 'subscriptions',
+    summary: 'Devolve a assinatura da agência, o uso e a tolerância',
+    description: [
+      'A assinatura corrente (`subscription` é `null` enquanto a agência não tem uma, num teste por exemplo), o que ela custa neste período e no',
+      'próximo, os tetos e o uso. `pending` é a descida agendada para o próximo período. `graceEndsOn` é o último dia para pagar, no dia de',
+      'São Paulo, só enquanto o período terminou sem renovação e a agência ainda escreve (3 dias); a assinatura cancelada não tem tolerância.',
+      '`paymentProvider` é `simulado` onde o pagamento é simulado (nunca em produção) e `null` onde ninguém consegue pagar.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Assinatura e uso.',
+      schema: SubscriptionOverviewResponseSchema,
+      example: {
+        subscription: {
+          planKey: 'essencial',
+          extraClients: 2,
+          extraStorageGib: 0,
+          provider: 'simulado',
+          currentPeriodEnd: '2026-11-29T12:00:00.000Z',
+          cancelAtPeriodEnd: false,
+          pending: null,
+          monthlyCents: 10900,
+          nextMonthlyCents: 10900,
+          clientLimit: 12,
+          storageBytes: 21474836480,
+          usedClients: 4,
+          usedBytes: 1073741824,
+          graceEndsOn: null
+        },
+        paymentProvider: 'simulado'
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/subscription/quote',
+    operationId: 'quoteSubscriptionChange',
+    module: 'subscriptions',
+    summary: 'Calcula o que uma mudança de plano ou de extras faz e custa',
+    description: [
+      'O total é calculado no servidor e nada é gravado. `effect` é `subscribe` (primeira assinatura, ou nova depois do fim), `upgrade`',
+      '(sobe agora e cobra o proporcional dos dias que restam do período) ou `downgrade` (vale no próximo período e cobra nada;',
+      '`effectiveAt` é o fim do período). Recusas: `409 SUBSCRIPTION_BELOW_CLIENTS` ou `409 SUBSCRIPTION_BELOW_STORAGE` quando o novo teto fica abaixo do',
+      'uso; `409 SUBSCRIPTION_MIXED_CHANGE` quando sobe um limite e desce outro; `409 SUBSCRIPTION_UNCHANGED` quando nada muda;',
+      '`409 SUBSCRIPTION_NOT_AVAILABLE` quando a agência não pode mudar de plano (isenta, cortesia, sem assinatura da operação ou cancelada);',
+      '`400 SUBSCRIPTION_INVALID` para um plano que não existe.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    body: SubscriptionChangeRequestSchema,
+    requestExample: { planKey: 'profissional', extraClients: 0, extraStorageGib: 0 },
+    responses: [{
+      status: 200,
+      description: 'O que a mudança faz.',
+      schema: SubscriptionQuoteResponseSchema,
+      example: { effect: 'upgrade', monthlyCents: 19700, amountCents: 6800, effectiveAt: '2026-11-15T12:00:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'SUBSCRIPTION_INVALID' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'SUBSCRIPTION_NOT_AVAILABLE' },
+      { status: 409, code: 'SUBSCRIPTION_BELOW_CLIENTS' },
+      { status: 409, code: 'SUBSCRIPTION_BELOW_STORAGE' },
+      { status: 409, code: 'SUBSCRIPTION_MIXED_CHANGE' },
+      { status: 409, code: 'SUBSCRIPTION_UNCHANGED' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/subscription/charges',
+    operationId: 'requestSubscriptionCharge',
+    module: 'subscriptions',
+    summary: 'Pede a mudança de plano ou de extras e abre a cobrança',
+    description: [
+      'As mesmas contas e recusas de `quote`. Uma subida ou assinatura abre uma cobrança (`chargeId`) que o provedor tem 30 minutos para',
+      'confirmar; um pedido novo, uma descida agendada ou um cancelamento a invalidam, e só existe uma por agência. **O plano e os tetos não mudam aqui:**',
+      'só mudam quando o provedor confirma essa cobrança. Uma descida é agendada para o próximo período, não cobra nada e devolve `chargeId` nulo.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    body: SubscriptionChangeRequestSchema,
+    requestExample: { planKey: 'profissional', extraClients: 0, extraStorageGib: 0 },
+    responses: [{
+      status: 201,
+      description: 'Cobrança aberta, ou descida agendada.',
+      schema: SubscriptionChargeResponseSchema,
+      example: { chargeId: '99999999-9999-4999-8999-999999999999', effect: 'upgrade', monthlyCents: 19700, amountCents: 6800, effectiveAt: '2026-11-15T12:00:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'SUBSCRIPTION_INVALID' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'SUBSCRIPTION_NOT_AVAILABLE' },
+      { status: 409, code: 'SUBSCRIPTION_BELOW_CLIENTS' },
+      { status: 409, code: 'SUBSCRIPTION_BELOW_STORAGE' },
+      { status: 409, code: 'SUBSCRIPTION_MIXED_CHANGE' },
+      { status: 409, code: 'SUBSCRIPTION_UNCHANGED' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/subscription/cancel',
+    operationId: 'cancelSubscription',
+    module: 'subscriptions',
+    summary: 'Cancela a assinatura',
+    description: [
+      'A assinatura segue valendo até o fim do período e não renova; a descida agendada e a cobrança pendente caem. Dentro dos 3 dias de tolerância',
+      'depois de um período sem renovação o Owner também cancela: nenhuma renovação é tentada e a agência fica somente leitura na hora. Cancelar',
+      'de novo é inofensivo. Passada a tolerância, ou sem assinatura paga (teste, cortesia, isenta): `409 SUBSCRIPTION_NOT_AVAILABLE`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    responses: [{ status: 204, description: 'Cancelada.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'SUBSCRIPTION_NOT_AVAILABLE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/subscription/reactivate',
+    operationId: 'reactivateSubscription',
+    module: 'subscriptions',
+    summary: 'Desfaz o cancelamento até o fim do período',
+    description: [
+      'Sem cobrança agora: a assinatura volta a renovar com as condições que tem (a descida que estava agendada não volta). Só vale com o',
+      'período em curso; depois do fim, inclusive na tolerância, a agência assina de novo: `409 SUBSCRIPTION_NOT_AVAILABLE`.',
+      'Reativar uma assinatura que não está cancelada é inofensivo.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    responses: [{ status: 204, description: 'Reativada.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'SUBSCRIPTION_NOT_AVAILABLE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/subscription/charges/:chargeId/simulated-payment',
+    operationId: 'payChargeSimulated',
+    module: 'subscriptions',
+    summary: 'Paga uma cobrança com o provedor simulado (só fora de produção)',
+    description: [
+      'Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). O cartão **nunca** viaja: a tela escolhe `outcome`',
+      '(`approved`, ou `declined` para o número de cartão de teste fixo) e não manda mais nada do cartão. A cobrança precisa ser da agência do Owner que paga e',
+      'estar aberta; a de outra agência responde `404 NOT_FOUND` e continua pendente. Aprovada, o provedor confirma ao banco, e só então o plano e os tetos',
+      'mudam (`confirmed`); recusada (`declined`), nada muda e a cobrança segue aberta até vencer.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: SubscriptionChargePathParamsSchema,
+    body: SimulatedPaymentRequestSchema,
+    requestExample: { outcome: 'approved' },
+    responses: [{
+      status: 200,
+      description: 'Resultado do pagamento.',
+      schema: SimulatedPaymentResponseSchema,
+      example: { status: 'confirmed' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Charge not found.' },
+      { status: 409, code: 'CHARGE_NOT_OPEN' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 502, code: 'PAYMENT_PROVIDER_FAILED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/subscription/simulated-period-advance',
+    operationId: 'advanceSimulatedPeriod',
+    module: 'subscriptions',
+    summary: 'Avança o relógio da assinatura simulada (só fora de produção)',
+    description: [
+      'Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção. Numa assinatura do provedor simulado, a primeira chamada leva o fim do período para agora;',
+      'a segunda, se a assinatura não foi cancelada, leva o fim da tolerância para agora. Assinatura de outro provedor, ou sem assinatura:',
+      '`409 SUBSCRIPTION_NOT_AVAILABLE`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    responses: [{ status: 204, description: 'Período avançado.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'SUBSCRIPTION_NOT_AVAILABLE' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   }
 ];

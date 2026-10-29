@@ -7,6 +7,7 @@ import type { ApiConfig, IdentityStorageConfig, StorageConfig } from '@ageniza/c
 import { createLogger, type CoreLogger } from '@ageniza/core';
 import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, type DatabaseClient, resolveIntegrationDatabaseUrls } from '@ageniza/database';
 import type { EmailSender, OutgoingEmail } from '@ageniza/email';
+import { createPaymentProvider, type PaymentProvider } from '@ageniza/payments';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Pool } from 'pg';
 
@@ -33,6 +34,7 @@ import { createMediaStorageClient, type MediaStorageClient } from '../../media/s
 import type { LegalModuleDependencies } from '../../legal/routes.js';
 import type { EmailChangeModuleDependencies } from '../../email-change/routes.js';
 import type { StoryScriptModuleDependencies } from '../../story-scripts/routes.js';
+import type { SubscriptionModuleDependencies } from '../../subscriptions/routes.js';
 import type { ProfileModuleDependencies } from '../../profile/routes.js';
 
 /** Runs only against your own migrated database (`pnpm db:migrate`), as the application role; never `ageniza`. */
@@ -173,6 +175,10 @@ export interface TestAppOptions {
    * `requireAgencyAccess`/`requireClientAccess` prehandlers without a bespoke fixture.
    */
   readonly registerExtraRoutes?: (app: FastifyInstance, guards: TestGuardBuilders) => void | Promise<void>;
+  /** The payment provider of the billing routes (#772): the simulated one by default, `null` for none, or a fake. */
+  readonly paymentProvider?: PaymentProvider | null;
+  /** The environment the billing routes believe they run in, to prove the simulated ones are left out in production. */
+  readonly subscriptionsProduction?: boolean;
   /** Test-only route observer, forwarded to `buildApp` (issue #182 route-inventory test). */
   readonly onRoute?: ApiAppOptions['onRoute'];
   /**
@@ -341,6 +347,17 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     legalVersions: { terms: config.authTermsVersion, privacy: config.authPrivacyVersion },
     ...(config.google === undefined ? {} : { google: { appPublicUrl: config.appPublicUrl } })
   };
+  const paymentProvider = options.paymentProvider === undefined
+    ? await createPaymentProvider({ production: false, provider: 'simulado' })
+    : options.paymentProvider ?? undefined;
+  const subscriptions: SubscriptionModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission,
+    production: options.subscriptionsProduction ?? false,
+    ...(paymentProvider === undefined ? {} : { paymentProvider })
+  };
   const app = await buildApp({
     config,
     logger,
@@ -358,6 +375,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     legal,
     emailChange,
     storyScripts,
+    subscriptions,
     onRoute: options.onRoute,
     // A handler whose reply status drifts from its own `config.responseStatus` fails the request,
     // so the documented status is enforced by the suites, not only by the catalog.

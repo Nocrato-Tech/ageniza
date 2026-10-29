@@ -173,7 +173,8 @@ export interface AgencyCommandService {
   suspend(agencyId: string): Promise<AgencyStatusResult>;
   reactivate(agencyId: string): Promise<AgencyStatusResult>;
   resendActivation(agencyId: string): Promise<AgencyCreateResult>;
-  setPlan(agencyId: string, plan: AgencyPlan, endsAt?: string): Promise<AgencyPlanResult>;
+  /** `ativo` needs `paidPlan` (courtesy subscription, no charge); no other plan takes one. */
+  setPlan(agencyId: string, plan: AgencyPlan, endsAt?: string, paidPlan?: string): Promise<AgencyPlanResult>;
   setEmailLimit(agencyId: string, perDay: number | null): Promise<AgencyEmailLimitResult>;
 }
 
@@ -190,6 +191,23 @@ export interface AgencyEmailLimitResult {
 }
 
 export const AGENCY_PLANS: readonly AgencyPlan[] = ['trial', 'ativo', 'isenta'];
+
+/** The paid plans an `ativo` agency is given by courtesy (`public.paid_plans`); the price tables stay in the database. */
+export const PAID_PLAN_KEYS = ['essencial', 'profissional', 'agencia'] as const;
+export type PaidPlanKey = (typeof PAID_PLAN_KEYS)[number];
+
+const PAID_PLAN_ERROR = 'Option --paid-plan must be essencial, profissional or agencia.';
+
+/** `ativo` is a paid plan, so it names which one; no other plan has one. Shared by the parser and the service. */
+const assertPaidPlanFor = (plan: AgencyPlan, paidPlan: string | undefined): PaidPlanKey | undefined => {
+  if (plan !== 'ativo') {
+    if (paidPlan !== undefined) throw new AgencyCliError('Option --paid-plan is only for the ativo plan.');
+    return undefined;
+  }
+  if (paidPlan === undefined) throw new AgencyCliError('Option --paid-plan is required for the ativo plan.');
+  if (!(PAID_PLAN_KEYS as readonly string[]).includes(paidPlan)) throw new AgencyCliError(PAID_PLAN_ERROR);
+  return paidPlan as PaidPlanKey;
+};
 
 /** `--per-day`: a whole number from 0 to 100000, or `padrao` for the plan's default. */
 export const parseDailyEmailLimit = (value: string): number | null => {
@@ -308,12 +326,13 @@ export const createAgencyCommandService = (options: CreateAgencyCommandServiceOp
    * as the owner role, which the triggers of the plan do not govern; the one-trial-per-e-mail and per-owner indexes still
    * hold for a trial. The application role never writes `plan`.
    */
-  const setPlan = async (agencyIdInput: string, plan: AgencyPlan, endsAtInput?: string): Promise<AgencyPlanResult> => {
+  const setPlan = async (agencyIdInput: string, plan: AgencyPlan, endsAtInput?: string, paidPlanInput?: string): Promise<AgencyPlanResult> => {
     const agencyId = assertUuid(agencyIdInput);
     if (!AGENCY_PLANS.includes(plan)) throw new AgencyCliError('plan must be one of isenta, ativo or trial.');
     if ((plan === 'trial') !== (endsAtInput !== undefined)) {
       throw new AgencyCliError(plan === 'trial' ? 'Option --ends-at is required for the trial plan.' : 'Option --ends-at is only for the trial plan.');
     }
+    const paidPlan = assertPaidPlanFor(plan, paidPlanInput);
     const endsAt = endsAtInput === undefined ? null : parseTrialEnd(endsAtInput).toISOString();
     return options.database.transaction(async (transaction) => {
       const result = await transaction.query<AgencyRow>('select id, owner_user_id from public.agencies where id = ? for update', [agencyId]);
@@ -348,6 +367,11 @@ export const createAgencyCommandService = (options: CreateAgencyCommandServiceOp
           'update public.agency_storage_quotas set quota_bytes = null, updated_at = now() where agency_id = ? and quota_bytes = ?',
           [agencyId, TRIAL_STORAGE_BYTES]
         );
+      }
+      // `ativo` is a paid plan by courtesy (owner decision, 2026-10-29): the subscription, its quota and the terms come from the
+      // database, which also sets `plan = 'ativo'` and the paid plan's storage; no charge is made.
+      if (paidPlan !== undefined) {
+        await transaction.query('select app_private.grant_courtesy_subscription(?::uuid, ?)', [agencyId, paidPlan]);
       }
       await recordAudit(transaction, `agency.plan_${plan}`, agencyId, 'agency', agencyId);
       return { agencyId, plan, trialEndsAt: endsAt };
@@ -462,14 +486,21 @@ export const createAgencyActivationMailer = (input: {
 };
 
 type AgencyIdArguments = { readonly command: 'suspend' | 'reactivate' | 'resend-activation'; readonly agencyId: string };
-type SetPlanArguments = { readonly command: 'set-plan'; readonly agencyId: string; readonly plan: AgencyPlan; readonly endsAt?: string };
+type SetPlanArguments = {
+  readonly command: 'set-plan';
+  readonly agencyId: string;
+  readonly plan: AgencyPlan;
+  readonly endsAt?: string;
+  readonly paidPlan?: PaidPlanKey;
+};
 type SetEmailLimitArguments = { readonly command: 'set-email-limit'; readonly agencyId: string; readonly perDay: number | null };
 export type AgencyCliArguments = AgencyIdArguments | SetPlanArguments | SetEmailLimitArguments;
 
 // An agency is only born through the product ("Criar agência"); there is no command that creates one.
 const usage = [
   'Usage:',
-  '  node dist/cli/agency.js set-plan --agency-id <uuid> --plan isenta|ativo|trial [--ends-at <ISO 8601 date>]',
+  '  node dist/cli/agency.js set-plan --agency-id <uuid> --plan isenta|trial [--ends-at <ISO 8601 date>]',
+  '  node dist/cli/agency.js set-plan --agency-id <uuid> --plan ativo --paid-plan essencial|profissional|agencia',
   '  node dist/cli/agency.js set-email-limit --agency-id <uuid> --per-day <0-100000|padrao>',
   '  node dist/cli/agency.js suspend --agency-id <uuid>',
   '  node dist/cli/agency.js reactivate --agency-id <uuid>',
@@ -477,7 +508,7 @@ const usage = [
 ].join('\n');
 
 const expectedOptions: Record<AgencyCliArguments['command'], readonly string[]> = {
-  'set-plan': ['agency-id', 'plan', 'ends-at'],
+  'set-plan': ['agency-id', 'plan', 'ends-at', 'paid-plan'],
   'set-email-limit': ['agency-id', 'per-day'],
   suspend: ['agency-id'],
   reactivate: ['agency-id'],
@@ -517,7 +548,14 @@ export const parseAgencyCliArguments = (argv: readonly string[]): AgencyCliArgum
     if ((plan === 'trial') !== (endsAt !== undefined)) {
       throw new AgencyCliError(plan === 'trial' ? 'Option --ends-at is required for the trial plan.' : 'Option --ends-at is only for the trial plan.');
     }
-    return endsAt === undefined ? { command, agencyId, plan: plan as AgencyPlan } : { command, agencyId, plan: plan as AgencyPlan, endsAt };
+    const paidPlan = assertPaidPlanFor(plan as AgencyPlan, options['paid-plan']);
+    return {
+      command,
+      agencyId,
+      plan: plan as AgencyPlan,
+      ...(endsAt === undefined ? {} : { endsAt }),
+      ...(paidPlan === undefined ? {} : { paidPlan })
+    };
   }
   if (command === 'set-email-limit') {
     const perDay = options['per-day'];
@@ -554,7 +592,7 @@ export const runAgencyCli = async (options: RunAgencyCliOptions = {}): Promise<n
     mailer ??= createAgencyActivationMailer({ smtpUrl: environment.smtpUrl, emailFrom: environment.emailFrom });
     const service = createAgencyCommandService({ database, mailer, appPublicUrl: environment.appPublicUrl });
     let result: AgencyCreateResult | AgencyStatusResult | AgencyPlanResult | AgencyEmailLimitResult;
-    if (args.command === 'set-plan') result = await service.setPlan(args.agencyId, args.plan, args.endsAt);
+    if (args.command === 'set-plan') result = await service.setPlan(args.agencyId, args.plan, args.endsAt, args.paidPlan);
     else if (args.command === 'set-email-limit') result = await service.setEmailLimit(args.agencyId, args.perDay);
     else if (args.command === 'suspend') result = await service.suspend(args.agencyId);
     else if (args.command === 'reactivate') result = await service.reactivate(args.agencyId);

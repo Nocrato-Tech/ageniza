@@ -60,6 +60,9 @@ importers:
       '@ageniza/email':
         specifier: workspace:*
         version: link:../../packages/email
+      '@ageniza/payments':
+        specifier: workspace:*
+        version: link:../../packages/payments
       '@aws-sdk/client-s3':
         specifier: 3.1140.0
         version: 3.1140.0
@@ -242,6 +245,8 @@ importers:
       '@types/nodemailer':
         specifier: ^8.0.2
         version: 8.0.2
+
+  packages/payments: {}
 
   packages/ui:
     dependencies:

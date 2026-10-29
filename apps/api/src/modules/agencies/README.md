@@ -40,6 +40,11 @@ id que `owner.membershipId` de um conteúdo carrega, para a tela saber se a pess
 relógio do banco decide (`trial_ends_at <= now()`), e `supportContactEmail`, o contato público de `SUPPORT_CONTACT_EMAIL`
 (`null` quando não configurado). É UX, como as permissões: quem recusa é o banco.
 
+Com os planos pagos (#772), `plan` também traz `paidPlanKey` (o plano pago de uma agência `ativo` com assinatura ou cortesia),
+`canceled` e `graceEndsOn` (o último dia para pagar, no dia de São Paulo, enquanto o período acabou e a agência ainda escreve).
+Vêm de `app_private.subscription_overview`, e `readOnly` vem de `app_private.agency_is_read_only`, que responde só para membro da
+agência: a API não compara relógio nenhum. A assinatura em si está em `modules/subscriptions`.
+
 `POST /agencies` cria uma agência em teste por `app_private.create_trial_agency(name)`, que tira o ator da transação.
 Só conta com e-mail confirmado (`403 EMAIL_NOT_VERIFIED`) e no máximo uma agência em teste por conta e por e-mail normalizado (minúsculas, sem `+alias` e, em gmail.com e
 googlemail.com, sem pontos e com o domínio unificado: `app_private.trial_email_key`), vencida ou não

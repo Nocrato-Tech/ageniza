@@ -1,8 +1,9 @@
 import { Pool } from 'pg';
 
-import { isTestProcess, loadApiConfig } from '@ageniza/config/server';
+import { isTestProcess, loadApiConfig, runsAsProduction } from '@ageniza/config/server';
 import { captureUnexpectedError, configureServerSentry, createLogger, createReadiness, createShutdownManager, flushServerSentry, registerShutdownSignals, type HealthCheck } from '@ageniza/core';
 import { createEmailSender } from '@ageniza/email';
+import { createPaymentProvider } from '@ageniza/payments';
 import { createDatabaseClient } from '@ageniza/database';
 
 import { buildApp } from './app.js';
@@ -28,6 +29,7 @@ import type { LegalModuleDependencies } from './modules/legal/routes.js';
 import type { EmailChangeModuleDependencies } from './modules/email-change/routes.js';
 import type { ProfileModuleDependencies } from './modules/profile/routes.js';
 import type { StoryScriptModuleDependencies } from './modules/story-scripts/routes.js';
+import type { SubscriptionModuleDependencies } from './modules/subscriptions/routes.js';
 
 /** Dedicated to Better Auth (and, since it shares the same `ageniza_app` role and connection
  * settings, to append-only audit writes); small on purpose on a shared VPS. */
@@ -157,6 +159,17 @@ export const startApi = async (): Promise<void> => {
     requireClientAccess: createRequireClientAccess({ database })
   };
 
+  // Refuses to start with the simulated provider in production (the config already did; this is the second barrier).
+  const paymentProvider = await createPaymentProvider({ production: runsAsProduction(config), provider: config.paymentsProvider });
+  const subscriptionDependencies: SubscriptionModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    requirePermission,
+    production: runsAsProduction(config),
+    ...(paymentProvider === undefined ? {} : { paymentProvider })
+  };
+
   const readiness = createReadiness(false);
   const dependencyChecks: readonly HealthCheck[] = [
     { name: 'auth-database', check: async () => { await authPool.query('select 1'); } }
@@ -188,7 +201,8 @@ export const startApi = async (): Promise<void> => {
     profile: profileDependencies,
     legal: legalDependencies,
     emailChange: emailChangeDependencies,
-    storyScripts: storyScriptDependencies
+    storyScripts: storyScriptDependencies,
+    subscriptions: subscriptionDependencies
   });
 
   const shutdown = createShutdownManager();
