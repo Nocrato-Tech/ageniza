@@ -10,7 +10,12 @@
 //    DELETE on the subscription tables.
 //  - Raising a plan or buying an extra applies at once and is charged for the days left of the period; lowering waits for the
 //    next period and never goes below the clients and the storage in use. Canceling keeps everything until the period ends.
-//  - Every operation that counts takes the advisory lock of the agency first, and counts after it.
+//  - Every writer of the subscription tables (request, confirm, cancel, renew, advance, and the courtesy of the first migration)
+//    takes the advisory lock of the agency first and reads after it; there are no row locks, so the lock is the only order.
+//    Every operation that counts takes it first, and counts after it. An operation that compares the
+//    storage in use with a new ceiling (subscribe, raise, a decrease on request and on renewal) takes the upload confirmation's
+//    lock ('media-quota:<agency>', taken by the media service) before the agency's, always in that order, so a confirmation in
+//    flight is in the count or waits for the new quota.
 //
 // Error codes: A0110 the agency cannot take the operation in its state, A0111 the new limit is below the clients in use,
 // A0112 an increase and a decrease together, A0113 nothing changes, A0114 the confirmation does not match the charge,
@@ -35,6 +40,24 @@ export async function up(knex) {
       from (select greatest(pg_catalog.round(pg_catalog.date_part('epoch', p_period_end - p_period_start) / 86400), 1) as days) total
     $function$;
     revoke all on function app_private.prorated_cents(integer, timestamptz, timestamptz, timestamptz) from public;
+  `);
+
+  await knex.raw(`
+    -- The two locks a change of ceiling needs, always in this order: the upload confirmation's (which writes the storage in use)
+    -- and the agency's (which serializes the clients, the collaborators and the other changes of the subscription). The media
+    -- service takes only the first and the client triggers only the second, so no path takes them the other way round.
+    create function app_private.lock_subscription_change(p_agency_id uuid)
+    returns void
+    language plpgsql
+    security definer
+    set search_path = ''
+    as $function$
+    begin
+      perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('media-quota:' || p_agency_id::text, 0));
+      perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('agency_trial_limits:' || p_agency_id::text, 0));
+    end;
+    $function$;
+    revoke all on function app_private.lock_subscription_change(uuid) from public;
   `);
 
   await knex.raw(`
@@ -194,7 +217,7 @@ export async function up(knex) {
     set search_path = ''
     as $function$
     begin
-      if app_private.current_user_id() is null or not app_private.has_agency_permission(p_agency_id, 'assinatura.gerenciar') then
+      if not app_private.has_agency_permission(p_agency_id, 'assinatura.gerenciar') then
         raise exception using errcode = '42501', message = 'Only the Owner manages the subscription.';
       end if;
     end;
@@ -236,7 +259,7 @@ export async function up(knex) {
     begin
       perform app_private.require_subscription_owner(p_agency_id);
       perform app_private.require_read_committed();
-      perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('agency_trial_limits:' || p_agency_id::text, 0));
+      perform app_private.lock_subscription_change(p_agency_id);
       select * into v_assessment from app_private.assess_agency_subscription_change(p_agency_id, p_plan_key, p_extra_clients, p_extra_storage_gib);
 
       if v_assessment.effect = 'downgrade' then
@@ -288,8 +311,9 @@ export async function up(knex) {
       if not found then
         raise exception using errcode = 'A0114', message = 'The charge does not exist.';
       end if;
-      perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('agency_trial_limits:' || v_charge.agency_id::text, 0));
-      select * into v_charge from public.subscription_charges charge where charge.id = p_charge_id for update;
+      perform app_private.lock_subscription_change(v_charge.agency_id);
+      -- Read again after the wait: every writer of the charges holds the lock of the agency, so no row lock is needed.
+      select * into v_charge from public.subscription_charges charge where charge.id = p_charge_id;
 
       if v_charge.status = 'confirmed' then
         if v_charge.provider = p_provider and v_charge.provider_ref = p_provider_ref then
@@ -322,7 +346,7 @@ export async function up(knex) {
           cancel_at_period_end = false, pending_plan_key = null, pending_extra_clients = null, pending_extra_storage_gib = null,
           updated_at = pg_catalog.now();
       else
-        select * into v_subscription from public.agency_subscriptions subscription where subscription.agency_id = v_charge.agency_id for update;
+        select * into v_subscription from public.agency_subscriptions subscription where subscription.agency_id = v_charge.agency_id;
         v_start := v_subscription.current_period_start;
         v_end := v_subscription.current_period_end;
         update public.agency_subscriptions
@@ -359,7 +383,7 @@ export async function up(knex) {
       perform app_private.require_subscription_owner(p_agency_id);
       perform app_private.require_read_committed();
       perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('agency_trial_limits:' || p_agency_id::text, 0));
-      select * into v_subscription from public.agency_subscriptions subscription where subscription.agency_id = p_agency_id for update;
+      select * into v_subscription from public.agency_subscriptions subscription where subscription.agency_id = p_agency_id;
       if not found or v_subscription.provider = 'cortesia' or v_subscription.current_period_end <= pg_catalog.now() then
         raise exception using errcode = 'A0110', message = 'There is no running subscription to cancel.';
       end if;
@@ -381,7 +405,8 @@ export async function up(knex) {
 
   await knex.raw(`
     -- What the next period costs: the scheduled terms when they still fit the usage, the current ones otherwise. Null when
-    -- the subscription does not renew now.
+    -- the subscription does not renew now. A courtesy plan has no end (agency_subscriptions_period_check), so the comparison with
+    -- the end is never true for it and it never renews.
     create function app_private.next_renewal_terms(p_agency_id uuid)
     returns table (plan_key text, extra_clients integer, extra_storage_gib integer, scheduled_applies boolean)
     language sql
@@ -404,7 +429,6 @@ export async function up(knex) {
                 <= app_private.subscription_storage_bytes(subscription.pending_plan_key, subscription.pending_extra_storage_gib)) as ok
       ) fits
       where subscription.agency_id = p_agency_id
-        and subscription.provider <> 'cortesia'
         and not subscription.cancel_at_period_end
         and subscription.current_period_end <= pg_catalog.now() + interval '1 day'
     $function$;
@@ -424,7 +448,7 @@ export async function up(knex) {
     revoke all on function app_private.next_renewal_cents(uuid) from public;
     grant execute on function app_private.next_renewal_cents(uuid) to ageniza_app;
 
-    -- The agencies the worker has to renew: the period ends within a day, and nothing cancels it.
+    -- The agencies the worker has to renew: the period ends within a day, and nothing cancels it (a courtesy plan has no end).
     create function app_private.agencies_due_for_renewal(p_limit integer)
     returns setof uuid
     language sql
@@ -436,7 +460,6 @@ export async function up(knex) {
       from public.agency_subscriptions subscription
       join public.agencies agency on agency.id = subscription.agency_id and agency.plan = 'ativo' and agency.status = 'active'
       where app_private.current_user_id() is null
-        and subscription.provider <> 'cortesia'
         and not subscription.cancel_at_period_end
         and subscription.current_period_end <= pg_catalog.now() + interval '1 day'
       order by subscription.current_period_end
@@ -464,14 +487,14 @@ export async function up(knex) {
       if p_provider is null or p_provider not in ('simulado', 'asaas') or p_provider_ref is null or pg_catalog.btrim(p_provider_ref) = '' then
         raise exception using errcode = 'A0114', message = 'The confirmation names no provider or no reference.';
       end if;
-      perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('agency_trial_limits:' || p_agency_id::text, 0));
+      perform app_private.lock_subscription_change(p_agency_id);
       if exists (
         select 1 from public.subscription_charges charge
         where charge.agency_id = p_agency_id and charge.provider = p_provider and charge.provider_ref = p_provider_ref and charge.kind = 'renewal'
       ) then
         return false;
       end if;
-      select * into v_subscription from public.agency_subscriptions subscription where subscription.agency_id = p_agency_id for update;
+      select * into v_subscription from public.agency_subscriptions subscription where subscription.agency_id = p_agency_id;
       if not found or v_subscription.provider is distinct from p_provider then
         raise exception using errcode = 'A0114', message = 'The subscription is not of this provider.';
       end if;
@@ -526,7 +549,9 @@ export async function up(knex) {
       v_shift interval;
     begin
       perform app_private.require_subscription_owner(p_agency_id);
-      select * into v_subscription from public.agency_subscriptions subscription where subscription.agency_id = p_agency_id for update;
+      perform app_private.require_read_committed();
+      perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('agency_trial_limits:' || p_agency_id::text, 0));
+      select * into v_subscription from public.agency_subscriptions subscription where subscription.agency_id = p_agency_id;
       if not found or v_subscription.provider <> 'simulado' then
         raise exception using errcode = 'A0110', message = 'Only a simulated subscription moves its period.';
       end if;

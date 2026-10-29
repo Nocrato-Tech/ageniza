@@ -36,7 +36,7 @@ export interface Harness {
   /** A transaction with nobody bound: the provider's webhook and the worker. */
   asNobody<TResult>(work: (transaction: Knex.Transaction) => Promise<TResult>): Promise<TResult>;
   openTransactionAs(userId: string, isolationLevel?: 'read committed' | 'repeatable read' | 'serializable'): Promise<Knex.Transaction>;
-  openTransactionAsNobody(): Promise<Knex.Transaction>;
+  openTransactionAsNobody(isolationLevel?: 'read committed' | 'repeatable read' | 'serializable'): Promise<Knex.Transaction>;
   person(): Promise<string>;
   /** An agency in trial created by the product's own function, its Owner by possession and Admin by membership. */
   trialAgency(): Promise<{ agencyId: string; ownerId: string }>;
@@ -55,7 +55,8 @@ export interface Harness {
   setPeriod(agencyId: string, startedDaysAgo: number, endsInDays: number): Promise<void>;
   subscriptionOf(agencyId: string): Promise<Record<string, unknown> | undefined>;
   quotaOf(agencyId: string): Promise<string | undefined>;
-  seedConfirmedBytes(agencyId: string, bytes: number): Promise<void>;
+  /** A confirmed upload of the agency, written as the schema owner, in `on` when the write has to stay uncommitted. */
+  seedConfirmedBytes(agencyId: string, bytes: number, on?: Knex): Promise<void>;
   acceptsWrites(agencyId: string): Promise<boolean>;
 }
 
@@ -85,7 +86,8 @@ export const createHarness = (label: string): Harness => {
     return transaction;
   };
 
-  const openTransactionAsNobody: Harness['openTransactionAsNobody'] = () => application().knex.transaction();
+  const openTransactionAsNobody: Harness['openTransactionAsNobody'] = (isolationLevel) =>
+    application().knex.transaction(isolationLevel === undefined ? {} : { isolationLevel });
 
   const person: Harness['person'] = async () => {
     const id = randomUUID();
@@ -190,15 +192,16 @@ export const createHarness = (label: string): Harness => {
   const quotaOf: Harness['quotaOf'] = async (agencyId) =>
     (await ownerKnex()('agency_storage_quotas').where({ agency_id: agencyId }).first('quota_bytes'))?.quota_bytes as string | undefined;
 
-  const seedConfirmedBytes: Harness['seedConfirmedBytes'] = async (agencyId, bytes) => {
+  const seedConfirmedBytes: Harness['seedConfirmedBytes'] = async (agencyId, bytes, on) => {
+    const db = on ?? ownerKnex();
     const id = randomUUID();
-    const clientId = (await ownerKnex()('clients').where({ agency_id: agencyId }).first('id'))?.id as string | undefined;
-    const client = clientId ?? (await ownerKnex()('clients').insert({ agency_id: agencyId, name: 'Cliente de mídia' }).returning('id'))[0].id as string;
-    const folder = await ownerKnex()('media_folders').where({ client_id: client, is_default: true }).first('id');
-    await ownerKnex()('media_assets').insert({
+    const clientId = (await db('clients').where({ agency_id: agencyId }).first('id'))?.id as string | undefined;
+    const client = clientId ?? (await db('clients').insert({ agency_id: agencyId, name: 'Cliente de mídia' }).returning('id'))[0].id as string;
+    const folder = await db('media_folders').where({ client_id: client, is_default: true }).first('id');
+    await db('media_assets').insert({
       id, agency_id: agencyId, client_id: client, folder_id: folder.id, category: 'video', declared_content_type: 'video/mp4', extension: 'mp4',
       object_key: `${agencyId}/${id}/original.mp4`, upload_object_key: `staging/${agencyId}/${id}/upload.mp4`, declared_size_bytes: bytes,
-      created_by_user_id: (await ownerKnex()('agencies').where({ id: agencyId }).first('owner_user_id')).owner_user_id as string,
+      created_by_user_id: (await db('agencies').where({ id: agencyId }).first('owner_user_id')).owner_user_id as string,
       status: 'confirmed', confirmed_size_bytes: bytes, confirmed_content_type: 'video/mp4', confirmed_at: new Date()
     });
   };

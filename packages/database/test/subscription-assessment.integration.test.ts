@@ -48,6 +48,12 @@ describe('the pure assessment of a change', () => {
       .toEqual([{ effect: 'upgrade', monthly_cents: 9740, amount_cents: 20 }]);
   });
 
+  it('charges nothing for a raise of the limits whose price is lower than the current terms', async () => {
+    // Essencial with 20 extra clients is 30 clients and 20 GiB at R$ 217; Profissional is 30 clients and 100 GiB at R$ 197.
+    expect(await assess({ current: current('essencial', 20, 0), target: { plan: 'profissional', clients: 0, gib: 0 } }))
+      .toEqual([{ effect: 'upgrade', monthly_cents: 19700, amount_cents: 0 }]);
+  });
+
   it('waits for the next period to lower and charges nothing', async () => {
     expect(await assess({ current: current('profissional'), target: { plan: 'essencial', clients: 0, gib: 0 } }))
       .toEqual([{ effect: 'downgrade', monthly_cents: 9700, amount_cents: 0 }]);
@@ -86,6 +92,8 @@ describe('the pure assessment of a change', () => {
     await expect(assess({ target: { plan: 'inexistente', clients: 0, gib: 0 } })).rejects.toMatchObject({ code: 'A0116' });
     await expect(assess({ target: { plan: 'essencial', clients: -1, gib: 0 } })).rejects.toMatchObject({ code: 'A0116' });
     await expect(assess({ target: { plan: 'essencial', clients: 0, gib: 10001 } })).rejects.toMatchObject({ code: 'A0116' });
+    await expect(assess({ target: { plan: 'essencial', clients: 10001, gib: 0 } })).rejects.toMatchObject({ code: 'A0116' });
+    await expect(assess({ target: { plan: 'essencial', clients: 0, gib: -1 } })).rejects.toMatchObject({ code: 'A0116' });
     expect(await assess({ target: { plan: 'essencial', clients: 10000, gib: 10000 } })).toHaveLength(1);
   });
 });
