@@ -21,19 +21,26 @@ const apiBuildLines = (workflow) => workflow.split('\n').filter((line) => line.i
 describe('the API image and the simulated payment provider (issue #772)', () => {
   it('keeps the simulated code by default and removes it only for exclude, refusing any other value', () => {
     expect(dockerfile).toContain('ARG PAYMENTS_SIMULATED=include');
-    expect(dockerfile).toMatch(/if \[ "\$PAYMENTS_SIMULATED" = "exclude" \]; then[^]*rm -rf node_modules\/@ageniza\/payments\/dist\/simulated/);
+    expect(dockerfile).toMatch(/if \[ "\$PAYMENTS_SIMULATED" = "exclude" \]; then[^]*rm -rf \/runtime\/node_modules\/@ageniza\/payments\/dist\/simulated/);
     expect(dockerfile).toMatch(/elif \[ "\$PAYMENTS_SIMULATED" != "include" \]; then[^]*exit 1/);
   });
 
   it('checks that the removal happened, so a layout change in the package fails the build instead of shipping the code', () => {
-    expect(dockerfile).toContain('test ! -e node_modules/@ageniza/payments/dist/simulated');
+    expect(dockerfile).toContain('test ! -e /runtime/node_modules/@ageniza/payments/dist/simulated');
   });
 
-  it('removes it before the image drops to the node user and in the final stage that ships', () => {
-    const finalStage = dockerfile.slice(dockerfile.lastIndexOf('FROM node:'));
-    expect(finalStage.indexOf('PAYMENTS_SIMULATED')).toBeGreaterThan(-1);
-    expect(finalStage.indexOf('rm -rf node_modules/@ageniza/payments/dist/simulated')).toBeLessThan(finalStage.indexOf('USER node'));
-    expect(finalStage.indexOf('COPY --from=build /runtime ./')).toBeLessThan(finalStage.indexOf('rm -rf node_modules/@ageniza/payments/dist/simulated'));
+  // A `rm` in the final stage, after `COPY --from=build`, would leave the files in the layer of the copy, and a tar of the image would
+  // still hold them. The removal is in the build stage, after the deploy that builds the tree and before the final stage copies it.
+  it('removes it in the build stage, after the deploy, so that no layer of the final image holds it and the final stage does not mention it', () => {
+    const boundary = dockerfile.lastIndexOf('FROM node:');
+    const buildStage = dockerfile.slice(0, boundary);
+    const finalStage = dockerfile.slice(boundary);
+    expect(buildStage.indexOf('--prod deploy /runtime')).toBeGreaterThan(-1);
+    expect(buildStage.indexOf('rm -rf /runtime/node_modules/@ageniza/payments/dist/simulated')).toBeGreaterThan(buildStage.indexOf('--prod deploy /runtime'));
+    expect(buildStage.indexOf('ARG PAYMENTS_SIMULATED=include')).toBeLessThan(buildStage.indexOf('rm -rf /runtime'));
+    expect(finalStage).toContain('COPY --from=build /runtime ./');
+    expect(finalStage).not.toMatch(/simulated/i);
+    expect(finalStage).not.toContain('rm -rf');
   });
 
   it('is built with exclude by the production workflow, in the validating build and in the publishing build', () => {

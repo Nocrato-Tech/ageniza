@@ -14,21 +14,22 @@ RUN pnpm install --frozen-lockfile
 COPY apps apps
 COPY packages packages
 RUN pnpm --filter @ageniza/api... build && pnpm --filter @ageniza/api --prod deploy /runtime
+# The simulated payment provider (issue #772) is code that approves any card. The production release builds with
+# PAYMENTS_SIMULATED=exclude, which removes it here, in the build stage, so the final stage copies a tree that never had it and no
+# layer of the shipped image holds it; the API also refuses to start with it in production. The default keeps it, because the dev and
+# local environments run this same image with PAYMENTS_PROVIDER=simulado.
+ARG PAYMENTS_SIMULATED=include
+RUN if [ "$PAYMENTS_SIMULATED" = "exclude" ]; then \
+      rm -rf /runtime/node_modules/@ageniza/payments/dist/simulated && test ! -e /runtime/node_modules/@ageniza/payments/dist/simulated; \
+    elif [ "$PAYMENTS_SIMULATED" != "include" ]; then \
+      echo "PAYMENTS_SIMULATED must be include or exclude" >&2 && exit 1; \
+    fi
 FROM node:22-bookworm-slim
 ARG APP_VERSION=unknown
-# The simulated payment provider (issue #772) is code that approves any card. The production release builds with
-# PAYMENTS_SIMULATED=exclude, which removes it from the image; the API also refuses to start with it in production.
-# The default keeps it, because the dev and local environments run this same image with PAYMENTS_PROVIDER=simulado.
-ARG PAYMENTS_SIMULATED=include
 ENV NODE_ENV=production
 ENV APP_VERSION=$APP_VERSION
 WORKDIR /app
 COPY --from=build /runtime ./
-RUN if [ "$PAYMENTS_SIMULATED" = "exclude" ]; then \
-      rm -rf node_modules/@ageniza/payments/dist/simulated && test ! -e node_modules/@ageniza/payments/dist/simulated; \
-    elif [ "$PAYMENTS_SIMULATED" != "include" ]; then \
-      echo "PAYMENTS_SIMULATED must be include or exclude" >&2 && exit 1; \
-    fi
 USER node
 EXPOSE 3001
 CMD ["node", "dist/index.js"]
