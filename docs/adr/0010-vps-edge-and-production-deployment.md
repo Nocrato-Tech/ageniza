@@ -1,6 +1,6 @@
 # ADR 0010: Caddy edge and controlled production deployment
 
-- Status: Accepted; the **edge** decision is superseded by [ADR 0012](0012-cloudflare-tunnel-edge.md) (Cloudflare Tunnel instead of Caddy). The deployment mechanism below still applies.
+- Status: Accepted; the **edge** decision is superseded by [ADR 0012](0012-cloudflare-tunnel-edge.md) (Cloudflare Tunnel instead of Caddy). The deployment mechanism below still applies. The statement that `develop` has no remote environment is amended by [ADR 0013](0013-dev-environment-on-the-vps.md): `develop` is published to a separate dev environment.
 - Date: 2026-09-15
 - Deciders: Ageniza maintainers
 - Issue: [#10](https://github.com/Nocrato-Tech/ageniza/issues/10)
