@@ -1203,3 +1203,164 @@ describe('the storage in use against an upload being confirmed', () => {
     }
   });
 });
+
+// A raise is free when the monthly price does not go up, whatever the proration rounds to (review of #782). With today's prices the two
+// readings agree, so these tests change the price tables inside a transaction of the schema owner that is always rolled back: nothing
+// another test reads is ever committed.
+describe('a raise is free by the monthly price and not by the rounding', () => {
+  type Priced = { agencyId: string; ownerId: string; transaction: Knex.Transaction };
+  const changeAsOwner = (transaction: Knex.Transaction, agencyId: string, plan: string, clients: number, gib: number) =>
+    transaction.raw<{ rows: Array<{ charge_id: string | null; effect: string; monthly_cents: number; amount_cents: number }> }>(
+      'select * from app_private.request_subscription_change(?::uuid, ?, ?::integer, ?::integer)', [agencyId, plan, clients, gib]);
+  const quoteAsOwner = (transaction: Knex.Transaction, agencyId: string, plan: string, clients: number, gib: number) =>
+    transaction.raw<{ rows: Array<{ effect: string; monthly_cents: number; amount_cents: number }> }>(
+      'select * from app_private.quote_subscription_change(?::uuid, ?, ?::integer, ?::integer)', [agencyId, plan, clients, gib]);
+
+  // The subscription is committed as any other; the price change and the request live in one transaction that is rolled back.
+  const withPrices = async (
+    setup: (world: { agencyId: string; ownerId: string }) => Promise<void>,
+    prices: (transaction: Knex.Transaction) => Promise<void>,
+    work: (priced: Priced) => Promise<void>
+  ): Promise<void> => {
+    const world = await h.trialAgency();
+    await setup(world);
+    const transaction = await owner().transaction();
+    try {
+      await prices(transaction);
+      await transaction.raw('select app_private.bind_actor(?::uuid)', [world.ownerId]);
+      await work({ ...world, transaction });
+    } finally {
+      await transaction.rollback();
+    }
+  };
+
+  it('charges at least one cent for a raise that costs more by less than the proration can show, and applies nothing', async () => {
+    await withPrices(
+      async ({ agencyId, ownerId }) => {
+        await h.subscribe(ownerId, agencyId, 'essencial', 0, 0);
+        await h.setPeriod(agencyId, 29, 1);
+      },
+      async (transaction) => { await transaction('subscription_extra_prices').where({ kind: 'storage_gib' }).update({ unit_price_cents: 10 }); },
+      async ({ agencyId, transaction }) => {
+        // One more GiB at 10 cents, one day left of thirty: 10 * 1 / 30 rounds to zero.
+        expect((await quoteAsOwner(transaction, agencyId, 'essencial', 0, 1)).rows).toMatchObject([{ effect: 'upgrade', monthly_cents: 9_710, amount_cents: 1 }]);
+
+        const { rows } = await changeAsOwner(transaction, agencyId, 'essencial', 0, 1);
+
+        expect(rows).toMatchObject([{ effect: 'upgrade', monthly_cents: 9_710, amount_cents: 1 }]);
+        expect(rows[0]!.charge_id).not.toBeNull();
+        expect((await transaction('agency_subscriptions').where({ agency_id: agencyId }).first('plan_key', 'extra_storage_gib'))).toEqual({ plan_key: 'essencial', extra_storage_gib: 0 });
+        expect(await transaction('subscription_charges').where({ agency_id: agencyId, status: 'pending' }).select('kind', 'amount_cents')).toEqual([{ kind: 'upgrade', amount_cents: 1 }]);
+        expect((await transaction.raw<{ rows: Array<{ n: string }> }>("select count(*)::text as n from audit.events where agency_id = ? and action = 'subscription.upgraded'", [agencyId])).rows).toEqual([{ n: '0' }]);
+      }
+    );
+  });
+
+  it('charges the full proration when it is more than one cent, and never less than the price asks', async () => {
+    await withPrices(
+      async ({ agencyId, ownerId }) => {
+        await h.subscribe(ownerId, agencyId, 'essencial', 0, 0);
+        await h.setPeriod(agencyId, 15, 15);
+      },
+      async () => undefined,
+      async ({ agencyId, transaction }) => {
+        // 20 GiB at 40 cents: 800 cents a month, 15 of 30 days left.
+        const { rows } = await changeAsOwner(transaction, agencyId, 'essencial', 0, 20);
+        expect(rows).toMatchObject([{ effect: 'upgrade', monthly_cents: 10_500, amount_cents: 400 }]);
+      }
+    );
+  });
+
+  it('applies at once a raise whose monthly price is the same, since the Owner already pays what it costs, and quotes it as zero', async () => {
+    await withPrices(
+      async ({ agencyId, ownerId }) => {
+        await h.subscribe(ownerId, agencyId, 'essencial', 0, 0);
+        await h.setPeriod(agencyId, 10, 20);
+      },
+      // Profissional at the price of Essencial: more clients and more storage for the same money.
+      async (transaction) => { await transaction('subscription_plans').where({ key: 'profissional' }).update({ monthly_price_cents: 9_700 }); },
+      async ({ agencyId, transaction }) => {
+        expect((await quoteAsOwner(transaction, agencyId, 'profissional', 0, 0)).rows).toMatchObject([{ effect: 'upgrade', monthly_cents: 9_700, amount_cents: 0 }]);
+
+        const { rows } = await changeAsOwner(transaction, agencyId, 'profissional', 0, 0);
+
+        expect(rows).toMatchObject([{ charge_id: null, effect: 'upgrade', monthly_cents: 9_700, amount_cents: 0 }]);
+        expect((await transaction('agency_subscriptions').where({ agency_id: agencyId }).first('plan_key'))).toEqual({ plan_key: 'profissional' });
+        expect(await transaction('subscription_charges').where({ agency_id: agencyId, status: 'pending' })).toEqual([]);
+      }
+    );
+  });
+
+  it('charges nothing now for a decrease of the limits that costs more per month, and schedules it instead of adding a cent', async () => {
+    await withPrices(
+      async ({ agencyId, ownerId }) => {
+        await h.subscribe(ownerId, agencyId, 'profissional', 0, 0);
+        await h.setPeriod(agencyId, 10, 20);
+      },
+      async () => undefined,
+      async ({ agencyId, transaction }) => {
+        // Essencial with 19 extra clients and 80 extra GiB has 29 clients and 100 GiB (fewer clients, the same storage) for 24.300 cents,
+        // more than the 19.700 of Profissional: a decrease of the limits, billed from the next period, so nothing is charged now.
+        expect((await quoteAsOwner(transaction, agencyId, 'essencial', 19, 80)).rows).toMatchObject([{ effect: 'downgrade', monthly_cents: 24_300, amount_cents: 0 }]);
+
+        const { rows } = await changeAsOwner(transaction, agencyId, 'essencial', 19, 80);
+
+        expect(rows).toMatchObject([{ effect: 'downgrade', monthly_cents: 24_300, amount_cents: 0 }]);
+        expect(rows[0]!.charge_id).toBeNull();
+        expect((await transaction('agency_subscriptions').where({ agency_id: agencyId }).first('plan_key', 'pending_plan_key'))).toEqual({ plan_key: 'profissional', pending_plan_key: 'essencial' });
+      }
+    );
+  });
+
+  it('opens a charge, and applies nothing, for a new subscription that costs no more than the one that lapsed', async () => {
+    await withPrices(
+      async ({ agencyId, ownerId }) => {
+        await h.subscribe(ownerId, agencyId, 'profissional', 0, 0);
+        // Ended four days ago, past the three of grace: the subscription row stays, but nothing is live.
+        await h.endPeriod(agencyId, 4 * 86400);
+      },
+      async () => undefined,
+      async ({ agencyId, transaction }) => {
+        const { rows } = await changeAsOwner(transaction, agencyId, 'essencial', 0, 0);
+
+        expect(rows).toMatchObject([{ effect: 'subscribe', monthly_cents: 9_700, amount_cents: 9_700 }]);
+        expect(rows[0]!.charge_id).not.toBeNull();
+        expect((await transaction('agency_subscriptions').where({ agency_id: agencyId }).first('plan_key'))).toEqual({ plan_key: 'profissional' });
+        expect(await transaction('subscription_charges').where({ agency_id: agencyId, status: 'pending' }).select('kind', 'amount_cents')).toEqual([{ kind: 'subscribe', amount_cents: 9_700 }]);
+      }
+    );
+  });
+
+  it('applies at once a raise whose monthly price is lower, as before', async () => {
+    await withPrices(
+      async ({ agencyId, ownerId }) => {
+        await h.subscribe(ownerId, agencyId, 'essencial', 20, 80);
+        await h.setPeriod(agencyId, 10, 20);
+      },
+      async () => undefined,
+      async ({ agencyId, transaction }) => {
+        const { rows } = await changeAsOwner(transaction, agencyId, 'profissional', 0, 1);
+        expect(rows).toMatchObject([{ charge_id: null, effect: 'upgrade', monthly_cents: 19_740, amount_cents: 0 }]);
+        expect((await transaction('agency_subscriptions').where({ agency_id: agencyId }).first('plan_key', 'extra_storage_gib'))).toEqual({ plan_key: 'profissional', extra_storage_gib: 1 });
+      }
+    );
+  });
+
+  it('compares with the price of the subscription of this agency, not of another one', async () => {
+    await withPrices(
+      async ({ agencyId, ownerId }) => {
+        // Other agencies on the dearest terms, so a comparison with any subscription but this one would find the raise cheaper.
+        const other = await h.trialAgency();
+        await h.subscribe(other.ownerId, other.agencyId, 'agencia', 100, 100);
+        await h.subscribe(ownerId, agencyId, 'essencial', 0, 0);
+        await h.setPeriod(agencyId, 10, 20);
+      },
+      async (transaction) => { await transaction('subscription_extra_prices').where({ kind: 'storage_gib' }).update({ unit_price_cents: 10 }); },
+      async ({ agencyId, transaction }) => {
+        const { rows } = await changeAsOwner(transaction, agencyId, 'essencial', 0, 1);
+        expect(rows[0]!.charge_id).not.toBeNull();
+        expect((await transaction('agency_subscriptions').where({ agency_id: agencyId }).first('extra_storage_gib'))).toEqual({ extra_storage_gib: 0 });
+      }
+    );
+  });
+});
