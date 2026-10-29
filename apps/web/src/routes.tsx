@@ -10,7 +10,7 @@ import { DarkArea } from './area-theme.js';
 import { AgencyAreaLayout, AgencyHomePage, AgencyPermissionRoute } from './agency.js';
 import { AuthLayout } from './auth-layout.js';
 import { CircleAlert, CircleCheck } from 'lucide-react';
-import { Button, ButtonLink, LiveStatus, Logo } from '@ageniza/ui';
+import { Button, LiveStatus, Logo } from '@ageniza/ui';
 import { ClientBrandStudyTab } from './brand-study.js';
 import { ClientDetailPage, ClientGeneralTab, ClientSkeletonTab } from './client-detail.js';
 import { ClientMediaTab } from './client-media.js';
@@ -68,16 +68,17 @@ function PortalCalendarRedirect() {
   return <Navigate to={{ pathname: `/portal/${encodeURIComponent(clienteId)}/conteudos`, search }} replace />;
 }
 
-function PublicHome() {
-  return <section className="public-page public-home" aria-labelledby="public-home-title">
-    <h1 id="public-home-title" className="visually-hidden">Ageniza</h1>
-    <p className="public-home__lead">Operações de agência, em um só lugar.</p>
-    <div className="public-page__actions">
-      <ButtonLink as={Link} to="/entrar" size="lg">Entrar</ButtonLink>
-      <ButtonLink as={Link} to="/status" variant="secondary" size="lg">Status do serviço</ButtonLink>
-    </div>
-  </section>;
+/**
+ * The root has no page of its own (decision of the owner, 2026-10-29, #786): it is the login. A visitor lands on
+ * `/entrar`; a person with a session lands there too, and the login sends them on through the resolve to the same
+ * destination as after signing in. The query and the state travel along, so what the login reads from them
+ * (`?erro=google`, the destination the session guard kept) behaves the same from `/`.
+ */
+function RootRedirect() {
+  const { search, state } = useLocation();
+  return <Navigate to={{ pathname: '/entrar', search }} state={state} replace />;
 }
+
 function ServiceStatus() {
   const httpClient = useApiClient();
   const health = useQuery({ queryKey: ['health'], queryFn: () => getHealth(httpClient) });
@@ -106,8 +107,8 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
   return <Routes>
     {/* The page of the link in the e-mail "conteúdos para aprovar": no login, no shell of the product, its own header (#717). */}
     <Route path="aprovar" element={<ApprovalLinkPage />} />
+    <Route index element={<RootRedirect />} />
     <Route element={<PublicLayout />}>
-      <Route index element={<PublicHome />} />
       <Route path="status" element={<ServiceStatus />} />
       <Route path="sem-acesso" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <NoAccessPage />} />
       <Route path="termos" element={<LegalDocumentPage document={termsOfUse} sibling={{ title: 'Política de Privacidade', to: '/privacidade' }} />} />

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useNavigationType } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
@@ -36,16 +36,21 @@ const signedInFetch: typeof fetch = async (input, init) => {
   return new Response(null, { status: 401 });
 };
 
-function LocationProbe({ probe }: { probe: { pathname: string } }) {
+interface Probe { pathname: string; search: string; navigationType: string }
+
+function LocationProbe({ probe }: { probe: Probe }) {
+  const navigationType = useNavigationType();
   useCommittedLocation((location) => {
     probe.pathname = location.pathname;
+    probe.search = location.search;
+    probe.navigationType = navigationType;
   });
   return null;
 }
 
-const renderRoute = (path: string, isAuthenticated: boolean, impl: typeof fetch = unauthenticatedFetch) => {
+const renderRoute = (path: string | { pathname: string; state: unknown }, isAuthenticated: boolean, impl: typeof fetch = unauthenticatedFetch) => {
   const client = new HttpClient('http://127.0.0.1:3001', impl);
-  const probe = { pathname: '' };
+  const probe: Probe = { pathname: '', search: '', navigationType: 'POP' };
   render(
     <AuthSessionProvider store={createAuthSessionStore(client)}>
       <QueryClientProvider client={createQueryClient()}>
@@ -101,11 +106,8 @@ describe('route boundaries', () => {
     expect(screen.getByText('Esta área exige uma sessão ativa.')).toBeTruthy();
   });
 
-  it('shows the public home in Portuguese, behind the skip link of the public layout', () => {
-    renderRoute('/', false);
-    expect(screen.getByRole('heading', { name: 'Ageniza', level: 1 })).toBeTruthy();
-    expect(screen.getByText('Operações de agência, em um só lugar.')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Status do serviço' }).getAttribute('href')).toBe('/status');
+  it('keeps the skip link and the main landmark on the public pages that remain', () => {
+    renderRoute('/privacidade', false);
     expect(screen.getByRole('link', { name: 'Pular para o conteúdo' }).getAttribute('href')).toBe('#main-content');
     expect(screen.getByRole('main').id).toBe('main-content');
   });
@@ -229,16 +231,8 @@ describe('screens that open with a valid session (rule 11 exceptions, issue #342
 });
 
 describe('public pages in the Pauta look (#639)', () => {
-  it('leads the home with one primary way in, and keeps the status as the quiet one', () => {
-    renderRoute('/', false);
-    const enter = screen.getByRole('link', { name: 'Entrar' });
-    expect(enter.getAttribute('href')).toBe('/entrar');
-    expect(enter.classList.contains('ui-button--primary')).toBe(true);
-    expect(screen.getByRole('link', { name: 'Status do serviço' }).classList.contains('ui-button--secondary')).toBe(true);
-  });
-
   it('wears the logo, not the word, in the header of the public pages', () => {
-    renderRoute('/', false);
+    renderRoute('/status', false);
     const link = screen.getByRole('link', { name: 'Ageniza' });
     expect(link.getAttribute('href')).toBe('/');
     expect(link.querySelector('img')?.getAttribute('src')).toBe('/brand/logo-para-fundo-claro.svg');
@@ -304,10 +298,58 @@ describe('the retry of the service status keeps the keyboard where it was (#639)
   });
 });
 
-describe('the public home does not say the brand twice (#639)', () => {
-  it('keeps the title for assistive technology and shows the sentence as the visible heading line', () => {
-    renderRoute('/', false);
-    expect(screen.getByRole('heading', { name: 'Ageniza', level: 1 }).classList.contains('visually-hidden')).toBe(true);
-    expect(screen.getByText('Operações de agência, em um só lugar.').classList.contains('public-home__lead')).toBe(true);
+describe('the root opens the login (#786)', () => {
+  it('sends a visitor from / to the login screen, with no provisional page in between', async () => {
+    const { probe } = renderRoute('/', false);
+    expect(await screen.findByRole('heading', { name: 'Entrar', level: 1 })).toBeTruthy();
+    expect(probe.pathname).toBe('/entrar');
+    expect(screen.queryByText('Operações de agência, em um só lugar.')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Status do serviço' })).toBeNull();
+  });
+
+  it('replaces the root in the history, so Back never returns to a redirect', async () => {
+    const { probe } = renderRoute('/', false);
+    await screen.findByRole('heading', { name: 'Entrar', level: 1 });
+    expect(probe.navigationType).toBe('REPLACE');
+  });
+
+  it('carries the query of the root to the login, which reads it', async () => {
+    const { probe } = renderRoute('/?erro=google', false);
+    expect(await screen.findByText('E-mail ou senha incorretos.')).toBeTruthy();
+    expect(probe.pathname).toBe('/entrar');
+    expect(probe.search).toBe('?erro=google');
+  });
+
+  it('sends a person with a session from / to the context the resolve picks', async () => {
+    const { probe } = renderRoute('/', true, signedInFetch);
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
+  });
+
+  it('sends a person with a session to the selector when the resolve says select', async () => {
+    const selecting: typeof fetch = async (input, init) =>
+      String(input).endsWith('/me/contexts/resolve')
+        ? json({ decision: 'select', contexts: [agencyA], highlighted: null, canCreateAgency: false })
+        : signedInFetch(input, init);
+    const { probe } = renderRoute('/', true, selecting);
+    await waitFor(() => expect(probe.pathname).toBe('/contextos'));
+  });
+
+  it('sends a person with a session and no context to /comecar', async () => {
+    const empty: typeof fetch = async (input, init) =>
+      String(input).endsWith('/me/contexts/resolve') ? json({ decision: 'none' }) : signedInFetch(input, init);
+    const { probe } = renderRoute('/', true, empty);
+    await waitFor(() => expect(probe.pathname).toBe('/comecar'));
+  });
+
+  it('keeps the destination the session guard saved, which the login honors from /', async () => {
+    const saved = { path: `/agencia/${AGENCY_A}/colaboradores`, savedAt: Date.now() };
+    const { probe } = renderRoute({ pathname: '/', state: { sessionDestination: saved } }, true, signedInFetch);
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`));
+  });
+
+  it('keeps the service status reachable on its own route', async () => {
+    const healthy: typeof fetch = async (input) => (String(input).endsWith('/health') ? json({ status: 'ok' }) : new Response(null, { status: 401 }));
+    renderRoute('/status', false, healthy);
+    expect(await screen.findByText('A API está ok.')).toBeTruthy();
   });
 });

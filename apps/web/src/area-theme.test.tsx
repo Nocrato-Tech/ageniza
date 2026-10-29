@@ -60,7 +60,7 @@ describe('theme of the areas', () => {
   });
 
   it.each([
-    ['the public home', '/', false],
+    ['the root, which opens the login', '/', false],
     ['the login', '/entrar', false],
     ['a public page', '/termos', false],
     ['the context picker', '/contextos', true],
