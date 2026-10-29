@@ -33,7 +33,7 @@ O backend foi feito para o navegador; para o app nativo ele ganhou três coisas,
    Sem `appRedirect`, o fluxo é o da web e termina na tela `/entrar/google`.
 4. **Links de e-mail abrindo o app** (opcional, ainda não existe): os e-mails apontam para a web (`/email/verificar?token=`, `/convite/:token`, `/aprovar#<token>`, `/senha/redefinir?token=`). Para abrir no app, configure universal links / app links para esses caminhos. Peça por issue.
 
-**Cuidado com o deep link.** Um esquema próprio (`ageniza://`) não é exclusivo: outro app instalado no aparelho pode registrar o mesmo esquema e ler o cookie que o Google devolve. Por isso, antes de abrir o app a um público amplo, o esquema deve virar universal link / app link (item 4). A decisão está em [autenticação para o cliente nativo](../business/decisions/2026-10-29-estrutural-autenticacao-para-cliente-nativo.md).
+**Cuidado com o deep link.** Um esquema próprio (`ageniza://`) não é exclusivo: outro app instalado no aparelho pode registrar o mesmo esquema e ler o cookie que o Google devolve (só o retorno do Google leva o `?cookie=`; e-mail e senha recebem `Set-Cookie`). Universal links / App Links **não** resolvem, porque o plugin não anexa a sessão a destino `http(s)`. Por isso a lista fica só no dev até a issue #799 (código de uso único com PKCE, ou Google Sign-In nativo com `idToken`). A decisão está em [autenticação para o cliente nativo](../business/decisions/2026-10-29-estrutural-autenticacao-para-cliente-nativo.md).
 
 Mudou algo na autenticação que o app precisa? Isso passa pela revisão de segurança do backend: peça por issue com o que o app precisa; não altere o backend pelo lado do app.
 

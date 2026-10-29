@@ -566,7 +566,8 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
   }
   for (const origin of result.data.MOBILE_APP_ORIGINS) {
     const scheme = /^([a-z][a-z0-9+.-]*):\/\/$/.exec(origin)?.[1];
-    if (scheme === undefined || webSchemes.has(scheme)) {
+    // `exp://` is Expo Go's, shared by every app that runs in it: only the shared dev environment may list it.
+    if (scheme === undefined || webSchemes.has(scheme) || (scheme === 'exp' && runsAsProduction(serverConfig))) {
       throw new ConfigValidationError('API', [{ path: 'MOBILE_APP_ORIGINS', message: 'must contain app schemes such as ageniza://; supplied values are redacted' }]);
     }
   }
