@@ -148,6 +148,7 @@ O registro detalhado vive no ai-memory, em `notes/licoes-seguranca-rls.md`. As r
 - Teto de página é **limitar**, e `page` gigante não pode virar 500.
 - Upload validado pelo conteúdo; URL assinada com tipo forçado.
 - Mudança de ambiente entra na allowlist do deploy.
+- Em VPS compartilhada, o isolamento de recurso entre ambientes (dev e prod) cobre também o **disco** (imagens, volumes, logs), e não só CPU, memória e pids. Um limite de container não impede que as imagens de cada release, os logs do Docker ou um volume sem teto encham o disco e derrubem a Postgres do outro ambiente (#774).
 - Trocar a credencial (redefinir a senha, o Google assumir a conta) invalida a sessão **pela data da troca**, não só apagando as sessões uma vez: um login com a senha antiga em andamento grava a sessão depois do apagamento e sobrevive (#705, #719). Quem revisa roda logins com a credencial antiga em paralelo com a troca e conta as sessões que sobram.
 - Um contador compartilhado entre caminhos (por exemplo, o de reenvio de confirmação usado pelo login e pelo cadastro) vira oráculo de existência de conta: quem chama um caminho lê o efeito do outro pelo limite. Contador de limite fica por caminho, ou o caminho público não o consome (#722).
 - Quando a regra está em duas camadas (rota e banco), cada camada precisa de um teste que espione só ela, com a outra desligada; senão a mutação de uma camada fica verde, porque a outra segura (#722).

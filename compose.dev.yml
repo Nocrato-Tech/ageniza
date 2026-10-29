@@ -1,0 +1,122 @@
+# Shared dev environment on the VPS (ADR 0013), layered over compose.yml exactly like compose.production.yml.
+# It is its own Compose project (ageniza-dev): its network, volume and PostgreSQL are never the production ones,
+# and nothing publishes a port. Sizes come from infra/vps/dev-limits.env, pass it with --env-file.
+name: ageniza-dev
+
+services:
+  api:
+    image: ${AGENIZA_API_IMAGE:?immutable API image reference required}
+    build: !reset null
+    extra_hosts: !reset []
+    # Mail and the trusted proxy network are fixed here, above whatever the runtime file says, so no host file can
+    # point the dev environment at a real SMTP provider (the API and worker also refuse it, see DEPLOY_TARGET).
+    environment: !override
+      DEPLOY_TARGET: dev
+      SMTP_URL: smtp://mailpit:1025
+      EMAIL_FROM: Ageniza Dev <no-reply@dev.ageniza.com.br>
+      API_TRUSTED_PROXY_CIDRS: 172.30.250.0/24
+    env_file:
+      - path: ${AGENIZA_RUNTIME_ENV_FILE:?server runtime env file required}
+        format: raw
+    ports: !reset []
+    restart: unless-stopped
+    logging: &dev-logging
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    networks: !override [dev-private, egress]
+    cpus: ${DEV_API_CPUS:?infra/vps/dev-limits.env required}
+    mem_limit: ${DEV_API_MEM:?infra/vps/dev-limits.env required}
+    memswap_limit: ${DEV_API_MEM:?infra/vps/dev-limits.env required}
+    pids_limit: ${DEV_API_PIDS:?infra/vps/dev-limits.env required}
+  worker:
+    image: ${AGENIZA_WORKER_IMAGE:?immutable worker image reference required}
+    build: !reset null
+    extra_hosts: !reset []
+    environment: !override
+      DEPLOY_TARGET: dev
+      SMTP_URL: smtp://mailpit:1025
+      EMAIL_FROM: Ageniza Dev <no-reply@dev.ageniza.com.br>
+    env_file:
+      - path: ${AGENIZA_RUNTIME_ENV_FILE:?server runtime env file required}
+        format: raw
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *dev-logging
+    networks: !override [dev-private, egress]
+    cpus: ${DEV_WORKER_CPUS:?infra/vps/dev-limits.env required}
+    mem_limit: ${DEV_WORKER_MEM:?infra/vps/dev-limits.env required}
+    memswap_limit: ${DEV_WORKER_MEM:?infra/vps/dev-limits.env required}
+    pids_limit: ${DEV_WORKER_PIDS:?infra/vps/dev-limits.env required}
+  web:
+    image: ${AGENIZA_WEB_IMAGE:?immutable web image reference required}
+    build: !reset null
+    ports: !reset []
+    restart: unless-stopped
+    logging: *dev-logging
+    # The tunnel reaches this service as `web`; it proxies /api to the API on the private network.
+    networks: !override [dev-proxy, dev-private]
+    cpus: ${DEV_WEB_CPUS:?infra/vps/dev-limits.env required}
+    mem_limit: ${DEV_WEB_MEM:?infra/vps/dev-limits.env required}
+    memswap_limit: ${DEV_WEB_MEM:?infra/vps/dev-limits.env required}
+    pids_limit: ${DEV_WEB_PIDS:?infra/vps/dev-limits.env required}
+  # The only mail path of the environment: SMTP is reachable on the internal network alone, the inbox UI only through
+  # the tunnel hostname that sits behind Cloudflare Access.
+  mailpit:
+    image: ${AGENIZA_MAILPIT_IMAGE:?immutable Mailpit image reference required}
+    environment: !override
+      MP_SMTP_AUTH_ACCEPT_ANY: '1'
+      MP_SMTP_AUTH_ALLOW_INSECURE: '1'
+      MP_MAX_MESSAGES: '500'
+    ports: !reset []
+    restart: unless-stopped
+    logging: *dev-logging
+    networks: !override [dev-private, dev-proxy]
+    cpus: ${DEV_MAILPIT_CPUS:?infra/vps/dev-limits.env required}
+    mem_limit: ${DEV_MAILPIT_MEM:?infra/vps/dev-limits.env required}
+    memswap_limit: ${DEV_MAILPIT_MEM:?infra/vps/dev-limits.env required}
+    pids_limit: ${DEV_MAILPIT_PIDS:?infra/vps/dev-limits.env required}
+  # Dev uses its own Cloudflare R2 buckets; the local object-storage stand-in stays out of the model.
+  localstack:
+    profiles: ["local-only"]
+    ports: !reset []
+  postgres:
+    image: ${AGENIZA_POSTGRES_IMAGE:?immutable PostgreSQL image reference required}
+    environment: !reset {}
+    env_file:
+      - path: ${AGENIZA_POSTGRES_ENV_FILE:?PostgreSQL env file required}
+        format: raw
+    # Never publish PostgreSQL: Docker-published ports bypass the host firewall.
+    ports: !reset []
+    volumes: !override
+      - postgres-data:/var/lib/postgresql/data
+      - /opt/ageniza-dev/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    shm_size: 64mb
+    restart: unless-stopped
+    logging: *dev-logging
+    networks: !override [dev-private]
+    cpus: ${DEV_POSTGRES_CPUS:?infra/vps/dev-limits.env required}
+    mem_limit: ${DEV_POSTGRES_MEM:?infra/vps/dev-limits.env required}
+    memswap_limit: ${DEV_POSTGRES_MEM:?infra/vps/dev-limits.env required}
+    pids_limit: ${DEV_POSTGRES_PIDS:?infra/vps/dev-limits.env required}
+
+networks:
+  dev-proxy:
+    name: ageniza-dev-proxy
+    external: true
+  # The subnet is fixed so the API can trust the forwarded client address of the web container without a manual step.
+  dev-private:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.250.0/24

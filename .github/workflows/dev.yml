@@ -1,0 +1,171 @@
+name: Dev release
+
+# Every commit that lands on develop is built and published to the dev environment on the VPS (ADR 0013).
+# This workflow never runs for main and holds no production secret: its key and variables live in the
+# GitHub environment `dev`, restricted to the develop branch, and its key can only call the dev forced command.
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+# One dev release at a time; a newer push replaces a release that is still pending.
+concurrency:
+  group: dev-develop
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    name: Build and publish develop images
+    # The switch is a repository variable, set to true by the owner once the domain, the tunnel and the VPS exist
+    # (docs/infra/dev-environment.md); until then a merge to develop builds and publishes nothing.
+    if: vars.DEV_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: dev
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Require the public web build variables
+        env:
+          VITE_API_BASE_URL: ${{ vars.DEV_VITE_API_BASE_URL }}
+        run: |
+          [[ "$VITE_API_BASE_URL" == https://dev.ageniza.com.br/api ]] || { echo '::error::Environment variable DEV_VITE_API_BASE_URL must be https://dev.ageniza.com.br/api.'; exit 1; }
+      - name: Resolve lowercase GHCR namespace
+        id: registry
+        # Docker repository names must be lowercase; the GitHub owner may not be.
+        run: echo "namespace=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The tag is for people; the VPS deploys the digest from the manifest below, never a tag.
+      - id: api
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.registry.outputs.namespace }}/ageniza-api:develop-${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - id: worker
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          push: true
+          tags: ${{ steps.registry.outputs.namespace }}/ageniza-worker:develop-${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - id: web
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ steps.registry.outputs.namespace }}/ageniza-web:develop-${{ github.sha }}
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.DEV_VITE_API_BASE_URL }}
+            VITE_SENTRY_DSN=${{ vars.DEV_VITE_SENTRY_DSN }}
+            VITE_APP_VERSION=${{ github.sha }}
+            APP_VERSION=${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - id: migrations
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: infra/migrations/Dockerfile
+          push: true
+          tags: ${{ steps.registry.outputs.namespace }}/ageniza-migrations:develop-${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - name: Record the immutable dev release manifest
+        env:
+          NAMESPACE: ${{ steps.registry.outputs.namespace }}
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+          WORKER_DIGEST: ${{ steps.worker.outputs.digest }}
+          MIGRATIONS_DIGEST: ${{ steps.migrations.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          manifest="$RUNNER_TEMP/release/release.env"
+          {
+            echo "TARGET=dev"
+            echo "RELEASE=$GITHUB_SHA"
+            echo "RUN_ID=$GITHUB_RUN_ID"
+            echo "API_IMAGE=$NAMESPACE/ageniza-api@$API_DIGEST"
+            echo "WEB_IMAGE=$NAMESPACE/ageniza-web@$WEB_DIGEST"
+            echo "WORKER_IMAGE=$NAMESPACE/ageniza-worker@$WORKER_DIGEST"
+            echo "MIGRATIONS_IMAGE=$NAMESPACE/ageniza-migrations@$MIGRATIONS_DIGEST"
+          } > "$manifest"
+          while IFS='=' read -r key value; do
+            case "$key" in *_IMAGE) node scripts/deploy/validate-image-ref.mjs "$key" "$value" ;; esac
+          done < "$manifest"
+          { echo "## Dev release manifest"; echo '```'; cat "$manifest"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      # The VPS downloads this artifact itself; digests are never taken from the SSH command.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dev-release-manifest
+          path: ${{ runner.temp }}/release/release.env
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy:
+    name: Migrate and deploy dev
+    needs: publish
+    if: vars.DEV_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: dev
+    permissions:
+      contents: read
+    env:
+      DEV_PUBLIC_URL: ${{ vars.DEV_PUBLIC_URL }}
+    # No application secret exists in GitHub: migrations, runtime configuration, and registry credentials live on
+    # the VPS. This job holds only the dev forced-command SSH key, which cannot apply a production release.
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Skip if develop has moved past this commit
+        id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/develop" --jq .object.sha)"
+          if [[ "$tip" == "$GITHUB_SHA" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::develop is now at $tip; the newer run deploys it, not $GITHUB_SHA."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Require the public URL
+        if: steps.tip.outputs.deploy == 'true'
+        run: |
+          [[ "$DEV_PUBLIC_URL" == https://dev.ageniza.com.br ]] || { echo '::error::Environment variable DEV_PUBLIC_URL must be https://dev.ageniza.com.br.'; exit 1; }
+      - if: steps.tip.outputs.deploy == 'true'
+        uses: ./.github/actions/dev-ssh
+        with:
+          private-key: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+          known-hosts: ${{ secrets.DEV_SSH_KNOWN_HOSTS }}
+          host: ${{ vars.DEV_SSH_HOST }}
+          port: ${{ vars.DEV_SSH_PORT }}
+          user: ${{ vars.DEV_SSH_USER }}
+      # On failure the VPS restarts the release that was live; dev has no manual rollback.
+      - name: Verify, migrate, and activate the release on the VPS
+        if: steps.tip.outputs.deploy == 'true'
+        run: ssh dev "apply-dev $GITHUB_SHA $GITHUB_RUN_ID"
+      - name: Smoke test the served version through Cloudflare
+        if: steps.tip.outputs.deploy == 'true'
+        run: |
+          served="$(curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$DEV_PUBLIC_URL/version.txt?run=$GITHUB_RUN_ID" | tr -d '[:space:]')"
+          [[ "$served" == "$GITHUB_SHA" ]] || { echo "::error::The dev site serves '$served', expected $GITHUB_SHA."; exit 1; }
+          curl --fail --silent --show-error --proto '=https' --retry 3 --retry-all-errors --max-time 20 "$DEV_PUBLIC_URL/api/health" >/dev/null

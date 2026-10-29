@@ -1,0 +1,54 @@
+name: Dev SSH
+description: Configure the `dev` SSH alias for the VPS dev forced-command key with a pinned host key. Separate from production-ssh on purpose, so a change here cannot touch the production release path.
+
+inputs:
+  private-key:
+    description: Private key whose public half is installed with the ageniza-deploy-dev-ssh forced command.
+    required: true
+  known-hosts:
+    description: Pre-verified known_hosts lines for the VPS.
+    required: true
+  host:
+    description: VPS hostname or IP address.
+    required: true
+  port:
+    description: VPS SSH port.
+    required: true
+  user:
+    description: Forced-command account of the dev environment on the VPS.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Configure pinned SSH access
+      shell: bash
+      env:
+        SSH_PRIVATE_KEY: ${{ inputs.private-key }}
+        SSH_KNOWN_HOSTS: ${{ inputs.known-hosts }}
+        SSH_HOST: ${{ inputs.host }}
+        SSH_PORT: ${{ inputs.port }}
+        SSH_USER: ${{ inputs.user }}
+      run: |
+        [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]] || { echo '::error::Secrets DEV_SSH_PRIVATE_KEY and DEV_SSH_KNOWN_HOSTS are required.'; exit 1; }
+        [[ "$SSH_HOST" =~ ^[A-Za-z0-9.:-]+$ ]] || { echo '::error::Variable DEV_SSH_HOST is missing or invalid.'; exit 1; }
+        [[ "$SSH_PORT" =~ ^[0-9]{1,5}$ ]] || { echo '::error::Variable DEV_SSH_PORT is missing or invalid.'; exit 1; }
+        [[ "$SSH_USER" == ageniza-dev-ci ]] || { echo '::error::Variable DEV_SSH_USER must be ageniza-dev-ci.'; exit 1; }
+        install -d -m 0700 ~/.ssh
+        printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+        ssh-keygen -lf ~/.ssh/known_hosts >/dev/null
+        (umask 077 && printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/dev_deploy)
+        ssh-keygen -y -f ~/.ssh/dev_deploy >/dev/null
+        cat > ~/.ssh/config <<EOF
+        Host dev
+          HostName $SSH_HOST
+          Port $SSH_PORT
+          User $SSH_USER
+          IdentityFile ~/.ssh/dev_deploy
+          IdentitiesOnly yes
+          BatchMode yes
+          StrictHostKeyChecking yes
+          UserKnownHostsFile ~/.ssh/known_hosts
+          ConnectTimeout 20
+        EOF
+        chmod 0600 ~/.ssh/config ~/.ssh/known_hosts

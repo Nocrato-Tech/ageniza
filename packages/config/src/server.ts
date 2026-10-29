@@ -184,7 +184,9 @@ const sharedServerSchema = z.object({
   ),
   SENTRY_DSN: optionalUrl('must be a valid Sentry DSN'),
   APP_VERSION: z.string().trim().min(1).max(128).optional().default('unknown'),
-  APP_CONTAINER_LOCAL: z.enum(['true', 'false']).optional().default('false')
+  APP_CONTAINER_LOCAL: z.enum(['true', 'false']).optional().default('false'),
+  // Set only by compose.dev.yml: the shared dev environment may never deliver mail outside its Mailpit sink.
+  DEPLOY_TARGET: z.preprocess((value) => typeof value === 'string' && value.trim() === '' ? undefined : value, z.enum(['dev']).optional())
 });
 const commaSeparatedValues = (value: string): string[] => value.split(',').map((item) => item.trim()).filter(Boolean);
 
@@ -330,6 +332,11 @@ const workerSchema = sharedServerSchema.extend({
   MEDIA_PREVIEW_MAX_OUTPUT_BYTES: z.coerce.number().int().min(1_048_576).default(300 * 1024 * 1024)
 });
 
+const isDevMailSink = (value: string): boolean => {
+  const url = new URL(value);
+  return url.protocol === 'smtp:' && url.hostname === 'mailpit' && url.port === '1025';
+};
+
 const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'], env: ServerEnvironment): ServerConfig => {
   const environment = loadRuntimeEnvironment(env.APP_ENV);
   const result = sharedServerSchema.safeParse(env);
@@ -356,6 +363,9 @@ const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'
       throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{ path: 'SMTP_URL', message: 'must use smtp or smtps; supplied values are redacted' }]);
     }
     assertRuntimeUrlSafety(environment, 'SMTP_URL', config.SMTP_URL, { allowLocalContainerHosts });
+    if (config.DEPLOY_TARGET === 'dev' && !isDevMailSink(config.SMTP_URL)) {
+      throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{ path: 'SMTP_URL', message: 'must be smtp://mailpit:1025 when DEPLOY_TARGET is dev; supplied values are redacted' }]);
+    }
   }
   if (environment === 'production' && config.SENTRY_DSN !== undefined && new URL(config.SENTRY_DSN).protocol !== 'https:') {
     throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{ path: 'SENTRY_DSN', message: 'must use HTTPS in production; supplied values are redacted' }]);

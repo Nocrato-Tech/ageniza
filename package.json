@@ -25,7 +25,7 @@
     "docker:up": "node scripts/docker/local-stack.mjs up",
     "docker:down": "node scripts/docker/local-stack.mjs down",
     "docker:logs": "docker compose logs --tail=200 -f",
-    "deploy:validate": "node scripts/deploy/validate-production.mjs",
+    "deploy:validate": "node scripts/deploy/validate-production.mjs && node scripts/deploy/validate-dev.mjs",
     "board:released": "node scripts/board/mark-released.mjs",
     "test:scripts": "vitest run --dir scripts",
     "quality:file-size": "node scripts/quality/file-size-report.mjs",

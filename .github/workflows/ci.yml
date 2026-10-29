@@ -170,6 +170,21 @@ jobs:
           echo '{}' > "$edge/credentials.json"
           docker run --rm -v "$edge:/etc/cloudflared:ro" cloudflare/cloudflared:latest \
             tunnel --config /etc/cloudflared/config.yml ingress validate
+      # Same rendering as the dev installer: the two Access values are filled in, the rest is the committed file.
+      - name: Render and check the dev Compose model
+        run: node scripts/deploy/validate-dev.mjs
+      - name: Validate the dev tunnel ingress rules
+        run: |
+          edge="$RUNNER_TEMP/cloudflared-dev"
+          mkdir -p "$edge"
+          sed -e 's/REPLACE_WITH_ACCESS_TEAM_NAME/ci-team/' -e "s/REPLACE_WITH_ACCESS_AUD_TAG/$(printf 'ab%.0s' {1..32})/" \
+            infra/vps/cloudflared/dev-config.yml > "$edge/config.yml"
+          echo '{}' > "$edge/credentials.json"
+          run() { docker run --rm -v "$edge:/etc/cloudflared:ro" cloudflare/cloudflared:latest tunnel --config /etc/cloudflared/config.yml ingress "$@"; }
+          run validate
+          run rule https://dev.ageniza.com.br/api/health | grep -F 'service: http://web:8080'
+          run rule https://mail-dev.ageniza.com.br/ | grep -F 'service: http://mailpit:8025'
+          run rule https://anything-else.ageniza.com.br/ | grep -F 'service: http_status:404'
       - name: Validate the web server configuration
         run: |
           docker run --rm -v "$PWD/apps/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
