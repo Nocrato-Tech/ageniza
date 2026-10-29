@@ -20,7 +20,9 @@ const provider: PaymentProvider = {
   charge: async (request) => {
     requests.push(request);
     return answer(request);
-  }
+  },
+  // Refunds belong to the worker's renewal; a route that asked for one here would be a bug.
+  refund: async () => { throw new Error('the API never refunds a charge'); }
 };
 
 let app: TestApp;
@@ -360,7 +362,11 @@ describe('the simulated routes fail closed', () => {
   });
 
   it('does not register them for a provider that is not the simulated one, and the overview names that provider', async () => {
-    const real = await buildTestApp({ paymentProvider: { name: 'asaas', charge: async () => { throw new Error('a real provider is never charged from a test'); } } });
+    const real = await buildTestApp({ paymentProvider: {
+      name: 'asaas',
+      charge: async () => { throw new Error('a real provider is never charged from a test'); },
+      refund: async () => { throw new Error('a real provider is never refunded from a test'); }
+    } });
     try {
       for (const route of simulatedRoutes(agencyA)) {
         const response = await real.app.inject({
