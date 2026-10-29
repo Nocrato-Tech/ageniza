@@ -279,6 +279,30 @@ describe('the ceiling of clients', () => {
     }
   });
 
+  it.each(['trial', 'paid'] as const)('creates the client of a writer who waited while the plan of a %s agency became exempt', async (kind) => {
+    // H (the operation) holds the lock of the agency and moves the agency to the exempt plan; A is already queued for it.
+    // After H commits, A reads a ceiling that is null: it must create the client, not refuse it with a ceiling of zero.
+    const { agencyId, ownerId } = await h.trialAgency();
+    if (kind === 'paid') await h.seedSubscription(agencyId, 'essencial');
+    await addClients(agencyId, 1);
+    const holder = await owner().transaction();
+    try {
+      await holder.raw("select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('agency_trial_limits:' || ?::text, 0))", [agencyId]);
+      await holder.raw("update public.agencies set plan = 'isenta', trial_ends_at = null where id = ?", [agencyId]);
+      let settled = false;
+      const waiting = h.insertClient(ownerId, agencyId).finally(() => { settled = true; });
+      waiting.catch(() => undefined);
+      await waitForBlockedLock(() => settled);
+      expect(settled).toBe(false);
+      await holder.commit();
+      await expect(waiting).resolves.toEqual(expect.any(String));
+    } finally {
+      if (!holder.isCompleted()) await holder.rollback();
+    }
+    expect(await activeClients(agencyId)).toBe(2);
+    expect(await agencyRow(agencyId)).toMatchObject({ plan: 'isenta' });
+  });
+
   it('makes the second writer wait for the one who takes the last place, and then refuses it', async () => {
     const { agencyId, ownerId } = await h.trialAgency();
     await h.seedSubscription(agencyId, 'essencial');

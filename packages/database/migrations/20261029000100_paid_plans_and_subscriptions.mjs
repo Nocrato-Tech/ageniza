@@ -346,7 +346,10 @@ export async function up(knex) {
   `);
 
   await knex.raw(`
-    -- Writes the terms of a subscription and the quota that follows them. Callers hold the lock of the agency.
+    -- Writes the terms of a subscription and the quota that follows them. A caller holds the lock of the agency
+    -- ('agency_trial_limits:<agency>') and, when it compares the storage in use with the new ceiling, also the upload
+    -- confirmation's lock ('media-quota:<agency>', taken by the media service) first, always in that order: the two keys do not
+    -- serialize with each other, so the lock of the agency alone leaves a confirmation in flight out of the count.
     create function app_private.apply_subscription_terms(
       p_agency_id uuid, p_plan_key text, p_extra_clients integer, p_extra_storage_gib integer
     )
