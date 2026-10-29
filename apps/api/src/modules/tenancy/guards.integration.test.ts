@@ -157,7 +157,7 @@ describe('requireAgencyAccess builds request.tenant from the one resolution (iss
     await expectGuardAgreesWithRls(user.id, agency, result.tenant?.permissions ?? []);
   });
 
-  it('the Admin preset holds every key except colaborador.atribuir_admin', async () => {
+  it('the Admin preset holds every key except the two only the owner holds', async () => {
     const user = await makeUser('guard-admin');
     const agency = await createAgency('Guard Admin', null);
     await addMembership(agency, user.id, adminRoleId);
@@ -168,7 +168,7 @@ describe('requireAgencyAccess builds request.tenant from the one resolution (iss
       agencyId: agency,
       isOwner: false,
       roleKey: 'admin',
-      permissions: catalog.filter((key) => key !== 'colaborador.atribuir_admin')
+      permissions: catalog.filter((key) => key !== 'colaborador.atribuir_admin' && key !== 'assinatura.gerenciar')
     });
     await expectGuardAgreesWithRls(user.id, agency, result.tenant?.permissions ?? []);
   });

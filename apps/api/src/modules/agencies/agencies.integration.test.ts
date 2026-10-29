@@ -178,9 +178,9 @@ describe('agencies module (issue #180)', () => {
     expect(response.status).toBe(200);
 
     const keys = await catalogKeys();
-    expect(keys).toContain('colaborador.atribuir_admin');
+    expect(keys).toEqual(expect.arrayContaining(['colaborador.atribuir_admin', 'assinatura.gerenciar']));
     // The owner criterion is only meaningful while no preset grants that key.
-    const presetRows = await owner.knex('role_permissions').where({ permission_key: 'colaborador.atribuir_admin' });
+    const presetRows = await owner.knex('role_permissions').whereIn('permission_key', ['colaborador.atribuir_admin', 'assinatura.gerenciar']);
     expect(presetRows).toHaveLength(0);
 
     expect(response.body.permissions).toEqual(keys);
