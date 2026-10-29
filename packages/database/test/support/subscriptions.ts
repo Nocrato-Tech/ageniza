@@ -20,6 +20,14 @@ export interface SeedOptions {
   readonly provider?: 'simulado' | 'asaas';
 }
 
+export interface Request {
+  readonly charge_id: string | null;
+  readonly effect: string;
+  readonly monthly_cents: number;
+  readonly amount_cents: number;
+  readonly effective_at: Date;
+}
+
 export interface Harness {
   setup(): Promise<void>;
   teardown(): Promise<void>;
@@ -28,12 +36,16 @@ export interface Harness {
   /** A transaction with nobody bound: the provider's webhook and the worker. */
   asNobody<TResult>(work: (transaction: Knex.Transaction) => Promise<TResult>): Promise<TResult>;
   openTransactionAs(userId: string, isolationLevel?: 'read committed' | 'repeatable read' | 'serializable'): Promise<Knex.Transaction>;
-  openTransactionAsNobody(): Promise<Knex.Transaction>;
+  openTransactionAsNobody(isolationLevel?: 'read committed' | 'repeatable read' | 'serializable'): Promise<Knex.Transaction>;
   person(): Promise<string>;
   /** An agency in trial created by the product's own function, its Owner by possession and Admin by membership. */
   trialAgency(): Promise<{ agencyId: string; ownerId: string }>;
   withRole(agencyId: string, roleKey: 'admin' | 'manager', userId?: string): Promise<string>;
   withPermissions(agencyId: string, ...permissions: string[]): Promise<string>;
+  request(userId: string, agencyId: string, plan: string, extraClients?: number, extraGib?: number): Promise<Request>;
+  confirm(chargeId: string, ref: string, cents: number, provider?: string): Promise<boolean>;
+  /** Request and confirm: the Owner's subscription as the simulated provider would approve it. */
+  subscribe(userId: string, agencyId: string, plan: string, extraClients?: number, extraGib?: number): Promise<Request>;
   /** A subscription as the schema owner would write it: the plan, the extras, and a period around the database clock. */
   seedSubscription(agencyId: string, plan: string, options?: SeedOptions): Promise<void>;
   /** A charge row as the schema owner would write it, to see how the application role reads it. */
@@ -41,9 +53,12 @@ export interface Harness {
   insertClient(userId: string, agencyId: string): Promise<string>;
   /** Moves the period by the database clock. */
   setPeriod(agencyId: string, startedDaysAgo: number, endsInDays: number): Promise<void>;
+  /** Ends the period `endedSecondsAgo` seconds ago, a month after it started, by the database clock. */
+  endPeriod(agencyId: string, endedSecondsAgo: number): Promise<void>;
   subscriptionOf(agencyId: string): Promise<Record<string, unknown> | undefined>;
   quotaOf(agencyId: string): Promise<string | undefined>;
-  seedConfirmedBytes(agencyId: string, bytes: number): Promise<void>;
+  /** A confirmed upload of the agency, written as the schema owner, in `on` when the write has to stay uncommitted. */
+  seedConfirmedBytes(agencyId: string, bytes: number, on?: Knex): Promise<void>;
   acceptsWrites(agencyId: string): Promise<boolean>;
 }
 
@@ -73,7 +88,8 @@ export const createHarness = (label: string): Harness => {
     return transaction;
   };
 
-  const openTransactionAsNobody: Harness['openTransactionAsNobody'] = () => application().knex.transaction();
+  const openTransactionAsNobody: Harness['openTransactionAsNobody'] = (isolationLevel) =>
+    application().knex.transaction(isolationLevel === undefined ? {} : { isolationLevel });
 
   const person: Harness['person'] = async () => {
     const id = randomUUID();
@@ -113,6 +129,28 @@ export const createHarness = (label: string): Harness => {
     return id;
   };
 
+  const request: Harness['request'] = (userId, agencyId, plan, extraClients = 0, extraGib = 0) =>
+    asUser(userId, async (transaction) => {
+      const { rows } = await transaction.raw<{ rows: Request[] }>(
+        'select * from app_private.request_subscription_change(?::uuid, ?, ?::integer, ?::integer)', [agencyId, plan, extraClients, extraGib]
+      );
+      return rows[0]!;
+    });
+
+  const confirm: Harness['confirm'] = (chargeId, ref, cents, provider = 'simulado') =>
+    asNobody(async (transaction) => {
+      const { rows } = await transaction.raw<{ rows: Array<{ confirmed: boolean }> }>(
+        'select app_private.confirm_subscription_charge(?::uuid, ?, ?, ?::integer) as confirmed', [chargeId, provider, ref, cents]
+      );
+      return rows[0]!.confirmed;
+    });
+
+  const subscribe: Harness['subscribe'] = async (userId, agencyId, plan, extraClients = 0, extraGib = 0) => {
+    const requested = await request(userId, agencyId, plan, extraClients, extraGib);
+    await confirm(requested.charge_id!, `ref-${randomUUID()}`, requested.amount_cents);
+    return requested;
+  };
+
   const seedSubscription: Harness['seedSubscription'] = async (agencyId, plan, options = {}) => {
     const { extraClients = 0, extraGib = 0, startedDaysAgo = 1, endsInDays = 29, provider = 'simulado' } = options;
     await ownerKnex().transaction(async (transaction) => {
@@ -150,21 +188,29 @@ export const createHarness = (label: string): Harness => {
     );
   };
 
+  const endPeriod: Harness['endPeriod'] = async (agencyId, endedSecondsAgo) => {
+    await ownerKnex().raw(
+      "update public.agency_subscriptions set current_period_end = now() - make_interval(secs => ?::int), current_period_start = now() - make_interval(secs => ?::int) - interval '1 month' where agency_id = ?",
+      [endedSecondsAgo, endedSecondsAgo, agencyId]
+    );
+  };
+
   const subscriptionOf: Harness['subscriptionOf'] = async (agencyId) =>
     await ownerKnex()('agency_subscriptions').where({ agency_id: agencyId }).first() as Record<string, unknown> | undefined;
 
   const quotaOf: Harness['quotaOf'] = async (agencyId) =>
     (await ownerKnex()('agency_storage_quotas').where({ agency_id: agencyId }).first('quota_bytes'))?.quota_bytes as string | undefined;
 
-  const seedConfirmedBytes: Harness['seedConfirmedBytes'] = async (agencyId, bytes) => {
+  const seedConfirmedBytes: Harness['seedConfirmedBytes'] = async (agencyId, bytes, on) => {
+    const db = on ?? ownerKnex();
     const id = randomUUID();
-    const clientId = (await ownerKnex()('clients').where({ agency_id: agencyId }).first('id'))?.id as string | undefined;
-    const client = clientId ?? (await ownerKnex()('clients').insert({ agency_id: agencyId, name: 'Cliente de mídia' }).returning('id'))[0].id as string;
-    const folder = await ownerKnex()('media_folders').where({ client_id: client, is_default: true }).first('id');
-    await ownerKnex()('media_assets').insert({
+    const clientId = (await db('clients').where({ agency_id: agencyId }).first('id'))?.id as string | undefined;
+    const client = clientId ?? (await db('clients').insert({ agency_id: agencyId, name: 'Cliente de mídia' }).returning('id'))[0].id as string;
+    const folder = await db('media_folders').where({ client_id: client, is_default: true }).first('id');
+    await db('media_assets').insert({
       id, agency_id: agencyId, client_id: client, folder_id: folder.id, category: 'video', declared_content_type: 'video/mp4', extension: 'mp4',
       object_key: `${agencyId}/${id}/original.mp4`, upload_object_key: `staging/${agencyId}/${id}/upload.mp4`, declared_size_bytes: bytes,
-      created_by_user_id: (await ownerKnex()('agencies').where({ id: agencyId }).first('owner_user_id')).owner_user_id as string,
+      created_by_user_id: (await db('agencies').where({ id: agencyId }).first('owner_user_id')).owner_user_id as string,
       status: 'confirmed', confirmed_size_bytes: bytes, confirmed_content_type: 'video/mp4', confirmed_at: new Date()
     });
   };
@@ -209,10 +255,14 @@ export const createHarness = (label: string): Harness => {
     trialAgency,
     withRole,
     withPermissions,
+    request,
+    confirm,
+    subscribe,
     seedSubscription,
     seedCharge,
     insertClient,
     setPeriod,
+    endPeriod,
     subscriptionOf,
     quotaOf,
     seedConfirmedBytes,
