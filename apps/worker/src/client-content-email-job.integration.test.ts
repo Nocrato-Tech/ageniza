@@ -443,6 +443,81 @@ describe('no e-mail for what stopped being true (issue #260)', () => {
     await expectDiscardedUnsent(content);
   });
 
+  // The paid plan of an agency (issue #772): it keeps writing for three days after the period ended and not for the fourth, and a
+  // canceled one stops writing when the period ends. The e-mail follows the same rule as every other write of the agency.
+  describe('an agency with a paid plan', () => {
+    const SUBSCRIPTION_FIXTURE = (periodEnd: string, canceled: boolean) => knex().raw(
+      `insert into public.agency_subscriptions (agency_id, plan_key, provider, current_period_start, current_period_end, cancel_at_period_end)
+       values (?, 'essencial', 'simulado', ${periodEnd} - interval '1 month', ${periodEnd}, ?)`,
+      [ids.agencySuspended, canceled]
+    );
+    const withPaidPlan = async (work: () => Promise<void>): Promise<void> => {
+      await knex()('agencies').where({ id: ids.agencySuspended }).update({ plan: 'ativo', trial_ends_at: null, trial_owner_email_key: null });
+      await SUBSCRIPTION_FIXTURE("now() + interval '10 days'", false);
+      try {
+        await work();
+      } finally {
+        await knex()('agency_subscriptions').where({ agency_id: ids.agencySuspended }).delete();
+        await knex()('agencies').where({ id: ids.agencySuspended }).update({ plan: 'isenta', trial_ends_at: null, trial_owner_email_key: null });
+      }
+    };
+    const movePeriod = (periodEnd: string, canceled: boolean) => knex().raw(
+      `update public.agency_subscriptions set current_period_start = ${periodEnd} - interval '1 month', current_period_end = ${periodEnd}, cancel_at_period_end = ? where agency_id = ?`,
+      [canceled, ids.agencySuspended]
+    );
+    const queued = async () => {
+      const client = await freshClient([ids.portal3], ids.agencySuspended);
+      const content = await seedContent(client, 'in_production', undefined, ids.suspendedActor);
+      await sendForApproval(content, ids.suspendedActor);
+      await ageQueue(16);
+      return content;
+    };
+
+    it.each([
+      ['the period ended two days ago, inside the three days of grace', "now() - interval '2 days'", false],
+      ['it was canceled and the period still runs', "now() + interval '1 day'", true]
+    ])('still sends when %s', async (_name, periodEnd, canceled) => {
+      await withPaidPlan(async () => {
+        const content = await queued();
+        await movePeriod(periodEnd, canceled);
+        const box = mailbox();
+
+        await runJob(box);
+
+        expect(box.sent).toHaveLength(1);
+        expect((await itemsOf(content)).every((row) => row.sent_at !== null)).toBe(true);
+      });
+    });
+
+    it.each([
+      ['the period ended four days ago, past the three days of grace', "now() - interval '4 days'", false],
+      ['it was canceled and the period ended an hour ago', "now() - interval '1 hour'", true]
+    ])('sends nothing and discards the items when %s', async (_name, periodEnd, canceled) => {
+      await withPaidPlan(async () => {
+        const content = await queued();
+        await movePeriod(periodEnd, canceled);
+        const box = mailbox();
+
+        await runJob(box);
+
+        expect(box.sent).toEqual([]);
+        await expectDiscardedUnsent(content);
+      });
+    });
+
+    it('sends nothing when the agency went read-only AFTER the claim', async () => {
+      await withPaidPlan(async () => {
+        const content = await queued();
+        const box = mailbox();
+
+        await runJob(box, { queue: afterClaim(createNotificationQueue(application), async () => { await movePeriod("now() - interval '4 days'", false); }) });
+
+        expect(box.sent).toEqual([]);
+        expect((await itemsOf(content)).every((row) => row.sent_at === null)).toBe(true);
+      });
+    });
+  });
+
   it('sends nothing for an agency that was already suspended', async () => {
     const client = await freshClient([ids.portal3], ids.agencySuspended);
     const content = await seedContent(client, 'in_production', undefined, ids.suspendedActor);

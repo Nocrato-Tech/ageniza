@@ -173,6 +173,8 @@ export interface WorkerConfig extends ServerConfig {
    * required in production because thumbnail/preview generation (issue #24) is core to the product. */
   storage?: WorkerStorageConfig;
   mediaProcessing: MediaProcessingConfig;
+  /** What the simulated provider answers when a subscription renews (`PAYMENTS_SIMULATED_RENEWAL`); only with `PAYMENTS_PROVIDER=simulado`. */
+  simulatedRenewalOutcome?: 'approved' | 'declined';
 }
 type ServerEnvironment = Record<string, string | undefined>;
 
@@ -328,6 +330,9 @@ const workerSchema = sharedServerSchema.extend({
   WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(3002),
   WORKER_SMOKE_JOB: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   APP_PUBLIC_URL: optionalUrl('must be a valid URL origin; supplied values are redacted'),
+  // What the simulated provider answers to the renewal of a subscription (issue #772). Only the simulated provider reads it, so it is
+  // refused without it: a setting that does nothing is a setting someone believes in.
+  PAYMENTS_SIMULATED_RENEWAL: z.preprocess((value) => typeof value === 'string' && value.trim() === '' ? undefined : value, z.enum(['approved', 'declined']).optional()),
   // Bounded on purpose: raising it trades API and database headroom on a shared VPS for throughput.
   // CPU-heavy jobs cap themselves further through the queue's per-job `concurrency` (video
   // processing, issue #24, runs one at a time), so this ceiling stays for lighter jobs.
@@ -659,6 +664,10 @@ export const loadWorkerConfig = (env: ServerEnvironment): WorkerConfig => {
     throw new ConfigValidationError('Worker', [{ path: 'WORKER_SMOKE_JOB', message: 'must be false in production' }]);
   }
 
+  if (result.data.PAYMENTS_SIMULATED_RENEWAL !== undefined && serverConfig.paymentsProvider !== 'simulado') {
+    throw new ConfigValidationError('Worker', [{ path: 'PAYMENTS_SIMULATED_RENEWAL', message: 'needs PAYMENTS_PROVIDER=simulado' }]);
+  }
+
   // Object storage (issue #24): required together, mirroring the API's R2 settings (issue #21).
   const allStoragePresent = validateStorageEnvironment('Worker', serverConfig.environment, result.data, env.APP_CONTAINER_LOCAL === 'true');
 
@@ -683,6 +692,7 @@ export const loadWorkerConfig = (env: ServerEnvironment): WorkerConfig => {
     healthPort: result.data.WORKER_HEALTH_PORT,
     smokeJob: result.data.WORKER_SMOKE_JOB,
     appPublicUrl: result.data.APP_PUBLIC_URL,
+    ...(result.data.PAYMENTS_SIMULATED_RENEWAL === undefined ? {} : { simulatedRenewalOutcome: result.data.PAYMENTS_SIMULATED_RENEWAL }),
     concurrency: result.data.WORKER_CONCURRENCY,
     storage: allStoragePresent ? {
       endpoint: result.data.R2_ENDPOINT!,

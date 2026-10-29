@@ -16,6 +16,7 @@ import {
 } from '@ageniza/core';
 import { createDatabaseClient, type DatabaseClient } from '@ageniza/database';
 import { createEmailSender, type EmailSender } from '@ageniza/email';
+import type { PaymentProvider } from '@ageniza/payments';
 
 import { archiveDueClientsJob } from './archive-due-clients-job.js';
 import { clientContentEmailJob } from './client-content-email-job.js';
@@ -25,6 +26,7 @@ import { mediaVideoProcessingJob } from './media-video-job.js';
 import { createMediaProcessingStorageClient } from './media-storage.js';
 import { createNotificationQueue } from './notification-queue.js';
 import { createDurableQueue, type DurableQueue } from './queue.js';
+import { renewSubscriptionsJob } from './renew-subscriptions-job.js';
 import { unconfirmedAccountPurgeJob } from './unconfirmed-account-purge-job.js';
 
 type WorkerSignal = 'SIGINT' | 'SIGTERM';
@@ -56,6 +58,8 @@ export interface CreateWorkerRuntimeOptions {
   readonly queue?: DurableQueue;
   /** Test seam: the transport of the e-mail to the client. Production builds it from SMTP_URL and EMAIL_FROM. */
   readonly emailSender?: EmailSender;
+  /** The provider that charges the renewals (issue #772). Absent, nobody can pay and no subscription renews; `start` builds it from `PAYMENTS_PROVIDER`. */
+  readonly paymentProvider?: PaymentProvider;
   readonly registerSignals?: boolean;
   readonly process?: SignalProcess;
   readonly readinessCheck?: ReadinessCheck;
@@ -127,6 +131,17 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
     queue.register(clientContentEmailJob({ queue: createNotificationQueue(database), sender: emailSender, appPublicUrl: options.config.appPublicUrl }));
   } else if (queue !== undefined) {
     logger.warn({ status: 'skipped' }, 'E-mail is not configured (SMTP_URL, EMAIL_FROM and APP_PUBLIC_URL); the e-mails to the clients will not be sent.');
+  }
+  // The renewal of the paid plans (issue #772) needs the queue and a provider that charges. Where there is none (the real production
+  // until the real provider exists) nobody has a paid plan to renew.
+  if (queue !== undefined && options.paymentProvider !== undefined) {
+    queue.register(renewSubscriptionsJob({
+      database,
+      provider: options.paymentProvider,
+      ...(options.config.simulatedRenewalOutcome === undefined ? {} : { simulatedOutcome: options.config.simulatedRenewalOutcome })
+    }));
+  } else if (queue !== undefined) {
+    logger.warn({ status: 'skipped' }, 'No payment provider is configured; the subscriptions will not be renewed.');
   }
   const shutdownManager = createShutdownManager();
   shutdownManager.add('sentry', async () => { await flushServerSentry(); });

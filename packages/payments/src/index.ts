@@ -15,10 +15,25 @@ export type ChargeResult =
   | { readonly status: 'approved'; readonly providerRef: string; readonly paidCents: number }
   | { readonly status: 'declined'; readonly reason: string };
 
+export interface RefundRequest {
+  /** Same key, same outcome: a retry never refunds twice. */
+  readonly idempotencyKey: string;
+  /** The reference the provider answered when it approved the charge. */
+  readonly providerRef: string;
+  /** What the provider took, back in full: a partial refund is not something the product does. */
+  readonly amountCents: number;
+}
+
+export type RefundResult =
+  | { readonly status: 'refunded' }
+  | { readonly status: 'failed'; readonly reason: string };
+
 /** The only door to a payment provider: application code depends on this, never on an adapter or a vendor SDK. */
 export interface PaymentProvider {
   readonly name: PaymentProviderName;
   charge(request: ChargeRequest): Promise<ChargeResult>;
+  /** Gives back a charge the product could not honor, such as a renewal whose amount changed while it was being charged. */
+  refund(request: RefundRequest): Promise<RefundResult>;
 }
 
 export interface PaymentProviderOptions {

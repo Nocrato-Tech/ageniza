@@ -374,6 +374,65 @@ describe('worker runtime', () => {
     expect(output.join('')).toContain('the e-mails to the clients will not be sent');
   });
 
+  describe('the renewal of the subscriptions (issue #772)', () => {
+    const AGENCY = '0b1f6c9e-1111-4222-8333-444455556666';
+    const renewalDatabase = (): DatabaseClient => ({
+      ...createTestDatabase(),
+      knex: {
+        raw: vi.fn(async (sql: string) => {
+          if (sql.includes('agencies_due_for_renewal')) return { rows: [{ id: AGENCY }] };
+          if (sql.includes('renewal_quote')) return { rows: [{ period_end: new Date('2026-11-29T12:00:00.000Z'), amount_cents: 9_700, provider: 'simulado', attempt: 0 }] };
+          if (sql.includes('renew_subscription')) return { rows: [{ renewed: true }] };
+          return undefined;
+        })
+      } as unknown as DatabaseClient['knex']
+    });
+    const providerOf = () => {
+      const charge = vi.fn(async (request: { amountCents: number; idempotencyKey: string }) =>
+        ({ status: 'approved' as const, providerRef: `sim:${request.idempotencyKey}`, paidCents: request.amountCents }));
+      return { charge, provider: { name: 'simulado' as const, charge, refund: vi.fn(async () => ({ status: 'refunded' as const })) } };
+    };
+
+    it('registers it every five minutes when a payment provider exists, and not without one, saying so', () => {
+      const withProvider = createTestQueue();
+      createTestRuntime({ queue: withProvider, paymentProvider: providerOf().provider });
+      const registered = vi.mocked(withProvider.register).mock.calls.map(([definition]) => definition);
+      expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed', 'subscriptions.renew-due']);
+      const renewal = registered.find((definition) => definition.name === 'subscriptions.renew-due');
+      expect(renewal?.schedule).toEqual({ cron: '*/5 * * * *', timeZone: 'America/Sao_Paulo' });
+      expect(renewal?.runOnStart).toBe(true);
+
+      const withoutProvider = createTestQueue();
+      const output: string[] = [];
+      const destination = new PassThrough();
+      destination.on('data', (chunk: Buffer) => output.push(chunk.toString()));
+      createTestRuntime({ queue: withoutProvider, logger: createLogger({}, destination) });
+      expect(vi.mocked(withoutProvider.register).mock.calls.map(([definition]) => definition.name)).not.toContain('subscriptions.renew-due');
+      expect(output.join('')).toContain('the subscriptions will not be renewed');
+    });
+
+    it('charges the renewals with the provider it was given, and passes the simulated outcome of the config to it', async () => {
+      for (const simulatedRenewalOutcome of ['declined', 'approved', undefined] as const) {
+        const queue = createTestQueue();
+        const { provider, charge } = providerOf();
+        createTestRuntime({
+          queue,
+          database: renewalDatabase(),
+          paymentProvider: provider,
+          config: { ...config, ...(simulatedRenewalOutcome === undefined ? {} : { simulatedRenewalOutcome }) }
+        });
+        const renewal = vi.mocked(queue.register).mock.calls.map(([definition]) => definition).find((definition) => definition.name === 'subscriptions.renew-due')!;
+
+        await renewal.handler({ id: 'job-1', name: 'subscriptions.renew-due', payload: {}, attempt: 1 }, { logger: createLogger({ enabled: false }), signal: new AbortController().signal });
+
+        expect(charge).toHaveBeenCalledTimes(1);
+        const request = charge.mock.calls[0]![0] as { testOutcome?: string };
+        if (simulatedRenewalOutcome === undefined) expect(request).not.toHaveProperty('testOutcome');
+        else expect(request.testOutcome).toBe(simulatedRenewalOutcome);
+      }
+    });
+  });
+
   it('closes the e-mail transport on shutdown', async () => {
     const emailSender = { send: vi.fn(async () => undefined), close: vi.fn(async () => undefined) };
     const { runtime } = createTestRuntime({ emailSender, config: { ...config, appPublicUrl: 'http://127.0.0.1:5173' } });
