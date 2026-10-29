@@ -16,6 +16,9 @@ COPY packages/ui/package.json packages/ui/package.json
 RUN pnpm install --frozen-lockfile
 COPY apps apps
 COPY packages packages
+# The /mobile page (dev image, VITE_DEV_DOCS=true) reads the guide and the OpenAPI file from the repository at build time.
+COPY docs/mobile docs/mobile
+COPY docs/api/openapi.json docs/api/openapi.json
 # version.txt lets the production smoke test prove which release the public site serves.
 RUN pnpm --filter @ageniza/web... build && printf '%s\n' "$VITE_APP_VERSION" > apps/web/dist/version.txt
 FROM nginxinc/nginx-unprivileged:1.27-alpine
