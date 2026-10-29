@@ -281,14 +281,17 @@ describe('server configuration', () => {
   it('lets the simulated provider decline the renewals only when it is the provider, and reads nothing else (issue #772)', () => {
     const simulated = { ...localEnvironment, PAYMENTS_PROVIDER: 'simulado' };
     expect(loadWorkerConfig(simulated).simulatedRenewalOutcome).toBeUndefined();
+    // Absent is absent, not a key holding undefined: the worker reads the key to tell a setting from a default.
+    expect(loadWorkerConfig(simulated)).not.toHaveProperty('simulatedRenewalOutcome');
+    expect(loadWorkerConfig({ ...simulated, PAYMENTS_SIMULATED_RENEWAL: '  ' })).not.toHaveProperty('simulatedRenewalOutcome');
     expect(loadWorkerConfig({ ...simulated, PAYMENTS_SIMULATED_RENEWAL: '  ' }).simulatedRenewalOutcome).toBeUndefined();
     expect(loadWorkerConfig({ ...simulated, PAYMENTS_SIMULATED_RENEWAL: 'declined' }).simulatedRenewalOutcome).toBe('declined');
     expect(loadWorkerConfig({ ...simulated, PAYMENTS_SIMULATED_RENEWAL: 'approved' }).simulatedRenewalOutcome).toBe('approved');
     expect(() => loadWorkerConfig({ ...simulated, PAYMENTS_SIMULATED_RENEWAL: 'Declined' })).toThrow('PAYMENTS_SIMULATED_RENEWAL');
     expect(() => loadWorkerConfig({ ...simulated, PAYMENTS_SIMULATED_RENEWAL: 'yes' })).toThrow('PAYMENTS_SIMULATED_RENEWAL');
     // A setting that does nothing without the simulated provider is refused, so nobody believes it is in force.
-    expect(() => loadWorkerConfig({ ...localEnvironment, PAYMENTS_SIMULATED_RENEWAL: 'declined' })).toThrow('needs PAYMENTS_PROVIDER=simulado');
-    expect(() => loadWorkerConfig({ ...localEnvironment, PAYMENTS_PROVIDER: '', PAYMENTS_SIMULATED_RENEWAL: 'approved' })).toThrow('needs PAYMENTS_PROVIDER=simulado');
+    expect(() => loadWorkerConfig({ ...localEnvironment, PAYMENTS_SIMULATED_RENEWAL: 'declined' })).toThrow('Worker configuration is invalid:\n- PAYMENTS_SIMULATED_RENEWAL: needs PAYMENTS_PROVIDER=simulado');
+    expect(() => loadWorkerConfig({ ...localEnvironment, PAYMENTS_PROVIDER: '', PAYMENTS_SIMULATED_RENEWAL: 'approved' })).toThrow('Worker configuration is invalid:\n- PAYMENTS_SIMULATED_RENEWAL: needs PAYMENTS_PROVIDER=simulado');
     // The API has no renewal to simulate: it does not carry the setting.
     expect(loadApiConfig({ ...simulated, PAYMENTS_SIMULATED_RENEWAL: 'declined' })).not.toHaveProperty('simulatedRenewalOutcome');
   });
