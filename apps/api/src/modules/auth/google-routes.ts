@@ -14,6 +14,7 @@ import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js'
 import type { AuthInstance } from './better-auth.js';
 import { perIpRateLimit } from './per-ip-rate-limit.js';
 import { AUTH_RATE_LIMITS } from './policy.js';
+import { mobileAppRedirectOf } from '../../plugins/infra/mobile-app-origin.js';
 import { noStore } from '../../plugins/infra/no-store.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeQuery, routeResponse } from '../../plugins/infra/zod.js';
@@ -21,7 +22,7 @@ import { routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 export interface GoogleRoutesDependencies {
   readonly auth: AuthInstance;
   /** Absent when Google sign-in is not configured: the routes then answer 404 and `GET /auth/providers` says so. */
-  readonly google?: { readonly appPublicUrl: string };
+  readonly google?: { readonly appPublicUrl: string; readonly mobileAppOrigins: readonly string[] };
 }
 
 const providersDocs = {
@@ -62,6 +63,11 @@ export const registerGoogleRoutes = (app: FastifyInstance, dependencies: GoogleR
     if (google === undefined) throw notFound();
     const query = routeQuery(startDocs, request);
     const reauth = query.intent === 'reauth';
+    // The flow began in the app: it comes back to the deep link it named, and only to a scheme the environment listed.
+    const appRedirect = query.appRedirect === undefined ? undefined : mobileAppRedirectOf(query.appRedirect, google.mobileAppOrigins);
+    if (query.appRedirect !== undefined && appRedirect === undefined) {
+      throw new HttpError({ statusCode: 400, code: 'VALIDATION_ERROR', message: 'Request validation failed' });
+    }
     // Bound to this flow through the state record, and sent to Google as the `nonce` the id token must come back with.
     const nonce = randomBytes(32).toString('base64url');
 
@@ -70,8 +76,8 @@ export const registerGoogleRoutes = (app: FastifyInstance, dependencies: GoogleR
       started = await auth.api.signInSocial({
         body: {
           provider: 'google',
-          callbackURL: `${google.appPublicUrl}${LANDING_PATH}${reauth ? '?intent=reauth' : ''}`,
-          errorCallbackURL: `${google.appPublicUrl}${FAILURE_PATH}`,
+          callbackURL: appRedirect?.toString() ?? `${google.appPublicUrl}${LANDING_PATH}${reauth ? '?intent=reauth' : ''}`,
+          errorCallbackURL: appRedirect?.toString() ?? `${google.appPublicUrl}${FAILURE_PATH}`,
           disableRedirect: true,
           // Authenticating again is what "recent" means for the account that has no password.
           ...(reauth ? { additionalParams: { prompt: 'login' } } : {}),
@@ -112,6 +118,16 @@ export const registerGoogleRoutes = (app: FastifyInstance, dependencies: GoogleR
     applyAuthCookies(reply, outcome.headers);
     const location = outcome.headers.get('location');
     let landed = false;
+    const appTarget = location === null ? undefined : mobileAppRedirectOf(location, google.mobileAppOrigins);
+    if (location !== null && appTarget !== undefined) {
+      // The deep link carries the session in `cookie` (the Expo plugin puts it there); a refusal carries nothing and,
+      // like the web, never says why.
+      if (appTarget.searchParams.has('error')) {
+        appTarget.search = '?erro=google';
+        return reply.redirect(appTarget.toString(), 302);
+      }
+      return reply.redirect(location, 302);
+    }
     if (location !== null) {
       try {
         const target = new URL(location, google.appPublicUrl);

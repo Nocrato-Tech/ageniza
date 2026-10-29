@@ -8,7 +8,7 @@ Esta pasta é para quem vai construir o app em Expo. Ela descreve **o que o back
 
 Esta documentação também está publicada, com os diagramas desenhados e a referência da API pesquisável, em **<https://dev.ageniza.com.br/mobile>** (só no ambiente de dev; localmente, `pnpm dev` e `http://127.0.0.1:5173/mobile`).
 
-1. [Começar o projeto](comecar.md): ambiente, como a API autentica, o que falta no backend para o app e as regras de compatibilidade.
+1. [Começar o projeto](comecar.md): ambiente, como a API autentica, como o app entra e as regras de compatibilidade.
 2. Os fluxos, um arquivo por quem usa:
 
 | arquivo | quem | o que tem |

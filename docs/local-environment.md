@@ -153,6 +153,10 @@ O Google fica **desligado** enquanto `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET`
 
 Em desenvolvimento a API tem a própria origem (`VITE_API_BASE_URL=http://127.0.0.1:3001`), então a URL de retorno é a da API, e o `.env` a informa em `GOOGLE_CALLBACK_URL=http://127.0.0.1:3001/auth/callback/google`. Sem essa variável vale `APP_PUBLIC_URL` + `/api/auth/callback/google`, que é o caminho em produção, onde o contêiner web repassa `/api` à API. Os testes de integração não falam com o Google: simulam o endpoint de token e as chaves do id token (`apps/api/src/modules/auth/test-support/fake-google.ts`).
 
+### O app nativo (Expo)
+
+`MOBILE_APP_ORIGINS` (no `.env`, vazia por padrão) é a lista, separada por vírgulas, dos esquemas de deep link do app, como `ageniza://`. **Vazia, a API se comporta como sempre** e recusa a origem do app com `403 CSRF_REJECTED`. Com um esquema listado, o app pode entrar, escrever (ele se identifica no cabeçalho `expo-origin`, que só vale sem `Origin`) e receber a volta do Google no deep link (`GET /auth/google/start?appRedirect=ageniza://auth/google`). Cada item é só o esquema e `://`: nada de host ou caminho, e esquemas de site (`https://`, `javascript://`…) fazem a API recusar a subida. O contêiner da API repassa a variável; no dev e na produção ela entra pelo `runtime.env` (no dev, `MOBILE_APP_ORIGINS=ageniza://`). Em produção, `exp://` (Expo Go) é recusado, e a lista fica vazia até a issue #799 (ver a decisão de autenticação para o cliente nativo). O fluxo do app está em [Começar o projeto mobile](mobile/comecar.md#3-como-o-app-entra).
+
 A alternativa é rodar tudo em contêiner:
 
 ```sh

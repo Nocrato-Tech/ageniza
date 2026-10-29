@@ -133,6 +133,17 @@ password. An account with Google and without both acceptances is `required` on `
 contexts and cannot create an agency (`403 TERMS_NOT_ACCEPTED`) until it accepts. The simulated Google for the tests is
 `test-support/fake-google.ts`.
 
+**The native app (Expo; decision 2026-10-29).** `MOBILE_APP_ORIGINS` lists the deep-link schemes of the app (`ageniza://`, nothing
+else); empty, which is the default, changes nothing. A listed scheme is accepted by the global origin check (`plugins/infra/origin.ts`)
+as `Origin` or, when no `Origin` came, as `expo-origin` (what the Expo client sends), and is added to Better Auth's
+`trustedOrigins`. The session is the same cookie, kept by the app and sent back in `Cookie`: nothing in the session guard,
+`logout-all` or the collaborator removal knows about the app, and `mobile-app.integration.test.ts` proves they still end its
+session. `GET /auth/google/start?appRedirect=<deep link>` returns to that link, only for a listed scheme
+(`plugins/infra/mobile-app-origin.ts`: no web scheme, credentials or fragment, else `400`); the `@better-auth/expo` plugin appends
+the session to the redirect as `?cookie=`, and the callback forwards it only to a listed scheme (a refusal goes to
+`<deep link>?erro=google`, with no reason, and an unlisted scheme to the web failure screen).
+
+
 ## Composition
 
 - `better-auth.ts` (`createAuth`) builds an isolated Better Auth instance from injected

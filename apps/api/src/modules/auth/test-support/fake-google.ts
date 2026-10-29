@@ -201,6 +201,13 @@ const nextBrowserAddress = (): string => {
   return `10.77.${Math.floor(browsers / 250) % 250}.${(browsers % 250) + 1}`;
 };
 
+const startQuery = (options: { readonly intent?: string; readonly appRedirect?: string }): string => {
+  const params = new URLSearchParams();
+  if (options.intent !== undefined) params.set('intent', options.intent);
+  if (options.appRedirect !== undefined) params.set('appRedirect', options.appRedirect);
+  return params.size === 0 ? '' : `?${params.toString()}`;
+};
+
 /**
  * One whole trip through the browser: start, Google's consent, and the callback, with the cookies the browser would carry.
  * `query` replaces what comes back to the callback (a tampered state, a missing code) without touching the rest.
@@ -212,6 +219,10 @@ export const signInWithGoogle = async (
   options: {
     readonly overrides?: FakeGoogleOverrides;
     readonly intent?: 'login' | 'reauth';
+    /** The deep link of the native app the flow began in. */
+    readonly appRedirect?: string;
+    /** The app that answers the callback, when it is not the one that started the flow. */
+    readonly callbackApp?: FastifyInstance;
     readonly remoteAddress?: string;
     readonly cookie?: string;
     readonly query?: (issued: { code: string; state: string }) => Record<string, string | undefined>;
@@ -221,7 +232,7 @@ export const signInWithGoogle = async (
   const remoteAddress = options.remoteAddress ?? nextBrowserAddress();
   const start = await app.inject({
     method: 'GET',
-    url: `/auth/google/start${options.intent === undefined ? '' : `?intent=${options.intent}`}`,
+    url: `/auth/google/start${startQuery(options)}`,
     remoteAddress,
     ...(options.cookie === undefined ? {} : { headers: { cookie: options.cookie } })
   });
@@ -232,7 +243,7 @@ export const signInWithGoogle = async (
   const issued = google.authorize(authorizeUrl, identity, options.overrides);
   const query = options.query === undefined ? { code: issued.code, state: issued.state } : options.query(issued);
   const search = new URLSearchParams(Object.entries(query).filter((entry): entry is [string, string] => entry[1] !== undefined)).toString();
-  const callback = await app.inject({
+  const callback = await (options.callbackApp ?? app).inject({
     method: 'GET',
     url: `/auth/callback/google${search === '' ? '' : `?${search}`}`,
     remoteAddress,

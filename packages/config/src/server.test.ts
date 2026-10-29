@@ -827,3 +827,43 @@ describe('server configuration', () => {
     });
   });
 });
+
+describe('MOBILE_APP_ORIGINS', () => {
+  it('is empty unless set, so the web stays the only origin', () => {
+    expect(loadApiConfig(localEnvironment).mobileAppOrigins).toEqual([]);
+    expect(loadApiConfig({ ...localEnvironment, MOBILE_APP_ORIGINS: '' }).mobileAppOrigins).toEqual([]);
+  });
+
+  it('lists the schemes of the app', () => {
+    expect(loadApiConfig({ ...localEnvironment, MOBILE_APP_ORIGINS: 'ageniza://, ageniza-dev://' }).mobileAppOrigins).toEqual(['ageniza://', 'ageniza-dev://']);
+  });
+
+  it('refuses exp:// (Expo Go, shared by every app) in production but keeps it locally and in the shared dev environment', () => {
+    const production = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      SMTP_URL: 'smtps://user:key@smtp.example.com:465',
+      EMAIL_FROM: 'no-reply@ageniza.example',
+      ...productionStorageSettings,
+      ...productionIdentityStorageSettings
+    };
+    expect(loadApiConfig({ ...production, MOBILE_APP_ORIGINS: 'ageniza://' }).mobileAppOrigins).toEqual(['ageniza://']);
+    expect(() => loadApiConfig({ ...production, MOBILE_APP_ORIGINS: 'ageniza://,exp://' })).toThrow(/MOBILE_APP_ORIGINS/);
+    const dev = { ...production, DEPLOY_TARGET: 'dev', SMTP_URL: 'smtp://mailpit:1025', MOBILE_APP_ORIGINS: 'exp://' };
+    expect(loadApiConfig(dev).mobileAppOrigins).toEqual(['exp://']);
+    expect(loadApiConfig({ ...localEnvironment, MOBILE_APP_ORIGINS: 'exp://' }).mobileAppOrigins).toEqual(['exp://']);
+  });
+
+  it.each(['ageniza', 'ageniza://host', 'ageniza://path/x', 'Ageniza://', 'https://', 'http://', 'javascript://', 'file://', 'data://', '://'])(
+    'refuses %s, which is not the scheme of an app',
+    (value) => {
+      const attempt = (): unknown => loadApiConfig({ ...localEnvironment, MOBILE_APP_ORIGINS: 'ageniza://,' + value });
+      expect(attempt).toThrow(ConfigValidationError);
+      expect(attempt).toThrow(/MOBILE_APP_ORIGINS/);
+    }
+  );
+});

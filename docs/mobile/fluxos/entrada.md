@@ -75,11 +75,11 @@ sequenceDiagram
 ## Login
 
 1. `GET /auth/providers` diz se o botão do Google deve aparecer.
-2. Com e-mail e senha, use `POST /auth/login`; a sessão vem no cookie. O erro `401 INVALID_CREDENTIALS` é o mesmo para e-mail inexistente e para senha errada.
+2. Com e-mail e senha, use `POST /auth/login` com o cabeçalho `expo-origin` ([como o app entra](../comecar.md#3-como-o-app-entra)); a sessão vem no cookie, que o app guarda e devolve no cabeçalho `Cookie`. O erro `401 INVALID_CREDENTIALS` é o mesmo para e-mail inexistente e para senha errada.
 3. Com o Google:
-   - `GET /auth/google/start` leva ao Google, e a volta é por `GET /auth/callback/google`;
-   - hoje a volta redireciona para a web;
-   - no app, isso depende do deep link ([o que falta no backend](../comecar.md#3-o-que-falta-no-backend-para-o-app)).
+   - abra `GET /auth/google/start?appRedirect=<deep link do app>` num navegador do sistema; a volta é por `GET /auth/callback/google`, que devolve o app ao deep link com `?cookie=<Set-Cookie>` (sucesso) ou `?erro=google` (falha);
+   - sem `appRedirect`, a volta é para a web (`/entrar/google`);
+   - o deep link precisa estar na lista da API ([como o app entra](../comecar.md#3-como-o-app-entra)).
 4. Para conferir a sessão quando o app volta ao primeiro plano, use `GET /auth/session/check`, que não renova a sessão. A web confere a cada 45 s e sempre que a aba volta ao foco, porque a pessoa pode ter sido removida e ter as sessões encerradas.
 5. Para sair, use `POST /auth/logout`; para sair de todos os aparelhos, `POST /auth/logout-all`.
 

@@ -55,7 +55,7 @@ export interface AuthModuleDependencies {
   /** The versions in force, recorded at sign-up exactly like the invitation's new account. */
   readonly legalVersions: { readonly terms: string; readonly privacy: string };
   /** Present only when Google sign-in is configured (issue #707); without it the Google routes answer 404. */
-  readonly google?: { readonly appPublicUrl: string };
+  readonly google?: { readonly appPublicUrl: string; readonly mobileAppOrigins: readonly string[] };
 }
 
 // Declared once per route: the same object is the documentation metadata and the source of the
