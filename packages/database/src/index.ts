@@ -228,7 +228,7 @@ export const createLocalTestDatabaseClient = (connectionString: string): Databas
   return createDatabaseClient({ connectionString });
 };
 
-export { requestLockOnceBlocked, type LockBarrierOptions } from './lock-barrier.js';
+export { backendPid, requestLockOnceBlocked, waitForBackendsBlockedBy, type LockBarrierOptions, type WaitForBlockedOptions } from './lock-barrier.js';
 
 /**
  * Creates a narrow capability after an authentication boundary has verified the user's token.

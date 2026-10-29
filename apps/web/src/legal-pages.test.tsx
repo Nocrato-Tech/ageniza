@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { privacyPolicy } from './legal/privacy.js';
 import { termsOfUse } from './legal/terms.js';
@@ -15,13 +16,15 @@ afterEach(cleanup);
 const renderAt = (path: string, fetchImpl: typeof fetch = async () => new Response(null, { status: 204 })) => {
   const client = new HttpClient('http://127.0.0.1:3001', fetchImpl);
   return render(
-    <QueryClientProvider client={createQueryClient()}>
-      <ApiClientProvider client={client}>
-        <MemoryRouter initialEntries={[path]}>
-          <ApplicationRoutes session={{ status: 'ready', isAuthenticated: false, user: null }} />
-        </MemoryRouter>
-      </ApiClientProvider>
-    </QueryClientProvider>
+    <AuthSessionProvider store={createAuthSessionStore(client)}>
+      <QueryClientProvider client={createQueryClient()}>
+        <ApiClientProvider client={client}>
+          <MemoryRouter initialEntries={[path]}>
+            <ApplicationRoutes session={{ status: 'ready', isAuthenticated: false, user: null }} />
+          </MemoryRouter>
+        </ApiClientProvider>
+      </QueryClientProvider>
+    </AuthSessionProvider>
   );
 };
 
@@ -60,10 +63,11 @@ describe('legal pages', () => {
     expect(blocks[1]!.tagName).toBe('UL');
   });
 
-  it('returns to the home page when there is no in-app history to go back to', () => {
+  it('returns to the root, which opens the login, when there is no in-app history to go back to', async () => {
     renderAt('/termos');
     fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
-    expect(screen.getByRole('heading', { level: 1, name: 'Ageniza' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Entrar' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Termos de Uso' })).toBeNull();
   });
 
   it('shows the draft notice while the document is a draft', () => {

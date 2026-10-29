@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { createVerifiedUserClaims, raw, requestLockOnceBlocked, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
+import { backendPid, createVerifiedUserClaims, raw, requestLockOnceBlocked, waitForBackendsBlockedBy, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -221,30 +221,6 @@ const archiveEffects = async (clientId: string, invitationIds: readonly string[]
     activeMemberships: Number((await owner.knex('client_memberships').where({ client_id: clientId, status: 'active' }).count<{ count: string }[]>('id as count'))[0]?.count ?? 0),
     events: (await auditActions(clientId)).map((event) => ({ action: event.action, agencyId: event.agency_id }))
   };
-};
-
-type Holder = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
-
-const backendPid = async (transaction: Holder): Promise<number> => {
-  const result = await raw<{ rows: Array<{ pid: number }> }>(transaction, 'select pg_catalog.pg_backend_pid() as pid', []);
-  return Number(result.rows[0]?.pid);
-};
-
-/** Waits until a backend of this database is blocked by the given one, so the race is sequenced by locks and never by a sleep. */
-const waitForBackendBlockedBy = async (blockerPid: number): Promise<number> => {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    const result = await raw<{ rows: Array<{ pid: number }> }>(owner.knex, `
-      select activity.pid
-      from pg_catalog.pg_stat_activity activity
-      where activity.datname = pg_catalog.current_database()
-        and pg_catalog.pg_blocking_pids(activity.pid) @> array[?::int]
-      limit 1
-    `, [blockerPid]);
-    const pid = result.rows[0]?.pid;
-    if (pid !== undefined) return pid;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`No backend ever waited on a lock held by ${blockerPid}.`);
 };
 
 const NO_DATABASE_DETAIL = /deadlock|40P01|pg_|relation|process|A002/i;
@@ -826,7 +802,7 @@ describe('CLIENTS contract lifecycle, agency side (#131)', () => {
         await raw(holder, "update public.clients set status = 'archived', archived_at = now() where id = ?::uuid", [clientId]);
         const holderPid = await backendPid(holder);
         const pending = start();
-        await waitForBackendBlockedBy(holderPid);
+        await waitForBackendsBlockedBy(owner.knex, holderPid);
         await holder.commit();
         released = true;
         return await pending;

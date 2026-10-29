@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Knex } from 'knex';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, type DatabaseClient } from '../src/index.js';
+import { backendPid, createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, waitForBackendsBlockedBy, type DatabaseClient } from '../src/index.js';
 
 import { createContentWorld } from './support/content-world.js';
 import { setPortalAccessStatus } from './support/portal-access.js';
@@ -162,6 +162,29 @@ const recheckIn = async (transaction: Knex.Transaction, items: readonly string[]
   withPeople((await transaction.raw<{ rows: RawClaimed[] }>(RECHECK_SQL, [items as never, token])).rows);
 const recheck = (batch: readonly Claimed[], token: string | null = batch[0]?.claim_token ?? randomUUID()): Promise<Claimed[]> =>
   asWorker((transaction) => recheckIn(transaction, batch.map((row) => row.item_id), token));
+// The lease ends on the database clock, so the test waits for that fact and not for a guessed number of milliseconds.
+const untilTheLeaseHasRunOut = async (contentId: string): Promise<void> => {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const { rows } = await owner().raw<{ rows: Array<{ over: boolean | null }> }>(
+      "select bool_and(clock_timestamp() >= claimed_at + interval '10 minutes') as over from public.notification_queue where content_id = ?::uuid and claimed_at is not null",
+      [contentId]
+    );
+    if (rows[0]?.over === true) return;
+    if (Date.now() > deadline) throw new Error('The lease never ran out on the database clock.');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};
+// The test above means "the lease runs out WHILE the recheck waits", and that holds only if the recheck began inside the lease. On a
+// machine that was late the lease is over before it begins, and `[]` comes out of any code: that is a red with its own reason.
+const assertTheRecheckBeganInsideTheLease = async (contentId: string, recheckPid: number): Promise<void> => {
+  const { rows } = await owner().raw<{ rows: Array<{ inside: boolean | null }> }>(
+    `select (select xact_start from pg_catalog.pg_stat_activity where pid = ?::int) < min(claimed_at) + interval '10 minutes' as inside
+     from public.notification_queue where content_id = ?::uuid and claimed_at is not null`,
+    [recheckPid, contentId]
+  );
+  if (rows[0]?.inside !== true) throw new Error('The machine was late: the lease had already run out when the recheck began, so this test would pass with any code.');
+};
 const peopleOf = (rows: readonly Claimed[]): string[] => rows.map((row) => row.recipient_user_id).sort();
 
 const freshClient = async (people: readonly string[] = [ids.portalA1, ids.portalA1Second]): Promise<string> => {
@@ -1660,9 +1683,11 @@ describe('rechecking what a claim handed over, right before the send (issue #260
       let outcome: Promise<Claimed[]>;
       try {
         await holding('clients').where({ id: client }).update({ name: `Cliente ${client}` });
+        const holdingPid = await backendPid(holding);
         outcome = recheck(batch);
-        await w.waitUntilSomeoneWaitsOnALock();
-        await new Promise((resolve) => setTimeout(resolve, 1_200));
+        const [recheckPid] = await waitForBackendsBlockedBy(owner(), holdingPid);
+        await assertTheRecheckBeganInsideTheLease(id, recheckPid!);
+        await untilTheLeaseHasRunOut(id);
       } finally {
         await holding.commit();
       }

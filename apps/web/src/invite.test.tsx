@@ -295,8 +295,8 @@ describe('InvitationPage (/convite/:token)', () => {
     expect(screen.queryByRole('status')).toBeNull();
 
     // Leaving the area unmounts the shell, and coming back through history must not revive it.
-    act(() => probe.navigate('/'));
-    await screen.findByRole('heading', { name: 'Ageniza' });
+    act(() => probe.navigate('/termos'));
+    await screen.findByRole('heading', { name: 'Termos de Uso' });
     act(() => probe.back());
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     await screen.findByRole('heading', { name: 'Agência Um' });
@@ -371,8 +371,8 @@ describe('InvitationPage (/convite/:token)', () => {
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     await findNotice('Você já fazia parte de Agência Um. Nada mudou no seu acesso.');
 
-    act(() => probe.navigate('/'));
-    await screen.findByRole('heading', { name: 'Ageniza' });
+    act(() => probe.navigate('/termos'));
+    await screen.findByRole('heading', { name: 'Termos de Uso' });
     act(() => probe.back());
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
     await screen.findByRole('heading', { name: 'Agência Um' });

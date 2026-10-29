@@ -1,4 +1,4 @@
-import { raw } from '@ageniza/database';
+import { raw, waitForBackendsBlockedBy } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { backendPid, archiveBeforeStatement, archiveWhileRouteWaits, waitForBackendBlockedBy } from './test-support/race.js';
@@ -186,15 +186,7 @@ describe('two creations of a subtask at the same time, with 49 in the content (i
       const first = w.call('POST', people.admin.cookie, t.tasksUrl(clientId, contentId), body);
       await waitForBackendBlockedBy(w, holderPid);
       const second = w.call('POST', people.admin.cookie, t.tasksUrl(clientId, contentId), body);
-      for (let attempt = 0; attempt < 400; attempt += 1) {
-        const waiting = await raw<{ rows: Array<{ total: number }> }>(w.getOwner().knex, `
-          select count(*)::int as total from pg_catalog.pg_stat_activity activity
-          where activity.datname = pg_catalog.current_database() and pg_catalog.pg_blocking_pids(activity.pid) @> array[?::int]
-        `, [holderPid]);
-        if (Number(waiting.rows[0]?.total) === 2) break;
-        if (attempt === 399) throw new Error('The two creations never waited for the lock.');
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
+      await waitForBackendsBlockedBy(w.getOwner().knex, holderPid, { waiters: 2 });
       await holder.rollback();
       released = true;
 

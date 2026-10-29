@@ -1,4 +1,4 @@
-import { raw, requestLockOnceBlocked, type DatabaseClient } from '@ageniza/database';
+import { backendPid, raw, requestLockOnceBlocked, waitForBackendsBlockedBy } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createContentsWorld, type Reply } from './test-support/world.js';
@@ -16,28 +16,6 @@ const { people } = w;
 
 const NO_DATABASE_DETAIL = /A0020|A0061|deadlock|40P01|42501|pg_|relation|process/i;
 
-type Holder = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
-
-const backendPid = async (transaction: Holder): Promise<number> => {
-  const result = await raw<{ rows: Array<{ pid: number }> }>(transaction, 'select pg_catalog.pg_backend_pid() as pid', []);
-  return Number(result.rows[0]?.pid);
-};
-
-const waitForBackendBlockedBy = async (blockerPid: number): Promise<void> => {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    const result = await raw<{ rows: Array<{ pid: number }> }>(w.getOwner().knex, `
-      select activity.pid
-      from pg_catalog.pg_stat_activity activity
-      where activity.datname = pg_catalog.current_database()
-        and pg_catalog.pg_blocking_pids(activity.pid) @> array[?::int]
-      limit 1
-    `, [blockerPid]);
-    if (result.rows[0] !== undefined) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`No backend ever waited on a lock held by ${blockerPid}.`);
-};
-
 /** Window 1: the route starts while the archive is uncommitted, waits on the client, and is answered after it commits. */
 const archiveWhileRouteWaits = async (clientId: string, start: () => Promise<Reply>): Promise<Reply> => {
   const holder = await w.getOwner().knex.transaction();
@@ -47,7 +25,7 @@ const archiveWhileRouteWaits = async (clientId: string, start: () => Promise<Rep
     if (locked.rows.length !== 1) throw new Error('The holder did not archive exactly one client.');
     const holderPid = await backendPid(holder);
     const pending = start();
-    await waitForBackendBlockedBy(holderPid);
+    await waitForBackendsBlockedBy(w.getOwner().knex, holderPid);
     await holder.commit();
     released = true;
     return await pending;
@@ -214,7 +192,7 @@ describe('a content edited while the client is archived behind the row the edit 
       const holderPid = await backendPid(holder);
 
       const pending = w.call('PATCH', people.production.cookie, `${urlOf(clientId)}/${contentId}`, body);
-      await waitForBackendBlockedBy(holderPid);
+      await waitForBackendsBlockedBy(w.getOwner().knex, holderPid);
       const archive = await w.getOwner().knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
       expect(archive).toBe(1);
       await holder.rollback();

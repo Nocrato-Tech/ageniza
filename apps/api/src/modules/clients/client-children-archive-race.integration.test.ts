@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { raw, type DatabaseClient } from '@ageniza/database';
+import { backendPid, raw, waitForBackendsBlockedBy, type DatabaseClient } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -84,29 +84,6 @@ const sectionRows = async (clientId: string): Promise<number> =>
 
 const statusOf = async (clientId: string): Promise<string> => (await owner.knex('clients').where({ id: clientId }).first()).status as string;
 
-type Holder = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
-
-const backendPid = async (transaction: Holder): Promise<number> => {
-  const result = await raw<{ rows: Array<{ pid: number }> }>(transaction, 'select pg_catalog.pg_backend_pid() as pid', []);
-  return Number(result.rows[0]?.pid);
-};
-
-/** Waits until a backend of this database is blocked by the given one, so the race is sequenced by locks and never by a sleep. */
-const waitForBackendBlockedBy = async (blockerPid: number): Promise<void> => {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    const result = await raw<{ rows: Array<{ pid: number }> }>(owner.knex, `
-      select activity.pid
-      from pg_catalog.pg_stat_activity activity
-      where activity.datname = pg_catalog.current_database()
-        and pg_catalog.pg_blocking_pids(activity.pid) @> array[?::int]
-      limit 1
-    `, [blockerPid]);
-    if (result.rows[0] !== undefined) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`No backend ever waited on a lock held by ${blockerPid}.`);
-};
-
 const NO_DATABASE_DETAIL = /A0020|deadlock|40P01|pg_|relation|process/i;
 
 /** The route starts while the archive is uncommitted, waits on the client, and is answered after the archive commits. */
@@ -118,7 +95,7 @@ const archiveWhileRouteWaits = async (clientId: string, start: () => Promise<Rep
     if (locked.rows.length !== 1) throw new Error('The holder did not archive exactly one client.');
     const holderPid = await backendPid(holder);
     const pending = start();
-    await waitForBackendBlockedBy(holderPid);
+    await waitForBackendsBlockedBy(owner.knex, holderPid);
     await holder.commit();
     released = true;
     return await pending;

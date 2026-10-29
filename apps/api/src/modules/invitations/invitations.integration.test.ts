@@ -12,7 +12,7 @@ import {
 } from '../auth/test-support/harness.js';
 import { createInvitationToken, hashInvitationToken } from './tokens.js';
 import { setPortalAccessStatus } from '../clients/test-support/portal-access.js';
-import { raw, requestLockOnceBlocked, type DatabaseClient } from '@ageniza/database';
+import { backendPid, raw, requestLockOnceBlocked, waitForBackendsBlockedBy, type DatabaseClient } from '@ageniza/database';
 import { createHash, randomUUID } from 'node:crypto';
 
 const origin = { origin: TEST_APP_PUBLIC_URL };
@@ -144,28 +144,6 @@ const invitationTokenFromLatestEmail = (emailSender = sender): string => {
   const token = text.match(/\/convite\/([^\s]+)/)?.[1];
   if (token === undefined) throw new Error('The invitation email did not contain a token.');
   return token;
-};
-
-/** Waits until some backend is blocked waiting for a relation lock, so a race is sequenced by the
- * lock, not by a sleep. Used by the listing test that pins the count and the page to one snapshot. */
-const waitForRelationLockWait = async (database: DatabaseClient, relation: string): Promise<void> => {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    const result = await raw<{ rows: Array<{ waiting: number }> }>(database.knex, `
-      select count(*)::int as waiting
-      from pg_catalog.pg_locks locks
-      join pg_catalog.pg_class relation on relation.oid = locks.relation
-      where relation.relname = ? and not locks.granted
-    `, [relation]);
-    if ((result.rows[0]?.waiting ?? 0) > 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`No backend ever waited on the ${relation} lock.`);
-};
-
-/** The backend pid of an open transaction, to scope a lock wait to this test's holder. */
-const backendPid = async (transaction: Transaction): Promise<number> => {
-  const result = await raw<{ rows: Array<{ pid: number }> }>(transaction, 'select pg_catalog.pg_backend_pid() as pid', []);
-  return Number(result.rows[0]?.pid);
 };
 
 /**
@@ -1059,26 +1037,6 @@ describe('invitation HTTP module', () => {
     };
     const LOCK_THE_INVITATION = 'select 1 from public.invitations where id = %L::uuid for update';
     const TAKE_THE_SLOT = 'select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(%L, 0))';
-    /** The pid of one backend currently blocked by the given database backend, in this database. */
-    const backendBlockedBy = async (blockerPid: number): Promise<number | undefined> => {
-      const result = await raw<{ rows: Array<{ pid: number }> }>(owner.knex, `
-        select activity.pid
-        from pg_catalog.pg_stat_activity activity
-        where activity.datname = pg_catalog.current_database()
-          and pg_catalog.pg_blocking_pids(activity.pid) @> array[?::int]
-        limit 1
-      `, [blockerPid]);
-      return result.rows[0]?.pid;
-    };
-    /** Waits until a backend is blocked by the given backend, so the race is sequenced by locks. */
-    const waitForBackendBlockedBy = async (blockerPid: number): Promise<number> => {
-      for (let attempt = 0; attempt < 400; attempt += 1) {
-        const pid = await backendBlockedBy(blockerPid);
-        if (pid !== undefined) return pid;
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      throw new Error(`No backend ever waited on a lock held by ${blockerPid}.`);
-    };
 
     it('serializes a create and a resend of the same recipient instead of deadlocking', async () => {
       const raceOwner = await makeUser('invitations-lock-order-owner');
@@ -1102,7 +1060,7 @@ describe('invitation HTTP module', () => {
           remoteAddress: LOCK_ORDER_IP,
           headers: { ...origin, cookie }
         });
-        const resendPid = await waitForBackendBlockedBy(holderPid);
+        const resendPid = (await waitForBackendsBlockedBy(owner.knex, holderPid))[0]!;
         const created = app.app.inject({
           method: 'POST',
           url: `/agencies/${raceAgencyId}/invitations/collaborators`,
@@ -1110,7 +1068,7 @@ describe('invitation HTTP module', () => {
           headers: { ...origin, cookie },
           payload: { email, roleId: productionRoleId }
         });
-        await waitForBackendBlockedBy(resendPid);
+        await waitForBackendsBlockedBy(owner.knex, resendPid);
         await holder.commit();
         released = true;
 
@@ -1743,6 +1701,7 @@ describe('invitation HTTP module', () => {
       // A count read before it would report one, while the list shows none (issue #165).
       const holdInvitations = await owner.knex.transaction();
       await holdInvitations.raw('lock table public.invitations in access exclusive mode');
+      const holdInvitationsPid = await backendPid(holdInvitations);
       let invitationsReleased = false;
       try {
         const responsePromise = app.app.inject({
@@ -1750,15 +1709,16 @@ describe('invitation HTTP module', () => {
           url: `/agencies/${raceAgencyId}/invitations`,
           headers: { ...origin, cookie }
         });
-        await waitForRelationLockWait(owner, 'invitations');
+        await waitForBackendsBlockedBy(owner.knex, holdInvitationsPid);
 
         const holdClients = await owner.knex.transaction();
         let clientsReleased = false;
         try {
           await holdClients.raw('lock table public.clients in access exclusive mode');
+          const holdClientsPid = await backendPid(holdClients);
           await holdInvitations.commit();
           invitationsReleased = true;
-          await waitForRelationLockWait(owner, 'clients');
+          await waitForBackendsBlockedBy(owner.knex, holdClientsPid);
 
           await owner.knex('invitations').where({ id: pending.invitationId }).update({ revoked_at: new Date() });
           await holdClients.commit();
