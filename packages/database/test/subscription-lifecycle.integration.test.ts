@@ -381,12 +381,13 @@ describe('canceling', () => {
     expect(await h.subscriptionOf(agencyId)).toMatchObject({ pending_plan_key: null });
   });
 
-  it('has nothing to cancel in a trial or after the period', async () => {
+  it('has nothing to cancel in a trial or once the window after the period is over (inside it the Owner may, see subscription-grace)', async () => {
     const trial = await h.trialAgency();
     await expect(cancel(trial.ownerId, trial.agencyId)).rejects.toMatchObject({ code: 'A0110' });
 
     const ended = await h.trialAgency();
     await h.subscribe(ended.ownerId, ended.agencyId, 'essencial');
+    await advance(ended.ownerId, ended.agencyId);
     await advance(ended.ownerId, ended.agencyId);
     await expect(cancel(ended.ownerId, ended.agencyId)).rejects.toMatchObject({ code: 'A0110' });
   });

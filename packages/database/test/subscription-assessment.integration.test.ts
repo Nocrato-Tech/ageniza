@@ -176,13 +176,13 @@ describe('who may quote, ask, cancel and move the clock', () => {
       where n.nspname = 'app_private'
         and p.proname in ('quote_subscription_change', 'request_subscription_change', 'confirm_subscription_charge', 'cancel_subscription',
                           'reactivate_subscription', 'renew_subscription', 'next_renewal_cents', 'agencies_due_for_renewal', 'advance_simulated_period',
-                          'subscription_overview')
+                          'subscription_overview', 'agency_is_read_only')
     `);
     expect(rows.map((row) => row.proname).sort()).toEqual([
       'advance_simulated_period', 'agencies_due_for_renewal', 'cancel_subscription', 'confirm_subscription_charge',
       'next_renewal_cents', 'quote_subscription_change', 'reactivate_subscription', 'renew_subscription', 'request_subscription_change',
       'subscription_overview'
-    ]);
+    ].concat('agency_is_read_only').sort());
     for (const row of rows) {
       expect(row.granted, row.proname).toBe(true);
       expect(row.definer, row.proname).toBe(true);
@@ -194,7 +194,7 @@ describe('who may quote, ask, cancel and move the clock', () => {
         and p.proname in ('quote_subscription_change', 'request_subscription_change', 'confirm_subscription_charge', 'cancel_subscription', 'renew_subscription',
                           'reactivate_subscription', 'next_renewal_cents', 'next_renewal_terms', 'agencies_due_for_renewal', 'advance_simulated_period',
                           'subscription_overview', 'prorated_cents', 'assess_subscription_change', 'assess_agency_subscription_change', 'require_no_person',
-                          'require_subscription_owner', 'payment_grace_period', 'lock_subscription_change')
+                          'require_subscription_owner', 'payment_grace_period', 'lock_subscription_change', 'agency_is_read_only')
         and has_function_privilege('public', p.oid, 'execute')
     `);
     expect(publicRows).toEqual([]);
