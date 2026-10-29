@@ -66,6 +66,8 @@ Encontre o documento certo pela tarefa. Cada linha diz **que pergunta o document
 - [Observabilidade](observability.md) — formato de logs, health e ready, e o que nunca logar. **Leia quando:** for adicionar log, probe ou erro novo.
 - [Docker](infra/docker.md) — a stack local em containers. **Leia quando:** for subir, parar ou resetar a stack Docker.
 - [Baseline da VPS Ubuntu](infra/vps-baseline.md) — como preparar o host limpo. **Leia quando:** for provisionar ou reconstruir o servidor.
+- [ADR 0013: ambiente de dev na VPS](adr/0013-dev-environment-on-the-vps.md) — por que o dev roda na mesma VPS da produção, isolado e com limite de recursos, publicado a cada merge no `develop`. **Leia quando:** for mexer no que o dev compartilha ou não com a produção.
+- [Ambiente de dev na VPS](infra/dev-environment.md) — o desenho, os limites, o passo a passo do dono (Registro.br, Cloudflare, Access, GitHub) e a operação. **Leia quando:** for publicar, operar ou mudar o dev, ou criar o domínio e a conta da Cloudflare.
 - [Deploy e rollback em produção](infra/production-deploy.md) — o runbook de release e reversão. **Leia quando:** for publicar ou reverter uma versão.
 - [Checklist de prontidão para produção](infra/production-readiness.md) — as ações humanas pendentes antes do lançamento. **Leia quando:** for agendar ou revisar o lançamento em produção.
 - [Backup e restauração](infra/backup-restore.md) — o backup diário do banco e como restaurar. **Leia quando:** for verificar, testar ou restaurar um backup.

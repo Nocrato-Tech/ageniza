@@ -1,4 +1,4 @@
-// GitHub Free cannot enforce branch protection on this private repository, so workflows
+// Branch protection is not enabled on this repository (public, on purpose), so workflows
 // verify instead that a pushed commit is the merge result of a pull request.
 const headMatches = (ref, patterns) =>
   patterns.some((pattern) => (pattern.endsWith('*') ? ref.startsWith(pattern.slice(0, -1)) : ref === pattern));

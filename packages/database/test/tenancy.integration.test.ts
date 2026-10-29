@@ -254,7 +254,8 @@ describe('AUTH-20B database RLS and invitation functions', () => {
     // (#94 review) plus the CLIENTS module catalog (#122): cliente.visualizar, cliente.operar,
     // cliente.cadastrar, cliente.arquivar and cliente.remover_usuario, with their preset grants, plus the
     // five conteudo.* permissions (#247): 5 + 5 + 3 preset grants for Admin, Account Manager and Production.
-    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(20);
+    // And assinatura.gerenciar (#771), the owner-only key of the subscription, in no preset.
+    await expect(asUser(userA, (transaction) => transaction('permissions').select('key'))).resolves.toHaveLength(21);
     await expect(asUser(userA, (transaction) => transaction('roles').whereNull('agency_id').select('key'))).resolves.toHaveLength(5);
     await expect(asUser(userA, (transaction) => transaction('role_permissions').select('permission_key'))).resolves.toHaveLength(38);
 

@@ -47,19 +47,25 @@ To change what the image carries, edit `files` and compare the deploy by hand on
 
 ## Branch protections and promotion
 
-The organization is on GitHub Free and this repository is private, so GitHub rejects rulesets, branch protection, Environment reviewers, and CODEOWNERS enforcement. Until the plan changes, `main` and `develop` are guarded by:
+This repository is **public, on purpose** (owner decision, 2026-10-29), and the organization is on GitHub Free. Two consequences follow:
+
+- Nothing sensitive may ever be committed: no credential, token, private key, real customer or agency data, or personal data, not even in a test fixture or a deleted commit. Production and dev secrets live on the VPS, not in GitHub (see the [production deploy runbook](../infra/production-deploy.md)). The security lessons, the review checklists and the infrastructure design (VPS baseline, deploy, tunnel) are readable by anyone, so the design must stay safe when known: the controls cannot depend on the layout being secret.
+- On a public repository GitHub Free *does* allow rulesets, branch protection and Environment required reviewers (CODEOWNERS enforcement comes with branch protection). None of them is turned on yet; turning them on is proposed in issue #778. If the repository ever turns private on the Free plan, those features stop being available and the guards below are the only protection.
+
+Until they are on, `main` and `develop` are guarded by:
 
 | Guard | Enforced where | What it does |
 | --- | --- | --- |
 | `.githooks/pre-push` | Each clone (installed by `pnpm install`) | Refuses `git push` to `main` or `develop`. Bypassable with `--no-verify`; it prevents accidents. |
 | `Production release / Release origin guard` | GitHub Actions | A push to `main` publishes, migrates, or deploys only if it is not a force push and is the merge commit of a pull request from this repository's `develop` or `hotfix/*`. |
 | `ageniza-deploy` release verification | Production VPS | The host deploys only the manifest of a push-to-`main` run of `production.yml` for a commit on `main`; production secrets never live in GitHub. See the [production deploy runbook](../infra/production-deploy.md). |
+| `ageniza-deploy-dev` release verification | Production VPS (dev environment) | The host deploys only the manifest of a push-to-`develop` run of `dev.yml` for a commit on `develop`, with the dev account, key and entrypoint that production does not share. See the [dev environment runbook](../infra/dev-environment.md). |
 | `Branch guard` | GitHub Actions | Any force push, or any commit on `main` or `develop` that is not a merged pull request, fails the run and opens an issue assigned to @PedroV1dal. |
 | `Pull request reviewer` | GitHub Actions | Requests review from @PedroV1dal on pull requests to `develop` and `main`. |
 
 Team agreement, not technically enforced: merge only pull requests with an approval and green CI. GitHub itself never merges a pull request with conflicts. A direct push can edit these workflows too, so treat every `Branch guard` issue as an incident.
 
-When the organization moves to GitHub Team, replace this with rulesets on `develop` and `main`: require pull requests with one approval (code owner on `main`), dismiss stale approvals, require conversation resolution and up-to-date branches, block force pushes and deletion, allow only repository admins to bypass for pull requests, and require these checks (plus `Release path validation` on `main`):
+When the protections are turned on (or the organization moves to a paid plan), replace this with rulesets on `develop` and `main`: require pull requests with one approval (code owner on `main`), dismiss stale approvals, require conversation resolution and up-to-date branches, block force pushes and deletion, allow only repository admins to bypass for pull requests, and require these checks (plus `Release path validation` on `main`):
 
 - `CI / Branch route`
 - `CI / Migration policy`
@@ -67,6 +73,6 @@ When the organization moves to GitHub Team, replace this with rulesets on `devel
 - `CI / Docker images`
 - `CI / PostgreSQL local database`
 
-Feature, fix, and refactor branches merge into `develop`. `develop` is the integration branch only: it has no remote deployment environment. A pull request to `main` is a production-promotion gate and must originate from `develop`; the workflow permits `hotfix/*` only as the documented production exception. Production deployment belongs to a separate main-only workflow using GitHub's `production` Environment, never this CI workflow or a `develop` environment; see the [production deploy runbook](../infra/production-deploy.md).
+Feature, fix, and refactor branches merge into `develop`. `develop` is the integration branch: every commit that lands on it is published to the dev environment on the VPS by the `Dev release` workflow ([dev environment runbook](../infra/dev-environment.md), [ADR 0013](../adr/0013-dev-environment-on-the-vps.md)), and nothing else is deployed from it. A pull request to `main` is a production-promotion gate and must originate from `develop`; the workflow permits `hotfix/*` only as the documented production exception. Production deployment belongs to a separate main-only workflow, never this CI workflow or the `Dev release` workflow; see the [production deploy runbook](../infra/production-deploy.md). The `Dev release` workflow runs only for pushes to `develop`, holds only the dev SSH key (GitHub environment `dev`, restricted to `develop`) and calls the dev forced command, which cannot apply a production release.
 
 After a `hotfix/*` branch is merged to `main`, immediately open and merge its reconciliation pull request into `develop` (or merge the resulting `main` delta into `develop` if branch policy requires it). This prevents the next release promotion from losing the production correction.

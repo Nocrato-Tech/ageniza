@@ -1,6 +1,6 @@
 name: Branch guard
 
-# GitHub Free cannot protect branches of this private repository. This workflow detects
+# Branch protection is not enabled on this repository (public, on purpose; see docs/ci/README.md). This workflow detects
 # commits that reached main or develop without a merged pull request and alerts the owner.
 on:
   push:

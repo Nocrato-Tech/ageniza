@@ -1,0 +1,5 @@
+# Installed at /etc/sudoers.d/ageniza-deploy-dev (0440) by install-dev-deploy.sh, which validates it first.
+# Only the dev forced-command account may run the dev entrypoint, and it is not listed for the production one
+# (/etc/sudoers.d/ageniza-deploy lists ageniza-ci alone), so neither key can deploy the other environment.
+# No NOEXEC: the entrypoint must execute docker, curl, and install.
+ageniza-dev-ci ALL=(root) NOPASSWD: /usr/local/sbin/ageniza-deploy-dev apply-dev *, /usr/local/sbin/ageniza-deploy-dev status-dev

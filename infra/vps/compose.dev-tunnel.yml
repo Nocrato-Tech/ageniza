@@ -1,0 +1,25 @@
+services:
+  cloudflared:
+    image: ${AGENIZA_TUNNEL_IMAGE:?immutable cloudflared image reference required}
+    # Outbound only, with a tunnel of its own: the dev environment shares no credential, network or hostname with
+    # production (ADR 0013). Routing comes from the versioned config file, not the Cloudflare dashboard (ADR 0012).
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run", "${AGENIZA_TUNNEL_ID:?tunnel id required}"]
+    restart: unless-stopped
+    networks: [dev-proxy]
+    volumes:
+      - /etc/ageniza-dev/cloudflared:/etc/cloudflared:ro
+    cpus: ${DEV_CLOUDFLARED_CPUS:?infra/vps/dev-limits.env required}
+    mem_limit: ${DEV_CLOUDFLARED_MEM:?infra/vps/dev-limits.env required}
+    memswap_limit: ${DEV_CLOUDFLARED_MEM:?infra/vps/dev-limits.env required}
+    pids_limit: ${DEV_CLOUDFLARED_PIDS:?infra/vps/dev-limits.env required}
+    # The cloudflared image ships no shell, so there is no container healthcheck (ADR 0012).
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  dev-proxy:
+    name: ageniza-dev-proxy
+    external: true

@@ -1,0 +1,23 @@
+# Tunnel routing of the dev environment, versioned on purpose (ADR 0012, ADR 0013). The installer copies it to
+# /etc/ageniza-dev/cloudflared/config.yml, filling the two Cloudflare Access values from dev-deploy.env.
+credentials-file: /etc/cloudflared/credentials.json
+no-autoupdate: true
+
+originRequest:
+  connectTimeout: 10s
+  noTLSVerify: false
+
+ingress:
+  - hostname: dev.ageniza.com.br
+    service: http://web:8080
+  # The inbox of every message the dev environment sends. cloudflared itself refuses a request that does not carry
+  # a valid Cloudflare Access token for this application, so a missing or wrong Access policy fails closed here.
+  - hostname: mail-dev.ageniza.com.br
+    service: http://mailpit:8025
+    originRequest:
+      access:
+        required: true
+        teamName: REPLACE_WITH_ACCESS_TEAM_NAME
+        audTag:
+          - REPLACE_WITH_ACCESS_AUD_TAG
+  - service: http_status:404
