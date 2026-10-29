@@ -52,7 +52,7 @@ export const SubscriptionQuoteResponseSchema = z.object({
 }).strict();
 
 export const SubscriptionChargeResponseSchema = SubscriptionQuoteResponseSchema.extend({
-  /** The charge the provider has to confirm; null for a downgrade, which charges nothing. */
+  /** The charge the provider has to confirm; null for a downgrade, which charges nothing, and for a raise that costs nothing, which is applied at once. */
   chargeId: z.string().uuid().nullable()
 }).strict();
 

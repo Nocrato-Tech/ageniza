@@ -6913,7 +6913,8 @@
               "null"
             ],
             "enum": [
-              "simulado"
+              "simulado",
+              "asaas"
             ]
           }
         },
@@ -26599,7 +26600,7 @@
       "post": {
         "operationId": "requestSubscriptionCharge",
         "summary": "Pede a mudança de plano ou de extras e abre a cobrança",
-        "description": "As mesmas contas e recusas de `quote`. Uma subida ou assinatura abre uma cobrança (`chargeId`) que o provedor tem 30 minutos para\nconfirmar; um pedido novo, uma descida agendada ou um cancelamento a invalidam, e só existe uma por agência. **O plano e os tetos não mudam aqui:**\nsó mudam quando o provedor confirma essa cobrança. Uma descida é agendada para o próximo período, não cobra nada e devolve `chargeId` nulo.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "description": "As mesmas contas e recusas de `quote`. Uma subida ou assinatura abre uma cobrança (`chargeId`) que o provedor tem 30 minutos para\nconfirmar; um pedido novo, uma descida agendada ou um cancelamento a invalidam, e só existe uma por agência. **O plano e os tetos só mudam\nquando o provedor confirma essa cobrança**, com uma exceção: uma subida cujo valor é zero (um plano mais barato com teto maior, por exemplo)\nnão passa pelo provedor, que não cobra zero; é aplicada na hora, na mesma transação, e devolve `chargeId` nulo e `amountCents` zero, sem\ndeixar cobrança pendente. Uma descida é agendada para o próximo período, não cobra nada e também devolve `chargeId` nulo.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
         "tags": [
           "subscriptions"
         ],
@@ -26632,7 +26633,7 @@
         },
         "responses": {
           "201": {
-            "description": "Cobrança aberta, ou descida agendada.",
+            "description": "Cobrança aberta, descida agendada ou subida de valor zero aplicada na hora (os dois últimos com `chargeId` nulo).",
             "content": {
               "application/json": {
                 "schema": {

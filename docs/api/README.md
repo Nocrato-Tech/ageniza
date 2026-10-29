@@ -4543,7 +4543,7 @@ Pede a mudança de plano ou de extras e abre a cobrança.
 }
 ```
 
-**Resposta `201`** — Cobrança aberta, ou descida agendada.
+**Resposta `201`** — Cobrança aberta, descida agendada ou subida de valor zero aplicada na hora (os dois últimos com `chargeId` nulo).
 
 ```json
 {

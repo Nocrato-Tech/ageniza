@@ -169,6 +169,74 @@ describe('paying', () => {
   });
 });
 
+// Review of #782: a raise whose amount is zero (a cheaper plan with a bigger ceiling) cannot be paid, because no provider charges zero.
+// The database applies it in the request: no charge, no provider, nothing pending, and the plan is what the Owner asked for.
+describe('a raise that costs nothing', () => {
+  let owner: Person;
+  let agency: string;
+  const dear = { planKey: 'essencial', extraClients: 20, extraStorageGib: 80 };
+  const cheaperAndBigger = { planKey: 'profissional', extraClients: 0, extraStorageGib: 1 };
+
+  beforeAll(async () => {
+    owner = await world.person('simpay-free-owner');
+    agency = await world.agency(owner);
+    const chargeId = await open(owner, agency, dear);
+    expect((await world.call(owner, 'POST', payUrl(agency, chargeId), { outcome: 'approved' })).json()).toEqual({ status: 'confirmed' });
+  });
+
+  it('is quoted as an upgrade of zero and applied by the request, with no charge and without asking the provider', async () => {
+    expect((await world.call(owner, 'GET', base(agency))).json()).toMatchObject({ subscription: { planKey: 'essencial', monthlyCents: 24_900, clientLimit: 30 } });
+    const quote = await world.call(owner, 'POST', `${base(agency)}/quote`, cheaperAndBigger);
+    expect(quote.json()).toMatchObject({ effect: 'upgrade', monthlyCents: 19_740, amountCents: 0 });
+    requests.length = 0;
+
+    const response = await world.call(owner, 'POST', `${base(agency)}/charges`, cheaperAndBigger);
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ chargeId: null, effect: 'upgrade', monthlyCents: 19_740, amountCents: 0 });
+    expect(requests).toEqual([]);
+    expect(recorder.running(/confirm_subscription_charge/)).toEqual([]);
+    expect(await world.owner.knex('subscription_charges').where({ agency_id: agency, status: 'pending' })).toEqual([]);
+    const overview = await world.call(owner, 'GET', base(agency));
+    expect(overview.json()).toMatchObject({
+      subscription: { planKey: 'profissional', extraClients: 0, extraStorageGib: 1, monthlyCents: 19_740, nextMonthlyCents: 19_740, clientLimit: 30, storageBytes: 101 * 1_073_741_824 }
+    });
+  });
+
+  it('takes the charge that was waiting out of play: paying it afterwards answers 409 and the provider is not asked', async () => {
+    const waiting = await open(owner, agency, { planKey: 'agencia', extraClients: 0, extraStorageGib: 0 });
+    requests.length = 0;
+    // One more GiB over the plan it has now costs the rest of the period: that raise opens a charge, which replaces the waiting one.
+    const response = await world.call(owner, 'POST', `${base(agency)}/charges`, { planKey: 'profissional', extraClients: 0, extraStorageGib: 2 });
+    expect(response.statusCode).toBe(201);
+    expect(await statusOf(waiting)).toBe('expired');
+    const late = await world.call(owner, 'POST', payUrl(agency, waiting), { outcome: 'approved' });
+    expect(late.statusCode).toBe(409);
+    expect(errorCode(late)).toBe('CHARGE_NOT_OPEN');
+    expect(requests).toEqual([]);
+  });
+
+  it('applies the same request only once: the second answer is 409 SUBSCRIPTION_UNCHANGED', async () => {
+    const other = await world.person('simpay-free-owner-2');
+    const otherAgency = await world.agency(other);
+    expect((await world.call(other, 'POST', payUrl(otherAgency, await open(other, otherAgency, dear)), { outcome: 'approved' })).statusCode).toBe(200);
+    expect((await world.call(other, 'POST', `${base(otherAgency)}/charges`, cheaperAndBigger)).statusCode).toBe(201);
+    const again = await world.call(other, 'POST', `${base(otherAgency)}/charges`, cheaperAndBigger);
+    expect(again.statusCode).toBe(409);
+    expect(errorCode(again)).toBe('SUBSCRIPTION_UNCHANGED');
+  });
+
+  it('is the Owner’s alone: an Admin is refused and the plan stays', async () => {
+    const other = await world.person('simpay-free-owner-3');
+    const otherAgency = await world.agency(other);
+    expect((await world.call(other, 'POST', payUrl(otherAgency, await open(other, otherAgency, dear)), { outcome: 'approved' })).statusCode).toBe(200);
+    const admin = await world.person('simpay-free-admin');
+    await world.withRole(otherAgency, admin.user.id, 'admin');
+    expect((await world.call(admin, 'POST', `${base(otherAgency)}/charges`, cheaperAndBigger)).statusCode).toBe(403);
+    expect(await world.subscriptionOf(otherAgency)).toMatchObject({ plan_key: 'essencial', extra_clients: 20, extra_storage_gib: 80 });
+  });
+});
+
 describe('what the provider answers is checked before the database sees it', () => {
   let owner: Person;
   let agency: string;

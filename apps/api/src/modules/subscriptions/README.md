@@ -18,7 +18,7 @@ Todas exigem a permissão `assinatura.gerenciar`, que **só o Owner tem, por pos
 | `GET /plans` | planos, preços e extras, lidos das tabelas |
 | `GET /` | a assinatura da agência: plano, extras, período, cancelamento, tolerância, uso e provedor |
 | `POST /quote` | o total e o efeito (assinar, subir, descer) de uma mudança, calculados no servidor |
-| `POST /charges` | pede a mudança; sobe ou assina gera uma cobrança pendente, descer só agenda para o próximo período |
+| `POST /charges` | pede a mudança; sobe ou assina gera uma cobrança pendente, descer só agenda para o próximo período, e uma subida de valor zero (plano mais barato com teto maior) é aplicada na hora, sem cobrança e sem passar pelo provedor |
 | `POST /cancel`, `POST /reactivate` | cancela (vale também na tolerância) e reativa (só até o fim do período) |
 | `POST /simulated-period-advance` | **só dev**: leva o período ao fim, para testar renovação e tolerância |
 | `POST /charges/:chargeId/simulated-payment` | **só dev**: o cartão simulado, `approved` ou `declined` |
@@ -29,7 +29,9 @@ As duas últimas só são registradas com `PAYMENTS_PROVIDER=simulado` **e** amb
 ## Quem muda o plano
 
 Só a confirmação do provedor. O front nunca escreve plano nem teto: `POST /charges` apenas cria a cobrança, e o plano e a cota
-mudam em `app_private.confirm_subscription_charge`, chamada sem pessoa ligada, depois de o provedor aprovar. Os totais, o pro rata
+mudam em `app_private.confirm_subscription_charge`, chamada sem pessoa ligada, depois de o provedor aprovar. A única exceção é a
+subida de valor zero (um plano mais barato com teto maior): o provedor não cobra zero, então `request_subscription_change` a aplica
+na hora, na mesma transação e sob as mesmas travas, sem cobrança e sem deixar nada pendente. Os totais, o pro rata
 e as recusas (`A0111` abaixo dos clientes em uso, `A0117` abaixo do armazenamento em uso) são do banco.
 
 ## O cartão

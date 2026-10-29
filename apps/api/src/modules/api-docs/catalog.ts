@@ -4193,8 +4193,10 @@ path: '/agencies/:agencyId/roles',
     summary: 'Pede a mudança de plano ou de extras e abre a cobrança',
     description: [
       'As mesmas contas e recusas de `quote`. Uma subida ou assinatura abre uma cobrança (`chargeId`) que o provedor tem 30 minutos para',
-      'confirmar; um pedido novo, uma descida agendada ou um cancelamento a invalidam, e só existe uma por agência. **O plano e os tetos não mudam aqui:**',
-      'só mudam quando o provedor confirma essa cobrança. Uma descida é agendada para o próximo período, não cobra nada e devolve `chargeId` nulo.'
+      'confirmar; um pedido novo, uma descida agendada ou um cancelamento a invalidam, e só existe uma por agência. **O plano e os tetos só mudam',
+      'quando o provedor confirma essa cobrança**, com uma exceção: uma subida cujo valor é zero (um plano mais barato com teto maior, por exemplo)',
+      'não passa pelo provedor, que não cobra zero; é aplicada na hora, na mesma transação, e devolve `chargeId` nulo e `amountCents` zero, sem',
+      'deixar cobrança pendente. Uma descida é agendada para o próximo período, não cobra nada e também devolve `chargeId` nulo.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'assinatura.gerenciar',
@@ -4203,7 +4205,7 @@ path: '/agencies/:agencyId/roles',
     requestExample: { planKey: 'profissional', extraClients: 0, extraStorageGib: 0 },
     responses: [{
       status: 201,
-      description: 'Cobrança aberta, ou descida agendada.',
+      description: 'Cobrança aberta, descida agendada ou subida de valor zero aplicada na hora (os dois últimos com `chargeId` nulo).',
       schema: SubscriptionChargeResponseSchema,
       example: { chargeId: '99999999-9999-4999-8999-999999999999', effect: 'upgrade', monthlyCents: 19700, amountCents: 6800, effectiveAt: '2026-11-15T12:00:00.000Z' }
     }],
