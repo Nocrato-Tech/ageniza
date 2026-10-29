@@ -110,6 +110,14 @@ describe('the dev model of ADR 0013', () => {
     expect(check((dev) => { dev.services.api.environment.API_TRUSTED_PROXY_CIDRS = '172.30.251.0/24'; })).toThrow('API_TRUSTED_PROXY_CIDRS');
   });
 
+  it.each([['egress'], ['dev-proxy']])('refuses PostgreSQL on the %s network as well as dev-private', (extra) => {
+    expect(check((dev) => { dev.services.postgres.networks[extra] = null; })).toThrow('postgres must be on the dev-private network only');
+  });
+
+  it('refuses PostgreSQL off the dev-private network', () => {
+    expect(check((dev) => { dev.services.postgres.networks = { egress: null }; })).toThrow('postgres must be on the dev-private network only');
+  });
+
   it('refuses a dev-private network that is not internal', () => {
     expect(check((dev) => { dev.networks['dev-private'].internal = false; })).toThrow('must be internal');
   });

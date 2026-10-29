@@ -73,6 +73,11 @@ export function assertDevModel(model, tunnelModel, limits) {
   if (model.services.api.environment?.API_TRUSTED_PROXY_CIDRS !== subnet) {
     throw new Error('API_TRUSTED_PROXY_CIDRS must be the subnet of the dev-private network.');
   }
+  // PostgreSQL has no route out and none in besides the internal network: the egress network would give it one.
+  const postgresNetworks = Object.keys(model.services.postgres.networks ?? {});
+  if (postgresNetworks.length !== 1 || postgresNetworks[0] !== 'dev-private') {
+    throw new Error(`Service postgres must be on the dev-private network only; it is on [${postgresNetworks.join(', ')}].`);
+  }
   if (model.networks?.['dev-private']?.internal !== true) throw new Error('The dev-private network must be internal.');
   return { cpus, memoryBytes: memory };
 }

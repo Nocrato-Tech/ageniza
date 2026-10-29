@@ -90,7 +90,7 @@ Create two private buckets whose names contain `dev` (for example `ageniza-media
 
 ### 7. GitHub
 
-In **Settings → Environments**, create the environment `dev` and restrict its **deployment branches** to `develop` only. The repository is public today, which is what makes environments available on the Free plan; if it turns private again on that plan, environments stop working and the same names go to repository secrets and variables, with `environment: dev` removed from `dev.yml`.
+In **Settings → Environments**, create the environment `dev` and restrict its **deployment branches** to `develop` only. Do this **before** you add `DEV_SSH_PRIVATE_KEY`: a secret of an environment without the branch restriction can be read by a workflow that runs from any branch, so the key must never exist while the restriction is missing. The repository is public today, which is what makes environments available on the Free plan; if it turns private again on that plan, environments stop working and the same names go to repository secrets and variables, with `environment: dev` removed from `dev.yml`.
 
 Environment **secrets**:
 
