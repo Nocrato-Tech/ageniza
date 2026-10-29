@@ -200,45 +200,78 @@ jobs:
       DATABASE_URL: postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza_ci
       MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/ageniza_ci
     steps:
-      # The default pull_request checkout is the merge result, which is what actually lands.
-      - uses: actions/checkout@v4
+      # The default pull_request checkout is the merge result, which is what actually lands. The whole history is
+      # fetched so the decision below can diff the pull request's base against its head.
+      - name: Check out the repository with its history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+      # Issue #789: a pull request whose every changed file is on a fixed allow list (apps/web, docs, root Markdown)
+      # cannot reach the database, the API or the worker, so the ~14 minute steps below are skipped. The job itself stays
+      # unconditional: a skipped job reads as "skipped", this one stays "completed" and says why. Every step below is
+      # gated on `!= 'false'`, so a decision that failed to produce its output runs the job instead of skipping it.
+      # The rule and the list live in scripts/ci/decide-database-job.mjs and docs/ci/README.md.
+      - name: Decide whether the database job is needed
+        id: area
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci/decide-database-job.mjs --event "$EVENT_NAME" --base "$BASE_SHA" --head "$HEAD_SHA"
+      - name: Say why the database job was skipped
+        if: steps.area.outputs.run == 'false'
+        env:
+          REASON: ${{ steps.area.outputs.reason }}
+        run: |
+          echo "Skipped: $REASON."
+          echo "Skipped: $REASON." >> "$GITHUB_STEP_SUMMARY"
       - name: Enable the repository-pinned pnpm with Corepack
+        if: steps.area.outputs.run != 'false'
         run: corepack enable
       - name: Resolve pnpm store path
+        if: steps.area.outputs.run != 'false'
         id: pnpm-store
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
+        if: steps.area.outputs.run != 'false'
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-
       - name: Install from the committed lockfile
+        if: steps.area.outputs.run != 'false'
         run: pnpm install --frozen-lockfile
       - name: Start the isolated local PostgreSQL
+        if: steps.area.outputs.run != 'false'
         run: pnpm db:start
       - name: Create the database the suites run against
+        if: steps.area.outputs.run != 'false'
         run: docker compose exec -T postgres psql -U postgres -v ON_ERROR_STOP=1 -c 'create database ageniza_ci'
       - name: Apply every migration to an empty database
+        if: steps.area.outputs.run != 'false'
         run: pnpm db:migrate
       - name: Run database integration and RLS isolation suite
+        if: steps.area.outputs.run != 'false'
         run: pnpm db:test:local
       - name: Start the local object storage
+        if: steps.area.outputs.run != 'false'
         run: pnpm storage:start
       # The worker image ships ffmpeg, but this job runs the suite on the runner, not in that image.
       # The media tests exercise real ffmpeg/ffprobe on purpose, so the runner needs it too. A pinned static
       # build is cached per version: apt-get from the runner's mirror stalled this job (issue #735).
       - name: Restore the cached ffmpeg
+        if: steps.area.outputs.run != 'false'
         id: ffmpeg-cache
         uses: actions/cache@v4
         with:
           path: ~/ffmpeg-static
           key: ${{ runner.os }}-ffmpeg-7.0.2-abda8d77ce83
       - name: Install ffmpeg for the media processing suite
-        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        if: steps.area.outputs.run != 'false' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
         timeout-minutes: 5
         env:
           FFMPEG_SHA256: abda8d77ce8309141f83ab8edf0596834087c52467f6badf376a6a2a4c87cf67
@@ -248,18 +281,23 @@ jobs:
           mkdir -p ~/ffmpeg-static
           tar -xJf "$RUNNER_TEMP/ffmpeg.tar.xz" -C ~/ffmpeg-static --strip-components=1             ffmpeg-7.0.2-amd64-static/ffmpeg ffmpeg-7.0.2-amd64-static/ffprobe
       - name: Put ffmpeg on the PATH
+        if: steps.area.outputs.run != 'false'
         run: |
           echo "$HOME/ffmpeg-static" >> "$GITHUB_PATH"
           "$HOME/ffmpeg-static/ffmpeg" -version | head -1
           "$HOME/ffmpeg-static/ffprobe" -version | head -1
       - name: Build the worker's workspace dependencies
+        if: steps.area.outputs.run != 'false'
         run: pnpm exec turbo run build --filter=@ageniza/worker^...
       - name: Run the durable job queue suite as the application role
+        if: steps.area.outputs.run != 'false'
         run: pnpm --filter @ageniza/worker test:integration
       - name: Build the API's workspace dependencies
+        if: steps.area.outputs.run != 'false'
         run: pnpm exec turbo run build --filter=@ageniza/api^...
       - name: Run the authentication suite as the application role
+        if: steps.area.outputs.run != 'false'
         run: pnpm --filter @ageniza/api test:integration
       - name: Remove the local database
-        if: always()
+        if: always() && steps.area.outputs.run != 'false'
         run: docker compose down --volumes --remove-orphans
