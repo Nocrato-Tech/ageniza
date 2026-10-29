@@ -208,9 +208,18 @@ describe('what the application role reads', () => {
     const { agencyId, ownerId } = await h.trialAgency();
     const admin = await h.withRole(agencyId, 'admin');
     const outsider = await h.person();
+    const oneKey = await h.withPermissions(agencyId, 'cliente.cadastrar');
+    // The Owner of another agency, who has a subscription of its own: the policy shows rows, and still not this agency's.
+    const neighbour = await h.trialAgency();
+    await h.seedSubscription(neighbour.agencyId, 'agencia');
+    await h.seedCharge(neighbour.agencyId, neighbour.ownerId, 'confirmed');
     await h.seedSubscription(agencyId, 'essencial');
     await h.seedCharge(agencyId, ownerId, 'confirmed');
 
+    expect(await h.asUser(neighbour.ownerId, (t) => t('agency_subscriptions').select('plan_key'))).toEqual([{ plan_key: 'agencia' }]);
+    expect(await h.asUser(neighbour.ownerId, (t) => t('subscription_charges').select('agency_id'))).toEqual([{ agency_id: neighbour.agencyId }]);
+    expect(await h.asUser(oneKey, (t) => t('agency_subscriptions').select('plan_key'))).toEqual([{ plan_key: 'essencial' }]);
+    expect(await h.asUser(oneKey, (t) => t('subscription_charges').select('kind'))).toEqual([]);
     expect(await h.asUser(ownerId, (t) => t('agency_subscriptions').select('plan_key'))).toEqual([{ plan_key: 'essencial' }]);
     expect(await h.asUser(admin, (t) => t('agency_subscriptions').select('plan_key'))).toEqual([{ plan_key: 'essencial' }]);
     expect(await h.asUser(outsider, (t) => t('agency_subscriptions').select('plan_key'))).toEqual([]);
