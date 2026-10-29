@@ -141,8 +141,10 @@ sudo docker --config /etc/ageniza-dev/registry login ghcr.io -u <github-user> --
 echo 'restrict,command="/usr/local/sbin/ageniza-deploy-dev-ssh" ssh-ed25519 AAAA... github-actions-dev' \
   | sudo tee /home/ageniza-dev-ci/.ssh/authorized_keys >/dev/null
 
-# The dev tunnel credentials, then re-run the installer so it renders the tunnel config with the Access values:
-sudo install -m 0600 -o root -g root credentials.json /etc/ageniza-dev/cloudflared/credentials.json
+# The dev tunnel credentials, then re-run the installer so it renders the tunnel config with the Access values.
+# The cloudflared container runs as gid 65532, so the group reads the file and no one else does (mode 0600 would
+# keep the tunnel from starting: "open /etc/cloudflared/config.yml: permission denied"):
+sudo install -m 0640 -o root -g 65532 credentials.json /etc/ageniza-dev/cloudflared/credentials.json
 sudo bash infra/vps/install-dev-deploy.sh
 sudo bash -c 'set -a; . /etc/ageniza-dev/dev-deploy.env; set +a; docker compose -p ageniza-dev-edge --env-file /opt/ageniza-dev/dev-limits.env -f /opt/ageniza-dev/compose.dev-tunnel.yml up -d'
 ```

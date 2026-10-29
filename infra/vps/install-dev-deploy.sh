@@ -5,6 +5,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+source "$(dirname "${BASH_SOURCE[0]}")/cloudflared-group.sh"
 
 # Fills the two Cloudflare Access values of the Mailpit hostname. cloudflared uses them to refuse any request that did
 # not pass Access, so a value that is not what Cloudflare issues must stop the install instead of producing a config
@@ -28,7 +29,7 @@ install_cloudflared_config() {
   grep -q 'REPLACE_WITH' <<< "$rendered" && die 'the rendered tunnel config still has a placeholder'
   temporary="$(mktemp)"
   printf '%s\n' "$rendered" > "$temporary"
-  install -o root -g root -m 0644 "$temporary" /etc/ageniza-dev/cloudflared/config.yml
+  install -o root -g "$CLOUDFLARED_GID" -m 0640 "$temporary" /etc/ageniza-dev/cloudflared/config.yml
   rm -f -- "$temporary"
 }
 
@@ -41,7 +42,7 @@ main() {
 
   for file in \
     "$source_dir/ageniza-deploy-dev.sh" "$source_dir/ageniza-deploy-dev-ssh.sh" "$source_dir/ageniza-deploy-dev.sudoers" \
-    "$source_dir/compose.dev-tunnel.yml" "$source_dir/cloudflared/dev-config.yml" "$source_dir/dev-limits.env" \
+    "$source_dir/compose.dev-tunnel.yml" "$source_dir/cloudflared/dev-config.yml" "$source_dir/cloudflared-group.sh" "$source_dir/dev-limits.env" \
     "$repository_root/compose.yml" "$repository_root/compose.dev.yml" \
     "$repository_root/infra/postgres/initdb/10-application-role.sh"; do
     [[ -f "$file" && ! -L "$file" ]] || die "Missing required bundle file: $file"
@@ -60,7 +61,8 @@ main() {
   install -d -o "$ci_user" -g "$ci_user" -m 0700 "/home/$ci_user/.ssh"
   [[ -f "/home/$ci_user/.ssh/authorized_keys" ]] || install -o "$ci_user" -g "$ci_user" -m 0600 /dev/null "/home/$ci_user/.ssh/authorized_keys"
 
-  install -d -o root -g root -m 0750 "$app_root" /etc/ageniza-dev /etc/ageniza-dev/cloudflared
+  install -d -o root -g root -m 0750 "$app_root" /etc/ageniza-dev
+  prepare_cloudflared_directory /etc/ageniza-dev/cloudflared
   install -d -o root -g root -m 0755 "$app_root/postgres" "$app_root/postgres/initdb"
   install -o root -g root -m 0755 "$repository_root/infra/postgres/initdb/10-application-role.sh" "$app_root/postgres/initdb/10-application-role.sh"
   install -d -o root -g root -m 0700 /etc/ageniza-dev/registry /var/lib/ageniza-dev/releases
@@ -79,7 +81,7 @@ Installed the dev deployment bundle. Finish the host setup from docs/infra/dev-e
   - /etc/ageniza-dev/dev-deploy.env, postgres.env, runtime.env, migrations.env, and github-token
   - GHCR login into /etc/ageniza-dev/registry
   - the dev GitHub Actions public key in /home/$ci_user/.ssh/authorized_keys with the forced command
-  - /etc/ageniza-dev/cloudflared/credentials.json (0600) for the DEV tunnel, then re-run this script and start the tunnel
+  - /etc/ageniza-dev/cloudflared/credentials.json (root:65532, 0640) for the DEV tunnel, then re-run this script and start the tunnel
 EOF
 }
 
