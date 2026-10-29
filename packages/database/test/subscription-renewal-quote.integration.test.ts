@@ -59,6 +59,20 @@ describe('renewal_quote', () => {
     expect((await quoteOf(agencyId))[0]!.amount_cents).toBe(cents);
   });
 
+  it('prices the extras of a scheduled decrease that keeps the plan, not the extras being paid now', async () => {
+    const { agencyId, ownerId } = await h.trialAgency();
+    await h.subscribe(ownerId, agencyId, 'profissional', 10, 50);
+    await h.request(ownerId, agencyId, 'profissional', 2, 5);
+    await h.setPeriod(agencyId, 29, 1);
+    expect((await quoteOf(agencyId))[0]!.amount_cents).toBe(19700 + 2 * 600 + 5 * 40);
+  });
+
+  it('names the provider of the subscription, so the worker charges only the one it has', async () => {
+    const { agencyId } = await h.trialAgency();
+    await h.seedSubscription(agencyId, 'essencial', { provider: 'asaas', startedDaysAgo: 29, endsInDays: 1 });
+    expect((await quoteOf(agencyId))[0]!.provider).toBe('asaas');
+  });
+
   it('answers nothing when the subscription does not renew now', async () => {
     const early = await h.trialAgency();
     await h.subscribe(early.ownerId, early.agencyId, 'essencial');
