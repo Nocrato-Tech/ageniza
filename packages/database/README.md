@@ -6,6 +6,8 @@ For the local Docker database, use `createLocalTestDatabaseClient`. It refuses a
 
 A race test that closes a lock cycle from its holder transaction asks for the second lock with `requestLockOnceBlocked(holder, statement, bindings)`, armed before the transaction under test starts. The wait for the blocked backend and the request run in one block inside the database, so a stall of the test process cannot make the holder the deadlock victim (issues #745 and #762); `docs/implementation-checklist.md` item 75 has the rule.
 
+A test that has to order two transactions waits for the second to be blocked by the first with `waitForBackendsBlockedBy(observer, blockerPid, options)`, taking the blocker's pid from `backendPid(connection)`. It reads `pg_stat_activity` for this database and for the backends blocked by that pid, so a wait of another database or of another holder never satisfies it, and it raises when nobody waits. No sleep and no unscoped `pg_locks` read decides an order (issue #767, `docs/implementation-checklist.md` item 76).
+
 ## Roles and RLS
 
 - `ageniza_app` is the only role the API and worker use. It is created when the data volume is initialised ([`infra/postgres/initdb`](../../infra/postgres/initdb)) and is neither superuser nor `BYPASSRLS`. Migrations grant it table privileges.
