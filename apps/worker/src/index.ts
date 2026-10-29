@@ -1,5 +1,6 @@
-import { isTestProcess, loadWorkerConfig } from '@ageniza/config/server';
+import { isTestProcess, loadWorkerConfig, runsAsProduction } from '@ageniza/config/server';
 import { configureServerSentry, createLogger, withLogContext } from '@ageniza/core';
+import { createPaymentProvider } from '@ageniza/payments';
 
 import { smokeJob } from './smoke-job.js';
 import { createWorkerRuntime, type WorkerRuntime } from './worker.js';
@@ -14,8 +15,11 @@ export const workerName = 'ageniza-worker';
 export const start = async (): Promise<WorkerRuntime> => {
   const config = loadWorkerConfig(process.env);
   configureServerSentry({ environment: config.environment, dsn: config.sentryDsn, release: config.deployVersion, isTest: isTestProcess(process.env) });
+  // Refuses to build the simulated provider in production, and fails when the image was built without it.
+  const paymentProvider = await createPaymentProvider({ production: runsAsProduction(config), provider: config.paymentsProvider });
   const runtime = createWorkerRuntime({
     config,
+    ...(paymentProvider === undefined ? {} : { paymentProvider }),
     logger: withLogContext(createLogger(), { environment: config.environment, service: config.service, deployVersion: config.deployVersion }),
     ...(config.smokeJob ? { readinessCheck: async () => undefined } : {})
   });
