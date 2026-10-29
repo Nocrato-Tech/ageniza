@@ -78,6 +78,7 @@ jobs:
             VITE_API_BASE_URL=${{ vars.DEV_VITE_API_BASE_URL }}
             VITE_SENTRY_DSN=${{ vars.DEV_VITE_SENTRY_DSN }}
             VITE_APP_VERSION=${{ github.sha }}
+            VITE_DEV_DOCS=true
             APP_VERSION=${{ github.sha }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
       - id: migrations

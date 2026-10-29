@@ -47,6 +47,9 @@ import { LoadingPage, NotFoundPage, SessionGate } from './status-pages.js';
 /** Internal page of tokens and components: dev only. Vite replaces `import.meta.env.DEV` with `false` in the production build, which drops the branch and its chunk. */
 const DesignSystemPage = import.meta.env.DEV ? lazy(() => import('./design-system/page.js')) : null;
 
+/** Guide and API reference for the mobile team: dev only. The development build sets `VITE_DEV_DOCS=true` (`pnpm dev` is already `DEV`); the production build sets neither, so Vite folds the condition to `false` and the page, its Markdown and mermaid stay out of the bundle. */
+const MobileDocsPage = import.meta.env.DEV || import.meta.env.VITE_DEV_DOCS === 'true' ? lazy(() => import('./mobile-docs/page.js')) : null;
+
 /** Contents and the roster behind its picker: both are needed to open the area. */
 const CONTENT_AREA_PERMISSIONS = ['conteudo.visualizar', 'cliente.visualizar'] as const;
 
@@ -193,6 +196,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="*" element={<NotFoundPage as="section" />} />
     </Route>
     {DesignSystemPage !== null && <Route path="design-system" element={<Suspense fallback={<LoadingPage />}><DesignSystemPage /></Suspense>} />}
+    {MobileDocsPage !== null && <Route path="mobile/*" element={<Suspense fallback={<LoadingPage />}><MobileDocsPage /></Suspense>} />}
     <Route element={<ProtectedLayout session={session} />}>
       <Route path="contextos" element={<ContextSelectPage />} />
       {/* An account that came in by Google and has not accepted the Terms and the Privacy Policy has no context, so the resolve
