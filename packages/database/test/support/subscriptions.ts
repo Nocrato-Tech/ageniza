@@ -230,6 +230,7 @@ export const createHarness = (label: string): Harness => {
         await knex('media_assets').whereIn('agency_id', agencies).delete();
         await knex('media_folders').whereIn('client_id', clientIds).delete();
         await knex('clients').whereIn('id', clientIds).delete();
+        await knex('subscription_renewal_refunds').whereIn('agency_id', agencies).delete();
         await knex('subscription_charges').whereIn('agency_id', agencies).delete();
         await knex('agency_subscriptions').whereIn('agency_id', agencies).delete();
         await knex('agency_storage_quotas').whereIn('agency_id', agencies).delete();
