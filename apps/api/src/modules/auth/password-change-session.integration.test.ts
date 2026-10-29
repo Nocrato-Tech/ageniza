@@ -279,6 +279,7 @@ const parkSessionInsert = async (userId: string, stampAfterParking: boolean): Pr
   const holder = new Client({ connectionString: OWNER_DATABASE_URL });
   await holder.connect();
   await holder.query('select pg_advisory_lock($1)', [key]);
+  const holderPid = Number((await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]?.pid);
   await queryAsOwner(`create function public.${name}() returns trigger language plpgsql as $$ begin
     perform pg_advisory_lock(${key}); perform pg_advisory_unlock(${key});
     ${stampAfterParking ? 'new."createdAt" := clock_timestamp();' : ''}
@@ -301,7 +302,7 @@ const parkSessionInsert = async (userId: string, stampAfterParking: boolean): Pr
     void request.then((response) => { settled = response; }, () => undefined);
     for (let attempt = 0; attempt < 600; attempt += 1) {
       if (settled) throw new Error(`The request ended before its session insert was parked: ${settled.statusCode} ${settled.body}`);
-      const waiting = await queryAsOwner('select 1 from pg_locks where locktype = $1 and not granted and objid = $2', ['advisory', key]);
+      const waiting = await queryAsOwner('select 1 from pg_stat_activity where datname = current_database() and $1::int = any (pg_blocking_pids(pid))', [holderPid]);
       if (waiting.length === 1) return;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }

@@ -1,30 +1,12 @@
-import { raw, type DatabaseClient } from '@ageniza/database';
+import { backendPid, raw, waitForBackendsBlockedBy } from '@ageniza/database';
 
 import type { ContentsWorld, Reply } from './world.js';
 
-type Holder = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
-
-export const backendPid = async (transaction: Holder): Promise<number> => {
-  const result = await raw<{ rows: Array<{ pid: number }> }>(transaction, 'select pg_catalog.pg_backend_pid() as pid', []);
-  return Number(result.rows[0]?.pid);
-};
+export { backendPid };
 
 /** The pid of a backend that waits on a lock held by `blockerPid`; no sleep decides the order, the lock does. */
-export const waitForBackendBlockedBy = async (w: ContentsWorld, blockerPid: number): Promise<number> => {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    const result = await raw<{ rows: Array<{ pid: number }> }>(w.getOwner().knex, `
-      select activity.pid
-      from pg_catalog.pg_stat_activity activity
-      where activity.datname = pg_catalog.current_database()
-        and pg_catalog.pg_blocking_pids(activity.pid) @> array[?::int]
-      limit 1
-    `, [blockerPid]);
-    const row = result.rows[0];
-    if (row !== undefined) return Number(row.pid);
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`No backend ever waited on a lock held by ${blockerPid}.`);
-};
+export const waitForBackendBlockedBy = async (w: ContentsWorld, blockerPid: number): Promise<number> =>
+  (await waitForBackendsBlockedBy(w.getOwner().knex, blockerPid))[0]!;
 
 /** Window 1: the route starts while the archive is uncommitted, waits on the client, and is answered after it commits. */
 export const archiveWhileRouteWaits = async (w: ContentsWorld, clientId: string, start: () => Promise<Reply>): Promise<Reply> => {
