@@ -68,6 +68,9 @@ const testStorageCredentials = localStorageCredentials();
 /** Every pool of a test file holds at most this many connections: files run in parallel against one server whose budget is 97, and the races need two waiters and a holder (issue #792). */
 const TEST_POOL_MAX = 3;
 
+/** A test app that sits open until its file ends (auth.integration keeps 33) must not keep its idle connections: one file held 64 of the 97 the server has (issue #792). */
+const TEST_POOL_IDLE_MS = 500;
+
 export const runPrefix = (): string => `authtest-${randomUUID().slice(0, 8)}`;
 
 /** A unique, obviously-fake local email per test run/case, so parallel and repeated CI runs never collide. */
@@ -229,8 +232,10 @@ export interface TestApp {
 export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestApp> => {
   assertLocalDatabaseUrl(APPLICATION_DATABASE_URL);
   const config = buildTestConfig(options.config);
-  const pool = new Pool({ connectionString: APPLICATION_DATABASE_URL, max: TEST_POOL_MAX });
-  const localDatabase = createLocalTestDatabaseClient(APPLICATION_DATABASE_URL, { max: TEST_POOL_MAX });
+  const pool = new Pool({ connectionString: APPLICATION_DATABASE_URL, max: TEST_POOL_MAX, idleTimeoutMillis: TEST_POOL_IDLE_MS });
+  // A clone dropped under an idle pool (a file whose afterAll failed) must not become an uncaught 57P01.
+  pool.on('error', () => undefined);
+  const localDatabase = createLocalTestDatabaseClient(APPLICATION_DATABASE_URL, { max: TEST_POOL_MAX, idleTimeoutMillis: TEST_POOL_IDLE_MS });
   const database = options.wrapDatabase === undefined ? localDatabase : options.wrapDatabase(localDatabase);
   const logger = options.logger ?? createLogger({ enabled: false });
   const sender = options.sender ?? createFakeEmailSender();
@@ -292,7 +297,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   };
   const ownedMediaJobDispatcher: MediaJobDispatcher | undefined = config.storage === undefined
     ? undefined
-    : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger: createLogger({ enabled: false }) });
+    : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger: createLogger({ enabled: false }), poolIdleTimeoutMillis: TEST_POOL_IDLE_MS });
   if (ownedMediaJobDispatcher !== undefined) await ownedMediaJobDispatcher.start();
   const mediaJobs = ownedMediaJobDispatcher === undefined
     ? undefined
@@ -439,6 +444,7 @@ const hashOncePerPassword = (auth: AuthInstance, password: string): Promise<stri
   if (known !== undefined) return known;
   const hashed = auth.$context.then((context) => context.password.hash(password));
   passwordHashes.set(password, hashed);
+  hashed.catch(() => passwordHashes.delete(password));
   return hashed;
 };
 
@@ -480,7 +486,7 @@ export const cleanupTestUser = async (pool: Pool, userId: string): Promise<void>
   await deleteTestUser(pool, userId);
 };
 
-export const ownerClient = (): DatabaseClient => createLocalTestDatabaseClient(OWNER_DATABASE_URL, { max: TEST_POOL_MAX });
+export const ownerClient = (): DatabaseClient => createLocalTestDatabaseClient(OWNER_DATABASE_URL, { max: TEST_POOL_MAX, idleTimeoutMillis: TEST_POOL_IDLE_MS });
 
 /**
  * Grants a user exactly one context — ownership of a freshly created agency — so a test login or

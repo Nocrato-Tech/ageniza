@@ -152,3 +152,43 @@ export const dropIntegrationDatabases = async (model: IntegrationModel): Promise
     await dropDatabase(client, model.modelDatabase);
   });
 };
+
+export interface ConnectionWatch {
+  /** Stops sampling and returns the most connections the clone ever held at one sample. */
+  stop(): Promise<{ readonly peak: number }>;
+}
+
+/**
+ * Counts the connections of a clone while its file runs, from a connection of its own to the operator's database, so
+ * the watcher is neither counted nor holds the clone. Files run side by side against one server whose connection budget
+ * is shared (97 for non-superusers): a file that holds more than its share refuses the others with SQLSTATE 53300 at
+ * random, and this turns that into a failure of the file that held them.
+ */
+export const watchConnections = async (model: IntegrationModel, clone: Pick<IntegrationClone, 'database'>, intervalMs = 200): Promise<ConnectionWatch> => {
+  const client = new Client({ connectionString: model.baseOwnerUrl });
+  await client.connect();
+  let peak = 0;
+  let stopped = false;
+  const sample = async (): Promise<void> => {
+    const result = await client.query<{ count: number }>(
+      'select count(*)::int as count from pg_catalog.pg_stat_activity where datname = $1 and pid <> pg_catalog.pg_backend_pid()',
+      [clone.database]
+    );
+    peak = Math.max(peak, Number(result.rows[0]?.count));
+  };
+  const loop = (async () => {
+    while (!stopped) {
+      await sample().catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  })();
+  return {
+    async stop() {
+      stopped = true;
+      await loop;
+      await sample().catch(() => undefined);
+      await client.end().catch(() => undefined);
+      return { peak };
+    }
+  };
+};

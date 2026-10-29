@@ -234,7 +234,9 @@ export {
   dropIntegrationDatabases,
   integrationCloneName,
   integrationModelName,
+  watchConnections,
   withDatabaseName,
+  type ConnectionWatch,
   type IntegrationClone,
   type IntegrationModel
 } from './integration-clone.js';

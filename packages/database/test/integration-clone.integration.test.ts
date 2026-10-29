@@ -9,6 +9,7 @@ import {
   dropIntegrationDatabases,
   resolveIntegrationDatabaseUrls,
   withDatabaseName,
+  watchConnections,
   type IntegrationClone,
   type IntegrationModel
 } from '../src/index.js';
@@ -84,6 +85,26 @@ describe('the model and clone databases of the integration suites (issue #792)',
     expect(cloneGrants).toEqual(await query(urls.ownerUrl, grants));
     // RLS answers as the application role does anywhere else: no actor, no tenant rows.
     expect(await query(clone.applicationUrl, 'select id from public.agencies')).toEqual([]);
+  });
+
+  it('reports the most connections its clone held, and not those of another database', async () => {
+    const held = await newClone();
+    const other = await newClone();
+    const watch = await watchConnections(model, held, 50);
+    const clients = await Promise.all([1, 2, 3, 4, 5].map(async () => {
+      const client = new Client({ connectionString: held.applicationUrl });
+      await client.connect();
+      return client;
+    }));
+    const strangers = await Promise.all([1, 2].map(async () => {
+      const client = new Client({ connectionString: other.applicationUrl });
+      await client.connect();
+      return client;
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await Promise.all([...clients, ...strangers].map((client) => client.end()));
+
+    expect((await watch.stop()).peak).toBe(5);
   });
 
   it('drops a clone the test file left connected, and drops it twice without complaint', async () => {
