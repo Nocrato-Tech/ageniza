@@ -127,6 +127,13 @@ describe('what the installers wire up', () => {
     expect(production).toContain('install -o root -g "$CLOUDFLARED_GID" -m 0640 "$SOURCE_DIR/cloudflared/config.yml" /etc/ageniza/cloudflared/config.yml');
   });
 
+  it.each([
+    ['production', production, 'install -d -o root -g root -m 0750 "$APP_ROOT" /etc/ageniza'],
+    ['dev', dev, 'install -d -o root -g root -m 0750 "$app_root" /etc/ageniza-dev']
+  ])('the %s installer keeps the parent of the tunnel directory root:root 0750, the barrier against the host once the group can read', (_label, installer, line) => {
+    expect(installer.split('\n').map((entry) => entry.trim())).toContain(line);
+  });
+
   it('prepares the directory before the config is installed into it', () => {
     expect(production.indexOf('prepare_cloudflared_directory')).toBeLessThan(production.indexOf('/etc/ageniza/cloudflared/config.yml'));
     expect(dev.indexOf('prepare_cloudflared_directory')).toBeLessThan(dev.indexOf('install_cloudflared_config "$source_dir"'));
