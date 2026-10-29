@@ -62,3 +62,46 @@ export const requestLockOnceBlocked = async (
   })]);
   await holder.raw(BARRIER_SQL);
 };
+
+export interface WaitForBlockedOptions {
+  /** `ilike` pattern of the statement the waiting backend runs; any backend blocked by the blocker counts when omitted. */
+  readonly blockedStatement?: string;
+  /** How many backends must wait on the blocker before the promise settles; one when omitted. */
+  readonly waiters?: number;
+  readonly timeoutMs?: number;
+}
+
+export const backendPid = async (connection: Pick<Knex, 'raw'>): Promise<number> => {
+  const result = await connection.raw<{ rows: Array<{ pid: number }> }>('select pg_catalog.pg_backend_pid() as pid');
+  return Number(result.rows[0]?.pid);
+};
+
+/**
+ * Resolves with the pids of the backends of THIS database that wait on a lock held by `blockerPid`, as soon as there are
+ * `waiters` of them, and rejects when they never show up. A test that has to sequence two transactions waits for this
+ * instead of sleeping, and it is scoped to the database and to the blocker: the same wait read from `pg_locks` or from
+ * `wait_event_type = 'Lock'` alone is satisfied by any other wait on a shared server (#767).
+ *
+ * `observer` must be a connection outside the transactions under test, autocommit, of a role that sees other backends.
+ */
+export const waitForBackendsBlockedBy = async (
+  observer: Pick<Knex, 'raw'>,
+  blockerPid: number,
+  options: WaitForBlockedOptions = {}
+): Promise<readonly number[]> => {
+  const wanted = options.waiters ?? 1;
+  const pattern = options.blockedStatement ?? null;
+  const deadline = Date.now() + (options.timeoutMs ?? 10_000);
+  for (;;) {
+    const result = await observer.raw<{ rows: Array<{ pid: number }> }>(`
+      select activity.pid
+      from pg_catalog.pg_stat_activity activity
+      where activity.datname = pg_catalog.current_database()
+        and ?::int = any (pg_catalog.pg_blocking_pids(activity.pid))
+        and (?::text is null or activity.query ilike ?::text)
+    `, [blockerPid, pattern, pattern]);
+    if (result.rows.length >= wanted) return result.rows.map((row) => Number(row.pid));
+    if (Date.now() > deadline) throw new Error(`Fewer than ${wanted} backend(s) ever waited on a lock held by backend ${blockerPid}.`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};

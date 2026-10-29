@@ -3,9 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  backendPid,
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   raw,
+  waitForBackendsBlockedBy,
   withAuthenticatedUserTransaction,
   type DatabaseClient,
   resolveIntegrationDatabaseUrls
@@ -181,8 +183,8 @@ describe('client thread reopen on a client comment (#212)', () => {
   it('locks the thread so a comment committing during a resolve is not lost', async () => {
     const thread = await createThread(false);
 
-    let locked!: () => void;
-    const hasLocked = new Promise<void>((resolve) => { locked = resolve; });
+    let locked!: (pid: number) => void;
+    const hasLocked = new Promise<number>((resolve) => { locked = resolve; });
     let releaseB!: () => void;
     const bMayFinish = new Promise<void>((resolve) => { releaseB = resolve; });
 
@@ -192,14 +194,17 @@ describe('client thread reopen on a client comment (#212)', () => {
       await raw(transaction, `
         update public.client_threads set resolved_at = now(), resolved_by = ?::uuid where id = ?::uuid
       `, [ownerA, thread]);
-      locked();
+      locked(await backendPid(transaction));
       await bMayFinish;
     });
-    await hasLocked;
+    const lockerPid = await hasLocked;
 
     // Session A (portal) inserts and commits; its deferred trigger must wait for B's lock, then
     // read the committed resolution and clear it.
+    let sessionAStarted!: (pid: number) => void;
+    const sessionAPid = new Promise<number>((resolve) => { sessionAStarted = resolve; });
     const sessionA = getApplication().transaction(async (transaction) => {
+      sessionAStarted(await backendPid(transaction));
       await setUser(transaction, portalUser);
       await raw(transaction, `
         insert into public.client_thread_comments (thread_id, client_id, author_user_id, author_side, body)
@@ -207,7 +212,7 @@ describe('client thread reopen on a client comment (#212)', () => {
       `, [thread, clientA, portalUser]);
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(await waitForBackendsBlockedBy(getOwner().knex, lockerPid)).toEqual([await sessionAPid]);
     releaseB();
     await Promise.all([sessionA, sessionB]);
 

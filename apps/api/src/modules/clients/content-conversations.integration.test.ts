@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { raw, type DatabaseClient } from '@ageniza/database';
+import { backendPid, raw, waitForBackendsBlockedBy, type DatabaseClient } from '@ageniza/database';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -227,29 +227,6 @@ const writesSentBy = async (work: (proxied: FastifyInstance) => Promise<void>): 
   return sent;
 };
 
-type Holder = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
-
-const backendPid = async (transaction: Holder): Promise<number> => {
-  const result = await raw<{ rows: Array<{ pid: number }> }>(transaction, 'select pg_catalog.pg_backend_pid() as pid', []);
-  return Number(result.rows[0]?.pid);
-};
-
-/** Waits until a backend of this database is blocked by the given one, so a race is sequenced by locks and never by a sleep. */
-const waitForBackendBlockedBy = async (blockerPid: number): Promise<void> => {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    const result = await raw<{ rows: Array<{ pid: number }> }>(owner.knex, `
-      select activity.pid
-      from pg_catalog.pg_stat_activity activity
-      where activity.datname = pg_catalog.current_database()
-        and pg_catalog.pg_blocking_pids(activity.pid) @> array[?::int]
-      limit 1
-    `, [blockerPid]);
-    if (result.rows[0] !== undefined) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`No backend ever waited on a lock held by ${blockerPid}.`);
-};
-
 /** The route starts while the archive is uncommitted, waits on the client in the trigger, and is answered after it commits. */
 const archiveWhileRouteWaits = async (clientId: string, start: () => Promise<Reply>): Promise<Reply> => {
   const holder = await owner.knex.transaction();
@@ -259,7 +236,7 @@ const archiveWhileRouteWaits = async (clientId: string, start: () => Promise<Rep
     expect(locked.rows).toHaveLength(1);
     const holderPid = await backendPid(holder);
     const pending = start();
-    await waitForBackendBlockedBy(holderPid);
+    await waitForBackendsBlockedBy(owner.knex, holderPid);
     await holder.commit();
     released = true;
     return await pending;
@@ -1181,7 +1158,7 @@ describe('CLIENTES conversation of a content (#259)', () => {
           await raw(holder, 'insert into public.client_thread_comments (thread_id, client_id, author_user_id, author_side, body) values (?::uuid, ?::uuid, ?::uuid, ?, ?)', [threadId, clientA1, users[first]!.id, sideOf(first), 'Primeiro']);
           const holderPid = await backendPid(holder);
           const pending = openAs(cookies[second]!, urlOf(second), contentId, 'Segundo');
-          await waitForBackendBlockedBy(holderPid);
+          await waitForBackendsBlockedBy(owner.knex, holderPid);
           await holder.commit();
           released = true;
           const reply = await pending;

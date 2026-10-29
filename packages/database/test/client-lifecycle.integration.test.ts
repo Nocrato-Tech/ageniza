@@ -4,9 +4,11 @@ import type { Knex } from 'knex';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  backendPid,
   createLocalTestDatabaseClient,
   createVerifiedUserClaims,
   raw,
+  waitForBackendsBlockedBy,
   withAuthenticatedUserTransaction,
   type DatabaseClient,
   resolveIntegrationDatabaseUrls
@@ -735,8 +737,8 @@ describe('CLIENT lifecycle functions (#123)', () => {
     const firstClient = await createClient({ agencyId: agencyA, name, status: 'archived' });
     const secondClient = await createClient({ agencyId: agencyA, name, status: 'archived' });
 
-    let firstUpdated!: () => void;
-    const firstCommitted = new Promise<void>((resolve) => { firstUpdated = resolve; });
+    let firstUpdated!: (pid: number) => void;
+    const firstHoldsTheEntry = new Promise<number>((resolve) => { firstUpdated = resolve; });
     let releaseFirst!: () => void;
     const firstMayFinish = new Promise<void>((resolve) => { releaseFirst = resolve; });
 
@@ -744,18 +746,20 @@ describe('CLIENT lifecycle functions (#123)', () => {
     const first = getApplication().transaction(async (transaction) => {
       await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
       await raw(transaction, 'select app_private.reactivate_client(?)', [firstClient]);
-      firstUpdated();
+      firstUpdated(await backendPid(transaction));
       await firstMayFinish;
     });
-    await firstCommitted;
+    const firstPid = await firstHoldsTheEntry;
 
+    let secondStarted!: (pid: number) => void;
+    const secondPid = new Promise<number>((resolve) => { secondStarted = resolve; });
     const second = getApplication().transaction(async (transaction) => {
+      secondStarted(await backendPid(transaction));
       await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
       await raw(transaction, 'select app_private.reactivate_client(?)', [secondClient]);
     });
 
-    // Let the second reach its UPDATE and block on the first's uncommitted unique-index entry.
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(await waitForBackendsBlockedBy(getOwner().knex, firstPid)).toEqual([await secondPid]);
     releaseFirst();
 
     const [firstResult, secondResult] = await Promise.allSettled([first, second]);
@@ -772,19 +776,6 @@ describe('CLIENT lifecycle functions (#123)', () => {
   });
 
   describe('portal invite racing the archive of its client', () => {
-    // True once some backend of this database waits on a lock, so a test only moves on when the
-    // second transaction is really blocked behind the first, not after a guessed delay.
-    const waitForLockWait = async (): Promise<void> => {
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const waiting = await getOwner().knex.raw<Rows<{ pid: number }>>(
-          "select pid from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'"
-        );
-        if (waiting.rows.length > 0) return;
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      throw new Error('No backend ever blocked on a lock.');
-    };
-
     const pendingInvites = async (clientId: string): Promise<number> => {
       const rows = await getOwner().knex('invitations')
         .where({ client_id: clientId, purpose: 'client_invite' })
@@ -811,8 +802,8 @@ describe('CLIENT lifecycle functions (#123)', () => {
       const client = await createClient({ agencyId: agencyA });
       const inviteId = randomUUID();
 
-      let archived!: () => void;
-      const archiveDone = new Promise<void>((resolve) => { archived = resolve; });
+      let archived!: (pid: number) => void;
+      const archiveDone = new Promise<number>((resolve) => { archived = resolve; });
       let commitArchive!: () => void;
       const archiveMayCommit = new Promise<void>((resolve) => { commitArchive = resolve; });
 
@@ -820,21 +811,24 @@ describe('CLIENT lifecycle functions (#123)', () => {
       const archive = getApplication().transaction(async (transaction) => {
         await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
         await raw(transaction, 'select app_private.archive_client(?)', [client]);
-        archived();
+        archived(await backendPid(transaction));
         await archiveMayCommit;
       });
-      await archiveDone;
+      const archivePid = await archiveDone;
 
       // T2 still sees the client as active, so the policy lets the row in and the insert then waits
       // on the reference to the client that T1 holds locked.
+      let inviteStarted!: (pid: number) => void;
+      const invitePid = new Promise<number>((resolve) => { inviteStarted = resolve; });
       const invite = getApplication().transaction(async (transaction) => {
+        inviteStarted(await backendPid(transaction));
         await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
         await insertPortalInvite(transaction, client, inviteId);
       });
       const inviteOutcome = invite.then(() => 'inserted' as const, (error: unknown) => error);
 
       try {
-        await waitForLockWait();
+        expect(await waitForBackendsBlockedBy(getOwner().knex, archivePid)).toEqual([await invitePid]);
         commitArchive();
         await archive;
 
@@ -855,27 +849,30 @@ describe('CLIENT lifecycle functions (#123)', () => {
       const client = await createClient({ agencyId: agencyA });
       const inviteId = randomUUID();
 
-      let inserted!: () => void;
-      const insertDone = new Promise<void>((resolve) => { inserted = resolve; });
+      let inserted!: (pid: number) => void;
+      const insertDone = new Promise<number>((resolve) => { inserted = resolve; });
       let commitInvite!: () => void;
       const inviteMayCommit = new Promise<void>((resolve) => { commitInvite = resolve; });
 
       const invite = getApplication().transaction(async (transaction) => {
         await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
         await insertPortalInvite(transaction, client, inviteId);
-        inserted();
+        inserted(await backendPid(transaction));
         await inviteMayCommit;
       });
-      await insertDone;
+      const insertPid = await insertDone;
 
+      let archiveStarted!: (pid: number) => void;
+      const archivePid = new Promise<number>((resolve) => { archiveStarted = resolve; });
       const archive = getApplication().transaction(async (transaction) => {
+        archiveStarted(await backendPid(transaction));
         await raw(transaction, 'select app_private.bind_actor(?::uuid)', [adminA]);
         await raw(transaction, 'select app_private.archive_client(?)', [client]);
       });
       const archiveOutcome = archive.then(() => 'archived' as const, (error: unknown) => error);
 
       try {
-        await waitForLockWait();
+        expect(await waitForBackendsBlockedBy(getOwner().knex, insertPid)).toEqual([await archivePid]);
         commitInvite();
         await invite;
 
