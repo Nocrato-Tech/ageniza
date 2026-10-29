@@ -567,11 +567,35 @@ describe('renewing', () => {
     const b = await h.trialAgency();
     await h.subscribe(a.ownerId, a.agencyId, 'essencial');
     await h.subscribe(b.ownerId, b.agencyId, 'essencial');
-    await h.setPeriod(a.agencyId, 430, -400);
-    await h.setPeriod(b.agencyId, 31, -1);
+    // The oldest period still inside the window, so no agency other tests left behind comes before it.
+    await h.endPeriod(a.agencyId, 3 * 86400 - 300);
+    await h.endPeriod(b.agencyId, 3600);
     const limited = (await owner().raw<{ rows: Array<{ id: string }> }>('select app_private.agencies_due_for_renewal(1) as id')).rows;
     expect(limited).toEqual([{ id: a.agencyId }]);
     expect((await owner().raw<{ rows: unknown[] }>('select app_private.agencies_due_for_renewal(-5) as id')).rows).toEqual([]);
+  });
+
+  it('lists the periods that end within a day or ended inside the window, and no other, and never a canceled one', async () => {
+    const at = async (endsInSeconds: number, canceled = false): Promise<string> => {
+      const { agencyId, ownerId } = await h.trialAgency();
+      await h.subscribe(ownerId, agencyId, 'essencial');
+      if (canceled) await cancel(ownerId, agencyId);
+      await h.endPeriod(agencyId, -endsInSeconds);
+      return agencyId;
+    };
+    const day = 86400;
+    const in36Hours = await at(36 * 3600);
+    const in12Hours = await at(12 * 3600);
+    const ended1Day = await at(-day);
+    const ended2d23h = await at(-(3 * day - 3600));
+    const ended3d1h = await at(-(3 * day + 3600));
+    const ended1Year = await at(-365 * day);
+    const canceledEnded1Day = await at(-day, true);
+    const listed = (await owner().raw<{ rows: Array<{ id: string }> }>('select app_private.agencies_due_for_renewal(500) as id')).rows.map((row) => row.id);
+    expect(listed).toEqual(expect.arrayContaining([in12Hours, ended1Day, ended2d23h]));
+    for (const [name, agencyId] of [['36 hours ahead', in36Hours], ['3 days and an hour ago', ended3d1h], ['a year ago', ended1Year], ['canceled', canceledEnded1Day]] as const) {
+      expect(listed, name).not.toContain(agencyId);
+    }
   });
 });
 

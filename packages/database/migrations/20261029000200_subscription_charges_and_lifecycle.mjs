@@ -469,7 +469,9 @@ export async function up(knex) {
     revoke all on function app_private.next_renewal_cents(uuid) from public;
     grant execute on function app_private.next_renewal_cents(uuid) to ageniza_app;
 
-    -- The agencies the worker has to renew: the period ends within a day, and nothing cancels it (a courtesy plan has no end).
+    -- The agencies the worker has to renew: the period ends within a day or ended inside the window the agency keeps writing in,
+    -- and nothing cancels it (a courtesy plan has no end). An agency past the window leaves the list; whether the worker tries again
+    -- is its own policy.
     create function app_private.agencies_due_for_renewal(p_limit integer)
     returns setof uuid
     language sql
@@ -483,6 +485,7 @@ export async function up(knex) {
       where app_private.current_user_id() is null
         and not subscription.cancel_at_period_end
         and subscription.current_period_end <= pg_catalog.now() + interval '1 day'
+        and subscription.current_period_end + app_private.payment_grace_period() > pg_catalog.now()
       order by subscription.current_period_end
       limit least(greatest(p_limit, 0), 500)
     $function$;
