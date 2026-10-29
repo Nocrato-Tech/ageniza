@@ -53,6 +53,12 @@ const planErrorResponses: Readonly<Record<string, Omit<PublicErrorResponse, 'det
 };
 
 
+const planClientLimitResponse: Omit<PublicErrorResponse, 'details'> = {
+  statusCode: 409,
+  code: 'PLAN_CLIENT_LIMIT',
+  message: 'Você chegou ao limite de clientes do seu plano. Suba o plano ou compre clientes extras.'
+};
+
 const isRateLimitError = (error: unknown): error is { statusCode: number; code: string } =>
   typeof error === 'object' && error !== null &&
   'statusCode' in error && error.statusCode === 429 &&
@@ -74,6 +80,8 @@ const isAbortedBody = (error: unknown, request: FastifyRequest): boolean =>
 
 const clientErrorResponse = (error: unknown): PublicErrorResponse | undefined => {
   if (!(error instanceof Error) || !('code' in error) || typeof error.code !== 'string') return undefined;
+  // The client ceiling has one code for the trial and for a paid plan; the message of the database says which (migrations 20261027020000, 20261029000100).
+  if (error.code === 'A0091' && !error.message.includes('The trial')) return planClientLimitResponse;
   return clientErrorResponses[error.code] ?? planErrorResponses[error.code];
 };
 

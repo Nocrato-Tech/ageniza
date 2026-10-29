@@ -278,6 +278,124 @@ describe('raising the plan or buying an extra', () => {
   });
 });
 
+// A raise of a limit that costs nothing (rule derived 3: "zero charge and no refund"; review of #782). A provider does not charge zero, so
+// a charge opened for it could never be paid. The database applies the raise in the request itself, under the same locks.
+describe('a raise that costs nothing', () => {
+  // 30 clients, 100 GiB, R$ 249,00 a month (essencial + 20 clients + 80 GiB) to 30 clients, 101 GiB, R$ 197,40 (profissional + 0 + 1 GiB).
+  const subscribedToTheDearPlan = async () => {
+    const world = await h.trialAgency();
+    await h.subscribe(world.ownerId, world.agencyId, 'essencial', 20, 80);
+    return world;
+  };
+
+  it('applies the raise at once with no charge, no provider and nothing pending, and moves the quota and the ceiling', async () => {
+    const { agencyId, ownerId } = await subscribedToTheDearPlan();
+    await h.setPeriod(agencyId, 10, 20);
+    const before = await h.subscriptionOf(agencyId);
+    expect(await h.quotaOf(agencyId)).toBe(String(100 * GIB));
+
+    const raise = await h.request(ownerId, agencyId, 'profissional', 0, 1);
+
+    expect(raise).toMatchObject({ charge_id: null, effect: 'upgrade', monthly_cents: 19_740, amount_cents: 0 });
+    const after = await h.subscriptionOf(agencyId);
+    expect(after).toMatchObject({ plan_key: 'profissional', extra_clients: 0, extra_storage_gib: 1, pending_plan_key: null });
+    expect(after!.current_period_start).toEqual(before!.current_period_start);
+    expect(after!.current_period_end).toEqual(before!.current_period_end);
+    expect(await h.quotaOf(agencyId)).toBe(String(101 * GIB));
+    expect((await chargesOf(agencyId)).map((row) => [row.kind, row.status])).toEqual([['subscribe', 'confirmed']]);
+    expect(await owner()('subscription_charges').where({ agency_id: agencyId, status: 'pending' })).toEqual([]);
+    expect(await auditActions(agencyId)).toEqual(['subscription.subscribed', 'subscription.upgraded']);
+    const { rows } = await owner().raw<{ rows: Array<{ actor_user_id: string }> }>("select actor_user_id from audit.events where agency_id = ? and action = 'subscription.upgraded'", [agencyId]);
+    expect(rows).toEqual([{ actor_user_id: ownerId }]);
+    // The new ceiling is in force: 30 clients stay, and the agency can fill them.
+    await addClients(agencyId, 30);
+    await expect(h.insertClient(ownerId, agencyId)).rejects.toMatchObject(CLIENT_LIMIT);
+    // The same request again is the same terms.
+    await expect(h.request(ownerId, agencyId, 'profissional', 0, 1)).rejects.toMatchObject({ code: 'A0113' });
+  });
+
+  it('expires a charge that was pending, so it can no longer be paid, and drops a scheduled decrease', async () => {
+    const { agencyId, ownerId } = await subscribedToTheDearPlan();
+    await h.setPeriod(agencyId, 10, 20);
+    const paid = await h.request(ownerId, agencyId, 'agencia');
+    expect(paid.amount_cents).toBeGreaterThan(0);
+    await h.request(ownerId, agencyId, 'essencial', 20, 70);
+    expect(await h.subscriptionOf(agencyId)).toMatchObject({ pending_plan_key: 'essencial' });
+
+    await h.request(ownerId, agencyId, 'profissional', 0, 1);
+
+    expect(await h.subscriptionOf(agencyId)).toMatchObject({ plan_key: 'profissional', pending_plan_key: null, pending_extra_clients: null, pending_extra_storage_gib: null });
+    expect((await chargesOf(agencyId)).map((row) => [row.kind, row.status])).toEqual([['subscribe', 'confirmed'], ['upgrade', 'expired']]);
+    await expect(h.confirm(paid.charge_id!, 'ref-expired-by-a-free-raise', paid.amount_cents)).rejects.toMatchObject({ code: 'A0114' });
+    expect(await h.subscriptionOf(agencyId)).toMatchObject({ plan_key: 'profissional' });
+  });
+
+  it('refuses it when the subscription is canceled or the caller is not the Owner, as any request is', async () => {
+    const canceled = await subscribedToTheDearPlan();
+    await cancel(canceled.ownerId, canceled.agencyId);
+    await expect(h.request(canceled.ownerId, canceled.agencyId, 'profissional', 0, 1)).rejects.toMatchObject({ code: 'A0110' });
+    expect(await h.subscriptionOf(canceled.agencyId)).toMatchObject({ plan_key: 'essencial', extra_clients: 20 });
+
+    const world = await subscribedToTheDearPlan();
+    const admin = await h.withRole(world.agencyId, 'admin');
+    await expect(h.request(admin, world.agencyId, 'profissional', 0, 1)).rejects.toMatchObject({ code: '42501' });
+    const custom = await h.withPermissions(world.agencyId, 'cliente.cadastrar');
+    await expect(h.request(custom, world.agencyId, 'profissional', 0, 1)).rejects.toMatchObject({ code: '42501' });
+    expect(await h.subscriptionOf(world.agencyId)).toMatchObject({ plan_key: 'essencial', extra_clients: 20 });
+    expect(await auditActions(world.agencyId)).toEqual(['subscription.subscribed']);
+  });
+
+  it('is atomic with the request: a rolled back transaction leaves nothing of it', async () => {
+    const { agencyId, ownerId } = await subscribedToTheDearPlan();
+    const transaction = await h.openTransactionAs(ownerId);
+    try {
+      await transaction.raw('select * from app_private.request_subscription_change(?::uuid, ?, ?::integer, ?::integer)', [agencyId, 'profissional', 0, 1]);
+    } finally {
+      await transaction.rollback();
+    }
+    expect(await h.subscriptionOf(agencyId)).toMatchObject({ plan_key: 'essencial', extra_clients: 20, extra_storage_gib: 80 });
+    expect(await h.quotaOf(agencyId)).toBe(String(100 * GIB));
+    expect(await auditActions(agencyId)).toEqual(['subscription.subscribed']);
+  });
+
+  it('holds the lock of the agency until it commits, so a cancel waits for it and then sees the raised terms', async () => {
+    const { agencyId, ownerId } = await subscribedToTheDearPlan();
+    const holder = await h.openTransactionAs(ownerId);
+    try {
+      await holder.raw('select * from app_private.request_subscription_change(?::uuid, ?, ?::integer, ?::integer)', [agencyId, 'profissional', 0, 1]);
+      let settled = false;
+      const waiting = cancel(ownerId, agencyId).finally(() => { settled = true; });
+      waiting.catch(() => undefined);
+      await waitForBlockedLock(() => settled);
+      expect(settled).toBe(false);
+      await holder.commit();
+      await waiting;
+    } finally {
+      if (!holder.isCompleted()) await holder.rollback();
+    }
+    expect(await h.subscriptionOf(agencyId)).toMatchObject({ plan_key: 'profissional', extra_storage_gib: 1, cancel_at_period_end: true });
+  });
+
+  it('is serialized with a client being created: the client and the raise both stand', async () => {
+    const { agencyId, ownerId } = await subscribedToTheDearPlan();
+    const holder = await h.openTransactionAs(ownerId);
+    try {
+      await holder('clients').insert({ agency_id: agencyId, name: `Cliente ${randomUUID().slice(0, 8)}` });
+      let settled = false;
+      const waiting = h.request(ownerId, agencyId, 'profissional', 0, 1).finally(() => { settled = true; });
+      waiting.catch(() => undefined);
+      await waitForBlockedLock(() => settled);
+      expect(settled).toBe(false);
+      await holder.commit();
+      expect(await waiting).toMatchObject({ charge_id: null, effect: 'upgrade' });
+    } finally {
+      if (!holder.isCompleted()) await holder.rollback();
+    }
+    expect(await activeClients(agencyId)).toBe(1);
+    expect(await h.subscriptionOf(agencyId)).toMatchObject({ plan_key: 'profissional' });
+  });
+});
+
 describe('lowering the plan or an extra', () => {
   it('waits for the next period: nothing changes now, nothing is charged', async () => {
     const { agencyId, ownerId } = await h.trialAgency();
@@ -381,12 +499,13 @@ describe('canceling', () => {
     expect(await h.subscriptionOf(agencyId)).toMatchObject({ pending_plan_key: null });
   });
 
-  it('has nothing to cancel in a trial or after the period', async () => {
+  it('has nothing to cancel in a trial or once the window after the period is over (inside it the Owner may, see subscription-grace)', async () => {
     const trial = await h.trialAgency();
     await expect(cancel(trial.ownerId, trial.agencyId)).rejects.toMatchObject({ code: 'A0110' });
 
     const ended = await h.trialAgency();
     await h.subscribe(ended.ownerId, ended.agencyId, 'essencial');
+    await advance(ended.ownerId, ended.agencyId);
     await advance(ended.ownerId, ended.agencyId);
     await expect(cancel(ended.ownerId, ended.agencyId)).rejects.toMatchObject({ code: 'A0110' });
   });

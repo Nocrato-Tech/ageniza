@@ -19,6 +19,9 @@ interface AgencyMeRow {
   readonly plan: 'trial' | 'ativo' | 'isenta';
   readonly trial_ends_at: Date | null;
   readonly read_only: boolean;
+  readonly paid_plan_key: string | null;
+  readonly canceled: boolean | null;
+  readonly grace_ends_on: string | null;
 }
 
 /**
@@ -60,9 +63,14 @@ export const loadAgencyMe = async (transaction: AgencyTransaction, agencyId: str
       ) as permissions,
       agency.plan,
       agency.trial_ends_at,
-      -- The database clock decides, with the comparison the write trigger makes.
-      (agency.plan = 'trial' and agency.trial_ends_at <= now()) as read_only
+      -- The database clock decides, with the function the write triggers call.
+      coalesce(app_private.agency_is_read_only(agency.id), false) as read_only,
+      subscription.plan_key as paid_plan_key,
+      subscription.cancel_at_period_end as canceled,
+      to_char(overview.grace_ends_on, 'YYYY-MM-DD') as grace_ends_on
     from public.agencies as agency
+    left join public.agency_subscriptions as subscription on subscription.agency_id = agency.id
+    left join lateral app_private.subscription_overview(agency.id) as overview on true
     left join public.agency_memberships as membership
       on membership.agency_id = agency.id
      and membership.user_id = app_private.current_user_id()
@@ -87,7 +95,10 @@ export const loadAgencyMe = async (transaction: AgencyTransaction, agencyId: str
     plan: {
       kind: row.plan,
       trialEndsAt: row.trial_ends_at === null ? null : new Date(row.trial_ends_at).toISOString(),
-      readOnly: row.read_only === true
+      readOnly: row.read_only === true,
+      paidPlanKey: row.paid_plan_key,
+      canceled: row.canceled === true,
+      graceEndsOn: row.grace_ends_on
     }
   };
 };

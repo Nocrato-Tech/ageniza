@@ -86,6 +86,8 @@ afterAll(async () => {
   await owner.knex('media_folders').whereIn('client_id', clientIds).delete();
   await owner.knex('clients').whereIn('id', clientIds).delete();
   await owner.knex('agency_storage_quotas').whereIn('agency_id', createdAgencyIds).delete();
+  await owner.knex('subscription_charges').whereIn('agency_id', createdAgencyIds).delete();
+  await owner.knex('agency_subscriptions').whereIn('agency_id', createdAgencyIds).delete();
   await owner.knex('agency_memberships').whereIn('agency_id', createdAgencyIds).delete();
   await owner.knex.raw('delete from audit.events where agency_id = any(?::uuid[])', [createdAgencyIds]);
   await owner.knex('agencies').whereIn('id', createdAgencyIds).update({ owner_user_id: null });
@@ -167,6 +169,31 @@ describe('the plan refusals through the API (issue #708)', () => {
     expect(third.json<{ error: { code: string } }>().error.code).toBe('TRIAL_COLLABORATOR_LIMIT');
   });
 
+  it('answers 409 PLAN_CLIENT_LIMIT, not the trial one, for the 11th client of a paid plan, with the ceiling the plan gives', async () => {
+    const { cookie } = await signedIn(true);
+    const agencyId = (await createAgency(cookie)).json<{ context: { agencyId: string } }>().context.agencyId;
+    const database = createAgencyCliDatabase(OWNER_DATABASE_URL);
+    const service = createAgencyCommandService({
+      database,
+      mailer: { sendActivationEmail: async () => undefined, close: async () => undefined },
+      appPublicUrl: TEST_APP_PUBLIC_URL
+    });
+    try {
+      await service.setPlan(agencyId, 'ativo', undefined, 'essencial');
+      for (let index = 0; index < 10; index += 1) {
+        expect((await request(cookie, 'POST', `/agencies/${agencyId}/clients`, { name: `Pago ${index} ${randomUUID().slice(0, 6)}` })).statusCode).toBe(201);
+      }
+      const eleventh = await request(cookie, 'POST', `/agencies/${agencyId}/clients`, { name: `Pago 11 ${randomUUID().slice(0, 6)}` });
+      expect(eleventh.statusCode).toBe(409);
+      expect(eleventh.json<{ error: { code: string; message: string } }>().error).toEqual({
+        code: 'PLAN_CLIENT_LIMIT',
+        message: 'Você chegou ao limite de clientes do seu plano. Suba o plano ou compre clientes extras.'
+      });
+    } finally {
+      await database.close();
+    }
+  });
+
   it('answers 409 AGENCY_READ_ONLY once the trial ended, keeps the reads, and says so in /me and in the portal', async () => {
     const { cookie } = await signedIn(true);
     const agencyId = (await createAgency(cookie)).json<{ context: { agencyId: string } }>().context.agencyId;
@@ -209,9 +236,14 @@ describe('the operation command lifts the trial (issue #708)', () => {
       await expect(service.setPlan(agencyId, 'trial', ends)).resolves.toMatchObject({ plan: 'trial' });
       expect((await request(cookie, 'GET', `/agencies/${agencyId}/me`)).json<{ plan: { readOnly: boolean } }>().plan.readOnly).toBe(false);
 
-      await expect(service.setPlan(agencyId, 'ativo')).resolves.toEqual({ agencyId, plan: 'ativo', trialEndsAt: null });
-      expect((await request(cookie, 'GET', `/agencies/${agencyId}/me`)).json<{ plan: unknown }>().plan).toEqual({ kind: 'ativo', trialEndsAt: null, readOnly: false, supportContactEmail: null });
-      expect((await owner.knex('agency_storage_quotas').where({ agency_id: agencyId }).first('quota_bytes')).quota_bytes).toBeNull();
+      await expect(service.setPlan(agencyId, 'ativo', undefined, 'essencial')).resolves.toEqual({ agencyId, plan: 'ativo', trialEndsAt: null });
+      expect((await request(cookie, 'GET', `/agencies/${agencyId}/me`)).json<{ plan: unknown }>().plan).toEqual({
+        kind: 'ativo', trialEndsAt: null, readOnly: false, paidPlanKey: 'essencial', canceled: false, graceEndsOn: null, supportContactEmail: null
+      });
+      // `ativo` is the paid plan by courtesy (owner, 2026-10-29): the ceiling is the plan's 20 GiB, not the trial's 2 GiB and not unlimited.
+      expect(Number((await owner.knex('agency_storage_quotas').where({ agency_id: agencyId }).first('quota_bytes')).quota_bytes)).toBe(20 * 1024 ** 3);
+      expect(await owner.knex('agency_subscriptions').where({ agency_id: agencyId }).first('plan_key', 'provider'))
+        .toEqual({ plan_key: 'essencial', provider: 'cortesia' });
       for (let index = 0; index < 4; index += 1) {
         expect((await request(cookie, 'POST', `/agencies/${agencyId}/clients`, { name: `Depois ${index} ${randomUUID().slice(0, 6)}` })).statusCode).toBe(201);
       }

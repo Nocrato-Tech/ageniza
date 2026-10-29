@@ -4,6 +4,7 @@
   "@ageniza/core",
   "@ageniza/database",
   "@ageniza/email",
+  "@ageniza/payments",
   "@aws-sdk/client-s3",
   "@aws-sdk/s3-request-presigner",
   "@fastify/cors",

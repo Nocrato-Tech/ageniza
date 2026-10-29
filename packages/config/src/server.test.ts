@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ConfigValidationError, loadApiConfig, loadWorkerConfig } from './server.js';
+import { ConfigValidationError, loadApiConfig, loadWorkerConfig, runsAsProduction } from './server.js';
 
 const localEnvironment = {
   APP_ENV: 'local',
@@ -243,6 +243,41 @@ describe('server configuration', () => {
     expect(loadWorkerConfig({ ...localEnvironment, SENTRY_DSN: '' }).sentryDsn).toBeUndefined();
   });
 
+  it('leaves the payment provider off unless PAYMENTS_PROVIDER is explicitly simulado, and refuses it in production (issue #772)', () => {
+    expect(loadApiConfig(localEnvironment).paymentsProvider).toBeUndefined();
+    expect(loadWorkerConfig(localEnvironment).paymentsProvider).toBeUndefined();
+    expect(loadApiConfig({ ...localEnvironment, PAYMENTS_PROVIDER: '  ' }).paymentsProvider).toBeUndefined();
+    expect(loadApiConfig({ ...localEnvironment, PAYMENTS_PROVIDER: 'simulado' }).paymentsProvider).toBe('simulado');
+    expect(loadWorkerConfig({ ...localEnvironment, PAYMENTS_PROVIDER: 'simulado' }).paymentsProvider).toBe('simulado');
+    expect(loadApiConfig({ ...localEnvironment, APP_ENV: 'test', PAYMENTS_PROVIDER: 'simulado' }).paymentsProvider).toBe('simulado');
+    expect(() => loadApiConfig({ ...localEnvironment, PAYMENTS_PROVIDER: 'Simulado' })).toThrow('PAYMENTS_PROVIDER');
+    expect(() => loadApiConfig({ ...localEnvironment, PAYMENTS_PROVIDER: 'asaas' })).toThrow('PAYMENTS_PROVIDER');
+
+    const apiProduction = {
+      ...localEnvironment,
+      BETTER_AUTH_SECRET: productionAuthSecret,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      API_CORS_ORIGINS: 'https://app.ageniza.example',
+      ...productionEmailSettings,
+      ...productionStorageSettings,
+      ...productionIdentityStorageSettings
+    };
+    const workerProduction = {
+      ...localEnvironment,
+      APP_ENV: 'production',
+      DATABASE_URL: productionDatabaseUrl,
+      APP_PUBLIC_URL: 'https://app.ageniza.example',
+      ...productionEmailSettings,
+      ...productionStorageSettings
+    };
+    expect(loadApiConfig(apiProduction).paymentsProvider).toBeUndefined();
+    expect(loadWorkerConfig(workerProduction).paymentsProvider).toBeUndefined();
+    expect(() => loadApiConfig({ ...apiProduction, PAYMENTS_PROVIDER: 'simulado' })).toThrow('must not run in production');
+    expect(() => loadWorkerConfig({ ...workerProduction, PAYMENTS_PROVIDER: 'simulado' })).toThrow('must not run in production');
+  });
+
   it('accepts the internal production database and rejects a loopback one', () => {
     expect(loadApiConfig({
       ...localEnvironment,
@@ -360,6 +395,21 @@ describe('server configuration', () => {
 
     it('refuses a deploy target that is not dev', () => {
       expect(() => loadApiConfig({ ...dev, DEPLOY_TARGET: 'staging' })).toThrow('DEPLOY_TARGET');
+    });
+
+    it('is the one APP_ENV=production deployment where the simulated payment provider may run (issue #772)', () => {
+      expect(loadApiConfig({ ...dev, PAYMENTS_PROVIDER: 'simulado' })).toMatchObject({ paymentsProvider: 'simulado', deployTarget: 'dev' });
+      expect(loadWorkerConfig({ ...dev, PAYMENTS_PROVIDER: 'simulado' })).toMatchObject({ paymentsProvider: 'simulado', deployTarget: 'dev' });
+      // Without the target the same environment is the real production, which refuses it.
+      expect(() => loadApiConfig({ ...dev, DEPLOY_TARGET: undefined, SMTP_URL: productionEmailSettings.SMTP_URL, EMAIL_FROM: productionEmailSettings.EMAIL_FROM, PAYMENTS_PROVIDER: 'simulado' }))
+        .toThrow('must not run in production');
+    });
+
+    it('tells the real production from the dev environment in one place', () => {
+      expect(runsAsProduction({ environment: 'production' })).toBe(true);
+      expect(runsAsProduction({ environment: 'production', deployTarget: 'dev' })).toBe(false);
+      expect(runsAsProduction({ environment: 'local' })).toBe(false);
+      expect(runsAsProduction({ environment: 'test', deployTarget: 'dev' })).toBe(false);
     });
   });
 

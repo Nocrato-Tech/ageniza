@@ -18,6 +18,7 @@ import { registerMediaModule, type MediaModuleDependencies } from './modules/med
 import { registerLegalModule, type LegalModuleDependencies } from './modules/legal/routes.js';
 import { registerStoryScriptModule, type StoryScriptModuleDependencies } from './modules/story-scripts/routes.js';
 import { registerProfileModule, type ProfileModuleDependencies } from './modules/profile/routes.js';
+import { registerSubscriptionModule, type SubscriptionModuleDependencies } from './modules/subscriptions/routes.js';
 import { applyCorrelationHeaders } from './plugins/infra/correlation.js';
 import { registerCors } from './plugins/infra/cors.js';
 import { registerErrorHandling, sendErrorEnvelope } from './plugins/infra/errors.js';
@@ -57,6 +58,8 @@ export interface ApiAppOptions {
   media?: MediaModuleDependencies;
   /** Story script dependencies are optional; undefined for tests that never touch them. */
   storyScripts?: StoryScriptModuleDependencies;
+  /** Billing of the agency (#772); optional, undefined for tests that never touch it. */
+  subscriptions?: SubscriptionModuleDependencies;
   /** Profile dependencies are optional; undefined where identity storage is not configured. */
   profile?: ProfileModuleDependencies;
   /** Legal acceptance dependencies are optional; undefined for tests that never touch the legal routes. */
@@ -209,6 +212,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.storyScripts !== undefined) {
     registerStoryScriptModule(app, options.storyScripts);
+  }
+  if (options.subscriptions !== undefined) {
+    registerSubscriptionModule(app, options.subscriptions);
   }
   if (options.profile !== undefined) {
     registerProfileModule(app, options.profile);

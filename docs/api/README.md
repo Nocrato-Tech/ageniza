@@ -35,7 +35,7 @@ produto mostra; as demais são internas.
 
 As de escrita de uma agência ou do portal também podem responder `409 AGENCY_READ_ONLY` quando o período de teste
 da agência terminou (só o que reduz acesso continua: remover colaborador, remover acesso ao portal e cancelar convite),
-e as que criam cliente, convidam colaborador ou reativam um deles, `409 TRIAL_CLIENT_LIMIT` ou
+e as que criam cliente, convidam colaborador ou reativam um deles, `409 TRIAL_CLIENT_LIMIT` (num plano pago, `409 PLAN_CLIENT_LIMIT`) ou
 `409 TRIAL_COLLABORATOR_LIMIT` durante o teste. Os convites (criar e reenviar, de colaborador e de portal) podem
 responder `429 DAILY_EMAIL_LIMIT` quando a agência passou do limite diário de e-mails (20 no teste e 200 nos demais
 planos, ajustável pela operação). Todos vêm do banco, valem em toda rota e não são repetidos em cada uma.
@@ -4415,6 +4415,206 @@ Marca o roteiro como gravado, no portal.
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
+### subscriptions — Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar; e, só fora de produção, pagar com o provedor simulado e avançar o relógio.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `GET` | `/agencies/:agencyId/subscription/plans` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Lista os planos pagos e o preço dos extras |
+| `GET` | `/agencies/:agencyId/subscription` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Devolve a assinatura da agência, o uso e a tolerância |
+| `POST` | `/agencies/:agencyId/subscription/quote` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Calcula o que uma mudança de plano ou de extras faz e custa |
+| `POST` | `/agencies/:agencyId/subscription/charges` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Pede a mudança de plano ou de extras e abre a cobrança |
+| `POST` | `/agencies/:agencyId/subscription/cancel` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Cancela a assinatura |
+| `POST` | `/agencies/:agencyId/subscription/reactivate` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Desfaz o cancelamento até o fim do período |
+| `POST` | `/agencies/:agencyId/subscription/charges/:chargeId/simulated-payment` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Paga uma cobrança com o provedor simulado (só fora de produção) |
+| `POST` | `/agencies/:agencyId/subscription/simulated-period-advance` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Avança o relógio da assinatura simulada (só fora de produção) |
+
+#### `GET /agencies/:agencyId/subscription/plans`
+
+Lista os planos pagos e o preço dos extras.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Resposta `200`** — Planos e preços.
+
+```json
+{
+  "plans": [
+    {
+      "key": "essencial",
+      "name": "Essencial",
+      "clientLimit": 10,
+      "storageBytes": 21474836480,
+      "monthlyCents": 9700
+    },
+    {
+      "key": "profissional",
+      "name": "Profissional",
+      "clientLimit": 30,
+      "storageBytes": 107374182400,
+      "monthlyCents": 19700
+    }
+  ],
+  "extraClientCents": 600,
+  "extraStorageGibCents": 40,
+  "maxExtra": 10000
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/subscription`
+
+Devolve a assinatura da agência, o uso e a tolerância.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Resposta `200`** — Assinatura e uso.
+
+```json
+{
+  "subscription": {
+    "planKey": "essencial",
+    "extraClients": 2,
+    "extraStorageGib": 0,
+    "provider": "simulado",
+    "currentPeriodEnd": "2026-11-29T12:00:00.000Z",
+    "cancelAtPeriodEnd": false,
+    "pending": null,
+    "monthlyCents": 10900,
+    "nextMonthlyCents": 10900,
+    "clientLimit": 12,
+    "storageBytes": 21474836480,
+    "usedClients": 4,
+    "usedBytes": 1073741824,
+    "graceEndsOn": null
+  },
+  "paymentProvider": "simulado"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/subscription/quote`
+
+Calcula o que uma mudança de plano ou de extras faz e custa.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "planKey": "profissional",
+  "extraClients": 0,
+  "extraStorageGib": 0
+}
+```
+
+**Resposta `200`** — O que a mudança faz.
+
+```json
+{
+  "effect": "upgrade",
+  "monthlyCents": 19700,
+  "amountCents": 6800,
+  "effectiveAt": "2026-11-15T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 SUBSCRIPTION_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 SUBSCRIPTION_BELOW_CLIENTS` · `409 SUBSCRIPTION_BELOW_STORAGE` · `409 SUBSCRIPTION_MIXED_CHANGE` · `409 SUBSCRIPTION_NOT_AVAILABLE` · `409 SUBSCRIPTION_UNCHANGED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/subscription/charges`
+
+Pede a mudança de plano ou de extras e abre a cobrança.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "planKey": "profissional",
+  "extraClients": 0,
+  "extraStorageGib": 0
+}
+```
+
+**Resposta `201`** — Cobrança aberta, descida agendada ou subida de valor zero aplicada na hora (os dois últimos com `chargeId` nulo).
+
+```json
+{
+  "chargeId": "99999999-9999-4999-8999-999999999999",
+  "effect": "upgrade",
+  "monthlyCents": 19700,
+  "amountCents": 6800,
+  "effectiveAt": "2026-11-15T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 SUBSCRIPTION_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 SUBSCRIPTION_BELOW_CLIENTS` · `409 SUBSCRIPTION_BELOW_STORAGE` · `409 SUBSCRIPTION_MIXED_CHANGE` · `409 SUBSCRIPTION_NOT_AVAILABLE` · `409 SUBSCRIPTION_UNCHANGED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/subscription/cancel`
+
+Cancela a assinatura.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Resposta `204`** — Cancelada.
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 SUBSCRIPTION_NOT_AVAILABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/subscription/reactivate`
+
+Desfaz o cancelamento até o fim do período.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Resposta `204`** — Reativada.
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 SUBSCRIPTION_NOT_AVAILABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/subscription/charges/:chargeId/simulated-payment`
+
+Paga uma cobrança com o provedor simulado (só fora de produção).
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "outcome": "approved"
+}
+```
+
+**Resposta `200`** — Resultado do pagamento.
+
+```json
+{
+  "status": "confirmed"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CHARGE_NOT_OPEN` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR` · `502 PAYMENT_PROVIDER_FAILED`
+
+#### `POST /agencies/:agencyId/subscription/simulated-period-advance`
+
+Avança o relógio da assinatura simulada (só fora de produção).
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Resposta `204`** — Período avançado.
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 SUBSCRIPTION_NOT_AVAILABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
 ## Catálogo de códigos de erro
 
 | código | mensagem padrão |
@@ -4433,6 +4633,15 @@ Marca o roteiro como gravado, no portal.
 | `AGENCY_READ_ONLY` | O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados. |
 | `DAILY_EMAIL_LIMIT` | Limite diário de envios atingido. Tente amanhã. |
 | `TRIAL_CLIENT_LIMIT` | O período de teste permite até 3 clientes ativos. |
+| `PLAN_CLIENT_LIMIT` | Você chegou ao limite de clientes do seu plano. Suba o plano ou compre clientes extras. |
+| `SUBSCRIPTION_NOT_AVAILABLE` | Esta operação não está disponível para a assinatura da agência neste momento. |
+| `SUBSCRIPTION_BELOW_CLIENTS` | O novo plano comporta menos clientes do que os ativos. Arquive clientes antes de reduzir. |
+| `SUBSCRIPTION_BELOW_STORAGE` | O novo plano comporta menos armazenamento do que o usado. Remova arquivos antes de reduzir. |
+| `SUBSCRIPTION_MIXED_CHANGE` | Aumentar um limite e reduzir outro não podem ir juntos. Faça uma mudança de cada vez. |
+| `SUBSCRIPTION_UNCHANGED` | A assinatura já tem estas condições. |
+| `SUBSCRIPTION_INVALID` | O plano ou a quantidade de extras informados não valem. |
+| `CHARGE_NOT_OPEN` | Esta cobrança não está mais aberta. Peça uma nova. |
+| `PAYMENT_PROVIDER_FAILED` | O provedor de pagamento não respondeu como esperado. Tente de novo. |
 | `TRIAL_COLLABORATOR_LIMIT` | O período de teste permite até 3 colaboradores, contando quem criou a agência e os convites pendentes. |
 | `PAYLOAD_TOO_LARGE` | Request payload is too large |
 | `RATE_LIMITED` | Too many requests |

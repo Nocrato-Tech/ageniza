@@ -249,7 +249,7 @@ const SCALAR = '@scalar/fastify-api-reference';
 describe('the direct dependencies of the API (issue #517)', () => {
   it('are allowed by value, from a literal list rather than the one the script exports', () => {
     expect([...API_RUNTIME_DEPENDENCIES].sort()).toEqual([
-      '@ageniza/config', '@ageniza/contracts', '@ageniza/core', '@ageniza/database', '@ageniza/email',
+      '@ageniza/config', '@ageniza/contracts', '@ageniza/core', '@ageniza/database', '@ageniza/email', '@ageniza/payments',
       '@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner',
       '@fastify/cors', '@fastify/helmet', '@fastify/rate-limit',
       'better-auth', 'fastify', 'helmet', 'kysely', 'pg', 'pg-boss', 'zod'

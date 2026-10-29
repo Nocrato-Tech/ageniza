@@ -194,17 +194,68 @@ describe('agency operator CLI: the plan (issue #708, decision 2026-10-27)', () =
 
   it('parses set-plan, with --ends-at only for the trial, and set-email-limit', () => {
     expect(parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'isenta'])).toEqual({ command: 'set-plan', agencyId, plan: 'isenta' });
-    expect(parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'ativo'])).toEqual({ command: 'set-plan', agencyId, plan: 'ativo' });
+    expect(parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'ativo', '--paid-plan', 'profissional']))
+      .toEqual({ command: 'set-plan', agencyId, plan: 'ativo', paidPlan: 'profissional' });
     expect(parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'trial', '--ends-at', '2030-01-31']))
       .toEqual({ command: 'set-plan', agencyId, plan: 'trial', endsAt: '2030-01-31' });
     expect(() => parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'trial'])).toThrow('Option --ends-at is required for the trial plan.');
-    expect(() => parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'ativo', '--ends-at', '2030-01-31'])).toThrow('Option --ends-at is only for the trial plan.');
+    expect(() => parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'ativo', '--paid-plan', 'essencial', '--ends-at', '2030-01-31']))
+      .toThrow('Option --ends-at is only for the trial plan.');
     expect(() => parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'pago'])).toThrow('Option --plan must be isenta, ativo or trial.');
     expect(() => parseAgencyCliArguments(['set-plan', '--agency-id', agencyId])).toThrow('Option --plan is required.');
     expect(parseAgencyCliArguments(['set-email-limit', '--agency-id', agencyId, '--per-day', '50'])).toEqual({ command: 'set-email-limit', agencyId, perDay: 50 });
     expect(parseAgencyCliArguments(['set-email-limit', '--agency-id', agencyId, '--per-day', 'padrao'])).toEqual({ command: 'set-email-limit', agencyId, perDay: null });
     for (const bad of ['-1', '1.5', '100001', 'muitos']) {
       expect(() => parseAgencyCliArguments(['set-email-limit', '--agency-id', agencyId, '--per-day', bad]), bad).toThrow(/per-day must be a whole number/);
+    }
+  });
+
+  it('makes ativo a paid plan by courtesy: --paid-plan is required for it, one of the three, and refused for any other plan', () => {
+    expect(() => parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'ativo'])).toThrow('Option --paid-plan is required for the ativo plan.');
+    for (const paid of ['pago', 'Essencial', 'trial', 'isenta']) {
+      expect(() => parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'ativo', '--paid-plan', paid]), paid)
+        .toThrow('Option --paid-plan must be essencial, profissional or agencia.');
+    }
+    for (const paid of ['essencial', 'profissional', 'agencia']) {
+      expect(parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'ativo', `--paid-plan=${paid}`]), paid)
+        .toEqual({ command: 'set-plan', agencyId, plan: 'ativo', paidPlan: paid });
+    }
+    expect(() => parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'isenta', '--paid-plan', 'essencial']))
+      .toThrow('Option --paid-plan is only for the ativo plan.');
+    expect(() => parseAgencyCliArguments(['set-plan', '--agency-id', agencyId, '--plan', 'trial', '--ends-at', '2030-01-31', '--paid-plan', 'essencial']))
+      .toThrow('Option --paid-plan is only for the ativo plan.');
+  });
+
+  it('refuses ativo without a valid paid plan in the service too, before it touches the database', async () => {
+    const { mailer } = fakeMailer();
+    for (const paid of [undefined, 'pago']) {
+      const { database, calls } = fakeDatabase(planQuery());
+      const service = createAgencyCommandService({ database, mailer, appPublicUrl: 'https://app.example.com' });
+      await expect(service.setPlan(agencyId, 'ativo', undefined, paid)).rejects.toThrow(/--paid-plan/);
+      expect(calls).toEqual([]);
+    }
+    const { database, calls } = fakeDatabase(planQuery());
+    const service = createAgencyCommandService({ database, mailer, appPublicUrl: 'https://app.example.com' });
+    await expect(service.setPlan(agencyId, 'isenta', undefined, 'essencial')).rejects.toThrow('only for the ativo plan');
+    expect(calls).toEqual([]);
+  });
+
+  it('grants the courtesy subscription for ativo, after the update and in the same transaction, and for no other plan', async () => {
+    const { mailer } = fakeMailer();
+    const { database, calls } = fakeDatabase(planQuery());
+    const service = createAgencyCommandService({ database, mailer, appPublicUrl: 'https://app.example.com' });
+    await expect(service.setPlan(agencyId, 'ativo', undefined, 'agencia')).resolves.toEqual({ agencyId, plan: 'ativo', trialEndsAt: null });
+    const grants = calls.filter((call) => call.statement.includes('grant_courtesy_subscription'));
+    expect(grants.map((call) => call.bindings)).toEqual([[agencyId, 'agencia']]);
+    const order = calls.map((call) => (call.statement.includes('grant_courtesy_subscription') ? 'grant' : call.statement.trim().startsWith('update public.agencies') ? 'update' : call.statement.includes('audit.events') ? 'audit' : 'other'));
+    expect(order.indexOf('update')).toBeLessThan(order.indexOf('grant'));
+    expect(order.indexOf('grant')).toBeLessThan(order.indexOf('audit'));
+
+    for (const plan of ['isenta', 'trial'] as const) {
+      const other = fakeDatabase(planQuery());
+      await createAgencyCommandService({ database: other.database, mailer, appPublicUrl: 'https://app.example.com' })
+        .setPlan(agencyId, plan, plan === 'trial' ? '2999-01-31' : undefined);
+      expect(other.calls.some((call) => call.statement.includes('grant_courtesy_subscription')), plan).toBe(false);
     }
   });
 
@@ -220,7 +271,7 @@ describe('agency operator CLI: the plan (issue #708, decision 2026-10-27)', () =
     const { database, calls } = fakeDatabase(planQuery());
     const { mailer } = fakeMailer();
     const service = createAgencyCommandService({ database, mailer, appPublicUrl: 'https://app.example.com' });
-    await expect(service.setPlan(agencyId, plan)).resolves.toEqual({ agencyId, plan, trialEndsAt: null });
+    await expect(service.setPlan(agencyId, plan, undefined, plan === 'ativo' ? 'essencial' : undefined)).resolves.toEqual({ agencyId, plan, trialEndsAt: null });
     expect(calls.find((call) => call.statement.trim().startsWith('update public.agencies'))?.bindings).toEqual([plan, null, plan, agencyId]);
     expect(calls.find((call) => call.statement.includes('agency_storage_quotas'))?.bindings).toEqual([agencyId, 2147483648]);
     expect(calls.some((call) => call.statement.includes('audit.events') && call.bindings[0] === `agency.plan_${plan}`)).toBe(true);
