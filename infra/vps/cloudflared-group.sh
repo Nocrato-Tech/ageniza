@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by both root installers (production and dev); defines functions only.
 # The cloudflared image runs as nonroot (uid and gid 65532) and the tunnel directory is mounted read-only into it, so the
 # directory and the files in it belong to that group: readable by it, by no one else.
