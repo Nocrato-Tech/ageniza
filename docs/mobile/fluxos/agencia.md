@@ -63,9 +63,16 @@ A equipe da agência, no contexto `agency`. Todas as rotas começam com `/agenci
 
 **Ciclo do cliente**
 
-```
-novo ─▶ ativo ─▶ ativo com encerramento agendado ─▶ arquivado ─▶ ativo (reativar)
-          └──────────────────────────────────────▶ arquivado (na hora)
+```mermaid
+stateDiagram-v2
+    state "ativo com encerramento agendado" as agendado
+    [*] --> novo
+    novo --> ativo
+    ativo --> agendado: agenda o encerramento
+    agendado --> ativo: desmarca o encerramento
+    agendado --> arquivado: no dia seguinte (job)
+    ativo --> arquivado: arquiva na hora
+    arquivado --> ativo: reativa
 ```
 
 - Com o encerramento agendado, tudo funciona até o fim da data, inclusive o portal. No dia seguinte, um job arquiva o cliente.
@@ -152,6 +159,26 @@ Formatos: `image`, `carousel`, `reels`, `long_video` e `vsl`. Plataforma: `insta
 | cancelado | em produção | `conteudo.operar` | reagendar |
 | aprovado | aguardando aprovação | automático | ao mudar a legenda, a mídia, a capa ou o formato |
 
+```mermaid
+stateDiagram-v2
+    state "em produção" as producao
+    state "aguardando aprovação" as aguardando
+    state "em ajuste" as ajuste
+    [*] --> producao: cria
+    producao --> aguardando: mídia completa e subtarefas aprovadas
+    aguardando --> aprovado: portal, link ou agência com motivo
+    aguardando --> ajuste: comentário obrigatório
+    ajuste --> aguardando: reenvia
+    aprovado --> aguardando: legenda, mídia, capa ou formato mudam
+    aprovado --> publicado: data real, não futura
+    publicado --> aprovado: só no mesmo dia
+    producao --> cancelado: cancela
+    aguardando --> cancelado: cancela
+    ajuste --> cancelado: cancela
+    aprovado --> cancelado: cancela
+    cancelado --> producao: reagenda
+```
+
 - Não existe caminho direto de "em produção" para "aprovado".
 - Mudar a data, a hora, o título, o responsável ou as subtarefas **mantém** a aprovação.
 - A data pode mudar em qualquer estado, menos publicado e cancelado.
@@ -169,9 +196,12 @@ Formatos: `image`, `carousel`, `reels`, `long_video` e `vsl`. Plataforma: `insta
 | `POST` | `…/clients/:clientId/contents/:contentId/tasks/:taskId/approve` | `conteudo.visualizar`, sendo o responsável pelo conteúdo, ou `conteudo.aprovar_pela_agencia` | aprova |
 | `POST` | `…/clients/:clientId/contents/:contentId/tasks/:taskId/return` | as mesmas de aprovar | devolve, com comentário |
 
-```
-pendente ─▶ entregue ─▶ aprovada
-               └─▶ pendente (devolvida, com comentário)
+```mermaid
+stateDiagram-v2
+    [*] --> pendente: cria
+    pendente --> entregue: responsável entrega
+    entregue --> aprovada: aprova
+    entregue --> pendente: devolve, com comentário
 ```
 
 - O responsável é um colaborador ativo da agência. A subtarefa fica atrasada quando o prazo passa sem ela estar aprovada.
@@ -186,8 +216,11 @@ pendente ─▶ entregue ─▶ aprovada
 | `PATCH` | `…/clients/:clientId/story-scripts/:scriptId` | `conteudo.operar` | edita o dia e as cenas (só em rascunho) |
 | `POST` | `…/clients/:clientId/story-scripts/:scriptId/send` | `conteudo.operar` | envia ao cliente |
 
-```
-rascunho ─▶ enviado ─▶ gravado
+```mermaid
+stateDiagram-v2
+    [*] --> rascunho: cria
+    rascunho --> enviado: agência envia
+    enviado --> gravado: pessoa do portal marca
 ```
 
 - Ao ser enviado, o roteiro passa a aparecer no portal.
@@ -216,6 +249,30 @@ rascunho ─▶ enviado ─▶ gravado
 3. `POST …/media/uploads/:assetId/complete` confirma. O processamento (miniatura e prévia) acontece depois, num worker.
 4. Para exibir, use `GET …/media/:assetId/download-url`, com `variant` igual a `original`, `thumbnail` ou `preview`. A URL expira; peça outra quando isso acontecer.
 
+```mermaid
+sequenceDiagram
+    actor U as Colaborador
+    participant App
+    participant API
+    participant S as Armazenamento
+    participant W as Worker
+    U->>App: escolhe o arquivo
+    App->>API: POST …/media/uploads (fileName, contentType, declaredSizeBytes)
+    API-->>App: assetId e upload.type
+    alt single
+        App->>S: PUT do arquivo na upload.url
+    else multipart
+        App->>API: POST …/media/uploads/:assetId/parts
+        API-->>App: URLs das partes
+        App->>S: PUT de cada parte
+    end
+    App->>API: POST …/media/uploads/:assetId/complete
+    API-->>App: arquivo validado
+    API->>W: gera miniatura e prévia
+    App->>API: GET …/media/:assetId/download-url (variant)
+    API-->>App: URL assinada, que expira
+```
+
 **Regras**
 - Só imagem e vídeo; outros tipos recebem `415 UNSUPPORTED_MEDIA_TYPE`.
 - A mídia conta na cota da agência (`409 QUOTA_EXCEEDED`).
@@ -237,6 +294,17 @@ rascunho ─▶ enviado ─▶ gravado
 | `POST` | `…/invitations/collaborators` | `colaborador.convidar` | convida por e-mail, com o papel |
 | `POST` | `…/invitations/:invitationId/resend` | `convite.reenviar` | reenvia |
 | `DELETE` | `…/invitations/:invitationId` | `convite.cancelar` | cancela |
+
+**Ciclo do colaborador**
+
+```mermaid
+stateDiagram-v2
+    [*] --> convidado: convite por e-mail
+    convidado --> ativo: aceita o convite
+    convidado --> encerrado: cancelado ou vencido
+    ativo --> removido: remove (encerra as sessões)
+    removido --> ativo: reativa, com papel novo
+```
 
 **Regras**
 - Ninguém altera o próprio papel nem remove a si mesmo.

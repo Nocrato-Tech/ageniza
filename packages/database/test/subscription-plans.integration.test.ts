@@ -83,7 +83,7 @@ describe('the plans and the price of an extra', () => {
 });
 
 describe('the catalog of the subscription tables', () => {
-  const tables = ['subscription_plans', 'subscription_extra_prices', 'agency_subscriptions', 'subscription_charges'];
+  const tables = ['subscription_plans', 'subscription_extra_prices', 'agency_subscriptions', 'subscription_charges', 'subscription_renewal_refunds'];
 
   it('gives the application role no write on any column or table, and RLS enabled and forced', async () => {
     for (const table of tables) {

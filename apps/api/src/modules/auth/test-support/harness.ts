@@ -65,6 +65,12 @@ const localStorageCredentials = (): { accessKeyId: string; secretAccessKey: stri
 
 const testStorageCredentials = localStorageCredentials();
 
+/** Every pool of a test file holds at most this many connections: files run in parallel against one server whose budget is 97, and the races need two waiters and a holder (issue #792). */
+const TEST_POOL_MAX = 3;
+
+/** A test app that sits open until its file ends (auth.integration keeps 33) must not keep its idle connections: one file held 64 of the 97 the server has (issue #792). */
+const TEST_POOL_IDLE_MS = 500;
+
 export const runPrefix = (): string => `authtest-${randomUUID().slice(0, 8)}`;
 
 /** A unique, obviously-fake local email per test run/case, so parallel and repeated CI runs never collide. */
@@ -227,8 +233,10 @@ export interface TestApp {
 export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestApp> => {
   assertLocalDatabaseUrl(APPLICATION_DATABASE_URL);
   const config = buildTestConfig(options.config);
-  const pool = new Pool({ connectionString: APPLICATION_DATABASE_URL, max: 4 });
-  const localDatabase = createLocalTestDatabaseClient(APPLICATION_DATABASE_URL);
+  const pool = new Pool({ connectionString: APPLICATION_DATABASE_URL, max: TEST_POOL_MAX, idleTimeoutMillis: TEST_POOL_IDLE_MS });
+  // A clone dropped under an idle pool (a file whose afterAll failed) must not become an uncaught 57P01.
+  pool.on('error', () => undefined);
+  const localDatabase = createLocalTestDatabaseClient(APPLICATION_DATABASE_URL, { max: TEST_POOL_MAX, idleTimeoutMillis: TEST_POOL_IDLE_MS });
   const database = options.wrapDatabase === undefined ? localDatabase : options.wrapDatabase(localDatabase);
   const logger = options.logger ?? createLogger({ enabled: false });
   const sender = options.sender ?? createFakeEmailSender();
@@ -290,7 +298,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   };
   const ownedMediaJobDispatcher: MediaJobDispatcher | undefined = config.storage === undefined
     ? undefined
-    : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger: createLogger({ enabled: false }) });
+    : createMediaJobDispatcher({ connectionString: config.databaseUrl, logger: createLogger({ enabled: false }), poolIdleTimeoutMillis: TEST_POOL_IDLE_MS });
   if (ownedMediaJobDispatcher !== undefined) await ownedMediaJobDispatcher.start();
   const mediaJobs = ownedMediaJobDispatcher === undefined
     ? undefined
@@ -429,13 +437,25 @@ export interface InsertTestUserOptions {
   readonly emailVerified?: boolean;
 }
 
+const passwordHashes = new Map<string, Promise<string>>();
+
+/** A fixture hashes the same password dozens of times, and scrypt is what starves a file running beside others (issue #792). */
+const hashOncePerPassword = (auth: AuthInstance, password: string): Promise<string> => {
+  const known = passwordHashes.get(password);
+  if (known !== undefined) return known;
+  const hashed = auth.$context.then((context) => context.password.hash(password));
+  passwordHashes.set(password, hashed);
+  hashed.catch(() => passwordHashes.delete(password));
+  return hashed;
+};
+
 /** Inserts a credential user directly into `auth.user`/`auth.account`, exactly as issue #31 prescribes. */
 export const insertTestUser = async (pool: Pool, auth: AuthInstance, options: InsertTestUserOptions = {}): Promise<TestUserFixture> => {
   const id = randomUUID();
   const email = options.email ?? uniqueTestEmail(options.emailLabel ?? 'user');
   const password = options.password ?? 'a correct horse battery staple';
   const name = options.name ?? 'Integration Test User';
-  const passwordHash = await (await auth.$context).password.hash(password);
+  const passwordHash = await hashOncePerPassword(auth, password);
 
   await pool.query('insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, $4)', [id, name, email, options.emailVerified ?? true]);
   await pool.query(
@@ -467,7 +487,7 @@ export const cleanupTestUser = async (pool: Pool, userId: string): Promise<void>
   await deleteTestUser(pool, userId);
 };
 
-export const ownerClient = (): DatabaseClient => createLocalTestDatabaseClient(OWNER_DATABASE_URL);
+export const ownerClient = (): DatabaseClient => createLocalTestDatabaseClient(OWNER_DATABASE_URL, { max: TEST_POOL_MAX, idleTimeoutMillis: TEST_POOL_IDLE_MS });
 
 /**
  * Grants a user exactly one context — ownership of a freshly created agency — so a test login or

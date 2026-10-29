@@ -35,6 +35,33 @@ Este fluxo cobre cadastro, confirmação do e-mail, login, recuperação de senh
 
 ## Cadastro com e-mail e senha
 
+```mermaid
+sequenceDiagram
+    actor P as Pessoa
+    participant App
+    participant API
+    participant E as E-mail
+    P->>App: nome, e-mail, senha e aceite dos termos
+    App->>API: POST /auth/sign-up
+    API-->>App: 202, sempre, exista a conta ou não
+    API->>E: link /email/verificar?token=
+    E-->>P: link de confirmação
+    P->>App: abre o link
+    App->>API: POST /auth/email/verify (token e password)
+    API-->>App: e-mail confirmado e sessão aberta
+    App->>API: GET /me/contexts/resolve
+    API-->>App: decision
+    alt none
+        App->>API: POST /agencies (name)
+        API-->>App: agência em teste grátis, pessoa como Owner
+    else enter
+        Note over App: entra no context devolvido
+    else select
+        Note over App: mostra contexts, a pessoa escolhe
+    end
+    App->>API: PUT /me/last-context
+```
+
 1. Chame `POST /auth/sign-up` com `name`, `email`, `password` e `acceptTerms: true`.
 2. A resposta é sempre `202`, com corpo vazio, exista ou não uma conta com aquele e-mail. Assim, a API não revela quais e-mails estão cadastrados.
 3. O link de confirmação chega por e-mail (`/email/verificar?token=`).
@@ -84,6 +111,28 @@ Cada contexto tem um `type`:
 ## Convite
 
 A agência convida um colaborador ou uma pessoa do portal, e o link chega por e-mail (`/convite/:token`). Quem convidou também pode copiar o link e mandar por outro meio.
+
+```mermaid
+sequenceDiagram
+    actor Ag as Quem convida
+    participant API
+    actor P as Pessoa convidada
+    participant App
+    Ag->>API: cria o convite
+    API-->>P: e-mail com /convite/:token
+    P->>App: abre o link
+    App->>API: GET /invitations/:token
+    API-->>App: purpose, email, accountExists
+    alt accountExists é false
+        App->>API: POST /invitations/:token/accept-new-account
+        API-->>App: conta criada, convite aceito, sessão aberta
+    else a conta já existe
+        P->>App: entra com o mesmo e-mail do convite
+        App->>API: POST /auth/login
+        App->>API: POST /invitations/:token/accept
+        API-->>App: convite aceito
+    end
+```
 
 1. `GET /invitations/:token` mostra o convite: `purpose` (colaborador ou portal), `email`, a agência ou o cliente, e `accountExists`.
 2. Se a pessoa ainda não tem conta (`accountExists: false`), chame `POST /invitations/:token/accept-new-account` com `name`, `password` e `acceptTerms: true`. A conta é criada, o convite é aceito e a sessão abre.

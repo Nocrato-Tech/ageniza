@@ -14,6 +14,29 @@ Cada e-mail "conteúdos para aprovar" leva um link `/aprovar#<token>`, próprio 
 
 ## Fluxo
 
+```mermaid
+sequenceDiagram
+    actor P as Pessoa do portal
+    participant App
+    participant API
+    P->>App: abre /aprovar#token
+    App->>App: lê o token do fragmento e apaga da URL
+    App->>API: POST /portal-approval/session (token)
+    API-->>App: cookie de aprovação, sessionExpiresAt e linkExpiresAt
+    App->>API: GET /portal-approval/batch
+    API-->>App: lote, com a prévia de cada post
+    loop cada mídia
+        App->>API: GET /portal-approval/contents/:contentId/media/:assetId/url
+        API-->>App: URL assinada, de poucos minutos
+    end
+    alt aprova
+        App->>API: POST /portal-approval/contents/:contentId/approve
+    else pede ajuste
+        App->>API: POST /portal-approval/contents/:contentId/request-changes (comentário)
+    end
+    API-->>App: decisão registrada
+```
+
 1. O token vem no **fragmento** da URL, a parte depois do `#`. O fragmento não vai para servidores nem para logs. Leia o token do link, apague-o da URL e não o registre em lugar nenhum.
 2. `POST /portal-approval/session` com `{ "token" }` troca o token por uma **sessão de aprovação**. Essa sessão é um cookie próprio, separado da sessão de login. A resposta traz `sessionExpiresAt` e `linkExpiresAt`.
 3. `GET /portal-approval/batch` lê o lote.

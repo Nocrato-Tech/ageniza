@@ -12,17 +12,28 @@ import { describe, expect, it } from 'vitest';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (path) => readFileSync(join(root, path), 'utf8').replace(/\r\n/g, '\n');
 
-const dockerfile = read('apps/api/Dockerfile');
 const production = read('.github/workflows/production.yml');
 const dev = read('.github/workflows/dev.yml');
 
-const apiBuildLines = (workflow) => workflow.split('\n').filter((line) => line.includes('apps/api/Dockerfile'));
+// The worker charges the renewals, so it carries the same package and the same switch.
+const IMAGES = [
+  ['API', 'apps/api/Dockerfile'],
+  ['worker', 'apps/worker/Dockerfile']
+];
 
-describe('the API image and the simulated payment provider (issue #772)', () => {
+const buildLines = (workflow, path) => workflow.split('\n').filter((line) => line.includes(path));
+
+describe.each(IMAGES)('the %s image and the simulated payment provider (issue #772)', (_label, path) => {
+  const dockerfile = read(path);
+
   it('keeps the simulated code by default and removes it only for exclude, refusing any other value', () => {
     expect(dockerfile).toContain('ARG PAYMENTS_SIMULATED=include');
     expect(dockerfile).toMatch(/if \[ "\$PAYMENTS_SIMULATED" = "exclude" \]; then[^]*rm -rf \/runtime\/node_modules\/@ageniza\/payments\/dist\/simulated/);
     expect(dockerfile).toMatch(/elif \[ "\$PAYMENTS_SIMULATED" != "include" \]; then[^]*exit 1/);
+  });
+
+  it('carries the payments package into the build, so the removal has something to remove', () => {
+    expect(dockerfile).toContain('COPY packages/payments/package.json packages/payments/package.json');
   });
 
   it('checks that the removal happened, so a layout change in the package fails the build instead of shipping the code', () => {
@@ -40,26 +51,29 @@ describe('the API image and the simulated payment provider (issue #772)', () => 
     expect(buildStage.indexOf('ARG PAYMENTS_SIMULATED=include')).toBeLessThan(buildStage.indexOf('rm -rf /runtime'));
     expect(finalStage).toContain('COPY --from=build /runtime ./');
     expect(finalStage).not.toMatch(/simulated/i);
-    expect(finalStage).not.toContain('rm -rf');
+    // The worker's final stage may clean the apt cache; what it must not do is remove anything from the copied tree.
+    expect(finalStage).not.toMatch(/rm -rf[^\n]*(payments|node_modules|\/app)/);
   });
 
   it('is built with exclude by the production workflow, in the validating build and in the publishing build', () => {
-    const validating = apiBuildLines(production).find((line) => line.trimStart().startsWith('run: docker build'));
+    const validating = buildLines(production, path).find((line) => line.trimStart().startsWith('run: docker build'));
     expect(validating).toContain('--build-arg PAYMENTS_SIMULATED=exclude');
 
-    const publishing = production.slice(production.indexOf('file: apps/api/Dockerfile'));
+    const publishing = production.slice(production.indexOf('file: ' + path));
     const buildArgs = publishing.slice(publishing.indexOf('build-args:'), publishing.indexOf('labels:'));
     expect(buildArgs).toContain('PAYMENTS_SIMULATED=exclude');
   });
+});
 
+describe('the images and the dev environment (issue #772)', () => {
   it('is not excluded by the dev workflow, whose environment simulates payments', () => {
     expect(dev).not.toContain('PAYMENTS_SIMULATED');
   });
 
   // The dev environment runs with APP_ENV=production, so the line between it and the real production is DEPLOY_TARGET=dev, set by
   // compose.dev.yml alone. The production deploy has to keep refusing both keys, or production could name itself dev.
-  it('keeps PAYMENTS_PROVIDER and DEPLOY_TARGET out of what the production deploy accepts and what its compose file sets', () => {
-    for (const key of ['PAYMENTS_PROVIDER', 'DEPLOY_TARGET']) {
+  it('keeps PAYMENTS_PROVIDER, PAYMENTS_SIMULATED_RENEWAL and DEPLOY_TARGET out of what the production deploy accepts and what its compose file sets', () => {
+    for (const key of ['PAYMENTS_PROVIDER', 'PAYMENTS_SIMULATED_RENEWAL', 'DEPLOY_TARGET']) {
       expect(read('infra/vps/ageniza-deploy.sh'), key).not.toContain(key);
       expect(read('compose.production.yml'), key).not.toContain(key);
       expect(read('infra/vps/runtime.env.example'), key).not.toContain(key);

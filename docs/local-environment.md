@@ -68,7 +68,7 @@ pnpm --filter @ageniza/api cli:agency resend-activation --agency-id <uuid>
 
 `set-plan` é a única troca de plano, e a aplicação nunca muda `plan`: `isenta` é a agência que não paga e usa tudo; `ativo` é um plano pago, e `--paid-plan` diz qual (obrigatório, e só vale com `ativo`): o comando dá a agência uma assinatura de cortesia, sem cobrança, com os tetos do plano (decisão do dono, 2026-10-29); `trial` devolve um teste com outra data de fim (`--ends-at`, obrigatório; só a data termina às 23:59:59 de Brasília). Cada troca fica auditada. `set-email-limit` muda o limite diário de convites enviados pela agência (20 no teste e 200 nos outros planos; `padrao` volta ao do plano). Para testar o somente leitura na máquina, mude a data pelo banco: `update public.agencies set trial_ends_at = now() - interval '1 minute' where id = '<uuid>'`.
 
-**Pagamento simulado.** Para assinar um plano na máquina, ponha `PAYMENTS_PROVIDER=simulado` no `.env` da API (vazio, ninguém paga e as rotas simuladas não existem). O provedor simulado aprova qualquer cartão (a API nunca recebe número nem final de cartão: o corpo é só `approved` ou `declined`, o cartão de teste recusado), e a API ganha o controle de avançar o período (`POST /agencies/:id/subscription/simulated-period-advance`) para testar a renovação e a tolerância de 3 dias. A API em produção recusa subir com `simulado`, e a imagem de produção não leva o código dele; o ambiente de dev da VPS (`DEPLOY_TARGET=dev`) é onde ele roda fora da sua máquina.
+**Pagamento simulado.** Para assinar um plano na máquina, ponha `PAYMENTS_PROVIDER=simulado` no `.env` da API (vazio, ninguém paga e as rotas simuladas não existem). O provedor simulado aprova qualquer cartão (a API nunca recebe número nem final de cartão: o corpo é só `approved` ou `declined`, o cartão de teste recusado), e a API ganha o controle de avançar o período (`POST /agencies/:id/subscription/simulated-period-advance`) para testar a renovação e a tolerância de 3 dias. Quem renova é o worker (`subscriptions.renew-due`, a cada 5 minutos): com `PAYMENTS_PROVIDER=simulado` no `.env` dele, ele cobra a renovação das assinaturas que vencem; `PAYMENTS_SIMULATED_RENEWAL=declined` faz toda renovação ser recusada, para ver o aviso de pagamento pendente e a tolerância. A API em produção recusa subir com `simulado`, e a imagem de produção não leva o código dele; o ambiente de dev da VPS (`DEPLOY_TARGET=dev`) é onde ele roda fora da sua máquina.
 
 O aviso de teste vencido mostra um contato só quando a API tem `SUPPORT_CONTACT_EMAIL` (um e-mail público, sem segredo). Sem ela, o aviso só diz que o teste acabou e que os dados estão guardados.
 
@@ -231,6 +231,20 @@ pnpm db:migrate
 ```
 
 Para recomeçar, apague e recrie só esse banco (`drop database ageniza_meu`). O CI faz o mesmo com `ageniza_ci`. O comando de demonstração (`seed-demo`) é outra coisa: ele existe justamente para o banco `ageniza` do dono e mantém o próprio portão local descrito acima.
+
+#### Um banco por arquivo na suíte da API
+
+A suíte da API **não** roda os arquivos no banco que você exportou: ele só diz ao harness qual servidor e quais credenciais usar, e nada é escrito nele. A cada execução, o `globalSetup` (`apps/api/integration-setup/`) cria um banco-modelo `<banco>_m<execução>` com todas as migrations, e cada arquivo de teste ganha um clone dele (`create database ... template`), `<banco>_c<execução>_<arquivo>`, apagado quando o arquivo termina. Os papéis (`ageniza_app` e os outros) são do servidor, e os grants e o `search_path` ficam dentro do banco, então o clone os leva; `packages/database/test/integration-clone.integration.test.ts` prova isso comparando o clone com o banco migrado, e `apps/api/src/plugins/infra/integration-database.integration.test.ts` falha se um arquivo da API estiver no banco compartilhado.
+
+Como nenhum arquivo enxerga o banco do outro, os arquivos rodam em paralelo (`maxWorkers: 4`, o valor do CI, de 4 vCPU). Uma máquina que divide o PostgreSQL com outros agentes passa menos:
+
+```sh
+pnpm --filter @ageniza/api test:integration --maxWorkers=2
+```
+
+O servidor entrega 97 conexões que não são de superusuário (`max_connections=100` menos 3 reservadas), e o que conta é o pico de cada arquivo, não o tamanho do pool: um app de teste são três pools (Better Auth, Knex e o produtor do pg-boss) e `auth.integration.test.ts` mantém 35 apps abertos até o fim do arquivo. Por isso cada pool tem no máximo 3 conexões (`TEST_POOL_MAX`) e devolve a conexão ociosa em 500 ms (`TEST_POOL_IDLE_MS`); com o padrão de 10 s esse arquivo sozinho chegou a 64 conexões, e agora chega a 14. Picos medidos, um arquivo por vez: `auth.integration` 14, `password-change-session` 11, `auth-logs` 10, `sign-up` 8, `portal` 8, `invitation-email-token` 7; os quatro maiores juntos somam 43 de 97. Cada arquivo tem um orçamento de 20 conexões (`FILE_CONNECTION_BUDGET` em `integration-setup/per-file-database.ts`): um vigia amostra o clone a cada 200 ms e o arquivo que passar disso falha sozinho no fim, dizendo o pico, em vez de recusar outros arquivos com 53300 ao acaso. Um `--maxWorkers` bem acima de 4 volta a esbarrar no limite do #167. Teste novo usa `buildTestApp` e `ownerClient` do harness como sempre; não abra conexão por outra URL. A espera por lock que filtra `datname = current_database()` é segura por construção, porque o banco é só do arquivo.
+
+Se a execução for morta à força, sobram bancos `<banco>_m*` e `<banco>_c*` no servidor. Apague-os com `drop database "<nome>" with (force)`; um banco que sobrou não afeta a execução seguinte, porque cada uma tem o próprio identificador.
 
 ## Quando algo não sobe
 

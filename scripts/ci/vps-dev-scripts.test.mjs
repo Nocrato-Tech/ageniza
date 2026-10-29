@@ -170,6 +170,17 @@ describe('validate_runtime_env of the dev entrypoint', () => {
     expect(validate(replacing(key, value)).status).toBe(1);
   });
 
+  // The worker of the dev environment can decline the renewals of the simulated provider, to exercise the three days of grace (issue #772).
+  it.each(['approved', 'declined'])('accepts PAYMENTS_SIMULATED_RENEWAL=%s', (value) => {
+    expect(validate([...fromExample(), `PAYMENTS_SIMULATED_RENEWAL=${value}`]).status).toBe(0);
+  });
+
+  it.each(['', 'Declined', 'maybe', 'true'])('refuses PAYMENTS_SIMULATED_RENEWAL=%j', (value) => {
+    const result = validate([...fromExample(), `PAYMENTS_SIMULATED_RENEWAL=${value}`]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('PAYMENTS_SIMULATED_RENEWAL must be approved or declined');
+  });
+
   it.each(['PAYMENTS_PROVIDER', 'BETTER_AUTH_SECRET', 'DATABASE_URL', 'R2_BUCKET', 'IDENTITY_STORAGE_SECRET_ACCESS_KEY', 'APP_PUBLIC_URL'])('requires %s', (key) => {
     const result = validate(without(key));
     expect(result.status).toBe(1);

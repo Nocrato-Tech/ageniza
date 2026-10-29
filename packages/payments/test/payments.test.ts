@@ -49,6 +49,25 @@ describe('simulated payment provider', () => {
     }
   });
 
+  it('refunds a charge it approved, whatever the number of times it is asked', async () => {
+    const provider = await simulated();
+    const charge = await provider.charge(request);
+    if (charge.status !== 'approved') throw new Error('expected an approval');
+    const refund = { idempotencyKey: `refund:${request.idempotencyKey}`, providerRef: charge.providerRef, amountCents: charge.paidCents };
+    expect(await provider.refund(refund)).toEqual({ status: 'refunded' });
+    expect(await provider.refund(refund)).toEqual({ status: 'refunded' });
+  });
+
+  it('refuses to refund what it never took: a reference of another provider, or an amount that is not a positive whole number of cents', async () => {
+    const provider = await simulated();
+    const refund = { idempotencyKey: 'refund-key', providerRef: 'sim:some-charge', amountCents: 19_700 };
+    expect(await provider.refund({ ...refund, providerRef: 'asaas:pay_123' })).toEqual({ status: 'failed', reason: 'unknown_charge' });
+    expect(await provider.refund({ ...refund, providerRef: '' })).toEqual({ status: 'failed', reason: 'unknown_charge' });
+    for (const amountCents of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(await provider.refund({ ...refund, amountCents })).toEqual({ status: 'failed', reason: 'invalid_amount' });
+    }
+  });
+
   it('keeps the provider reference inside the 200 bytes the database accepts for a charge id', async () => {
     const provider = await simulated();
     const result = await provider.charge(request);

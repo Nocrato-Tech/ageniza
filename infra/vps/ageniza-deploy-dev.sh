@@ -103,6 +103,7 @@ validate_runtime_env() {
       SMTP_URL|EMAIL_FROM|DEPLOY_TARGET|API_TRUSTED_PROXY_CIDRS) die "$key is fixed by compose.dev.yml and must not appear in $RUNTIME_ENV" ;;
       APP_ENV) [[ "$value" == production ]] || die 'APP_ENV must be production' ;;
       PAYMENTS_PROVIDER) [[ "$value" == simulado ]] || die 'PAYMENTS_PROVIDER must be simulado in dev' ;;
+      PAYMENTS_SIMULATED_RENEWAL) [[ "$value" == approved || "$value" == declined ]] || die 'PAYMENTS_SIMULATED_RENEWAL must be approved or declined' ;;
       WORKER_SMOKE_JOB) [[ "$value" == false ]] || die 'WORKER_SMOKE_JOB must be false' ;;
       WORKER_CONCURRENCY) [[ "$value" =~ ^[1-2]$ ]] || die 'WORKER_CONCURRENCY must be 1 or 2 in dev' ;;
       AUTH_TERMS_VERSION|AUTH_PRIVACY_VERSION) [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "$key must use YYYY-MM-DD" ;;
