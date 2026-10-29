@@ -381,7 +381,7 @@ describe('worker runtime', () => {
       knex: {
         raw: vi.fn(async (sql: string) => {
           if (sql.includes('agencies_due_for_renewal')) return { rows: [{ id: AGENCY }] };
-          if (sql.includes('renewal_quote')) return { rows: [{ period_end: new Date('2026-11-29T12:00:00.000Z'), amount_cents: 9_700, provider: 'simulado' }] };
+          if (sql.includes('renewal_quote')) return { rows: [{ period_end: new Date('2026-11-29T12:00:00.000Z'), amount_cents: 9_700, provider: 'simulado', attempt: 0 }] };
           if (sql.includes('renew_subscription')) return { rows: [{ renewed: true }] };
           return undefined;
         })

@@ -14,15 +14,18 @@ import {
 } from './renew-subscriptions-job.js';
 
 const DUE_SQL = 'select app_private.agencies_due_for_renewal(?::integer) as id';
-const QUOTE_SQL = 'select period_end, amount_cents, provider from app_private.renewal_quote(?::uuid)';
+const QUOTE_SQL = 'select period_end, amount_cents, provider, attempt from app_private.renewal_quote(?::uuid)';
 const RENEW_SQL = 'select app_private.renew_subscription(?::uuid, ?, ?, ?::integer) as renewed';
+const RECORD_SQL = 'select app_private.record_renewal_refund(?::uuid, ?, ?, ?::timestamptz, ?::integer, ?)';
+const SETTLE_SQL = 'select app_private.settle_renewal_refund(?, ?, ?, ?)';
 
 const AGENCY = '0b1f6c9e-1111-4222-8333-444455556666';
 const OTHER_AGENCY = '0b1f6c9e-7777-4888-9999-aaaabbbbcccc';
 const PERIOD_END = new Date('2026-11-29T12:00:00.000Z');
 
-interface QuoteRow { period_end: Date; amount_cents: number; provider: string }
-const quote = (amountCents: number, provider = 'simulado', periodEnd = PERIOD_END): QuoteRow => ({ period_end: periodEnd, amount_cents: amountCents, provider });
+interface QuoteRow { period_end: Date; amount_cents: number; provider: string; attempt: number }
+const quote = (amountCents: number, provider = 'simulado', periodEnd = PERIOD_END, attempt = 0): QuoteRow =>
+  ({ period_end: periodEnd, amount_cents: amountCents, provider, attempt });
 const lost = (code: string): Error => Object.assign(new Error('database refused'), { code });
 
 type RenewAnswer = boolean | Error;
@@ -33,9 +36,14 @@ const databaseWith = (script: {
   readonly due: ReadonlyArray<string>;
   readonly quotes: Readonly<Record<string, ReadonlyArray<QuoteRow | undefined>>>;
   readonly renewals?: Readonly<Record<string, ReadonlyArray<RenewAnswer>>>;
+  /** What the database answers when the refund is recorded, per agency and in order; a refund recorded when the script has no more. */
+  readonly records?: Readonly<Record<string, ReadonlyArray<Error | undefined>>>;
+  /** What the database answers when the provider's answer to a refund is written down. */
+  readonly settlement?: Error;
 }) => {
   const quotes = new Map(Object.entries(script.quotes).map(([agency, rows]) => [agency, [...rows]]));
   const renewals = new Map(Object.entries(script.renewals ?? {}).map(([agency, rows]) => [agency, [...rows]]));
+  const records = new Map(Object.entries(script.records ?? {}).map(([agency, rows]) => [agency, [...rows]]));
   const raw = vi.fn(async (sql: string, bindings: ReadonlyArray<unknown>) => {
     if (sql === DUE_SQL) return { rows: script.due.map((id) => ({ id })) };
     if (sql === QUOTE_SQL) {
@@ -47,6 +55,15 @@ const databaseWith = (script: {
       if (next === undefined) throw new Error(`unexpected renewal of ${String(bindings[0])}`);
       if (next instanceof Error) throw next;
       return { rows: [{ renewed: next }] };
+    }
+    if (sql === RECORD_SQL) {
+      const next = records.get(String(bindings[0]))?.shift();
+      if (next instanceof Error) throw next;
+      return { rows: [{ record_renewal_refund: '' }] };
+    }
+    if (sql === SETTLE_SQL) {
+      if (script.settlement !== undefined) throw script.settlement;
+      return { rows: [{ settle_renewal_refund: true }] };
     }
     throw new Error(`unexpected statement: ${sql}`);
   });
@@ -85,7 +102,9 @@ const run = async (definition: ReturnType<typeof renewSubscriptionsJob>, logger:
 const SUMMARY = 'Renewed the subscriptions that are due';
 const summaryOf = async (captured: ReturnType<typeof captureLogger>): Promise<Record<string, unknown>> =>
   (await captured.records()).find((record) => record.msg === SUMMARY)!;
-const keyFor = (agency: string, cents: number, periodEnd = PERIOD_END): string => `renewal:${agency}:${periodEnd.getTime()}:${cents}`;
+const keyFor = (agency: string, cents: number, attempt = 0, periodEnd = PERIOD_END): string => `renewal:${agency}:${periodEnd.getTime()}:${cents}:${attempt}`;
+const callsOf = (raw: { mock: { calls: ReadonlyArray<ReadonlyArray<unknown>> } }, sql: string): ReadonlyArray<unknown> =>
+  raw.mock.calls.filter(([statement]) => statement === sql).map(([, bindings]) => bindings);
 
 describe('subscriptions.renew-due', () => {
   it('is named and scheduled as decided: every five minutes in Brasília, and once at every start', () => {
@@ -101,7 +120,7 @@ describe('subscriptions.renew-due', () => {
     expect(RENEW_SUBSCRIPTIONS_PER_RUN).toBe(500);
   });
 
-  it('charges the amount the database priced under a key made of the agency, the end of the period and the amount, then confirms what the provider answered', async () => {
+  it('charges the amount the database priced under a key made of the agency, the end of the period, the amount and the attempt, then confirms what the provider answered', async () => {
     const { database, raw } = databaseWith({ due: [AGENCY], quotes: { [AGENCY]: [quote(19_700)] }, renewals: { [AGENCY]: [true] } });
     const { provider, charge, refund } = providerWith({ charge: (request) => ({ status: 'approved', providerRef: 'sim:from-the-provider', paidCents: request.amountCents }) });
     const captured = captureLogger();
@@ -124,9 +143,9 @@ describe('subscriptions.renew-due', () => {
     expect(raw.mock.calls.find(([sql]) => sql === RENEW_SQL)).toEqual([RENEW_SQL, [AGENCY, 'simulado', 'sim:x', 9_600]]);
   });
 
-  it('makes another key for the next month and for another amount, and the same key for a retry', async () => {
-    const keysOf = async (periodEnd: Date, cents: number): Promise<string> => {
-      const { database } = databaseWith({ due: [AGENCY], quotes: { [AGENCY]: [quote(cents, 'simulado', periodEnd)] }, renewals: { [AGENCY]: [true] } });
+  it('makes another key for the next month, for another amount and for another attempt, and the same key for a retry', async () => {
+    const keysOf = async (periodEnd: Date, cents: number, attempt = 0): Promise<string> => {
+      const { database } = databaseWith({ due: [AGENCY], quotes: { [AGENCY]: [quote(cents, 'simulado', periodEnd, attempt)] }, renewals: { [AGENCY]: [true] } });
       const { provider, charge } = providerWith();
       await run(renewSubscriptionsJob({ database, provider }), captureLogger().logger);
       return charge.mock.calls[0]![0].idempotencyKey;
@@ -135,6 +154,11 @@ describe('subscriptions.renew-due', () => {
     expect(await keysOf(PERIOD_END, 9_700)).toBe(base);
     expect(await keysOf(new Date(PERIOD_END.getTime() + 30 * 86_400_000), 9_700)).not.toBe(base);
     expect(await keysOf(PERIOD_END, 9_740)).not.toBe(base);
+    // A refund of the period is an attempt: the charge after it is another payment, not the one that was given back.
+    expect(await keysOf(PERIOD_END, 9_700, 1)).not.toBe(base);
+    expect(await keysOf(PERIOD_END, 9_700, 1)).toBe(await keysOf(PERIOD_END, 9_700, 1));
+    expect(await keysOf(PERIOD_END, 9_700, 2)).not.toBe(await keysOf(PERIOD_END, 9_700, 1));
+    expect(base).toBe(keyFor(AGENCY, 9_700, 0));
   });
 
   it('records nothing for a declined card, logs the reason with the id of the agency, and goes on to the next agency', async () => {
@@ -205,7 +229,7 @@ describe('subscriptions.renew-due', () => {
   it('refunds the whole charge when the database refuses the amount (A0114), quotes again and charges the new amount at once', async () => {
     const { database, raw } = databaseWith({
       due: [AGENCY],
-      quotes: { [AGENCY]: [quote(9_700), quote(19_700)] },
+      quotes: { [AGENCY]: [quote(9_700), quote(19_700, 'simulado', PERIOD_END, 1)] },
       renewals: { [AGENCY]: [lost('A0114'), true] }
     });
     const { provider, charge, refund } = providerWith();
@@ -214,13 +238,13 @@ describe('subscriptions.renew-due', () => {
     await run(renewSubscriptionsJob({ database, provider }), captured.logger);
 
     expect(charge.mock.calls.map(([request]) => [request.idempotencyKey, request.amountCents])).toEqual([
-      [keyFor(AGENCY, 9_700), 9_700],
-      [keyFor(AGENCY, 19_700), 19_700]
+      [keyFor(AGENCY, 9_700, 0), 9_700],
+      [keyFor(AGENCY, 19_700, 1), 19_700]
     ]);
     expect(refund.mock.calls).toEqual([[{ idempotencyKey: `refund:${keyFor(AGENCY, 9_700)}`, providerRef: `fake:${keyFor(AGENCY, 9_700)}`, amountCents: 9_700 }]]);
     expect(raw.mock.calls.filter(([sql]) => sql === RENEW_SQL).map(([, bindings]) => bindings)).toEqual([
       [AGENCY, 'simulado', `fake:${keyFor(AGENCY, 9_700)}`, 9_700],
-      [AGENCY, 'simulado', `fake:${keyFor(AGENCY, 19_700)}`, 19_700]
+      [AGENCY, 'simulado', `fake:${keyFor(AGENCY, 19_700, 1)}`, 19_700]
     ]);
     // The refund is made before the second charge: the money of the first never stays with the provider while the second is asked.
     expect(refund.mock.invocationCallOrder[0]).toBeLessThan(charge.mock.invocationCallOrder[1]!);
@@ -230,7 +254,7 @@ describe('subscriptions.renew-due', () => {
   it('charges the new amount once at most in a run: a second refusal is refunded and the agency waits for the next run', async () => {
     const { database } = databaseWith({
       due: [AGENCY],
-      quotes: { [AGENCY]: [quote(9_700), quote(19_700), quote(29_700)] },
+      quotes: { [AGENCY]: [quote(9_700), quote(19_700, 'simulado', PERIOD_END, 1), quote(9_700, 'simulado', PERIOD_END, 2)] },
       renewals: { [AGENCY]: [lost('A0114'), lost('A0114')] }
     });
     const { provider, charge, refund } = providerWith();
@@ -260,9 +284,9 @@ describe('subscriptions.renew-due', () => {
   });
 
   it('logs at error level, with the reference of the charge, a refund that failed, and does not charge that agency again nor stop the run', async () => {
-    const { database } = databaseWith({
+    const { database, raw } = databaseWith({
       due: [AGENCY, OTHER_AGENCY],
-      quotes: { [AGENCY]: [quote(9_700), quote(19_700)], [OTHER_AGENCY]: [quote(9_700)] },
+      quotes: { [AGENCY]: [quote(9_700), quote(19_700, 'simulado', PERIOD_END, 1)], [OTHER_AGENCY]: [quote(9_700)] },
       renewals: { [AGENCY]: [lost('A0114')], [OTHER_AGENCY]: [true] }
     });
     const { provider, charge } = providerWith({ refund: () => ({ status: 'failed', reason: 'provider_unavailable' }) });
@@ -275,6 +299,8 @@ describe('subscriptions.renew-due', () => {
     expect(records).toContainEqual(expect.objectContaining({
       level: 50, agencyId: AGENCY, providerRef: `fake:${keyFor(AGENCY, 9_700)}`, amountCents: 9_700, reason: 'provider_unavailable', code: 'RENEWAL_REFUND_FAILED'
     }));
+    // The database is told it failed, with the reason the provider gave; the reference stays closed for renewals.
+    expect(callsOf(raw, SETTLE_SQL)).toEqual([['simulado', `fake:${keyFor(AGENCY, 9_700)}`, 'failed', 'provider_unavailable']]);
     expect(await summaryOf(captured)).toMatchObject({ renewed: 1, refund_failed: 1, refunded: 0 });
   });
 
@@ -361,9 +387,13 @@ describe('subscriptions.renew-due', () => {
   // The quote is refused by its own check, before anything is charged: a TypeError further on (`getTime` of a string) would also stop the
   // agency, so the test reads the name of the logged error, which is `Error` only for the guard.
   it.each([
-    ['a period that is not a date', { period_end: '2026-11-29', amount_cents: 9_700, provider: 'simulado' }],
-    ['an amount that is not a number', { period_end: PERIOD_END, amount_cents: '9700', provider: 'simulado' }],
-    ['a provider that is not a name', { period_end: PERIOD_END, amount_cents: 9_700, provider: 42 }]
+    ['a period that is not a date', { period_end: '2026-11-29', amount_cents: 9_700, provider: 'simulado', attempt: 0 }],
+    ['an amount that is not a number', { period_end: PERIOD_END, amount_cents: '9700', provider: 'simulado', attempt: 0 }],
+    ['a provider that is not a name', { period_end: PERIOD_END, amount_cents: 9_700, provider: 42, attempt: 0 }],
+    ['an attempt that is missing', { period_end: PERIOD_END, amount_cents: 9_700, provider: 'simulado' }],
+    ['an attempt that is a string', { period_end: PERIOD_END, amount_cents: 9_700, provider: 'simulado', attempt: '1' }],
+    ['an attempt that is negative', { period_end: PERIOD_END, amount_cents: 9_700, provider: 'simulado', attempt: -1 }],
+    ['an attempt that is not whole', { period_end: PERIOD_END, amount_cents: 9_700, provider: 'simulado', attempt: 0.5 }]
   ])('refuses a quote with %s, charges nothing and fails the run after the others', async (_label, row) => {
     const { provider, charge } = providerWith();
     const database = { knex: { raw: vi.fn(async (sql: string) => (sql === DUE_SQL ? { rows: [{ id: AGENCY }] } : { rows: [row] })) } } as unknown as DatabaseClient;
@@ -418,5 +448,200 @@ describe('subscriptions.renew-due', () => {
     await run(renewSubscriptionsJob({ database, provider }), captureLogger().logger);
 
     expect(refund.mock.calls).toEqual([[{ idempotencyKey: `refund:${keyFor(AGENCY, 9_700)}`, providerRef: 'sim:took-less', amountCents: 9_600 }]]);
+  });
+});
+
+describe('the refund the database is told about', () => {
+  it.each(['A0114', 'A0115'] as const)('records the refund of a charge the database refused (%s) before it asks the provider, and writes the answer down after', async (code) => {
+    const { database, raw } = databaseWith({ due: [AGENCY], quotes: { [AGENCY]: [quote(9_700), undefined] }, renewals: { [AGENCY]: [lost(code)] } });
+    const { provider, refund } = providerWith({ charge: (request) => ({ status: 'approved', providerRef: 'sim:took-less', paidCents: request.amountCents - 100 }) });
+
+    await run(renewSubscriptionsJob({ database, provider }), captureLogger().logger);
+
+    // What was taken (9_600), the period and the code the database refused with: the job reads them, it does not compute them.
+    expect(callsOf(raw, RECORD_SQL)).toEqual([[AGENCY, 'simulado', 'sim:took-less', PERIOD_END, 9_600, code]]);
+    expect(callsOf(raw, SETTLE_SQL)).toEqual([['simulado', 'sim:took-less', 'refunded', null]]);
+    const order = raw.mock.invocationCallOrder;
+    const recordAt = order[raw.mock.calls.findIndex(([sql]) => sql === RECORD_SQL)]!;
+    const settleAt = order[raw.mock.calls.findIndex(([sql]) => sql === SETTLE_SQL)]!;
+    expect(recordAt).toBeLessThan(refund.mock.invocationCallOrder[0]!);
+    expect(refund.mock.invocationCallOrder[0]!).toBeLessThan(settleAt);
+  });
+
+  it('records a refund with the provider of the worker, so the database counts it for that provider', async () => {
+    const { database, raw } = databaseWith({ due: [AGENCY], quotes: { [AGENCY]: [quote(9_700, 'asaas'), undefined] }, renewals: { [AGENCY]: [lost('A0115')] } });
+    const { provider } = providerWith({ name: 'asaas' });
+
+    await run(renewSubscriptionsJob({ database, provider }), captureLogger().logger);
+
+    expect(callsOf(raw, RECORD_SQL)).toEqual([[AGENCY, 'asaas', `fake:${keyFor(AGENCY, 9_700)}`, PERIOD_END, 9_700, 'A0115']]);
+    expect(callsOf(raw, SETTLE_SQL)).toEqual([['asaas', `fake:${keyFor(AGENCY, 9_700)}`, 'refunded', null]]);
+  });
+
+  it('charges a new payment, not the refunded one, when the card is charged again for the same period (cancel, refund, reactivate)', async () => {
+    // First run: the Owner canceled while the card was charged. Second run: reactivated, the database counts the refund as an attempt.
+    const first = databaseWith({ due: [AGENCY], quotes: { [AGENCY]: [quote(9_700), undefined] }, renewals: { [AGENCY]: [lost('A0115')] } });
+    const second = databaseWith({ due: [AGENCY], quotes: { [AGENCY]: [quote(9_700, 'simulado', PERIOD_END, 1)] }, renewals: { [AGENCY]: [true] } });
+    const { provider, charge } = providerWith({ charge: (request) => ({ status: 'approved', providerRef: `sim:${request.idempotencyKey}`, paidCents: request.amountCents }) });
+
+    await run(renewSubscriptionsJob({ database: first.database, provider }), captureLogger().logger);
+    await run(renewSubscriptionsJob({ database: second.database, provider }), captureLogger().logger);
+
+    const refs = charge.mock.calls.map(([request]) => request.idempotencyKey);
+    expect(refs).toHaveLength(2);
+    expect(new Set(refs).size).toBe(2);
+    expect(callsOf(second.raw, RENEW_SQL)).toEqual([[AGENCY, 'simulado', `sim:${keyFor(AGENCY, 9_700, 1)}`, 9_700]]);
+    expect(callsOf(first.raw, RECORD_SQL)).toEqual([[AGENCY, 'simulado', `sim:${keyFor(AGENCY, 9_700, 0)}`, PERIOD_END, 9_700, 'A0115']]);
+  });
+
+  it('does not ask the provider to refund when the database could not record it, logs what a person needs, and fails the run after the others', async () => {
+    const { database, raw } = databaseWith({
+      due: [AGENCY, OTHER_AGENCY],
+      quotes: { [AGENCY]: [quote(9_700)], [OTHER_AGENCY]: [quote(19_700)] },
+      renewals: { [AGENCY]: [lost('A0114')], [OTHER_AGENCY]: [true] },
+      records: { [AGENCY]: [Object.assign(new Error('Connection terminated unexpectedly'), { code: '57P01' })] }
+    });
+    const { provider, refund, charge } = providerWith();
+    const captured = captureLogger();
+
+    await expect(run(renewSubscriptionsJob({ database, provider }), captured.logger)).rejects.toThrow('The renewal of 1 agencies failed.');
+
+    expect(refund).not.toHaveBeenCalled();
+    expect(callsOf(raw, RECORD_SQL)).toHaveLength(1);
+    expect(callsOf(raw, SETTLE_SQL)).toEqual([]);
+    expect(charge).toHaveBeenCalledTimes(2);
+    const records = await captured.records();
+    expect(records).toContainEqual(expect.objectContaining({
+      level: 50, agencyId: AGENCY, providerRef: `fake:${keyFor(AGENCY, 9_700)}`, amountCents: 9_700, code: 'RENEWAL_REFUND_NOT_RECORDED'
+    }));
+    expect(JSON.stringify(records)).not.toContain('Connection terminated');
+    expect(await summaryOf(captured)).toMatchObject({ renewed: 1, refunded: 0 });
+  });
+
+  it('records again after a lost race, and gives up (without a refund) when the race is lost every time', async () => {
+    const won = databaseWith({
+      due: [AGENCY], quotes: { [AGENCY]: [quote(9_700), undefined] }, renewals: { [AGENCY]: [lost('A0115')] },
+      records: { [AGENCY]: [lost('40001'), lost('40P01')] }
+    });
+    const first = providerWith();
+    await run(renewSubscriptionsJob({ database: won.database, provider: first.provider }), captureLogger().logger);
+    expect(callsOf(won.raw, RECORD_SQL)).toHaveLength(3);
+    expect(first.refund).toHaveBeenCalledTimes(1);
+
+    const never = databaseWith({
+      due: [AGENCY], quotes: { [AGENCY]: [quote(9_700)] }, renewals: { [AGENCY]: [lost('A0115')] },
+      records: { [AGENCY]: Array.from({ length: CONFIRMATION_ATTEMPTS + 2 }, () => lost('40001')) }
+    });
+    const second = providerWith();
+    await expect(run(renewSubscriptionsJob({ database: never.database, provider: second.provider }), captureLogger().logger)).rejects.toThrow('The renewal of 1 agencies failed.');
+    expect(callsOf(never.raw, RECORD_SQL)).toHaveLength(CONFIRMATION_ATTEMPTS);
+    expect(second.refund).not.toHaveBeenCalled();
+  });
+
+  it('does not refund a reference that holds a confirmed charge (A0119): it logs it and counts it as a refund that did not happen', async () => {
+    const { database, raw } = databaseWith({
+      due: [AGENCY], quotes: { [AGENCY]: [quote(9_700)] }, renewals: { [AGENCY]: [lost('A0114')] },
+      records: { [AGENCY]: [lost('A0119')] }
+    });
+    const { provider, refund, charge } = providerWith();
+    const captured = captureLogger();
+
+    await run(renewSubscriptionsJob({ database, provider }), captured.logger);
+
+    expect(refund).not.toHaveBeenCalled();
+    expect(charge).toHaveBeenCalledTimes(1);
+    expect(callsOf(raw, RECORD_SQL)).toHaveLength(1);
+    expect(callsOf(raw, SETTLE_SQL)).toEqual([]);
+    expect(await captured.records()).toContainEqual(expect.objectContaining({
+      level: 50, agencyId: AGENCY, providerRef: `fake:${keyFor(AGENCY, 9_700)}`, amountCents: 9_700, code: 'RENEWAL_REFUND_REFUSED'
+    }));
+    expect(await summaryOf(captured)).toMatchObject({ refund_failed: 1, refunded: 0 });
+  });
+
+  it('catches a refund that throws as a refund that failed: logs the reference and the amount, leaves the record, goes on with the others', async () => {
+    const { database, raw } = databaseWith({
+      due: [AGENCY, OTHER_AGENCY],
+      quotes: { [AGENCY]: [quote(9_700), quote(19_700, 'simulado', PERIOD_END, 1)], [OTHER_AGENCY]: [quote(19_700)] },
+      renewals: { [AGENCY]: [lost('A0114')], [OTHER_AGENCY]: [true] }
+    });
+    const { provider, refund, charge } = providerWith({ refund: () => { throw new TypeError('socket hang up with the card 4111'); } });
+    const captured = captureLogger();
+
+    await run(renewSubscriptionsJob({ database, provider }), captured.logger);
+
+    expect(refund).toHaveBeenCalledTimes(1);
+    // The record was written before, and it is not settled: nobody knows whether the money went back.
+    expect(callsOf(raw, RECORD_SQL)).toEqual([[AGENCY, 'simulado', `fake:${keyFor(AGENCY, 9_700)}`, PERIOD_END, 9_700, 'A0114']]);
+    expect(callsOf(raw, SETTLE_SQL)).toEqual([]);
+    // That agency is not charged again in the run, and the other one is renewed.
+    expect(charge.mock.calls.map(([request]) => request.idempotencyKey)).toEqual([keyFor(AGENCY, 9_700), keyFor(OTHER_AGENCY, 19_700)]);
+    const records = await captured.records();
+    expect(records).toContainEqual(expect.objectContaining({
+      level: 50, agencyId: AGENCY, providerRef: `fake:${keyFor(AGENCY, 9_700)}`, amountCents: 9_700, reason: 'refund_threw', code: 'RENEWAL_REFUND_FAILED',
+      error: { name: 'TypeError' }
+    }));
+    expect(JSON.stringify(records)).not.toContain('4111');
+    expect(await summaryOf(captured)).toMatchObject({ renewed: 1, refund_failed: 1, refunded: 0 });
+  });
+
+  it('logs a refund thrown as something that is not an error, with the name of an unknown one', async () => {
+    const { database } = databaseWith({ due: [AGENCY], quotes: { [AGENCY]: [quote(9_700)] }, renewals: { [AGENCY]: [lost('A0114')] } });
+    const { provider } = providerWith({ refund: () => Promise.reject('plain text') });
+    const captured = captureLogger();
+
+    await run(renewSubscriptionsJob({ database, provider }), captured.logger);
+
+    expect(await captured.records()).toContainEqual(expect.objectContaining({ code: 'RENEWAL_REFUND_FAILED', reason: 'refund_threw', error: { name: 'UnknownError' } }));
+  });
+
+  it('goes on when the answer to a refund cannot be written down: the money went back, and the next charge of the agency is still asked', async () => {
+    const { database } = databaseWith({
+      due: [AGENCY],
+      quotes: { [AGENCY]: [quote(9_700), quote(19_700, 'simulado', PERIOD_END, 1)] },
+      renewals: { [AGENCY]: [lost('A0114'), true] },
+      settlement: Object.assign(new Error('write failed'), { code: '57P01' })
+    });
+    const { provider, charge } = providerWith();
+    const captured = captureLogger();
+
+    await run(renewSubscriptionsJob({ database, provider }), captured.logger);
+
+    expect(charge).toHaveBeenCalledTimes(2);
+    expect(await captured.records()).toContainEqual(expect.objectContaining({
+      level: 50, agencyId: AGENCY, providerRef: `fake:${keyFor(AGENCY, 9_700)}`, code: 'RENEWAL_REFUND_NOT_SETTLED', error: { code: '57P01' }
+    }));
+    expect(await summaryOf(captured)).toMatchObject({ renewed: 1, refunded: 1 });
+  });
+
+  it('logs a settlement that failed without a SQLSTATE as an unknown one', async () => {
+    const { database } = databaseWith({
+      due: [AGENCY], quotes: { [AGENCY]: [quote(9_700), undefined] }, renewals: { [AGENCY]: [lost('A0115')] }, settlement: new Error('write failed')
+    });
+    const { provider } = providerWith();
+    const captured = captureLogger();
+
+    await run(renewSubscriptionsJob({ database, provider }), captured.logger);
+
+    expect(await captured.records()).toContainEqual(expect.objectContaining({ code: 'RENEWAL_REFUND_NOT_SETTLED', error: { code: 'UNKNOWN' } }));
+  });
+
+  it('refunds nothing for a reference the database recorded as refunded (A0118): it logs it, renews nothing and does not charge again', async () => {
+    const { database, raw } = databaseWith({
+      due: [AGENCY], quotes: { [AGENCY]: [quote(9_700), quote(9_700, 'simulado', PERIOD_END, 1)] }, renewals: { [AGENCY]: [lost('A0118')] }
+    });
+    const { provider, refund, charge } = providerWith();
+    const captured = captureLogger();
+
+    await run(renewSubscriptionsJob({ database, provider }), captured.logger);
+
+    expect(refund).not.toHaveBeenCalled();
+    expect(charge).toHaveBeenCalledTimes(1);
+    expect(callsOf(raw, RECORD_SQL)).toEqual([]);
+    expect(callsOf(raw, SETTLE_SQL)).toEqual([]);
+    expect(callsOf(raw, RENEW_SQL)).toHaveLength(1);
+    expect(await captured.records()).toContainEqual(expect.objectContaining({
+      level: 50, agencyId: AGENCY, providerRef: `fake:${keyFor(AGENCY, 9_700)}`, amountCents: 9_700, code: 'RENEWAL_REFUNDED_REFERENCE'
+    }));
+    expect(await summaryOf(captured)).toMatchObject({ refunded_reference: 1, renewed: 0, refunded: 0, left_for_next_run: 0 });
   });
 });

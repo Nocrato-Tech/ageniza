@@ -63,6 +63,12 @@ const addClients = async (agencyId: string, count: number): Promise<void> => {
   await knex()('clients').insert(Array.from({ length: count }, () => ({ agency_id: agencyId, name: `Cliente ${randomUUID().slice(0, 8)}` })));
 };
 
+const refundsOf = async (agencyId: string) =>
+  (await knex()('subscription_renewal_refunds').where({ agency_id: agencyId }).orderBy('created_at')) as Array<Record<string, unknown>>;
+/** What the Owner's reactivation leaves in the subscription: the cancellation is gone, the period is the same. */
+const reactivate = async (agencyId: string): Promise<void> => {
+  await knex().raw('update public.agency_subscriptions set cancel_at_period_end = false where agency_id = ?', [agencyId]);
+};
 const subscriptionOf = async (agencyId: string) =>
   (await knex()('agency_subscriptions').where({ agency_id: agencyId }).first()) as Record<string, unknown>;
 const chargesOf = async (agencyId: string) =>
@@ -137,6 +143,7 @@ afterAll(async () => {
   try {
     if (agencies.length > 0) {
       await owner?.knex('clients').whereIn('agency_id', agencies).delete();
+      await owner?.knex('subscription_renewal_refunds').whereIn('agency_id', agencies).delete();
       await owner?.knex('subscription_charges').whereIn('agency_id', agencies).delete();
       await owner?.knex('agency_subscriptions').whereIn('agency_id', agencies).delete();
       await owner?.knex('agency_storage_quotas').whereIn('agency_id', agencies).delete();
@@ -371,5 +378,192 @@ describe('subscriptions.renew-due against the database', { timeout: 60_000 }, ()
     expect(recording.refunds).toEqual([]);
     expect(await isListed(failing)).toBe(true);
     expect(await isListed(healthy)).toBe(false);
+  });
+});
+
+// The review of #790 (Coruja): the simulated provider answers the same key with the same reference, and the database only knew the
+// reference had been charged. A renewal that was refunded was confirmed later with the reference whose money had gone back, and the
+// period came out paid with nothing. Both scenarios below were proven by the review against the job as it was.
+describe('a refunded renewal never comes back as a renewal', { timeout: 60_000 }, () => {
+  const isMine = (agencyId: string, request: ChargeRequest): boolean => request.idempotencyKey.startsWith(`renewal:${agencyId}:`);
+
+  it('scenario A: canceled while the card is charged, refunded, reactivated in the same period: the next charge is another payment and renews with money', async () => {
+    const agencyId = await seedAgency();
+    let own = 0;
+    const { provider, recording } = await recordedProvider(async (request) => {
+      if (!isMine(agencyId, request)) return;
+      own += 1;
+      if (own === 1) await knex().raw('update public.agency_subscriptions set cancel_at_period_end = true where agency_id = ?', [agencyId]);
+    });
+    const periodEnd = (await subscriptionOf(agencyId)).current_period_end as Date;
+
+    await runJob(provider, captureLogs());
+
+    const [first] = mine(recording, agencyId);
+    expect(recording.refunds).toEqual([{ idempotencyKey: `refund:${first!.idempotencyKey}`, providerRef: `sim:${first!.idempotencyKey}`, amountCents: 9_700 }]);
+    expect(await chargesOf(agencyId)).toEqual([]);
+    expect(await refundsOf(agencyId)).toEqual([expect.objectContaining({
+      provider: 'simulado', provider_ref: `sim:${first!.idempotencyKey}`, amount_cents: 9_700, reason: 'A0115', status: 'refunded'
+    })]);
+    expect((await refundsOf(agencyId))[0]!.period_end).toEqual(periodEnd);
+
+    // The Owner reactivates inside the same period, and the next run charges again.
+    await reactivate(agencyId);
+    expect(await isListed(agencyId)).toBe(true);
+    await runJob(provider, captureLogs());
+
+    const [, second] = mine(recording, agencyId);
+    expect(mine(recording, agencyId)).toHaveLength(2);
+    expect(second!.idempotencyKey).not.toBe(first!.idempotencyKey);
+    expect(second!.idempotencyKey.endsWith(':1')).toBe(true);
+    const charges = await chargesOf(agencyId);
+    expect(charges).toHaveLength(1);
+    expect(charges[0]).toMatchObject({ kind: 'renewal', status: 'confirmed', amount_cents: 9_700, provider_ref: `sim:${second!.idempotencyKey}` });
+    expect(charges[0]!.provider_ref).not.toBe(`sim:${first!.idempotencyKey}`);
+    expect(recording.refunds).toHaveLength(1);
+    expect(await auditOf(agencyId)).toEqual(['subscription.renewed']);
+    expect(await isListed(agencyId)).toBe(false);
+  });
+
+  it('scenario B: a scheduled decrease whose usage oscillates is refused twice in a run, and the next run charges neither of the refunded payments', async () => {
+    const agencyId = await seedAgency({ plan: 'profissional', pending: { plan: 'essencial' } });
+    let own = 0;
+    // The first charge (9700) finds the usage grown (expected 19700); the second (19700) finds it back (expected 9700).
+    const { provider, recording } = await recordedProvider(async (request) => {
+      if (!isMine(agencyId, request)) return;
+      own += 1;
+      if (own === 1) await addClients(agencyId, 12);
+      if (own === 2) await knex()('clients').where({ agency_id: agencyId }).delete();
+    });
+    const captured = captureLogs();
+
+    await runJob(provider, captured);
+
+    expect(mine(recording, agencyId).map((request) => request.amountCents)).toEqual([9_700, 19_700]);
+    expect(recording.refunds.map((request) => request.amountCents)).toEqual([9_700, 19_700]);
+    expect(await chargesOf(agencyId)).toEqual([]);
+    expect(await subscriptionOf(agencyId)).toMatchObject({ plan_key: 'profissional', pending_plan_key: 'essencial' });
+    expect((await refundsOf(agencyId)).map((row) => [row.amount_cents, row.reason, row.status])).toEqual([[9_700, 'A0114', 'refunded'], [19_700, 'A0114', 'refunded']]);
+
+    await runJob(provider, captureLogs());
+
+    // 9700 again, as in the first charge, but another attempt: the provider is asked for a payment, not handed the refunded one.
+    const keys = mine(recording, agencyId).map((request) => request.idempotencyKey);
+    expect(mine(recording, agencyId).map((request) => request.amountCents)).toEqual([9_700, 19_700, 9_700]);
+    expect(new Set(keys).size).toBe(3);
+    expect(keys[2]!.endsWith(':2')).toBe(true);
+    const charges = await chargesOf(agencyId);
+    expect(charges).toHaveLength(1);
+    expect(charges[0]).toMatchObject({ status: 'confirmed', amount_cents: 9_700, provider_ref: `sim:${keys[2]}` });
+    expect(recording.refunds).toHaveLength(2);
+    expect(await subscriptionOf(agencyId)).toMatchObject({ plan_key: 'essencial', pending_plan_key: null });
+    expect(await auditOf(agencyId)).toEqual(['subscription.downgrade_applied']);
+  });
+
+  it('records the refund in the database before the provider is asked for it', async () => {
+    const agencyId = await seedAgency();
+    const { provider: inner } = await recordedProvider(async (request) => {
+      if (isMine(agencyId, request)) await knex().raw('update public.agency_subscriptions set cancel_at_period_end = true where agency_id = ?', [agencyId]);
+    });
+    let seenWhenAsked: Array<Record<string, unknown>> | undefined;
+    const provider: PaymentProvider = {
+      name: inner.name,
+      charge: (request) => inner.charge(request),
+      async refund(request) {
+        seenWhenAsked = await refundsOf(agencyId);
+        return inner.refund(request);
+      }
+    };
+
+    await runJob(provider, captureLogs());
+
+    expect(seenWhenAsked).toEqual([expect.objectContaining({ amount_cents: 9_700, status: 'recorded', settled_at: null })]);
+    expect((await refundsOf(agencyId))[0]).toMatchObject({ status: 'refunded' });
+  });
+
+  it('refuses a provider that answers a refunded reference again, whatever the key: nothing renews, nothing is refunded twice, and a person is told', async () => {
+    const agencyId = await seedAgency();
+    const periodEndBefore = (await subscriptionOf(agencyId)).current_period_end;
+    let own = 0;
+    const { provider: inner, recording } = await recordedProvider(async (request) => {
+      if (!isMine(agencyId, request)) return;
+      own += 1;
+      if (own === 1) await knex().raw('update public.agency_subscriptions set cancel_at_period_end = true where agency_id = ?', [agencyId]);
+    });
+    // A provider that ignores the idempotency key and hands back the one payment it has: the database must not take it.
+    const provider: PaymentProvider = {
+      name: inner.name,
+      async charge(request) {
+        const result = await inner.charge(request);
+        return result.status === 'approved' && isMine(agencyId, request) ? { ...result, providerRef: 'sim:one-payment-for-every-key' } : result;
+      },
+      refund: (request) => inner.refund(request)
+    };
+    await runJob(provider, captureLogs());
+    await reactivate(agencyId);
+    const captured = captureLogs();
+
+    await runJob(provider, captured);
+
+    expect(mine(recording, agencyId)).toHaveLength(2);
+    expect(await chargesOf(agencyId)).toEqual([]);
+    expect(await auditOf(agencyId)).toEqual([]);
+    expect((await subscriptionOf(agencyId)).current_period_end).toEqual(periodEndBefore);
+    expect(recording.refunds).toHaveLength(1);
+    expect(captured.records()).toContainEqual(expect.objectContaining({
+      level: 50, agencyId, providerRef: 'sim:one-payment-for-every-key', amountCents: 9_700, code: 'RENEWAL_REFUNDED_REFERENCE'
+    }));
+    expect(await isListed(agencyId)).toBe(true);
+  });
+
+  it('catches a refund that throws: it is logged with the reference and the amount, the record stays to be reconciled, and the next run charges a new payment', async () => {
+    const agencyId = await seedAgency({ plan: 'profissional', pending: { plan: 'essencial' } });
+    let own = 0;
+    const { provider: inner, recording } = await recordedProvider(async (request) => {
+      if (!isMine(agencyId, request)) return;
+      own += 1;
+      if (own === 1) await addClients(agencyId, 12);
+    });
+    const provider: PaymentProvider = {
+      name: inner.name,
+      charge: (request) => inner.charge(request),
+      refund: () => Promise.reject(new TypeError('socket hang up'))
+    };
+    const captured = captureLogs();
+
+    await runJob(provider, captured);
+
+    const [first] = mine(recording, agencyId);
+    expect(mine(recording, agencyId)).toHaveLength(1);
+    expect(captured.records()).toContainEqual(expect.objectContaining({
+      level: 50, agencyId, providerRef: `sim:${first!.idempotencyKey}`, amountCents: 9_700, reason: 'refund_threw', code: 'RENEWAL_REFUND_FAILED'
+    }));
+    expect(await refundsOf(agencyId)).toEqual([expect.objectContaining({ provider_ref: `sim:${first!.idempotencyKey}`, amount_cents: 9_700, status: 'recorded', settled_at: null })]);
+    expect(await chargesOf(agencyId)).toEqual([]);
+
+    await runJob(inner, captureLogs());
+
+    const [, second] = mine(recording, agencyId);
+    expect(mine(recording, agencyId).map((request) => request.amountCents)).toEqual([9_700, 19_700]);
+    expect(second!.idempotencyKey).not.toBe(first!.idempotencyKey);
+    expect((await chargesOf(agencyId)).map((charge) => [charge.amount_cents, charge.provider_ref])).toEqual([[19_700, `sim:${second!.idempotencyKey}`]]);
+  });
+
+  it('writes down a refund the provider could not make as failed, with its reason', async () => {
+    const agencyId = await seedAgency();
+    const { provider: inner } = await recordedProvider(async (request) => {
+      if (isMine(agencyId, request)) await knex().raw('update public.agency_subscriptions set cancel_at_period_end = true where agency_id = ?', [agencyId]);
+    });
+    const provider: PaymentProvider = {
+      name: inner.name,
+      charge: (request) => inner.charge(request),
+      refund: () => Promise.resolve({ status: 'failed', reason: 'provider_unavailable' })
+    };
+    const captured = captureLogs();
+
+    await runJob(provider, captured);
+
+    expect(await refundsOf(agencyId)).toEqual([expect.objectContaining({ amount_cents: 9_700, reason: 'A0115', status: 'failed', failure: 'provider_unavailable' })]);
+    expect(captured.records()).toContainEqual(expect.objectContaining({ level: 50, agencyId, amountCents: 9_700, reason: 'provider_unavailable', code: 'RENEWAL_REFUND_FAILED' }));
   });
 });
