@@ -2893,18 +2893,6 @@ a.client-general__block:focus-visible {
   font: var(--body-lg);
 }
 
-.public-page .public-home__lead {
-  font: var(--heading-xl);
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
-}
-
-.public-page__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
 .public-page__ok,
 .public-page__alert p {
   display: flex;
