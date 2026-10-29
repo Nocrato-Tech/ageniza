@@ -53,3 +53,50 @@ describe('global origin protection', () => {
     await app.close();
   });
 });
+
+describe('origin protection for the native app', () => {
+  const build = async (mobileAppOrigins?: readonly string[]) => {
+    const app = Fastify();
+    app.setErrorHandler((error, _request, reply) => reply.status((error as { statusCode?: number }).statusCode ?? 500).send({ code: (error as { code?: string }).code ?? 'INTERNAL_ERROR' }));
+    registerOriginProtection(app, { appPublicUrl: 'https://app.example.test', ...(mobileAppOrigins === undefined ? {} : { mobileAppOrigins }) });
+    app.post('/resource', async () => ({ ok: true }));
+    return app;
+  };
+
+  it('refuses the app\'s origin while no scheme is listed, however it is sent', async () => {
+    for (const mobileAppOrigins of [undefined, []]) {
+      const app = await build(mobileAppOrigins);
+      for (const headers of [{ 'expo-origin': 'ageniza://' }, { origin: 'ageniza://' }, { 'expo-origin': 'https://app.example.test' }]) {
+        const response = await app.inject({ method: 'POST', url: '/resource', headers });
+        expect(response.statusCode).toBe(403);
+        expect(response.json()).toMatchObject({ code: 'CSRF_REJECTED' });
+      }
+      await app.close();
+    }
+  });
+
+  it('accepts a listed scheme as expo-origin or as Origin', async () => {
+    const app = await build(['ageniza://']);
+    const viaExpo = await app.inject({ method: 'POST', url: '/resource', headers: { 'expo-origin': 'ageniza:///' } });
+    expect(viaExpo.statusCode).toBe(200);
+    expect((await app.inject({ method: 'POST', url: '/resource', headers: { origin: 'ageniza://' } })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'POST', url: '/resource', headers: { origin: 'https://app.example.test' } })).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('refuses a scheme that is not listed, and a missing origin', async () => {
+    const app = await build(['ageniza://']);
+    for (const headers of [{ 'expo-origin': 'evil://' }, { origin: 'evil://' }, { 'expo-origin': 'https://evil.test' }, {}]) {
+      const response = await app.inject({ method: 'POST', url: '/resource', headers });
+      expect(response.statusCode, JSON.stringify(headers)).toBe(403);
+    }
+    await app.close();
+  });
+
+  it('never lets expo-origin outvote an Origin that was sent', async () => {
+    const app = await build(['ageniza://']);
+    const response = await app.inject({ method: 'POST', url: '/resource', headers: { origin: 'https://evil.test', 'expo-origin': 'ageniza://' } });
+    expect(response.statusCode).toBe(403);
+    await app.close();
+  });
+});

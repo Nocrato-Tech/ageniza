@@ -112,6 +112,8 @@ export interface ApiConfig extends ServerConfig {
   host: string;
   port: number;
   corsOrigins: readonly string[];
+  /** Deep-link schemes (`ageniza://`) of the native app allowed to write and to receive the Google sign-in; empty means the web only. */
+  mobileAppOrigins: readonly string[];
   bodyLimitBytes: number;
   /** Explicit proxy networks only. An empty list means Fastify does not trust forwarding headers. */
   trustedProxyCidrs: readonly string[];
@@ -290,6 +292,7 @@ const apiSchema = sharedServerSchema.extend({
   API_HOST: z.string().trim().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   API_CORS_ORIGINS: z.string().default('http://127.0.0.1:5173').transform(commaSeparatedValues),
+  MOBILE_APP_ORIGINS: z.string().default('').transform(commaSeparatedValues),
   API_BODY_LIMIT_BYTES: z.coerce.number().int().min(1_024).max(50 * 1024 * 1024).default(1_048_576),
   API_TRUSTED_PROXY_CIDRS: z.string().default('').transform(commaSeparatedValues),
   GOOGLE_CLIENT_ID: optionalText(),
@@ -487,6 +490,9 @@ const validateIdentityStorageEnvironment = (
  * browser reaches the API on, which the web container serves under `/api`; `GOOGLE_CALLBACK_URL` replaces it where the
  * API is on its own origin, as in the local stack.
  */
+/** Schemes that are a website or carry code, never an app: listing one would turn the app origin into a web one. */
+const webSchemes: ReadonlySet<string> = new Set(['http', 'https', 'ws', 'wss', 'ftp', 'file', 'data', 'blob', 'javascript', 'about']);
+
 const loadGoogleConfig = (
   environment: ServerConfig['environment'],
   values: { APP_PUBLIC_URL: string; GOOGLE_CLIENT_ID?: string | undefined; GOOGLE_CLIENT_SECRET?: string | undefined; GOOGLE_CALLBACK_URL?: string | undefined }
@@ -558,6 +564,12 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     }
     assertRuntimeUrlSafety(serverConfig.environment, 'API_CORS_ORIGINS', origin, { requireHttpsInProduction: true });
   }
+  for (const origin of result.data.MOBILE_APP_ORIGINS) {
+    const scheme = /^([a-z][a-z0-9+.-]*):\/\/$/.exec(origin)?.[1];
+    if (scheme === undefined || webSchemes.has(scheme)) {
+      throw new ConfigValidationError('API', [{ path: 'MOBILE_APP_ORIGINS', message: 'must contain app schemes such as ageniza://; supplied values are redacted' }]);
+    }
+  }
   if (result.data.API_TRUSTED_PROXY_CIDRS.some((value) => value === '*' || value.toLowerCase() === 'true')) {
     throw new ConfigValidationError('API', [{ path: 'API_TRUSTED_PROXY_CIDRS', message: 'must name explicit proxy networks; supplied values are redacted' }]);
   }
@@ -612,6 +624,7 @@ export const loadApiConfig = (env: ServerEnvironment): ApiConfig => {
     host: result.data.API_HOST,
     port: result.data.PORT,
     corsOrigins: result.data.API_CORS_ORIGINS,
+    mobileAppOrigins: result.data.MOBILE_APP_ORIGINS,
     bodyLimitBytes: result.data.API_BODY_LIMIT_BYTES,
     trustedProxyCidrs: result.data.API_TRUSTED_PROXY_CIDRS,
     containerLocal: result.data.APP_CONTAINER_LOCAL === 'true',

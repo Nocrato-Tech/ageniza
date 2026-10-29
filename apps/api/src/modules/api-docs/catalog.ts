@@ -721,7 +721,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'Navegação, não chamada de API: o navegador é redirecionado (302) para a tela de consentimento do Google, com',
       '`state`, PKCE (S256) e `nonce` próprios do fluxo e só os escopos `openid`, `email` e `profile`.',
       '`intent=reauth` pede ao Google que autentique a pessoa de novo (`prompt=login`), para a conta que não tem senha',
-      'confirmar uma operação sensível; a volta cai em `/entrar/google?intent=reauth`. Com o Google desligado responde 404.'
+      'confirmar uma operação sensível; a volta cai em `/entrar/google?intent=reauth`.',
+      '`appRedirect` é o deep link do app nativo a que o fluxo volta, com a sessão em `?cookie=` (ou `?erro=google`); só vale',
+      'para um esquema de `MOBILE_APP_ORIGINS`, e outro valor responde `400`. Com o Google desligado responde 404.'
     ].join('\n'),
     access: 'Público',
     permission: null,

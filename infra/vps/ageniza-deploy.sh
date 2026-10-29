@@ -115,6 +115,8 @@ validate_runtime_env() {
       API_PUBLIC_URL) ;;
       # Public trial-notice contact (#725): optional, not a secret; the config loader validates the e-mail.
       SUPPORT_CONTACT_EMAIL) ;;
+      # Deep-link schemes of the native app (app Expo): optional, not a secret; empty keeps the web as the only origin. The config loader validates it.
+      MOBILE_APP_ORIGINS) ;;
       *) die "$RUNTIME_ENV contains a key that is not allowed: $key" ;;
     esac
   done < "$RUNTIME_ENV"

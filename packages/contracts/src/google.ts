@@ -8,11 +8,13 @@ export const AuthProvidersResponseSchema = z.object({ google: z.boolean() }).str
 
 /**
  * `GET /auth/google/start`. `reauth` asks Google to authenticate the person again (the 5-minute proof a Google-only
- * account gives where a password is asked) and lands on the screen that asked for it.
+ * account gives where a password is asked) and lands on the screen that asked for it. `appRedirect` is the deep link of the
+ * native app the sign-in returns to with the session, accepted only for a scheme `MOBILE_APP_ORIGINS` lists.
  */
 export const GOOGLE_INTENTS = ['login', 'reauth'] as const;
 export const AuthGoogleStartQuerySchema = z.object({
-  intent: z.enum(GOOGLE_INTENTS).optional()
+  intent: z.enum(GOOGLE_INTENTS).optional(),
+  appRedirect: z.string().max(512).optional()
 }).strict();
 
 /**

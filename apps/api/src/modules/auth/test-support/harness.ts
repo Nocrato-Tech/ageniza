@@ -152,6 +152,7 @@ export const buildTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig =
   host: '127.0.0.1',
   port: 0,
   corsOrigins: [TEST_APP_PUBLIC_URL],
+  mobileAppOrigins: [],
   bodyLimitBytes: 1_048_576,
   trustedProxyCidrs: [],
   containerLocal: false,
@@ -345,7 +346,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     database,
     emailService,
     legalVersions: { terms: config.authTermsVersion, privacy: config.authPrivacyVersion },
-    ...(config.google === undefined ? {} : { google: { appPublicUrl: config.appPublicUrl } })
+    ...(config.google === undefined ? {} : { google: { appPublicUrl: config.appPublicUrl, mobileAppOrigins: config.mobileAppOrigins } })
   };
   const paymentProvider = options.paymentProvider === undefined
     ? await createPaymentProvider({ production: false, provider: 'simulado' })

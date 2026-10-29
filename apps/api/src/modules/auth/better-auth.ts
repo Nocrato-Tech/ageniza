@@ -1,4 +1,5 @@
-import { betterAuth } from 'better-auth';
+import { expo } from '@better-auth/expo';
+import { betterAuth, type BetterAuthPlugin } from 'better-auth';
 import { PostgresDialect } from 'kysely';
 import type { Pool } from 'pg';
 
@@ -13,7 +14,7 @@ import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
 
 export interface CreateAuthDependencies {
   readonly pool: Pool;
-  readonly config: Pick<ApiConfig, 'authSecret' | 'appPublicUrl' | 'environment' | 'google'>;
+  readonly config: Pick<ApiConfig, 'authSecret' | 'appPublicUrl' | 'environment' | 'google' | 'mobileAppOrigins'>;
   readonly sender: EmailService;
   readonly logger: CoreLogger;
   readonly auditRecorder: AuthAuditRecorder;
@@ -38,7 +39,9 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
     secret: dependencies.config.authSecret,
     baseURL: dependencies.config.appPublicUrl,
     basePath: '/auth',
-    trustedOrigins: [dependencies.config.appPublicUrl],
+    trustedOrigins: [dependencies.config.appPublicUrl, ...dependencies.config.mobileAppOrigins],
+    // Hands the session to the app on the deep link its Google sign-in returns to; inert while no app scheme is listed.
+    plugins: [expo({ disableOriginOverride: true }) as BetterAuthPlugin],
     telemetry: { enabled: false },
     database: {
       dialect: new PostgresDialect({ pool: dependencies.pool }),

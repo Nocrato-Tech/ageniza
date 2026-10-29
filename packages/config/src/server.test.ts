@@ -809,3 +809,23 @@ describe('server configuration', () => {
     });
   });
 });
+
+describe('MOBILE_APP_ORIGINS', () => {
+  it('is empty unless set, so the web stays the only origin', () => {
+    expect(loadApiConfig(localEnvironment).mobileAppOrigins).toEqual([]);
+    expect(loadApiConfig({ ...localEnvironment, MOBILE_APP_ORIGINS: '' }).mobileAppOrigins).toEqual([]);
+  });
+
+  it('lists the schemes of the app', () => {
+    expect(loadApiConfig({ ...localEnvironment, MOBILE_APP_ORIGINS: 'ageniza://, ageniza-dev://' }).mobileAppOrigins).toEqual(['ageniza://', 'ageniza-dev://']);
+  });
+
+  it.each(['ageniza', 'ageniza://host', 'ageniza://path/x', 'Ageniza://', 'https://', 'http://', 'javascript://', 'file://', 'data://', '://'])(
+    'refuses %s, which is not the scheme of an app',
+    (value) => {
+      const attempt = (): unknown => loadApiConfig({ ...localEnvironment, MOBILE_APP_ORIGINS: 'ageniza://,' + value });
+      expect(attempt).toThrow(ConfigValidationError);
+      expect(attempt).toThrow(/MOBILE_APP_ORIGINS/);
+    }
+  );
+});

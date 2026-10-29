@@ -136,6 +136,11 @@ describe('validate_runtime_env of the dev entrypoint', () => {
     expect(validate(fromExample()).status).toBe(0);
   });
 
+  it('accepts the deep-link schemes of the native app, which the example leaves empty', () => {
+    expect(fromExample()).toContain('MOBILE_APP_ORIGINS=');
+    expect(validate(replacing('MOBILE_APP_ORIGINS', 'ageniza://')).status).toBe(0);
+  });
+
   it.each([
     ['a real SMTP provider', 'SMTP_URL=smtps://user:key@smtp.example.com:465'],
     ['the Mailpit address itself (it is fixed by the compose file)', 'SMTP_URL=smtp://mailpit:1025'],

@@ -7432,7 +7432,7 @@
       "get": {
         "operationId": "getAuthGoogleStart",
         "summary": "Leva o navegador ao Google para entrar",
-        "description": "Navegação, não chamada de API: o navegador é redirecionado (302) para a tela de consentimento do Google, com\n`state`, PKCE (S256) e `nonce` próprios do fluxo e só os escopos `openid`, `email` e `profile`.\n`intent=reauth` pede ao Google que autentique a pessoa de novo (`prompt=login`), para a conta que não tem senha\nconfirmar uma operação sensível; a volta cai em `/entrar/google?intent=reauth`. Com o Google desligado responde 404.\n\nAcesso: Público.",
+        "description": "Navegação, não chamada de API: o navegador é redirecionado (302) para a tela de consentimento do Google, com\n`state`, PKCE (S256) e `nonce` próprios do fluxo e só os escopos `openid`, `email` e `profile`.\n`intent=reauth` pede ao Google que autentique a pessoa de novo (`prompt=login`), para a conta que não tem senha\nconfirmar uma operação sensível; a volta cai em `/entrar/google?intent=reauth`.\n`appRedirect` é o deep link do app nativo a que o fluxo volta, com a sessão em `?cookie=` (ou `?erro=google`); só vale\npara um esquema de `MOBILE_APP_ORIGINS`, e outro valor responde `400`. Com o Google desligado responde 404.\n\nAcesso: Público.",
         "tags": [
           "auth"
         ],
@@ -7448,6 +7448,15 @@
             },
             "required": false,
             "name": "intent",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "required": false,
+            "name": "appRedirect",
             "in": "query"
           }
         ],

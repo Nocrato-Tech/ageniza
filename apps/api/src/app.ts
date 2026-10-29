@@ -169,7 +169,7 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   registerErrorHandling(app);
   // Global CSRF/origin check, registered before any domain module so every current and future
   // route is covered; no route implements this check on its own (issue #31 section 5.1).
-  registerOriginProtection(app, { appPublicUrl: options.config.appPublicUrl });
+  registerOriginProtection(app, { appPublicUrl: options.config.appPublicUrl, mobileAppOrigins: options.config.mobileAppOrigins });
   registerSystemModule(app, {
     readiness: options.readiness ?? createReadiness(true),
     dependencyChecks: options.dependencyChecks ?? []

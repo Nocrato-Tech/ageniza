@@ -187,7 +187,7 @@ export const startApi = async (): Promise<void> => {
       database,
       emailService,
       legalVersions: { terms: config.authTermsVersion, privacy: config.authPrivacyVersion },
-      ...(config.google === undefined ? {} : { google: { appPublicUrl: config.appPublicUrl } })
+      ...(config.google === undefined ? {} : { google: { appPublicUrl: config.appPublicUrl, mobileAppOrigins: config.mobileAppOrigins } })
     },
     invitations: invitationDependencies,
     contexts: contextDependencies,
