@@ -6,8 +6,10 @@
 
 **Decisão.** Os dados do dev são descartáveis: o dev não entra no backup diário, e perder o banco do dev é um incidente sem consequência para clientes. Em troca, nenhum dado real de agência, cliente ou pessoa entra no dev: nem cópia da produção, nem importação, nem conta de pessoa de fora. O dev usa buckets R2 próprios, com tokens que só alcançam esses buckets, e um segredo de autenticação próprio.
 
+Nunca se copia o banco de produção para o dev. Para testar com dado parecido com o real, só se usa uma cópia anonimizada, feita fora do dev e sem identificar nenhuma pessoa. O dev tem uma semente de teste própria (dado inventado), que recria o ambiente do zero (issue #777).
+
 **Consequência.** Refazer o dev é recriar o volume e rodar as migrations. O deploy recusa um `runtime.env` cujos buckets não tenham `dev` no nome. A primeira agência-piloto, ou qualquer dado real, só entra na produção.
 
-**Origem.** Desenho do ambiente de dev na VPS (issue #774), tomado pelo implementador a partir da decisão do dono.
+**Origem.** Desenho do ambiente de dev na VPS (issue #774); confirmada pelo dono em 2026-10-29.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-10-29.

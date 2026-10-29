@@ -1,6 +1,6 @@
 name: Pull request reviewer
 
-# Stand-in for CODEOWNERS review requests, which need a paid plan on this private repository.
+# Stand-in for CODEOWNERS review requests, which are not enforced yet on this repository (public, on purpose).
 on:
   pull_request:
     types: [opened, reopened, ready_for_review]

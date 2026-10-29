@@ -253,9 +253,12 @@ evidence.
 
 ## Amendment (2026-09-15): GitHub Free constraints
 
-The organization is on GitHub Free and the repository is private, so Environment
-required reviewers, deployment branch restrictions, rulesets, and branch
-protection are unavailable. Any collaborator with write access can run a
+The organization is on GitHub Free. This amendment was written when the
+repository was believed to be private, where Environment required reviewers,
+deployment branch restrictions, rulesets, and branch protection are unavailable.
+The repository is in fact public, on purpose (owner decision, 2026-10-29), so
+GitHub Free offers them and they are not yet enabled; the rules below hold until
+they are, and nothing sensitive may be committed to a public repository. Any collaborator with write access can run a
 workflow on any branch, so any secret stored in GitHub is readable by every
 collaborator. The trust boundaries above are changed as follows, and where this
 amendment conflicts with the earlier sections (blue/green candidates, Origin CA
