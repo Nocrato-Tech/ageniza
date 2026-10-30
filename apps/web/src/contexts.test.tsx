@@ -274,7 +274,7 @@ describe('ContextSelectPage (/contextos)', () => {
     );
 
     await waitFor(() => expect(probe.pathname).toBe('/comecar'));
-    expect(await screen.findByRole('heading', { name: 'Sua conta está pronta' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo ao Ageniza' })).toBeTruthy();
     expect(calls.logout).toBe(0);
   });
 

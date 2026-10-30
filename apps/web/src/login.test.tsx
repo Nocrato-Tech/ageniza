@@ -308,9 +308,9 @@ describe('LoginPage (/entrar)', () => {
     submit('pessoa@example.test', 'a correct password');
 
     await waitFor(() => expect(probe.pathname).toBe('/comecar'));
-    expect(await screen.findByRole('heading', { name: 'Sua conta está pronta' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo ao Ageniza' })).toBeTruthy();
     const createAgency = screen.getByRole('button', { name: 'Criar agência' });
-    expect(createAgency.getAttribute('aria-disabled') === 'true' || createAgency.hasAttribute('disabled')).toBe(true);
+    expect(createAgency.hasAttribute('disabled') || createAgency.getAttribute('aria-disabled') === 'true').toBe(false);
     expect(end).not.toHaveBeenCalled();
     expect(calls.logout).toBe(0);
   });
