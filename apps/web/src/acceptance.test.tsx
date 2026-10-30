@@ -152,14 +152,14 @@ describe('the block before the first use (issue #713)', () => {
     expect(await screen.findByRole('heading', { name: 'Antes de começar' })).toBeTruthy();
     expect(probe.pathname).toBe('/aceite');
     expect(screen.queryByRole('heading', { name: 'Onde você quer entrar?' })).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Sua conta está pronta' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Bem-vindo ao Ageniza' })).toBeNull();
   });
 
   it('lets an account that accepted through to the screen it asked for', async () => {
     const { impl } = makeFetch({ pending: [] });
     const { probe } = renderApp(impl, '/comecar');
 
-    expect(await screen.findByRole('heading', { name: 'Sua conta está pronta' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo ao Ageniza' })).toBeTruthy();
     expect(probe.pathname).toBe('/comecar');
   });
 
@@ -167,7 +167,7 @@ describe('the block before the first use (issue #713)', () => {
     const { impl } = makeFetch({ pending: [], read: () => apiError(403, 'FORBIDDEN') });
     const { probe } = renderApp(impl, '/comecar');
 
-    expect(await screen.findByRole('heading', { name: 'Sua conta está pronta' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo ao Ageniza' })).toBeTruthy();
     expect(probe.pathname).toBe('/comecar');
   });
 
@@ -176,7 +176,7 @@ describe('the block before the first use (issue #713)', () => {
     const { probe } = renderApp(impl, '/comecar');
 
     // The default of the app retries a 5xx once after a second; the gate must not wait for it.
-    expect(await screen.findByRole('heading', { name: 'Sua conta está pronta' }, { timeout: 400 })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo ao Ageniza' }, { timeout: 400 })).toBeTruthy();
     expect(probe.pathname).toBe('/comecar');
     expect(counts.read).toBe(1);
   });

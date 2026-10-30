@@ -38,7 +38,7 @@ export function TermsRedirect() {
  * The block before the first use (specs/auth.md section 13): an account that has Google and has not accepted the Terms and the
  * Privacy Policy, or that Google took over, has no context until it does, so the resolve answers `none` and the person lands on
  * `/comecar`, which sends it to `/aceite` instead. The server decides (`required`); this only follows it. While the answer is on
- * its way the page waits, so the "Sua conta está pronta" screen is never drawn first, and when it cannot be read the page opens:
+ * its way the page waits, so the "Bem-vindo ao Ageniza" screen is never drawn first, and when it cannot be read the page opens:
  * the server refuses what needs the acceptance.
  */
 export function AcceptanceGate({ children }: { children: ReactNode }) {
