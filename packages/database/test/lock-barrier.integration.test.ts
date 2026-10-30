@@ -195,3 +195,53 @@ describe('waitForBackendsBlockedBy (#767)', () => {
     await blocked;
   }, 30_000);
 });
+
+describe('the deadlock_timeout of the holder', () => {
+  const shown = async (trx: Pick<Knex, 'raw'>): Promise<string> => ((await trx.raw('show deadlock_timeout')) as { rows: Array<{ deadlock_timeout: string }> }).rows[0]!.deadlock_timeout;
+
+  it('is longer than the server\'s inside the holder\'s transaction, and goes back to the server\'s when it ends', async () => {
+    const key = randomUUID();
+    const serverDefault = await shown(owner.knex);
+    const holder = await holding(key);
+    const blocked = blockedBehind(key);
+
+    await requestLockOnceBlocked(holder, 'select 1 where %L is not null', ['anything']);
+    expect(await shown(holder)).toBe('10s');
+    await holder.rollback();
+    await blocked;
+
+    expect(await shown(owner.knex)).toBe(serverDefault);
+    expect(serverDefault).not.toBe('10s');
+  }, 30_000);
+
+  it('takes the value the caller asks for', async () => {
+    const key = randomUUID();
+    const holder = await holding(key);
+    const blocked = blockedBehind(key);
+
+    await requestLockOnceBlocked(holder, 'select 1 where %L is not null', ['anything'], { holderDeadlockTimeoutSeconds: 4 });
+    expect(await shown(holder)).toBe('4s');
+    await holder.rollback();
+    await blocked;
+  }, 30_000);
+
+  it('makes the waiter the victim even when the waiter\'s own deadlock_timeout is the longer of the two, which is what a busy machine does to it', async () => {
+    // The waiter checks for a deadlock 3s after it starts to wait, the server's default (1s) is the holder's without the fix:
+    // the holder's check would run first, with the cycle closed, and the holder would die of its own 40P01.
+    expect(Number.parseFloat(await shown(owner.knex))).toBeLessThan(3);
+    const first = randomUUID();
+    const second = randomUUID();
+    const holder = await holding(first);
+    const waiter = owner.knex.transaction(async (trx) => {
+      await trx.raw("set local deadlock_timeout = '3s'");
+      await advisory(trx, second);
+      await advisory(trx, first);
+    });
+    const outcome = waiter.then(() => 'committed', (error: { code?: string }) => error.code);
+
+    await requestLockOnceBlocked(holder, ADVISORY, [second]);
+
+    expect(await outcome).toBe('40P01');
+    await holder.rollback();
+  }, 30_000);
+});

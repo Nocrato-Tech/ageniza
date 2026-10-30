@@ -102,13 +102,6 @@ export const createIntegrationModel = async (urls: { readonly applicationUrl: st
   return { runId, baseDatabase, modelDatabase, baseApplicationUrl: applicationUrl, baseOwnerUrl: ownerUrl };
 };
 
-/**
- * The lock-barrier tests need the waiting backend to be the deadlock victim, which holds only while the holder closes
- * the cycle within `deadlock_timeout` of the waiter starting to wait. Files running side by side starve each other
- * for longer than the default 1s now and then: in one parallel run two holders were aborted by their own 40P01.
- */
-const CLONE_DEADLOCK_TIMEOUT = '3s';
-
 const OBJECT_IN_USE = '55006';
 const CLONE_ATTEMPTS = 5;
 
@@ -126,8 +119,6 @@ export const cloneIntegrationDatabase = async (model: IntegrationModel): Promise
       }
     }
   });
-  await withAdministrator(model.baseOwnerUrl, (client) =>
-    client.query(`alter database ${quoteIdentifier(database)} set deadlock_timeout = '${CLONE_DEADLOCK_TIMEOUT}'`));
   let dropped = false;
   return {
     database,

@@ -34,12 +34,6 @@ describe('the database of an API integration file (issue #792)', () => {
     expect(databaseOf(OWNER_DATABASE_URL)).toBe(name);
   });
 
-  it('waits 3s before it calls a lock cycle a deadlock, so the waiter of a lock-barrier race is the victim and not the holder', async () => {
-    const [shown] = await queryAsOwner<{ deadlock_timeout: string }>('show deadlock_timeout');
-
-    expect(shown?.deadlock_timeout).toBe('3s');
-  });
-
   it('keeps what the file writes out of the model and out of the operator\'s database', async () => {
     const { base, run } = CLONE_NAME.exec(await currentDatabase())?.groups ?? {};
     await owner.knex('agencies').insert({ id: agencyId, name: `Isolation ${agencyId}`, owner_user_id: null });
