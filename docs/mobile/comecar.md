@@ -11,8 +11,16 @@ Esta documentação e a referência da API estão em **<https://dev.ageniza.com.
 
 - Saúde da API: `GET /health` (processo vivo) e `GET /ready` (pronta para tráfego).
 - A documentação interativa da API (`/docs`) só existe no ambiente local (`pnpm dev`).
-- Os e-mails do ambiente de dev (confirmação, convite, aprovação) caem numa caixa interna protegida; o acesso é liberado por e-mail pelo dono.
+- **E-mail no dev não chega ao Gmail.** Confirmação de conta, convite, link de aprovação e recuperação de senha caem numa caixa interna: **<https://mail-dev.ageniza.com.br>**. Para abrir, digite o seu e-mail e use o código que chega no seu Gmail; só e-mails liberados pelo dono entram.
+- **Login com Google no dev**: só funciona depois que o dono configura as credenciais do Google no servidor; até lá, `GET /auth/providers` responde `{ "google": false }` e o botão não deve aparecer.
 - Os planos pagos no dev usam um provedor **simulado**: `POST /agencies/:agencyId/subscription/charges/:chargeId/simulated-payment` paga e `POST /agencies/:agencyId/subscription/simulated-period-advance` avança o relógio. Essas rotas não existem em produção.
+
+## Primeiro acesso ao dev
+
+1. Crie a conta em <https://dev.ageniza.com.br> (ou pelo app, com `POST /auth/sign-up`).
+2. Abra <https://mail-dev.ageniza.com.br>, entre com o código que chega no seu Gmail e clique no link de confirmação.
+3. Faça login. Sem agência, crie uma: ela nasce em teste grátis e você é o Owner, com acesso a tudo.
+4. Para testar o portal do cliente, cadastre um cliente na sua agência e adicione outro e-mail seu como pessoa do portal; o convite também cai na caixa do dev.
 
 ## 2. Como a API autentica hoje
 
