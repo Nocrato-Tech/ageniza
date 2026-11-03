@@ -361,6 +361,20 @@ describe('creating a story script (issue #258)', () => {
     expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
   });
 
+  it('answers a body with a huge list of scenes with one small refusal, and writes nothing (GHSA-mrhx-c7xc-m3w5)', async () => {
+    const before = [await scriptCount(cMain), await sceneCount(cMain)];
+    const manyScenes = new Array<Record<string, never>>(100_000).fill({});
+
+    const reply = await call('POST', agencyScripts(agencyA, cMain), 'opVis', { scriptOn: '2026-10-20', scenes: manyScenes });
+
+    expect(reply.statusCode).toBe(400);
+    expect(reply.json().error.code).toBe('VALIDATION_ERROR');
+    expect(reply.json().error.details.issues).toEqual([
+      { path: 'scenes', code: 'too_big', message: 'Array must have at most 10000 elements' }
+    ]);
+    expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
+  });
+
   it('keeps a complete emoji sequence in a scene and refuses the same one broken (issue #539)', async () => {
     const family = text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
     const keycap = text(0x31, 0xfe0f, 0x20e3);
