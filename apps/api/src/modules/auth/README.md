@@ -1,6 +1,6 @@
 # `apps/api/src/modules/auth`
 
-Backend-only authentication core (issue #31, part 1 of 3 of #20). Better Auth 1.7.15 owns credential
+Backend-only authentication core (issue #31, part 1 of 3 of #20). Better Auth 1.7.7 owns credential
 storage and session lifecycle in a dedicated `auth` PostgreSQL schema; this module is the only code
 that talks to it. There is no sign-up, invitation, agency, or role logic here — that is 20B and 20C.
 
