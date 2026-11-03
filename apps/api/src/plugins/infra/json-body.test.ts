@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { CompleteMediaUploadRequestSchema } from '@ageniza/contracts';
 
 import { registerErrorHandling } from './errors.js';
-import { findJsonOverreach, MAX_JSON_CONTAINERS, MAX_JSON_NESTING, registerBoundedJsonParser } from './json-body.js';
+import { findJsonOverreach, MAX_JSON_CONTAINERS, MAX_JSON_NESTING, MAX_JSON_SEPARATORS, registerBoundedJsonParser } from './json-body.js';
 import { routeBody } from './zod.js';
 
 const json = { 'content-type': 'application/json' };
@@ -26,6 +26,25 @@ describe('findJsonOverreach: the scan of the text of a body', () => {
     expect(findJsonOverreach(flatObjects(10_100))?.details).toEqual({
       issues: [{ path: '', code: 'too_big', message: 'The body must have at most 10100 lists and objects' }]
     });
+  });
+
+  it('takes the most commas, and refuses one more (a list of scalars is one container)', () => {
+    const scalars = (count: number): string => `[${new Array<number>(count).fill(1).join(',')}]`;
+    expect(findJsonOverreach(scalars(40_101))).toBeUndefined();
+    expect(findJsonOverreach(scalars(40_102))?.details).toEqual({
+      issues: [{ path: '', code: 'too_big', message: 'The body must have at most 40100 values and keys' }]
+    });
+  });
+
+  it('counts the colons as well: an object of a single container with a key for every value', () => {
+    const keyed = (count: number): string => `{${Array.from({ length: count }, (_, index) => `"${index}":1.5`).join(',')}}`;
+    expect(findJsonOverreach(keyed(20_050))).toBeUndefined();
+    expect(findJsonOverreach(keyed(20_051))).not.toBeUndefined();
+  });
+
+  it('does not count commas and colons inside a string', () => {
+    expect(findJsonOverreach(`{"note":"${',:'.repeat(50_000)}","x":1}`)).toBeUndefined();
+    expect(findJsonOverreach(`{"note":"\\"${',:'.repeat(50_000)}","x":1}`)).toBeUndefined();
   });
 
   it('counts a list that closes: siblings are not depth', () => {
@@ -54,6 +73,9 @@ describe('findJsonOverreach: the scan of the text of a body', () => {
     const body = JSON.stringify({ parts: Array.from({ length: 10_000 }, (_, index) => ({ partNumber: index + 1, eTag: `"${'a'.repeat(32)}"` })) });
     expect(findJsonOverreach(body)).toBeUndefined();
     expect(MAX_JSON_CONTAINERS).toBeGreaterThan(10_002);
+    // 4 separators per part (two colons, one comma inside, one after, but the last) and the colon of "parts": the arithmetic of MAX_JSON_SEPARATORS.
+    expect(body.match(/[,:]/g)).toHaveLength(40_000);
+    expect(MAX_JSON_SEPARATORS).toBeGreaterThan(40_000);
     expect(MAX_JSON_NESTING).toBeGreaterThan(4);
   });
 });

@@ -361,9 +361,9 @@ describe('creating a story script (issue #258)', () => {
     expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
   });
 
-  it('answers a body with a huge list of scenes with one small refusal, and writes nothing (GHSA-mrhx-c7xc-m3w5)', async () => {
+  it('answers a body with a list of scenes over the ceiling with one small refusal, and writes nothing (GHSA-mrhx-c7xc-m3w5)', async () => {
     const before = [await scriptCount(cMain), await sceneCount(cMain)];
-    const manyScenes = new Array<number>(100_000).fill(0);
+    const manyScenes = new Array<number>(10_001).fill(0);
 
     const reply = await call('POST', agencyScripts(agencyA, cMain), 'opVis', { scriptOn: '2026-10-20', scenes: manyScenes });
 

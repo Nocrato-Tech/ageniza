@@ -17,12 +17,22 @@ export const MAX_JSON_NESTING = 64;
  */
 export const MAX_JSON_CONTAINERS = 10_100;
 
+/**
+ * The most commas and colons outside strings a JSON request body may hold: one per value and one per key, which is what `JSON.parse`
+ * allocates for when the body is a single object of a million keys (`{"0":1.5,"1":1.5,...}`), invisible to the limit of containers.
+ * The largest legitimate body is again the completion of 10 000 parts. Each part is `{"partNumber":1,"eTag":"..."}`: two colons and
+ * one comma inside it, one comma after it (but the last), 4 per part less one, plus the colon of `"parts"` at the root: 40 000 in all; the rest is margin.
+ */
+export const MAX_JSON_SEPARATORS = 40_100;
+
 const OPEN_BRACE = 123;
 const CLOSE_BRACE = 125;
 const OPEN_BRACKET = 91;
 const CLOSE_BRACKET = 93;
 const QUOTE = 34;
 const BACKSLASH = 92;
+const COMMA = 44;
+const COLON = 58;
 
 const tooBig = (message: string): HttpError => new HttpError({
   statusCode: 400,
@@ -38,6 +48,7 @@ const tooBig = (message: string): HttpError => new HttpError({
 export const findJsonOverreach = (text: string): HttpError | undefined => {
   let depth = 0;
   let containers = 0;
+  let separators = 0;
   let inString = false;
   let escaped = false;
   for (let index = 0; index < text.length; index += 1) {
@@ -53,6 +64,9 @@ export const findJsonOverreach = (text: string): HttpError | undefined => {
       containers += 1;
       if (depth > MAX_JSON_NESTING) return tooBig(`Nesting must be at most ${MAX_JSON_NESTING} levels`);
       if (containers > MAX_JSON_CONTAINERS) return tooBig(`The body must have at most ${MAX_JSON_CONTAINERS} lists and objects`);
+    } else if (code === COMMA || code === COLON) {
+      separators += 1;
+      if (separators > MAX_JSON_SEPARATORS) return tooBig(`The body must have at most ${MAX_JSON_SEPARATORS} values and keys`);
     } else if ((code === CLOSE_BRACKET || code === CLOSE_BRACE) && depth > 0) {
       depth -= 1;
     }
