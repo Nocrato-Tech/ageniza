@@ -7,7 +7,16 @@ export interface LockBarrierOptions {
   readonly timeoutSeconds?: number;
 }
 
-const ARM_SQL = `select pg_catalog.set_config('ageniza_test.lock_barrier', ?::text, true)`;
+/**
+ * The holder waits ten times longer than any backend of a test database before it runs the deadlock check (the
+ * clones use 3s, `integration-clone.ts`). Both backends of a cycle arm their timer within milliseconds of each other,
+ * and a timer that expired is only served when its backend is scheduled: on a loaded machine, or where timers tick
+ * every 15ms (Windows), the holder's check can run first and the database aborts the holder with its own 40P01. With
+ * this the waiter's check always runs alone, `HOLDER_DEADLOCK_TIMEOUT` earlier than the holder's.
+ */
+const HOLDER_DEADLOCK_TIMEOUT = '30s';
+
+const ARM_SQL = `select pg_catalog.set_config('ageniza_test.lock_barrier', ?::text, true), pg_catalog.set_config('deadlock_timeout', ?::text, true)`;
 
 const BARRIER_SQL = `
   do $barrier$
@@ -38,11 +47,13 @@ const BARRIER_SQL = `
  * Makes an open transaction (the holder of a race test) run `statement` from inside the database, the moment another
  * backend is blocked by it, so that the statement closes a lock cycle without a step of the test process in between.
  *
- * The deadlock detector aborts the backend whose `deadlock_timeout` (1s) expires with the cycle already closed. That is
- * the backend that waited first only if the holder closes the cycle within a second of the other one starting to wait.
- * A poll from Node followed by the holder's statement can be late by more than that whenever the test process stalls
- * (GC, a busy machine), and then the database aborts the holder and the test fails with the holder's own 40P01 (#745,
- * #762). Call it BEFORE starting the transaction under test, never after, and wait for the returned promise together
+ * The deadlock detector aborts the backend whose `deadlock_timeout` expires with the cycle already closed. That is the
+ * backend that waited first only if the holder closes the cycle before the other one's timeout, and only if the holder's
+ * own check cannot run before the other's. A poll from Node followed by the holder's statement can be late by more than
+ * the timeout whenever the test process stalls (GC, a busy machine), and the holder's timer is armed milliseconds after
+ * the waiter's, so a loaded or coarse-timer machine can serve it first: either way the database aborts the holder and
+ * the test fails with the holder's own 40P01 (#745, #762, and the flake of the PR #806 runs). The barrier therefore
+ * raises the holder's `deadlock_timeout` for its transaction. Call it BEFORE starting the transaction under test, never after, and wait for the returned promise together
  * with the response; it rejects when no backend blocks within `timeoutSeconds`.
  *
  * `statement` is a `format()` template whose `%L` placeholders take `bindings` as quoted literals, so a value never
@@ -59,7 +70,7 @@ export const requestLockOnceBlocked = async (
     bindings,
     blockedStatement: options.blockedStatement ?? null,
     timeoutSeconds: options.timeoutSeconds ?? 10
-  })]);
+  }), HOLDER_DEADLOCK_TIMEOUT]);
   await holder.raw(BARRIER_SQL);
 };
 
