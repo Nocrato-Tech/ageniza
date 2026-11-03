@@ -77,6 +77,23 @@ describe('requestLockOnceBlocked', () => {
     await holder.rollback();
   }, 30_000);
 
+  it('makes the holder wait 30s before its own deadlock check, for its transaction only, so its timer can never be served before the waiter\'s', async () => {
+    const key = randomUUID();
+    const holder = await holding(key);
+    const blocked = blockedBehind(key);
+    const shown = async (connection: Pick<Knex, 'raw'>): Promise<string> =>
+      (await connection.raw<{ rows: Array<{ deadlock_timeout: string }> }>('show deadlock_timeout')).rows[0]?.deadlock_timeout ?? '';
+    const before = await shown(holder);
+
+    await requestLockOnceBlocked(holder, 'select 1', []);
+    expect(await shown(holder)).toBe('30s');
+    expect(before).not.toBe('30s');
+
+    await holder.rollback();
+    await blocked;
+    expect(await shown(owner.knex)).toBe(before);
+  }, 30_000);
+
   it('does not run the statement and raises when no backend is ever blocked by the holder', async () => {
     const holder = await holding(randomUUID());
 
