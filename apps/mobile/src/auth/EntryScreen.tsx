@@ -8,7 +8,7 @@ import { space } from '../ui/theme';
 import type { Entry } from './session';
 import icon from '../../assets/icon.png';
 
-export function Login({ onLogin }: { onLogin(): Promise<void> }) {
+export function Login({ onLogin, onDemo }: { onLogin(): Promise<void>; onDemo(): void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [forgot, setForgot] = useState(false);
@@ -38,7 +38,7 @@ export function Login({ onLogin }: { onLogin(): Promise<void> }) {
     <ScrollView contentContainerStyle={[styles.body, { justifyContent: 'center' }]} keyboardShouldPersistTaps="handled">
       <View style={styles.row}><Image source={icon} style={{ width: 48, height: 48 }} /><Copy title>Ageniza</Copy></View>
       <View style={{ gap: space.sm }}><Copy title>{forgot ? 'Recuperar sua senha' : 'Entre no seu fluxo.'}</Copy><Copy muted>{forgot ? 'Enviaremos um link para você criar uma nova senha.' : 'Conteúdos, clientes e aprovações. Tudo no mesmo lugar.'}</Copy></View>
-      {browserPreview && <Copy muted>Prévia da interface. Para acessar sua conta e seus conteúdos, abra o aplicativo no Expo Go.</Copy>}
+      {browserPreview && <><Copy muted>Teste os fluxos com dados fictícios, sem criar conta.</Copy><Button label="Entrar na demonstração" onPress={onDemo} /></>}
       {sent ? <Copy>Se houver uma conta com esse e-mail, o link de recuperação será enviado. No ambiente de teste, consulte a caixa de e-mails do dev.</Copy> : <>
         <Field label="E-mail" value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" textContentType="emailAddress" editable={!busy} />
         {!forgot && <Field label="Senha" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="current-password" textContentType="password" onSubmitEditing={() => void submit()} editable={!busy} />}

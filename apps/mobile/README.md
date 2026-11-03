@@ -18,6 +18,8 @@ Para acesso fora da rede local: `pnpm --filter @ageniza/mobile preview`. O túne
 
 ## O que funciona neste incremento
 
+Na prévia web da Vercel, **Entrar na demonstração** abre um ambiente fictício sem conta e sem chamada à API. É possível buscar clientes de exemplo, consultar conteúdos, criar rascunho, simular envio, alternar agência/cliente e aprovar ou pedir ajuste com comentário. Esses fluxos são simulações locais, não operações de negócio implementadas na API mobile. Os dados são apagados ao sair do teste ou recarregar a página. O portal de demonstração esconde a legenda de rascunhos e não oferece seleção de clientes.
+
 - Login por e-mail, recuperação de senha e restauração da sessão.
 - Cookie persistido com Expo SecureStore e devolvido pelo transporte nativo; nenhuma senha é persistida.
 - Sessão revogada encerra o acesso; conferência ao voltar ao app e a cada 45 segundos em primeiro plano.

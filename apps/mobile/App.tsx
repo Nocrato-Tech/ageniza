@@ -15,6 +15,7 @@ import type { Entry } from './src/auth/session';
 import { Workspace } from './src/contents/Workspace';
 import { Button, Copy, Notice, styles, ThemeContext } from './src/ui/components';
 import { dark, light, space } from './src/ui/theme';
+import { DemoApp } from './src/demo/DemoApp';
 
 export default function App() {
   const [fonts, fontError] = useFonts({ Archivo_700Bold, Geist_400Regular, Geist_600SemiBold });
@@ -22,6 +23,7 @@ export default function App() {
   const [restoring, setRestoring] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [demo, setDemo] = useState(false);
   const generation = useRef(0);
   const pending = useRef(false);
   const checking = useRef(false);
@@ -42,7 +44,7 @@ export default function App() {
     return () => { api.onExpired(() => {}); generation.current += 1; };
   }, [expire]);
   useEffect(() => {
-    if (!entry) return;
+    if (!entry || demo) return;
     let alive = true;
     const check = async () => {
       if (!alive || checking.current || AppState.currentState !== 'active') return;
@@ -54,7 +56,7 @@ export default function App() {
     const timer = setInterval(() => void check(), 45_000);
     const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') void check(); });
     return () => { alive = false; clearInterval(timer); subscription.remove(); };
-  }, [entry, expire]);
+  }, [entry, expire, demo]);
   async function run(action: () => Promise<void>) {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError('');
@@ -70,7 +72,7 @@ export default function App() {
     await api.request('/auth/logout', { method: 'POST' });
     await api.clearSession(); expire();
   }
-  return <SafeAreaProvider><ThemeContext.Provider value={t}><SafeAreaView style={[styles.page, { backgroundColor: t.canvas }]}>
+  return <SafeAreaProvider>{demo ? <DemoApp onExit={() => setDemo(false)} /> : <ThemeContext.Provider value={t}><SafeAreaView style={[styles.page, { backgroundColor: t.canvas }]}>
     <StatusBar style={t === dark ? 'light' : 'dark'} />
     {!fonts && !fontError || restoring ? <View style={[styles.body, { justifyContent: 'center' }]}><ActivityIndicator accessibilityLabel="Abrindo Ageniza" color={t.action} /></View> : <>
       {entry && <View style={{ paddingHorizontal: space.xl, paddingVertical: space.md, gap: space.md, borderBottomWidth: 1, borderColor: t.border }}>
@@ -78,7 +80,7 @@ export default function App() {
         <View style={styles.row}>{active && <View style={{ flex: 1 }}><Button secondary disabled={busy} label="Trocar acesso" onPress={() => void run(async () => { const next = await listContexts(api); setEntry(next); })} /></View>}<View style={{ flex: 1 }}><Button secondary label="Sair" busy={busy} onPress={() => void run(logout)} /></View></View>
       </View>}
       {error && <ScrollView style={{ maxHeight: 120 }} contentContainerStyle={{ padding: space.lg }}><Notice message={error} /></ScrollView>}
-      {!entry ? <Login onLogin={resolve} /> : entry.kind === 'active' ? <Workspace key={`${entry.context.type}:${entry.context.type === 'agency' ? entry.context.agencyId : entry.context.clientId}`} context={entry.context} /> : <EntryScreen key={entry.kind} entry={entry} busy={busy} onSelect={select} onContinue={resolve} />}
+      {!entry ? <Login onLogin={resolve} onDemo={() => setDemo(true)} /> : entry.kind === 'active' ? <Workspace key={`${entry.context.type}:${entry.context.type === 'agency' ? entry.context.agencyId : entry.context.clientId}`} context={entry.context} /> : <EntryScreen key={entry.kind} entry={entry} busy={busy} onSelect={select} onContinue={resolve} />}
     </>}
-  </SafeAreaView></ThemeContext.Provider></SafeAreaProvider>;
+  </SafeAreaView></ThemeContext.Provider>}</SafeAreaProvider>;
 }
