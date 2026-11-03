@@ -361,6 +361,35 @@ describe('creating a story script (issue #258)', () => {
     expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
   });
 
+  it('answers a body with a list of scenes over the ceiling with one small refusal, and writes nothing (GHSA-mrhx-c7xc-m3w5)', async () => {
+    const before = [await scriptCount(cMain), await sceneCount(cMain)];
+    const manyScenes = new Array<number>(10_001).fill(0);
+
+    const reply = await call('POST', agencyScripts(agencyA, cMain), 'opVis', { scriptOn: '2026-10-20', scenes: manyScenes });
+
+    expect(reply.statusCode).toBe(400);
+    expect(reply.json().error.code).toBe('VALIDATION_ERROR');
+    expect(reply.json().error.details.issues).toEqual([
+      { path: 'scenes', code: 'too_big', message: 'Array must have at most 10000 elements' }
+    ]);
+    expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
+  });
+
+  it('refuses a body nested past the limit from its text, before it is parsed, and writes nothing', async () => {
+    const before = [await scriptCount(cMain), await sceneCount(cMain)];
+
+    const reply = await app.app.inject({
+      method: 'POST',
+      url: agencyScripts(agencyA, cMain),
+      headers: { ...origin, cookie: cookies.opVis!, 'content-type': 'application/json' },
+      payload: `{"scriptOn":"2026-10-20","scenes":${'['.repeat(65)}${']'.repeat(65)}}`
+    });
+
+    expect(reply.statusCode).toBe(400);
+    expect(reply.json().error.details.issues).toEqual([{ path: '', code: 'too_big', message: 'Nesting must be at most 64 levels' }]);
+    expect([await scriptCount(cMain), await sceneCount(cMain)]).toEqual(before);
+  });
+
   it('keeps a complete emoji sequence in a scene and refuses the same one broken (issue #539)', async () => {
     const family = text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
     const keycap = text(0x31, 0xfe0f, 0x20e3);

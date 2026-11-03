@@ -22,6 +22,7 @@ import { registerSubscriptionModule, type SubscriptionModuleDependencies } from 
 import { applyCorrelationHeaders } from './plugins/infra/correlation.js';
 import { registerCors } from './plugins/infra/cors.js';
 import { registerErrorHandling, sendErrorEnvelope } from './plugins/infra/errors.js';
+import { registerBoundedJsonParser } from './plugins/infra/json-body.js';
 import { registerOriginProtection } from './plugins/infra/origin.js';
 import { registerRouteRateLimit } from './plugins/infra/rate-limit.js';
 import { loggableRoute } from './plugins/infra/route.js';
@@ -113,6 +114,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
       sendErrorEnvelope(error, request, reply);
     }
   });
+
+  // Before any route: a body of lists inside lists is refused from its text, before `JSON.parse` allocates it (GHSA-mrhx-c7xc-m3w5 follow-up).
+  registerBoundedJsonParser(app);
 
   if (options.onRoute !== undefined) {
     const observeRoute = options.onRoute;

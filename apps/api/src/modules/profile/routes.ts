@@ -98,7 +98,9 @@ export const registerProfileModule = (app: FastifyInstance, dependencies: Profil
   });
 
   app.post('/me/photo', {
-    preHandler: requireSession,
+    // `onRequest`, not `preHandler`: Fastify reads and parses the body between the two, up to the limit below, and a person with no
+    // session must not make the API allocate 6.7 MiB of JSON before being told 401.
+    onRequest: requireSession,
     // Own limit, at least the configured image size plus base64/JSON overhead; the global body
     // limit is not raised for this route (issue #100's README).
     bodyLimit: profilePhotoBodyLimitBytes(dependencies.config.maxImageBytes),

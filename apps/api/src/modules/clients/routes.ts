@@ -556,6 +556,10 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     const photoRoute = authenticated(photoDocs);
     app.put('/agencies/:agencyId/clients/:clientId/photo', {
       ...photoRoute,
+      // The session is checked in `onRequest`, before Fastify reads the body up to the limit below, so a person with no session
+      // makes the API allocate nothing; the agency and the permission stay in `preHandler`, so a client out of reach is still a 404.
+      onRequest: requireSession,
+      preHandler: [dependencies.requireAgencyAccess, dependencies.requirePermission(photoDocs.permission)],
       // Own limit, sized for base64/JSON overhead; the global body limit is not raised for this route.
       bodyLimit: clientPhotoBodyLimitBytes(maxImageBytes),
       config: { ...photoRoute.config, ...photoRateLimit }
