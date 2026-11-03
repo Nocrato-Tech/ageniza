@@ -1,0 +1,81 @@
+export interface SessionStorage {
+  get(): Promise<string | null>;
+  set(value: string): Promise<void>;
+  clear(): Promise<void>;
+}
+export interface CookieCodec {
+  getCookie(value: string | null): string;
+  getSetCookie(header: string, previous?: string): string;
+  hasBetterAuthCookies(header: string, prefix: string): boolean;
+}
+
+export class ApiError extends Error {
+  constructor(readonly status: number, readonly code: string, message: string) {
+    super(message);
+  }
+}
+
+export function createApiClient(baseUrl: string, storage: SessionStorage, native: boolean, cookies: CookieCodec, transport: typeof fetch = fetch) {
+  const base = new URL(baseUrl);
+  if (base.protocol !== 'https:' && !['localhost', '127.0.0.1', '10.0.2.2'].includes(base.hostname)) {
+    throw new Error('A API deve usar HTTPS fora do ambiente local.');
+  }
+  let epoch = 0;
+  let writes = Promise.resolve();
+  let onExpired = () => {};
+  async function clearSession() {
+    epoch += 1;
+    writes = writes.catch(() => {}).then(() => storage.clear());
+    await writes;
+  }
+  async function request<T>(path: string, options: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
+    if (!path.startsWith('/') || path.startsWith('//')) throw new Error('Caminho de API inválido.');
+    const requestEpoch = epoch;
+    await writes;
+    const headers = new Headers({ Accept: 'application/json' });
+    if (options.body !== undefined) headers.set('Content-Type', 'application/json');
+    if (native) {
+      headers.set('expo-origin', 'ageniza://');
+      const cookie = cookies.getCookie(await storage.get());
+      if (cookie) headers.set('Cookie', cookie);
+    }
+    let response: Response;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    const abort = () => controller.abort();
+    options.signal?.addEventListener('abort', abort);
+    if (options.signal?.aborted) controller.abort();
+    try {
+      response = await transport(`${baseUrl.replace(/\/$/, '')}${path}`, {
+        method: options.method ?? 'GET', headers, credentials: native ? 'omit' : 'include',
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: controller.signal, redirect: 'error'
+      });
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      throw new ApiError(0, 'NETWORK_ERROR', 'Não foi possível conectar. Confira sua internet e tente de novo.');
+    } finally { clearTimeout(timeout); options.signal?.removeEventListener('abort', abort); }
+    if (requestEpoch !== epoch) throw new ApiError(401, 'STALE_SESSION', 'Sua sessão mudou. Entre novamente.');
+    const setCookie = response.headers.get('set-cookie');
+    if (native && setCookie && cookies.hasBetterAuthCookies(setCookie, 'ageniza')) {
+      writes = writes.catch(() => {}).then(async () => {
+        if (requestEpoch === epoch) await storage.set(cookies.getSetCookie(setCookie, await storage.get() ?? undefined));
+      });
+      await writes;
+    }
+    if (response.status === 401) {
+      await clearSession();
+      onExpired();
+    }
+    if (response.status === 204 || response.status === 202) return undefined as T;
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      if (payload?.error?.code === 'CSRF_REJECTED') throw new ApiError(403, 'CSRF_REJECTED', 'O servidor ainda não liberou o acesso deste app. A equipe precisa habilitar ageniza:// no ambiente de desenvolvimento.');
+      throw new ApiError(response.status, payload?.error?.code ?? 'REQUEST_FAILED',
+        payload?.error?.message ?? 'Não foi possível concluir. Tente de novo.');
+    }
+    return payload as T;
+  }
+  return { request, clearSession, onExpired: (listener: () => void) => { onExpired = listener; } };
+}
+export type ApiClient = ReturnType<typeof createApiClient>;
