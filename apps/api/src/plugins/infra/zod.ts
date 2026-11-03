@@ -6,15 +6,9 @@ import { HttpError } from '@ageniza/core';
 import type { DocumentedRouteConfig } from './route-metadata.js';
 
 /**
- * Parses untrusted transport values and exposes only safe issue metadata to clients.
- *
- * `TIn` is separate from `TOut` so a schema that normalizes rather than merely validates still
- * infers its parsed type. Query schemas need this: a value that must be treated as absent instead
- * of rejected (issue #33's `preferred`) transforms `unknown` into `string | undefined`.
- */
-/**
  * The most elements any array of a request may have. The largest the contracts accept is the list of parts of a multipart upload
- * (`CompleteMediaUploadRequestSchema`, 10 000, as S3 allows); `zod.test.ts` fails if a contract goes past this ceiling.
+ * (`CompleteMediaUploadRequestSchema`, 10 000, as S3 allows); the test "no request contract allows more than the ceiling" in
+ * `zod.test.ts` walks every request schema the contracts export and fails if one goes past it.
  *
  * Zod 3 keeps parsing every element of an array that is already over its `.max()` and adds one issue per element that fails
  * (GHSA-mrhx-c7xc-m3w5, fixed only in zod 4.6.6). A 1 MiB body of `0,` measured about 520 000 issues, a 50 MB answer and 460 MB of
@@ -32,25 +26,48 @@ const tooManyElements = (path: string): HttpError => new HttpError({
   details: { issues: [{ path, code: 'too_big', message: `Array must have at most ${MAX_REQUEST_ARRAY_ELEMENTS} elements` }] }
 });
 
-/** Walks the parsed JSON (iteratively: a body can nest deeper than the stack) and refuses an array over the ceiling. */
+/** One list or object on the way down: the path is joined from these only when a refusal needs it, so the walk allocates no strings. */
+interface Frame {
+  readonly node: object;
+  readonly parent: Frame | undefined;
+  readonly key: string | number;
+}
+
+const pathOf = (frame: Frame): string => {
+  const keys: Array<string | number> = [];
+  for (let current: Frame | undefined = frame; current?.parent !== undefined; current = current.parent) keys.push(current.key);
+  return keys.reverse().join('.');
+};
+
+/**
+ * Walks the parsed JSON (iteratively: a body can nest deeper than the stack) and refuses an array over the ceiling. A body that came
+ * through HTTP was already limited in depth and in lists and objects by `json-body.ts`, so the walk is bounded by that.
+ */
 const assertArraysWithinCeiling = (value: unknown): void => {
-  const pending: Array<{ readonly node: unknown; readonly path: string }> = [{ node: value, path: '' }];
-  for (let entry = pending.pop(); entry !== undefined; entry = pending.pop()) {
-    const { node, path } = entry;
-    if (typeof node !== 'object' || node === null) continue;
+  if (typeof value !== 'object' || value === null) return;
+  const pending: Frame[] = [{ node: value, parent: undefined, key: '' }];
+  for (let frame = pending.pop(); frame !== undefined; frame = pending.pop()) {
+    const { node } = frame;
     if (Array.isArray(node)) {
-      if (node.length > MAX_REQUEST_ARRAY_ELEMENTS) throw tooManyElements(path);
-      node.forEach((child, index) => {
-        if (typeof child === 'object' && child !== null) pending.push({ node: child, path: path === '' ? String(index) : `${path}.${index}` });
+      if (node.length > MAX_REQUEST_ARRAY_ELEMENTS) throw tooManyElements(pathOf(frame));
+      node.forEach((child: unknown, index) => {
+        if (typeof child === 'object' && child !== null) pending.push({ node: child, parent: frame, key: index });
       });
     } else {
       for (const [key, child] of Object.entries(node)) {
-        if (typeof child === 'object' && child !== null) pending.push({ node: child, path: path === '' ? key : `${path}.${key}` });
+        if (typeof child === 'object' && child !== null) pending.push({ node: child, parent: frame, key });
       }
     }
   }
 };
 
+/**
+ * Parses untrusted transport values and exposes only safe issue metadata to clients.
+ *
+ * `TIn` is separate from `TOut` so a schema that normalizes rather than merely validates still
+ * infers its parsed type. Query schemas need this: a value that must be treated as absent instead
+ * of rejected (issue #33's `preferred`) transforms `unknown` into `string | undefined`.
+ */
 const parseRequest = <TOut, TIn = TOut>(schema: ZodType<TOut, ZodTypeDef, TIn>, value: unknown): TOut => {
   assertArraysWithinCeiling(value);
   try {

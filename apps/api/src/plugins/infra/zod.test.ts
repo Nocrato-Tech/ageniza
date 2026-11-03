@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import * as contracts from '@ageniza/contracts';
 import { CompleteMediaUploadRequestSchema } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 
-import { MAX_REPORTED_ISSUES, parseStrictEmptyQuery, routeBody, routeQuery, routeResponse } from './zod.js';
+import { MAX_REQUEST_ARRAY_ELEMENTS, parseStrictEmptyQuery, routeBody, routeQuery, routeResponse } from './zod.js';
 
 interface FakeRequest {
   readonly routeOptions: { readonly url: string; readonly config: { readonly schemas: Readonly<Record<string, unknown>> } };
@@ -119,7 +120,56 @@ describe('arrays of a request are bounded before the schema counts them', () => 
     const request = requestWith({ body: schema }, { body: { values: zeros(5_000) } });
 
     const { issues } = refusal(() => routeBody({ schemas: { body: schema } }, request as never));
-    expect(issues).toHaveLength(MAX_REPORTED_ISSUES);
+    expect(issues).toHaveLength(100);
     expect(issues[0]).toMatchObject({ path: 'values.0', code: 'too_small' });
+  });
+});
+
+/**
+ * The ceiling must not refuse a request a contract accepts. Every schema the contracts export for a request body, query or path is
+ * walked, and every list in it must have a `.max()` that the ceiling covers.
+ */
+describe('no request contract allows more than the ceiling', () => {
+  interface Def { readonly typeName?: string; readonly [key: string]: unknown }
+  const maxima: Array<{ readonly where: string; readonly max: number | undefined }> = [];
+
+  const visit = (schema: unknown, where: string, seen: Set<unknown>): void => {
+    if (typeof schema !== 'object' || schema === null || seen.has(schema)) return;
+    seen.add(schema);
+    const def = (schema as { _def?: Def })._def;
+    if (def === undefined) return;
+    const next = (child: unknown, label: string): void => visit(child, `${where}.${label}`, seen);
+    switch (def.typeName) {
+      case 'ZodArray':
+        maxima.push({ where, max: (def.maxLength as { value: number } | null)?.value });
+        next(def.type, '[]');
+        break;
+      case 'ZodObject':
+        for (const [key, child] of Object.entries((def.shape as () => Record<string, unknown>)())) next(child, key);
+        break;
+      case 'ZodUnion':
+      case 'ZodDiscriminatedUnion':
+        for (const option of [...(def.options as Iterable<unknown>)]) next(option, '|');
+        break;
+      case 'ZodEffects': next(def.schema, 'fx'); break;
+      case 'ZodOptional': case 'ZodNullable': case 'ZodDefault': case 'ZodReadonly': next(def.innerType, '?'); break;
+      case 'ZodPipeline': next(def.in, 'in'); next(def.out, 'out'); break;
+      case 'ZodRecord': next(def.valueType, '{}'); break;
+      case 'ZodIntersection': next(def.left, '&l'); next(def.right, '&r'); break;
+      default: break;
+    }
+  };
+
+  for (const [name, schema] of Object.entries(contracts)) {
+    if (/(Request|Query|Params)Schema$/.test(name)) visit(schema, name, new Set());
+  }
+
+  it('finds the lists of the request contracts, the largest being the 10 000 parts of a multipart upload', () => {
+    expect(maxima.length).toBeGreaterThanOrEqual(5);
+    expect(Math.max(...maxima.map((entry) => entry.max ?? 0))).toBe(10_000);
+  });
+
+  it('gives every list of a request an explicit maximum no larger than the ceiling', () => {
+    expect(maxima.filter((entry) => entry.max === undefined || entry.max > MAX_REQUEST_ARRAY_ELEMENTS)).toEqual([]);
   });
 });

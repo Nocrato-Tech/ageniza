@@ -530,6 +530,18 @@ describe('profile module (issue #101)', () => {
     expect((await postPhoto(undefined, { imageBase64: base64(png()) })).status).toBe(401);
   });
 
+  it('a person with no session is refused before the body of the photo is read: a body that is not JSON still answers 401', async () => {
+    const response = await app.app.inject({
+      method: 'POST',
+      url: '/me/photo',
+      headers: { ...origin, 'content-type': 'application/json' },
+      payload: '{ this is not json'
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error.code).toBe('UNAUTHENTICATED');
+  });
+
   it('#101: a malformed body answers 400, never 500', async () => {
     const user = await makeUserWithOwnAgency('profile-malformed');
     const cookie = await loginCookie(user);
