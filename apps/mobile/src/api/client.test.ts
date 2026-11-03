@@ -73,4 +73,3 @@ describe('native API transport', () => {
     await expect(api.request('//evil.test')).rejects.toThrow('inválido'); expect(fetcher).not.toHaveBeenCalled();
   });
 });
-
