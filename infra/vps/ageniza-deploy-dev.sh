@@ -115,7 +115,9 @@ validate_runtime_env() {
       R2_REGION|IDENTITY_STORAGE_REGION) ;;
       R2_FORCE_PATH_STYLE|IDENTITY_STORAGE_FORCE_PATH_STYLE) [[ "$value" == true || "$value" == false ]] || die "$key must be true or false" ;;
       MEDIA_UPLOAD_URL_EXPIRY_SECONDS|MEDIA_DOWNLOAD_URL_EXPIRY_SECONDS|MEDIA_MULTIPART_THRESHOLD_BYTES|MEDIA_MULTIPART_PART_BYTES|MEDIA_MAX_BYTES_IMAGE|MEDIA_MAX_BYTES_VIDEO|STORAGE_QUOTA_DEFAULT_BYTES|STORAGE_QUOTA_DEFAULT_OBJECT_COUNT) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
-      MEDIA_PROCESSING_TIMEOUT_SECONDS|MEDIA_PROCESSING_MAX_DURATION_SECONDS|MEDIA_THUMBNAIL_WIDTH_PIXELS|MEDIA_PREVIEW_MAX_HEIGHT_PIXELS|MEDIA_PREVIEW_MAX_OUTPUT_BYTES) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
+      MEDIA_PROCESSING_TIMEOUT_SECONDS|MEDIA_PROCESSING_MAX_TIMEOUT_SECONDS|MEDIA_PROCESSING_MAX_DURATION_SECONDS|MEDIA_THUMBNAIL_WIDTH_PIXELS|MEDIA_PREVIEW_MAX_HEIGHT_PIXELS|MEDIA_PREVIEW_MAX_OUTPUT_BYTES) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
+      # A factor in seconds of timeout per second of media (0.5): the one setting here that is a decimal, so its rule is its own and the integer rule above stays as it was.
+      MEDIA_PROCESSING_TIMEOUT_PER_MEDIA_SECOND) [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "$key must be a number such as 0.5" ;;
       IDENTITY_DOWNLOAD_URL_EXPIRY_SECONDS|IDENTITY_MAX_IMAGE_BYTES) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
       SENTRY_DSN|GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|GOOGLE_CALLBACK_URL|API_PUBLIC_URL|SUPPORT_CONTACT_EMAIL|MOBILE_APP_ORIGINS) ;;
       *) die "$RUNTIME_ENV contains a key that is not allowed: $key" ;;
