@@ -73,7 +73,7 @@ describe('headingSlug', () => {
 describe('the guide', () => {
   it('lists every file of docs/mobile, README first', () => {
     expect(guide[0]!.file).toBe('README.md');
-    expect(guide.map((page) => page.file)).toEqual(['README.md', 'comecar.md', 'fluxos/entrada.md', 'fluxos/agencia.md', 'fluxos/portal.md', 'fluxos/link-de-aprovacao.md']);
+    expect(guide.map((page) => page.file)).toEqual(['README.md', 'comecar.md', 'fluxos/entrada.md', 'fluxos/agencia.md', 'fluxos/portal.md', 'fluxos/link-de-aprovacao.md', 'interface-mobile.md', 'prontidao-lancamento.md']);
     expect(guideFiles.has('fluxos/agencia.md')).toBe(true);
   });
 

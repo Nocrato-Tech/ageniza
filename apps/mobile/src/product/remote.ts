@@ -24,7 +24,7 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
         const me = await api.request<AgencyMeResponse>(`${root}/me`);
         data.permissions = me.permissions; data.readOnly = me.plan.readOnly;
         const clients = me.permissions.includes('cliente.visualizar') ? await all<ClientListResponse['data'][number]>(`${root}/clients`) : [];
-        data.clients = clients.map((client) => ({ id: client.id, name: client.name, handle: client.instagramHandle ?? '' }));
+        data.clients = clients.map((client) => ({ id: client.id, name: client.name, handle: client.instagramHandle ?? '', photoUrl: client.photoUrl }));
         if (me.permissions.includes('colaborador.visualizar')) { const people = await all<CollaboratorListResponse['data'][number]>(`${root}/collaborators`); data.people = people.map((person) => ({ id: person.membershipId, name: person.name, job: person.jobTitle ?? '', role: person.role.name, email: person.email, self: person.isSelf, owner: person.isOwner })); const self = data.people.find((person) => person.self); if (self) data.profile = { ...data.profile, name: self.name }; }
         if (me.permissions.includes('conteudo.visualizar')) {
           for (let index = 0; index < data.clients.length; index += 4) {
@@ -39,7 +39,7 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
       } else {
         const clientId = context.clientId;
         const client = await api.request<PortalClientResponse>(base(clientId));
-        data.clients = [{ id: clientId, name: client.name, handle: client.instagramHandle ?? '' }];
+        data.clients = [{ id: clientId, name: client.name, handle: client.instagramHandle ?? '', photoUrl: client.photoUrl }];
         data.readOnly = client.agencyReadOnly; data.onboardingPending = client.onboardingSeenAt === null;
         const period = await api.request<PortalContentPeriodResponse>(`${base(clientId)}/contents?from=${from}&to=${to}`);
         data.posts = period.data.map((post) => ({ ...fromDetail(clientId, post.status === 'in_production' ? post : { ...post, revision: 0, caption: null, media: [] }), thumbnailId: 'thumbnailAssetId' in post ? post.thumbnailAssetId : null }));

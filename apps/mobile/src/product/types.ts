@@ -1,7 +1,7 @@
 import type { ContentFormat, ContentStatus, Context } from '@ageniza/contracts';
 
 export type Side = 'agency' | 'client';
-export type Client = { id: string; name: string; handle: string; archived?: boolean };
+export type Client = { id: string; name: string; handle: string; photoUrl?: string | null; archived?: boolean };
 export type Person = { id: string; name: string; job: string; role: string; email: string; self?: boolean; owner?: boolean };
 export type Asset = { id: string; clientId: string; folderId: string; name: string; kind: 'image' | 'video'; uri?: string; size: number; sample?: boolean };
 export type Folder = { id: string; clientId: string; name: string; parentId?: string | null };
