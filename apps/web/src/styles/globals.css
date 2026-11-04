@@ -6834,6 +6834,68 @@ html:has(.portal-post__bar) {
   gap: var(--space-2);
 }
 
+/* The phone beside the calendar has a screen of a fixed height and the grid scrolls inside it: wheel, touch and keyboard.
+   The bar is hidden (it would sit on the bezel), the region is still a stop of the keyboard and shows its focus. */
+.content-phone--fixed .content-phone__screen {
+  grid-template-rows: minmax(0, 1fr);
+  height: 42rem;
+  min-height: 0;
+  padding-bottom: var(--space-8);
+  overflow: hidden;
+}
+
+.content-feed--scroll {
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.content-feed__scroller {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.content-feed__scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.content-feed__scroller:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.content-feed__scrolled {
+  display: grid;
+  gap: var(--space-4);
+  padding: 0 0 var(--space-2);
+}
+
+.content-feed__scrolled .content-feed__grid {
+  gap: var(--space-1);
+}
+
+.content-feed__error,
+.content-feed__loading {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  text-align: center;
+}
+
+.content-feed__error p {
+  margin: 0;
+}
+
+/* The two arrows of the phone sit side by side at the middle of the foot of the screen. */
+.content-phone--fixed .content-feed__pager {
+  justify-content: center;
+  gap: var(--space-4);
+}
+
 .content-feed__range {
   margin: 0;
   color: var(--text-secondary);

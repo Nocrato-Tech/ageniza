@@ -7,9 +7,10 @@ import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within }
 import { MemoryRouter, type Location, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { UpdateContentRequestSchema } from '@ageniza/contracts';
+import { CONTENT_FEED_PAGE_SIZE, UpdateContentRequestSchema, type ContentListItem } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { feedItems } from './content-feed.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -157,6 +158,8 @@ interface Scenario {
   /** Contents of one client, by its id; the fake filters them by the period like the API does. */
   readonly contents?: Readonly<Record<string, readonly ReturnType<typeof contentFixture>[]>>;
   readonly period?: (clientId: string, from: string, to: string, call: number) => Response | Promise<Response> | undefined;
+  /** The feed of the phone, by cursor; the default pages the client's `contents` nine at a time like the API. */
+  readonly feed?: (clientId: string, cursor: string | null, call: number) => Response | Promise<Response> | undefined;
   readonly detail?: (clientId: string) => Response | Promise<Response> | undefined;
 }
 
@@ -169,6 +172,7 @@ const makeFetch = (scenario: Scenario = {}) => {
   const calls: string[] = [];
   const patches: Array<{ clientId: string; contentId: string; body: unknown }> = [];
   let periodCalls = 0;
+  let feedCalls = 0;
   const permissions = scenario.permissions ?? [VISUALIZE, READ_CLIENTS];
   const roster = scenario.roster ?? ROSTER;
   const impl: typeof fetch = async (input, init) => {
@@ -201,6 +205,29 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (custom !== undefined) return custom;
       const rows = (scenario.contents?.[clientId] ?? []).filter((content) => content.publishOn >= from && content.publishOn <= to);
       return periodResponse(rows, from, to);
+    }
+    const feedRoute = /\/agencies\/([^/]+)\/clients\/([^/]+)\/contents\/feed$/.exec(path);
+    if (feedRoute !== null && method === 'GET') {
+      if (!permissions.includes(VISUALIZE)) return forbidden();
+      const clientId = feedRoute[2]!;
+      if (!roster.some((client) => client.id === clientId)) return notFound();
+      const cursor = url.searchParams.get('cursor');
+      feedCalls += 1;
+      await new Promise<void>((done) => { setTimeout(done, 0); });
+      const custom = scenario.feed?.(clientId, cursor, feedCalls);
+      if (custom !== undefined) return custom;
+      const rows = feedItems((scenario.contents?.[clientId] ?? []) as unknown as ContentListItem[]);
+      const offset = cursor === null ? 0 : Number(cursor.replace('offset-', ''));
+      const page = rows.slice(offset, offset + CONTENT_FEED_PAGE_SIZE);
+      const counted = (status: string): number => rows.filter((row) => row.status === status).length;
+      return json({
+        data: {
+          contents: page,
+          nextCursor: offset + CONTENT_FEED_PAGE_SIZE < rows.length ? `offset-${offset + CONTENT_FEED_PAGE_SIZE}` : null,
+          counters: { posts: rows.length, approved: counted('approved'), awaitingApproval: counted('awaiting_approval') }
+        },
+        meta: { count: page.length }
+      });
     }
     const media = /\/agencies\/([^/]+)\/media\/([^/]+)\/download-url$/.exec(path);
     if (media !== null && method === 'GET') {
@@ -941,7 +968,7 @@ describe('every request goes through apiPath', () => {
 
     const agencyCalls = calls.filter((call) => call.includes('/agencies/'));
     expect(agencyCalls.length).toBeGreaterThan(2);
-    for (const call of agencyCalls) expect(call).toMatch(new RegExp(`^GET /agencies/${AGENCY_A}/(me|clients(/${padaria.id}(/contents\\?from=\\d{4}-\\d{2}-\\d{2}&to=\\d{4}-\\d{2}-\\d{2})?|\\?page=1&pageSize=100)?)$`));
+    for (const call of agencyCalls) expect(call).toMatch(new RegExp(`^GET /agencies/${AGENCY_A}/(me|clients(/${padaria.id}(/contents(\\?from=\\d{4}-\\d{2}-\\d{2}&to=\\d{4}-\\d{2}-\\d{2}|/feed))?|\\?page=1&pageSize=100)?)$`));
     // The id in the address is lower-cased before it becomes a request: the API compares it as is.
     expect(calls.some((call) => call.includes(padaria.id.toUpperCase()))).toBe(false);
   });
@@ -1332,15 +1359,14 @@ describe('the cover of a tile of the feed beside the calendar (the cell of the c
     ]);
   });
 
-  it('does not read an address again when the person leaves the period and comes back before it expires', async () => {
+  it('does not read an address again when the person leaves for another client and comes back before it expires', async () => {
     const { impl, calls } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Volta', publishOn: '2026-10-14', coverAssetId: ASSET_A })] } });
     render_(impl, contentsUrl(padaria.id));
     await waitFor(() => expect(document.querySelector('.content-feed__tile img')).not.toBeNull());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }));
-    await screen.findByRole('heading', { name: 'Novembro 2026' });
+    fireEvent.click(screen.getByRole('link', { name: 'Confeitaria Doce' }));
     await waitFor(() => expect(document.querySelector('.content-feed__tile')).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
     await waitFor(() => expect(document.querySelector('.content-feed__tile img')).not.toBeNull());
     expect(coverCalls(calls)).toHaveLength(1);
   });
@@ -1355,10 +1381,9 @@ describe('the cover of a tile of the feed beside the calendar (the cell of the c
     render_(impl, contentsUrl(padaria.id));
     await waitFor(() => expect(document.querySelector('.content-feed__tile img')).not.toBeNull());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }));
-    await screen.findByRole('heading', { name: 'Novembro 2026' });
+    fireEvent.click(screen.getByRole('link', { name: 'Confeitaria Doce' }));
     await waitFor(() => expect(document.querySelector('.content-feed__tile')).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
     await waitFor(() => expect(coverCalls(calls)).toHaveLength(2));
   });
 
@@ -1437,7 +1462,7 @@ describe('the detail on a card (hover and focus)', () => {
   };
   const point = (element: HTMLElement): void => pointer('pointerOver', element);
   const unpoint = (element: HTMLElement): void => pointer('pointerOut', element);
-  const detailCalls = (calls: readonly string[]): string[] => calls.filter((call) => /\/contents\/[^/?]+$/.test(call) && call.startsWith('GET'));
+  const detailCalls = (calls: readonly string[]): string[] => calls.filter((call) => /\/contents\/(?!feed$)[^/?]+$/.test(call) && call.startsWith('GET'));
   const withDetail = (row: ReturnType<typeof contentFixture>, extra: Record<string, unknown>) => (_client: string, id: string) =>
     id === row.id ? json({ ...detailOfContent(padaria.id, row), ...extra }) : undefined;
 
@@ -2264,7 +2289,7 @@ describe('the Calendário Editorial: the title, the three views, the whole card 
   it('offers the way to plan the first post in the empty feed to who can create, and not to who cannot', async () => {
     const reader = makeFetch();
     const first = render_(reader.impl, contentsUrl(padaria.id));
-    await screen.findByText('Nenhum post planejado neste período.');
+    await screen.findByText('Nenhum post planejado ainda.');
     expect(screen.queryByRole('button', { name: 'Planejar um post' })).toBeNull();
     first.unmount();
 

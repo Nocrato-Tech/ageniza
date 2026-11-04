@@ -21,7 +21,7 @@ import { clientDetailQueryKey } from './client-detail.js';
 import { contentsAddress } from './content-address.js';
 import { ContentCalendar } from './content-calendar.js';
 import type { ContentsOutletContext } from './content-modal.js';
-import { ContentFeed, ContentFeedSkeleton } from './content-feed.js';
+import { ContentFeed, ContentPhoneFeed } from './content-feed.js';
 import { daysOf, parseAnchor, periodOf, periodTitle, shiftAnchor, todayInSaoPaulo, type CalendarView } from './content-dates.js';
 import { deadlineAlert, STATUS_LABELS } from './content-labels.js';
 import { useDocumentTitle } from './document-title.js';
@@ -255,7 +255,7 @@ export function ContentsClientPage() {
   const validId = ClientSchema.shape.id.safeParse(normalizedId).success;
   const today = todayInSaoPaulo();
   const view = parseView(searchParams.get('visao'));
-  // The feed reads a month, like the month does; only the week is narrower.
+  // The feed on its own screen reads a month, like the month does; only the week is narrower. The phone beside the calendar reads no period.
   const calendarView: CalendarView = view === 'week' ? 'week' : 'month';
   const narrow = useNarrow();
   const legacyFolders = isLegacyFolders(searchParams);
@@ -411,7 +411,6 @@ export function ContentsClientPage() {
               {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
               {view === 'feed'
                 ? <ContentFeed
-                  variant="full"
                   onCreate={canWriteScripts && blocked === undefined ? () => startContent(today) : undefined}
                   clientId={normalizedId}
                   scope={`${normalizedId}|${period.from}|${period.to}`}
@@ -439,17 +438,13 @@ export function ContentsClientPage() {
         {loaded !== undefined && scriptLayer.list}
       </div>
       {view !== 'feed' && <aside className="contents__feed" aria-label="Prévia do feed">
-        {loaded === undefined
-          ? <ContentFeedSkeleton />
-          : <ContentFeed
-            onCreate={canWriteScripts && blocked === undefined ? () => startContent(today) : undefined}
-            clientId={normalizedId}
-            scope={`${normalizedId}|${period.from}|${period.to}`}
-            contents={loaded.data.contents}
-            today={today}
-            handle={clientData?.instagramHandle ?? null}
-            profile={clientData === undefined ? undefined : { name: clientData.name, photoUrl: clientData.photoUrl }}
-          />}
+        <ContentPhoneFeed
+          onCreate={canWriteScripts && blocked === undefined ? () => startContent(today) : undefined}
+          clientId={normalizedId}
+          today={today}
+          handle={clientData?.instagramHandle ?? null}
+          profile={clientData === undefined ? undefined : { name: clientData.name, photoUrl: clientData.photoUrl }}
+        />
       </aside>}
     </div>}
     {scriptLayer.modal}
