@@ -16,6 +16,53 @@ function memory() {
 const json = (body: unknown, status = 200, headers?: Record<string, string>) => new Response(JSON.stringify(body), { status, headers });
 
 describe('native API transport', () => {
+  it('does not restore a cookie when logout races a pending write and secure deletion fails', async () => {
+    let value: string | null = 'saved-session'; let release!: () => void;
+    const storage = { get: async () => value, set: vi.fn((next: string) => new Promise<void>((resolve) => { release = () => { value = next; resolve(); }; })), clear: vi.fn().mockRejectedValue(new Error('delete failed')) };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json({}, 200, { 'set-cookie': 'ageniza.session_token=new' })).mockResolvedValueOnce(json({ ok: true }));
+    const api = createApiClient('https://dev.ageniza.com.br/api', storage, true, codec, fetcher);
+    const login = api.request('/auth/login', { method: 'POST', body: {} });
+    await vi.waitFor(() => expect(storage.set).toHaveBeenCalledOnce());
+    const clearing = api.clearSession().catch(() => {}); release();
+    await expect(login).rejects.toMatchObject({ code: 'STALE_SESSION' }); await clearing;
+    await api.request('/health'); expect(new Headers(fetcher.mock.calls[1][1]?.headers).has('Cookie')).toBe(false);
+  });
+  it('recovers from a failed secure write without poisoning later requests', async () => {
+    const storage = memory();
+    vi.spyOn(storage, 'set').mockRejectedValueOnce(new Error('secure storage unavailable'));
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json({}, 200, { 'set-cookie': 'ageniza.session_token=new' })).mockResolvedValueOnce(json({ ok: true }));
+    const api = createApiClient('https://dev.ageniza.com.br/api', storage, true, codec, fetcher);
+    await expect(api.request('/auth/login', { method: 'POST', body: {} })).rejects.toThrow('secure storage');
+    await expect(api.request('/health')).resolves.toEqual({ ok: true });
+    expect(new Headers(fetcher.mock.calls[1][1]?.headers).has('Cookie')).toBe(false);
+  });
+  it('expires access even when deleting the revoked secure session fails', async () => {
+    const storage = memory(); await storage.set('saved-session');
+    vi.spyOn(storage, 'clear').mockRejectedValueOnce(new Error('delete failed'));
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json({}, 401)).mockResolvedValueOnce(json({ ok: true }));
+    const api = createApiClient('https://dev.ageniza.com.br/api', storage, true, codec, fetcher); const expired = vi.fn(); api.onExpired(expired);
+    await expect(api.request('/auth/session')).rejects.toThrow('delete failed'); expect(expired).toHaveBeenCalledOnce();
+    await api.request('/health'); expect(new Headers(fetcher.mock.calls[1][1]?.headers).has('Cookie')).toBe(false);
+  });
+  it('does not erase an existing session after an invalid login attempt', async () => {
+    const storage = memory(); await storage.set('saved-session'); const expired = vi.fn();
+    const api = createApiClient('https://dev.ageniza.com.br/api', storage, true, codec, vi.fn().mockResolvedValue(json({ error: { code: 'INVALID_CREDENTIALS' } }, 401))); api.onExpired(expired);
+    await expect(api.request('/auth/login', { method: 'POST', body: {} })).rejects.toMatchObject({ status: 401 });
+    expect(await storage.get()).toBe('saved-session'); expect(expired).not.toHaveBeenCalled();
+  });
+  it('rejects a foreign final URL before reading or persisting its cookies', async () => {
+    const response = json({}, 200, { 'set-cookie': 'ageniza.session_token=foreign' });
+    Object.defineProperty(response, 'url', { value: 'https://foreign.example/api/auth/login' });
+    const storage = memory(); const write = vi.spyOn(storage, 'set');
+    const api = createApiClient('https://dev.ageniza.com.br/api', storage, true, codec, vi.fn().mockResolvedValue(response));
+    await expect(api.request('/auth/login', { method: 'POST', body: {} })).rejects.toMatchObject({ code: 'UNSAFE_REDIRECT' }); expect(write).not.toHaveBeenCalled();
+  });
+  it('sends a zero-length POST body for logout and routes access-policy changes to entry resolution', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(null, { status: 204 })).mockResolvedValueOnce(json({ error: { code: 'TERMS_NOT_ACCEPTED' } }, 403));
+    const api = createApiClient('https://dev.ageniza.com.br/api', memory(), true, codec, fetcher); const required = vi.fn(); api.onAccessRequired(required);
+    await api.request('/auth/logout', { method: 'POST' }); expect(fetcher.mock.calls[0][1]?.body).toBe('');
+    await expect(api.request('/clients/one')).rejects.toMatchObject({ status: 403 }); expect(required).toHaveBeenCalledOnce();
+  });
   it('preserves the secure session cookie name when persisting and reopening the transport', async () => {
     const storage = memory();
     const secureCookie = '__Secure-ageniza.session_token=test-only';

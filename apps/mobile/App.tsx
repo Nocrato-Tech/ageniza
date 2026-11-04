@@ -15,32 +15,44 @@ import type { Entry } from './src/auth/session';
 import { Button, Copy, Notice, styles, ThemeContext } from './src/ui/components';
 import { dark, light, space } from './src/ui/theme';
 import { MobileApp } from './src/product/MobileApp';
+import { logoutLocally } from './src/auth/logout';
 
 export default function App() {
   const [fonts, fontError] = useFonts({ Sora: Sora_600SemiBold, Inter: Inter_400Regular, InterSemi: Inter_600SemiBold });
   const [entry, setEntry] = useState<Entry | null>(null);
   const [restoring, setRestoring] = useState(true);
+  const [restoreFailure, setRestoreFailure] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [demo, setDemo] = useState(browserPreview);
   const generation = useRef(0);
   const pending = useRef(false);
   const checking = useRef(false);
+  const resolvingAccess = useRef(false);
   const active = entry?.kind === 'active';
   const t = active && entry.context.type === 'agency' ? dark : light;
-  const expire = useCallback(() => { generation.current += 1; setEntry(null); setRestoring(false); setError(''); }, []);
+  const expire = useCallback(() => { generation.current += 1; setEntry(null); setRestoring(false); setRestoreFailure(''); setError(''); }, []);
   async function resolve() {
     const current = generation.current;
     const next = await resolveEntry(api);
-    if (generation.current === current) { setEntry(next); setError(''); }
+    if (generation.current === current) { setEntry(next); setError(''); setRestoreFailure(''); }
+  }
+  async function restore() {
+    setRestoring(true);
+    try { await resolve(); }
+    catch (cause) { if (!(cause instanceof ApiError && cause.status === 401)) setRestoreFailure(cause instanceof Error ? cause.message : 'Não foi possível recuperar sua sessão.'); }
+    finally { setRestoring(false); }
   }
   useEffect(() => {
     api.onExpired(expire);
+    api.onAccessRequired(() => {
+      if (resolvingAccess.current) return;
+      resolvingAccess.current = true; generation.current += 1; setEntry(null);
+      void restore().finally(() => { resolvingAccess.current = false; });
+    });
     if (browserPreview) { setRestoring(false); return; }
-    void resolve().catch((cause: unknown) => {
-      if (!(cause instanceof ApiError && cause.status === 401)) setError(cause instanceof Error ? cause.message : 'Não foi possível recuperar sua sessão.');
-    }).finally(() => setRestoring(false));
-    return () => { api.onExpired(() => {}); generation.current += 1; };
+    void restore();
+    return () => { api.onExpired(() => {}); api.onAccessRequired(() => {}); generation.current += 1; };
   }, [expire]);
   useEffect(() => {
     if (!entry || demo) return;
@@ -68,8 +80,10 @@ export default function App() {
     if (current === generation.current) setEntry(next);
   });
   async function logout() {
-    await api.request('/auth/logout', { method: 'POST' });
-    await api.clearSession(); expire();
+    try {
+      const result = await logoutLocally(api, expire);
+      if (result.revocationFailed) setError('Você saiu deste aparelho. A conexão falhou ao encerrar a sessão no servidor.');
+    } catch { setError('O acesso foi bloqueado neste app, mas não foi possível apagar o armazenamento seguro. Tente sair novamente antes de compartilhar o aparelho.'); }
   }
   if (!fonts && !fontError) return <SafeAreaProvider><View style={{ flex: 1, justifyContent: 'center', backgroundColor: light.canvas }}><ActivityIndicator accessibilityLabel="Carregando fontes" color={light.action} /></View></SafeAreaProvider>;
   return <SafeAreaProvider>{demo ? <MobileApp onExit={() => setDemo(false)} /> : entry?.kind === 'active' ? <MobileApp key={`${entry.context.type}:${entry.context.type === 'agency' ? entry.context.agencyId : entry.context.clientId}`} context={entry.context} onExit={logout} onContext={async () => { setEntry(await listContexts(api)); }} /> : <ThemeContext.Provider value={light}><SafeAreaView style={[styles.page, { backgroundColor: light.canvas }]}>
@@ -80,7 +94,7 @@ export default function App() {
         <View style={styles.row}>{active && <View style={{ flex: 1 }}><Button secondary disabled={busy} label="Trocar acesso" onPress={() => void run(async () => { const next = await listContexts(api); setEntry(next); })} /></View>}<View style={{ flex: 1 }}><Button secondary label="Sair" busy={busy} onPress={() => void run(logout)} /></View></View>
       </View>}
       {error && <ScrollView style={{ maxHeight: 120 }} contentContainerStyle={{ padding: space.lg }}><Notice message={error} /></ScrollView>}
-      {!entry ? <Login onLogin={resolve} onDemo={() => setDemo(true)} /> : <EntryScreen key={entry.kind} entry={entry} busy={busy} onSelect={select} onContinue={resolve} />}
+      {restoreFailure ? <View style={styles.body}><Copy title>Vamos recuperar seu acesso</Copy><Notice message={restoreFailure} /><Button label="Tentar novamente" onPress={() => void restore()} /><Button secondary label="Sair deste aparelho" onPress={() => void logout()} /></View> : !entry ? <Login onLogin={resolve} onDemo={() => setDemo(true)} /> : <EntryScreen key={entry.kind} entry={entry} busy={busy} onSelect={select} onContinue={resolve} />}
     </>}
   </SafeAreaView></ThemeContext.Provider>}</SafeAreaProvider>;
 }

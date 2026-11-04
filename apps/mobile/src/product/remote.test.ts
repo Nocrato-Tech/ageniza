@@ -6,7 +6,7 @@ const clientId = '11111111-1111-4111-8111-111111111111';
 const contentId = '22222222-2222-4222-8222-222222222222';
 const agencyId = '33333333-3333-4333-8333-333333333333';
 const post: Post = { id: contentId, clientId, title: 'Post', caption: 'Legenda', date: '2026-11-12', time: '', format: 'image', status: 'awaiting_approval', revision: 7, ownerId: '', folderId: '', coverId: null, mediaIds: [], comments: [], tasks: [] };
-function client(request: ReturnType<typeof vi.fn>): ApiClient { return { request, clearSession: async () => {}, onExpired: () => {} } as ApiClient; }
+function client(request: ReturnType<typeof vi.fn>): ApiClient { return { request, clearSession: async () => {}, onExpired: () => {}, onAccessRequired: () => {} } as ApiClient; }
 describe('real API adapter boundaries', () => {
   it('keeps client decisions scoped to the portal, with the revision read', async () => {
     const request = vi.fn().mockImplementation(async (path: string) => path.includes('/threads') ? { data: [], meta: { totalPages: 1 } } : { id: contentId, title: 'Post', format: 'image', status: 'approved', publishOn: '2026-11-12', caption: 'Legenda', revision: 7, media: [], coverAssetId: null });
