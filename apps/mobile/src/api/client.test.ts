@@ -160,3 +160,23 @@ describe('session response ordering', () => {
     expect(await storage.get()).toBe('saved-session'); expect(expired).not.toHaveBeenCalled();
   });
 });
+
+
+it('does not persist a queued old cookie after logout changes the generation', async () => {
+  let value: string | null = 'saved-session'; let release!: () => void; let respondFirst!: (value: Response) => void; let respondSecond!: (value: Response) => void;
+  const storage = { get: async () => value, set: vi.fn((next: string) => new Promise<void>((resolve) => { release = () => { value = next; resolve(); }; })), clear: vi.fn(async () => { value = null; }) };
+  const codecCheck = vi.fn(() => true);
+  const fetcher = vi.fn<typeof fetch>().mockReturnValueOnce(new Promise<Response>((resolve) => { respondFirst = resolve; })).mockReturnValueOnce(new Promise<Response>((resolve) => { respondSecond = resolve; }));
+  const api = createApiClient('https://dev.ageniza.com.br/api', storage, true, { ...codec, hasBetterAuthCookies: codecCheck }, fetcher);
+  const first = api.request('/profile'); const second = api.request('/health');
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  respondFirst(json({}, 200, { 'set-cookie': 'ageniza.session_token=first' }));
+  await vi.waitFor(() => expect(storage.set).toHaveBeenCalledOnce());
+  respondSecond(json({}, 200, { 'set-cookie': 'ageniza.session_token=second' }));
+  await vi.waitFor(() => expect(codecCheck).toHaveBeenCalledTimes(2));
+  const clearing = api.clearSession(); release();
+  await expect(first).rejects.toMatchObject({ code: 'STALE_SESSION' });
+  await expect(second).rejects.toMatchObject({ code: 'STALE_SESSION' });
+  await clearing;
+  expect(storage.set).toHaveBeenCalledTimes(1); expect(await storage.get()).toBeNull();
+});
