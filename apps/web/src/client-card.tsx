@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { ClientListItem } from '@ageniza/contracts';
 import { Avatar, LateBadge, Menu, MenuItem, Pill, PillAction } from '@ageniza/ui';
 
-import { nextAction, triageSealOf, type ClientTabSlug, type TriageSeal, type TriageVisibility } from './clients-triage.js';
+import { nextAction, triageSealOf, type ClientTarget, type TriageSeal, type TriageVisibility } from './clients-triage.js';
 
 /** "2026-10-30" → "30/10". Built from the string: a UTC parse would flip the day in Brazil. */
 const closingLabel = (closingDate: string): string => `${closingDate.slice(8, 10)}/${closingDate.slice(5, 7)}`;
@@ -41,8 +41,9 @@ export function ClientCard({ client, visible, agencyId, listUrl }: ClientCardPro
   const seal = triageSealOf(client, visible);
   const action = nextAction(client, visible);
   const indicators = visible.contents ? client.contentIndicators : undefined;
-  const open = (tab: ClientTabSlug): void => {
-    void navigate(`/agencia/${agencyId}/clientes/${client.id}/${tab}`, { state: { clientListUrl: listUrl } });
+  const open = (target: ClientTarget): void => {
+    const path = target === 'calendario' ? `/agencia/${agencyId}/conteudos/${client.id}` : `/agencia/${agencyId}/clientes/${client.id}/${target}`;
+    void navigate(path, { state: { clientListUrl: listUrl } });
   };
 
   const badges: Array<{ key: string; text: string; attention?: true }> = [];
@@ -92,7 +93,7 @@ export function ClientCard({ client, visible, agencyId, listUrl }: ClientCardPro
     <div className="clients__menu">
       <Menu label={`Ações de ${client.name}`} triggerLabel={`Mais ações para ${client.name}`} trigger={<EllipsisVertical aria-hidden="true" />}>
         <MenuItem onClick={() => open('geral')}>Abrir cliente</MenuItem>
-        {!archived && visible.contents && <MenuItem onClick={() => open('conteudos')}>Calendário Editorial</MenuItem>}
+        {!archived && visible.contents && <MenuItem onClick={() => open('calendario')}>Calendário Editorial</MenuItem>}
         {!archived && <MenuItem onClick={() => open('estudo-de-marca')}>Estudo de marca</MenuItem>}
         {!archived && visible.invitations && <MenuItem onClick={() => open('acessos')}>Acessos</MenuItem>}
       </Menu>
@@ -105,7 +106,7 @@ export function ClientCard({ client, visible, agencyId, listUrl }: ClientCardPro
         className="clients__action"
         trailingIcon={<ArrowRight />}
         aria-label={`${action.label}, ${client.name}`}
-        onClick={() => open(action.tab)}
+        onClick={() => open(action.target)}
       >{action.label}</PillAction>
     </div>}
   </article>;

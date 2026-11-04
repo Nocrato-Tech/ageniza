@@ -1086,7 +1086,7 @@ describe('the client badge (#636)', () => {
     expect(within(cardOf('Cliente Quieto')).queryByText('convite pendente')).toBeNull();
   });
 
-  it('opens the tab the next action is about, and shows the number behind it', async () => {
+  it('opens the place the next action is about (the screen of Conteúdos for the late posts), and shows the number behind it', async () => {
     const { impl } = roster([lateAndInvited, invited, quiet]);
     const { probe } = renderClients(impl);
     await screen.findByText('Cliente Atrasado');
@@ -1099,7 +1099,7 @@ describe('the client badge (#636)', () => {
     const again = renderClients(impl);
     await screen.findByText('Cliente Atrasado');
     fireEvent.click(within(cardOf('Cliente Atrasado')).getByRole('button', { name: 'Resolver atraso, Cliente Atrasado' }));
-    await waitFor(() => expect(again.probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${lateAndInvited.id}/conteudos`));
+    await waitFor(() => expect(again.probe.pathname).toBe(`/agencia/${AGENCY_A}/conteudos/${lateAndInvited.id}`));
     cleanup();
 
     renderClients(impl);
@@ -1117,7 +1117,7 @@ describe('the client badge (#636)', () => {
     const menu = screen.getByRole('menu', { name: 'Ações de Cliente Quieto' });
     expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Abrir cliente', 'Calendário Editorial', 'Estudo de marca', 'Acessos']);
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Calendário Editorial' }));
-    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${quiet.id}/conteudos`));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/conteudos/${quiet.id}`));
     cleanup();
 
     const limited = roster([quiet], ['cliente.visualizar']);

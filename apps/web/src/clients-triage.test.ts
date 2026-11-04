@@ -41,20 +41,20 @@ describe('triageSealOf', () => {
 describe('nextAction', () => {
   it('follows the triage: late, due soon, suggestions, invitation, and otherwise open the client', () => {
     expect(nextAction(client('A', { contentIndicators: indicators({ overdue: 2, dueSoon: 1 }), threadsAwaitingAgency: 3, pendingInvitations: 1 }), READER))
-      .toEqual({ label: 'Resolver atraso', tab: 'conteudos', figure: { value: 2, caption: 'posts atrasados' } });
+      .toEqual({ label: 'Resolver atraso', target: 'calendario', figure: { value: 2, caption: 'posts atrasados' } });
     expect(nextAction(client('B', { contentIndicators: indicators({ dueSoon: 1 }), threadsAwaitingAgency: 3 }), READER))
-      .toEqual({ label: 'Ver prazos', tab: 'conteudos', figure: { value: 1, caption: 'post com prazo em até 2 dias' } });
+      .toEqual({ label: 'Ver prazos', target: 'calendario', figure: { value: 1, caption: 'post com prazo em até 2 dias' } });
     expect(nextAction(client('C', { threadsAwaitingAgency: 3, pendingInvitations: 1 }), READER))
-      .toEqual({ label: 'Ver sugestões', tab: 'estudo-de-marca', figure: { value: 3, caption: 'sugestões para responder' } });
+      .toEqual({ label: 'Ver sugestões', target: 'estudo-de-marca', figure: { value: 3, caption: 'sugestões para responder' } });
     expect(nextAction(client('D', { pendingInvitations: 1 }), READER))
-      .toEqual({ label: 'Ver convites', tab: 'acessos', figure: { value: 1, caption: 'convite em aberto' } });
-    expect(nextAction(client('E'), READER)).toEqual({ label: 'Abrir cliente', tab: 'geral', figure: null });
+      .toEqual({ label: 'Ver convites', target: 'acessos', figure: { value: 1, caption: 'convite em aberto' } });
+    expect(nextAction(client('E'), READER)).toEqual({ label: 'Abrir cliente', target: 'geral', figure: null });
   });
 
   it('never sends who cannot read contents or invitations to a tab of them', () => {
     const loaded = client('A', { contentIndicators: indicators({ overdue: 2 }), pendingInvitations: 1 });
-    expect(nextAction(loaded, NO_CONTENTS)?.tab).toBe('acessos');
-    expect(nextAction(loaded, { contents: false, invitations: false })).toEqual({ label: 'Abrir cliente', tab: 'geral', figure: null });
+    expect(nextAction(loaded, NO_CONTENTS)?.target).toBe('acessos');
+    expect(nextAction(loaded, { contents: false, invitations: false })).toEqual({ label: 'Abrir cliente', target: 'geral', figure: null });
   });
 
   it('gives an archived client no action', () => {
