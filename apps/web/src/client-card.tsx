@@ -92,7 +92,7 @@ export function ClientCard({ client, visible, agencyId, listUrl }: ClientCardPro
     <div className="clients__menu">
       <Menu label={`Ações de ${client.name}`} triggerLabel={`Mais ações para ${client.name}`} trigger={<EllipsisVertical aria-hidden="true" />}>
         <MenuItem onClick={() => open('geral')}>Abrir cliente</MenuItem>
-        {!archived && visible.contents && <MenuItem onClick={() => open('conteudos')}>Conteúdos</MenuItem>}
+        {!archived && visible.contents && <MenuItem onClick={() => open('conteudos')}>Calendário Editorial</MenuItem>}
         {!archived && <MenuItem onClick={() => open('estudo-de-marca')}>Estudo de marca</MenuItem>}
         {!archived && visible.invitations && <MenuItem onClick={() => open('acessos')}>Acessos</MenuItem>}
       </Menu>

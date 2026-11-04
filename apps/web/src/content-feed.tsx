@@ -1,11 +1,13 @@
 import { useState, type ReactNode } from 'react';
-import { CalendarX, ChevronLeft, ChevronRight, Clapperboard, GalleryVertical } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clapperboard, GalleryVertical } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 
-import { Avatar, IconButton, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, IconButton, Skeleton } from '@ageniza/ui';
 import type { ContentFormat, ContentListItem, ContentStatus } from '@ageniza/contracts';
 
+import { useContentsAddress } from './content-address.js';
 import { ContentCover } from './content-cover.js';
-import { dayMonthLabel } from './content-dates.js';
+import { dayMonthLabel, dayMonthNameLabel } from './content-dates.js';
 import { FORMAT_LABELS } from './content-labels.js';
 
 /** What the tile says about the state: shorter than the card's own words, and always with the colour of the dot beside it. */
@@ -18,8 +20,11 @@ const TILE_STATUS_LABELS: Readonly<Record<ContentStatus, string>> = {
   cancelled: 'Cancelado'
 };
 
-/** The grid is three columns by three rows, nine posts a page, like the profile it previews: a page never has a blank corner. */
+/** The phone shows nine posts a page, three rows of the grid of a profile; the last row may be short, as on a real one. */
 export const FEED_PAGE_SIZE = 9;
+
+/** The feed on its own screen has the whole period to show: ten rows of three a page, and no blank corner is drawn. */
+export const FULL_FEED_PAGE_SIZE = 30;
 
 /** Long videos and VSLs are not posts of the feed: they live in the calendar only (specs/conteudo.md section 7). */
 export const FEED_FORMATS: ReadonlySet<ContentFormat> = new Set<ContentFormat>(['image', 'carousel', 'reels']);
@@ -39,15 +44,6 @@ export const feedItems = (contents: readonly ContentListItem[]): ContentListItem
     return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
   });
 
-/** A slot with nothing in it: the frame and the "nothing on this day" icon, so the grid is never left with blank space. */
-function EmptySlots({ count }: { count: number }) {
-  return <>
-    {Array.from({ length: count }, (_value, index) => <li key={index} className="content-feed__slot" aria-hidden="true" title="Nada neste dia">
-      <CalendarX />
-    </li>)}
-  </>;
-}
-
 /** The device the profile is drawn on: a bezel, the camera island and the home bar, around whatever the screen holds. The approval link draws a post on it. */
 export function Phone({ children }: { children: ReactNode }) {
   return <div className="content-phone">
@@ -57,6 +53,11 @@ export function Phone({ children }: { children: ReactNode }) {
       <span className="content-phone__home" aria-hidden="true" />
     </div>
   </div>;
+}
+
+/** The feed on its own screen: the profile and its grid on the page itself, with no device around them. */
+function FullFrame({ children }: { children: ReactNode }) {
+  return <div className="content-feed-full">{children}</div>;
 }
 
 /** The shape of the grid while the first period loads: decorative, never announced. */
@@ -86,31 +87,42 @@ const countOf = (items: readonly ContentListItem[], status: ContentStatus): numb
  * server is a React text child. The page belongs to the `scope` it was chosen in (the client and the period on
  * screen): another scope starts on its first page, without remounting the tiles, which would read their covers again.
  */
-export function ContentFeed({ contents, today, handle, profile, scope }: {
+export function ContentFeed({ onCreate, clientId, contents, today, handle, profile, scope, variant = 'phone' }: {
+  /** The way to plan the first post, for who may create one: absent for who may not. */
+  onCreate?: (() => void) | undefined;
+  clientId: string;
   contents: readonly ContentListItem[];
   today: string;
   handle: string | null;
   profile?: ContentFeedProfile;
   scope: string;
+  /** `phone` is the preview beside the calendar; `full` is the feed on its own screen, with no device around it. */
+  variant?: 'phone' | 'full';
 }) {
+  const address = useContentsAddress(clientId);
+  const location = useLocation();
+  const full = variant === 'full';
+  const pageSize = full ? FULL_FEED_PAGE_SIZE : FEED_PAGE_SIZE;
   const [chosen, choose] = useState({ scope, page: 1 });
   // Another scope forgets the page at once, so coming back to a period never finds the page it was left on.
   if (chosen.scope !== scope) choose({ scope, page: 1 });
   const setPage = (next: number): void => choose({ scope, page: next });
   const items = feedItems(contents);
   const ready = countOf(items, 'approved');
-  const pages = Math.max(1, Math.ceil(items.length / FEED_PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(items.length / pageSize));
   const page = Math.min(chosen.page, pages);
-  const first = (page - 1) * FEED_PAGE_SIZE;
-  const shown = items.slice(first, first + FEED_PAGE_SIZE);
+  const first = (page - 1) * pageSize;
+  const shown = items.slice(first, first + pageSize);
   const atStart = page === 1;
   const atEnd = page === pages;
 
-  return <Phone>
+  const Frame = full ? FullFrame : Phone;
+  return <Frame>
     <div className="content-feed">
       {handle !== null && <p className="content-feed__handle">@{handle}</p>}
       {profile !== undefined && <div className="content-feed__profile">
         <Avatar name={profile.name} photoUrl={profile.photoUrl} size="lg" />
+        {full && <p className="content-feed__name">{profile.name}</p>}
         <dl className="content-feed__counters">
           <div><dt>no período</dt><dd>{items.length}</dd></div>
           <div><dt>{ready === 1 ? 'pronto' : 'prontos'}</dt><dd>{ready}</dd></div>
@@ -118,31 +130,35 @@ export function ContentFeed({ contents, today, handle, profile, scope }: {
         </dl>
       </div>}
       {items.length === 0
-        ? <>
-          <ol className="content-feed__grid content-feed__grid--empty" aria-hidden="true">
-            <EmptySlots count={FEED_PAGE_SIZE} />
-          </ol>
-          <p className="content-feed__empty">Planeje o primeiro post</p>
-        </>
+        ? <div className="content-feed__empty">
+          <p>Nenhum post planejado neste período.</p>
+          {onCreate !== undefined && <Button variant="secondary" onClick={onCreate}>Planejar um post</Button>}
+        </div>
         : <>
           <ol className="content-feed__grid">
             {shown.map((content) => <li key={content.id} className="content-feed__tile" data-status={content.status}>
-              <ContentCover assetId={content.thumbnailAssetId} format={content.format} className="content-feed__cover" />
-              <span className="content-feed__status"><span className="content-feed__dot" aria-hidden="true" />{TILE_STATUS_LABELS[content.status]}</span>
-              {content.format === 'reels' && <Clapperboard className="content-feed__format" aria-hidden="true" />}
-              {content.format === 'carousel' && <GalleryVertical className="content-feed__format" aria-hidden="true" />}
-              {content.publishOn > today && <span className="content-feed__planned">Planejado</span>}
-              <span className="visually-hidden">{content.title} · {FORMAT_LABELS[content.format]} · {dayMonthLabel(content.publishOn)}</span>
+              <Link
+                className="content-feed__link"
+                to={{ pathname: `${address}/${content.id}`, search: location.search }}
+                state={location.state}
+              >
+                <ContentCover assetId={content.thumbnailAssetId} format={content.format} className="content-feed__cover" />
+                <span className="content-feed__status"><span className="content-feed__dot" aria-hidden="true" />{TILE_STATUS_LABELS[content.status]}</span>
+                {content.format === 'reels' && <Clapperboard className="content-feed__format" aria-hidden="true" />}
+                {content.format === 'carousel' && <GalleryVertical className="content-feed__format" aria-hidden="true" />}
+                <time className="content-feed__date" dateTime={content.publishOn}>{dayMonthNameLabel(content.publishOn)}</time>
+                {content.publishOn > today && <span className="content-feed__planned">Planejado</span>}
+                <span className="visually-hidden">{content.title} · {FORMAT_LABELS[content.format]} · {dayMonthLabel(content.publishOn)}</span>
+              </Link>
             </li>)}
-            <EmptySlots count={FEED_PAGE_SIZE - shown.length} />
           </ol>
-          <nav className="content-feed__pager" aria-label="Páginas do feed">
+          {(!full || pages > 1) && <nav className="content-feed__pager" aria-label="Páginas do feed">
             {/* `aria-disabled`, not `disabled`: the button that was just pressed keeps the keyboard focus when it reaches an end. */}
             <IconButton label="Página anterior" icon={<ChevronLeft />} aria-disabled={atStart || undefined} onClick={() => { if (!atStart) setPage(page - 1); }} />
             <p className="content-feed__range" aria-live="polite">{shown.length === 1 ? first + 1 : `${first + 1}–${first + shown.length}`} de {items.length}</p>
             <IconButton label="Próxima página" icon={<ChevronRight />} aria-disabled={atEnd || undefined} onClick={() => { if (!atEnd) setPage(page + 1); }} />
-          </nav>
+          </nav>}
         </>}
     </div>
-  </Phone>;
+  </Frame>;
 }

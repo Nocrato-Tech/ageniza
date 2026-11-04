@@ -1115,8 +1115,8 @@ describe('the client badge (#636)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Mais ações para Cliente Quieto' }));
     const menu = screen.getByRole('menu', { name: 'Ações de Cliente Quieto' });
-    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Abrir cliente', 'Conteúdos', 'Estudo de marca', 'Acessos']);
-    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Conteúdos' }));
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Abrir cliente', 'Calendário Editorial', 'Estudo de marca', 'Acessos']);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Calendário Editorial' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${quiet.id}/conteudos`));
     cleanup();
 

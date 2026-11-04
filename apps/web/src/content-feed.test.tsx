@@ -290,26 +290,28 @@ describe('the feed beside the calendar', () => {
     expect(tileTexts()).toEqual(['De novembro · Imagem · 10/11']);
   });
 
-  it('draws the empty grid and says "Planeje o primeiro post" when there is nothing to show, and only then', async () => {
+  it('says there is no post, with no grid of empty frames, when there is nothing to show, and only then', async () => {
     const empty = makeFetch();
     const first = renderScreen(empty.impl, url(padaria.id));
-    expect(await screen.findByText('Planeje o primeiro post')).toBeTruthy();
-    expect(document.querySelectorAll('.content-feed__slot')).toHaveLength(9);
+    expect(await screen.findByText('Nenhum post planejado neste período.')).toBeTruthy();
+    expect(document.querySelectorAll('.content-feed__slot')).toHaveLength(0);
+    expect(document.querySelector('.content-feed__grid')).toBeNull();
     first.unmount();
 
     // A period with only what the feed leaves out is empty for the feed, though not for the calendar.
     const onlyOthers = makeFetch({ contents: { [padaria.id]: [contentFixture({ format: 'long_video', publishOn: '2026-10-14' }), contentFixture({ status: 'cancelled', publishOn: '2026-10-15' })] } });
     const second = renderScreen(onlyOthers.impl, url(padaria.id));
-    expect(await screen.findByText('Planeje o primeiro post')).toBeTruthy();
+    expect(await screen.findByText('Nenhum post planejado neste período.')).toBeTruthy();
     expect(screen.queryByText('Nenhum conteúdo planejado neste período.')).toBeNull();
     second.unmount();
 
     const filled = makeFetch({ contents: { [padaria.id]: [contentFixture({ publishOn: '2026-10-14' })] } });
     renderScreen(filled.impl, url(padaria.id));
     await ready();
-    expect(screen.queryByText('Planeje o primeiro post')).toBeNull();
-    // One post fills one slot of the nine: the other eight are the frames of "nothing on this day", and none is a tile of the feed.
-    expect(document.querySelectorAll('.content-feed__slot')).toHaveLength(8);
+    expect(screen.queryByText('Nenhum post planejado neste período.')).toBeNull();
+    // One post is one tile: nothing is drawn for the eight places a full page would have.
+    expect(document.querySelectorAll('.content-feed__slot')).toHaveLength(0);
+    expect(document.querySelectorAll('.content-feed__tile')).toHaveLength(1);
     expect(document.querySelectorAll('.content-feed__tile--empty')).toHaveLength(0);
   });
 
@@ -322,7 +324,7 @@ describe('the feed beside the calendar', () => {
     const first = makeFetch({ period: () => deferred<Response>().promise });
     const loading = renderScreen(first.impl, url(confeitaria.id));
     await waitFor(() => expect(document.querySelectorAll('.content-feed__skeleton')).toHaveLength(9));
-    expect(screen.queryByText('Planeje o primeiro post')).toBeNull();
+    expect(screen.queryByText('Nenhum post planejado neste período.')).toBeNull();
     loading.unmount();
 
     renderScreen(impl, url(padaria.id));
@@ -333,7 +335,7 @@ describe('the feed beside the calendar', () => {
     expect(tileTexts()).toEqual(['Do fim de outubro · Imagem · 30/10']);
     expect(document.querySelectorAll('.content-feed__skeleton')).toHaveLength(0);
     held.resolve(json({}));
-    expect(await screen.findByText('Planeje o primeiro post')).toBeTruthy();
+    expect(await screen.findByText('Nenhum post planejado neste período.')).toBeTruthy();
   });
 
   it('shows no feed of another client while the next client loads', async () => {
@@ -349,7 +351,7 @@ describe('the feed beside the calendar', () => {
     expect(screen.queryByText(/Da padaria/)).toBeNull();
     expect(document.querySelectorAll('.content-feed__skeleton')).toHaveLength(9);
     held.resolve(json({}));
-    expect(await screen.findByText('Planeje o primeiro post')).toBeTruthy();
+    expect(await screen.findByText('Nenhum post planejado neste período.')).toBeTruthy();
   });
 
   it('shows the handle of the client above the grid, and nothing when the client has none', async () => {
@@ -359,7 +361,7 @@ describe('the feed beside the calendar', () => {
     first.unmount();
 
     renderScreen(makeFetch().impl, url(confeitaria.id));
-    await screen.findByText('Planeje o primeiro post');
+    await screen.findByText('Nenhum post planejado neste período.');
     expect(document.querySelector('.content-feed__handle')).toBeNull();
   });
 
@@ -371,7 +373,7 @@ describe('the feed beside the calendar', () => {
     renderScreen(impl, url(padaria.id));
 
     expect(await screen.findByText('Não foi possível carregar os conteúdos. Tente de novo.', undefined, { timeout: 5000 })).toBeTruthy();
-    expect(screen.queryByText('Planeje o primeiro post')).toBeNull();
+    expect(screen.queryByText('Nenhum post planejado neste período.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     await ready();
     expect(tileTexts()).toEqual(['Voltou · Imagem · 14/10']);
@@ -465,7 +467,7 @@ describe('the cover of a tile', () => {
   });
 });
 
-describe('the feed is the phone beside the calendar, not a view of the page', () => {
+describe('the feed is the phone beside the calendar, and a view of its own', () => {
   it('has one feed on the screen, at the side of the calendar, and no tab to swap them', async () => {
     const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'De outubro', publishOn: '2026-10-07' })] } });
     renderScreen(impl, url(padaria.id));
@@ -475,7 +477,8 @@ describe('the feed is the phone beside the calendar, not a view of the page', ()
     expect(screen.queryByRole('region', { name: 'Prévia do feed' })).toBeNull();
     expect(document.querySelector('.content-calendar')).not.toBeNull();
     expect(screen.queryByRole('tab', { name: 'Feed' })).toBeNull();
-    expect(screen.queryByRole('radio', { name: 'Feed' })).toBeNull();
+    // The same feed is also one of the three views of the screen, on its own, with no phone around it.
+    expect(screen.getByRole('radio', { name: 'Feed' })).toBeTruthy();
   });
 
   it('opens the calendar with the feed beside it for the old feed address, and writes nothing to the URL', async () => {
@@ -570,7 +573,7 @@ describe('the feed drawn as a phone, nine posts to a page', () => {
     expect(slots()).toBe(0);
   });
 
-  it('goes to the next page and back, ends the last page in empty slots and keeps the counters of the whole period', async () => {
+  it('goes to the next page and back, ends the last page where the posts end, with no empty slot, and keeps the counters of the whole period', async () => {
     const { impl } = makeFetch({ contents: { [padaria.id]: posts(14) } });
     renderScreen(impl, url(padaria.id));
     await ready();
@@ -578,7 +581,7 @@ describe('the feed drawn as a phone, nine posts to a page', () => {
     fireEvent.click(pagerButton('Próxima página'));
     expect(tileTexts()).toEqual(Array.from({ length: 5 }, (_value, index) => `Post ${5 - index} · Imagem · 0${5 - index}/10`));
     expect(pageOf()).toBe('10–14 de 14');
-    expect(slots()).toBe(4);
+    expect(slots()).toBe(0);
     const counters = feedRegion().querySelector<HTMLElement>('.content-feed__counters')!;
     expect(within(counters).getByText('no período').nextElementSibling?.textContent).toBe('14');
 
@@ -599,30 +602,35 @@ describe('the feed drawn as a phone, nine posts to a page', () => {
     renderScreen(makeFetch({ contents: { [padaria.id]: posts(1) } }).impl, url(padaria.id));
     await ready();
     expect(pageOf()).toBe('1 de 1');
-    expect(slots()).toBe(8);
+    expect(slots()).toBe(0);
   });
 
-  it('fills the empty feed with nine slots, says what to do and offers no pager', async () => {
+  it('says there is no post in the period, draws no frame, and offers no pager', async () => {
     renderScreen(makeFetch().impl, url(padaria.id));
-    expect(await screen.findByText('Planeje o primeiro post')).toBeTruthy();
+    expect(await screen.findByText('Nenhum post planejado neste período.')).toBeTruthy();
 
-    expect(slots()).toBe(9);
+    expect(slots()).toBe(0);
+    expect(feedRegion().querySelector('.content-feed__grid')).toBeNull();
     expect(within(feedRegion()).queryByRole('button', { name: 'Próxima página' })).toBeNull();
     expect(feedRegion().querySelector('.content-feed__range')).toBeNull();
+    // Nobody may create here: no way is offered.
+    expect(within(feedRegion()).queryByRole('button', { name: 'Planejar um post' })).toBeNull();
   });
 
-  it('draws the icon of "nothing on this day" in each slot and keeps it out of the reading order', async () => {
+  it('draws only the posts there are, with no empty frame, when a period has few', async () => {
     renderScreen(makeFetch({ contents: { [padaria.id]: posts(2) } }).impl, url(padaria.id));
     await ready();
 
-    const filled = [...feedRegion().querySelectorAll('.content-feed__slot')];
-    expect(filled).toHaveLength(7);
-    for (const slot of filled) {
-      expect(slot.getAttribute('aria-hidden')).toBe('true');
-      expect(slot.getAttribute('title')).toBe('Nada neste dia');
-      expect(slot.querySelector('svg.lucide-calendar-x')).not.toBeNull();
-    }
+    expect(slots()).toBe(0);
     expect(within(feedRegion()).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('shows the day of each post, as São Paulo plans it, on its tile', async () => {
+    renderScreen(makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Um', publishOn: '2026-10-03' }), contentFixture({ title: 'Outro', publishOn: '2026-10-21' })] } }).impl, url(padaria.id));
+    await ready();
+
+    const dates = [...feedRegion().querySelectorAll('.content-feed__tile time')].map((time) => [time.textContent, time.getAttribute('datetime')]);
+    expect(dates).toEqual([['21 de out.', '2026-10-21'], ['03 de out.', '2026-10-03']]);
   });
 
   it('keeps the page buttons 44px high and the pressed one focused when it reaches an end', async () => {

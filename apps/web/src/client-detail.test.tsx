@@ -288,7 +288,7 @@ describe('client detail (#136)', () => {
     // Every tab's own content heading; the two content tabs of #138/#140 render their real area
     // instead of the skeleton sentence.
     const tabHeadings = [
-      ['Conteúdos', 'conteudos', 'Conteúdos'],
+      ['Calendário Editorial', 'conteudos', 'Calendário Editorial'],
       ['Tarefas', 'tarefas', 'Tarefas'],
       ['Estudo de marca', 'estudo-de-marca', 'Estudo de marca'],
       ['Relatórios', 'relatorios', 'Relatórios'],
@@ -344,8 +344,8 @@ describe('client detail (#136)', () => {
     expect(back().getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
 
     // A tab click inside the detail must not drop the roster address (review of #379 r2).
-    fireEvent.click(within(await screen.findByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Conteúdos' }));
-    expect(await screen.findByRole('heading', { name: 'Conteúdos' })).toBeTruthy();
+    fireEvent.click(within(await screen.findByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Calendário Editorial' }));
+    expect(await screen.findByRole('heading', { name: 'Calendário Editorial' })).toBeTruthy();
     expect(back().getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
 
     fireEvent.click(back());

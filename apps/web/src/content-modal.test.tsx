@@ -75,8 +75,8 @@ describe('the address of a content', () => {
     probe.navigate(`${base()}?visao=semana&data=2026-10-21`, { state: { from: 'carteira' } });
     await screen.findByText('Receita longa');
 
-    const link = screen.getByRole('link', { name: 'Receita longa' });
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Receita longa' }).getAttribute('href')).toBe(`${base()}/${row.id}?visao=semana&data=2026-10-21`));
+    const link = screen.getAllByRole('link', { name: /Receita longa/ })[0]!;
+    await waitFor(() => expect(screen.getAllByRole('link', { name: /Receita longa/ })[0]!.getAttribute('href')).toBe(`${base()}/${row.id}?visao=semana&data=2026-10-21`));
     fireEvent.click(link);
     expect(await screen.findByRole('dialog', { name: 'Receita longa' })).toBeTruthy();
     expect(probe.pathname).toBe(`${base()}/${row.id}`);
@@ -95,8 +95,8 @@ describe('the address of a content', () => {
     const second = stored({ title: 'Segundo', publishOn: '2026-10-20' });
     const { impl } = makeFetch({ contents: [first, second] });
     const { probe } = render_(impl);
-    await screen.findByRole('link', { name: 'Segundo' });
-    fireEvent.click(screen.getByRole('link', { name: 'Segundo' }));
+    await screen.findAllByRole('link', { name: /Segundo/ });
+    fireEvent.click(screen.getAllByRole('link', { name: /Segundo/ })[0]!);
     await screen.findByRole('dialog', { name: 'Segundo' });
     expect(probe.pathname).toBe(`${base()}/${second.id}`);
   });
@@ -712,7 +712,7 @@ describe('creating a content', () => {
       path: `/agencies/${AGENCY}/clients/${padaria.id}/contents`,
       body: { title: '  Pão de queijo  ', format: 'reels', publishOn: '2026-10-22', publishAtTime: '09:15', caption: 'Quentinho', folderId: VIDEOS }
     }]);
-    expect(await screen.findByRole('link', { name: 'Pão de queijo' })).toBeTruthy();
+    expect(await screen.findAllByRole('link', { name: /Pão de queijo/ })).toBeTruthy();
   });
 
   it('asks for the folder before sending anything', async () => {

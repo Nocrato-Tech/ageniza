@@ -52,14 +52,14 @@ describe('the Mídias tab: navigation and the address', () => {
     const { probe } = open(world, contentsTabUrl);
 
     const tabs = within(await screen.findByRole('navigation', { name: 'Seções do cliente' }));
-    expect(tabs.getAllByRole('link').map((link) => link.textContent).slice(0, 3)).toEqual(['Geral', 'Conteúdos', 'Mídias']);
+    expect(tabs.getAllByRole('link').map((link) => link.textContent).slice(0, 3)).toEqual(['Geral', 'Calendário Editorial', 'Mídias']);
     fireEvent.click(tabs.getByRole('link', { name: 'Mídias' }));
     await heading('Pastas');
 
     expect(probe.pathname).toBe(mediaUrl);
     expect(probe.search).toBe('');
     expect(tabs.getByRole('link', { name: 'Mídias' }).getAttribute('aria-current')).toBe('page');
-    expect(tabs.getByRole('link', { name: 'Conteúdos' }).getAttribute('aria-current')).toBeNull();
+    expect(tabs.getByRole('link', { name: 'Calendário Editorial' }).getAttribute('aria-current')).toBeNull();
     for (const name of ['Vídeos Padrão', 'Imagens Padrão', 'Carrosséis Padrão', 'Ensaio fotográfico Padrão', 'Campanha de Natal']) {
       expect(screen.getByRole('link', { name })).toBeTruthy();
     }
@@ -175,7 +175,7 @@ describe('the Mídias tab: navigation and the address', () => {
     const { probe } = open(makeWorld(), foldersUrl(`&pasta=${VIDEOS}&subpasta=${WORK}&pagina=2`));
     await heading('Gravação de outubro');
 
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Conteúdos' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Calendário Editorial' }));
     await screen.findByRole('group', { name: 'Período' });
     expect(probe.pathname).toBe(contentsTabUrl);
     expect(probe.search).toBe('');
@@ -263,7 +263,7 @@ describe('the Mídias tab: who sees it', () => {
 
     const tabs = within(await screen.findByRole('navigation', { name: 'Seções do cliente' }));
     expect(tabs.getByRole('link', { name: 'Geral' })).toBeTruthy();
-    expect(tabs.queryByRole('link', { name: 'Conteúdos' })).toBeNull();
+    expect(tabs.queryByRole('link', { name: 'Calendário Editorial' })).toBeNull();
     expect(tabs.queryByRole('link', { name: 'Mídias' })).toBeNull();
   });
 
