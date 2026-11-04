@@ -25,9 +25,7 @@ runtime.queue?.register<{ assetId: string }>({
 await runtime.start();
 ```
 
-The values above are the defaults. `WORKER_CONCURRENCY` (default `1`, at most `4`) is the global
-worker budget. Video processing below has its own concurrency of `1`, so raising the global ceiling
-can increase throughput for lighter queues without running multiple ffmpeg jobs at once.
+The values above are the defaults. `WORKER_CONCURRENCY` (default `1`, at most `4`) is how many jobs of **each queue** the worker runs at once (pg-boss `localConcurrency` is per `work()` registration, so queues never hold one another: a long video does not delay e-mail, notification or purge jobs). A job may only ask for less through its own `concurrency`; video processing asks for `1`, so there is never more than one ffmpeg at a time whatever the global value.
 
 ### Contract every handler must follow
 
