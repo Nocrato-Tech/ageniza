@@ -23,7 +23,7 @@ export function TeamScreen({ context, permissions, readOnly }: { context: Extrac
   const canRole = has('colaborador.alterar_papel');
   const load = useCallback(async (signal: AbortSignal) => {
     const [people, roles, invitations] = await Promise.all([
-      api.request<CollaboratorListResponse>(`${root}/collaborators?status=${mode === 'removed' ? 'removed' : 'active'}&page=${page}&pageSize=24&q=${encodeURIComponent(query)}`, { signal }),
+      api.request<CollaboratorListResponse>(`${root}/collaborators?status=${mode === 'removed' ? 'removed' : 'active'}&page=${page}&pageSize=24${query.trim() ? `&q=${encodeURIComponent(query.trim())}` : ''}`, { signal }),
       canInvite || canRole ? api.request<AgencyRolesResponse>(`${root}/roles`, { signal }) : Promise.resolve({ data: [] }),
       canInvite ? api.request<PendingInvitationListResponse>(`${root}/invitations?page=${page}&pageSize=24`, { signal }) : Promise.resolve(undefined)
     ]);

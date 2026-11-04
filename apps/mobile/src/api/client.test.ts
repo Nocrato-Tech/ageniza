@@ -86,11 +86,13 @@ describe('native API transport', () => {
     expect(headers.get('expo-origin')).toBe('ageniza://');
     expect(headers.has('origin')).toBe(false);
     expect(fetcher.mock.calls[1][1]?.credentials).toBe('omit');
+    expect(fetcher.mock.calls[0][1]?.redirect).toBe('error');
+    expect(fetcher.mock.calls[1][1]?.redirect).toBe('error');
   });
   it('clears a revoked session and informs the UI on any 401', async () => {
     const storage = memory();
     const api = createApiClient('https://dev.ageniza.com.br/api', storage, true, codec, vi.fn().mockResolvedValue(json({ error: { code: 'SESSION_EXPIRED', message: 'Sessão encerrada.' } }, 401)));
-    await storage.set('stored');
+    await storage.set('saved-session');
     const expired = vi.fn(); api.onExpired(expired);
     await expect(api.request('/clients/one')).rejects.toMatchObject({ status: 401 });
     expect(await storage.get()).toBeNull(); expect(expired).toHaveBeenCalledOnce();
@@ -130,4 +132,51 @@ describe('native API transport', () => {
     const fetcher = vi.fn(); const api = createApiClient('https://dev.ageniza.com.br/api', memory(), true, codec, fetcher);
     await expect(api.request('//evil.test')).rejects.toThrow('inválido'); expect(fetcher).not.toHaveBeenCalled();
   });
+});
+
+
+describe('session response ordering', () => {
+  it('does not invalidate an anonymous invitation preview when cold restore returns 401', async () => {
+    let release!: (response: Response) => void;
+    const preview = new Promise<Response>((resolve) => { release = resolve; });
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (url) => String(url).includes('invitations') ? preview : json({}, 401));
+    const api = createApiClient('https://dev.ageniza.com.br/api', memory(), true, codec, fetcher);
+    const pending = api.request('/invitations/token');
+    await expect(api.request('/auth/session')).rejects.toMatchObject({ status: 401 });
+    release(json({ email: 'invited@example.test' }));
+    await expect(pending).resolves.toEqual({ email: 'invited@example.test' });
+  });
+  it('does not let a delayed revoked-session response erase a newer login', async () => {
+    let release!: (response: Response) => void;
+    const stale = new Promise<Response>((resolve) => { release = resolve; });
+    const storage = memory(); await storage.set('saved-session'); const expired = vi.fn();
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (url) => String(url).endsWith('/auth/login') ? json({}, 200, { 'set-cookie': 'ageniza.session_token=new' }) : stale);
+    const api = createApiClient('https://dev.ageniza.com.br/api', storage, true, codec, fetcher); api.onExpired(expired);
+    const pending = api.request('/auth/session/check');
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+    await api.request('/auth/login', { method: 'POST', body: {} });
+    release(json({}, 401));
+    await expect(pending).rejects.toMatchObject({ code: 'STALE_SESSION' });
+    expect(await storage.get()).toBe('saved-session'); expect(expired).not.toHaveBeenCalled();
+  });
+});
+
+
+it('does not persist a queued old cookie after logout changes the generation', async () => {
+  let value: string | null = 'saved-session'; let release!: () => void; let respondFirst!: (value: Response) => void; let respondSecond!: (value: Response) => void;
+  const storage = { get: async () => value, set: vi.fn((next: string) => new Promise<void>((resolve) => { release = () => { value = next; resolve(); }; })), clear: vi.fn(async () => { value = null; }) };
+  const codecCheck = vi.fn(() => true);
+  const fetcher = vi.fn<typeof fetch>().mockReturnValueOnce(new Promise<Response>((resolve) => { respondFirst = resolve; })).mockReturnValueOnce(new Promise<Response>((resolve) => { respondSecond = resolve; }));
+  const api = createApiClient('https://dev.ageniza.com.br/api', storage, true, { ...codec, hasBetterAuthCookies: codecCheck }, fetcher);
+  const first = api.request('/profile'); const second = api.request('/health');
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  respondFirst(json({}, 200, { 'set-cookie': 'ageniza.session_token=first' }));
+  await vi.waitFor(() => expect(storage.set).toHaveBeenCalledOnce());
+  respondSecond(json({}, 200, { 'set-cookie': 'ageniza.session_token=second' }));
+  await vi.waitFor(() => expect(codecCheck).toHaveBeenCalledTimes(2));
+  const clearing = api.clearSession(); release();
+  await expect(first).rejects.toMatchObject({ code: 'STALE_SESSION' });
+  await expect(second).rejects.toMatchObject({ code: 'STALE_SESSION' });
+  await clearing;
+  expect(storage.set).toHaveBeenCalledTimes(1); expect(await storage.get()).toBeNull();
 });
