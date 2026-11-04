@@ -37,7 +37,7 @@ export function createApiClient(baseUrl: string, storage: SessionStorage, native
   }
   async function request<T>(path: string, options: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
     if (!path.startsWith('/') || path.startsWith('//')) throw new Error('Caminho de API inválido.');
-    const requestEpoch = epoch;
+    let requestEpoch = epoch;
     await writes;
     const headers = new Headers({ Accept: 'application/json' });
     if (options.body !== undefined) headers.set('Content-Type', 'application/json');
@@ -66,7 +66,7 @@ export function createApiClient(baseUrl: string, storage: SessionStorage, native
       throw new ApiError(0, 'UNSAFE_REDIRECT', 'O servidor respondeu com um redirecionamento inesperado. Tente novamente mais tarde.');
     }
     if (requestEpoch !== epoch) throw new ApiError(401, 'STALE_SESSION', 'Sua sessão mudou. Entre novamente.');
-    if (response.status === 401 && path !== '/auth/login') {
+    if (response.status === 401 && path !== '/auth/login' && (!native || headers.has('Cookie'))) {
       try { await clearSession(); } finally { onExpired(); }
     }
     const setCookie = response.headers.get('set-cookie');
@@ -74,11 +74,12 @@ export function createApiClient(baseUrl: string, storage: SessionStorage, native
       await enqueueWrite(async () => {
         if (requestEpoch !== epoch) return;
         const previous = ignoreStoredSession ? undefined : await storage.get() ?? undefined;
-        try { await storage.set(cookies.getSetCookie(setCookie, previous)); if (requestEpoch === epoch) ignoreStoredSession = false; }
+        try { await storage.set(cookies.getSetCookie(setCookie, previous)); if (requestEpoch === epoch) { ignoreStoredSession = false; if (path === '/auth/login') { epoch += 1; requestEpoch = epoch; } } }
         catch (cause) { ignoreStoredSession = true; throw cause; }
       });
       if (requestEpoch !== epoch) throw new ApiError(401, 'STALE_SESSION', 'Sua sessão mudou. Entre novamente.');
     }
+    if (!native && response.ok && path === '/auth/login') epoch += 1;
     if (response.status === 204 || response.status === 202) return undefined as T;
     const payload = await response.json().catch(() => null);
     if (!response.ok) {

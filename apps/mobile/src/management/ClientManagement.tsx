@@ -23,7 +23,7 @@ export function ClientManagement({ context, initialClientId = '', permissions, r
   const [confirmArchive, setConfirmArchive] = useState(false);
   const root = `/agencies/${context.agencyId}/clients`;
   const has = (key: string) => permissions.includes(key);
-  const load = useCallback(async (signal: AbortSignal) => clientId ? { detail: await api.request<ClientDetailResponse>(`${root}/${clientId}`, { signal }), list: undefined } : { detail: undefined, list: await api.request<ClientListResponse>(`${root}?status=${status}&search=${encodeURIComponent(query)}&page=${page}&pageSize=20`, { signal }) }, [clientId, root, status, query, page]);
+  const load = useCallback(async (signal: AbortSignal) => clientId ? { detail: await api.request<ClientDetailResponse>(`${root}/${clientId}`, { signal }), list: undefined } : { detail: undefined, list: await api.request<ClientListResponse>(`${root}?status=${status}${query.trim() ? `&search=${encodeURIComponent(query.trim())}` : ''}&page=${page}&pageSize=20`, { signal }) }, [clientId, root, status, query, page]);
   const { data, loading, busy, error, notice, run } = useRemoteResource(load);
   const detail = data?.detail;
   useEffect(() => { if (detail) { setForm(Object.fromEntries(Object.keys(registration).map((key) => [key, detail[key as keyof Registration] ?? ''])) as Registration); setClosing(detail.closingDate ?? ''); } }, [detail]);
