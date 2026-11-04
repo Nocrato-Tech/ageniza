@@ -336,7 +336,7 @@ Nenhuma policy de outro módulo é alterada.
 |---|---|---|---|
 | Carteira | `/agencia/:agenciaId/clientes` | grade de crachás de clientes para triagem | `cliente.visualizar` |
 | Cadastrar | modal sobre a carteira | só o nome | `cliente.cadastrar` |
-| Detalhe | `/agencia/:agenciaId/clientes/:clienteId/<aba>` | cabeçalho e sete abas; as abas Conteúdos e Mídias só aparecem, e o endereço delas só abre, com `conteudo.visualizar` | `cliente.visualizar` |
+| Detalhe | `/agencia/:agenciaId/clientes/:clienteId/<aba>` | cabeçalho e seis abas (Geral, Mídias, Tarefas, Estudo de marca, Relatórios e Acessos); a aba Mídias e o botão "Abrir no Calendário Editorial" do cabeçalho só aparecem, e o endereço da aba só abre, com `conteudo.visualizar` | `cliente.visualizar` |
 | Editar cadastro | modal sobre o detalhe | todos os campos do cadastro | `cliente.operar` |
 | Portal — Início | `/portal/:clienteId` | saudação e próxima ação | vínculo de cliente |
 | Portal — Marca | `/portal/:clienteId/marca` | estudo em leitura e conversas | vínculo de cliente |
@@ -385,7 +385,7 @@ A carteira é uma grade de **crachás**, um por cliente (decisão de 2026-10-15,
 | Selo de triagem | **um só por crachá**, no alto da foto, na ordem: *Atrasado* (conteúdo atrasado), *Prazo em até 2 dias* e *convite pendente* (este só para quem tem `cliente.convidar_usuario`). Quem não lê Conteúdo (`conteudo.visualizar`) nunca vê os dois primeiros |
 | Etiquetas | o que não virou selo: *N sugestões aguardando* (threads abertas cujo último comentário é do cliente), *encerra em dd/mm* (encerramento agendado) e o *convite pendente* que perdeu o selo para outro. As sugestões seguem sendo o sinal de triagem do MVP: entram na ordem da carteira, na frase de triagem e na próxima ação, mesmo sem ser o selo |
 | Faixa de indicadores | pendentes, em revisão e atrasos. Mostra os três números de Conteúdo (#261) para quem tem `conteudo.visualizar`; para os demais segue reservada, sem número |
-| Próxima ação | rodapé do crachá, com o número curto por trás da ação: *Resolver atraso* (posts atrasados), *Ver prazos* (posts com prazo em até 2 dias), *Ver sugestões* (sugestões para responder), *Ver convites* (convites em aberto) ou, sem motivo, *Abrir cliente* sem número. Só leva a abas que o detalhe já tem (Geral, Conteúdos, Estudo de marca, Acessos), cada uma na permissão que o detalhe já exige |
+| Próxima ação | rodapé do crachá, com o número curto por trás da ação: *Resolver atraso* (posts atrasados), *Ver prazos* (posts com prazo em até 2 dias), *Ver sugestões* (sugestões para responder), *Ver convites* (convites em aberto) ou, sem motivo, *Abrir cliente* sem número. Só leva a abas que o detalhe já tem (Geral, Estudo de marca, Acessos) ou, nos casos de atraso e prazo, ao calendário do cliente na tela de Conteúdos, cada um na permissão que já exige |
 | Menu de três pontos | as mesmas abas, cada uma só para quem pode abri-la |
 | Frase de triagem | sobre os filtros, montada com as linhas da primeira página da carteira ativa sem busca (quem está atrasado, quem tem prazo em até 2 dias, quem tem sugestões, até dois); se ninguém tiver motivo, ela diz *Nada urgente nesta lista: …* para quem lê Conteúdo e *Nenhuma sugestão aguardando nesta lista.* para os demais; em qualquer outro recorte ela não aparece, porque não descreveria o topo da fila |
 | Ordem | a do servidor (`sort=attention`): para quem lê Conteúdo, quem tem conteúdo atrasado vem primeiro, depois quem tem sugestão aguardando, depois o nome (#261); para os demais, quem tem sugestão aguardando vem primeiro, depois o nome — a tela é de triagem, não de consulta |
@@ -416,9 +416,9 @@ Só o nome, porque só ele é obrigatório: o cadastro começa numa ligação, e
 ┌──────────────────────────────────────────────────────────────┐
 │ ← Clientes                                                   │
 │ (foto)  Padaria Central     Ativo · [encerra em 30/10]        │
-│         @padariacentral                  [ Editar ]  [ ⋯ ]    │
+│         @padariacentral  [ Abrir no Calendário Editorial ] [ Editar ] [ ⋯ ] │
 ├──────────────────────────────────────────────────────────────┤
-│ Geral │ Conteúdos │ Mídias │ Tarefas │ Estudo de marca │ Relatórios │ Acessos │
+│ Geral │ Mídias │ Tarefas │ Estudo de marca │ Relatórios │ Acessos │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
 │                      (conteúdo da aba)                       │
@@ -491,13 +491,13 @@ Só para `cliente.convidar_usuario`. O mesmo desenho da seção de convites de C
 - **Vazio**: "Ninguém deste cliente acessa o portal ainda", com **Adicionar pessoa**.
 - Convites vazios: a seção some.
 
-### Aba Conteúdos
+### Calendário Editorial (sem aba)
 
-A mesma visão de Conteúdos daquele cliente (o calendário e, ao lado, o celular com o feed, com o modal do conteúdo em endereços da própria aba), com o cliente fixo (`specs/conteudo.md` seção 7). Só com `conteudo.visualizar`: sem a permissão a aba não aparece, e o endereço digitado cai no mesmo "não encontrado" da página inteira, sem o cabeçalho do cliente.
+O perfil não tem aba nem cópia do calendário (decisão de 2026-11-04, `2026-11-04-o-perfil-do-cliente-nao-tem-copia-do-calendario`): o cabeçalho leva o botão "Abrir no Calendário Editorial", que abre `/agencia/:agenciaId/conteudos/:clienteId` com o cliente selecionado e o estado de navegação da carteira. Só com `conteudo.visualizar` (cliente arquivado também, onde o calendário é só leitura). Os endereços antigos `/clientes/:clienteId/conteudos[/novo|/:conteudoId]` redirecionam para a tela, e na tela "Abrir no cadastro do cliente" volta ao perfil.
 
 ### Aba Mídias
 
-A biblioteca de mídia do cliente, logo depois de Conteúdos (decisão de 2026-10-16, `2026-10-16-pastas-viram-a-aba-midias-do-cliente-e-o-feed-deixa-de-ser-vista`): as pastas padrão e próprias, as pastas de trabalho dentro delas (dois níveis, nunca três) e as mídias da pasta aberta, com o envio direto. A pasta aberta fica no endereço (`pasta`, `subpasta`, `pagina`) e o endereço antigo `?vista=pastas` da tela de Conteúdos leva para cá. Mesmas permissões das pastas de `specs/conteudo.md` (seção 2): ver com `conteudo.visualizar`, e criar pasta, enviar e remover mídia com `conteudo.operar` num cliente ativo; sem `conteudo.visualizar` a aba não aparece e o endereço cai no mesmo "não encontrado" da página inteira. Cliente arquivado é só leitura.
+A biblioteca de mídia do cliente, logo depois de Geral (decisão de 2026-10-16, `2026-10-16-pastas-viram-a-aba-midias-do-cliente-e-o-feed-deixa-de-ser-vista`): as pastas padrão e próprias, as pastas de trabalho dentro delas (dois níveis, nunca três) e as mídias da pasta aberta, com o envio direto. A pasta aberta fica no endereço (`pasta`, `subpasta`, `pagina`) e o endereço antigo `?vista=pastas` da tela de Conteúdos leva para cá. Mesmas permissões das pastas de `specs/conteudo.md` (seção 2): ver com `conteudo.visualizar`, e criar pasta, enviar e remover mídia com `conteudo.operar` num cliente ativo; sem `conteudo.visualizar` a aba não aparece e o endereço cai no mesmo "não encontrado" da página inteira. Cliente arquivado é só leitura.
 
 ### Abas Tarefas e Relatórios
 

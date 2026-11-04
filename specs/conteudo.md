@@ -31,7 +31,7 @@ Conteúdo é onde a agência planeja, produz e aprova os posts de cada cliente, 
 
 > Owner tem acesso total por posse. Visibilidade de menu é UX; a autorização é validada no backend e no banco em toda operação.
 
-- **Vendas e Financeiro não veem Conteúdo**, nem o que Clientes mostra derivado dele: as abas Conteúdos e Mídias do detalhe do cliente, os indicadores do card e a ordem da carteira por atraso. Para eles, a carteira mantém a ordem atual.
+- **Vendas e Financeiro não veem Conteúdo**, nem o que Clientes mostra derivado dele: a aba Mídias e o botão "Abrir no Calendário Editorial" do detalhe do cliente, os indicadores do card e a ordem da carteira por atraso. Para eles, a carteira mantém a ordem atual.
 - **Subtarefa** é aprovada pelo **responsável do conteúdo**; quem tem `conteudo.aprovar_pela_agencia` substitui. É autorização dependente do valor (seção 9).
 - Quem tem `conteudo.visualizar` vê o conteúdo de **todos** os clientes da agência, como em Clientes.
 
@@ -252,7 +252,7 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 | Conteúdos | `/agencia/:agenciaId/conteudos` | seletor de clientes em stories | `conteudo.visualizar` |
 | Conteúdos do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | calendário e, ao lado, o celular com o feed 3×3 | `conteudo.visualizar` |
 | Modal do conteúdo | `/agencia/:agenciaId/conteudos/:clienteId/:conteudoId` | abas Geral e Atribuição | `conteudo.visualizar` |
-| Aba Conteúdos do cliente | `/agencia/:agenciaId/clientes/:clienteId/conteudos` | a mesma visão do cliente | `conteudo.visualizar` |
+| Aba Conteúdos do cliente (extinta) | `/agencia/:agenciaId/clientes/:clienteId/conteudos[/novo\|/:conteudoId]` | não há mais aba: o endereço redireciona (com `replace`, mantendo a query e o estado de navegação) para o equivalente em `/conteudos/:clienteId`; o perfil do cliente tem o botão "Abrir no Calendário Editorial" (decisão `2026-11-04-o-perfil-do-cliente-nao-tem-copia-do-calendario`) | `conteudo.visualizar` (sem ela, "não encontrado") |
 | Aba Mídias do cliente | `/agencia/:agenciaId/clientes/:clienteId/midias` | as pastas e as mídias do cliente, com o envio; o endereço antigo `…/conteudos/:clienteId?vista=pastas` leva para cá | `conteudo.visualizar` (escrever: `conteudo.operar`) |
 | Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, calendário, feed | pessoa do portal |
 | Portal — post | `/portal/:clienteId/conteudos/:conteudoId` | post em tela cheia, Aprovar, Pedir ajuste, conversa | pessoa do portal |
@@ -344,7 +344,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 | Admin, Owner | tudo |
 | Gestor de conta | tudo |
 | Produção | opera e publica; sem Aprovar pela agência, sem Cancelar |
-| Vendas, Financeiro | o item Conteúdos e as abas Conteúdos e Mídias não existem; carteira sem indicadores de conteúdo |
+| Vendas, Financeiro | o item Conteúdos, a aba Mídias e o botão "Abrir no Calendário Editorial" do perfil não existem; carteira sem indicadores de conteúdo |
 | Pessoa do portal | aprova, pede ajuste, comenta a partir de aguardando aprovação, marca roteiro como gravado |
 
 ### Estados da tela
