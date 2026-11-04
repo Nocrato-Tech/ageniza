@@ -7919,6 +7919,7 @@ html:has(.portal-post__bar) {
 /* ButtonLink that cannot be followed: dimmed like a disabled button, and the pointer passes through it. */
 .ui-button--link-disabled {
   opacity: 0.55;
+  pointer-events: none;
 }
 
 /* Mascot and EmptyState: what a list shows when it has nothing yet. The owl is decorative and only beside an action. */
