@@ -6801,6 +6801,25 @@ html:has(.portal-post__bar) {
   border-radius: var(--radius-sm);
 }
 
+/* The phone tiles are small: the state takes what the format icon leaves and cuts with an ellipsis, and the "planned" tag, true of every tile here, stays for the reader of the screen only. */
+.content-phone .content-feed__status {
+  max-width: calc(100% - 1.75rem);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.content-phone .content-feed__planned {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .content-feed__pager {
   display: flex;
   align-items: center;
