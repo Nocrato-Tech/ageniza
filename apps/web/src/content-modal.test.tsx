@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -788,9 +788,14 @@ describe('the folder is a drive: choosing it gives the content what it holds', (
       public setRequestHeader(): void { /* not needed */ }
       public getResponseHeader(): string | null { return null; }
       public abort(): void { this.onabort?.(); }
-      public send(): void { queueMicrotask(() => this.onload?.()); }
+      public send(): void {
+        if (slow.held) { slow.finish = () => this.onload?.(); return; }
+        queueMicrotask(() => this.onload?.());
+      }
     }
-    beforeEach(() => { vi.stubGlobal('XMLHttpRequest', FakeXhr); });
+    // A real upload ends in a macrotask, long after the person has kept working; `held` keeps it open until the test lets it go.
+    const slow: { held: boolean; finish: (() => void) | null } = { held: false, finish: null };
+    beforeEach(() => { slow.held = false; slow.finish = null; vi.stubGlobal('XMLHttpRequest', FakeXhr); });
     afterEach(() => { vi.unstubAllGlobals(); });
 
     const sendFile = async (file: File): Promise<void> => {
@@ -840,6 +845,50 @@ describe('the folder is a drive: choosing it gives the content what it holds', (
       const body = writes(calls).find((call) => /contents$/.test(call.path))!.body as { mediaAssetIds: string[] };
       expect(body.mediaAssetIds).toHaveLength(1);
       expect(body.mediaAssetIds[0]).not.toBe(twenty[19]!.id);
+    });
+
+    it('puts the file in the list as it is when the upload ends, not as it was when it began', async () => {
+      const three = 'f1f1f1f1-0000-4000-8000-000000000007';
+      const assets = Array.from({ length: 3 }, (_, n) => asset(200 + n, 'image', '10'));
+      const { impl } = makeFetch({ folders: [...FOLDERS, folder(three, 'Tres')], assets: { ...ASSETS, [three]: assets } });
+      render_(impl, `${base()}/novo`);
+      await screen.findByLabelText('Título');
+      type('Formato', 'carousel');
+      await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(5));
+      type('Pasta', three);
+      await waitFor(() => expect(selected()).toHaveLength(3));
+      slow.held = true;
+      await sendFile(new File([new Uint8Array(2_000)], 'extra.jpg', { type: 'image/jpeg' }));
+      await waitFor(() => expect(slow.finish).not.toBeNull());
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Tirar mídia 1' }));
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Tirar mídia 1' }));
+      expect(selected()).toHaveLength(1);
+      await act(async () => { slow.finish?.(); await new Promise((resolve) => setTimeout(resolve, 20)); });
+      await waitFor(() => expect(selected()).toHaveLength(2));
+    });
+
+    it('does not save while the file goes up, not even with Enter, and says why', async () => {
+      const empty = 'f1f1f1f1-0000-4000-8000-000000000009';
+      const { impl, calls } = makeFetch({ folders: [...FOLDERS, folder(empty, 'Vazia')], assets: { ...ASSETS, [empty]: [] } });
+      render_(impl, `${base()}/novo`);
+      await screen.findByLabelText('Título');
+      type('Título', 'Com envio');
+      await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(5));
+      type('Pasta', empty);
+      await ready();
+      slow.held = true;
+      await sendFile(new File([new Uint8Array(2_000)], 'foto.jpg', { type: 'image/jpeg' }));
+      await waitFor(() => expect(slow.finish).not.toBeNull());
+      expect(within(dialog()).getByText('Aguarde o envio da mídia terminar para salvar o conteúdo.')).toBeTruthy();
+      expect((within(dialog()).getByRole('button', { name: 'Criar conteúdo' }) as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.submit(field('Título').closest('form')!);
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+      expect(writes(calls).filter((call) => /contents$/.test(call.path))).toHaveLength(0);
+      expect(screen.queryByRole('dialog')).not.toBeNull();
+      await act(async () => { slow.finish?.(); await new Promise((resolve) => setTimeout(resolve, 20)); });
+      await waitFor(() => expect(selected()).toHaveLength(1));
+      await waitFor(() => expect((within(dialog()).getByRole('button', { name: 'Criar conteúdo' }) as HTMLButtonElement).disabled).toBe(false));
+      expect(within(dialog()).queryByText('Aguarde o envio da mídia terminar para salvar o conteúdo.')).toBeNull();
     });
 
     it('does not put a twenty-first media in a carousel, and says why', async () => {

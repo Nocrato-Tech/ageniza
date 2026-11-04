@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -254,12 +254,14 @@ function AssetThumb({ asset }: { asset: Pick<MediaFolderAsset, 'category'> & { i
  * carousel appends and the list is ordered by hand, because the order is the carousel's. A file sent from here lands in the folder
  * and enters the content, the same as one sent from the Pastas view.
  */
-export function MediaField({ clientId, folderId, format, selected, onChange, disabled, canSend, error }: {
+export function MediaField({ clientId, folderId, format, selected, onChange, onSendingChange, disabled, canSend, error }: {
   clientId: string;
   folderId: string;
   format: ContentFormat;
   selected: readonly string[];
   onChange: (assetIds: readonly string[]) => void;
+  /** True while a file goes up or is being put in the list: the form must not be saved with half of it. */
+  onSendingChange?: ((sending: boolean) => void) | undefined;
   disabled: boolean;
   /** The person may send a file (`conteudo.operar`, and nothing blocks a write): the folder is what receives it. */
   canSend: boolean;
@@ -272,6 +274,15 @@ export function MediaField({ clientId, folderId, format, selected, onChange, dis
   const [notice, setNotice] = useState<string | undefined>();
   const accepted = acceptedCategory(format);
   const single = format !== 'carousel';
+  // A file takes time to go up and the person keeps working: what the list and the format are when it ends is what counts, not
+  // what they were when it started.
+  const live = useRef({ selected, format });
+  live.current = { selected, format };
+  const [uploading, setUploading] = useState(false);
+  const [placing, setPlacing] = useState(false);
+  const sending = uploading || placing;
+  useEffect(() => { onSendingChange?.(sending); }, [sending, onSendingChange]);
+  useEffect(() => () => { onSendingChange?.(false); }, [onSendingChange]);
   const move = (index: number, direction: -1 | 1): void => {
     const next = [...selected];
     const target = index + direction;
@@ -286,24 +297,31 @@ export function MediaField({ clientId, folderId, format, selected, onChange, dis
   // The file is read back from the folder: the category of what was sent decides whether this format takes it.
   const sent = async (assetId: string): Promise<void> => {
     setNotice(undefined);
-    let current: MediaFolderAsset[];
+    setPlacing(true);
     try {
-      current = await freshFolder(folderId);
-    } catch {
-      setNotice('A mídia foi enviada para a pasta, mas não deu para ler a pasta agora. Escolha a mídia na lista quando ela aparecer.');
-      return;
+      let current: MediaFolderAsset[];
+      try {
+        current = await freshFolder(folderId);
+      } catch {
+        setNotice('A mídia foi enviada para a pasta, mas não deu para ler a pasta agora. Escolha a mídia na lista quando ela aparecer.');
+        return;
+      }
+      const added = current.find((asset) => asset.id === assetId);
+      if (added === undefined) return;
+      const { selected: now, format: nowFormat } = live.current;
+      const nowAccepted = acceptedCategory(nowFormat);
+      if (nowAccepted !== null && added.category !== nowAccepted) {
+        setNotice(`A mídia foi para a pasta, mas o formato ${FORMAT_LABELS[nowFormat]} não usa ${added.category === 'video' ? 'vídeo' : 'imagem'}.`);
+        return;
+      }
+      if (nowFormat === 'carousel' && now.length >= CONTENT_CAROUSEL_MAX_MEDIA) {
+        setNotice(`A mídia foi para a pasta, mas um carrossel leva até ${CONTENT_CAROUSEL_MAX_MEDIA} mídias.`);
+        return;
+      }
+      onChange(nowFormat === 'carousel' ? [...now, assetId] : [assetId]);
+    } finally {
+      setPlacing(false);
     }
-    const added = current.find((asset) => asset.id === assetId);
-    if (added === undefined) return;
-    if (accepted !== null && added.category !== accepted) {
-      setNotice(`A mídia foi para a pasta, mas o formato ${FORMAT_LABELS[format]} não usa ${added.category === 'video' ? 'vídeo' : 'imagem'}.`);
-      return;
-    }
-    if (!single && selected.length >= CONTENT_CAROUSEL_MAX_MEDIA) {
-      setNotice(`A mídia foi para a pasta, mas um carrossel leva até ${CONTENT_CAROUSEL_MAX_MEDIA} mídias.`);
-      return;
-    }
-    onChange(single ? [assetId] : [...selected, assetId]);
   };
 
   return <div className="form-field content-media" role="group" aria-label="Mídias">
@@ -333,6 +351,7 @@ export function MediaField({ clientId, folderId, format, selected, onChange, dis
           clientId={clientId}
           folderId={folderId}
           onUploaded={(assetId) => { void sent(assetId); }}
+          onSendingChange={setUploading}
           sizeLabel={sizeLabel}
           heading={<p className="content-media__title">Mídias da pasta</p>}
           inputRef={picker}

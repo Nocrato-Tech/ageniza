@@ -120,6 +120,8 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const readFolder = useFreshFolder(clientId);
   const [inheriting, setInheriting] = useState(false);
   const [folderUnread, setFolderUnread] = useState(false);
+  // A file going up into the folder is part of the form: saving now would leave it out and close the modal over it.
+  const [sendingFile, setSendingFile] = useState(false);
   const folderTicket = useRef(0);
   const inherit = async (folderId: string, pick: (assets: MediaFolderAsset[], current: ContentFormValues) => string[]): Promise<void> => {
     const ticket = folderTicket.current + 1;
@@ -213,7 +215,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     setFormError(undefined);
-    if (inheriting || folderUnread) return;
+    if (inheriting || folderUnread || sendingFile) return;
     const problems = validate(form);
     setErrors(problems);
     if (Object.keys(problems).length > 0) return;
@@ -295,7 +297,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
 
   const formActions = <div className="content-modal__form-actions">
     <Button variant="ghost" disabled={busy} onClick={onDone}>Fechar</Button>
-    {editable && <Button type="submit" form={formId} variant={dirty ? 'primary' : 'secondary'} leadingIcon={<Save />} loading={busy} disabled={busy || inheriting || folderUnread || (!dirty && blocked === undefined)} blockedReason={blocked}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
+    {editable && <Button type="submit" form={formId} variant={dirty ? 'primary' : 'secondary'} leadingIcon={<Save />} loading={busy} disabled={busy || inheriting || folderUnread || sendingFile || (!dirty && blocked === undefined)} blockedReason={blocked}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
   </div>;
 
   return <div className="content-modal">
@@ -342,7 +344,9 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
           canSend={context.canEdit && blocked === undefined}
           error={errors.media}
           onChange={(mediaAssetIds) => edit({ mediaAssetIds }, 'media')}
+          onSendingChange={setSendingFile}
         />
+        {sendingFile && <p className="form-hint" role="status">Aguarde o envio da mídia terminar para salvar o conteúdo.</p>}
         {hasCover(form.format) && <CoverField
           clientId={clientId}
           folderId={form.folderId}
