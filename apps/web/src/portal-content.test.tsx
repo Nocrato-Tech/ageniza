@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { apiError, createConversationApi } from './conversation-fixture.js';
@@ -682,6 +682,53 @@ describe('the post of the portal (#270)', () => {
       expect(video.getAttribute('aria-label')).toBe('Lançamento da primavera: mídia 1 de 1');
       expect(document.querySelector('img.portal-media__item')).toBeNull();
       expect(contents.mediaRequests).toContainEqual({ assetId: asset(9), variant: 'thumbnail' });
+    });
+
+    it('asks for a new address when a video is refused in the middle of playing, rebuilds it and takes it back to the same second', async () => {
+      const { contents } = await open({ format: 'reels', coverAssetId: asset(9) });
+      const video = await waitFor(() => {
+        const found = document.querySelector('video');
+        expect(found?.getAttribute('src')).toBe(`https://storage.test/${asset(1)}/original`);
+        return found as HTMLVideoElement;
+      });
+      const asked = (): number => contents.mediaRequests.filter((request) => request.assetId === asset(1) && request.variant === 'original').length;
+      expect(asked()).toBe(1);
+      Object.defineProperty(video, 'currentTime', { configurable: true, value: 187.25 });
+      fireEvent.error(video);
+      await waitFor(() => { expect(asked()).toBe(2); });
+      const rebuilt = await waitFor(() => {
+        const found = document.querySelector('video');
+        expect(found).not.toBe(video);
+        return found as HTMLVideoElement;
+      });
+      expect(screen.queryByText('Não foi possível carregar esta mídia.')).toBeNull();
+      const seek = vi.spyOn(rebuilt, 'currentTime', 'set');
+      fireEvent.loadedMetadata(rebuilt);
+      expect(seek).toHaveBeenCalledWith(187.25);
+    });
+
+    it('says the video could not be taken up again, with a button, when the new address is refused', async () => {
+      const scenario = setup();
+      scenario.contents.seed({ id: CONTENT, clientId: CLIENT, format: 'reels' });
+      let refuse = false;
+      const impl: typeof fetch = async (input, init) => {
+        const url = new URL(String(input));
+        if (refuse && url.pathname.endsWith(`/media/${asset(1)}/url`)) return portalContentError(429, 'RATE_LIMITED');
+        return scenario.impl(input, init);
+      };
+      renderPost(impl);
+      const video = await waitFor(() => {
+        const found = document.querySelector('video');
+        expect(found).not.toBeNull();
+        return found as HTMLVideoElement;
+      });
+      refuse = true;
+      fireEvent.error(video);
+      expect(await screen.findByText('Não foi possível retomar o vídeo.')).toBeTruthy();
+      expect(document.querySelector('video')).toBeNull();
+      refuse = false;
+      fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+      await waitFor(() => { expect(document.querySelector('video')).not.toBeNull(); });
     });
 
     it('uses the frame of the video as the poster when there is no cover, and none when the frame is not ready', async () => {

@@ -436,6 +436,37 @@ describe('the page of the approval link (#717)', () => {
       await waitFor(() => { expect(screen.getByRole('img', { name: `${A.title}: mídia 1 de 1` }).getAttribute('src')).toContain('?n=2'); });
     });
 
+    it('asks for a new address when a video is refused in the middle of playing, and takes it back to the same second', async () => {
+      const { api } = await loaded([{ ...A, format: 'reels', coverAssetId: asset(9), media: [{ id: asset(4), kind: 'video' }] }]);
+      const video = await screen.findByLabelText(`${A.title}: mídia 1 de 1`) as HTMLVideoElement;
+      const first = video.getAttribute('src');
+      Object.defineProperty(video, 'currentTime', { configurable: true, value: 201.5 });
+      fireEvent.error(video);
+      await waitFor(() => {
+        const next = screen.getByLabelText(`${A.title}: mídia 1 de 1`).getAttribute('src');
+        expect(next).toMatch(new RegExp(`/${asset(4)}/original\\?n=\\d+$`));
+        expect(next).not.toBe(first);
+      });
+      expect(api.callsTo('GET', /\/media\/[^/]+\/url$/).filter((call) => call.search === '?variant=original')).toHaveLength(2);
+      expect(screen.queryByText('Não foi possível carregar esta mídia.')).toBeNull();
+      const reloaded = screen.getByLabelText(`${A.title}: mídia 1 de 1`) as HTMLVideoElement;
+      const seek = vi.spyOn(reloaded, 'currentTime', 'set');
+      fireEvent.loadedMetadata(reloaded);
+      expect(seek).toHaveBeenCalledWith(201.5);
+    });
+
+    it('says the video could not be taken up again when the new address is refused, and the button asks once more', async () => {
+      const { api } = await loaded([{ ...A, format: 'reels', coverAssetId: asset(9), media: [{ id: asset(4), kind: 'video' }] }]);
+      const video = await screen.findByLabelText(`${A.title}: mídia 1 de 1`);
+      api.controls.fail.media = () => new Response(JSON.stringify({ error: { code: 'RATE_LIMITED', message: 'MENSAGEM DO SERVIDOR' } }), { status: 429, headers: { 'content-type': 'application/json' } });
+      fireEvent.error(video);
+      expect(await screen.findByText('Não foi possível retomar o vídeo.')).toBeTruthy();
+      expect(document.body.textContent).not.toContain('MENSAGEM DO SERVIDOR');
+      delete api.controls.fail.media;
+      fireEvent.click(within(card(A.title)).getByRole('button', { name: 'Tentar de novo' }));
+      expect(await screen.findByLabelText(`${A.title}: mídia 1 de 1`)).toBeTruthy();
+    });
+
     it('keeps the failure on screen until the new address is there: the refused picture is never drawn again meanwhile', async () => {
       const { api } = await loaded([A]);
       fireEvent.error(await screen.findByRole('img', { name: `${A.title}: mídia 1 de 1` }));
