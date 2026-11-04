@@ -203,6 +203,29 @@ describe('the cover and the revision of a move', () => {
     expect(Number((await w.contentRow(empty.contentId)).revision)).toBe(1);
   });
 
+  it('counts exactly one revision when a content in production with a cover and media moves to an empty folder', async () => {
+    const s = await scene({ format: 'reels', cover: true, assets: 1 });
+    const before = Number((await w.contentRow(s.contentId)).revision);
+
+    await move(operarAndVisualizar, s.contentId, s.to);
+
+    const row = await w.contentRow(s.contentId);
+    expect(await listOf(s.contentId)).toEqual([]);
+    expect(row.cover_asset_id).toBeNull();
+    expect(Number(row.revision)).toBe(before + 1);
+  });
+
+  it.each(['approved', 'awaiting_approval'] as const)('refuses a direct UPDATE of the folder of a %s content with no media and no cover, which no route reaches', async (status) => {
+    const s = await scene({ status, assets: 0 });
+    const before = await w.contentRow(s.contentId);
+
+    await expect(w.asUser(operarAndVisualizar, (transaction) => transaction('contents').where({ id: s.contentId }).update({ folder_id: s.to })))
+      .rejects.toMatchObject({ code: '42501' });
+
+    expect(await w.contentRow(s.contentId)).toEqual(before);
+    expect(await w.columnsWithPrivilege('contents', 'update')).not.toContain('folder_id');
+  });
+
   it('asking for the folder the content already has changes nothing, and writes only a list the caller names', async () => {
     const s = await scene({ format: 'carousel' });
     const extra = await w.seedAsset(ids.clientA1, s.from);
