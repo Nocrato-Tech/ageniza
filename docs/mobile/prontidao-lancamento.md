@@ -22,10 +22,11 @@ As ações continuam sujeitas às permissões, estados e limites da API. Formul�
 
 ## Evidências existentes
 
-Na última rodada executada antes da interrupção:
+Na última rodada de verificação:
 
-- Typecheck e lint do mobile passaram.
-- 73 testes passaram em 13 arquivos, incluindo formulários renderizados por React Native Web, consentimento, credenciais, convite, contexto, permissões, leitura e alvo de remoção.
+- Typecheck e lint de todo o monorepo passaram (18 e 11 tarefas, respectivamente).
+- `pnpm test` concluiu as 18 tarefas do monorepo sem falhas; a suíte web registrou 2.539 testes aprovados.
+- 74 testes passaram em 14 arquivos, incluindo formulários renderizados por React Native Web, consentimento, credenciais, convite, contexto, permissões, leitura e alvo de remoção.
 - A instalação com lockfile congelado passou após encerrar o Metro que mantinha arquivos de dependências ocupados no Windows.
 
 A configuração Expo em `app.config.js` passou pelos testes e pela exportação Android/iOS/web. As dependências passaram pela verificação de compatibilidade do Expo; os dois testes de isolamento dos peers nativos também passaram.
@@ -34,9 +35,9 @@ A configuração Expo em `app.config.js` passou pelos testes e pela exportação
 
 | Área | Próxima comprovação necessária |
 |---|---|
-| Alterações locais | PRs #809 (entrada), #810 (operações) e #811 (build) abertos como rascunho e enviados para revisão, empilhados sobre #804. |
+| Alterações locais | PRs #809 (entrada), #810 (operações), #811 (build), #812 (aprovação por e-mail) e #813 (foto do cliente e verificações) abertos como rascunho e enviados para revisão, empilhados sobre #804. |
 | Mutações | Mutações executadas e detectadas: origem estrangeira, consentimento do convite, e-mail convidado, escrita no portal em modo leitura, alvo de remoção, escopo da sessão de aprovação e revisão enviada. Arquivos restaurados. O rigor completo de todos os novos aceites ainda não foi concluído. |
-| Exportação | Exportação Android/iOS/web passou antes do novo fluxo de aprovação por e-mail; repetir para esse fluxo. |
+| Exportação | Exportação Android/iOS/web passou incluindo o fluxo de aprovação por e-mail. A foto do cliente foi acrescentada depois dessa exportação e é verificada pela compilação Android seguinte. |
 | Android | Validar o workflow de APK interno e executar o artefato em aparelho físico. O workflow foi publicado e a execução 41763507734 gerou o APK de 8acb061d. O arquivo foi baixado e conferido: pacote com.ageniza.mobile.internal, bundle JavaScript embutido, API dev e bibliotecas nativas. SHA-256: 287534f20bdfef041bf12ecd33dd0196b0fd8c04df0b67762080454478703904. Isso não comprova execução física. |
 | Sessão | Login real, persistência após fechar/reabrir, troca de contexto, expiração e logout no aparelho. |
 | Contas | Exercitar cadastro, confirmação, convite e recuperação com a caixa de e-mail do dev. |
@@ -55,6 +56,6 @@ A configuração Expo em `app.config.js` passou pelos testes e pela exportação
 
 O bloqueio temporário da revisão automática não se repetiu nesta sessão: comandos, mutações, push e solicitação de revisão puderam ser executados. A API dev respondeu 200 no health. Isso não comprova login autenticado ou fluxo físico.
 
-O endereço público da Vercel continua na versão anterior e não deve ser apresentado como o aplicativo completo. O primeiro resultado instalável é o APK do workflow 41763507734, disponível nos artefatos privados do GitHub. O fluxo de aprovação por e-mail foi acrescentado depois do início dessa primeira compilação e precisa entrar na compilação seguinte.
+A Vercel agora publica uma página de instalação e o APK real em https://mobile-vercel-preview.vercel.app/downloads/ageniza-android.apk, substituindo a demonstração web. O APK de a456d4a1 inclui o fluxo de aprovação por e-mail; o workflow 41764475323 concluiu com sucesso. SHA-256: d898cab81ade83b294be3c87c81424fc1331ee9c5d46824f8d3ffffd1352d1a7. A compilação 41765497119 inclui a foto do cliente e ainda estava em andamento ao registrar esta evidência. O arquivo utiliza assinatura de desenvolvimento e API dev; não é uma publicação nas lojas nem comprovação de execução física.
 
 O checklist operacional do sistema continua em [prontidão de produção](../infra/production-readiness.md).
