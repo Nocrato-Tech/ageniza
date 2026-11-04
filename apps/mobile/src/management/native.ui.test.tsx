@@ -15,6 +15,8 @@ vi.mock('react-native-svg', async () => {
 import { TeamScreen } from './TeamScreen';
 import { ClientAccess } from './ClientAccess';
 import { BrandStudy } from './BrandStudy';
+import { ClientManagement } from './ClientManagement';
+import { ClientListQuerySchema, CollaboratorListQuerySchema } from '@ageniza/contracts';
 
 beforeEach(() => {
   request.mockReset();
@@ -65,3 +67,37 @@ describe('management permissions and mutation targets', () => {
   });
 });
 
+
+
+describe('list queries follow the actual route contract', () => {
+  it('loads team initially without an empty search and sends trimmed encoded search', async () => {
+    request.mockImplementation(async (path: string) => {
+      const url = new URL(path, 'https://api.example.test');
+      CollaboratorListQuerySchema.parse(Object.fromEntries(url.searchParams));
+      return { data: people, meta: { totalPages: 1 } };
+    });
+    render(<TeamScreen context={agency} permissions={['colaborador.visualizar']} readOnly={false} />);
+    await screen.findByRole('button', { name: 'Abrir Bruno Vídeo' });
+    expect(new URL(request.mock.calls[0][0], 'https://api.example.test').searchParams.has('q')).toBe(false);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar na equipe' }), { target: { value: '  Ana & Design  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }));
+    await waitFor(() => expect(request.mock.calls.some(([path]) => new URL(path, 'https://api.example.test').searchParams.get('q') === 'Ana & Design')).toBe(true));
+  });
+  it('loads the client portfolio without empty search and validates subsequent searches', async () => {
+    request.mockImplementation(async (path: string) => {
+      const url = new URL(path, 'https://api.example.test');
+      ClientListQuerySchema.parse(Object.fromEntries(url.searchParams));
+      return { data: [{ id: 'client-one', name: 'Marca', instagramHandle: null, status: 'active' }], meta: { totalPages: 1 } };
+    });
+    render(<ClientManagement context={agency} permissions={['cliente.visualizar']} readOnly={false} onChanged={async () => {}} onContents={() => {}} />);
+    await screen.findByRole('button', { name: 'Gerenciar Marca' });
+    expect(new URL(request.mock.calls[0][0], 'https://api.example.test').searchParams.has('search')).toBe(false);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar cliente' }), { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar cliente' }));
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    expect(new URL(request.mock.calls[1][0], 'https://api.example.test').searchParams.has('search')).toBe(false);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar cliente' }), { target: { value: ' Marca & Saúde ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar cliente' }));
+    await waitFor(() => expect(request.mock.calls.some(([path]) => new URL(path, 'https://api.example.test').searchParams.get('search') === 'Marca & Saúde')).toBe(true));
+  });
+});
