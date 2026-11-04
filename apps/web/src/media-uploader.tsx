@@ -23,7 +23,8 @@ const percent = (sent: number, total: number): number => (total === 0 ? 0 : Math
 export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel, heading, inputRef, triggerHidden = false }: {
   clientId: string;
   folderId: string;
-  onUploaded: () => void;
+  /** The id of the media just confirmed, so a caller that wants it in a list can put it there. */
+  onUploaded: (assetId: string) => void;
   sizeLabel: (bytes: number) => string;
   heading: ReactNode;
   inputRef: RefObject<HTMLInputElement | null>;
@@ -49,13 +50,13 @@ export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel, headi
     setSent(0);
     setPhase({ kind: 'sending' });
     uploadMedia({ httpClient, agencyId: agency.agencyId, clientId, folderId, file: chosen, onProgress: setSent, signal: own.signal })
-      .then(() => {
+      .then((assetId) => {
         if (controller.current !== own) return;
         setFile(null);
         if (inputRef.current !== null) inputRef.current.value = '';
         setPhase({ kind: 'done' });
         void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'media-folder-assets', clientId, folderId] });
-        onUploaded();
+        onUploaded(assetId);
       })
       .catch((error: unknown) => {
         if (controller.current !== own) return;

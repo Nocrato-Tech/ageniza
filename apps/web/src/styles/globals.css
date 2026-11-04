@@ -7544,6 +7544,24 @@ html:has(.portal-post__bar) {
   text-align: center;
 }
 
+.content-media__confirm {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.content-media__confirm p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.content-media__confirm-title {
+  font: var(--label-md);
+}
+
 .content-media__new-folder {
   display: grid;
   gap: var(--space-3);

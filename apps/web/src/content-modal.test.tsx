@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   TODAY,
@@ -21,6 +21,9 @@ import {
   IMG_1,
   IMG_2,
   IMG_3,
+  VID_1,
+  FOLDERS,
+  ASSETS,
   stored,
   detailOf,
   makeFetch,
@@ -43,6 +46,8 @@ import {
 setupModalTests();
 
 const closed = (): void => expect(screen.queryByRole('dialog')).toBeNull();
+/** The folder chosen is read first; the form is saved only when the list on screen is the folder's. */
+const savable = (): Promise<void> => waitFor(() => expect((within(dialog()).getByRole('button', { name: /^(Criar conteúdo|Salvar)$/ }) as HTMLButtonElement).disabled).toBe(false));
 
 describe('the address of a content', () => {
   it('opens the modal from the shared address, with the form of that content, and again after a reload', async () => {
@@ -254,7 +259,6 @@ describe('editing', () => {
     [409, 'CONTENT_NOT_EDITABLE', 'Este conteúdo já foi publicado ou cancelado e não pode mais ser editado.'],
     [409, 'TRY_AGAIN', 'Outra alteração aconteceu ao mesmo tempo. Salve de novo.'],
     [409, 'CONTENT_MEDIA_INCOMPLETE', 'A mídia não cobre este formato. Depois do envio para aprovação, não se troca entre carrossel e uma mídia só: cancele e reagende o conteúdo.'],
-    [409, 'CONTENT_FOLDER_IN_USE', 'A pasta não muda enquanto o conteúdo tem mídia ou capa. Tire as duas, salve, e escolha a outra pasta.'],
     [400, 'CONTENT_MEDIA_INVALID', 'A mídia ou a capa escolhida não pode ser usada neste conteúdo.'],
     [400, 'CONTENT_FOLDER_INVALID', 'A pasta escolhida não é uma pasta deste cliente.'],
     [403, 'FORBIDDEN', 'Você não tem permissão para alterar conteúdos.'],
@@ -368,7 +372,7 @@ describe('editing', () => {
     const row = stored({ status: 'approved' });
     const { calls, contents } = await openContent(row);
     type('Legenda', 'Outra legenda');
-    expect(within(dialog()).getByText('Este conteúdo está aprovado. Mudar a legenda, a mídia, a capa ou o formato o devolve para “Aguardando aprovação”.')).toBeTruthy();
+    expect(within(dialog()).getByText('Este conteúdo está aprovado. Mudar a legenda, a mídia, a capa, a pasta ou o formato o devolve para “Aguardando aprovação”.')).toBeTruthy();
     click('Salvar');
     await waitFor(closed);
     expect(writes(calls)[0]!.body).toEqual({ caption: 'Outra legenda' });
@@ -475,12 +479,13 @@ describe('the folder and the media', () => {
     expect((within(dialog()).getByRole('button', { name: 'Adicionar Imagem de 03/10' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('sends nothing when a format that takes one media has several, and says why', async () => {
+  it('keeps the first media that fits when a carousel becomes a format of one media', async () => {
     const { calls } = await openContent(stored({ format: 'carousel', media: [IMG_1.id, IMG_2.id] }));
     type('Formato', 'image');
+    await waitFor(() => expect(within(dialog()).getAllByText(/^Mídia \d$/)).toHaveLength(1));
     click('Salvar');
-    expect(await within(dialog()).findByText('Este formato leva uma mídia só.')).toBeTruthy();
-    expect(writes(calls)).toHaveLength(0);
+    await waitFor(closed);
+    expect(writes(calls)[0]!.body).toEqual({ format: 'image', mediaAssetIds: [IMG_1.id] });
   });
 
   it('sends the format and the media of a change of format in the same request', async () => {
@@ -519,29 +524,22 @@ describe('the folder and the media', () => {
     const { calls } = await openContent(stored({ format: 'reels', folderId: LAUNCH, coverAssetId: cover }));
     type('Formato', 'image');
     expect(within(dialog()).queryByRole('group', { name: 'Capa' })).toBeNull();
+    await waitFor(() => expect(within(dialog()).getAllByText(/^Mídia \d$/)).toHaveLength(1));
     click('Salvar');
     await waitFor(closed);
-    expect(writes(calls)[0]!.body).toEqual({ format: 'image', coverAssetId: null });
+    expect(writes(calls)[0]!.body).toEqual({ format: 'image', coverAssetId: null, mediaAssetIds: [asset(7, 'image', '09').id] });
   });
 
-  it.each([
-    ['media', { media: [IMG_1.id] }],
-    ['a cover', { format: 'reels' as const, coverAssetId: asset(7, 'image', '09').id, folderId: LAUNCH }]
-  ])('keeps the folder while the content has %s, with the reason on screen', async (_name, extra) => {
-    await openContent(stored(extra));
-    await within(dialog()).findByLabelText('Pasta');
-    expect((field('Pasta') as HTMLSelectElement).disabled).toBe(true);
-    expect(within(dialog()).getByText('A pasta não muda enquanto o conteúdo tem mídia ou capa.')).toBeTruthy();
-    expect(within(dialog()).queryByRole('button', { name: 'Nova pasta' })).toBeNull();
-  });
-
-  it('changes the folder of a content with no media, and sends only the folder', async () => {
+  it('changes the folder of a content with no media, asks nothing, and sends the folder with the list on screen', async () => {
     const { calls } = await openContent(stored());
     await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
     type('Pasta', VIDEOS);
+    expect(within(dialog()).queryByRole('group', { name: 'Trocar a pasta' })).toBeNull();
+    expect((field('Pasta') as HTMLSelectElement).value).toBe(VIDEOS);
+    await savable();
     click('Salvar');
     await waitFor(closed);
-    expect(writes(calls)[0]!.body).toEqual({ folderId: VIDEOS });
+    expect(writes(calls)[0]!.body).toEqual({ folderId: VIDEOS, mediaAssetIds: [] });
   });
 
   it('creates a folder inside the first level, chooses it, and sends the name and the parent', async () => {
@@ -624,8 +622,220 @@ describe('the folder and the media', () => {
   });
 });
 
+describe('the folder is a drive: choosing it gives the content what it holds', () => {
+  const ready = (): Promise<void> => waitFor(() => expect((within(dialog()).getByRole('button', { name: /^(Criar conteúdo|Salvar)$/ }) as HTMLButtonElement).disabled).toBe(false));
+  const selected = (): string[] => Array.from(dialog().querySelectorAll('.content-media__selected .content-media__tile')).map((tile) => tile.textContent ?? '');
+
+  it('puts the first image of the folder in an image, and the first video in a reels', async () => {
+    const { impl } = makeFetch();
+    render_(impl, `${base()}/novo`);
+    await screen.findByLabelText('Título');
+    await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
+    type('Pasta', IMAGES);
+    await waitFor(() => expect(selected()).toHaveLength(1));
+    type('Formato', 'reels');
+    type('Pasta', VIDEOS);
+    await waitFor(() => expect(selected()).toHaveLength(1));
+    expect(within(dialog()).queryByText('Esta pasta não tem vídeos para este formato.')).toBeNull();
+  });
+
+  it('puts every media of the folder in a carousel, and sends them in the creation itself', async () => {
+    const { impl, calls } = makeFetch();
+    render_(impl, `${base()}/novo`);
+    await screen.findByLabelText('Título');
+    type('Título', 'Carrossel');
+    type('Formato', 'carousel');
+    await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
+    type('Pasta', IMAGES);
+    await waitFor(() => expect(selected()).toHaveLength(3));
+    await ready();
+    click('Criar conteúdo');
+    await waitFor(closed);
+    expect(writes(calls)).toHaveLength(1);
+    expect((writes(calls)[0]!.body as { mediaAssetIds: string[] }).mediaAssetIds).toEqual([IMG_1.id, IMG_2.id, IMG_3.id]);
+  });
+
+  it('says an empty folder is empty and where to send the first media, and creates the content without media', async () => {
+    const empty = 'f1f1f1f1-0000-4000-8000-000000000009';
+    const { impl, calls } = makeFetch({ folders: [...FOLDERS, folder(empty, 'Vazia')], assets: { ...ASSETS, [empty]: [] } });
+    render_(impl, `${base()}/novo`);
+    await screen.findByLabelText('Título');
+    type('Título', 'Sem mídia ainda');
+    await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(5));
+    type('Pasta', empty);
+    expect(await within(dialog()).findByText('Esta pasta está vazia. Envie a primeira mídia por aqui.')).toBeTruthy();
+    await ready();
+    click('Criar conteúdo');
+    await waitFor(closed);
+    expect((writes(calls)[0]!.body as { mediaAssetIds: string[] }).mediaAssetIds).toEqual([]);
+  });
+
+  it('does not create before the folder is read, and says so when it cannot be read', async () => {
+    let failing = true;
+    const { impl, calls } = makeFetch({
+      override: (call) => (failing && call.method === 'GET' && /media-folders\/[^/]+\/assets/.test(call.path) ? failure(500, 'INTERNAL') : undefined)
+    });
+    render_(impl, `${base()}/novo`);
+    await screen.findByLabelText('Título');
+    type('Título', 'Pão');
+    await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
+    type('Pasta', IMAGES);
+    expect(await within(dialog()).findByText('Não foi possível ler a pasta. Escolha a pasta de novo.')).toBeTruthy();
+    expect((within(dialog()).getByRole('button', { name: 'Criar conteúdo' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(writes(calls)).toHaveLength(0);
+    failing = false;
+    type('Pasta', VIDEOS);
+    await ready();
+    expect((within(dialog()).getByRole('button', { name: 'Criar conteúdo' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('refits the media to a new format: what fits stays, and a folder without the kind gives its own', async () => {
+    await openContent(stored({ format: 'carousel', folderId: LAUNCH, media: [asset(7, 'image', '09').id, asset(6, 'video', '08').id] }));
+    await waitFor(() => expect(selected()).toHaveLength(2));
+    type('Formato', 'reels');
+    await waitFor(() => expect(selected()).toHaveLength(1));
+    type('Formato', 'image');
+    await waitFor(() => expect(within(dialog()).queryByText('Esta pasta não tem imagens para este formato.')).toBeNull());
+    await waitFor(() => expect(selected()).toHaveLength(1));
+  });
+
+  describe('changing the folder of a content that has media', () => {
+    const swap = async (row: Stored) => {
+      const opened = await openContent(row);
+      await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
+      type('Pasta', VIDEOS);
+      return opened;
+    };
+    const confirmation = (): HTMLElement => within(dialog()).getByRole('group', { name: 'Trocar a pasta' });
+
+    it('asks first, says what leaves and what enters, and changes nothing until the person confirms', async () => {
+      const { calls } = await swap(stored({ format: 'carousel', media: [IMG_1.id, IMG_2.id] }));
+      expect(within(confirmation()).getByText('Trocar para Vídeos?')).toBeTruthy();
+      expect(within(confirmation()).getByText('A mídia de agora sai do conteúdo, e entra a da pasta nova.')).toBeTruthy();
+      expect((field('Pasta') as HTMLSelectElement).value).toBe(IMAGES);
+      expect(selected()).toHaveLength(2);
+      expect(writes(calls)).toHaveLength(0);
+    });
+
+    it('keeps the folder when the person keeps it', async () => {
+      await swap(stored({ format: 'carousel', media: [IMG_1.id] }));
+      fireEvent.click(within(confirmation()).getByRole('button', { name: 'Manter a pasta atual' }));
+      expect(within(dialog()).queryByRole('group', { name: 'Trocar a pasta' })).toBeNull();
+      expect((field('Pasta') as HTMLSelectElement).value).toBe(IMAGES);
+      expect(selected()).toHaveLength(1);
+    });
+
+    it('takes the media of the new folder when confirmed, with the cover gone, and saves them in one request', async () => {
+      const cover = asset(7, 'image', '09').id;
+      const { calls, contents } = await swap(stored({ format: 'reels', folderId: LAUNCH, media: [asset(6, 'video', '08').id], coverAssetId: cover }));
+      expect(within(confirmation()).getByText('A mídia e a capa de agora saem do conteúdo, e entram as da pasta nova.')).toBeTruthy();
+      fireEvent.click(within(confirmation()).getByRole('button', { name: 'Trocar a pasta' }));
+      expect((field('Pasta') as HTMLSelectElement).value).toBe(VIDEOS);
+      await waitFor(() => expect(selected()).toHaveLength(1));
+      await ready();
+      click('Salvar');
+      await waitFor(closed);
+      expect(writes(calls)[0]!.body).toEqual({ folderId: VIDEOS, coverAssetId: null, mediaAssetIds: [VID_1.id] });
+      expect(contents[0]!.folderId).toBe(VIDEOS);
+      expect(contents[0]!.media).toEqual([VID_1.id]);
+      expect(contents[0]!.coverAssetId).toBeNull();
+    });
+
+    it('says an approved content goes back to "aguardando aprovação"', async () => {
+      await swap(stored({ status: 'approved', format: 'carousel', media: [IMG_1.id, IMG_2.id] }));
+      expect(within(confirmation()).getByText(/O conteúdo está aprovado e volta para “Aguardando aprovação”\./)).toBeTruthy();
+    });
+
+    it('says a content that waits stays waiting, and that it does not stay without media', async () => {
+      await swap(stored({ status: 'awaiting_approval', format: 'carousel', media: [IMG_1.id, IMG_2.id] }));
+      expect(within(confirmation()).getByText(/Um conteúdo enviado para aprovação não fica sem mídia/)).toBeTruthy();
+      expect(within(confirmation()).queryByText(/está aprovado/)).toBeNull();
+    });
+
+    it('answers a folder that cannot fill a content that waits with its own words, and keeps what is on screen', async () => {
+      const empty = 'f1f1f1f1-0000-4000-8000-000000000009';
+      const row = stored({ status: 'awaiting_approval', format: 'carousel', media: [IMG_1.id, IMG_2.id] });
+      const { calls } = await openContent(row, { folders: [...FOLDERS, folder(empty, 'Vazia')], assets: { ...ASSETS, [empty]: [] } });
+      await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(5));
+      type('Pasta', empty);
+      fireEvent.click(within(confirmation()).getByRole('button', { name: 'Trocar a pasta' }));
+      await ready();
+      click('Salvar');
+      expect((await within(dialog()).findAllByRole('alert')).some((alert) => /não tem mídia que complete o formato/.test(alert.textContent ?? ''))).toBe(true);
+      expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+      expect(writes(calls)).toHaveLength(1);
+      expect(screen.queryByRole('dialog')).not.toBeNull();
+    });
+
+    it('asks nothing of a content in production that has no media and no cover', async () => {
+      await openContent(stored());
+      await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
+      type('Pasta', VIDEOS);
+      expect(within(dialog()).queryByRole('group', { name: 'Trocar a pasta' })).toBeNull();
+    });
+  });
+
+  describe('sending a file from the modal', () => {
+    class FakeXhr {
+      public upload = { onprogress: null as null | ((event: { lengthComputable: boolean; loaded: number }) => void) };
+      public onload: (() => void) | null = null;
+      public onerror: (() => void) | null = null;
+      public onabort: (() => void) | null = null;
+      public status = 200;
+      public open(): void { /* the storage is the fake's */ }
+      public setRequestHeader(): void { /* not needed */ }
+      public getResponseHeader(): string | null { return null; }
+      public abort(): void { this.onabort?.(); }
+      public send(): void { queueMicrotask(() => this.onload?.()); }
+    }
+    beforeEach(() => { vi.stubGlobal('XMLHttpRequest', FakeXhr); });
+    afterEach(() => { vi.unstubAllGlobals(); });
+
+    const sendFile = async (file: File): Promise<void> => {
+      const input = await within(dialog()).findByLabelText('Enviar mídia');
+      fireEvent.change(input, { target: { files: [file] } });
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Enviar' }));
+    };
+
+    it('lands in the folder and enters the content, then is saved with the content', async () => {
+      const empty = 'f1f1f1f1-0000-4000-8000-000000000009';
+      const { impl, calls } = makeFetch({ folders: [...FOLDERS, folder(empty, 'Vazia')], assets: { ...ASSETS, [empty]: [] } });
+      render_(impl, `${base()}/novo`);
+      await screen.findByLabelText('Título');
+      type('Título', 'Com envio');
+      await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(5));
+      type('Pasta', empty);
+      await sendFile(new File([new Uint8Array(2_000)], 'foto.jpg', { type: 'image/jpeg' }));
+
+      await waitFor(() => expect(selected()).toHaveLength(1));
+      const upload = calls.find((call) => call.method === 'POST' && /media\/uploads$/.test(call.path));
+      expect(upload?.body).toMatchObject({ fileName: 'foto.jpg', contentType: 'image/jpeg', clientId: padaria.id, folderId: empty });
+      await ready();
+      click('Criar conteúdo');
+      await waitFor(closed);
+      const created = writes(calls).find((call) => /contents$/.test(call.path));
+      expect((created?.body as { mediaAssetIds: string[] }).mediaAssetIds).toHaveLength(1);
+      expect((created?.body as { folderId: string }).folderId).toBe(empty);
+    });
+
+    it('keeps a video that the format does not take in the folder, and says so', async () => {
+      const { impl } = makeFetch();
+      render_(impl, `${base()}/novo`);
+      await screen.findByLabelText('Título');
+      await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
+      type('Pasta', IMAGES);
+      await waitFor(() => expect(selected()).toHaveLength(1));
+      await sendFile(new File([new Uint8Array(2_000)], 'filme.mp4', { type: 'video/mp4' }));
+      expect(await within(dialog()).findByText('A mídia foi para a pasta, mas o formato Imagem não usa vídeo.')).toBeTruthy();
+      expect(selected()).toHaveLength(1);
+    });
+  });
+});
+
 describe('creating a content', () => {
   const createButton = (): HTMLElement | null => screen.queryByRole('button', { name: 'Nova publicação' });
+  /** The folder is read when it is chosen, and the content is not created before the list on screen is the folder's. */
+  const readyToCreate = (): Promise<void> => waitFor(() => expect((within(dialog()).getByRole('button', { name: 'Criar conteúdo' }) as HTMLButtonElement).disabled).toBe(false));
 
   it.each([
     ['conteudo.visualizar only', [VISUALIZE, READ_CLIENTS], false],
@@ -704,13 +914,14 @@ describe('creating a content', () => {
     type('Legenda', 'Quentinho');
     await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
     type('Pasta', VIDEOS);
+    await readyToCreate();
     click('Criar conteúdo');
 
     await waitFor(closed);
     expect(writes(calls)).toEqual([{
       method: 'POST',
       path: `/agencies/${AGENCY}/clients/${padaria.id}/contents`,
-      body: { title: '  Pão de queijo  ', format: 'reels', publishOn: '2026-10-22', publishAtTime: '09:15', caption: 'Quentinho', folderId: VIDEOS }
+      body: { title: '  Pão de queijo  ', format: 'reels', publishOn: '2026-10-22', publishAtTime: '09:15', caption: 'Quentinho', folderId: VIDEOS, mediaAssetIds: [VID_1.id] }
     }]);
     expect(await screen.findAllByRole('link', { name: /Pão de queijo/ })).toBeTruthy();
   });
@@ -737,6 +948,7 @@ describe('creating a content', () => {
     await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
     type('Título', 'Pão novo');
     type('Pasta', IMAGES);
+    await readyToCreate();
     click('Criar conteúdo');
 
     expect((await within(dialog()).findAllByText(text)).length).toBeGreaterThan(0);
@@ -746,31 +958,22 @@ describe('creating a content', () => {
     expect(screen.queryByRole('dialog')).not.toBeNull();
   });
 
-  it('creates once and sends only the rest again when the media of the first try is refused', async () => {
-    let refusing = true;
-    const { impl, calls, contents } = makeFetch({
-      override: (call) => (refusing && call.method === 'PATCH' ? failure(409, 'TRY_AGAIN') : undefined)
-    });
+  it('creates once, with the media swapped by hand after the folder was read, in the one request', async () => {
+    const { impl, calls, contents } = makeFetch();
     render_(impl, `${base()}/novo`);
     await screen.findByLabelText('Título');
     await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
     type('Título', 'Pão novo');
     type('Pasta', IMAGES);
+    await readyToCreate();
     fireEvent.click(await within(dialog()).findByRole('button', { name: 'Adicionar Imagem de 04/10' }));
     click('Criar conteúdo');
-
-    expect(await within(dialog()).findByText(/O conteúdo já foi criado: ao salvar de novo, só o que falta é enviado\./)).toBeTruthy();
-    expect(contents).toHaveLength(1);
-    refusing = false;
-    // The content exists now: the button says so, and saving edits it.
-    click('Salvar');
     await waitFor(closed);
 
-    expect(writes(calls).map((call) => call.method)).toEqual(['POST', 'PATCH', 'PATCH']);
+    expect(writes(calls).map((call) => call.method)).toEqual(['POST']);
     expect(contents).toHaveLength(1);
     expect(contents[0]!.media).toEqual([IMG_2.id]);
-    expect(writes(calls)[2]!.path).toBe(contentPath(contents[0]!.id));
-    expect(writes(calls)[2]!.body).toEqual({ mediaAssetIds: [IMG_2.id] });
+    expect(writes(calls)[0]!.body).toMatchObject({ folderId: IMAGES, mediaAssetIds: [IMG_2.id] });
   });
 
   it.each([
