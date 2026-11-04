@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@ageniza/contracts": "workspace:*",
-    "@better-auth/expo": "1.7.5",
+    "@better-auth/expo": "1.7.7",
     "@better-auth/utils": "0.4.2",
     "@expo-google-fonts/archivo": "^0.4.2",
     "@expo-google-fonts/geist": "^0.4.1",

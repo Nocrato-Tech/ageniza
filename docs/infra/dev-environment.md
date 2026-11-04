@@ -165,6 +165,8 @@ The first deploy needs no command: it happens on the next merge to `develop`, or
 | `/etc/ageniza-dev/runtime.env` | `APP_ENV=production`, `BETTER_AUTH_SECRET` (fresh), `APP_PUBLIC_URL`, `API_CORS_ORIGINS`, `AUTH_TERMS_VERSION`, `AUTH_PRIVACY_VERSION`, `DATABASE_URL`, `PAYMENTS_PROVIDER=simulado`, `WORKER_SMOKE_JOB=false`, the `R2_*` and `IDENTITY_STORAGE_*` settings of the dev buckets, and the optional ones listed in the example |
 | `/etc/ageniza-dev/github-token`, `registry/`, `cloudflared/credentials.json` | the GitHub read token, the GHCR login, the dev tunnel credentials |
 
+`runtime.env` accepts only the keys listed in the installed `/usr/local/sbin/ageniza-deploy-dev`, which does not update with a release. When a new key reaches `develop`, re-run `install-dev-deploy.sh` from a checkout of `develop` before adding it; otherwise the deploy stops with `contains a key that is not allowed` and no release reaches dev until that is fixed (#803).
+
 `SMTP_URL`, `EMAIL_FROM`, `DEPLOY_TARGET` and `API_TRUSTED_PROXY_CIDRS` must not be in `runtime.env`: `compose.dev.yml` fixes them, and `ageniza-deploy-dev` refuses a file that names them. The entrypoint also refuses a `runtime.env` whose `APP_PUBLIC_URL` is not `https://dev.ageniza.com.br`, whose payments provider is not the simulated one, or whose R2 buckets do not have `dev` in the name.
 
 ## Operations

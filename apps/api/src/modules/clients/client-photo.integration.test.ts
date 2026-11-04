@@ -307,6 +307,20 @@ describe('client photo (issue #126)', () => {
     expect((await deletePhoto(undefined, agencyA, clientId)).status).toBe(401);
   });
 
+  it('a person with no session is refused before the body of the photo is read: a body that is not JSON still answers 401', async () => {
+    const clientId = await createClient();
+
+    const response = await app.app.inject({
+      method: 'PUT',
+      url: `/agencies/${agencyA}/clients/${clientId}/photo`,
+      headers: { ...origin, 'content-type': 'application/json' },
+      payload: '{ this is not json'
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error.code).toBe('UNAUTHENTICATED');
+  });
+
   it('refuses SVG, HTML and unknown bytes by content (415), and any declared label or extra field (400), storing nothing', async () => {
     const clientId = await createClient();
     for (const body of [SVG_BODY, HTML_BODY, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])]) {
