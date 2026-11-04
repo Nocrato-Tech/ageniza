@@ -25,3 +25,13 @@ describe('the web image', () => {
     expect(dockerfile).toContain('VITE_DEV_DOCS=$VITE_DEV_DOCS');
   });
 });
+
+// The dev API sends HSTS, so a redirect to http://host:8080 breaks a browser that already used the dev host over HTTPS.
+describe('the web nginx config', () => {
+  const nginx = readFileSync(join(__dirname, '../../nginx.conf'), 'utf8');
+
+  it('keeps redirects relative', () => {
+    expect(nginx).toMatch(/^\s*absolute_redirect off;/m);
+    expect(nginx).toContain('location = /app-mobile { return 308 /app-mobile/; }');
+  });
+});
