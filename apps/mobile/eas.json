@@ -4,7 +4,12 @@
     "preview": {
       "distribution": "internal",
       "android": { "buildType": "apk" },
-      "env": { "EXPO_PUBLIC_API_URL": "https://dev.ageniza.com.br/api" }
+      "env": { "EXPO_PUBLIC_API_URL": "https://dev.ageniza.com.br/api", "APP_VARIANT": "internal" }
+    },
+    "production": {
+      "environment": "production",
+      "android": { "buildType": "app-bundle" },
+      "env": { "APP_VARIANT": "production" }
     }
   }
 }
