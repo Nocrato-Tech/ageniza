@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "Ageniza",
+    "slug": "ageniza-mobile",
+    "version": "0.1.0",
+    "scheme": "ageniza",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.ageniza.mobile" },
+    "android": { "package": "com.ageniza.mobile", "edgeToEdgeEnabled": true },
+    "web": { "bundler": "metro", "output": "single", "favicon": "./assets/icon.png" },
+    "plugins": ["expo-font", "expo-secure-store"]
+  }
+}

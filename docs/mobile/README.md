@@ -6,6 +6,8 @@ Esta pasta é para quem vai construir o app em Expo. Ela descreve **o que o back
 
 ## Por onde começar
 
+O primeiro cliente nativo está em [`apps/mobile`](../../apps/mobile/README.md): login por e-mail, contextos e os fluxos de conteúdo. O [mapa da interface](interface-mobile.md) relaciona telas do Figma, integrações e limites da demonstração. O README do app distingue o que já é nativo, o que ainda abre a web e os pré-requisitos do ambiente dev.
+
 Esta documentação também está publicada, com os diagramas desenhados e a referência da API pesquisável, em **<https://dev.ageniza.com.br/mobile>** (só no ambiente de dev; localmente, `pnpm dev` e `http://127.0.0.1:5173/mobile`).
 
 1. [Começar o projeto](comecar.md): ambiente, como a API autentica, como o app entra e as regras de compatibilidade.

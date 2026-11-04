@@ -14,9 +14,18 @@
 module.exports = {
   hooks: {
     readPackage (pkg) {
-      if (pkg.name !== 'better-auth') return pkg
-      if (pkg.peerDependencies) delete pkg.peerDependencies.vitest
-      if (pkg.peerDependenciesMeta) delete pkg.peerDependenciesMeta.vitest
+      if (pkg.name === 'better-auth') {
+        if (pkg.peerDependencies) delete pkg.peerDependencies.vitest
+        if (pkg.peerDependenciesMeta) delete pkg.peerDependenciesMeta.vitest
+      }
+      // The API imports the server entrypoint. Resolving native optional peers here would
+      // pull Expo/Metro into its production image; apps/mobile declares them explicitly.
+      if (pkg.name === '@better-auth/expo') {
+        for (const peer of ['expo-constants', 'expo-linking', 'expo-network', 'expo-secure-store', 'expo-web-browser']) {
+          if (pkg.peerDependencies) delete pkg.peerDependencies[peer]
+          if (pkg.peerDependenciesMeta) delete pkg.peerDependenciesMeta[peer]
+        }
+      }
       return pkg
     }
   }
