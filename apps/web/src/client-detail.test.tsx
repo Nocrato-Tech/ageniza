@@ -266,7 +266,7 @@ describe('client detail (#136)', () => {
     expect(screen.getByText('2 aguardando a agência')).toBeTruthy();
     expect(screen.getByText('1 com resposta da agência')).toBeTruthy();
     expect(screen.getByText('3 pessoas com acesso')).toBeTruthy();
-    expect(screen.getByText('Pendentes, atrasos e próximos posts aparecem quando os módulos de Conteúdo e Tarefas existirem.')).toBeTruthy();
+    expect(screen.queryByText('Saúde do cliente')).toBeNull();
     const progress = screen.getByRole('progressbar') as HTMLProgressElement;
     expect(progress.value).toBe(5);
     expect(progress.max).toBe(7);

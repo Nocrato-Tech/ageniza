@@ -254,10 +254,6 @@ export function ClientGeneralTab() {
         <ArrowRight className="client-general__go" aria-hidden="true" />
       </Link>
       : portalBlock}
-    <section className="client-general__reserved" aria-labelledby="client-health-title">
-      <h2 id="client-health-title">Saúde do cliente</h2>
-      <p>Pendentes, atrasos e próximos posts aparecem quando os módulos de Conteúdo e Tarefas existirem.</p>
-    </section>
   </div>;
 }
 

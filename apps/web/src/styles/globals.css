@@ -1691,27 +1691,6 @@ a.client-general__block:focus-visible {
   accent-color: var(--text-primary);
 }
 
-/* What the later modules will fill: a quiet line under the blocks, not a block of its own. */
-.client-general__reserved {
-  display: grid;
-  grid-column: 1 / -1;
-  gap: var(--space-1);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.client-general__reserved h2 {
-  margin: 0;
-  color: var(--text-secondary);
-  font: var(--label-md);
-}
-
-.client-general__reserved p {
-  margin: 0;
-  color: var(--text-muted);
-  font: var(--body-md);
-}
-
 /* Edit client modal: specs/clientes.md section 7 (issue #137). */
 .edit-client__photo {
   display: grid;
