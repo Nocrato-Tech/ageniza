@@ -53,6 +53,8 @@ const storageConfig: WorkerStorageConfig = {
 const mediaProcessingConfig: MediaProcessingConfig = {
   ffmpegTimeoutSeconds: 30,
   maxDurationSeconds: 30,
+  timeoutPerMediaSecond: 0.5,
+  maxTimeoutSeconds: 120,
   thumbnailWidthPixels: 160,
   previewMaxHeightPixels: 480,
   previewMaxOutputBytes: 20 * 1024 * 1024

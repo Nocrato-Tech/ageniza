@@ -109,12 +109,18 @@ database and RLS on every run -- see `src/media-repository.ts`), the handler:
 4. uploads both outputs back under the asset's own key prefix and records duration/sizes, or a
    short, non-sensitive failure reason -- never raw ffmpeg output or a signed URL.
 
-Every `ffmpeg`/`ffprobe` invocation is timeout-bounded (`MEDIA_PROCESSING_TIMEOUT_SECONDS`, killed
-with `SIGKILL` past it), restricted to the `file`/`pipe` protocols (a crafted input cannot make it
-reach the network), and the handler has a whole-job abort budget covering ffprobe, both ffmpeg
-calls and object-storage I/O. The AWS SDK streams receive the same abort signal. pg-boss expiry is
-60 seconds later (`3 * ffmpegTimeoutSeconds + 180`) as a crash-recovery backstop. The temporary
-directory is always removed in a `finally`, including on failure -- no file is left on disk.
+Every `ffmpeg`/`ffprobe` invocation is timeout-bounded (killed with `SIGKILL` past it), restricted
+to the `file`/`pipe` protocols (a crafted input cannot make it reach the network). The probe and the
+thumbnail get `MEDIA_PROCESSING_TIMEOUT_SECONDS` (default 240, the floor). The preview encode gets the
+duration `ffprobe` read times `MEDIA_PROCESSING_TIMEOUT_PER_MEDIA_SECOND` (default 0.5), never under
+that floor and never over `MEDIA_PROCESSING_MAX_TIMEOUT_SECONDS` (default 1200). Measured with the
+worker's exact encode on a 30 min 1080p source (about 8 Mbps): 170 s on 8 cores/16 threads, about
+475 s extrapolated on 2 logical CPUs, so a fixed 240 s left a long video on a small VPS without a
+preview. The handler's whole-job abort budget is `2 * floor + ceiling + 120` seconds (probe,
+thumbnail, a preview at the ceiling, and the object-storage transfers; the AWS SDK streams receive
+the same abort signal), and pg-boss expiry is 60 seconds later as a crash-recovery backstop, so the
+queue neither kills a job inside its budget nor retries it on top of itself. The temporary directory
+is always removed in a `finally`, including on failure -- no file is left on disk.
 
 ## In-process jobs
 
