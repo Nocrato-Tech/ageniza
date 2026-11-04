@@ -65,7 +65,7 @@ function useLiveChoice({ current, save, refresh, refusal }: {
   const [draft, setDraft] = useState<string | null>(null);
   const [state, setState] = useState<SaveState>('idle');
   const [error, setError] = useState<string | undefined>();
-  const flight = useRef<{ busy: boolean; queued: string | null }>({ busy: false, queued: null });
+  const flight = useRef<{ busy: boolean; queued: string | null; saved: string | null }>({ busy: false, queued: null, saved: null });
   const latest = useRef({ save, refresh, refusal });
   latest.current = { save, refresh, refusal };
 
@@ -81,20 +81,21 @@ function useLiveChoice({ current, save, refresh, refusal }: {
     try {
       await latest.current.save(value);
     } catch (failed) {
-      flight.current = { busy: false, queued: null };
+      flight.current = { busy: false, queued: null, saved: null };
       await Promise.resolve(latest.current.refresh()).catch(() => undefined);
       setDraft(null);
       setState('idle');
       setError(latest.current.refusal(failed));
       return;
     }
+    flight.current.saved = value;
     const next = flight.current.queued;
     flight.current.queued = null;
     if (next !== null && next !== value) { await send(next); return; }
     flight.current.busy = false;
     await Promise.resolve(latest.current.refresh()).catch(() => undefined);
     // A choice made while the screen was reading again has its own request on its way, and its own end.
-    if (!flight.current.busy) { setDraft(null); setState('saved'); }
+    if (!flight.current.busy) { flight.current.saved = null; setDraft(null); setState('saved'); }
   };
 
   const choose = (value: string): void => {
@@ -102,7 +103,8 @@ function useLiveChoice({ current, save, refresh, refusal }: {
     setError(undefined);
     setDraft(value);
     if (flight.current.busy) { flight.current.queued = value; return; }
-    if (value === current) { setDraft(null); return; }
+    // Between the write and the end of the next reading, what is saved is the last value written, not the `current` the screen still holds.
+    if (value === (flight.current.saved ?? current)) { setDraft(flight.current.saved === null ? null : value); return; }
     void send(value);
   };
 
@@ -117,8 +119,9 @@ function SaveStatus({ state }: { state: SaveState }) {
 }
 
 /** The person in charge of a subtask: chosen from the team, saved as it is chosen. */
-function TaskAssignee({ task, options, save, refresh }: {
+function TaskAssignee({ task, options, save, refresh, disabled }: {
   task: ContentTask;
+  disabled: boolean;
   options: readonly { value: string; label: string }[];
   save: (value: string) => Promise<unknown>;
   refresh: () => Promise<unknown>;
@@ -132,6 +135,7 @@ function TaskAssignee({ task, options, save, refresh }: {
         ? [{ value: task.assignee.membershipId, label: task.assignee.name }, ...options]
         : options}
       placeholder="Escolha uma pessoa"
+      disabled={disabled}
       loading={live.state === 'saving'}
       onChange={live.choose}
     />
@@ -340,7 +344,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
             </p>
             {task.description !== null && <p className="content-assignment__task-description">{task.description}</p>}
             {task.status === 'pending' && task.returnComment !== null && <p className="content-assignment__task-return">Devolvida: {task.returnComment}</p>}
-            {editable && teamReady && <TaskAssignee task={task} options={teamOptions} save={assignTask(task)} refresh={refresh} />}
+            {editable && teamReady && <TaskAssignee task={task} options={teamOptions} save={assignTask(task)} refresh={refresh} disabled={blocked !== undefined} />}
             {(deliver || judge || editable) && <div className="form-actions">
               {deliver && <Button
                 size="sm"

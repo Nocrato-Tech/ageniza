@@ -929,6 +929,43 @@ describe('editing a subtask that exists', () => {
     expect(taskItem(row, 'Primeira').textContent).toContain('Responsável: Ana Souza');
   });
 
+  it('keeps the person chosen live when the title is saved from a form opened before the choice', async () => {
+    const row = complete();
+    const tasks = two();
+    const { calls, world } = await openEdit(row, 'Segunda', { tasks });
+    fireEvent.change(personBox(row, 'Segunda'), { target: { value: CARLA.membershipId } });
+    await waitFor(() => expect(taskItem(row, 'Segunda').textContent).toContain('Responsável: Carla Dias'));
+    fireEvent.change(titleBox(row, 'Segunda'), { target: { value: 'Segunda parte' } });
+    fireEvent.click(save(row, 'Segunda'));
+    await waitFor(() => expect(writes(calls)).toHaveLength(2));
+    expect(writes(calls).map((call) => call.body)).toEqual([{ assigneeMembershipId: CARLA.membershipId }, { title: 'Segunda parte' }]);
+    expect(world.tasks[1]!.assignee?.membershipId).toBe(CARLA.membershipId);
+  });
+
+  it('sends the choice that goes back to the old person while the screen reads again, and ends with it', async () => {
+    const row = complete();
+    const tasks = two();
+    const { calls, world } = await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, tasks });
+    const box = (await within(taskItem(row, 'Segunda')).findByLabelText('Responsável por “Segunda”')) as HTMLSelectElement;
+    await waitFor(() => expect(box.options.length).toBeGreaterThan(2));
+    let release!: () => void;
+    world.holdRead = new Promise<void>((resolve) => { release = resolve; });
+    fireEvent.change(box, { target: { value: CARLA.membershipId } });
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    await settled();
+    fireEvent.change(box, { target: { value: BRUNO.membershipId } });
+    release();
+    await waitFor(() => expect(world.tasks[1]!.assignee?.membershipId).toBe(BRUNO.membershipId));
+    expect(writes(calls).map((call) => call.body)).toEqual([{ assigneeMembershipId: CARLA.membershipId }, { assigneeMembershipId: BRUNO.membershipId }]);
+  });
+
+  it('offers no choice of person on a subtask while the plan blocks writes', async () => {
+    const row = complete();
+    await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, tasks: two(), readOnly: true });
+    const box = (await within(taskItem(row, 'Segunda')).findByLabelText('Responsável por “Segunda”')) as HTMLSelectElement;
+    expect(box.disabled).toBe(true);
+  });
+
   it('goes back to the saved person of the subtask and says why when the API refuses the one that was chosen', async () => {
     const row = complete();
     await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, tasks: two(), team: [ANA, DIOGO, BRUNO] });

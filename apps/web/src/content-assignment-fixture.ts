@@ -41,6 +41,8 @@ export interface World {
   refuseLimit: boolean;
   /** Holds the answer of the writes whose path matches. */
   hold: { match: RegExp; promise: Promise<void> } | undefined;
+  /** Holds the answer of the reads of the content, so the screen stays on what it had while it reads again. */
+  holdRead: Promise<void> | undefined;
 }
 
 let sequence = 0;
@@ -82,7 +84,7 @@ const collaborator = (person: Person, self: string | null) => ({
 });
 
 export const assignmentWorld = (options: AssignmentOptions) => {
-  const world: World = { owner: options.owner === undefined ? ANA : options.owner, tasks: options.tasks === undefined ? [] : options.tasks.map((item) => ({ ...item })), failNext: undefined, refuseLimit: false, hold: undefined };
+  const world: World = { owner: options.owner === undefined ? ANA : options.owner, tasks: options.tasks === undefined ? [] : options.tasks.map((item) => ({ ...item })), failNext: undefined, refuseLimit: false, hold: undefined, holdRead: undefined };
   const holds = (permission: string): boolean => options.permissions.includes(permission);
   const team = options.team ?? [ANA, BRUNO, CARLA];
   const invalidAssignee = (membershipId: string): boolean => ![ANA, BRUNO, CARLA].some((person) => person.membershipId === membershipId);
@@ -111,6 +113,7 @@ export const assignmentWorld = (options: AssignmentOptions) => {
     if (row === undefined) return undefined;
     const write = call.method !== 'GET';
     if (write && world.hold?.match.test(path) === true) await world.hold.promise;
+    if (!write && world.holdRead !== undefined) await world.holdRead;
     if (write && world.failNext?.match.test(path) === true) {
       const { response } = world.failNext;
       world.failNext = undefined;
