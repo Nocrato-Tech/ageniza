@@ -180,10 +180,12 @@ function NewFolder({ clientId, folders, onCreated, onCancel }: {
  * The folder of the content, to choose or to create. The content takes what the folder holds; changing it is always allowed, and
  * when that takes something out of the content (`warning`), the person is told the effect first and confirms.
  */
-export function FolderField({ clientId, value, onChange, disabled, canCreate, error, hint, warning }: {
+export function FolderField({ clientId, value, onChange, onRetry, disabled, canCreate, error, hint, warning }: {
   clientId: string;
   value: string;
   onChange: (folderId: string) => void;
+  /** Set when the folder on screen could not be read: reads the same folder again, which a select cannot say by choosing it twice. */
+  onRetry?: (() => void) | undefined;
   disabled: boolean;
   canCreate: boolean;
   error?: string | undefined;
@@ -224,6 +226,7 @@ export function FolderField({ clientId, value, onChange, disabled, canCreate, er
     />
     {hint !== undefined && <p id={hintId} className="form-hint">{hint}</p>}
     {error !== undefined && <FieldMessage id={errorId} role="alert">{error}</FieldMessage>}
+    {onRetry !== undefined && !disabled && <Button variant="secondary" onClick={onRetry}>Ler a pasta de novo</Button>}
     {pending !== null && warning !== undefined && <div className="content-media__confirm" role="group" aria-label="Trocar a pasta">
       <p className="content-media__confirm-title">Trocar para {labels.get(pending) ?? 'a pasta escolhida'}?</p>
       <p>{warning}</p>

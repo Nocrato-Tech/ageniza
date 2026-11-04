@@ -680,7 +680,7 @@ describe('the folder is a drive: choosing it gives the content what it holds', (
     type('Título', 'Pão');
     await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
     type('Pasta', IMAGES);
-    expect(await within(dialog()).findByText('Não foi possível ler a pasta. Escolha a pasta de novo.')).toBeTruthy();
+    expect(await within(dialog()).findByText('Não foi possível ler a pasta. Tente de novo.')).toBeTruthy();
     expect((within(dialog()).getByRole('button', { name: 'Criar conteúdo' }) as HTMLButtonElement).disabled).toBe(true);
     // Enter in a field submits the form without the button: that must not create the content on a list that was never read either.
     fireEvent.submit(dialog().querySelector('form')!);
@@ -688,6 +688,28 @@ describe('the folder is a drive: choosing it gives the content what it holds', (
     failing = false;
     type('Pasta', VIDEOS);
     await ready();
+    expect((within(dialog()).getByRole('button', { name: 'Criar conteúdo' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('reads the same folder again from "Ler a pasta de novo", which clears the error and frees the save', async () => {
+    let failing = true;
+    const { impl, calls } = makeFetch({
+      override: (call) => (failing && call.method === 'GET' && /media-folders\/[^/]+\/assets/.test(call.path) ? failure(500, 'INTERNAL') : undefined)
+    });
+    render_(impl, `${base()}/novo`);
+    await screen.findByLabelText('Título');
+    type('Título', 'Pão');
+    await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
+    type('Pasta', IMAGES);
+    expect(await within(dialog()).findByText('Não foi possível ler a pasta. Tente de novo.')).toBeTruthy();
+    const reads = calls.filter((call) => call.method === 'GET' && /media-folders\/[^/]+\/assets/.test(call.path)).length;
+
+    failing = false;
+    click('Ler a pasta de novo');
+    await ready();
+    expect(within(dialog()).queryByText('Não foi possível ler a pasta. Tente de novo.')).toBeNull();
+    expect(within(dialog()).queryByRole('button', { name: 'Ler a pasta de novo' })).toBeNull();
+    expect(calls.filter((call) => call.method === 'GET' && /media-folders\/[^/]+\/assets/.test(call.path)).length).toBeGreaterThan(reads);
     expect((within(dialog()).getByRole('button', { name: 'Criar conteúdo' }) as HTMLButtonElement).disabled).toBe(false);
   });
 

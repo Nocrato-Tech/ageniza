@@ -123,9 +123,12 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   // A file going up into the folder is part of the form: saving now would leave it out and close the modal over it.
   const [sendingFile, setSendingFile] = useState(false);
   const folderTicket = useRef(0);
+  // What the last reading was for, so that a failed one can be asked again as it was, even for the same folder.
+  const lastReading = useRef<{ folderId: string; pick: (assets: MediaFolderAsset[], current: ContentFormValues) => string[] } | null>(null);
   const inherit = async (folderId: string, pick: (assets: MediaFolderAsset[], current: ContentFormValues) => string[]): Promise<void> => {
     const ticket = folderTicket.current + 1;
     folderTicket.current = ticket;
+    lastReading.current = { folderId, pick };
     setInheriting(true);
     setFolderUnread(false);
     try {
@@ -330,7 +333,8 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
           value={form.folderId}
           disabled={busy || !writable}
           canCreate={context.canEdit && blocked === undefined}
-          error={errors.folderId ?? (folderUnread ? 'Não foi possível ler a pasta. Escolha a pasta de novo.' : undefined)}
+          error={errors.folderId ?? (folderUnread ? 'Não foi possível ler a pasta. Tente de novo.' : undefined)}
+          onRetry={folderUnread && !inheriting ? () => { const last = lastReading.current; if (last !== null) void inherit(last.folderId, last.pick); } : undefined}
           hint="O conteúdo usa a mídia que está na pasta. Pasta vazia? Envie a mídia por aqui."
           warning={folderWarning}
           onChange={chooseFolder}
