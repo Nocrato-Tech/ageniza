@@ -5,6 +5,14 @@ const require = createRequire(import.meta.url);
 const configure = require('../../app.config.js') as () => { name: string; android: { package: string } };
 afterEach(() => vi.unstubAllEnvs());
 describe('release environment', () => {
+  it('uses a fixed same-origin web path without changing native or default exports', () => {
+    expect(configure()).not.toHaveProperty('experiments.baseUrl');
+    vi.stubEnv('MOBILE_WEB_BASE_PATH', '/app-mobile');
+    expect(configure()).toHaveProperty('experiments.baseUrl', '/app-mobile');
+    vi.stubEnv('MOBILE_WEB_BASE_PATH', '//external.example');
+    expect(configure).toThrow('supported web base path');
+  });
+
   it('does not silently send a production build to the dev backend', () => {
     vi.stubEnv('APP_VARIANT', 'production'); vi.stubEnv('EXPO_PUBLIC_API_URL', '');
     expect(configure).toThrow('explicit');

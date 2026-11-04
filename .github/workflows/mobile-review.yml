@@ -1,0 +1,66 @@
+name: Mobile review
+
+on:
+  push:
+    branches: ['codex/mobile-*']
+    paths: ['apps/mobile/**', 'apps/web/Dockerfile', 'apps/web/nginx.conf', '.github/workflows/mobile-review.yml']
+  pull_request:
+    branches: ['develop']
+    paths: ['apps/mobile/**', 'apps/web/Dockerfile', 'apps/web/nginx.conf', '.github/workflows/mobile-review.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @ageniza/contracts build
+      - run: pnpm --filter @ageniza/mobile typecheck
+      - run: pnpm --filter @ageniza/mobile lint
+      - run: pnpm --filter @ageniza/mobile test
+      - run: pnpm --filter @ageniza/mobile exec expo export --platform all --output-dir launch-dist/review
+        env:
+          EXPO_PUBLIC_API_URL: https://dev.ageniza.com.br/api
+  same-origin-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the dev image with the mobile interface
+        run: docker build -f apps/web/Dockerfile --build-arg VITE_DEV_DOCS=true --build-arg VITE_API_BASE_URL=/api -t ageniza-mobile-web-review:dev .
+      - name: Verify static routes without an API or customer data
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name ageniza-mobile-web-review -p 127.0.0.1:18080:8080 ageniza-mobile-web-review:dev
+          trap 'docker logs ageniza-mobile-web-review; docker rm -f ageniza-mobile-web-review' EXIT
+          curl --fail --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:18080/health
+          curl --fail http://127.0.0.1:18080/app-mobile/ -o /tmp/ageniza-mobile-review.html
+          grep -q '/app-mobile/_expo/' /tmp/ageniza-mobile-review.html
+          asset=$(sed -n 's/.*src="\([^" ]*index-[^" ]*\.js\)".*/\1/p' /tmp/ageniza-mobile-review.html)
+          test -n "$asset"
+          curl --fail "http://127.0.0.1:18080$asset" -o /tmp/ageniza-mobile-review.js
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/app-mobile/_expo/missing.js)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/app-mobile/assets/missing.ttf)" = 404
+      - name: Build production without the mobile export
+        run: docker build -f apps/web/Dockerfile --build-arg VITE_API_BASE_URL=/api -t ageniza-mobile-web-review:production .
+      - name: Verify production does not publish the dev-only interface
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name ageniza-mobile-web-production -p 127.0.0.1:18081:8080 ageniza-mobile-web-review:production
+          trap 'docker logs ageniza-mobile-web-production; docker rm -f ageniza-mobile-web-production' EXIT
+          curl --fail --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:18081/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/app-mobile/)" = 404

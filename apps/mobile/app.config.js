@@ -10,8 +10,11 @@ module.exports = () => {
     }
   }
   const internal = process.env.APP_VARIANT === 'internal';
+  const webBasePath = process.env.MOBILE_WEB_BASE_PATH;
+  if (webBasePath && webBasePath !== '/app-mobile') throw new Error('The supported web base path is /app-mobile.');
   return {
     ...base,
+    ...(webBasePath ? { experiments: { ...base.experiments, baseUrl: webBasePath } } : {}),
     name: internal ? 'Ageniza Interno' : base.name,
     android: { ...base.android, package: internal ? 'com.ageniza.mobile.internal' : base.android.package },
     ios: { ...base.ios, bundleIdentifier: internal ? 'com.ageniza.mobile.internal' : base.ios.bundleIdentifier },
