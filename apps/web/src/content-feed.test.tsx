@@ -403,6 +403,26 @@ describe('the feed beside the calendar', () => {
     expect(await screen.findByText('Nenhum post planejado ainda.')).toBeTruthy();
   });
 
+  it('opens the phone on the newest post when it goes back to a client that is in the cache, not where it was left', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Da padaria', publishOn: '2026-10-14' })] } });
+    renderScreen(impl, url(padaria.id));
+    await ready();
+    const first = await screen.findByRole('region', { name: 'Posts do feed' });
+    first.scrollTop = 500;
+    expect(first.scrollTop).toBe(500);
+
+    fireEvent.click(await screen.findByRole('link', { name: 'Confeitaria Doce' }));
+    await waitFor(() => expect(probe.pathname).toBe(url(confeitaria.id)));
+    await screen.findByText('Nenhum post planejado ainda.');
+    fireEvent.click(await screen.findByRole('link', { name: 'Padaria Central' }));
+    await waitFor(() => expect(probe.pathname).toBe(url(padaria.id)));
+    await ready();
+
+    const back = await screen.findByRole('region', { name: 'Posts do feed' });
+    expect(back.scrollTop).toBe(0);
+    expect(tileTexts()).toEqual(['Da padaria · Imagem · 14/10']);
+  });
+
   it('shows the handle of the client above the grid, and nothing when the client has none', async () => {
     const first = renderScreen(makeFetch().impl, url(padaria.id));
     expect(await screen.findByText('@padariacentral')).toBeTruthy();
@@ -610,9 +630,19 @@ describe('the profile preview (state of each post and counters)', () => {
   });
 });
 
+const realRect = Element.prototype.getBoundingClientRect;
+afterEach(() => { Element.prototype.getBoundingClientRect = realRect; });
+
 /** The layout jsdom does not have: a screen of `screenHeight` px over a header and rows of `rowHeight` px, three tiles to a row. */
 const withLayout = (scroller: HTMLElement, { screenHeight = 300, rowHeight = 200 } = {}) => {
   let top = 0;
+  // A tile sits where its row puts it: the arrow measures the rows from the tiles themselves.
+  Element.prototype.getBoundingClientRect = function (this: Element): DOMRect {
+    if (!this.classList.contains('content-feed__tile')) return realRect.call(this);
+    const index = Array.from(scroller.querySelectorAll('.content-feed__tile')).indexOf(this);
+    const y = 150 + Math.floor(index / 3) * rowHeight - top;
+    return { x: 0, y, top: y, left: 0, right: 100, bottom: y + rowHeight, width: 100, height: rowHeight, toJSON: () => ({}) } as DOMRect;
+  };
   const jumps: Array<{ top: number; behavior: ScrollBehavior | undefined }> = [];
   const height = (): number => 150 + Math.ceil(scroller.querySelectorAll('.content-feed__tile').length / 3) * rowHeight;
   const maxTop = (): number => Math.max(0, height() - screenHeight);
@@ -690,9 +720,9 @@ describe('the phone scrolls inside its screen, nine posts at a time', () => {
     expect(locked(down())).toBe(false);
 
     fireEvent.click(down());
-    expect(laid.jumps).toEqual([{ top: 300, behavior: 'smooth' }]);
+    expect(laid.jumps).toEqual([{ top: 600, behavior: 'smooth' }]);
     expect(locked(up())).toBe(false);
-    // 750 px of grid, a screen of 300 and the top at 300: 150 px from the end, less than a screen, so the second page is asked for.
+    // 750 px of grid, a screen of 300 and the top at 600 (three rows, clamped to 450): at the end, so the second page is asked for.
     await waitFor(() => expect(feedCalls(calls)).toEqual([
       `GET /agencies/${AGENCY_A}/clients/${padaria.id}/contents/feed`,
       `GET /agencies/${AGENCY_A}/clients/${padaria.id}/contents/feed?cursor=offset-9`
@@ -717,7 +747,7 @@ describe('the phone scrolls inside its screen, nine posts at a time', () => {
     expect(locked(up())).toBe(false);
 
     fireEvent.click(up());
-    expect(laid.jumps.at(-1)).toEqual({ top: 150, behavior: 'smooth' });
+    expect(laid.jumps.at(-1)).toEqual({ top: 0, behavior: 'smooth' });
     laid.scrollTo(0);
     expect(locked(up())).toBe(true);
     // A press at the start moves nothing.
@@ -766,7 +796,17 @@ describe('the phone scrolls inside its screen, nine posts at a time', () => {
     }));
 
     await waitFor(() => expect(laid.jumps).toHaveLength(before + 1));
-    expect(laid.jumps.at(-1)?.top).toBe(startedAt + 300);
+    expect(laid.jumps.at(-1)?.top).toBe(startedAt + 600);
+  });
+
+  it.each([120, 105, 80])('moves exactly three rows, whatever the height of a row (%i px), and not the height of the screen', async (rowHeight) => {
+    const { laid } = await open({ contents: { [padaria.id]: posts(30) } }, { screenHeight: 200, rowHeight });
+    fireEvent.click(down());
+    expect(laid.jumps.at(-1)).toEqual({ top: 3 * rowHeight, behavior: 'smooth' });
+    await waitFor(() => expect(tileTexts().length).toBeGreaterThan(9));
+    laid.scrollTo(4 * rowHeight);
+    fireEvent.click(up());
+    expect(laid.jumps.at(-1)).toEqual({ top: rowHeight, behavior: 'smooth' });
   });
 
   it('locks both arrows when there are fewer than nine posts and they fit the screen', async () => {
@@ -792,6 +832,7 @@ describe('the phone scrolls inside its screen, nine posts at a time', () => {
     const { laid } = await open({ contents: { [padaria.id]: posts(30) } });
     fireEvent.click(down());
     expect(laid.jumps.at(-1)?.behavior).toBe('smooth');
+    laid.scrollTo(100);
 
     const original = window.matchMedia;
     const asked: string[] = [];

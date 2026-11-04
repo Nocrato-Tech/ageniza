@@ -70,19 +70,6 @@ function FullFrame({ children }: { children: ReactNode }) {
   return <div className="content-feed-full">{children}</div>;
 }
 
-/** The shape of the grid while the first page loads: decorative, never announced. */
-export function ContentFeedSkeleton() {
-  return <Phone fixed>
-    <div className="content-feed content-feed--scroll">
-      <div className="content-feed__scroller">
-        <ol className="content-feed__grid" aria-hidden="true">
-          {Array.from({ length: FEED_PAGE_SIZE }, (_value, index) => <li key={index} className="content-feed__tile"><Skeleton className="content-feed__skeleton" /></li>)}
-        </ol>
-      </div>
-    </div>
-  </Phone>;
-}
-
 export interface ContentFeedProfile {
   readonly name: string;
   readonly photoUrl: string | null;
@@ -203,6 +190,19 @@ const prefersReducedMotion = (): boolean =>
 /** Tolerance, in pixels, of a scroll position that the browser rounds. */
 const EDGE_TOLERANCE = 1;
 
+/** A screen of the phone is three rows of the grid (nine posts). */
+const SCREEN_ROWS = 3;
+
+/** How far one arrow moves: three real rows, measured from the tiles (a tile and the gap under it), at any width. With no row to measure it falls back to the height of the screen. */
+const screenStep = (scroller: HTMLElement): number => {
+  const tiles = scroller.querySelectorAll<HTMLElement>('.content-feed__tile');
+  const first = tiles[0];
+  const below = tiles[3];
+  if (first === undefined || below === undefined) return scroller.clientHeight;
+  const row = below.getBoundingClientRect().top - first.getBoundingClientRect().top;
+  return row > 0 ? row * SCREEN_ROWS : scroller.clientHeight;
+};
+
 /**
  * The phone beside the calendar (`specs/conteudo.md` section 7): the Instagram profile of the client, whole, not the period
  * on screen. It opens on the newest post and the grid scrolls inside the screen of the device (wheel, touch, keyboard); the
@@ -246,7 +246,7 @@ export function ContentPhoneFeed({ onCreate, clientId, today, handle, profile }:
   const scrollOneScreen = (direction: 1 | -1): void => {
     const element = scroller.current;
     if (element === null) return;
-    const top = Math.max(0, element.scrollTop + direction * element.clientHeight);
+    const top = Math.max(0, element.scrollTop + direction * screenStep(element));
     if (typeof element.scrollTo === 'function') element.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
     else element.scrollTop = top;
   };
