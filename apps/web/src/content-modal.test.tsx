@@ -682,6 +682,8 @@ describe('the folder is a drive: choosing it gives the content what it holds', (
     type('Pasta', IMAGES);
     expect(await within(dialog()).findByText('Não foi possível ler a pasta. Escolha a pasta de novo.')).toBeTruthy();
     expect((within(dialog()).getByRole('button', { name: 'Criar conteúdo' }) as HTMLButtonElement).disabled).toBe(true);
+    // Enter in a field submits the form without the button: that must not create the content on a list that was never read either.
+    fireEvent.submit(dialog().querySelector('form')!);
     expect(writes(calls)).toHaveLength(0);
     failing = false;
     type('Pasta', VIDEOS);
@@ -816,6 +818,43 @@ describe('the folder is a drive: choosing it gives the content what it holds', (
       const created = writes(calls).find((call) => /contents$/.test(call.path));
       expect((created?.body as { mediaAssetIds: string[] }).mediaAssetIds).toHaveLength(1);
       expect((created?.body as { folderId: string }).folderId).toBe(empty);
+    });
+
+    it('replaces the media of a format of one media, and does not pass twenty in a carousel', async () => {
+      const big = 'f1f1f1f1-0000-4000-8000-000000000008';
+      const twenty = Array.from({ length: 20 }, (_, n) => asset(100 + n, 'image', '10'));
+      const { impl, calls } = makeFetch({ folders: [...FOLDERS, folder(big, 'Cheia')], assets: { ...ASSETS, [big]: twenty } });
+      render_(impl, `${base()}/novo`);
+      await screen.findByLabelText('Título');
+      type('Título', 'Cheio');
+      await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(5));
+      type('Pasta', big);
+      await waitFor(() => expect(selected()).toHaveLength(1));
+      await sendFile(new File([new Uint8Array(2_000)], 'nova.jpg', { type: 'image/jpeg' }));
+      await waitFor(() => expect(calls.some((call) => /uploads\/[^/]+\/complete$/.test(call.path))).toBe(true));
+      await savable();
+      // An image takes one: the file sent takes the place of the one inherited.
+      await waitFor(() => expect(selected()).toHaveLength(1));
+      click('Criar conteúdo');
+      await waitFor(closed);
+      const body = writes(calls).find((call) => /contents$/.test(call.path))!.body as { mediaAssetIds: string[] };
+      expect(body.mediaAssetIds).toHaveLength(1);
+      expect(body.mediaAssetIds[0]).not.toBe(twenty[19]!.id);
+    });
+
+    it('does not put a twenty-first media in a carousel, and says why', async () => {
+      const big = 'f1f1f1f1-0000-4000-8000-000000000008';
+      const twenty = Array.from({ length: 20 }, (_, n) => asset(100 + n, 'image', '10'));
+      const { impl } = makeFetch({ folders: [...FOLDERS, folder(big, 'Cheia')], assets: { ...ASSETS, [big]: twenty } });
+      render_(impl, `${base()}/novo`);
+      await screen.findByLabelText('Título');
+      type('Formato', 'carousel');
+      await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(5));
+      type('Pasta', big);
+      await waitFor(() => expect(selected()).toHaveLength(20));
+      await sendFile(new File([new Uint8Array(2_000)], 'extra.jpg', { type: 'image/jpeg' }));
+      expect(await within(dialog()).findByText('A mídia foi para a pasta, mas um carrossel leva até 20 mídias.')).toBeTruthy();
+      expect(selected()).toHaveLength(20);
     });
 
     it('keeps a video that the format does not take in the folder, and says so', async () => {

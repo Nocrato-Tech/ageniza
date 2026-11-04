@@ -213,7 +213,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     setFormError(undefined);
-    if (inheriting) return;
+    if (inheriting || folderUnread) return;
     const problems = validate(form);
     setErrors(problems);
     if (Object.keys(problems).length > 0) return;
