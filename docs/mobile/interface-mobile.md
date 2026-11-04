@@ -44,3 +44,10 @@ Typecheck, lint, testes de estado/persistência/contratos e exportação Android
 Aplicação dos princípios da skill stageshow ao produto real, usando Animated do React Native em vez do kit de demonstrações para DOM. Cards e ações respondem ao toque em 80 ms e retornam em 150 ms; mudanças de tela entram com deslocamento de 8 px em 190 ms. Confirmações mantêm o resultado visível. Opções abrem em painel deslizante. A preferência do sistema para reduzir movimento remove deslocamentos e animações dos painéis. As animações não atrasam requisições nem alteram regras de negócio.
 
 Validação: typecheck, lint, 31 testes existentes e exportação web. A execução em aparelho físico continua pendente.
+
+
+## Integração real e preparação de distribuição
+
+A área de trabalho agora exige contexto e usa somente o repositório da API; a entrada para demonstração foi removida. Marca/personas, carteira/ciclo de vida, acessos, equipe, roteiros e perfil foram integrados. O experimento sintético de ML foi retirado do fluxo real. A capa e a prévia usam os arquivos retornados pelo servidor; não substituem mídia ausente pela foto ilustrativa da clínica.
+
+O fluxo de aprovação do e-mail tem transporte separado para `ageniza_approval`, somente em memória e restrito ao lote, sem importar a sessão da conta. Testes cobrem abrir sem decidir, `canDecide`, a revisão e o conteúdo alvo. Veja [prontidão de lançamento](prontidao-lancamento.md) para evidências e lacunas atuais; as descrições de demonstração nas etapas anteriores são históricas e não descrevem o acesso atual.

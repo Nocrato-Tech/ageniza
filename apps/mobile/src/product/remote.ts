@@ -74,11 +74,11 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
     addTask: async (post, input) => { agencyOnly(); await api.request(`${base(post.clientId)}/contents/${post.id}/tasks`, { method: 'POST', body: CreateContentTaskRequestSchema.parse({ title: input.title, description: input.description, assigneeMembershipId: input.assigneeId, dueOn: input.dueOn }) }); return repo.detail(post.clientId, post.id); },
     comment: async (post, body) => { await api.request(`${base(post.clientId)}/threads`, { method: 'POST', body: { subject: { contentId: post.id }, body: CommentBodySchema.parse(body) } }); return repo.detail(post.clientId, post.id); },
     addClient: async (name) => { agencyOnly(); const client = await api.request<{ id: string; name: string }>(`${root}/clients`, { method: 'POST', body: CreateClientRequestSchema.parse({ name }) }); return { id: client.id, name: client.name, handle: '' }; },
-    addFolder: async (clientId, name) => { agencyOnly(); const folder = await api.request<MediaFolder>(`${base(clientId)}/media-folders`, { method: 'POST', body: CreateMediaFolderRequestSchema.parse({ name }) }); return { id: folder.id, clientId, name: folder.name }; },
+    addFolder: async (clientId, name, parentId) => { agencyOnly(); const folder = await api.request<MediaFolder>(`${base(clientId)}/media-folders`, { method: 'POST', body: CreateMediaFolderRequestSchema.parse({ name, ...(parentId ? { parentId } : {}) }) }); return { id: folder.id, clientId, name: folder.name, parentId: folder.parentId }; },
     library: async (clientId) => {
       agencyOnly();
       const folders = await all<MediaFolder>(`${base(clientId)}/media-folders`);
-      const library = { folders: folders.map((folder) => ({ id: folder.id, clientId, name: folder.name })), assets: [] as Asset[] };
+      const library = { folders: folders.map((folder) => ({ id: folder.id, clientId, name: folder.name, parentId: folder.parentId })), assets: [] as Asset[] };
       for (let index = 0; index < folders.length; index += 4) {
         const batches = await Promise.all(folders.slice(index, index + 4).map(async (folder) => (await all<MediaFolderAsset>(`${base(clientId)}/media-folders/${folder.id}/assets`)).map((asset) => ({ id: asset.id, clientId, folderId: folder.id, name: `${asset.category}-${asset.id.slice(0, 8)}`, kind: asset.category, size: asset.sizeBytes }))));
         library.assets.push(...batches.flat());

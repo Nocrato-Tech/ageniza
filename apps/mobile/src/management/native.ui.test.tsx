@@ -64,4 +64,3 @@ describe('management permissions and mutation targets', () => {
     expect(screen.queryByRole('button', { name: 'Editar Identidade da marca' })).toBeNull();
   });
 });
-

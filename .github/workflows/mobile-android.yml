@@ -3,7 +3,7 @@ name: Mobile Android internal APK
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/mobile-launch-readiness']
+    branches: ['codex/mobile-launch-readiness', 'codex/mobile-email-approval']
     paths: ['apps/mobile/**', 'packages/contracts/**', 'pnpm-lock.yaml', '.github/workflows/mobile-android.yml']
 
 permissions:

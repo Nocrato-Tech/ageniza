@@ -11,6 +11,12 @@ describe('account links', () => {
   ])('accepts the intended action of %s', (url, kind) => {
     expect(parseAccountLink(url, trusted)?.kind).toBe(kind);
   });
+  it('accepts approval tokens only in the fragment of the trusted link', () => {
+    const token = 'a'.repeat(43);
+    expect(parseAccountLink(`${trusted}/aprovar#${token}`, trusted)).toEqual({ kind: 'approval', token });
+    expect(parseAccountLink(`${trusted}/aprovar?token=${token}`, trusted)).toBeNull();
+    expect(parseAccountLink(`https://evil.example/aprovar#${token}`, trusted)).toBeNull();
+  });
   it.each([
     'https://evil.example/email/verificar?token=one',
     'http://dev.ageniza.com.br/email/verificar?token=one',

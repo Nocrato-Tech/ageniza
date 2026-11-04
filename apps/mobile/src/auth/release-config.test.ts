@@ -20,4 +20,3 @@ describe('release environment', () => {
     expect(configure()).toMatchObject({ name: 'Ageniza Interno', android: { package: 'com.ageniza.mobile.internal' } });
   });
 });
-

@@ -1,3 +1,4 @@
+import { ApprovalScreen } from './src/auth/ApprovalScreen';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Linking, ScrollView, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -37,7 +38,7 @@ export default function App() {
   const expire = useCallback(() => { generation.current += 1; setEntry(null); setRestoring(false); setRestoreFailure(''); setError(''); }, []);
   useEffect(() => {
     let alive = true;
-    const receive = (url: string) => { const link = parseAccountLink(url, webUrl); if (alive && link) { setAccountLink(link); } };
+    const receive = (url: string) => { const link = parseAccountLink(url, webUrl); if (alive && link) { if (link.kind === 'approval' && typeof window !== 'undefined' && window.location?.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search); setAccountLink(link); } };
     void Linking.getInitialURL().then((url) => { if (url) receive(url); }).catch(() => {});
     const subscription = Linking.addEventListener('url', ({ url }) => receive(url));
     return () => { alive = false; subscription.remove(); };
@@ -96,7 +97,7 @@ export default function App() {
     } catch { setError('O acesso foi bloqueado neste app, mas não foi possível apagar o armazenamento seguro. Tente sair novamente antes de compartilhar o aparelho.'); }
   }
   if (!fonts && !fontError) return <SafeAreaProvider><View style={{ flex: 1, justifyContent: 'center', backgroundColor: light.canvas }}><ActivityIndicator accessibilityLabel="Carregando fontes" color={light.action} /></View></SafeAreaProvider>;
-  return <SafeAreaProvider>{accountLink ? <SafeAreaView style={{ flex: 1, backgroundColor: light.canvas }}><AccountAction key={`${accountLink.kind}:${accountLink.token}`} link={accountLink} onDone={async (preferred) => { await resolve(preferred); setAccountLink(null); }} onClose={() => { setAccountLink(null); expire(); if (!browserPreview) void restore(); }} /></SafeAreaView> : entry?.kind === 'active' ? <MobileApp key={`${entry.context.type}:${entry.context.type === 'agency' ? entry.context.agencyId : entry.context.clientId}`} context={entry.context} onExit={logout} onContext={async () => { setEntry(await listContexts(api)); }} /> : <ThemeContext.Provider value={light}><SafeAreaView style={[styles.page, { backgroundColor: light.canvas }]}>
+  return <SafeAreaProvider>{accountLink ? <SafeAreaView style={{ flex: 1, backgroundColor: light.canvas }}>{accountLink.kind === 'approval' ? <ApprovalScreen key={accountLink.token} token={accountLink.token} onClose={() => setAccountLink(null)} /> : <AccountAction key={`${accountLink.kind}:${accountLink.token}`} link={accountLink} onDone={async (preferred) => { await resolve(preferred); setAccountLink(null); }} onClose={() => { setAccountLink(null); expire(); if (!browserPreview) void restore(); }} />}</SafeAreaView> : entry?.kind === 'active' ? <MobileApp key={`${entry.context.type}:${entry.context.type === 'agency' ? entry.context.agencyId : entry.context.clientId}`} context={entry.context} onExit={logout} onContext={async () => { setEntry(await listContexts(api)); }} /> : <ThemeContext.Provider value={light}><SafeAreaView style={[styles.page, { backgroundColor: light.canvas }]}>
     <StatusBar style={t === dark ? 'light' : 'dark'} />
     {!fonts && !fontError || restoring ? <View style={[styles.body, { justifyContent: 'center' }]}><ActivityIndicator accessibilityLabel="Abrindo Ageniza" color={t.action} /></View> : <>
       {entry && <View style={{ paddingHorizontal: space.xl, paddingVertical: space.md, gap: space.md, borderBottomWidth: 1, borderColor: t.border }}>

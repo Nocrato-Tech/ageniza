@@ -4,6 +4,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { ReactNode } from 'react';
 
 const request = vi.hoisted(() => vi.fn());
+const approvalRequest = vi.hoisted(() => vi.fn());
+vi.mock('../api/approval', () => ({ createApprovalClient: () => ({ request: approvalRequest, clear: async () => {} }) }));
+vi.mock('expo/fetch', () => ({ fetch: vi.fn() }));
 vi.mock('../api/runtime', () => ({ api: { request }, browserPreview: false, webUrl: 'https://dev.ageniza.com.br' }));
 vi.mock('react-native', async () => Object.fromEntries(await Promise.all(['View', 'Text', 'TextInput', 'Pressable', 'ScrollView', 'StyleSheet', 'Image', 'Modal', 'Platform', 'Animated', 'Easing', 'AccessibilityInfo', 'Switch', 'KeyboardAvoidingView', 'ActivityIndicator', 'Linking'].map(async (name) => [name, (await vi.importActual<{ default: unknown }>(`react-native-web/dist/exports/${name}/index.js`)).default]))));
 vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({ addListener: () => ({ remove() {} }) }) }));
@@ -14,9 +17,10 @@ vi.mock('react-native-svg', async () => {
 });
 import { Login } from './EntryScreen';
 import { AccountAction } from './AccountAction';
+import { ApprovalScreen } from './ApprovalScreen';
 
 beforeEach(() => {
-  request.mockReset();
+  request.mockReset(); approvalRequest.mockReset();
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) });
 });
 afterEach(cleanup);
@@ -66,5 +70,21 @@ describe('native account forms rendered through React Native Web', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continuar para meus acessos' }));
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(2));
     expect(request).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('email approval actions', () => {
+  it('opens the batch without deciding, respects canDecide and approves only the selected revision', async () => {
+    const content = { id: 'content-two', title: 'Segundo post', publishOn: '2026-11-03', format: 'image', status: 'awaiting_approval', caption: 'Legenda real', media: [], revision: 4, coverAssetId: null, canDecide: true };
+    approvalRequest.mockImplementation(async (path: string) => path.endsWith('/batch') ? { clientName: 'Cliente real', agencyName: 'Agência real', contents: [{ ...content, id: 'content-one', title: 'Primeiro post', status: 'approved', canDecide: false }, content] } : path.endsWith('/approve') ? { ...content, status: 'approved', canDecide: false } : {});
+    render(<ApprovalScreen token={'a'.repeat(43)} onClose={() => {}} />);
+    const approve = await screen.findByRole('button', { name: 'Aprovar Segundo post' });
+    expect(screen.queryByRole('button', { name: 'Aprovar Primeiro post' })).toBeNull();
+    expect(approvalRequest.mock.calls.every(([path]) => !String(path).endsWith('/approve'))).toBe(true);
+    fireEvent.click(approve);
+    await screen.findByText('Aprovação registrada.');
+    expect(approvalRequest).toHaveBeenCalledWith('/portal-approval/contents/content-two/approve', { method: 'POST', body: { revision: 4 } });
+    expect(screen.queryByRole('button', { name: 'Aprovar Segundo post' })).toBeNull();
   });
 });

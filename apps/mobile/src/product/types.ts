@@ -4,7 +4,7 @@ export type Side = 'agency' | 'client';
 export type Client = { id: string; name: string; handle: string; archived?: boolean };
 export type Person = { id: string; name: string; job: string; role: string; email: string; self?: boolean; owner?: boolean };
 export type Asset = { id: string; clientId: string; folderId: string; name: string; kind: 'image' | 'video'; uri?: string; size: number; sample?: boolean };
-export type Folder = { id: string; clientId: string; name: string };
+export type Folder = { id: string; clientId: string; name: string; parentId?: string | null };
 export type Task = { id: string; title: string; description?: string | null; assigneeId: string; dueOn: string; status: 'pending' | 'delivered' | 'approved' };
 export type Comment = { id: string; body: string; side: Side; name: string; createdAt: string };
 export type Post = { id: string; clientId: string; title: string; caption: string; format: ContentFormat; status: ContentStatus; date: string; time: string; ownerId: string; folderId: string; mediaIds: string[]; mediaKinds?: Record<string, 'image' | 'video'>; coverId: string | null; revision: number; tasks: Task[]; comments: Comment[]; priority?: boolean; thumbnailId?: string | null };
@@ -24,7 +24,7 @@ export interface Repository {
   updateTask(post: Post, task: Task): Promise<Post>;
   comment(post: Post, body: string): Promise<Post>;
   addClient(name: string): Promise<Client>;
-  addFolder(clientId: string, name: string): Promise<Folder>;
+  addFolder(clientId: string, name: string, parentId?: string): Promise<Folder>;
   library(clientId: string): Promise<{ folders: Folder[]; assets: Asset[] }>;
   removeAsset(asset: Asset): Promise<void>;
   upload(clientId: string, folderId: string, file: { uri: string; name: string; mimeType: string; size: number; file?: File }): Promise<Asset>;
