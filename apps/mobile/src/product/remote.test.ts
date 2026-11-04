@@ -31,4 +31,43 @@ describe('real API adapter boundaries', () => {
     expect(data.posts[0].caption).toBe(''); expect(data.posts[0].tasks).toEqual([]); expect(data.posts[0].mediaIds).toEqual([]);
     expect(data.people).toEqual([]);
   });
+  it('sends the read revision and reason for an agency approval, and refuses empty reasons', async () => {
+    const request = vi.fn().mockImplementation(async (path: string) => path.includes('/threads') ? { data: [], meta: { totalPages: 1 } } : { ...post, publishOn: post.date, media: [], tasks: [] });
+    const repo = remoteRepository(client(request), { type: 'agency', agencyId, agencyName: 'Agência', roleKey: 'admin', roleName: 'Admin', isOwner: false });
+    await expect(repo.move(post, 'approveByAgency', '  ')).rejects.toThrow();
+    expect(request).not.toHaveBeenCalled();
+    await repo.move(post, 'approveByAgency', 'Aprovado pela cliente em reunião.');
+    expect(request).toHaveBeenCalledWith(`/agencies/${agencyId}/clients/${clientId}/contents/${contentId}/approve-by-agency`, { method: 'POST', body: { revision: 7, reason: 'Aprovado pela cliente em reunião.' } });
+  });
+  it('sends the actual publication date and the new schedule without changing the status on the client', async () => {
+    const request = vi.fn().mockImplementation(async (path: string) => path.includes('/threads') ? { data: [], meta: { totalPages: 1 } } : { ...post, publishOn: post.date, media: [], tasks: [] });
+    const repo = remoteRepository(client(request), { type: 'agency', agencyId, agencyName: 'Agência', roleKey: 'admin', roleName: 'Admin', isOwner: false });
+    await repo.move(post, 'publish', undefined, '2026-11-03');
+    expect(request).toHaveBeenCalledWith(`/agencies/${agencyId}/clients/${clientId}/contents/${contentId}/publish`, { method: 'POST', body: { publishedOn: '2026-11-03' } });
+    await repo.move(post, 'reschedule', undefined, '2026-11-20');
+    expect(request).toHaveBeenCalledWith(`/agencies/${agencyId}/clients/${clientId}/contents/${contentId}/reschedule`, { method: 'POST', body: { publishOn: '2026-11-20' } });
+    request.mockClear();
+    await expect(repo.move(post, 'reschedule', undefined, '2026-02-30')).rejects.toThrow();
+    expect(request).not.toHaveBeenCalled();
+    expect(post.status).toBe('awaiting_approval');
+  });
+  it('keeps portal media kinds for mixed carousels without requesting an agency library', async () => {
+    const request = vi.fn().mockImplementation(async (path: string) => path.includes('/threads') ? { data: [], meta: { totalPages: 1 } } : { ...post, publishOn: post.date, revision: 7, media: [{ id: 'video', position: 1, kind: 'video' }, { id: 'image', position: 2, kind: 'image' }] });
+    const repo = remoteRepository(client(request), { type: 'client', clientId, clientName: 'Clínica', agencyId, agencyName: 'Agência', onboardingPending: false });
+    expect((await repo.detail(clientId, contentId)).mediaKinds).toEqual({ video: 'video', image: 'image' });
+    expect(request.mock.calls.every(([path]) => !String(path).startsWith('/agencies'))).toBe(true);
+  });
+  it('edits only the addressed task and requires the description and assignee contract', async () => {
+    const request = vi.fn().mockImplementation(async (path: string) => path.includes('/threads') ? { data: [], meta: { totalPages: 1 } } : { ...post, publishOn: post.date, media: [], tasks: [] });
+    const repo = remoteRepository(client(request), { type: 'agency', agencyId, agencyName: 'Agência', roleKey: 'admin', roleName: 'Admin', isOwner: false });
+    await repo.updateTask(post, { id: contentId, title: 'Revisar vídeo', description: 'Conferir a legenda.', assigneeId: clientId, dueOn: '2026-11-04', status: 'pending' });
+    expect(request).toHaveBeenCalledWith(`/agencies/${agencyId}/clients/${clientId}/contents/${contentId}/tasks/${contentId}`, { method: 'PATCH', body: { title: 'Revisar vídeo', description: 'Conferir a legenda.', assigneeMembershipId: clientId, dueOn: '2026-11-04' } });
+  });
+  it('loads the agency dashboard without scanning every media folder', async () => {
+    const request = vi.fn().mockImplementation(async (path: string) => path.endsWith('/me') ? { permissions: ['cliente.visualizar', 'conteudo.visualizar'], plan: { readOnly: false } } : path.includes('/clients?') ? { data: [{ id: clientId, name: 'Marca', instagramHandle: 'marca' }], meta: { totalPages: 1 } } : { data: { contents: [], storyScripts: [] } });
+    const repo = remoteRepository(client(request), { type: 'agency', agencyId, agencyName: 'Agência', roleKey: 'production', roleName: 'Produção', isOwner: false });
+    const data = await repo.load('2026-11-01', '2026-11-30');
+    expect(data.assets).toEqual([]);
+    expect(request.mock.calls.some(([path]) => String(path).includes('media-folders'))).toBe(false);
+  });
 });

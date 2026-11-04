@@ -18,9 +18,11 @@ No Expo Go, escaneie o QR do Metro. SDK 54; no Android use o cliente compatível
 
 Clientes, conteúdos em lista/kanban/calendário, criação e edição em três etapas, biblioteca e upload de mídia, prévia do Instagram, tarefas, comentários, aprovação e ajustes no portal. Os mesmos componentes usam um repositório real autenticado ou um repositório de demonstração explicitamente separado. Equipe, relatórios calculados e exportação CSV também estão disponíveis. As continuações do Figma são páginas roláveis.
 
-A prévia web abre diretamente a demonstração persistente. As alterações ficam no aparelho/navegador, e podem ser reiniciadas nas configurações. Não é necessário e-mail ou senha para testar. O login real está no Expo Go: a origem nativa foi liberada no dev na #803. A origem web da Vercel não foi liberada, portanto não há login real nela nem proxy que contorne essa restrição.
+O aplicativo abre no login e exige uma conta e contexto válidos para entrar. A área de trabalho consome a API real e não troca erros de integração por dados de demonstração. Cadastro, convite, recuperação, gestão de clientes/equipe, estudo de marca, roteiros e perfil usam os contratos existentes.
 
-Google, notificações push e um modelo de ML validado com dados reais continuam pendentes. O experimento local de k-NN é identificado como treinado em exemplos sintéticos. A demonstração não publica no Instagram nem envia e-mail.
+A exportação web em outra origem não equivale ao cliente nativo autenticado: cookies e CSRF continuam sujeitos ao servidor. O ambiente de desenvolvimento aceita `expo-origin: ageniza://` para o cliente nativo. Não há proxy para contornar a política.
+
+Ainda faltam validação física, revisão de segurança, pagamento de produção, Google seguro (#799), ML validado e distribuição assinada. Consulte [prontidão de lançamento](../../docs/mobile/prontidao-lancamento.md) antes de tratar esta implementação como pronta para clientes reais.
 
 Leia [o mapa das telas, integrações, limites e evidências](../../docs/mobile/interface-mobile.md) e [o guia da API mobile](../../docs/mobile/comecar.md).
 
