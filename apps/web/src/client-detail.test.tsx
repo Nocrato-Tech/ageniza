@@ -175,6 +175,7 @@ function Harness({ store }: { store: AuthSessionStore }) {
 interface ProbeTarget {
   pathname: string;
   search: string;
+  state: unknown;
   navigate: NavigateFunction;
 }
 
@@ -182,6 +183,7 @@ function Probe({ probe }: { probe: ProbeTarget }) {
   useCommittedLocation((location, navigate) => {
     probe.pathname = location.pathname;
     probe.search = location.search;
+    probe.state = location.state;
     probe.navigate = navigate;
   });
   return null;
@@ -194,7 +196,7 @@ const renderClientDetail = (impl: typeof fetch, entry: string | { pathname: stri
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: sessionEnd.notify });
   const queryClient = createQueryClient();
   const store = createAuthSessionStore(client);
-  const probe: ProbeTarget = { pathname: '', search: '', navigate: () => undefined };
+  const probe: ProbeTarget = { pathname: '', search: '', state: undefined, navigate: () => undefined };
   const rendered = render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={queryClient}>
@@ -294,6 +296,8 @@ describe('client detail (#136)', () => {
     expect(button.getAttribute('href')).toBe(`/agencia/${AGENCY_A}/conteudos/${CLIENT_ID}`);
     fireEvent.click(button);
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/conteudos/${CLIENT_ID}`));
+    // The way back to the roster the person came from travels with the button.
+    expect(probe.state).toEqual({ clientListUrl: roster });
   });
 
   it('shows the button for an archived client too, as the tab was, and hides it without conteudo.visualizar', async () => {

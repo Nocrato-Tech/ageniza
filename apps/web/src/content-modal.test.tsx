@@ -558,6 +558,21 @@ describe('the folder and the media', () => {
     expect(within(dialog()).queryByLabelText('Nome da pasta')).toBeNull();
   });
 
+  it('asks before taking a folder that was just created when the content has media, and changes nothing until the person confirms', async () => {
+    const { calls } = await openContent(stored({ format: 'carousel', media: [IMG_1.id, IMG_2.id] }));
+    await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
+    click('Nova pasta');
+    type('Nome da pasta', 'Verão');
+    click('Criar pasta');
+
+    const confirmation = await within(dialog()).findByRole('group', { name: 'Trocar a pasta' });
+    expect(within(confirmation).getByText('Trocar para Verão?')).toBeTruthy();
+    expect((field('Pasta') as HTMLSelectElement).value).toBe(IMAGES);
+    expect(dialog().querySelectorAll('.content-media__selected .content-media__tile')).toHaveLength(2);
+    // The folder itself was created; the content was not touched.
+    expect(writes(calls).filter((call) => call.method === 'PATCH')).toHaveLength(0);
+  });
+
   it('creates a first-level folder with no parent in the body', async () => {
     const { calls } = await openContent(stored());
     await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));

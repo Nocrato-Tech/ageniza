@@ -862,7 +862,8 @@ describe('the phone scrolls inside its screen, nine posts at a time', () => {
     // It does not loop on its own: a scroll more does not ask again.
     const asked = feedCalls(calls).length;
     laid.scrollTo(laid.maxTop() - 1);
-    await wait(30);
+    laid.scrollTo(laid.maxTop());
+    await wait(1500);
     expect(feedCalls(calls)).toHaveLength(asked);
 
     failing = false;

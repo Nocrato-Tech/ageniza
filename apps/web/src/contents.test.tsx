@@ -304,6 +304,7 @@ function Harness({ store }: { store: AuthSessionStore }) {
 interface Probe {
   pathname: string;
   search: string;
+  hash: string;
   state: unknown;
   navigate: NavigateFunction;
 }
@@ -312,18 +313,19 @@ function LocationProbe({ probe }: { probe: Probe }) {
   useCommittedLocation((location: Location, navigate) => {
     probe.pathname = location.pathname;
     probe.search = location.search;
+    probe.hash = location.hash;
     probe.state = location.state;
     probe.navigate = navigate;
   });
   return null;
 }
 
-const render_ = (impl: typeof fetch, entry: string | { pathname: string; search?: string; state: unknown } = `/agencia/${AGENCY_A}/conteudos`) => {
+const render_ = (impl: typeof fetch, entry: string | { pathname: string; search?: string; hash?: string; state: unknown } = `/agencia/${AGENCY_A}/conteudos`) => {
   const sessionEnd = createSessionEndSignal();
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: sessionEnd.notify });
   const queryClient = createQueryClient();
   const store = createAuthSessionStore(client);
-  const probe: Probe = { pathname: '', search: '', state: undefined, navigate: () => undefined };
+  const probe: Probe = { pathname: '', search: '', hash: '', state: undefined, navigate: () => undefined };
   const rendered = render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={queryClient}>
@@ -1902,6 +1904,13 @@ describe('the calendar lives only on the screen of Conteúdos, and the profile l
     expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
     expect(await screen.findByText('Treino da semana')).toBeTruthy();
     expect(screen.getByRole('heading', { level: 1, name: 'Calendário Editorial' })).toBeTruthy();
+  });
+
+  it('keeps the hash of the old tab address too', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: [treino()] } });
+    const { probe } = render_(impl, { pathname: oldTab(), search: '?visao=semana', hash: '#feed', state: { clientListUrl: ROSTER_ADDRESS } });
+    await waitFor(() => expect(probe.pathname).toBe(contentsUrl(padaria.id)));
+    expect(probe.hash).toBe('#feed');
   });
 
   it('redirects the old modal and creation addresses to the equivalents on the screen, with the query', async () => {
