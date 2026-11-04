@@ -439,6 +439,7 @@ export function ContentsClientPage() {
       </div>
       {view !== 'feed' && <aside className="contents__feed" aria-label="Prévia do feed">
         <ContentPhoneFeed
+          key={normalizedId}
           onCreate={canWriteScripts && blocked === undefined ? () => startContent(today) : undefined}
           clientId={normalizedId}
           today={today}
