@@ -6796,12 +6796,17 @@ html:has(.portal-post__bar) {
   border-radius: var(--radius-sm);
 }
 
-/* The phone tiles are small: the state takes what the format icon leaves and cuts with an ellipsis, and the "planned" tag, true of every tile here, stays for the reader of the screen only. */
+/* The phone tiles are small: the state takes the whole width of the tile, so "Aguardando" is never cut, and the format icon moves to the bottom corner the "planned" tag leaves (true of every tile here, so it stays for the reader of the screen only). */
 .content-phone .content-feed__status {
-  max-width: calc(100% - 1.75rem);
+  max-width: calc(100% - 2 * var(--space-1));
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.content-phone .content-feed__format {
+  top: auto;
+  bottom: var(--space-1);
 }
 
 .content-phone .content-feed__planned {
