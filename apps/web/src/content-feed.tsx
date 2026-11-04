@@ -146,8 +146,10 @@ export function ContentFeed({ onCreate, clientId, contents, today, handle, profi
                 <span className="content-feed__status"><span className="content-feed__dot" aria-hidden="true" />{TILE_STATUS_LABELS[content.status]}</span>
                 {content.format === 'reels' && <Clapperboard className="content-feed__format" aria-hidden="true" />}
                 {content.format === 'carousel' && <GalleryVertical className="content-feed__format" aria-hidden="true" />}
-                <time className="content-feed__date" dateTime={content.publishOn}>{dayMonthNameLabel(content.publishOn)}</time>
-                {content.publishOn > today && <span className="content-feed__planned">Planejado</span>}
+                <span className="content-feed__tags">
+                  <time className="content-feed__date" dateTime={content.publishOn}>{dayMonthNameLabel(content.publishOn)}</time>
+                  {content.publishOn > today && <span className="content-feed__planned">Planejado</span>}
+                </span>
                 <span className="visually-hidden">{content.title} · {FORMAT_LABELS[content.format]} · {dayMonthLabel(content.publishOn)}</span>
               </Link>
             </li>)}

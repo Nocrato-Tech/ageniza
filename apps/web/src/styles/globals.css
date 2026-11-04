@@ -6692,10 +6692,19 @@ html:has(.portal-post__bar) {
   filter: drop-shadow(0 0 2px rgb(0 0 0 / 0.6));
 }
 
-.content-feed__date {
+.content-feed__tags {
   position: absolute;
+  right: var(--space-1);
   bottom: var(--space-1);
   left: var(--space-1);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.content-feed__date {
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);
   background: var(--bg-surface);
@@ -6706,15 +6715,13 @@ html:has(.portal-post__bar) {
 }
 
 .content-feed__planned {
-  position: absolute;
-  bottom: var(--space-1);
-  right: var(--space-1);
   padding: 0 var(--space-2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-full);
   background: var(--bg-surface);
   color: var(--text-primary);
   font: var(--caption);
+  white-space: nowrap;
 }
 
 .content-feed__empty {
@@ -7850,7 +7857,6 @@ html:has(.portal-post__bar) {
 /* ButtonLink that cannot be followed: dimmed like a disabled button, and the pointer passes through it. */
 .ui-button--link-disabled {
   opacity: 0.55;
-  pointer-events: none;
 }
 
 /* Mascot and EmptyState: what a list shows when it has nothing yet. The owl is decorative and only beside an action. */
