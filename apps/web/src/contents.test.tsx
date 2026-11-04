@@ -1863,53 +1863,44 @@ describe('where the floating card of a calendar card opens', () => {
   });
 });
 
-describe('the Conteúdos tab of the client (#272)', () => {
-  const tabUrl = (search = '') => `/agencia/${AGENCY_A}/clientes/${padaria.id}/conteudos${search}`;
-  const tabNav = (): HTMLElement => screen.getByRole('navigation', { name: 'Seções do cliente' });
+describe('the calendar lives only on the screen of Conteúdos, and the profile leads to it (decision 2026-11-04)', () => {
+  const oldTab = (suffix = '', search = '') => `/agencia/${AGENCY_A}/clientes/${padaria.id}/conteudos${suffix}${search}`;
   const treino = () => contentFixture({ title: 'Treino da semana', publishOn: '2026-10-14' });
   const ROSTER_ADDRESS = `/agencia/${AGENCY_A}/clientes?search=padaria&page=2`;
   const OPERATOR = [VISUALIZE, READ_CLIENTS, 'conteudo.operar'];
 
-  it('gives the tab to who reads contents, and opens the calendar of that client with no stories and no second client header', async () => {
-    const row = treino();
-    const { impl, calls } = makeFetch({ contents: { [padaria.id]: [row] } });
-    const { probe } = render_(impl, `/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`);
-
-    const link = await within(await screen.findByRole('navigation', { name: 'Seções do cliente' })).findByRole('link', { name: 'Calendário Editorial' });
-    fireEvent.click(link);
-    await waitFor(() => expect(probe.pathname).toBe(tabUrl()));
+  it('redirects the old tab address to the screen, keeping the query and the roster address, replacing the history entry', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: [treino()] } });
+    const { probe } = render_(impl, { pathname: oldTab(), search: '?visao=semana&data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
+    await waitFor(() => expect(probe.pathname).toBe(contentsUrl(padaria.id)));
+    expect(probe.search).toBe('?visao=semana&data=2026-10-14');
+    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
     expect(await screen.findByText('Treino da semana')).toBeTruthy();
-    expect(within(tabNav()).getByRole('link', { name: 'Calendário Editorial' }).getAttribute('aria-current')).toBe('page');
-    expect(calls).toContain(periodCall(padaria.id, OCTOBER.from, OCTOBER.to));
-    expect(screen.queryByRole('navigation', { name: 'Clientes' })).toBeNull();
-    expect(calls.filter((call) => /\/clients\?/.test(call))).toEqual([]);
-    expect(screen.getAllByRole('heading', { name: 'Padaria Central' })).toHaveLength(1);
-    expect(screen.getByRole('complementary', { name: 'Prévia do feed' })).toBeTruthy();
-    expect(document.title).toBe('Padaria Central — Ageniza');
+    expect(screen.getByRole('heading', { level: 1, name: 'Calendário Editorial' })).toBeTruthy();
   });
 
-  it('draws the skeleton while the period loads and the empty state when it has nothing, as the screen does', async () => {
-    const gate = deferred<Response>();
-    const { impl } = makeFetch({ period: () => gate.promise });
-    render_(impl, tabUrl());
-    await screen.findByRole('heading', { name: 'Padaria Central' });
-    await waitFor(() => expect(document.querySelector('.contents__skeleton')?.getAttribute('aria-hidden')).toBe('true'));
-    expect(screen.queryByText('Nenhum conteúdo planejado neste período.')).toBeNull();
-    gate.resolve(periodResponse([], OCTOBER.from, OCTOBER.to));
-    expect(await screen.findByText('Nenhum conteúdo planejado neste período.')).toBeTruthy();
-    expect(document.querySelector('.contents__skeleton')).toBeNull();
+  it('redirects the old modal and creation addresses to the equivalents on the screen, with the query', async () => {
+    const row = treino();
+    const { impl } = makeFetch({ permissions: OPERATOR, contents: { [padaria.id]: [row] } });
+    const opened = render_(impl, { pathname: oldTab(`/${row.id}`), search: '?visao=semana&data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
+    await waitFor(() => expect(opened.probe.pathname).toBe(`${contentsUrl(padaria.id)}/${row.id}`));
+    expect(opened.probe.search).toBe('?visao=semana&data=2026-10-14');
+    expect(opened.probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    opened.unmount();
+
+    const created = render_(impl, { pathname: oldTab('/novo'), search: '?data=2026-10-14&dia=2026-10-20', state: { clientListUrl: ROSTER_ADDRESS } });
+    await waitFor(() => expect(created.probe.pathname).toBe(`${contentsUrl(padaria.id)}/novo`));
+    expect(created.probe.search).toBe('?data=2026-10-14&dia=2026-10-20');
+    expect(created.probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
+    expect(await screen.findByRole('dialog', { name: 'Novo conteúdo' })).toBeTruthy();
   });
 
-  it('keeps the client of the address fixed while the scale changes: week and back', async () => {
-    const { impl, calls } = makeFetch({ contents: { [padaria.id]: [treino()] } });
-    const { probe } = render_(impl, tabUrl());
-    await screen.findByText('Treino da semana');
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Semana' }));
-    await waitFor(() => expect(probe.search).toBe('?visao=semana'));
-    expect(probe.pathname).toBe(tabUrl());
-    await waitFor(() => expect(periodCalls(calls).some((call) => call.includes('from=2026-10-05&to=2026-10-11'))).toBe(true));
-    expect(periodCalls(calls).every((call) => call.includes(`/clients/${padaria.id}/`))).toBe(true);
+  it('sends the old folders address through the screen to the Mídias tab, with the folder it had open', async () => {
+    const { impl } = makeFetch({});
+    const { probe } = render_(impl, oldTab('', '?vista=pastas&pasta=abc'));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${padaria.id}/midias`));
+    expect(probe.search).toBe('?pasta=abc');
   });
 
   // Vendas and Financeiro hold neither content permission; each row is a role with permissions that never include conteudo.visualizar.
@@ -1917,90 +1908,33 @@ describe('the Conteúdos tab of the client (#272)', () => {
     ['cliente.visualizar only (Vendas)', [READ_CLIENTS]],
     ['conteudo.operar, without visualizar', [READ_CLIENTS, 'conteudo.operar']],
     ['cliente.visualizar and financeiro.visualizar (Financeiro)', [READ_CLIENTS, 'financeiro.visualizar']]
-  ])('has no tab, and every address of it is "não encontrado" without the client behind it: %s', async (_name, permissions) => {
+  ])('keeps every old address "não encontrado" without the client behind it: %s', async (_name, permissions) => {
     const row = treino();
     const { impl, calls } = makeFetch({ permissions, contents: { [padaria.id]: [row] } });
-    const { unmount } = render_(impl, `/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`);
-    await screen.findByRole('heading', { name: 'Padaria Central' });
-    expect(within(tabNav()).queryByRole('link', { name: 'Calendário Editorial' })).toBeNull();
-    expect(within(tabNav()).getAllByRole('link').map((item) => item.textContent)).toEqual(['Geral', 'Tarefas', 'Estudo de marca', 'Relatórios']);
-    unmount();
-
-    for (const address of [tabUrl(), `${tabUrl()}/novo`, `${tabUrl()}/${row.id}`, tabUrl('?vista=pastas')]) {
+    for (const address of [oldTab(), oldTab('/novo'), oldTab(`/${row.id}`), oldTab('', '?vista=pastas')]) {
       const view = render_(impl, address);
       expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
       expect(screen.queryByRole('heading', { name: 'Padaria Central' })).toBeNull();
+      expect(view.probe.pathname).toBe(address.split('?')[0]);
       view.unmount();
     }
     expect(calls.filter((call) => /\/contents|\/media-folders|\/threads/.test(call))).toEqual([]);
   });
 
-  it('goes to the screen of Conteúdos and back keeping the client, the period and the roster address', async () => {
+  it('links the calendar to the profile, keeping the roster address, so "← Clientes" still returns to the search', async () => {
     const { impl } = makeFetch({ contents: { [padaria.id]: [treino()] } });
-    const { probe } = render_(impl, { pathname: tabUrl(), search: '?visao=semana&data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
+    const { probe } = render_(impl, { pathname: contentsUrl(padaria.id), search: '?visao=semana&data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
     await screen.findByText('Treino da semana');
-    const back = (): HTMLElement => screen.getByRole('link', { name: 'Voltar para Clientes' });
-    expect(back().getAttribute('href')).toBe(ROSTER_ADDRESS);
-
-    const toScreen = screen.getByRole('link', { name: 'Abrir na tela do Calendário Editorial' });
-    expect(toScreen.getAttribute('href')).toBe(`${contentsUrl(padaria.id)}?visao=semana&data=2026-10-14`);
-    fireEvent.click(toScreen);
-    await waitFor(() => expect(probe.pathname).toBe(contentsUrl(padaria.id)));
-    expect(probe.search).toBe('?visao=semana&data=2026-10-14');
-    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-    expect(await screen.findByRole('navigation', { name: 'Clientes' })).toBeTruthy();
-    expect(await screen.findByText('Treino da semana')).toBeTruthy();
-
-    const toTab = screen.getByRole('link', { name: 'Abrir no cadastro do cliente' });
-    expect(toTab.getAttribute('href')).toBe(`${tabUrl()}?visao=semana&data=2026-10-14`);
-    fireEvent.click(toTab);
-    await waitFor(() => expect(probe.pathname).toBe(tabUrl()));
-    expect(probe.search).toBe('?visao=semana&data=2026-10-14');
+    const toProfile = screen.getByRole('link', { name: 'Abrir no cadastro do cliente' });
+    expect(toProfile.getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`);
+    fireEvent.click(toProfile);
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`));
     expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
     expect((await screen.findByRole('link', { name: 'Voltar para Clientes' })).getAttribute('href')).toBe(ROSTER_ADDRESS);
+    expect(screen.queryByRole('link', { name: 'Abrir na tela do Calendário Editorial' })).toBeNull();
   });
 
-  it('opens a content inside the tab, and closing it comes back to the same tab, period and roster address', async () => {
-    const row = treino();
-    const { impl } = makeFetch({ contents: { [padaria.id]: [row] } });
-    const { probe } = render_(impl, { pathname: tabUrl(), search: '?visao=semana&data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
-
-    const card = (await screen.findAllByRole('link', { name: /Treino da semana/ })).find((link) => link.classList.contains('content-card__link'))!;
-    expect(card.getAttribute('href')).toBe(`${tabUrl()}/${row.id}?visao=semana&data=2026-10-14`);
-    fireEvent.click(card);
-    await waitFor(() => expect(probe.pathname).toBe(`${tabUrl()}/${row.id}`));
-    expect(probe.search).toBe('?visao=semana&data=2026-10-14');
-    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Fechar conteúdo' }));
-    await waitFor(() => expect(probe.pathname).toBe(tabUrl()));
-    expect(probe.search).toBe('?visao=semana&data=2026-10-14');
-    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-    expect(screen.queryByRole('dialog')).toBeNull();
-  });
-
-  it('creates a content from the tab, on an address of the tab, and closing comes back to it', async () => {
-    const { impl } = makeFetch({ permissions: OPERATOR, contents: { [padaria.id]: [treino()] } });
-    const { probe } = render_(impl, { pathname: tabUrl(), search: '?data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
-    await screen.findByText('Treino da semana');
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Nova publicação' }));
-    await waitFor(() => expect(probe.pathname).toBe(`${tabUrl()}/novo`));
-    // The form of a new content, not the reading of a content called "novo": the route of the creation is in the tab.
-    const modal = await screen.findByRole('dialog', { name: 'Novo conteúdo' });
-    expect(await within(modal).findByRole('button', { name: 'Criar conteúdo' })).toBeTruthy();
-    expect((within(modal).getByLabelText('Título') as HTMLInputElement).value).toBe('');
-    expect(new URLSearchParams(probe.search).get('dia')).toBe(TODAY);
-    expect(new URLSearchParams(probe.search).get('data')).toBe('2026-10-14');
-    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Fechar conteúdo' }));
-    await waitFor(() => expect(probe.pathname).toBe(tabUrl()));
-    expect(new URLSearchParams(probe.search).get('dia')).toBeNull();
-    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-  });
-
-  it('keeps the screen of Conteúdos on its own addresses: the card and the modal stay in /conteudos', async () => {
+  it('opens a content on the screen and closing it comes back to the screen', async () => {
     const row = treino();
     const { impl } = makeFetch({ contents: { [padaria.id]: [row] } });
     const { probe } = render_(impl, contentsUrl(padaria.id));

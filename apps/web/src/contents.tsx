@@ -18,7 +18,7 @@ import { Avatar, Button, ClientStrip, IconButton, Segmented, Skeleton } from '@a
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
-import { contentsAddress, ContentsHomeContext } from './content-address.js';
+import { contentsAddress } from './content-address.js';
 import { ContentCalendar } from './content-calendar.js';
 import type { ContentsOutletContext } from './content-modal.js';
 import { ContentFeed, ContentFeedSkeleton } from './content-feed.js';
@@ -242,11 +242,10 @@ const isLegacyFolders = (searchParams: URLSearchParams): boolean => searchParams
  * path; the view (`visao`) and the day the period is built around (`data`) are in the query, so a
  * reload lands on the same period. The feed is the phone beside the calendar, not a view of its own, and the folders
  * are the Mídias tab of the client's detail: the old `?vista=pastas` address goes there, with the folder it had open.
- *
- * `pinned` is the same view inside the tab of the client's detail (`/clientes/:clienteId/conteudos`): the client is the
- * one of the page around it, so there are no stories and no client header, and every address it builds stays in the tab.
+
+ * The client's detail has no copy of it: its header links here, and the old `/clientes/:clienteId/conteudos` addresses redirect here.
  */
-export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
+export function ContentsClientPage() {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   const { clienteId = '' } = useParams();
@@ -302,7 +301,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
     // Settled only after the period is read again: the card never waits on its old day with the move already done.
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', normalizedId] })
   });
-  const address = contentsAddress(pinned ? 'tab' : 'screen', agency.agencyId, normalizedId);
+  const address = contentsAddress(agency.agencyId, normalizedId);
   const canWriteScripts = canOperate && client.data?.id.toLowerCase() === normalizedId && client.data.status !== 'archived';
   const navigate = useNavigate();
   const location = useLocation();
@@ -321,10 +320,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
   });
 
   const name = client.data?.name;
-  // In the tab the page around it already names the client in the title.
-  useDocumentTitle(pinned
-    ? (name === undefined ? 'Cliente — Ageniza' : `${name} — Ageniza`)
-    : (name === undefined ? `${SCREEN_TITLE} — Ageniza` : `${SCREEN_TITLE} de ${name} — Ageniza`));
+  useDocumentTitle(name === undefined ? `${SCREEN_TITLE} — Ageniza` : `${SCREEN_TITLE} de ${name} — Ageniza`);
 
   // Moving through periods rewrites the address; choosing another view adds a step to it, so "voltar" returns to the view before.
   const setPeriod = (nextView: ScreenView, nextAnchor: string | null, replace = true): void => {
@@ -357,41 +353,38 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
   const canEdit = canOperate && clientData !== undefined && !archived;
   const canMove = canEdit && blocked === undefined;
 
-  const Title = pinned ? 'h2' : 'h1';
-  // The other home of the same view, on the same client and period, and with the roster's address carried along.
-  const otherHome = <Link
+  // The client's profile, with the roster's address carried along so "← Clientes" there still returns to the search it left.
+  const toProfile = <Link
     className="contents__switch"
-    to={{ pathname: contentsAddress(pinned ? 'screen' : 'tab', agency.agencyId, normalizedId), search: location.search }}
+    to={`/agencia/${agency.agencyId}/clientes/${normalizedId}/geral`}
     state={location.state}
-  >{pinned ? `Abrir na tela do ${SCREEN_TITLE}` : 'Abrir no cadastro do cliente'}</Link>;
+  >Abrir no cadastro do cliente</Link>;
   // What the summary counts: the days of the month on screen (not the neighbours' the grid spills into), or the week.
   const counted = loaded === undefined ? [] : loaded.data.contents.filter((content) => calendarView === 'week' || content.publishOn.slice(0, 7) === anchor.slice(0, 7));
 
-  return <ContentsHomeContext.Provider value={pinned ? 'tab' : 'screen'}><section aria-labelledby="contents-title" className="contents" data-view={view} data-screen={pinned ? undefined : ''}>
+  return <section aria-labelledby="contents-title" className="contents" data-view={view} data-screen="">
     <header className="contents__head">
-      {/* The title is the screen's, the same with or without a client; in the tab the page around it already names the client. */}
-      <Title id="contents-title" className={pinned ? 'visually-hidden' : 'contents__title'}>{SCREEN_TITLE}</Title>
+      {/* The title is the screen's, the same with or without a client. */}
+      <h1 id="contents-title" className="contents__title">{SCREEN_TITLE}</h1>
       <div className="contents__actions">
         {canWriteScripts && <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => startContent(today)}>Nova publicação</Button>}
       </div>
     </header>
-    {!pinned && <ClientStories selectedId={normalizedId} />}
+    <ClientStories selectedId={normalizedId} />
     {failed ? <div className="contents__error" role="alert">
       <p>Não foi possível carregar os conteúdos. Tente de novo.</p>
       <Button onClick={() => { void client.refetch(); void contents.refetch(); }}>Tentar de novo</Button>
     </div> : <div className="contents__workspace">
       <div className="contents__main">
-        {pinned
-          ? <p className="contents__switch-row">{otherHome}</p>
-          : <header className="contents__client">
-            {clientData === undefined
-              ? <Skeleton className="contents__client-skeleton" aria-hidden="true" />
-              : <>
-                <Avatar name={clientData.name} photoUrl={clientData.photoUrl} size="sm" />
-                <h2 className="contents__client-name">{clientData.name}</h2>
-                {otherHome}
-              </>}
-          </header>}
+        <header className="contents__client">
+          {clientData === undefined
+            ? <Skeleton className="contents__client-skeleton" aria-hidden="true" />
+            : <>
+              <Avatar name={clientData.name} photoUrl={clientData.photoUrl} size="sm" />
+              <h2 className="contents__client-name">{clientData.name}</h2>
+              {toProfile}
+            </>}
+        </header>
         {archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
         {moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
         {move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
@@ -467,5 +460,5 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
       archived,
       handle: clientData?.instagramHandle ?? null
     } satisfies ContentsOutletContext} />
-  </section></ContentsHomeContext.Provider>;
+  </section>;
 }
