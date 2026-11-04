@@ -37,3 +37,10 @@ O app foi alinhado ao `develop` com `@better-auth/expo` 1.7.7, conforme a revis�
 As mutações executadas na rodada atual foram detectadas pelos testes: prefixo de cookie incorreto com o codec real, remoção da guarda de origem final, rejeição persistente na fila de escrita, ausência de expiração ao falhar a exclusão, limpeza indevida no 401 do login, ausência de transição por política de acesso, POST nativo sem corpo explícito e logout local dependente da rede. Os arquivos foram restaurados após cada mutação.
 
 Typecheck, lint, testes de estado/persistência/contratos e exportação Android/iOS/web compõem a verificação automatizada. A conferência pelo navegador cobre tarefas → envio → pedido de ajuste → edição → reenvio → aprovação da revisão 2, criação em três etapas e persistência ao recarregar. Teste com conta no aparelho, reabertura, cookie real `__Secure-`, troca de contexto e logout ainda precisam de evidência física antes de afirmar validação nativa completa. A revisão de segurança independente continua necessária antes do merge.
+
+
+### Movimento e interação
+
+Aplicação dos princípios da skill stageshow ao produto real, usando Animated do React Native em vez do kit de demonstrações para DOM. Cards e ações respondem ao toque em 80 ms e retornam em 150 ms; mudanças de tela entram com deslocamento de 8 px em 190 ms. Confirmações mantêm o resultado visível. Opções abrem em painel deslizante. A preferência do sistema para reduzir movimento remove deslocamentos e animações dos painéis. As animações não atrasam requisições nem alteram regras de negócio.
+
+Validação: typecheck, lint, 31 testes existentes e exportação web. A execução em aparelho físico continua pendente.

@@ -12,3 +12,5 @@ coverage/
 web-dist/
 web-dist-v2/
 native-dist-v2/
+
+/apps/mobile/web-motion-dist/
