@@ -1,53 +1,43 @@
-# Interface mobile — reconstrução a partir do Figma
+# Interface mobile — implementação a partir do Figma
 
-O cliente Expo em `apps/mobile` usa as telas aprovadas de [Ageniza · Mobile UI](https://www.figma.com/design/GysDnvGjqZlledBVlnS5pW). A instrução do designer de 03/11/2026 substitui a direção visual inicial do cliente mobile: tema claro, Sora/Inter, cards, seleção de clientes em stories e navegação inferior. Nenhuma regra, token ou tela da aplicação web foi alterada.
+O cliente React Native/Expo está em `apps/mobile` e segue as telas aprovadas de [Ageniza · Mobile UI](https://www.figma.com/design/GysDnvGjqZlledBVlnS5pW): tema claro, Sora/Inter, cards, seleção de clientes em stories e navegação inferior. A direção do designer substitui a prévia inicial. Não altera regras de negócio do servidor.
 
-## Referências implementadas
+## Telas e integração
 
-| Fluxo | Artboards de referência | Implementação |
+| Fluxo | Artboards de referência | Implementação atual |
 |---|---|---|
-| Início e clientes | `7:4`, `7:137`, `7:301` | resumo calculado, busca, seleção de cliente e carteira |
-| Conteúdos e kanban | `7:404`, `36:572` | lista, filtros, quadro horizontal, detalhe e tarefas |
-| Criação e edição | `8:364`, `37:829`, `37:1007` | formato → conteúdo/mídia → prévia; salvar e enviar são operações distintas |
+| Início e clientes | `7:4`, `7:137`, `7:301` | resumo do período, busca, seleção e carteira; cadastro, marca, personas, acessos e ciclo de vida usam a API |
+| Conteúdos e kanban | `7:404`, `36:572` | lista, filtros, quadro horizontal, detalhe, tarefas e transições do contrato |
+| Criação e edição | `8:364`, `37:829`, `37:1007` | formato → conteúdo/mídia → prévia; salvar e enviar são operações distintas; criação parcial preserva o ID recebido |
 | Calendário | `36:761` | meses e dias selecionáveis, publicações do dia |
-| Mídias | `36:975`, `36:1142` | pastas, filtros, seleção, upload, imagem e reprodução de vídeo |
-| Portal e aprovação | `38:1154`, `38:1229`, `38:1300` | feed por datas, aprovações, revisão, pedido de ajuste e comentários |
-| Equipe | `8:424`, `8:542` | lista, busca, perfil e conteúdos sob responsabilidade |
-| Gestão | `10:407`, `10:538`, `10:659`, `10:787` | resumo por período, CSV, menus, nome do perfil e atividades locais |
-| Experimento de ML | `138:4687`, `138:5072` | k-NN local com exemplos sintéticos; não é previsão validada ou módulo da API |
+| Mídias | `36:975`, `36:1142` | pastas e subpastas, filtros, upload simples/multipart, imagem e vídeo real |
+| Portal e aprovação | `38:1154`, `38:1229`, `38:1300` | feed por datas, aprovar/pedir ajuste, revisão e comentários; aprovação por e-mail usa sessão separada |
+| Equipe | `8:424`, `8:542` | lista, busca, convites, papéis, cargo, remoção e reativação conforme permissão |
+| Gestão | `10:407`, `10:538`, `10:659`, `10:787` | relatório do período e CSV, perfil, consulta de assinatura, cotação e cancelamento/reativação |
+| Machine learning | `138:4687`, `138:5072` | não implementado em produção; #817 registra a especificação e avaliação necessárias |
 
-As continuações das artboards são conteúdo rolável, não telas truncadas. O kanban deixa parte da próxima coluna visível; o portal não mostra kanban, stories de clientes, responsável ou tarefas internas.
+As continuações das artboards são conteúdo rolável. O quadro deixa parte da próxima coluna visível. O portal não mostra kanban, seleção de stories de clientes, responsável ou tarefas internas. Roteiros de stories seguem as permissões e estados do servidor.
 
-## Dois modos, sem fallback entre eles
+## Dados e sessão
 
-**API real:** contexto autenticado no Expo Go. Usa as rotas documentadas de clientes, conteúdos, mídia, tarefas, conversas, equipe e perfil, com os contratos de `@ageniza/contracts`. O servidor decide permissões, leitura, revisão e transições. Não existe sessão de demonstração enviada à API. Sessões e cookies ficam no transporte nativo, com SecureStore.
+A entrada exige conta e contexto real. `MobileApp` usa somente o adaptador da API, sem fallback para dados locais. O teste `real-entry.test.ts` percorre a árvore de imports e barra o repositório demonstrativo e o modelo sintético no app. Os arquivos de demonstração restantes são fixtures de teste, não uma opção de entrada.
 
-**Demonstração:** armazenamento local versionado, sem credenciais e sem chamada à API. Criação, edição, mídia, tarefas, comentários, aprovação e ajustes compartilham o mesmo conjunto de dados. As alterações persistem ao recarregar; há ação explícita de reiniciar os dados. No navegador, um arquivo de teste é armazenado como data URL e há limite de 8 MB, sujeito à cota do navegador. No aparelho, a seleção de arquivo usa o cache do Expo e não deve ser tratada como backup durável.
+Os contratos vêm de `@ageniza/contracts`. O servidor decide permissões, leitura, revisão e transições. O relatório conta conteúdos efetivamente retornados; não inventa engajamento ou pontualidade. A lista de atividades deriva do período carregado e sua marcação de leitura não é persistente; central/push de produção seguem #818. Cotação não significa pagamento; produção segue #819.
 
-O relatório calcula contagens a partir dos conteúdos do período e exporta CSV; não inventa indicador de pontualidade sem histórico. A API ainda não oferece notificações push ou previsão de atrasos. A central da demonstração lista atividades das operações de teste. O experimento de ML mostra a limitação dos dados sintéticos e nunca altera prazo ou responsável automaticamente.
+No nativo, `expo/fetch` envia `expo-origin: ageniza://`; o cookie é guardado em SecureStore. O transporte recusa redirecionamentos e origem final divergente antes de persistir cookies. Escritas rejeitadas não envenenam a fila. Logout tenta revogar no servidor e bloqueia o acesso local mesmo sem rede; falha de exclusão segura é informada. O 401 do login não apaga outra sessão válida. Mudanças de termos/e-mail retornam à resolução de entrada.
 
-## Conexão e verificação
+Links de conta aceitam somente origem/caminhos autorizados. A aprovação por e-mail mantém `ageniza_approval` apenas em memória, restrita ao lote e separada da sessão de login. Abrir não aprova: a decisão usa `canDecide` e a revisão lida.
 
-Em 03/11/2026, a origem nativa `ageniza://` foi liberada no dev pelo responsável do servidor, conforme [#803](https://github.com/Nocrato-Tech/ageniza/issues/803#issuecomment-6613231931). A conferência sem credenciais retornou `400 VALIDATION_ERROR` em `POST /api/auth/login` com corpo vazio. Isso prova a aceitação da origem, não um login autenticado. `exp://` continua proibido, e Google permanece dependente da #799.
+## Publicação
 
-A liberação nativa não autoriza a origem web da Vercel. Essa publicação continua em demonstração; não há proxy para contornar cookies, CORS ou CSRF.
+A origem nativa `ageniza://` foi liberada no dev em #803. A conferência sem credenciais retorna `400 VALIDATION_ERROR` no login vazio; não prova um login autenticado. `exp://` não foi liberado. Google segue #799.
 
-O app foi alinhado ao `develop` com `@better-auth/expo` 1.7.7, conforme a revisão do #804 e a #805. O transporte nativo usa `expo/fetch`, recusa redirecionamento e origem final divergente antes de persistir cookies e envia POST sem conteúdo como corpo de zero bytes, evitando o byte nulo do fallback Android. Falhas de escrita não envenenam a fila de armazenamento; logout tenta revogar no servidor e sempre bloqueia/limpa o acesso local. Falha na exclusão segura mantém o acesso bloqueado em memória e informa que o armazenamento precisa ser apagado antes de compartilhar o aparelho. O 401 de credenciais inválidas não apaga uma sessão existente. Erros de restauração oferecem nova tentativa, e mudanças de termos/e-mail retornam à resolução de entrada.
+A Vercel publica a interface real, mas seu domínio não está autorizado para sessões web. O PR #816 prepara a interface em `/app-mobile/` na imagem web de desenvolvimento, na mesma origem da API. O prefixo de assets é exportado pelo Expo; arquivos inexistentes respondem 404. Não altera CORS, CSRF, SameSite ou trusted origins. A URL só existe no servidor depois de revisão, merge e deploy; a imagem de produção não inclui essa exportação.
 
-As mutações executadas na rodada atual foram detectadas pelos testes: prefixo de cookie incorreto com o codec real, remoção da guarda de origem final, rejeição persistente na fila de escrita, ausência de expiração ao falhar a exclusão, limpeza indevida no 401 do login, ausência de transição por política de acesso, POST nativo sem corpo explícito e logout local dependente da rede. Os arquivos foram restaurados após cada mutação.
+O APK interno está disponível no link registrado em [prontidão de lançamento](prontidao-lancamento.md). É assinado para uso interno e aponta ao dev. iOS assinado/TestFlight, identidade de produção e validação em aparelho seguem #820. Exportação JavaScript não comprova execução nativa.
 
-Typecheck, lint, testes de estado/persistência/contratos e exportação Android/iOS/web compõem a verificação automatizada. A conferência pelo navegador cobre tarefas → envio → pedido de ajuste → edição → reenvio → aprovação da revisão 2, criação em três etapas e persistência ao recarregar. Teste com conta no aparelho, reabertura, cookie real `__Secure-`, troca de contexto e logout ainda precisam de evidência física antes de afirmar validação nativa completa. A revisão de segurança independente continua necessária antes do merge.
+## Movimento e verificação
 
+A interface usa Animated do React Native: resposta ao toque, entrada curta de telas e painéis. A preferência de reduzir movimento remove deslocamentos e animações; nenhuma animação atrasa requisições ou altera regras.
 
-### Movimento e interação
-
-Aplicação dos princípios da skill stageshow ao produto real, usando Animated do React Native em vez do kit de demonstrações para DOM. Cards e ações respondem ao toque em 80 ms e retornam em 150 ms; mudanças de tela entram com deslocamento de 8 px em 190 ms. Confirmações mantêm o resultado visível. Opções abrem em painel deslizante. A preferência do sistema para reduzir movimento remove deslocamentos e animações dos painéis. As animações não atrasam requisições nem alteram regras de negócio.
-
-Validação: typecheck, lint, 31 testes existentes e exportação web. A execução em aparelho físico continua pendente.
-
-
-## Integração real e preparação de distribuição
-
-A área de trabalho agora exige contexto e usa somente o repositório da API; a entrada para demonstração foi removida. Marca/personas, carteira/ciclo de vida, acessos, equipe, roteiros e perfil foram integrados. O experimento sintético de ML foi retirado do fluxo real. A capa e a prévia usam os arquivos retornados pelo servidor; não substituem mídia ausente pela foto ilustrativa da clínica.
-
-O fluxo de aprovação do e-mail tem transporte separado para `ageniza_approval`, somente em memória e restrito ao lote, sem importar a sessão da conta. Testes cobrem abrir sem decidir, `canDecide`, a revisão e o conteúdo alvo. Veja [prontidão de lançamento](prontidao-lancamento.md) para evidências e lacunas atuais; as descrições de demonstração nas etapas anteriores são históricas e não descrevem o acesso atual.
+Os testes cobrem contratos, persistência/expiração de sessão, convites, restrições do portal, revisão de aprovação, alvo de foto e recuperação de criação parcial. O workflow `Mobile review` verifica tipos, lint, testes, exportações Android/iOS/web e imagens web dev/produção. Resultados, mutações e limitações estão nos PRs e na [issue central #821](https://github.com/Nocrato-Tech/ageniza/issues/821). A revisão independente de segurança continua necessária; nenhum teste local é aprovação do autor.

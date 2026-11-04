@@ -26,7 +26,7 @@ Na última rodada de verificação:
 
 - Typecheck e lint de todo o monorepo passaram (18 e 11 tarefas, respectivamente).
 - `pnpm test` concluiu as 18 tarefas do monorepo sem falhas; a suíte web registrou 2.539 testes aprovados.
-- 74 testes passaram em 14 arquivos, incluindo formulários renderizados por React Native Web, consentimento, credenciais, convite, contexto, permissões, leitura e alvo de remoção.
+- 80 testes passaram em 14 arquivos antes da configuração de subpasta; a rodada integrada de CI também inclui o sexto teste de configuração, incluindo formulários renderizados por React Native Web, consentimento, credenciais, convite, contexto, permissões, leitura e alvo de remoção.
 - A instalação com lockfile congelado passou após encerrar o Metro que mantinha arquivos de dependências ocupados no Windows.
 
 A configuração Expo em `app.config.js` passou pelos testes e pela exportação Android/iOS/web. As dependências passaram pela verificação de compatibilidade do Expo; os dois testes de isolamento dos peers nativos também passaram.
@@ -54,8 +54,19 @@ A configuração Expo em `app.config.js` passou pelos testes e pela exportação
 
 ## Situação de execução
 
-O bloqueio temporário da revisão automática não se repetiu nesta sessão: comandos, mutações, push e solicitação de revisão puderam ser executados. A API dev respondeu 200 no health. Isso não comprova login autenticado ou fluxo físico.
+A API dev respondeu 200 no health. Isso não comprova login autenticado ou fluxo físico.
 
-A Vercel agora publica uma página de instalação e o APK real em https://mobile-vercel-preview.vercel.app/downloads/ageniza-android.apk, substituindo a demonstração web. O APK de a456d4a1 inclui o fluxo de aprovação por e-mail; o workflow 41764475323 concluiu com sucesso. SHA-256: d898cab81ade83b294be3c87c81424fc1331ee9c5d46824f8d3ffffd1352d1a7. A compilação 41765497119 concluiu com sucesso e gerou o APK 59000fb2 com a foto do cliente (70.775.541 bytes; SHA-256: 05d10a207c3366bf665701aedbe9776ab03b2418caf17874b9e774004d50b45e). O bundle JavaScript, o destino da API, a rota de aprovação e o identificador do pacote foram conferidos no APK. O arquivo utiliza assinatura de desenvolvimento e API dev; não é uma publicação nas lojas nem comprovação de execução física.
+A Vercel publica a interface web real e mantém o APK em https://mobile-vercel-preview.vercel.app/downloads/ageniza-android.apk, substituindo a demonstração web. O APK de a456d4a1 inclui o fluxo de aprovação por e-mail; o workflow 41764475323 concluiu com sucesso. SHA-256: d898cab81ade83b294be3c87c81424fc1331ee9c5d46824f8d3ffffd1352d1a7. A compilação 41765497119 concluiu com sucesso e gerou o APK 59000fb2 com a foto do cliente (70.775.541 bytes; SHA-256: 05d10a207c3366bf665701aedbe9776ab03b2418caf17874b9e774004d50b45e). O bundle JavaScript, o destino da API, a rota de aprovação e o identificador do pacote foram conferidos no APK. O arquivo utiliza assinatura de desenvolvimento e API dev; não é uma publicação nas lojas nem comprovação de execução física.
 
 O checklist operacional do sistema continua em [prontidão de produção](../infra/production-readiness.md).
+
+
+## Entrega para revisão — 04/11/2026
+
+A [issue #821](https://github.com/Nocrato-Tech/ageniza/issues/821) reúne a ordem de aprovação dos PRs #804, #809, #810, #811, #812, #813, #815 e #816 e as dependências #799, #814 e #817–#820. A revisão foi solicitada ao responsável; não há aprovação do autor nem merge automático.
+
+O PR #815 corrige criação parcial: depois de receber o ID da API, uma falha posterior não faz o próximo salvamento criar outro conteúdo. Acrescenta testes de foto para leitor, cancelamento, limite, alvo, confirmação e erro após gravação. Quatro mutações executadas ficaram vermelhas e os arquivos foram restaurados: remover a entrega antecipada do ID, perder o ID no editor, expor alteração de foto ao leitor e trocar o endpoint da foto.
+
+O workflow [41770722090](https://github.com/Nocrato-Tech/ageniza/actions/runs/41770722090) passou: tipos, lint, testes mobile, exportação Android/iOS/web e smoke tests reais das imagens dev/produção. A imagem dev serviu HTML e bundle em `/app-mobile/`; assets inexistentes retornaram 404; a imagem de produção não publicou a interface. O primeiro smoke test tinha uma corrida de inicialização do Nginx; a nova execução espera o serviço e mantém as verificações.
+
+A hospedagem de mesma origem ainda precisa de revisão e deploy no dev. Não houve teste autenticado nem físico. O APK público continua no commit 59000fb2 e não inclui #815/#816. Revisar os commits atuais da pilha; nenhum módulo pendente de produto passa a estar implementado por ter sido registrado como issue.

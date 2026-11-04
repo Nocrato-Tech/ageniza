@@ -350,7 +350,7 @@ Colaboradores são ilimitados, e o portal do cliente é grátis. Os extras são 
 
 ## Cliente Expo
 
-A interface nativa reúne carteira, lista/kanban/calendário, criação/edição em três etapas, biblioteca de mídias, tarefas e conversas. As operações seguem as rotas e condições deste documento. A prévia web usa um repositório local de demonstração separado da sessão real; veja [interface mobile](../interface-mobile.md).
+A interface nativa reúne carteira, lista/kanban/calendário, criação/edição em três etapas, biblioteca de mídias, tarefas e conversas. As operações seguem as rotas e condições deste documento. A interface web usa o mesmo adaptador da API e não oferece entrada de demonstração; a sessão depende da origem autorizada, conforme [interface mobile](../interface-mobile.md).
 
 
 ## Integração do aplicativo nativo
