@@ -2,12 +2,17 @@ import {
   AgencyClientContentPathParamsSchema,
   AgencyClientPathParamsSchema,
   CONTENT_PERIOD_MAX_ITEMS,
+  CONTENT_FEED_PAGE_SIZE,
   ContentDetailSchema,
+  ContentFeedQuerySchema,
+  ContentFeedResponseSchema,
   ContentPeriodQuerySchema,
   ContentPeriodResponseSchema,
   CreateContentRequestSchema,
   UpdateContentRequestSchema,
-  contentPeriodIssue
+  contentPeriodIssue,
+  decodeContentFeedCursor,
+  encodeContentFeedCursor
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
@@ -34,6 +39,7 @@ import {
   changesColumns,
   inheritContentMedia,
   insertContent,
+  listFeed,
   listPeriod,
   loadClientStatus,
   loadContent,
@@ -99,6 +105,11 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
     permission: CONTENT_READ_PERMISSION,
     responseStatus: 200,
     schemas: { params: AgencyClientPathParamsSchema, query: ContentPeriodQuerySchema, response: ContentPeriodResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const feedDocs = {
+    permission: CONTENT_READ_PERMISSION,
+    responseStatus: 200,
+    schemas: { params: AgencyClientPathParamsSchema, query: ContentFeedQuerySchema, response: ContentFeedResponseSchema }
   } satisfies DocumentedRouteConfig;
   const createDocs = {
     permission: 'conteudo.operar',
@@ -180,6 +191,29 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
     return reply.send(routeResponse(periodDocs, request, {
       data: { contents: items.contents, storyScripts: items.storyScripts },
       meta: { from: query.from, to: query.to, count }
+    }));
+  });
+
+  // The phone beside the calendar: the client's feed, newest first, nine a page and independent of any period. The static
+  // segment wins over `:contentId`, so `feed` is never read as an id.
+  app.get('/agencies/:agencyId/clients/:clientId/contents/feed', readable(feedDocs), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = idFromRoute(request, 'clientId', clientNotFound);
+    const query = routeQuery(feedDocs, request);
+    const after = query.cursor === undefined ? undefined : decodeContentFeedCursor(query.cursor);
+
+    const page = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      if (await loadClientStatus(transaction, { agencyId: tenant.agencyId, clientId }) === undefined) throw clientNotFound();
+      return listFeed(transaction, { clientId, after, limit: CONTENT_FEED_PAGE_SIZE });
+    });
+    return reply.send(routeResponse(feedDocs, request, {
+      data: {
+        contents: page.contents,
+        nextCursor: page.next === undefined ? null : encodeContentFeedCursor(page.next),
+        counters: page.counters
+      },
+      meta: { count: page.contents.length }
     }));
   });
 

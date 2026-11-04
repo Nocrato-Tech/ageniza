@@ -1,6 +1,8 @@
 import type {
   Content,
   ContentDetail,
+  ContentFeedPosition,
+  ContentFeedResponse,
   ContentListItem,
   ContentTask,
   CreateContentRequest,
@@ -159,6 +161,97 @@ export const loadClientStatus = async (
   return result.rows[0]?.status;
 };
 
+const LIST_SELECT = `
+select
+  content.id, content.title, content.platform, content.format, content.publish_on::text as publish_on,
+  to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.status,
+  owner_link.id as owner_membership_id, owner_account.name as owner_name,
+  content.cover_asset_id, thumbnail.asset_id as thumbnail_asset_id, content.revision, content.published_on::text as published_on,
+  tasks.total as tasks_total, tasks.approved as tasks_approved
+from public.contents content
+${OWNER_JOINS}
+left join lateral (
+  select entry.asset_id
+  from (
+    select content.cover_asset_id as asset_id, 0 as item_position where content.cover_asset_id is not null
+    union all
+    select item.asset_id, item.position from public.content_media item where item.content_id = content.id
+  ) entry
+  join public.media_assets asset on asset.id = entry.asset_id
+  where asset.status = 'confirmed' and asset.removed_at is null
+  order by entry.item_position, entry.asset_id
+  limit 1
+) thumbnail on true
+left join lateral (
+  select count(*) as total, count(*) filter (where task.status = 'approved') as approved
+  from public.content_tasks task
+  where task.content_id = content.id
+) tasks on true
+`;
+
+const listItemOf = (row: ListRow): ContentListItem => ({
+  id: row.id,
+  title: row.title,
+  platform: row.platform,
+  format: row.format,
+  publishOn: row.publish_on,
+  publishAtTime: row.publish_at_time,
+  status: row.status,
+  owner: ownerOf(row),
+  coverAssetId: row.cover_asset_id,
+  thumbnailAssetId: row.thumbnail_asset_id,
+  revision: Number(row.revision),
+  publishedOn: row.published_on,
+  tasksTotal: Number(row.tasks_total),
+  tasksApproved: Number(row.tasks_approved)
+});
+
+/** The formats of the feed's grid; long videos and VSLs live in the calendar only (specs/conteudo.md section 7). */
+const FEED_FORMATS = ['image', 'carousel', 'reels'];
+/** A post with no time is the last of its day, as the calendar reads it. */
+const FEED_TIME = `coalesce(content.publish_at_time, time '24:00:00')`;
+const FEED_FILTER = `content.client_id = ?::uuid and content.format::text = any(?::text[]) and content.status <> 'cancelled'`;
+
+/**
+ * One page of the client's feed, the newest post first, independent of any period: day, time (none counts as the end of
+ * the day) and id, all descending, so a tie on day and time is broken by the id and a page never repeats or skips a post.
+ * `after` is the position of the last post of the page before. The counters are over the whole feed. Reads `limit + 1`
+ * to know whether another page exists.
+ */
+export const listFeed = async (
+  transaction: ContentTransaction,
+  input: { readonly clientId: string; readonly after: ContentFeedPosition | undefined; readonly limit: number }
+): Promise<{ readonly contents: ContentListItem[]; readonly next: ContentFeedPosition | undefined; readonly counters: ContentFeedResponse['data']['counters'] }> => {
+  const formats = `{${FEED_FORMATS.join(',')}}`;
+  const rows = await raw<RawRows<ListRow & { readonly feed_time: string }>>(transaction, `
+    ${LIST_SELECT.replace('select\n', `select\n  ${FEED_TIME}::text as feed_time,\n`)}
+    where ${FEED_FILTER}
+      ${input.after === undefined ? '' : `and (content.publish_on, ${FEED_TIME}, content.id) < (?::date, ?::time, ?::uuid)`}
+    order by content.publish_on desc, ${FEED_TIME} desc, content.id desc
+    limit ?
+  `, [
+    input.clientId, formats,
+    ...(input.after === undefined ? [] : [input.after.publishOn, input.after.time, input.after.id]),
+    input.limit + 1
+  ]);
+  const counted = await raw<RawRows<{ posts: string | number; approved: string | number; awaiting: string | number }>>(transaction, `
+    select
+      count(*) as posts,
+      count(*) filter (where content.status = 'approved') as approved,
+      count(*) filter (where content.status = 'awaiting_approval') as awaiting
+    from public.contents content
+    where ${FEED_FILTER}
+  `, [input.clientId, formats]);
+  const page = rows.rows.slice(0, input.limit);
+  const last = page[page.length - 1];
+  const counts = counted.rows[0];
+  return {
+    contents: page.map(listItemOf),
+    next: rows.rows.length > input.limit && last !== undefined ? { publishOn: last.publish_on, time: last.feed_time, id: last.id } : undefined,
+    counters: { posts: Number(counts?.posts ?? 0), approved: Number(counts?.approved ?? 0), awaitingApproval: Number(counts?.awaiting ?? 0) }
+  };
+};
+
 /**
  * Both kinds of item of a period, each read one past the ceiling so the caller can tell "at the ceiling" from
  * "over it" without counting what it will refuse. One kind alone over the ceiling is over it for the two.
@@ -168,31 +261,7 @@ export const listPeriod = async (
   input: { readonly clientId: string; readonly from: string; readonly to: string; readonly limit: number }
 ): Promise<{ readonly contents: ContentListItem[]; readonly storyScripts: StoryScriptListItem[] }> => {
   const contents = await raw<RawRows<ListRow>>(transaction, `
-    select
-      content.id, content.title, content.platform, content.format, content.publish_on::text as publish_on,
-      to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.status,
-      owner_link.id as owner_membership_id, owner_account.name as owner_name,
-      content.cover_asset_id, thumbnail.asset_id as thumbnail_asset_id, content.revision, content.published_on::text as published_on,
-      tasks.total as tasks_total, tasks.approved as tasks_approved
-    from public.contents content
-    ${OWNER_JOINS}
-    left join lateral (
-      select entry.asset_id
-      from (
-        select content.cover_asset_id as asset_id, 0 as item_position where content.cover_asset_id is not null
-        union all
-        select item.asset_id, item.position from public.content_media item where item.content_id = content.id
-      ) entry
-      join public.media_assets asset on asset.id = entry.asset_id
-      where asset.status = 'confirmed' and asset.removed_at is null
-      order by entry.item_position, entry.asset_id
-      limit 1
-    ) thumbnail on true
-    left join lateral (
-      select count(*) as total, count(*) filter (where task.status = 'approved') as approved
-      from public.content_tasks task
-      where task.content_id = content.id
-    ) tasks on true
+    ${LIST_SELECT}
     where content.client_id = ?::uuid and content.publish_on between ?::date and ?::date
     order by content.publish_on, content.publish_at_time, content.id
     limit ?
@@ -207,22 +276,7 @@ export const listPeriod = async (
   `, [input.clientId, input.from, input.to, input.limit]);
 
   return {
-    contents: contents.rows.map((row) => ({
-      id: row.id,
-      title: row.title,
-      platform: row.platform,
-      format: row.format,
-      publishOn: row.publish_on,
-      publishAtTime: row.publish_at_time,
-      status: row.status,
-      owner: ownerOf(row),
-      coverAssetId: row.cover_asset_id,
-      thumbnailAssetId: row.thumbnail_asset_id,
-      revision: Number(row.revision),
-      publishedOn: row.published_on,
-      tasksTotal: Number(row.tasks_total),
-      tasksApproved: Number(row.tasks_approved)
-    })),
+    contents: contents.rows.map(listItemOf),
     storyScripts: scripts.rows.map((row) => ({ id: row.id, scriptOn: row.script_on, status: row.status }))
   };
 };

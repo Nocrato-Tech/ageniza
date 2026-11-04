@@ -32,7 +32,7 @@
     },
     {
       "name": "contents",
-      "description": "Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste."
+      "description": "Conteúdo do cliente na agência: a consulta por período (calendário e feed em tela cheia), a leitura do feed do cliente de 9 em 9 (o celular ao lado do calendário), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste."
     },
     {
       "name": "approval-link",
@@ -1593,6 +1593,189 @@
             "required": [
               "from",
               "to",
+              "count"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "listContentFeedResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "contents": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "platform": {
+                      "type": "string",
+                      "enum": [
+                        "instagram"
+                      ]
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "carousel",
+                        "reels",
+                        "long_video",
+                        "vsl"
+                      ]
+                    },
+                    "publishOn": {
+                      "type": "string"
+                    },
+                    "publishAtTime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "in_production",
+                        "awaiting_approval",
+                        "adjusting",
+                        "approved",
+                        "published",
+                        "cancelled"
+                      ]
+                    },
+                    "owner": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "membershipId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "membershipId",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "coverAssetId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "thumbnailAssetId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "publishedOn": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tasksTotal": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "tasksApproved": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "platform",
+                    "format",
+                    "publishOn",
+                    "publishAtTime",
+                    "status",
+                    "owner",
+                    "coverAssetId",
+                    "thumbnailAssetId",
+                    "revision",
+                    "publishedOn",
+                    "tasksTotal",
+                    "tasksApproved"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "counters": {
+                "type": "object",
+                "properties": {
+                  "posts": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "approved": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "awaitingApproval": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "posts",
+                  "approved",
+                  "awaitingApproval"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "contents",
+              "nextCursor",
+              "counters"
+            ],
+            "additionalProperties": false
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
               "count"
             ],
             "additionalProperties": false
@@ -10517,6 +10700,186 @@
                   "error": {
                     "code": "CLIENT_ARCHIVED",
                     "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/feed": {
+      "get": {
+        "operationId": "listContentFeed",
+        "summary": "Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9",
+        "description": "O celular ao lado do calendário: o feed do cliente inteiro, sem período. Só `image`, `carousel` e\n`reels`; cancelados, stories, vídeo longo e VSL ficam de fora (e dos contadores). Ordem: dia, hora\n(sem hora conta como o fim do dia) e id, todos do maior para o menor, então um empate nunca repete\nnem pula um post. A página tem 9 itens; `data.nextCursor` é o valor opaco que vai em `cursor` para\na página seguinte e é `null` na última. Um `cursor` que esta rota não devolveu é `400 VALIDATION_ERROR`.\n`data.counters` conta o feed inteiro (`posts`, `approved`, `awaitingApproval`), não a página. O item\ntem o formato do item da consulta por período. Cliente arquivado também responde: o conteúdo dele é só leitura.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Uma página do feed e os contadores do feed inteiro.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listContentFeedResponse"
+                },
+                "example": {
+                  "data": {
+                    "contents": [
+                      {
+                        "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                        "title": "Lançamento da coleção de outono",
+                        "platform": "instagram",
+                        "format": "reels",
+                        "publishOn": "2026-10-20",
+                        "publishAtTime": "18:30",
+                        "status": "in_production",
+                        "owner": {
+                          "membershipId": "22222222-2222-4222-8222-222222222222",
+                          "name": "Ana Souza"
+                        },
+                        "coverAssetId": null,
+                        "thumbnailAssetId": "44444444-4444-4444-8444-444444444444",
+                        "revision": 1,
+                        "publishedOn": null,
+                        "tasksTotal": 3,
+                        "tasksApproved": 1
+                      }
+                    ],
+                    "nextCursor": "WyIyMDI2LTEwLTIwIiwiMTg6MzA6MDAiLCJmZmZmZmZmZi1mZmZmLTRmZmYtOGZmZi1mZmZmZmZmZmZmZmYiXQ",
+                    "counters": {
+                      "posts": 24,
+                      "approved": 3,
+                      "awaitingApproval": 2
+                    }
+                  },
+                  "meta": {
+                    "count": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

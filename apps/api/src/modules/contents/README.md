@@ -8,6 +8,7 @@ ao cliente, senão o mesmo `404`.
 | método | rota | permissão |
 |---|---|---|
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents?from=&to=` | `conteudo.visualizar` |
+| `GET` | `/agencies/:agencyId/clients/:clientId/contents/feed?cursor=` | `conteudo.visualizar` |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents` | `conteudo.operar` e `conteudo.visualizar` |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | `conteudo.visualizar` |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | `conteudo.operar` e `conteudo.visualizar` |
@@ -41,6 +42,19 @@ contando os dois extremos (93 passa, 94 é `400`); até 500 itens somando conte�
 `thumbnailAssetId` é o id do arquivo que serve de capa no card e no feed: a capa escolhida (`coverAssetId`),
 senão a primeira mídia confirmada e não removida, por posição, ou `null` (issue #606; a imagem é lida como
 `variant=thumbnail`, e o vídeo, pelo quadro gerado). Nenhum outro dado da mídia entra na lista.
+
+## O feed do cliente
+
+O celular ao lado do calendário lê o feed do cliente inteiro, sem período (decisão
+`2026-11-04-o-celular-do-calendario-mostra-o-feed-inteiro-do-cliente`). É a leitura própria porque a consulta por
+período tem teto de 93 dias e 500 itens. `GET .../contents/feed?cursor=`: só `image`, `carousel` e `reels`, sem
+cancelados, da data mais recente para a mais antiga (dia, hora e id, todos decrescentes; sem hora conta como o fim do dia),
+9 itens por página. A resposta é `{ data: { contents, nextCursor, counters: { posts, approved, awaitingApproval } },
+meta: { count } }`: o item tem o formato do item da consulta por período, `nextCursor` é `null` na última página e
+os contadores são do feed inteiro, não da página. O cursor é opaco (base64url de dia, hora e id do último post da
+página) e vai de volta sem mudar; um que a rota não devolveu é `400 VALIDATION_ERROR`. O cliente é sempre o do caminho,
+na agência do caminho (outro cliente ou outra agência é o mesmo `404`), e o cliente arquivado também responde. Sem
+migration: o índice `(client_id, publish_on)` basta para a ordem e para os contadores no tamanho de um cliente.
 
 ## O que o banco decide e a rota só traduz
 

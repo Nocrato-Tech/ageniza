@@ -62,10 +62,13 @@ import {
   CommentSchema,
   ApproveContentByAgencyRequestSchema,
   ContentDetailSchema,
+  ContentFeedQuerySchema,
+  ContentFeedResponseSchema,
   ContentPeriodQuerySchema,
   ContentPeriodResponseSchema,
   ContentTaskSchema,
   CreateContentRequestSchema,
+  encodeContentFeedCursor,
   CreateContentTaskRequestSchema,
   ContentMoveRequestSchema,
   PublishContentRequestSchema,
@@ -252,7 +255,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
   clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.',
-  contents: 'Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste.',
+  contents: 'Conteúdo do cliente na agência: a consulta por período (calendário e feed em tela cheia), a leitura do feed do cliente de 9 em 9 (o celular ao lado do calendário), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste.',
   'approval-link': 'O link de aprovação do e-mail "conteúdos para aprovar": trocar o token, que vai no fragmento da URL, pela sessão de aprovação; ler o lote com a prévia de celular; assinar a mídia; Aprovar e Pedir ajuste. Sem login, sem conta e só o lote daquele link.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia; as pastas de mídia de um cliente, a listagem do que há nelas e a remoção.',
@@ -445,6 +448,15 @@ const contentPeriodExample = {
     storyScripts: [{ id: storyScriptId, scriptOn: '2026-10-21', status: 'draft' }]
   },
   meta: { from: '2026-10-01', to: '2026-10-31', count: 2 }
+} as const;
+
+const contentFeedExample = {
+  data: {
+    contents: contentPeriodExample.data.contents,
+    nextCursor: encodeContentFeedCursor({ publishOn: '2026-10-20', time: '18:30:00', id: contentId }),
+    counters: { posts: 24, approved: 3, awaitingApproval: 2 }
+  },
+  meta: { count: 1 }
 } as const;
 
 const portalContentOpenExample = {
@@ -1284,6 +1296,34 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 400, code: 'CONTENT_PERIOD_TOO_LARGE' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/contents/feed',
+    operationId: 'listContentFeed',
+    module: 'contents',
+    summary: 'Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9',
+    description: [
+      'O celular ao lado do calendário: o feed do cliente inteiro, sem período. Só `image`, `carousel` e',
+      '`reels`; cancelados, stories, vídeo longo e VSL ficam de fora (e dos contadores). Ordem: dia, hora',
+      '(sem hora conta como o fim do dia) e id, todos do maior para o menor, então um empate nunca repete',
+      'nem pula um post. A página tem 9 itens; `data.nextCursor` é o valor opaco que vai em `cursor` para',
+      'a página seguinte e é `null` na última. Um `cursor` que esta rota não devolveu é `400 VALIDATION_ERROR`.',
+      '`data.counters` conta o feed inteiro (`posts`, `approved`, `awaitingApproval`), não a página. O item',
+      'tem o formato do item da consulta por período. Cliente arquivado também responde: o conteúdo dele é só leitura.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientPathParamsSchema,
+    query: ContentFeedQuerySchema,
+    responses: [{ status: 200, description: 'Uma página do feed e os contadores do feed inteiro.', schema: ContentFeedResponseSchema, example: contentFeedExample }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
