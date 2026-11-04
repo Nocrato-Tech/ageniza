@@ -10,6 +10,7 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL VITE_SENTRY_DSN=$VITE_SENTRY_DSN VITE_A
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY .pnpmfile.cjs ./
 COPY apps/web/package.json apps/web/package.json
+COPY apps/mobile/package.json apps/mobile/package.json
 COPY packages/config/package.json packages/config/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/ui/package.json packages/ui/package.json
@@ -21,6 +22,11 @@ COPY docs/mobile docs/mobile
 COPY docs/api/openapi.json docs/api/openapi.json
 # version.txt lets the production smoke test prove which release the public site serves.
 RUN pnpm --filter @ageniza/web... build && printf '%s\n' "$VITE_APP_VERSION" > apps/web/dist/version.txt
+# Keep the native interface on the trusted dev origin, without changing auth or production output.
+RUN if [ "$VITE_DEV_DOCS" = "true" ]; then \
+      EXPO_PUBLIC_API_URL=https://dev.ageniza.com.br/api MOBILE_WEB_BASE_PATH=/app-mobile \
+      pnpm --filter @ageniza/mobile exec expo export --platform web --output-dir ../web/dist/app-mobile; \
+    fi
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 ARG APP_VERSION=unknown
 LABEL org.opencontainers.image.revision=$APP_VERSION

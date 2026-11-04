@@ -59,3 +59,10 @@ sequenceDiagram
 
 - `404 APPROVAL_LINK_INVALID`: o link venceu, foi revogado ou não existe. Mostre uma mensagem neutra, sem dizer qual foi o motivo.
 - `429 RATE_LIMITED`: tentativas demais.
+
+
+## Aplicativo nativo
+
+O link completo pode ser colado na entrada do app. O parser só aceita `/aprovar#token` do host configurado ou do esquema nativo, com 43 caracteres base64url e sem query. O token fica em memória e é trocado pelo cookie próprio `ageniza_approval`; esse cookie não é salvo em SecureStore nem misturado ao login. Um transporte separado restringe suas chamadas às rotas do lote, envia a origem nativa documentada e limpa a sessão ao fechar.
+
+Abrir só troca a sessão e lê o lote. As decisões exigem clique, `canDecide` e a revisão lida. Após conflito, a tela exige atualizar o lote; link indisponível retira seus conteúdos da tela e mostra mensagem neutra. A mídia usa URLs assinadas do próprio lote. Configurar App Links/Universal Links e testar o fluxo no aparelho continuam pendentes.

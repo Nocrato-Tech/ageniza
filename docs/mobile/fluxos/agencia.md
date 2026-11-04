@@ -347,3 +347,23 @@ Colaboradores são ilimitados, e o portal do cliente é grátis. Os extras são 
 - O pagamento atrasado tem **3 dias de tolerância**. Cancelar durante a tolerância leva direto ao modo leitura.
 - Chame sempre `quote` antes de `charges`, para mostrar o valor à pessoa.
 - A renovação automática da assinatura ainda está em desenvolvimento.
+
+## Cliente Expo
+
+A interface nativa reúne carteira, lista/kanban/calendário, criação/edição em três etapas, biblioteca de mídias, tarefas e conversas. As operações seguem as rotas e condições deste documento. A interface web usa o mesmo adaptador da API e não oferece entrada de demonstração; a sessão depende da origem autorizada, conforme [interface mobile](../interface-mobile.md).
+
+
+## Integração do aplicativo nativo
+
+A área de trabalho exige contexto autenticado e usa o repositório da API, sem fallback para dados locais. Foram acrescentados cadastro completo e ciclo de vida de clientes, estudo de marca e personas, acessos ao portal, equipe e convites, roteiros, perfil e consulta de assinatura. As operações usam as rotas e permissões acima; o servidor continua responsável por validar mudanças.
+
+Conteúdos oferecem edição/devolução de tarefas, registro de aprovação externa com motivo e revisão, cancelamento, reagendamento com data e desfazer publicação. A biblioteca é carregada por cliente; a reprodução pede o arquivo original, e erros de mídia permitem solicitar uma nova URL. A ação de remoção continua sujeita à recusa de mídia em uso pelo servidor.
+
+Não há previsão de ML com dados sintéticos no fluxo real. A consulta de assinatura distingue cotação de contratação; o pagamento real ainda depende da integração de produção. Essas lacunas permanecem em [prontidão de lançamento](../prontidao-lancamento.md).
+
+
+A foto do cliente usa `PUT …/photo` com imagem em base64 e limite local de 10 MB; tipo real e limite do ambiente continuam validados pelo servidor. Remover pede confirmação e usa `DELETE …/photo`. Os avatares usam a URL assinada do cadastro e voltam às iniciais se a imagem não carregar. A biblioteca permite criar uma pasta na raiz ou dentro de uma pasta de primeiro nível, enviando o `parentId` previsto no contrato.
+
+
+Ao criar um conteúdo, o editor guarda o identificador retornado antes de vincular as mídias e recarregar o detalhe. Se uma dessas etapas falhar, a próxima tentativa atualiza o mesmo conteúdo e preserva os campos; não faz outro cadastro. O cliente fica fixo assim que o cadastro é confirmado pela API. Uma falha antes de receber a resposta de criação continua sem confirmação de resultado: o servidor não oferece chave de idempotência nesse contrato.
+As buscas de equipe e carteira omitem `q`/`search` quando vazias ou compostas somente por espaços; quando presentes, são aparadas e codificadas. Isso preserva a validação de texto não vazio dos contratos e permite o primeiro carregamento. Os testes das telas validam as queries com `CollaboratorListQuerySchema` e `ClientListQuerySchema`.

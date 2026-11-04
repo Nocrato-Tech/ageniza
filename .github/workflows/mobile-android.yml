@@ -1,0 +1,61 @@
+name: Mobile Android internal APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/mobile-launch-readiness', 'codex/mobile-email-approval', 'codex/mobile-client-photo']
+    paths: ['apps/mobile/**', 'packages/contracts/**', 'pnpm-lock.yaml', '.github/workflows/mobile-android.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  internal-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      EXPO_PUBLIC_API_URL: https://dev.ageniza.com.br/api
+      APP_VARIANT: internal
+      CI: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Enable the repository-pinned package manager
+        run: corepack enable
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build shared contracts
+        run: pnpm --filter @ageniza/contracts build
+      - name: Verify mobile code
+        run: |
+          pnpm --filter @ageniza/mobile typecheck
+          pnpm --filter @ageniza/mobile lint
+          pnpm --filter @ageniza/mobile test
+      - name: Generate the native Android project
+        run: pnpm --filter @ageniza/mobile exec expo prebuild --platform android --no-install
+      - name: Build an internal APK with the JavaScript bundle embedded
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+      - name: Save internal validation APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ageniza-internal-${{ github.sha }}
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: Record build scope
+        run: |
+          echo '## Internal Android validation build' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Connects to dev. Separate app id: com.ageniza.mobile.internal. No customer production data.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Uses the generated template development signing key. Not a store release or a production signing identity.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'An APK build does not replace execution on a physical device, independent security review, or production release approval.' >> "$GITHUB_STEP_SUMMARY"

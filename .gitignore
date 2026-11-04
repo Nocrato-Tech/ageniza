@@ -8,3 +8,15 @@ coverage/
 .local/
 *.log
 .DS_Store
+.expo/
+web-dist/
+web-dist-v2/
+native-dist-v2/
+
+/apps/mobile/web-motion-dist/
+
+/apps/mobile/android/
+/apps/mobile/ios/
+/apps/mobile/launch-dist/
+
+/apps/mobile/web-online-dist/

@@ -75,3 +75,12 @@ O portal **nunca** vê subtarefa, responsável, prazo interno nem roteiro em ras
 ## Agência em modo leitura
 
 Com o teste vencido ou o plano encerrado, o portal continua visível. Aprovar, pedir ajuste e comentar recebem `409 AGENCY_READ_ONLY`.
+
+## Interface Expo
+
+O portal mobile apresenta feed em Geral, calendário e fila de aprovações. Revisar abre legenda, mídias e comentários apenas nos estados permitidos acima. Aprovar e pedir ajuste enviam a revisão lida. Não há seletor de clientes da agência nem kanban no portal. A demonstração é local e explicitamente separada da API; veja [interface mobile](../interface-mobile.md).
+
+
+## Ampliação da integração nativa
+
+O portal exige contexto de cliente autenticado. Boas-vindas usam o campo de primeiro acesso e gravam a ciência pela rota `onboarding/seen`. O estudo de marca é somente leitura; conversas não permitem escrita quando a agência está em modo leitura. Roteiros enviados podem ser lidos e marcados como gravados. Tipos de mídia são preservados na prévia de carrosséis mistos. Nenhuma sessão de agência é convertida em sessão de portal pelo aplicativo.
