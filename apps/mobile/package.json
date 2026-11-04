@@ -42,8 +42,11 @@
     "react-native-web": "~0.21.0"
   },
   "devDependencies": {
+    "@testing-library/react": "16.3.0",
     "@types/react": "~19.1.10",
+    "jsdom": "26.1.0",
     "typescript": "^5.7.3",
-    "vitest": "^3.0.7"
+    "vitest": "^3.0.7",
+    "@types/react-dom": "19.1.10"
   }
 }

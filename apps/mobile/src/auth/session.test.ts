@@ -21,8 +21,8 @@ describe('entry follows the server decision', () => {
     await expect(selectContext(api, agency)).rejects.toThrow('Acesso removido.');
   });
   it('does not resolve contexts before email confirmation or required legal acceptance', async () => {
-    const unverified = client([{ emailVerified: false }]);
-    await expect(resolveEntry(unverified)).rejects.toThrow('Confirme seu e-mail');
+    const unverified = client([{ emailVerified: false, user: { email: 'guest@example.test' } }]);
+    expect(await resolveEntry(unverified)).toEqual({ kind: 'unverified', email: 'guest@example.test' });
     expect(unverified.request).toHaveBeenCalledTimes(1);
     const pending = client([session, { required: true, documents: [{ document: 'terms', pending: true }] }]);
     expect(await resolveEntry(pending)).toMatchObject({ kind: 'legal' }); expect(pending.request).toHaveBeenCalledTimes(2);
@@ -31,5 +31,10 @@ describe('entry follows the server decision', () => {
     const api = client([session, legal, decision]); const result = await resolveEntry(api);
     expect(result.kind).toBe(decision.decision === 'none' ? 'empty' : 'contexts');
     expect(api.request).toHaveBeenCalledTimes(3);
+  });
+  it('passes the accepted invitation context to the server resolver instead of choosing the last agency', async () => {
+    const api = client([session, legal, { decision: 'enter', context: agency }, undefined]);
+    await resolveEntry(api, 'agency:one');
+    expect(api.request).toHaveBeenCalledWith('/me/contexts/resolve?preferred=agency%3Aone');
   });
 });

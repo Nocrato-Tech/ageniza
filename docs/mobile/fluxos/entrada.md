@@ -163,3 +163,14 @@ O cadastro e o aceite de convite já registram o aceite, pelo `acceptTerms: true
   1. a pessoa pede com `POST /me/email-change`;
   2. a operação aprova;
   3. o link chega ao e-mail **novo**, e `POST /email-change/confirm` conclui a troca.
+
+
+## Entrada no aplicativo nativo
+
+O app começa no login, sem entrar automaticamente na demonstração. Cadastro, recuperação, confirmação do e-mail, reenvio, redefinição, convite e criação de agência têm formulários nativos. Não existe entrada para demonstração na interface do aplicativo.
+
+Links HTTPS do ambiente configurado podem ser colados no app. O aplicativo também interpreta os caminhos de conta no esquema `ageniza://`, sem aceitar sessão em `cookie=`. Isso não configura Universal Links/App Links nem altera os links dos e-mails do servidor. Tokens ficam em memória, não em AsyncStorage, logs ou parâmetros de requisições de leitura, exceto o caminho público documentado do convite.
+
+Convite para conta existente entra com o e-mail convidado antes de aceitar. O contexto aceito é enviado ao resolvedor como preferência; o servidor continua decidindo o acesso. Conta não confirmada mostra uma etapa própria sem consultar dados de agência. Se a confirmação foi consumida e a conexão falha ao carregar contextos, o botão tenta carregar os acessos, sem consumir o link outra vez. Criação de agência aparece conforme a indicação `canCreateAgency` do servidor, e o seletor só entra após confirmar o último contexto pela API.
+
+As validações de consentimento, campos de senha, clique duplo e manutenção do formulário após erro têm testes. Teste físico com e-mail real de dev, SecureStore e reabertura continua pendente. A origem da Vercel não é autorizada para autenticação real; isso não é contornado por proxy. Google nativo em produção continua dependente da #799.

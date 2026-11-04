@@ -1,3 +1,3 @@
 import { defineConfig } from 'vitest/config';
 
-export default defineConfig({ test: { server: { deps: { inline: ['@better-auth/expo'] } } } });
+export default defineConfig({ esbuild: { jsx: 'automatic' }, test: { server: { deps: { inline: ['@better-auth/expo'] } } } });

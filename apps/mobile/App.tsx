@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, ScrollView, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, ScrollView, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -7,7 +7,7 @@ import Sora_600SemiBold from './assets/fonts/Sora-SemiBold.ttf';
 import Inter_400Regular from './assets/fonts/Inter-Regular.ttf';
 import Inter_600SemiBold from './assets/fonts/Inter-SemiBold.ttf';
 import type { Context } from '@ageniza/contracts';
-import { api, browserPreview } from './src/api/runtime';
+import { api, browserPreview, webUrl } from './src/api/runtime';
 import { ApiError } from './src/api/client';
 import { EntryScreen, Login } from './src/auth/EntryScreen';
 import { listContexts, resolveEntry, selectContext } from './src/auth/session';
@@ -16,6 +16,9 @@ import { Button, Copy, Notice, styles, ThemeContext } from './src/ui/components'
 import { dark, light, space } from './src/ui/theme';
 import { MobileApp } from './src/product/MobileApp';
 import { logoutLocally } from './src/auth/logout';
+import { AccountAction } from './src/auth/AccountAction';
+import { parseAccountLink } from './src/auth/links';
+import type { AccountLink } from './src/auth/links';
 
 export default function App() {
   const [fonts, fontError] = useFonts({ Sora: Sora_600SemiBold, Inter: Inter_400Regular, InterSemi: Inter_600SemiBold });
@@ -24,7 +27,7 @@ export default function App() {
   const [restoreFailure, setRestoreFailure] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [demo, setDemo] = useState(browserPreview);
+  const [accountLink, setAccountLink] = useState<AccountLink | null>(null);
   const generation = useRef(0);
   const pending = useRef(false);
   const checking = useRef(false);
@@ -32,9 +35,16 @@ export default function App() {
   const active = entry?.kind === 'active';
   const t = active && entry.context.type === 'agency' ? dark : light;
   const expire = useCallback(() => { generation.current += 1; setEntry(null); setRestoring(false); setRestoreFailure(''); setError(''); }, []);
-  async function resolve() {
+  useEffect(() => {
+    let alive = true;
+    const receive = (url: string) => { const link = parseAccountLink(url, webUrl); if (alive && link) { setAccountLink(link); } };
+    void Linking.getInitialURL().then((url) => { if (url) receive(url); }).catch(() => {});
+    const subscription = Linking.addEventListener('url', ({ url }) => receive(url));
+    return () => { alive = false; subscription.remove(); };
+  }, []);
+  async function resolve(preferred?: string) {
     const current = generation.current;
-    const next = await resolveEntry(api);
+    const next = await resolveEntry(api, preferred);
     if (generation.current === current) { setEntry(next); setError(''); setRestoreFailure(''); }
   }
   async function restore() {
@@ -55,7 +65,7 @@ export default function App() {
     return () => { api.onExpired(() => {}); api.onAccessRequired(() => {}); generation.current += 1; };
   }, [expire]);
   useEffect(() => {
-    if (!entry || demo) return;
+    if (!entry) return;
     let alive = true;
     const check = async () => {
       if (!alive || checking.current || AppState.currentState !== 'active') return;
@@ -67,7 +77,7 @@ export default function App() {
     const timer = setInterval(() => void check(), 45_000);
     const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') void check(); });
     return () => { alive = false; clearInterval(timer); subscription.remove(); };
-  }, [entry, expire, demo]);
+  }, [entry, expire]);
   async function run(action: () => Promise<void>) {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError('');
@@ -86,7 +96,7 @@ export default function App() {
     } catch { setError('O acesso foi bloqueado neste app, mas não foi possível apagar o armazenamento seguro. Tente sair novamente antes de compartilhar o aparelho.'); }
   }
   if (!fonts && !fontError) return <SafeAreaProvider><View style={{ flex: 1, justifyContent: 'center', backgroundColor: light.canvas }}><ActivityIndicator accessibilityLabel="Carregando fontes" color={light.action} /></View></SafeAreaProvider>;
-  return <SafeAreaProvider>{demo ? <MobileApp onExit={() => setDemo(false)} /> : entry?.kind === 'active' ? <MobileApp key={`${entry.context.type}:${entry.context.type === 'agency' ? entry.context.agencyId : entry.context.clientId}`} context={entry.context} onExit={logout} onContext={async () => { setEntry(await listContexts(api)); }} /> : <ThemeContext.Provider value={light}><SafeAreaView style={[styles.page, { backgroundColor: light.canvas }]}>
+  return <SafeAreaProvider>{accountLink ? <SafeAreaView style={{ flex: 1, backgroundColor: light.canvas }}><AccountAction key={`${accountLink.kind}:${accountLink.token}`} link={accountLink} onDone={async (preferred) => { await resolve(preferred); setAccountLink(null); }} onClose={() => { setAccountLink(null); expire(); if (!browserPreview) void restore(); }} /></SafeAreaView> : entry?.kind === 'active' ? <MobileApp key={`${entry.context.type}:${entry.context.type === 'agency' ? entry.context.agencyId : entry.context.clientId}`} context={entry.context} onExit={logout} onContext={async () => { setEntry(await listContexts(api)); }} /> : <ThemeContext.Provider value={light}><SafeAreaView style={[styles.page, { backgroundColor: light.canvas }]}>
     <StatusBar style={t === dark ? 'light' : 'dark'} />
     {!fonts && !fontError || restoring ? <View style={[styles.body, { justifyContent: 'center' }]}><ActivityIndicator accessibilityLabel="Abrindo Ageniza" color={t.action} /></View> : <>
       {entry && <View style={{ paddingHorizontal: space.xl, paddingVertical: space.md, gap: space.md, borderBottomWidth: 1, borderColor: t.border }}>
@@ -94,7 +104,7 @@ export default function App() {
         <View style={styles.row}>{active && <View style={{ flex: 1 }}><Button secondary disabled={busy} label="Trocar acesso" onPress={() => void run(async () => { const next = await listContexts(api); setEntry(next); })} /></View>}<View style={{ flex: 1 }}><Button secondary label="Sair" busy={busy} onPress={() => void run(logout)} /></View></View>
       </View>}
       {error && <ScrollView style={{ maxHeight: 120 }} contentContainerStyle={{ padding: space.lg }}><Notice message={error} /></ScrollView>}
-      {restoreFailure ? <View style={styles.body}><Copy title>Vamos recuperar seu acesso</Copy><Notice message={restoreFailure} /><Button label="Tentar novamente" onPress={() => void restore()} /><Button secondary label="Sair deste aparelho" onPress={() => void logout()} /></View> : !entry ? <Login onLogin={resolve} onDemo={() => setDemo(true)} /> : <EntryScreen key={entry.kind} entry={entry} busy={busy} onSelect={select} onContinue={resolve} />}
+      {restoreFailure ? <View style={styles.body}><Copy title>Vamos recuperar seu acesso</Copy><Notice message={restoreFailure} /><Button label="Tentar novamente" onPress={() => void restore()} /><Button secondary label="Sair deste aparelho" onPress={() => void logout()} /></View> : !entry ? <Login onLogin={resolve} onLink={setAccountLink} /> : <EntryScreen key={entry.kind} entry={entry} busy={busy} onSelect={select} onContinue={resolve} onLink={setAccountLink} />}
     </>}
   </SafeAreaView></ThemeContext.Provider>}</SafeAreaProvider>;
 }
