@@ -18,7 +18,8 @@
 
 **Consequência.**
 
-- Migration `20261104000100_content_folder_move_inherits_media`: três funções no banco (`folder_media_for`, `inherit_content_media`, `move_content_folder`). A troca de pasta passa a ser uma operação só no banco, que bloqueia na mesma ordem das demais (cliente, conteúdo, mídia) e não cria deadlock com a remoção de mídia.
+- Migration `20261104000100_content_folder_move_inherits_media`: três funções no banco (`folder_media_for`, `inherit_content_media`, `move_content_folder`). A troca de pasta passa a ser uma operação só no banco, que bloqueia na mesma ordem das demais (cliente, conteúdo, mídia). Uma corrida com a remoção de mídia ainda pode dar deadlock (`40P01`), e isso foi observado com um `PATCH` que nomeia a mesma pasta e uma lista com a mídia que a remoção está soltando: a pessoa recebe "tente de novo" (`409 TRY_AGAIN`) e nenhum dado fica errado.
+- Migration `20261104000200_contents_folder_id_not_updatable`: a coluna `folder_id` deixa de ser gravável pelo papel da aplicação; só `move_content_folder` (que é `security definer`) a grava.
 - A API deixa de aceitar `folderId` pelo caminho de colunas do `PATCH`: a troca vai pela função. O `POST` aceita `mediaAssetIds` (e herda quando ele não vem).
 - Uma troca de pasta em conteúdo com mídia soma 1 ou 2 à revisão; um conteúdo criado com mídia nasce na revisão 2.
 - Troca de formato com a lista vazia na tela volta a herdar da pasta.
