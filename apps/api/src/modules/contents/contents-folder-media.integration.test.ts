@@ -220,6 +220,17 @@ describe('the folder of a content changes, with its media', () => {
     await expectUntouched(s, before);
   });
 
+  it('does not blame the folder when the folder asked is the one the content already has', async () => {
+    const s = await scene({ format: 'carousel', status: 'awaiting_approval' });
+    const before = await w.contentRow(s.contentId);
+
+    const reply = await patch(s.contentId, { folderId: s.from, mediaAssetIds: [s.oldAssets[0]!] });
+
+    expectRefused(reply, 409, 'CONTENT_MEDIA_INCOMPLETE');
+    expect(reply.json().error.message).toMatch(/não cobre este formato/);
+    await expectUntouched(s, before);
+  });
+
   it('writes nothing of the other fields when the move is refused', async () => {
     const s = await scene({ format: 'carousel', status: 'awaiting_approval' });
     const before = await w.contentRow(s.contentId);
