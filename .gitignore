@@ -10,3 +10,5 @@ coverage/
 .DS_Store
 .expo/
 web-dist/
+web-dist-v2/
+native-dist-v2/

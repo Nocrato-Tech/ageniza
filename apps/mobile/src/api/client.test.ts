@@ -16,6 +16,17 @@ function memory() {
 const json = (body: unknown, status = 200, headers?: Record<string, string>) => new Response(JSON.stringify(body), { status, headers });
 
 describe('native API transport', () => {
+  it('preserves the secure session cookie name when persisting and reopening the transport', async () => {
+    const storage = memory();
+    const secureCookie = '__Secure-ageniza.session_token=test-only';
+    const secureCodec = { getCookie: (value: string | null) => value ?? '', getSetCookie: (header: string) => header.split(';')[0], hasBetterAuthCookies: (header: string, prefix: string) => header.startsWith(`__Secure-${prefix}.`) };
+    const first = vi.fn<typeof fetch>().mockResolvedValue(json({}, 200, { 'set-cookie': `${secureCookie}; Path=/; HttpOnly; Secure; Max-Age=3600` }));
+    await createApiClient('https://dev.ageniza.com.br/api', storage, true, secureCodec, first).request('/auth/login', { method: 'POST', body: {} });
+    expect(await storage.get()).toBe(secureCookie);
+    const reopened = vi.fn<typeof fetch>().mockResolvedValue(json({}));
+    await createApiClient('https://dev.ageniza.com.br/api', storage, true, secureCodec, reopened).request('/auth/session');
+    expect(new Headers(reopened.mock.calls[0][1]?.headers).get('Cookie')).toBe(secureCookie);
+  });
   it('stores the session cookie and returns it without a browser Origin', async () => {
     const storage = memory();
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json({}, 200, { 'set-cookie': 'ageniza.session_token=secret; Path=/; HttpOnly; Max-Age=3600' })).mockResolvedValueOnce(json({ ok: true }));

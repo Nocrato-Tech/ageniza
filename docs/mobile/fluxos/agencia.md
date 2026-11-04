@@ -347,3 +347,7 @@ Colaboradores são ilimitados, e o portal do cliente é grátis. Os extras são 
 - O pagamento atrasado tem **3 dias de tolerância**. Cancelar durante a tolerância leva direto ao modo leitura.
 - Chame sempre `quote` antes de `charges`, para mostrar o valor à pessoa.
 - A renovação automática da assinatura ainda está em desenvolvimento.
+
+## Cliente Expo
+
+A interface nativa reúne carteira, lista/kanban/calendário, criação/edição em três etapas, biblioteca de mídias, tarefas e conversas. As operações seguem as rotas e condições deste documento. A prévia web usa um repositório local de demonstração separado da sessão real; veja [interface mobile](../interface-mobile.md).
