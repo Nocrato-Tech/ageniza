@@ -5757,13 +5757,13 @@ html:has(.portal-post__bar) {
   font: var(--caption);
 }
 
-/* A tag wraps its words inside a card as narrow as a day. */
+/* A tag wraps between its words (never inside one) in a card as narrow as a day. */
 .content-card .ui-format-tag,
 .content-card .ui-status-tag,
 .content-card .ui-late-badge {
-  min-width: 0;
+  min-width: min-content;
   padding: 0 var(--space-1);
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   white-space: normal;
 }
 
