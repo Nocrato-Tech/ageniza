@@ -8,8 +8,9 @@ import { validateInput } from './validation';
 import type { Data, Post, PostInput, Repository } from './types';
 import { monthPeriod } from '../contents/period';
 
-export function ContentEditor({ data, repository, clientId, existing, busy, onSave, onError, onRefresh }: { data: Data; repository: Repository; clientId: string; existing?: Post; busy: boolean; onSave(input: PostInput, id?: string): Promise<void>; onError(message: string): void; onRefresh(): Promise<void> }) {
+export function ContentEditor({ data, repository, clientId, existing, busy, onSave, onError, onRefresh }: { data: Data; repository: Repository; clientId: string; existing?: Post; busy: boolean; onSave(input: PostInput, id?: string, onCreated?: (id: string) => void): Promise<void>; onError(message: string): void; onRefresh(): Promise<void> }) {
   const [step, setStep] = useState(0);
+  const [createdId, setCreatedId] = useState<string>();
   const [input, setInput] = useState<PostInput>(() => existing ? { ...existing } : { clientId: clientId || data.clients[0]?.id || '', title: '', caption: '', format: 'reels', date: monthPeriod().from, time: '18:00', ownerId: data.people[0]?.id ?? '', folderId: data.folders.find((folder) => folder.clientId === (clientId || data.clients[0]?.id))?.id ?? '', mediaIds: [], coverId: null });
   const update = <K extends keyof PostInput>(key: K, value: PostInput[K]) => setInput((current) => ({ ...current, [key]: value }));
   const client = data.clients.find((item) => item.id === input.clientId);
@@ -29,7 +30,7 @@ export function ContentEditor({ data, repository, clientId, existing, busy, onSa
       {!libraryLoading && !library.folders.some((folder) => folder.clientId === input.clientId) && <Action plain label="Recarregar biblioteca" onPress={() => setLibraryRetry((value) => value + 1)} />}
       {step === 0 && <>
         <Heading title="Dê forma à próxima ideia" subtitle="Escolha o cliente e o formato." />
-        {existing ? <Info title="Cliente do conteúdo" text={client?.name} /> : <Selector label="Cliente *" value={input.clientId} options={data.clients.map((item) => ({ id: item.id, label: item.name }))} onChange={(id) => setInput((current) => ({ ...current, clientId: id, folderId: '', mediaIds: [], coverId: null }))} />}
+        {existing || createdId ? <Info title="Cliente do conteúdo" text={client?.name} /> : <Selector label="Cliente *" value={input.clientId} options={data.clients.map((item) => ({ id: item.id, label: item.name }))} onChange={(id) => setInput((current) => ({ ...current, clientId: id, folderId: '', mediaIds: [], coverId: null }))} />}
         <Field label="Título interno *" placeholder="Como vamos chamar este conteúdo?" value={input.title} onChangeText={(value) => update('title', value)} maxLength={120} />
         <Txt kind="small" color={colors.muted}>Esse título organiza o trabalho da agência.</Txt>
         <Selector label="Formato da publicação" options={[{ id: 'image', label: 'Post com imagem' }, { id: 'carousel', label: 'Carrossel' }, { id: 'reels', label: 'Reel' }, { id: 'long_video', label: 'Vídeo longo' }, { id: 'vsl', label: 'VSL' }]} value={input.format} onChange={(id) => update('format', id as ContentFormat)} />
@@ -47,8 +48,9 @@ export function ContentEditor({ data, repository, clientId, existing, busy, onSa
         <Field label="Horário (HH:MM)" value={input.time} onChangeText={(value) => update('time', value)} placeholder="18:00" />
         <Info title="Tudo pronto para conferir" text="Você poderá salvar em produção e enviar para aprovação depois de concluir as tarefas." />
       </>}
+      {createdId && <Info title="Conteúdo já criado" text="Se o envio das mídias ou a atualização falhar, salve novamente para completar este mesmo conteúdo." />}
       {step === 2 && <><Heading title="Prévia no Instagram" subtitle="Confira a mídia, a legenda e a data." />{client && <InstagramPreview post={preview} client={client} assets={library.assets} repository={repository} />}<Info title="A aprovação vem antes da publicação" text="Salvar mantém o conteúdo em produção. O envio para aprovação fica no detalhe do conteúdo." /></>}
     </ScrollView></ScreenMotion>
-    <View style={{ padding: 20, gap: 4, backgroundColor: colors.surface, borderTopWidth: 1, borderColor: colors.border }}><Action label={step < 2 ? step === 0 ? 'Continuar para conteúdo' : 'Conferir prévia' : existing ? 'Salvar alterações' : 'Criar conteúdo'} busy={busy || picking || libraryLoading} onPress={() => step < 2 ? next() : void onSave(input, existing?.id)} />{step > 0 && <Action plain label="Voltar uma etapa" onPress={() => setStep(step - 1)} />}</View>
+    <View style={{ padding: 20, gap: 4, backgroundColor: colors.surface, borderTopWidth: 1, borderColor: colors.border }}><Action label={step < 2 ? step === 0 ? 'Continuar para conteúdo' : 'Conferir prévia' : existing || createdId ? 'Salvar alterações' : 'Criar conteúdo'} busy={busy || picking || libraryLoading} onPress={() => step < 2 ? next() : void onSave(input, existing?.id ?? createdId, setCreatedId)} />{step > 0 && <Action plain label="Voltar uma etapa" onPress={() => setStep(step - 1)} />}</View>
   </>;
 }

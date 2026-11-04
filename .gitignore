@@ -18,3 +18,5 @@ native-dist-v2/
 /apps/mobile/android/
 /apps/mobile/ios/
 /apps/mobile/launch-dist/
+
+/apps/mobile/web-online-dist/

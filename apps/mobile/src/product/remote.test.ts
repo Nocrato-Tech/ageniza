@@ -8,6 +8,21 @@ const agencyId = '33333333-3333-4333-8333-333333333333';
 const post: Post = { id: contentId, clientId, title: 'Post', caption: 'Legenda', date: '2026-11-12', time: '', format: 'image', status: 'awaiting_approval', revision: 7, ownerId: '', folderId: '', coverId: null, mediaIds: [], comments: [], tasks: [] };
 function client(request: ReturnType<typeof vi.fn>): ApiClient { return { request, clearSession: async () => {}, onExpired: () => {}, onAccessRequired: () => {} } as ApiClient; }
 describe('real API adapter boundaries', () => {
+  it('reports the created id before a later media attachment fails, allowing a PATCH retry', async () => {
+    const mediaId = '44444444-4444-4444-8444-444444444444';
+    const input = { ...post, folderId: clientId, coverId: null, mediaIds: [mediaId] };
+    const request = vi.fn().mockResolvedValueOnce({ id: contentId }).mockRejectedValueOnce(new Error('network'));
+    const repo = remoteRepository(client(request), { type: 'agency', agencyId, agencyName: 'Agência', roleKey: 'admin', roleName: 'Admin', isOwner: false });
+    const created = vi.fn();
+    await expect(repo.save(input, undefined, created)).rejects.toThrow('network');
+    expect(created).toHaveBeenCalledExactlyOnceWith(contentId);
+    expect(created.mock.invocationCallOrder[0]).toBeLessThan(request.mock.invocationCallOrder[1]);
+    request.mockImplementation(async (path: string) => path.includes('/threads') ? { data: [], meta: { totalPages: 1 } } : path.includes('media-folders') ? { data: [], meta: { totalPages: 1 } } : { ...post, folderId: clientId, publishOn: post.date, media: [], tasks: [] });
+    await repo.save(input, contentId, created);
+    expect(request.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(1);
+    expect(request.mock.calls[2]).toEqual([`/agencies/${agencyId}/clients/${clientId}/contents/${contentId}`, { method: 'PATCH', body: expect.objectContaining({ mediaAssetIds: [mediaId] }) }]);
+  });
+
   it('keeps client decisions scoped to the portal, with the revision read', async () => {
     const request = vi.fn().mockImplementation(async (path: string) => path.includes('/threads') ? { data: [], meta: { totalPages: 1 } } : { id: contentId, title: 'Post', format: 'image', status: 'approved', publishOn: '2026-11-12', caption: 'Legenda', revision: 7, media: [], coverAssetId: null });
     const repo = remoteRepository(client(request), { type: 'client', clientId, clientName: 'Clínica', agencyId, agencyName: 'Agência', onboardingPending: false });

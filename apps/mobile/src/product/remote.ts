@@ -54,10 +54,11 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
       if (agency || post.status !== 'in_production') { const threads = await all<{ id: string }>(`${base(clientId)}/threads?contentId=${id}`); for (const thread of threads) { const comments = await all<{ id: string; body: string; side: 'agency' | 'client'; author: { name: string } | null; createdAt: string }>(`${base(clientId)}/threads/${thread.id}/comments`); post.comments.push(...comments.map((comment): Comment => ({ ...comment, name: comment.author?.name ?? 'Agência' }))); } }
       return post;
     },
-    save: async (input: PostInput, id) => {
+    save: async (input: PostInput, id, onCreated) => {
       agencyOnly();
       const fields = { title: input.title, format: input.format, publishOn: input.date, publishAtTime: input.time || null, caption: input.caption, folderId: input.folderId, coverAssetId: input.coverId, ...(input.ownerId ? { ownerMembershipId: input.ownerId } : {}) };
       const value = await api.request<ContentDetail>(`${base(input.clientId)}/contents${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', body: id ? UpdateContentRequestSchema.parse({ ...fields, mediaAssetIds: input.mediaIds }) : CreateContentRequestSchema.parse(fields) });
+      if (!id) onCreated?.(value.id);
       if (!id && input.mediaIds.length) await api.request(`${base(input.clientId)}/contents/${value.id}`, { method: 'PATCH', body: UpdateContentRequestSchema.parse({ mediaAssetIds: input.mediaIds }) });
       return repo.detail(input.clientId, value.id);
     },

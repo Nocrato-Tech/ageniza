@@ -62,7 +62,7 @@ export function MobileApp({ context, onExit, onContext }: { context: Context; on
   async function openPost(item: Post) { await run(async () => { const detail = await repository.detail(item.clientId, item.id); setPost(detail); navigate('detail'); }); }
   async function updatePost(action: () => Promise<Post>) { return run(async () => { const next = await action(); setPost(next); await refresh(); setNotice('Alterações salvas.'); }); }
   async function move(action: Move, comment?: string, date?: string) { if (!post) return; await updatePost(() => repository.move(post, action, comment, date)); }
-  async function save(input: PostInput, id?: string) { await run(async () => { const next = await repository.save(input, id); setPost(next); await refresh(); navigate('detail'); setNotice('Conteúdo salvo.'); }); }
+  async function save(input: PostInput, id?: string, onCreated?: (id: string) => void) { await run(async () => { const next = await repository.save(input, id, onCreated); setPost(next); await refresh(); navigate('detail'); setNotice('Conteúdo salvo.'); }); }
   const selectedClient = data?.clients.find((client) => client.id === clientId) ?? (side === 'client' ? data?.clients[0] : undefined);
   const effectiveClientId = side === 'client' ? selectedClient?.id : clientId;
   const has = (permission: string) => !!data && (data.permissions.includes('*') || data.permissions.includes(permission));

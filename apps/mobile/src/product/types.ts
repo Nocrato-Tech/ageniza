@@ -17,7 +17,7 @@ export interface Repository {
   context?: Context;
   load(from: string, to: string): Promise<Data>;
   detail(clientId: string, id: string): Promise<Post>;
-  save(input: PostInput, id?: string): Promise<Post>;
+  save(input: PostInput, id?: string, onCreated?: (id: string) => void): Promise<Post>;
   move(post: Post, action: Move, comment?: string, date?: string): Promise<Post>;
   task(post: Post, task: Task, action: 'deliver' | 'approve' | 'return', comment?: string): Promise<Post>;
   addTask(post: Post, input: Omit<Task, 'id' | 'status'>): Promise<Post>;

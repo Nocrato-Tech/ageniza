@@ -4,6 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { ReactNode } from 'react';
 
 const request = vi.hoisted(() => vi.fn());
+const pick = vi.hoisted(() => vi.fn());
+vi.mock('expo-document-picker', () => ({ getDocumentAsync: pick }));
 vi.mock('../api/runtime', () => ({ api: { request }, browserPreview: false, webUrl: 'https://dev.ageniza.com.br' }));
 vi.mock('react-native', async () => Object.fromEntries(await Promise.all(['View', 'Text', 'TextInput', 'Pressable', 'ScrollView', 'StyleSheet', 'Image', 'Modal', 'Platform', 'Animated', 'Easing', 'AccessibilityInfo', 'Switch', 'KeyboardAvoidingView', 'ActivityIndicator', 'Linking'].map(async (name) => [name, (await vi.importActual<{ default: unknown }>(`react-native-web/dist/exports/${name}/index.js`)).default]))));
 vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({ addListener: () => ({ remove() {} }) }) }));
@@ -15,9 +17,12 @@ vi.mock('react-native-svg', async () => {
 import { TeamScreen } from './TeamScreen';
 import { ClientAccess } from './ClientAccess';
 import { BrandStudy } from './BrandStudy';
+import { ClientPhoto } from './ClientPhoto';
+import { ContentEditor } from '../product/ContentEditor';
+import type { Data, Repository } from '../product/types';
 
 beforeEach(() => {
-  request.mockReset();
+  request.mockReset(); pick.mockReset();
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) });
 });
 afterEach(cleanup);
@@ -62,5 +67,68 @@ describe('management permissions and mutation targets', () => {
     await waitFor(() => expect(request.mock.calls.some(([path]) => String(path).includes('/clients/client-one/threads?sectionKey=branding'))).toBe(true));
     expect(screen.queryByRole('button', { name: 'Enviar mensagem' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Editar Identidade da marca' })).toBeNull();
+  });
+});
+
+
+describe('client photo boundaries', () => {
+  const root = '/agencies/agency-one/clients/client-two';
+  it('does not expose photo mutations to a viewer', () => {
+    render(<ClientPhoto root={root} name="Marca" photoUrl={null} editable={false} onChanged={async () => {}} />);
+    expect(screen.queryByRole('button', { name: 'Alterar foto do cliente' })).toBeNull();
+    expect(request).not.toHaveBeenCalled();
+  });
+  it('does not mutate when the picker is cancelled or the image exceeds the limit', async () => {
+    pick.mockResolvedValueOnce({ canceled: true }).mockResolvedValueOnce({ canceled: false, assets: [{ size: 10 * 1024 * 1024 + 1 }] });
+    render(<ClientPhoto root={root} name="Marca" photoUrl={null} editable onChanged={async () => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Alterar foto do cliente' }));
+    await waitFor(() => expect(pick).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Alterar foto do cliente' }).getAttribute('aria-disabled')).not.toBe('true'));
+    fireEvent.click(screen.getByRole('button', { name: 'Alterar foto do cliente' }));
+    expect(await screen.findByText('Escolha uma imagem de até 10 MB.')).toBeTruthy();
+    expect(request).not.toHaveBeenCalled();
+  });
+  it('uploads only to the selected client and distinguishes a failed reload from a failed write', async () => {
+    pick.mockResolvedValue({ canceled: false, assets: [{ file: new File(['image'], 'cover.png', { type: 'image/png' }), size: 5 }] });
+    request.mockResolvedValue({});
+    const changed = vi.fn().mockRejectedValue(new Error('offline'));
+    render(<ClientPhoto root={root} name="Marca" photoUrl={null} editable onChanged={changed} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Alterar foto do cliente' }));
+    expect(await screen.findByText('A foto foi atualizada no servidor. Atualize o cadastro para recarregar a imagem.')).toBeTruthy();
+    expect(request).toHaveBeenCalledExactlyOnceWith(`${root}/photo`, { method: 'PUT', body: { imageBase64: 'aW1hZ2U=' } });
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+  it('requires confirmation and does not delete a different client photo', async () => {
+    request.mockResolvedValue({});
+    render(<ClientPhoto root={root} name="Marca" photoUrl="https://example.test/photo.png" editable onChanged={async () => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remover foto do cliente' }));
+    expect(request).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Manter foto' }));
+    expect(request).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Remover foto do cliente' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar remoção da foto' }));
+    await waitFor(() => expect(request).toHaveBeenCalledExactlyOnceWith(`${root}/photo`, { method: 'DELETE' }));
+  });
+});
+
+describe('content editor recovery', () => {
+  it('retries an already created draft by its server id instead of creating it again', async () => {
+    const clientId = '11111111-1111-4111-8111-111111111111';
+    const folderId = '22222222-2222-4222-8222-222222222222';
+    const contentId = '33333333-3333-4333-8333-333333333333';
+    const data: Data = { version: 2, clients: [{ id: clientId, name: 'Marca', handle: '' }], people: [], posts: [], activities: [], profile: { name: 'Pessoa', agency: 'Agência' }, permissions: [], readOnly: false, assets: [], folders: [{ id: folderId, clientId, name: 'Publicações' }] };
+    const repository = { library: async () => ({ folders: data.folders, assets: [] }) } as unknown as Repository;
+    const save = vi.fn(async (_input, _id, created) => { created?.(contentId); });
+    render(<ContentEditor data={data} repository={repository} clientId={clientId} busy={false} onSave={save} onError={() => {}} onRefresh={async () => {}} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Título interno *' }), { target: { value: 'Conteúdo real' } });
+    await waitFor(() => expect(screen.queryByText('Carregando biblioteca…')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar para conteúdo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir prévia' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Criar conteúdo' }));
+    expect(await screen.findByText('Conteúdo já criado')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save.mock.calls[0][1]).toBeUndefined();
+    expect(save.mock.calls[1][1]).toBe(contentId);
   });
 });
