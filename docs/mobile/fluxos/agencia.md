@@ -132,7 +132,8 @@ stateDiagram-v2
 
 | método | rota | permissão | o que faz |
 |---|---|---|---|
-| `GET` | `…/clients/:clientId/contents` | `conteudo.visualizar` | conteúdos e roteiros de um período (calendário e feed) |
+| `GET` | `…/clients/:clientId/contents` | `conteudo.visualizar` | conteúdos e roteiros de um período (calendário e feed em tela cheia) |
+| `GET` | `…/clients/:clientId/contents/feed?cursor=` | `conteudo.visualizar` | o feed inteiro do cliente (image, carousel e reels não cancelados), do mais recente ao mais antigo, 9 por página por cursor, com os contadores do feed inteiro |
 | `POST` | `…/clients/:clientId/contents` | `conteudo.operar` | cria, em produção |
 | `GET` | `…/clients/:clientId/contents/:contentId` | `conteudo.visualizar` | detalhe com as mídias, as subtarefas e a conversa |
 | `PATCH` | `…/clients/:clientId/contents/:contentId` | `conteudo.operar` | edita; mudar a data é editar `publishOn` |
