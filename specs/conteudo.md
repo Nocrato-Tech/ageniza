@@ -92,7 +92,7 @@ O upload é do **conteúdo pronto**; o material bruto fica fora do sistema.
 | `published_on` | date | não | data real; não futura |
 | `cancelled_at` | timestamptz | não | |
 
-**Mídias do conteúdo — `content_media`:** `content_id`, `asset_id`, `position`. Imagem e cada vídeo: 1 item; carrossel: 2 a 20, imagem ou vídeo, ordenados. Só mídias da pasta do conteúdo.
+**Mídias do conteúdo — `content_media`:** `content_id`, `asset_id`, `position`. Imagem e cada vídeo: 1 item; carrossel: 2 a 20, imagem ou vídeo, ordenados. Só mídias da pasta do conteúdo. **A pasta é como um drive** (decisão de 2026-11-04, [`2026-11-04-a-pasta-e-como-um-drive-...`](../docs/business/decisions/2026-11-04-a-pasta-e-como-um-drive-o-conteudo-herda-a-midia-e-troca-de-pasta.md)): ao escolher a pasta o conteúdo herda, uma vez, a mídia que serve ao formato; mídia que entra na pasta depois não entra sozinha; trocar a pasta é permitido e substitui a lista e a capa (a capa volta a nenhuma), com o efeito da troca de mídia sobre a aprovação; a pasta nova vazia deixa um conteúdo em produção sem mídia e é recusada (`CONTENT_MEDIA_INCOMPLETE`) para um que aguarda ou está aprovado. Isso substitui a trava de pasta (`CONTENT_FOLDER_IN_USE`) e o envio só pela visão Pastas.
 
 **Pertence a:** cliente.
 **Relações:** N conteúdos por cliente; 1 pasta por conteúdo; N mídias ordenadas; N subtarefas; 1 conversa.

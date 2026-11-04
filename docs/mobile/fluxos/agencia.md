@@ -277,6 +277,7 @@ sequenceDiagram
 - Só imagem e vídeo; outros tipos recebem `415 UNSUPPORTED_MEDIA_TYPE`.
 - A mídia conta na cota da agência (`409 QUOTA_EXCEEDED`).
 - Um conteúdo só usa mídias da pasta do próprio cliente.
+- Escolher a pasta dá ao conteúdo a mídia que serve ao formato (carrossel: toda, até 20; os outros: a primeira), uma vez; mídia nova na pasta não entra em conteúdo existente. Trocar a pasta é permitido e substitui a mídia e a capa: o aprovado volta para "aguardando aprovação", e o app confirma antes. Pasta vazia deixa o conteúdo sem mídia; um conteúdo que aguarda ou está aprovado recusa a troca (`CONTENT_MEDIA_INCOMPLETE`). O envio de arquivo na criação do conteúdo vai para a pasta e entra no conteúdo. `CONTENT_FOLDER_IN_USE` não existe mais.
 - Mídia usada em conteúdo aguardando aprovação, aprovado ou publicado não pode ser removida.
 
 ## Equipe
