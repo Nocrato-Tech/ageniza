@@ -98,7 +98,8 @@ export const ContentApproverSchema = z.object({
 
 /**
  * Body of `POST .../contents`. The state is not a field: a content is born in production, and the person in charge
- * (`ownerMembershipId`, an active link of a collaborator of the agency) defaults to who creates it.
+ * (`ownerMembershipId`, an active link of a collaborator of the agency) defaults to who creates it. The media is what the
+ * folder holds and the format takes (newest first) unless `mediaAssetIds` names the whole ordered list.
  */
 export const CreateContentRequestSchema = z.object({
   title: ContentTitleSchema,
@@ -109,13 +110,15 @@ export const CreateContentRequestSchema = z.object({
   caption: ContentCaptionSchema.nullable().optional(),
   folderId: z.string().uuid(),
   coverAssetId: z.string().uuid().nullable().optional(),
-  ownerMembershipId: z.string().uuid().optional()
+  ownerMembershipId: z.string().uuid().optional(),
+  mediaAssetIds: MediaAssetIdsSchema.optional()
 }).strict();
 
 /**
  * Body of `PATCH .../contents/:contentId`: any subset, and moving the date is just `publishOn`. `ownerMembershipId`
  * is a separate permission, and `mediaAssetIds` is the whole ordered list (never a delta), written in the same
- * transaction as the format so one request changes both.
+ * transaction as the format so one request changes both. A new `folderId` replaces the list and the cover by what the new
+ * folder holds, or by `mediaAssetIds` when the same request names it.
  */
 export const UpdateContentRequestSchema = z.object({
   title: ContentTitleSchema.optional(),

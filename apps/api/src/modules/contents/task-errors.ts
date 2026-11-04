@@ -55,7 +55,7 @@ export const translateTaskError = (error: unknown, action: TaskAction): HttpErro
     case '23503':
       return (error as { constraint?: unknown }).constraint === 'content_tasks_assignee_user_id_fkey'
         ? taskAssigneeInvalid()
-        : translateDatabaseError(error, { folderMoveKeepsCover: false });
-    default: return translateDatabaseError(error, { folderMoveKeepsCover: false });
+        : translateDatabaseError(error, { movesFolder: false });
+    default: return translateDatabaseError(error, { movesFolder: false });
   }
 };

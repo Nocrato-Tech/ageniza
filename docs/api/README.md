@@ -2391,7 +2391,7 @@ Edita um conteúdo; mover de data é editar `publishOn`.
 }
 ```
 
-**Erros:** `400 CONTENT_FOLDER_INVALID` · `400 CONTENT_MEDIA_INVALID` · `400 CONTENT_OWNER_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_FOLDER_IN_USE` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_NOT_EDITABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_FOLDER_INVALID` · `400 CONTENT_MEDIA_INVALID` · `400 CONTENT_OWNER_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_NOT_EDITABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/submit`
 
@@ -4666,7 +4666,6 @@ Avança o relógio da assinatura simulada (só fora de produção).
 | `CONTENT_MEDIA_INCOMPLETE` | A mídia do conteúdo não cobre este formato. Para trocar entre carrossel e formato de uma mídia só depois do envio para aprovação, cancele e reagende o conteúdo. |
 | `CONTENT_MEDIA_INVALID` | A mídia ou a capa escolhida não pode ser usada neste conteúdo. |
 | `CONTENT_FOLDER_INVALID` | A pasta escolhida não é uma pasta deste cliente. |
-| `CONTENT_FOLDER_IN_USE` | A pasta não muda enquanto o conteúdo tem mídia ou capa. |
 | `CONTENT_OWNER_INVALID` | O responsável precisa ser um colaborador ativo que vê Conteúdo. |
 | `CONTENT_STATE` | O conteúdo não está no estado que esta ação exige. |
 | `CONTENT_REVISION_CHANGED` | O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. |

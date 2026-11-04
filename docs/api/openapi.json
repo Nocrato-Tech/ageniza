@@ -1984,6 +1984,14 @@
           "ownerMembershipId": {
             "type": "string",
             "format": "uuid"
+          },
+          "mediaAssetIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 20
           }
         },
         "required": [
@@ -10318,7 +10326,7 @@
       "post": {
         "operationId": "createContent",
         "summary": "Cria um conteúdo em produção",
-        "description": "Exige `conteudo.operar` e também `conteudo.visualizar`. O conteúdo nasce em produção; o estado\nnão é campo do corpo. `platform` é `instagram` e é o padrão. O responsável é quem cria, a não ser\nque `ownerMembershipId` nomeie o vínculo ativo de outro colaborador da agência que veja Conteúdo (`400 CONTENT_OWNER_INVALID`\npara vínculo removido, de outra agência, do portal ou que não existe). A resposta traz o responsável como `owner: { membershipId, name }`\n(`null` para quem não tem vínculo com a agência). Nenhuma rota de conteúdo devolve o id de usuário de ninguém: quem aprovou vem como\n`approvedBy: { name, side }` (`agency` ou `client`) e o responsável de uma subtarefa como `assignee: { membershipId, name }`.\nA pasta e a capa são do próprio cliente (`400 CONTENT_FOLDER_INVALID`, `400 CONTENT_MEDIA_INVALID`).\nTítulo de uma linha até 120 caracteres e legenda até 2.200 caracteres recusam caractere de\ncontrole e invisível. Cliente arquivado responde `409 CLIENT_ARCHIVED`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "description": "Exige `conteudo.operar` e também `conteudo.visualizar`. O conteúdo nasce em produção; o estado\nnão é campo do corpo. `platform` é `instagram` e é o padrão. O responsável é quem cria, a não ser\nque `ownerMembershipId` nomeie o vínculo ativo de outro colaborador da agência que veja Conteúdo (`400 CONTENT_OWNER_INVALID`\npara vínculo removido, de outra agência, do portal ou que não existe). A resposta traz o responsável como `owner: { membershipId, name }`\n(`null` para quem não tem vínculo com a agência). Nenhuma rota de conteúdo devolve o id de usuário de ninguém: quem aprovou vem como\n`approvedBy: { name, side }` (`agency` ou `client`) e o responsável de uma subtarefa como `assignee: { membershipId, name }`.\nA pasta e a capa são do próprio cliente (`400 CONTENT_FOLDER_INVALID`, `400 CONTENT_MEDIA_INVALID`).\nO conteúdo usa a mídia da pasta: a que couber no formato, a mais nova primeiro (a primeira para imagem, vídeo curto e vídeo longo; até 20 para o carrossel),\na não ser que `mediaAssetIds` traga a lista inteira e ordenada. Pasta sem mídia deixa o conteúdo sem mídia.\nTítulo de uma linha até 120 caracteres e legenda até 2.200 caracteres recusam caractere de\ncontrole e invisível. Cliente arquivado responde `409 CLIENT_ARCHIVED`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
         "tags": [
           "contents"
         ],
@@ -10720,7 +10728,7 @@
       "patch": {
         "operationId": "updateContent",
         "summary": "Edita um conteúdo; mover de data é editar `publishOn`",
-        "description": "Qualquer subconjunto de `title`, `format`, `publishOn`, `publishAtTime` (`null` limpa),\n`caption`, `folderId`, `coverAssetId` e `ownerMembershipId` (o vínculo ativo do novo responsável); exige `conteudo.operar` e também\n`conteudo.visualizar`. Mudar a legenda, a capa ou o formato de um conteúdo aprovado o devolve\na `awaiting_approval` e sobe `revision`; mudar data, hora, título ou responsável mantém a aprovação.\nTrocar o responsável exige `conteudo.aprovar_pela_agencia` (`403` sem ela). `mediaAssetIds` é a lista\ninteira e ordenada das mídias, gravada na mesma transação, depois do formato: assim um conteúdo em\nprodução ou em ajuste troca de formato e de mídia numa só chamada. Depois do envio para aprovação, ir de\ncarrossel para formato de uma mídia só (ou o inverso) é `409 CONTENT_MEDIA_INCOMPLETE`: cancele e\nreagende. Conteúdo publicado ou cancelado responde `409 CONTENT_NOT_EDITABLE`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "description": "Qualquer subconjunto de `title`, `format`, `publishOn`, `publishAtTime` (`null` limpa),\n`caption`, `folderId`, `coverAssetId` e `ownerMembershipId` (o vínculo ativo do novo responsável); exige `conteudo.operar` e também\n`conteudo.visualizar`. Mudar a legenda, a capa ou o formato de um conteúdo aprovado o devolve\na `awaiting_approval` e sobe `revision`; mudar data, hora, título ou responsável mantém a aprovação.\nTrocar o responsável exige `conteudo.aprovar_pela_agencia` (`403` sem ela). `mediaAssetIds` é a lista\ninteira e ordenada das mídias, gravada na mesma transação, depois do formato: assim um conteúdo em\nprodução ou em ajuste troca de formato e de mídia numa só chamada. Depois do envio para aprovação, ir de\ncarrossel para formato de uma mídia só (ou o inverso) é `409 CONTENT_MEDIA_INCOMPLETE`: cancele e\nreagende. Trocar `folderId` troca a lista e a capa pelo que a pasta nova tem (a que couber no formato, a mais nova primeiro; a capa volta a nenhuma),\nou por `mediaAssetIds` quando a mesma chamada o traz; a capa pedida na mesma chamada vale. Um conteúdo aprovado volta a `awaiting_approval`; um que espera aprovação ou está aprovado não fica sem mídia:\numa pasta que não completa o formato responde `409 CONTENT_MEDIA_INCOMPLETE` e nada muda. Conteúdo publicado ou cancelado responde `409 CONTENT_NOT_EDITABLE`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
         "tags": [
           "contents"
         ],
@@ -10907,7 +10915,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_NOT_EDITABLE: Conteúdo publicado ou cancelado não pode ser editado. | CONTENT_MEDIA_INCOMPLETE: A mídia do conteúdo não cobre este formato. Para trocar entre carrossel e formato de uma mídia só depois do envio para aprovação, cancele e reagende o conteúdo. | CONTENT_FOLDER_IN_USE: A pasta não muda enquanto o conteúdo tem mídia ou capa. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_NOT_EDITABLE: Conteúdo publicado ou cancelado não pode ser editado. | CONTENT_MEDIA_INCOMPLETE: A mídia do conteúdo não cobre este formato. Para trocar entre carrossel e formato de uma mídia só depois do envio para aprovação, cancele e reagende o conteúdo. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {

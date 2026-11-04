@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { translateDatabaseError, type WriteContext } from './errors.js';
 
-const quiet: WriteContext = { folderMoveKeepsCover: false };
-const keepsCover: WriteContext = { folderMoveKeepsCover: true };
+const quiet: WriteContext = { movesFolder: false };
+const moving: WriteContext = { movesFolder: true };
 const failure = (code: string, constraint?: string): Error => Object.assign(new Error('database detail that never leaves'), { code, constraint });
 
 const answer = (error: unknown, context: WriteContext = quiet) => {
@@ -30,11 +30,18 @@ describe('the refusals of the database a content route answers by name (issue #2
   it.each([
     ['contents_folder_fk', quiet, 400, 'CONTENT_FOLDER_INVALID'],
     ['contents_cover_fk', quiet, 400, 'CONTENT_MEDIA_INVALID'],
-    ['contents_cover_fk', keepsCover, 409, 'CONTENT_FOLDER_IN_USE'],
-    ['content_media_content_fk', quiet, 409, 'CONTENT_FOLDER_IN_USE'],
     ['contents_owner_user_id_fkey', quiet, 400, 'CONTENT_OWNER_INVALID']
   ])('answers the foreign key %s by what it protects', (constraint, context, status, name) => {
     expect(answer(failure('23503', constraint), context)).toEqual({ status, code: name });
+  });
+
+  it('words an incomplete list by what moved: the same code, the sentence of the folder while the folder moves', () => {
+    const plain = translateDatabaseError(failure('A0065'), quiet);
+    const moved = translateDatabaseError(failure('A0065'), moving);
+    expect([plain?.statusCode, plain?.code]).toEqual([409, 'CONTENT_MEDIA_INCOMPLETE']);
+    expect([moved?.statusCode, moved?.code]).toEqual([409, 'CONTENT_MEDIA_INCOMPLETE']);
+    expect(moved?.message).toMatch(/pasta/);
+    expect(plain?.message).not.toBe(moved?.message);
   });
 
   it('leaves a foreign key it does not know, a row-level refusal and any other failure to the caller', () => {

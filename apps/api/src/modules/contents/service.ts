@@ -266,7 +266,7 @@ export const contentFromRow = (row: ContentRow): Content => ({
 /** The owner is omitted, never sent as null, so the column default (who creates) applies. */
 export const insertContent = async (
   transaction: ContentTransaction,
-  input: { readonly clientId: string; readonly body: Omit<CreateContentRequest, 'ownerMembershipId'>; readonly ownerUserId: string | undefined }
+  input: { readonly clientId: string; readonly body: Omit<CreateContentRequest, 'ownerMembershipId' | 'mediaAssetIds'>; readonly ownerUserId: string | undefined }
 ): Promise<string> => {
   const { body } = input;
   const result = await raw<RawRows<{ id: string }>>(transaction, `
@@ -284,9 +284,10 @@ export const insertContent = async (
 
 /**
  * What a PATCH writes into the row: the body without the link that names the owner, and the user that link resolved to. The route
- * resolves the link, because the column holds a user and no caller is given one.
+ * resolves the link, because the column holds a user and no caller is given one. The folder is no column to write here: it moves
+ * with the media, by `moveContentFolder`.
  */
-export type ContentChanges = Omit<UpdateContentRequest, 'ownerMembershipId'> & { readonly ownerUserId?: string };
+export type ContentChanges = Omit<UpdateContentRequest, 'ownerMembershipId' | 'folderId'> & { readonly ownerUserId?: string };
 
 /** Body field -> column and cast: the only columns a PATCH writes, in the order of the grant. */
 const UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof ContentChanges, string, string]> = [
@@ -295,7 +296,6 @@ const UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof ContentChanges, string, s
   ['publishOn', 'publish_on', '::date'],
   ['publishAtTime', 'publish_at_time', '::time'],
   ['caption', 'caption', ''],
-  ['folderId', 'folder_id', '::uuid'],
   ['coverAssetId', 'cover_asset_id', '::uuid'],
   ['ownerUserId', 'owner_user_id', '::uuid']
 ];
@@ -333,6 +333,28 @@ export const replaceContentMedia = async (
 ): Promise<void> => {
   // The ids are UUIDs the contract already checked; the array literal is the one way to hand the function a list.
   await raw(transaction, 'select app_private.set_content_media(?::uuid, ?::uuid[])', [input.contentId, `{${input.assetIds.join(',')}}`]);
+};
+
+/**
+ * A content born takes the media its folder holds and its format takes, newest first; the route calls it when the body names no list.
+ */
+export const inheritContentMedia = async (transaction: ContentTransaction, input: { readonly contentId: string }): Promise<void> => {
+  await raw(transaction, 'select app_private.inherit_content_media(?::uuid)', [input.contentId]);
+};
+
+/**
+ * The folder, the list and the cover change together: the list is `assetIds` when the caller names it, or what the new folder
+ * holds when it is `undefined`; the cover goes back to none. Asking for the folder the content already has only writes the list.
+ */
+export const moveContentFolder = async (
+  transaction: ContentTransaction,
+  input: { readonly contentId: string; readonly folderId: string; readonly assetIds: readonly string[] | undefined }
+): Promise<void> => {
+  await raw(transaction, 'select app_private.move_content_folder(?::uuid, ?::uuid, ?::uuid[])', [
+    input.contentId,
+    input.folderId,
+    input.assetIds === undefined ? null : `{${input.assetIds.join(',')}}`
+  ]);
 };
 
 /**

@@ -311,7 +311,6 @@ export const ERROR_MESSAGES: Record<string, string> = {
   CONTENT_MEDIA_INCOMPLETE: 'A mídia do conteúdo não cobre este formato. Para trocar entre carrossel e formato de uma mídia só depois do envio para aprovação, cancele e reagende o conteúdo.',
   CONTENT_MEDIA_INVALID: 'A mídia ou a capa escolhida não pode ser usada neste conteúdo.',
   CONTENT_FOLDER_INVALID: 'A pasta escolhida não é uma pasta deste cliente.',
-  CONTENT_FOLDER_IN_USE: 'A pasta não muda enquanto o conteúdo tem mídia ou capa.',
   CONTENT_OWNER_INVALID: 'O responsável precisa ser um colaborador ativo que vê Conteúdo.',
   CONTENT_STATE: 'O conteúdo não está no estado que esta ação exige.',
   CONTENT_REVISION_CHANGED: 'O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar.',
@@ -1304,6 +1303,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       '(`null` para quem não tem vínculo com a agência). Nenhuma rota de conteúdo devolve o id de usuário de ninguém: quem aprovou vem como',
       '`approvedBy: { name, side }` (`agency` ou `client`) e o responsável de uma subtarefa como `assignee: { membershipId, name }`.',
       'A pasta e a capa são do próprio cliente (`400 CONTENT_FOLDER_INVALID`, `400 CONTENT_MEDIA_INVALID`).',
+      'O conteúdo usa a mídia da pasta: a que couber no formato, a mais nova primeiro (a primeira para imagem, vídeo curto e vídeo longo; até 20 para o carrossel),',
+      'a não ser que `mediaAssetIds` traga a lista inteira e ordenada. Pasta sem mídia deixa o conteúdo sem mídia.',
       'Título de uma linha até 120 caracteres e legenda até 2.200 caracteres recusam caractere de',
       'controle e invisível. Cliente arquivado responde `409 CLIENT_ARCHIVED`.'
     ].join('\n'),
@@ -1364,7 +1365,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'inteira e ordenada das mídias, gravada na mesma transação, depois do formato: assim um conteúdo em',
       'produção ou em ajuste troca de formato e de mídia numa só chamada. Depois do envio para aprovação, ir de',
       'carrossel para formato de uma mídia só (ou o inverso) é `409 CONTENT_MEDIA_INCOMPLETE`: cancele e',
-      'reagende. Conteúdo publicado ou cancelado responde `409 CONTENT_NOT_EDITABLE`.'
+      'reagende. Trocar `folderId` troca a lista e a capa pelo que a pasta nova tem (a que couber no formato, a mais nova primeiro; a capa volta a nenhuma),',
+      'ou por `mediaAssetIds` quando a mesma chamada o traz; a capa pedida na mesma chamada vale. Um conteúdo aprovado volta a `awaiting_approval`; um que espera aprovação ou está aprovado não fica sem mídia:',
+      'uma pasta que não completa o formato responde `409 CONTENT_MEDIA_INCOMPLETE` e nada muda. Conteúdo publicado ou cancelado responde `409 CONTENT_NOT_EDITABLE`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'conteudo.operar',
@@ -1385,7 +1388,6 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 409, code: 'CLIENT_ARCHIVED' },
       { status: 409, code: 'CONTENT_NOT_EDITABLE' },
       { status: 409, code: 'CONTENT_MEDIA_INCOMPLETE' },
-      { status: 409, code: 'CONTENT_FOLDER_IN_USE' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },
