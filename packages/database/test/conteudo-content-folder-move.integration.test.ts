@@ -273,6 +273,17 @@ describe('a move in each state of the content (decision 2026-11-04)', () => {
     expect(before.cover_asset_id).not.toBeNull();
   });
 
+  it.each(['awaiting_approval', 'approved'] as const)('refuses to leave a content that is %s without media even when it has no cover to lose', async (status) => {
+    const s = await scene({ status, format: 'reels', assets: 1 });
+    const before = await w.contentRow(s.contentId);
+    await w.seedAsset(ids.clientA1, s.to, { category: 'image' });
+
+    await expect(move(operarAndVisualizar, s.contentId, s.to)).rejects.toMatchObject({ code: 'A0065' });
+
+    await unchanged(s, before);
+    expect(before.cover_asset_id).toBeNull();
+  });
+
   it.each(['awaiting_approval', 'approved'] as const)('refuses a folder with one image for a carousel that is %s: the list would not cover the format', async (status) => {
     const s = await scene({ status, format: 'carousel' });
     const before = await w.contentRow(s.contentId);
@@ -291,6 +302,22 @@ describe('a move in each state of the content (decision 2026-11-04)', () => {
     await expect(move(operarAndVisualizar, s.contentId, s.to)).rejects.toMatchObject({ code: 'A0062' });
 
     await unchanged(s, before);
+  });
+
+  it.each(['published', 'cancelled'] as const)('refuses the folder the %s content already has too: the state is read before anything', async (status) => {
+    const s = await scene({ status });
+    const before = await w.contentRow(s.contentId);
+
+    await expect(move(operarAndVisualizar, s.contentId, s.from)).rejects.toMatchObject({ code: 'A0062' });
+    await expect(move(operarAndVisualizar, s.contentId, s.from, [s.oldAssets[0]!])).rejects.toMatchObject({ code: 'A0062' });
+
+    await unchanged(s, before);
+  });
+
+  it('tells a person without the permission "not found" before it says the content is published', async () => {
+    const s = await scene({ status: 'published' });
+    await expect(move(onlyVisualizar, s.contentId, s.from)).rejects.toMatchObject({ code: 'A0060' });
+    await expect(move(onlyVisualizar, s.contentId, s.to)).rejects.toMatchObject({ code: 'A0060' });
   });
 });
 
@@ -382,6 +409,19 @@ describe('who may move, and where (decision 2026-10-01 rule 3)', () => {
     }
     expect((await w.contentRow(s.contentId)).folder_id).toBe(s.from);
   });
+
+  it.each(['repeatable read', 'serializable'] as const)('%s: the refusal comes before the content is read, even for the folder it already has and for a published one', async (level) => {
+    const s = await scene();
+    const published = await scene({ status: 'published' });
+    for (const [content, folder] of [[s.contentId, s.from], [published.contentId, published.to]] as const) {
+      const stale = await w.openTransactionAs(operarAndVisualizar, level);
+      try {
+        await expect(stale.raw('select app_private.move_content_folder(?::uuid, ?::uuid, null)', [content, folder])).rejects.toMatchObject({ code: '40001' });
+      } finally {
+        await stale.rollback();
+      }
+    }
+  });
 });
 
 describe('a content born takes what its folder holds', () => {
@@ -394,6 +434,22 @@ describe('a content born takes what its folder holds', () => {
     await inherit(operarAndVisualizar, contentId);
 
     expect(await listOf(contentId)).toEqual([second, first]);
+  });
+
+  it('takes only what fits the format of the content: a reels takes the newest video, an image the newest image', async () => {
+    const folder = await newFolder(ids.clientA1);
+    const image = await w.seedAsset(ids.clientA1, folder, { category: 'image' });
+    const oldVideo = await w.seedAsset(ids.clientA1, folder, { category: 'video' });
+    const newestVideo = await w.seedAsset(ids.clientA1, folder, { category: 'video' });
+    const reels = await w.seedContent(ids.clientA1, { format: 'reels', folderId: folder });
+    const picture = await w.seedContent(ids.clientA1, { format: 'image', folderId: folder });
+
+    await inherit(operarAndVisualizar, reels);
+    await inherit(operarAndVisualizar, picture);
+
+    expect(await listOf(reels)).toEqual([newestVideo]);
+    expect(await listOf(picture)).toEqual([image]);
+    expect(oldVideo).not.toBe(newestVideo);
   });
 
   it('leaves a content of an empty folder without media', async () => {

@@ -1,4 +1,4 @@
-// Decision: docs/business/decisions/2026-11-04-conteudo-herda-a-midia-da-pasta-e-troca-de-pasta.md. Forward-only.
+// Decision: docs/business/decisions/2026-11-04-a-pasta-e-como-um-drive-o-conteudo-herda-a-midia-e-troca-de-pasta.md. Forward-only.
 //
 // The folder of a content could not change while it held media or a cover: `content_media_content_fk` and `contents_cover_fk`
 // tie both to (client, folder) and `contents.folder_id` was a plain column grant. A content now takes what its folder holds and
