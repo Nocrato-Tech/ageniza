@@ -163,3 +163,6 @@ O cadastro e o aceite de convite já registram o aceite, pelo `acceptTerms: true
   1. a pessoa pede com `POST /me/email-change`;
   2. a operação aprova;
   3. o link chega ao e-mail **novo**, e `POST /email-change/confirm` conclui a troca.
+
+
+Uma restauração nativa anônima que recebe 401 não invalida a prévia de um convite aberto em paralelo. Ao persistir a sessão de um novo login, o transporte avança sua geração; respostas da sessão anterior não podem apagar a nova sessão nem reaplicar seus cookies. O transporte nativo continua sendo `expo/fetch`, com redirecionamentos recusados.
