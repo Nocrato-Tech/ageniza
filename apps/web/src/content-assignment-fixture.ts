@@ -68,6 +68,8 @@ export interface AssignmentOptions {
   readonly teamStatus?: number;
   /** Holds the answer of the team until it resolves. */
   readonly teamGate?: Promise<void>;
+  /** The plan is read-only (trial over, no payment): every write is blocked on the screen. */
+  readonly readOnly?: boolean;
 }
 
 const VISUALIZE = 'conteudo.visualizar';
@@ -95,7 +97,7 @@ export const assignmentWorld = (options: AssignmentOptions) => {
     const path = call.path.split('?')[0]!;
     if (path.endsWith('/auth/session')) return json(sessionBody);
     if (/\/agencies\/[^/]+\/me$/.test(path)) {
-      return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: options.permissions, membershipId: options.self });
+      return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: options.readOnly === true }, permissions: options.permissions, membershipId: options.self });
     }
     if (/\/agencies\/[^/]+\/collaborators$/.test(path)) {
       if (!holds('colaborador.visualizar')) return failure(403, 'FORBIDDEN');

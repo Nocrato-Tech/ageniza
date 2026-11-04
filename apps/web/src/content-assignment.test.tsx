@@ -490,6 +490,66 @@ describe('who is in charge of the content', () => {
     expect(world.owner?.membershipId).toBe(CARLA.membershipId);
   });
 
+  it('sends nothing when the saved person is chosen again', async () => {
+    const row = complete();
+    const { calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+    await changeOwnerTo(row, ANA);
+    await settled();
+    expect(writes(calls)).toEqual([]);
+    expect(within(panel(row)).queryByText('Salvando…')).toBeNull();
+  });
+
+  it('does not send again the person that is already on its way when the choice goes back to it', async () => {
+    const row = complete();
+    const { world, calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+    let release!: () => void;
+    world.hold = { match: /\/contents\/[^/]+$/, promise: new Promise<void>((resolve) => { release = resolve; }) };
+    await changeOwnerTo(row, BRUNO);
+    await changeOwnerTo(row, CARLA);
+    await changeOwnerTo(row, BRUNO);
+    release();
+    await waitFor(() => expect(within(panel(row)).getByText('Salvo')).toBeTruthy());
+    await settled();
+    expect(writes(calls).map((call) => call.body)).toEqual([{ ownerMembershipId: BRUNO.membershipId }]);
+    expect(world.owner?.membershipId).toBe(BRUNO.membershipId);
+    expect((within(panel(row)).getByLabelText('Responsável') as HTMLSelectElement).value).toBe(BRUNO.membershipId);
+  });
+
+  it('drops the choices that waited when the one before them is refused, and a later choice does not bring them back', async () => {
+    const row = complete();
+    const { world, calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+    let release!: () => void;
+    world.hold = { match: /\/contents\/[^/]+$/, promise: new Promise<void>((resolve) => { release = resolve; }) };
+    world.failNext = { match: /\/contents\/[^/]+$/, response: () => failure(409, 'TRY_AGAIN') };
+    await changeOwnerTo(row, BRUNO);
+    await changeOwnerTo(row, CARLA);
+    release();
+    expect(await within(panel(row)).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeTruthy();
+    await waitFor(() => expect((within(panel(row)).getByLabelText('Responsável') as HTMLSelectElement).value).toBe(ANA.membershipId));
+    world.hold = undefined;
+    await changeOwnerTo(row, BRUNO);
+    await waitFor(() => expect(within(panel(row)).getByText('Salvo')).toBeTruthy());
+    await settled();
+    expect(writes(calls).map((call) => call.body)).toEqual([{ ownerMembershipId: BRUNO.membershipId }, { ownerMembershipId: BRUNO.membershipId }]);
+    expect(world.owner?.membershipId).toBe(BRUNO.membershipId);
+  });
+
+  it('reads the content again from the server after a refusal, and clears the reason at the next choice', async () => {
+    const row = complete();
+    const { world, calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+    world.failNext = { match: /\/contents\/[^/]+$/, response: () => failure(409, 'TRY_AGAIN') };
+    await changeOwnerTo(row, BRUNO);
+    expect(await within(panel(row)).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeTruthy();
+    const refused = calls.findIndex((call) => call.method === 'PATCH');
+    await waitFor(() => expect(calls.slice(refused + 1).some((call) => call.method === 'GET' && /\/contents\/[^/]+$/.test(call.path.split('?')[0]!))).toBe(true));
+    let release!: () => void;
+    world.hold = { match: /\/contents\/[^/]+$/, promise: new Promise<void>((resolve) => { release = resolve; }) };
+    await changeOwnerTo(row, CARLA);
+    expect(within(panel(row)).queryByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeNull();
+    release();
+    await waitFor(() => expect(within(panel(row)).getByText('Salvo')).toBeTruthy());
+  });
+
   it('sends nothing when the empty option is chosen', async () => {
     const row = complete();
     const { calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
@@ -637,6 +697,16 @@ describe('a new subtask', () => {
     await waitFor(() => expect(taskItem(row, 'Gravar com Enter')).toBeTruthy());
     expect(posts(calls).map((call) => call.body)).toEqual([{ title: 'Gravar com Enter', assigneeMembershipId: BRUNO.membershipId, dueOn: '2026-10-18' }]);
     expect((within(dialogOf(row)).getByLabelText('Título da subtarefa') as HTMLInputElement).value).toBe('');
+  });
+
+  it('does not create with Enter while the plan blocks writes', async () => {
+    const row = complete();
+    const { calls } = await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, readOnly: true });
+    await within(panel(row)).findByLabelText('Título da subtarefa');
+    fill(row, { title: 'Bloqueada', person: BRUNO.membershipId, due: '2026-10-18' });
+    fireEvent.keyDown(within(dialogOf(row)).getByLabelText('Título da subtarefa'), { key: 'Enter' });
+    await settled();
+    expect(posts(calls)).toEqual([]);
   });
 
   it('keeps the title typed when the creation by Enter is refused, and says why', async () => {
