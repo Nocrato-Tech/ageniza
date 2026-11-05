@@ -22,7 +22,7 @@ const server = createServer((request, response) => {
       return;
     }
     response.setHeader('Content-Type', 'application/json');
-    response.end(JSON.stringify({ path: url.pathname, bytes, connection: request.headers.connection ?? null, forwardedProto: request.headers['x-forwarded-proto'], forwardedFor: request.headers['x-forwarded-for'], requestId: request.headers['x-request-id'] }));
+    response.end(JSON.stringify({ path: url.pathname, bytes, connection: request.headers.connection ?? null, forwardedProto: request.headers['x-forwarded-proto'], forwardedFor: request.headers['x-forwarded-for'], requestId: request.headers['x-request-id'], host: request.headers.host }));
   });
 });
 server.listen(3001, '0.0.0.0');

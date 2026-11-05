@@ -19,6 +19,9 @@ async function until(check, message) {
   while (Date.now() < end) { if (await check()) return; await pause(); }
   throw new Error(message);
 }
+const clientA = '198.51.100.1';
+const clientB = '203.0.113.99';
+const as = (address, headers = {}) => ({ headers: { ...headers, 'CF-Connecting-IP': address } });
 const clientPhoto = '/api/agencies/11111111-1111-4111-8111-111111111111/clients/22222222-2222-4222-8222-222222222222/photo';
 const config = readFileSync(resolve(root, 'apps/web/nginx.conf'), 'utf8');
 const include = readFileSync(resolve(root, 'apps/web/nginx-api-proxy.inc'), 'utf8');
@@ -44,7 +47,7 @@ async function scenario(label, changedConfig, changedInclude) {
     await until(async () => { try { return (await send('/health')).ok; } catch { return false; } }, 'Nginx did not start');
     const probe = await send('/api/probe', { headers: { 'CF-Connecting-IP': '198.51.100.7', 'X-Request-Id': 'edge-review' } });
     assert.equal(probe.status, 200);
-    assert.deepEqual(await probe.json(), { path: '/probe', bytes: 0, connection: null, forwardedProto: 'https', forwardedFor: '198.51.100.7', requestId: 'edge-review' });
+    assert.deepEqual(await probe.json(), { path: '/probe', bytes: 0, connection: null, forwardedProto: 'https', forwardedFor: '198.51.100.7', requestId: 'edge-review', host: new URL(base).hostname });
     const body = JSON.stringify({ imageBase64: 'A'.repeat(Math.ceil(10 * 1024 * 1024 / 3) * 4) });
     for (const path of ['/api/me/photo', clientPhoto]) {
       const result = await send(path, { method: path === clientPhoto ? 'PUT' : 'POST', body });
@@ -55,17 +58,19 @@ async function scenario(label, changedConfig, changedInclude) {
     for (const path of ['/api/probe', `${clientPhoto}/extra`, '/api/me/photo-extra']) {
       assert.equal((await send(path, { method: 'POST', body: 'A'.repeat(1024 * 1024 + 1) })).status, 413, `General body limit widened at ${path}`);
     }
-    for (const [count, paths, rejected] of [[4, ['/api/me/photo', clientPhoto], '/api/me/photo'], [32, ['/api/probe'], clientPhoto]]) {
-      const pending = Array.from({ length: count }, (_, index) => send(`${paths[index % paths.length]}?hold=1`).then(async (response) => { await response.arrayBuffer(); return response.status; }));
+    // The caps are per client: client A fills its own slots and is refused, client B (another CF-Connecting-IP) is still served.
+    for (const [count, paths, rejected] of [[2, ['/api/me/photo', clientPhoto], '/api/me/photo'], [16, ['/api/probe'], clientPhoto]]) {
+      const pending = Array.from({ length: count }, (_, index) => send(`${paths[index % paths.length]}?hold=1`, as(clientA)).then(async (response) => { await response.arrayBuffer(); return response.status; }));
       try {
         await until(async () => (await (await fetch(`${control}/__test/pending`)).json()).count === count, `Did not hold ${count} proxied requests`);
-        assert.equal((await send(rejected)).status, 429, `Missing shared connection cap (${count})`);
-        if (count === 4) assert.equal((await send('/api/probe')).status, 200);
-        else assert.equal((await send('/api/probe')).status, 429);
+        assert.equal((await send(rejected, as(clientA))).status, 429, `Missing per-client connection cap (${count})`);
+        if (count === 2) assert.equal((await send('/api/probe', as(clientA))).status, 200);
+        else assert.equal((await send('/api/probe', as(clientA))).status, 429);
+        assert.equal((await send('/api/probe', as(clientB))).status, 200, `Client A's ${count} requests took the API from client B`);
+        assert.equal((await send('/api/me/photo', as(clientB))).status, 200, `Client A's ${count} requests took the photo route from client B`);
         assert.equal((await send('/health')).status, 200);
       } finally { await release(); await Promise.allSettled(pending); }
-    }
-  } finally { await release(); docker('rm', '-f', name); containers.delete(name); }
+    }  } finally { await release(); docker('rm', '-f', name); containers.delete(name); }
 }
 try {
   docker('network', 'create', prefix);
@@ -74,15 +79,18 @@ try {
   control = endpoint(api, 3001);
   await until(async () => { try { return (await fetch(`${control}/__test/pending`)).ok; } catch { return false; } }, 'Test upstream did not start');
   await scenario('baseline');
-  console.log('Nginx identity upload, API limits, forwarding and shared concurrency: passed');
+  console.log('Nginx identity upload, API limits, forwarding and per-client concurrency: passed');
   if (process.argv.includes('--mutate')) {
     const mutations = [
       ['photo-body', config.replace('client_max_body_size 14m;', 'client_max_body_size 1m;'), undefined],
       ['general-body', config.replace('client_max_body_size 1m;', 'client_max_body_size 14m;'), undefined],
-      ['photo-cap', config.replace('limit_conn ageniza_photo_connections 4;', ''), undefined],
-      ['shared-cap', config.replace('    limit_conn ageniza_api_connections 32;', ''), undefined],
+      ['photo-cap', config.replace('limit_conn ageniza_photo_connections 2;', ''), undefined],
+      ['api-cap', config.replace(/(location \/api\/ \{\r?\n)\s*limit_conn ageniza_api_connections 16;/, '$1'), undefined],
+      ['shared-key-api', config.replace('limit_conn_zone $ageniza_client_ip zone=ageniza_api_connections', 'limit_conn_zone $server_name zone=ageniza_api_connections'), undefined],
+      ['shared-key-photo', config.replace('limit_conn_zone $ageniza_client_ip zone=ageniza_photo_connections', 'limit_conn_zone $server_name zone=ageniza_photo_connections'), undefined],
       ['connection', undefined, include.replace('proxy_set_header Connection "";', '')],
-      ['prefix', undefined, include.replace('rewrite ^/api/(.*)$ /$1 break;', '')]
+      ['prefix', undefined, include.replace('rewrite ^/api/(.*)$ /$1 break;', '')],
+      ['host', undefined, include.replace('proxy_set_header Host $host;', '')]
     ];
     for (const [label, changedConfig, changedInclude] of mutations) {
       let detected = false;
