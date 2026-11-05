@@ -44,3 +44,11 @@ it('bounds activation time and removes its event listener on failure', async () 
   expect(remove).toHaveBeenCalledWith('statechange', expect.any(Function));
   expect(show).not.toHaveBeenCalled();
 });
+
+it('does not leave the application busy forever when the permission prompt is unanswered', async () => {
+  vi.useFakeTimers();
+  permission.mockReturnValue(new Promise(() => {}));
+  const result = expect(sendPresentationNotification()).rejects.toThrow('A permissão está pendente no navegador.');
+  await vi.advanceTimersByTimeAsync(15_000); await result;
+  expect(register).not.toHaveBeenCalled(); expect(show).not.toHaveBeenCalled();
+});

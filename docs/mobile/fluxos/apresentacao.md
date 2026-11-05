@@ -18,6 +18,7 @@ Build com `EXPO_PUBLIC_PRESENTATION_FEATURES=true`, caminho `/apresentacao/`. A 
 1. Abrir Avisos web e clicar em Enviar notificação de teste.
 2. A pessoa decide a permissão no navegador.
 3. O envio usa o service worker exclusivo da apresentação, sem interceptar requisições. Recusa, indisponibilidade ou falha não aparecem como envio bem-sucedido.
+   Se a permissão ou ativação não responder, a espera tem prazo e a pessoa pode tentar novamente; a tela informa a etapa de autorização.
 4. Clicar na notificação retorna à apresentação. É envio local solicitado pela pessoa, não push remoto com a aplicação fechada.
 
 ## Planos

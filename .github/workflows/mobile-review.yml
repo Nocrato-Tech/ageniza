@@ -33,6 +33,10 @@ jobs:
       - run: pnpm --filter @ageniza/mobile exec expo export --platform all --output-dir launch-dist/review
         env:
           EXPO_PUBLIC_API_URL: https://dev.ageniza.com.br/api
+      - name: Export and verify the academic web entry
+        run: pnpm --filter @ageniza/mobile build:presentation
+        env:
+          EXPO_PUBLIC_API_URL: https://dev.ageniza.com.br/api
   same-origin-web:
     runs-on: ubuntu-latest
     timeout-minutes: 30

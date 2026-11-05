@@ -1,7 +1,14 @@
 export type NotificationOutcome = 'sent' | 'denied' | 'unsupported';
+async function requestPermission(): Promise<NotificationPermission> {
+  const pending = Notification.requestPermission();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([pending, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('A permissão está pendente no navegador. Confira o aviso deste site e tente novamente.')), 15_000); })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
 export async function sendPresentationNotification(): Promise<NotificationOutcome> {
   if (typeof window === 'undefined' || !window.isSecureContext || typeof Notification === 'undefined' || !('serviceWorker' in navigator)) return 'unsupported';
-  const permission = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+  const permission = Notification.permission === 'default' ? await requestPermission() : Notification.permission;
   if (permission !== 'granted') return 'denied';
   const registration = await navigator.serviceWorker.register('/presentation-notifications.js', { scope: '/apresentacao/' });
   if (!registration.active) {
