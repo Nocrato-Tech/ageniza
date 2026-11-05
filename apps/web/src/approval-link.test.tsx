@@ -467,6 +467,16 @@ describe('the page of the approval link (#717)', () => {
       expect(await screen.findByLabelText(`${A.title}: mídia 1 de 1`)).toBeTruthy();
     });
 
+    it('does not take a renewed address that is not http(s): the video says it could not be taken up again and never gets it', async () => {
+      const { api } = await loaded([{ ...A, format: 'reels', coverAssetId: asset(9), media: [{ id: asset(4), kind: 'video' }] }]);
+      const video = await screen.findByLabelText(`${A.title}: mídia 1 de 1`);
+      api.controls.fail.media = () => new Response(JSON.stringify({ url: 'javascript:alert(1)', expiresAt: new Date(Date.now() + 600_000).toISOString() }), { status: 200, headers: { 'content-type': 'application/json' } });
+      fireEvent.error(video);
+      expect(await screen.findByText('Não foi possível retomar o vídeo.')).toBeTruthy();
+      expect(document.querySelector('video[src^="javascript"]')).toBeNull();
+      expect(document.body.innerHTML).not.toContain('javascript:alert');
+    });
+
     it('keeps the failure on screen until the new address is there: the refused picture is never drawn again meanwhile', async () => {
       const { api } = await loaded([A]);
       fireEvent.error(await screen.findByRole('img', { name: `${A.title}: mídia 1 de 1` }));

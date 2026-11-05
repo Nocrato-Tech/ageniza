@@ -707,6 +707,29 @@ describe('the post of the portal (#270)', () => {
       expect(seek).toHaveBeenCalledWith(187.25);
     });
 
+    it('does not take a renewed address that is not http(s): the video says it could not be taken up again and never gets it', async () => {
+      const scenario = setup();
+      scenario.contents.seed({ id: CONTENT, clientId: CLIENT, format: 'reels' });
+      let renewed = false;
+      const impl: typeof fetch = async (input, init) => {
+        const url = new URL(String(input));
+        if (renewed && url.pathname.endsWith(`/media/${asset(1)}/url`)) {
+          return new Response(JSON.stringify({ url: 'javascript:alert(1)', expiresAt: new Date(Date.now() + 600_000).toISOString() }), { status: 200, headers: { 'content-type': 'application/json' } });
+        }
+        return scenario.impl(input, init);
+      };
+      renderPost(impl);
+      const video = await waitFor(() => {
+        const found = document.querySelector('video');
+        expect(found).not.toBeNull();
+        return found as HTMLVideoElement;
+      });
+      renewed = true;
+      fireEvent.error(video);
+      expect(await screen.findByText('Não foi possível retomar o vídeo.')).toBeTruthy();
+      expect(document.body.innerHTML).not.toContain('javascript:alert');
+    });
+
     it('says the video could not be taken up again, with a button, when the new address is refused', async () => {
       const scenario = setup();
       scenario.contents.seed({ id: CONTENT, clientId: CLIENT, format: 'reels' });
