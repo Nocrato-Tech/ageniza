@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { randomUUID } from 'node:crypto';
+
+import { encodeContentFeedCursor } from '@ageniza/contracts';
+
 import { createContentsWorld } from './test-support/world.js';
 
 // The feed of the phone is read page by page while a person scrolls, and each page is a pass over the client's rows: 300 pages a
@@ -54,5 +58,38 @@ describe('the limit of the feed per person', () => {
   it('does not count a person who is not allowed to read: the guard answers first', async () => {
     const forbidden = await readMany(LIMIT + 5, people.noContent.cookie);
     expect(forbidden.every((reply) => reply.statusCode === 403 || reply.statusCode === 404)).toBe(true);
+  }, 120_000);
+});
+
+describe('one bucket per person, whatever the reader changes in the request', () => {
+  it('spends the same budget on another client, another agency and another cursor, and refuses all of them together', async () => {
+    // A key made of the person and the client, or of the person and the cursor, would give a reader a new budget with each change.
+    const otherClientOfA = await w.newClient('feed-limit-other');
+    const clientOfB = await w.newClient('feed-limit-b', { agencyId: w.agencyB });
+    const cursor = (): string => encodeContentFeedCursor({ publishOn: '2026-10-20', time: '18:30:00', id: randomUUID() });
+    const urls = (): string[] => [
+      feedUrl(),
+      feedUrl(`?cursor=${cursor()}`),
+      `/agencies/${w.agencyA}/clients/${otherClientOfA}/contents/feed`,
+      `/agencies/${w.agencyA}/clients/${otherClientOfA}/contents/feed?cursor=${cursor()}`,
+      `/agencies/${w.agencyB}/clients/${clientOfB}/contents/feed`,
+      `/agencies/${w.agencyB}/clients/${clientOfB}/contents/feed?cursor=${cursor()}`
+    ];
+    const cookie = people.dual.cookie;
+
+    const spent: number[] = [];
+    for (let sent = 0; sent < LIMIT; sent += BATCH) {
+      const batch = await Promise.all(Array.from({ length: Math.min(BATCH, LIMIT - sent) }, (_, index) =>
+        w.call('GET', cookie, urls()[(sent + index) % 6] as string)));
+      spent.push(...batch.map((reply) => reply.statusCode));
+    }
+    expect(spent.every((status) => status === 200)).toBe(true);
+
+    // The 301st is refused whichever way it varies: all six shapes land on the one budget.
+    for (const url of urls()) {
+      const refused = await w.call('GET', cookie, url);
+      expect(refused.statusCode, url).toBe(429);
+      expect(refused.json<{ error: { code: string } }>().error.code).toBe('RATE_LIMITED');
+    }
   }, 120_000);
 });
