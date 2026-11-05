@@ -354,6 +354,8 @@ Colaboradores são ilimitados, e o portal do cliente é grátis. Os extras são 
 
 ## Cliente Expo
 
+A foto de identidade continua sujeita ao limite configurado na API. A borda permite o envelope base64 de até 10 MiB apenas nas rotas de foto de perfil/cliente; outras rotas mantêm 1 MiB. Se o mesmo cliente (IP) tiver 2 requisições de foto ou 16 requisições de API simultâneas, a borda responde 429 só para ele: aguarde antes de repetir. A biblioteca de imagens/vídeos continua usando upload direto no armazenamento.
+
 A interface nativa reúne carteira, lista/kanban/calendário, criação/edição em três etapas, biblioteca de mídias, tarefas e conversas. As operações seguem as rotas e condições deste documento. A interface web usa o mesmo adaptador da API e não oferece entrada de demonstração; a sessão depende da origem autorizada, conforme [interface mobile](../interface-mobile.md).
 
 

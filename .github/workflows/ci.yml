@@ -188,6 +188,7 @@ jobs:
       - name: Validate the web server configuration
         run: |
           docker run --rm -v "$PWD/apps/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            -v "$PWD/apps/web/nginx-api-proxy.inc:/etc/nginx/ageniza-api-proxy.inc:ro" \
             nginxinc/nginx-unprivileged:1.27-alpine nginx -t
 
   database-local:
