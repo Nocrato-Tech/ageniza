@@ -14,13 +14,13 @@ O cliente React Native/Expo está em `apps/mobile` e segue as telas aprovadas de
 | Portal e aprovação | `38:1154`, `38:1229`, `38:1300` | feed por datas, aprovar/pedir ajuste, revisão e comentários; aprovação por e-mail usa sessão separada |
 | Equipe | `8:424`, `8:542` | lista, busca, convites, papéis, cargo, remoção e reativação conforme permissão |
 | Gestão | `10:407`, `10:538`, `10:659`, `10:787` | relatório do período e CSV, perfil, consulta de assinatura, cotação e cancelamento/reativação |
-| Machine learning | `138:4687`, `138:5072` | não implementado em produção; #817 registra a especificação e avaliação necessárias |
+| Machine learning | `138:4687`, `138:5072` | no web dev, análise no detalhe usando sinais do conteúdo e treino sintético (#833); produção com dados reais continua em #817 |
 
 As continuações das artboards são conteúdo rolável. O quadro deixa parte da próxima coluna visível. O portal não mostra kanban, seleção de stories de clientes, responsável ou tarefas internas. Roteiros de stories seguem as permissões e estados do servidor.
 
 ## Dados e sessão
 
-A entrada exige conta e contexto real. `MobileApp` usa somente o adaptador da API, sem fallback para dados locais. O teste `real-entry.test.ts` percorre a árvore de imports e barra o repositório demonstrativo e o modelo sintético no app. Os arquivos de demonstração restantes são fixtures de teste, não uma opção de entrada.
+A entrada exige conta e contexto real. `MobileApp` usa somente o adaptador da API, sem fallback para dados locais. O teste `real-entry.test.ts` percorre a árvore de imports e barra o repositório demonstrativo antigo; a função ML sintética autorizada em #833 aparece somente no web dev, dentro do detalhe. Os arquivos de demonstração restantes são fixtures de teste, não uma opção de entrada.
 
 Os contratos vêm de `@ageniza/contracts`. O servidor decide permissões, leitura, revisão e transições. O relatório conta conteúdos efetivamente retornados; não inventa engajamento ou pontualidade. A lista de atividades deriva do período carregado e sua marcação de leitura não é persistente; central/push de produção seguem #818. Cotação não significa pagamento; produção segue #819.
 

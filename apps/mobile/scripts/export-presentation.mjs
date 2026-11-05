@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const root = fileURLToPath(new URL('../', import.meta.url));
+execFileSync(process.execPath, [require.resolve('expo/bin/cli'), 'export', '--platform', 'web', '--output-dir', 'launch-dist/presentation'], { cwd: root, stdio: 'inherit', env: { ...process.env, EXPO_PUBLIC_DEMO_WORKSPACE: 'true', MOBILE_WEB_BASE_PATH: '/app-mobile' } });
+const output = resolve(root, 'launch-dist/presentation');
+const html = readFileSync(resolve(output, 'index.html'), 'utf8');
+const paths = [...html.matchAll(/src="(\/app-mobile\/_expo\/[^"?]+\.js)"/g)].map((match) => match[1]);
+assert.ok(paths.length, 'The exported HTML must reference the official mobile bundle.');
+const entry = paths.map((path) => readFileSync(resolve(output, path.replace('/app-mobile/', '')), 'utf8')).join('\n');
+const decoded = entry.replace(/\\x([0-9a-f]{2})|\\u([0-9a-f]{4})/gi, (_, hex, unicode) => String.fromCharCode(parseInt(hex ?? unicode, 16)));
+const chunks = readdirSync(resolve(output, '_expo/static/js/web'));
+assert.ok(!chunks.some((name) => /^PresentationApp-/.test(name)), 'No separate presentation application.');
+for (const marker of ['Entre no seu fluxo.', 'Criar agência de demonstração', 'Inteligência do fluxo', 'simulated-payment']) assert.ok(decoded.includes(marker), `Mobile entry missing: ${marker}`);
+assert.ok(readFileSync(resolve(output, 'content-notifications.js'), 'utf8').includes("addEventListener('notificationclick'"));
+assert.ok(readFileSync(resolve(output, 'demo/saude-demonstracao.png')).length > 0);
+console.log('Official mobile entry, API workspace, ML, billing and notification worker verified.');

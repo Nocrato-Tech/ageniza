@@ -1,3 +1,5 @@
+import { ContentLearning } from '../demo/ContentLearning';
+import { demoWorkspaceEnabled } from '../demo/config';
 import { ContentTasks } from './ContentTasks';
 import { ContentActions } from './ContentActions';
 import { useState } from 'react';
@@ -27,6 +29,7 @@ export function PostDetail({ post, data, side, repository, busy, onMove, onUpdat
         {side === 'agency' && tab === 'summary' && <>
           <Card><Txt kind="strong">Publicação</Txt><Txt>{post.caption || 'Nenhuma legenda adicionada.'}</Txt><Txt kind="small" color={colors.muted}>{post.mediaIds.length} mídia(s) vinculada(s)</Txt><Action soft label="Prévia do Instagram" onPress={() => setTab('preview')} /></Card>
           <Card><View style={ui.row}><Avatar name={owner?.name ?? data.profile.name} size={32} accent /><View><Txt kind="strong">{owner?.name ?? data.profile.name}</Txt><Txt kind="small" color={colors.muted}>Responsável pela produção</Txt></View></View><View style={ui.line} /><Txt kind="small" color={colors.muted}>Publicação proposta · {displayDay(post.date)} · {post.time || 'Sem horário'}</Txt></Card>
+          {demoWorkspaceEnabled && !['published', 'cancelled'].includes(post.status) && <ContentLearning post={post} />}
           <ContentTasks post={post} data={data} repository={repository} busy={busy} onUpdate={onUpdate} />
           <ContentActions post={post} data={data} busy={busy} onMove={onMove} />
           {canEdit && <Action soft label="Editar conteúdo" onPress={onEdit} />}
