@@ -31,7 +31,7 @@ Conteúdo é onde a agência planeja, produz e aprova os posts de cada cliente, 
 
 > Owner tem acesso total por posse. Visibilidade de menu é UX; a autorização é validada no backend e no banco em toda operação.
 
-- **Vendas e Financeiro não veem Conteúdo**, nem o que Clientes mostra derivado dele: as abas Conteúdos e Mídias do detalhe do cliente, os indicadores do card e a ordem da carteira por atraso. Para eles, a carteira mantém a ordem atual.
+- **Vendas e Financeiro não veem Conteúdo**, nem o que Clientes mostra derivado dele: a aba Mídias e o botão "Abrir no Calendário Editorial" do detalhe do cliente, os indicadores do card e a ordem da carteira por atraso. Para eles, a carteira mantém a ordem atual.
 - **Subtarefa** é aprovada pelo **responsável do conteúdo**; quem tem `conteudo.aprovar_pela_agencia` substitui. É autorização dependente do valor (seção 9).
 - Quem tem `conteudo.visualizar` vê o conteúdo de **todos** os clientes da agência, como em Clientes.
 
@@ -92,7 +92,7 @@ O upload é do **conteúdo pronto**; o material bruto fica fora do sistema.
 | `published_on` | date | não | data real; não futura |
 | `cancelled_at` | timestamptz | não | |
 
-**Mídias do conteúdo — `content_media`:** `content_id`, `asset_id`, `position`. Imagem e cada vídeo: 1 item; carrossel: 2 a 20, imagem ou vídeo, ordenados. Só mídias da pasta do conteúdo.
+**Mídias do conteúdo — `content_media`:** `content_id`, `asset_id`, `position`. Imagem e cada vídeo: 1 item; carrossel: 2 a 20, imagem ou vídeo, ordenados. Só mídias da pasta do conteúdo. **A pasta é como um drive** (decisão de 2026-11-04, [`2026-11-04-a-pasta-e-como-um-drive-...`](../docs/business/decisions/2026-11-04-a-pasta-e-como-um-drive-o-conteudo-herda-a-midia-e-troca-de-pasta.md)): ao escolher a pasta o conteúdo herda, uma vez, a mídia que serve ao formato; mídia que entra na pasta depois não entra sozinha; trocar a pasta é permitido e substitui a lista e a capa (a capa volta a nenhuma), com o efeito da troca de mídia sobre a aprovação; a pasta nova vazia deixa um conteúdo em produção sem mídia e é recusada (`CONTENT_MEDIA_INCOMPLETE`) para um que aguarda ou está aprovado. Isso substitui a trava de pasta (`CONTENT_FOLDER_IN_USE`) e o envio só pela visão Pastas.
 
 **Pertence a:** cliente.
 **Relações:** N conteúdos por cliente; 1 pasta por conteúdo; N mídias ordenadas; N subtarefas; 1 conversa.
@@ -230,7 +230,7 @@ Todas sob `requireSession` e `requireClientAccess`.
 
 ### Consulta por período
 
-Calendário e feed consultam por intervalo (`from`, `to`), com **teto de 93 dias** e teto de itens; acima disso, 400. Não pagina. Os dois extremos entram: 93 dias passam e 94 não. O teto de itens é 500, somando conteúdos e roteiros, e a resposta é `{ data: { contents, storyScripts }, meta: { from, to, count } }` ([decisão](../docs/business/decisions/2026-10-11-consulta-por-periodo-teto-de-500-itens-e-formato-da-resposta.md)). É o formato que Tarefas (kanban) e Dashboard vão copiar; listas continuam no contrato paginado.
+Calendário e a aba Feed em tela cheia consultam por intervalo (`from`, `to`), com **teto de 93 dias** e teto de itens; acima disso, 400. Não pagina. Os dois extremos entram: 93 dias passam e 94 não. O teto de itens é 500, somando conteúdos e roteiros, e a resposta é `{ data: { contents, storyScripts }, meta: { from, to, count } }` ([decisão](../docs/business/decisions/2026-10-11-consulta-por-periodo-teto-de-500-itens-e-formato-da-resposta.md)). É o formato que Tarefas (kanban) e Dashboard vão copiar; listas continuam no contrato paginado. O celular ao lado do calendário tem leitura própria, `GET …/contents/feed`: o feed inteiro do cliente por cursor de nove em nove, na ordem do feed (dia, hora e id, do maior para o menor), com os contadores do feed inteiro.
 
 ### Persistência
 
@@ -249,10 +249,10 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 
 | tela | rota | o que mostra | quem acessa |
 |---|---|---|---|
-| Conteúdos | `/agencia/:agenciaId/conteudos` | seletor de clientes em stories | `conteudo.visualizar` |
-| Conteúdos do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | calendário e, ao lado, o celular com o feed 3×3 | `conteudo.visualizar` |
+| Calendário Editorial | `/agencia/:agenciaId/conteudos` | seletor de clientes em stories | `conteudo.visualizar` |
+| Calendário Editorial do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | seletor Mês, Semana e Feed (`?visao=`); no Mês e na Semana, o calendário e, ao lado, o celular com o feed 3×3 | `conteudo.visualizar` |
 | Modal do conteúdo | `/agencia/:agenciaId/conteudos/:clienteId/:conteudoId` | abas Geral e Atribuição | `conteudo.visualizar` |
-| Aba Conteúdos do cliente | `/agencia/:agenciaId/clientes/:clienteId/conteudos` | a mesma visão do cliente | `conteudo.visualizar` |
+| Aba Conteúdos do cliente (extinta) | `/agencia/:agenciaId/clientes/:clienteId/conteudos[/novo\|/:conteudoId]` | não há mais aba: o endereço redireciona (com `replace`, mantendo a query e o estado de navegação) para o equivalente em `/conteudos/:clienteId`; o perfil do cliente tem o botão "Abrir no Calendário Editorial" (decisão `2026-11-04-o-perfil-do-cliente-nao-tem-copia-do-calendario`) | `conteudo.visualizar` (sem ela, "não encontrado") |
 | Aba Mídias do cliente | `/agencia/:agenciaId/clientes/:clienteId/midias` | as pastas e as mídias do cliente, com o envio; o endereço antigo `…/conteudos/:clienteId?vista=pastas` leva para cá | `conteudo.visualizar` (escrever: `conteudo.operar`) |
 | Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, calendário, feed | pessoa do portal |
 | Portal — post | `/portal/:clienteId/conteudos/:conteudoId` | post em tela cheia, Aprovar, Pedir ajuste, conversa | pessoa do portal |
@@ -268,26 +268,26 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 │ ( ◉ )  ( ◉ )  ( ○ )  ( ○ )  ( ○ )   ← clientes em stories         │
 │ Padaria Ótica  Café   Moda   Pet       anel = algo pedindo ação   │
 ├──────────────────────────────────────┬────────────────────────────┤
-│ ‹ Outubro 2026 ›   [Mês|Semana]      │  @padariacentral           │
+│ ‹ Outubro 2026 ›  [Mês|Semana|Feed]  │  @padariacentral           │
 │ [+ Criar conteúdo]                   │ ┌──┬──┬──┐                 │
 │                                      │ │  │  │  │  feed 3×3       │
 │ seg  ter  qua  qui  sex  sáb  dom    │ ├──┼──┼──┤  mais recente   │
 │      ┌─────┐       ┌─────┐           │ │  │  │  │  primeiro;      │
-│      │capa │       │capa │  +        │ ├──┼──┼──┤  futuros com    │
-│      │título│      │título│          │ │  │  │  │  marca de       │
-│      │reels│       │🎬 ⚠ │           │ └──┴──┴──┘  planejado      │
-│      │2/4  │       │      │          │                            │
-│      └─────┘       └─────┘  stories ●│                            │
+│      │título│      │título│  +       │ ├──┼──┼──┤  futuros com    │
+│      │reels │       │reels │         │ │  │  │  │  marca de       │
+│      │18:30 │       │⚠ 2/4 │         │ └──┴──┴──┘  planejado      │
+│      └─────┘       └─────┘           │                            │
+│                             stories ●│                            │
 └──────────────────────────────────────┴────────────────────────────┘
 ```
 
 | elemento | função |
 |---|---|
 | Clientes em stories | foto ou ícone e nome; ordem da carteira; anel destacado quando há em ajuste, atraso ou prazo em dois dias; só ativos |
-| Calendário | mês, com opção de semana; criar pelo botão ou pelo **+** do dia (Conteúdo ou Roteiro de stories); arrastar o card para outra data |
-| Card | capa, título, formato, data e hora, status, alerta de prazo ou atraso, percentual das subtarefas |
+| Calendário | seletor **Mês, Semana e Feed** (`?visao=semana` e `?visao=feed`; o mês é o padrão); criar pelo botão ou pelo **+** do dia (Conteúdo ou Roteiro de stories); arrastar o card para outra data |
+| Card | compacto e **sem capa**: título, formato, data e hora, status, alerta de prazo ou atraso, percentual das subtarefas; um toque em qualquer ponto abre o conteúdo e o dia cheio mostra **+N** (decisão `2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga`) |
 | Detalhe ao passar o mouse | começo da legenda, responsável, resumo das subtarefas, última mensagem da conversa |
-| Feed | o celular ao lado do calendário, desenhado como um aparelho, com a grade 3×3 dos conteúdos de feed não cancelados, sincronizada com o período e **nove por página**: mais recente primeiro, "1–9 de N" e as setas Página anterior e Próxima página no pé; a página que não enche termina em quadros "nada neste dia" (moldura tracejada com ícone), nunca em espaço em branco; mudar de período ou de cliente volta à primeira página; vídeo longo e VSL só no calendário. Não é uma vista que troca o calendário (decisões de 2026-10-16) |
+| Feed | o celular ao lado do calendário, desenhado como um aparelho, com a grade de **3 colunas** dos conteúdos de feed não cancelados do **cliente inteiro, sem relação com o mês ou a semana abertos no calendário** (decisão `2026-11-04-o-celular-do-calendario-mostra-o-feed-inteiro-do-cliente`): abre no post mais recente, como um perfil real, e rola de verdade (roda, toque e teclado) dentro da tela do aparelho, que tem altura fixa; os próximos nove carregam ao chegar perto do fim, e a última linha pode ficar incompleta, sem quadro vazio. As setas **para cima e para baixo** movem uma tela (nove posts, três linhas) com rolagem suave (sem animação com `prefers-reduced-motion`) e só ficam travadas no começo ou no fim reais do feed. Os contadores do perfil (posts, prontos, aguardando) contam o feed inteiro e vêm da API. Vídeo longo e VSL só no calendário. Criar, editar, mover de data e cancelar atualizam o feed. O celular só aparece a partir de 48 rem de largura; abaixo disso fica escondido e o caminho é a vista **Feed** do seletor, que mostra o período em tela cheia, trinta por página (decisão `2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga`, que traz a vista Feed de volta e substitui nesse ponto a de 2026-10-16) |
 | Mídias | a biblioteca do cliente fica na aba Mídias do detalhe do cliente (`specs/clientes.md`, seção 7); subir mídia antes de existir o post (ensaio fotográfico) |
 
 ### Esboço — modal do conteúdo
@@ -344,7 +344,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 | Admin, Owner | tudo |
 | Gestor de conta | tudo |
 | Produção | opera e publica; sem Aprovar pela agência, sem Cancelar |
-| Vendas, Financeiro | o item Conteúdos e as abas Conteúdos e Mídias não existem; carteira sem indicadores de conteúdo |
+| Vendas, Financeiro | o item Calendário Editorial, a aba Mídias e o botão "Abrir no Calendário Editorial" do perfil não existem; carteira sem indicadores de conteúdo |
 | Pessoa do portal | aprova, pede ajuste, comenta a partir de aguardando aprovação, marca roteiro como gravado |
 
 ### Estados da tela

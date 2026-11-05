@@ -60,10 +60,9 @@ const taskItem = (row: Stored, title: string): HTMLElement => {
 };
 const settled = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 60); });
 const changeOwnerTo = async (row: Stored, person: { membershipId: string }): Promise<void> => {
-  const select = (await within(panel(row)).findByLabelText('Novo responsável')) as HTMLSelectElement;
+  const select = (await within(panel(row)).findByLabelText('Responsável')) as HTMLSelectElement;
   await waitFor(() => expect(select.options.length).toBeGreaterThan(1));
   fireEvent.change(select, { target: { value: person.membershipId } });
-  click(row, 'Trocar responsável');
 };
 
 describe('the tab', () => {
@@ -108,7 +107,6 @@ describe('the due day of a new subtask is a day field with a calendar (#703)', (
     await openContent(row, scenario([row]));
     await waitFor(() => expect((within(dialogOf(row)).getByRole('tab', { name: 'Atribuição' }) as HTMLButtonElement).disabled).toBe(false));
     goTo(row, 'Atribuição');
-    click(row, 'Nova subtarefa');
     await waitFor(() => expect((within(dialogOf(row)).getByLabelText('Responsável pela subtarefa') as HTMLSelectElement).options.length).toBeGreaterThan(1));
     return row;
   };
@@ -183,12 +181,11 @@ describe('the Geral tab follows what the Atribuição tab wrote', () => {
     expect(within(dialogOf(row)).queryByText(MISSING_ONE)).toBeNull();
 
     goTo(row, 'Atribuição');
-    click(row, 'Nova subtarefa');
     await waitFor(() => expect((within(dialogOf(row)).getByLabelText('Responsável pela subtarefa') as HTMLSelectElement).options.length).toBeGreaterThan(1));
     fireEvent.change(within(dialogOf(row)).getByLabelText('Título da subtarefa'), { target: { value: 'Gravar o vídeo' } });
     fireEvent.change(within(dialogOf(row)).getByLabelText('Responsável pela subtarefa'), { target: { value: CARLA.membershipId } });
     fireEvent.change(within(dialogOf(row)).getByLabelText('Prazo da subtarefa'), { target: { value: '2026-10-18' } });
-    click(row, 'Criar subtarefa');
+    click(row, 'Adicionar subtarefa');
     await waitFor(() => expect(taskItem(row, 'Gravar o vídeo')).toBeTruthy());
     goTo(row, 'Geral');
 
@@ -449,43 +446,128 @@ describe('who is in charge of the content', () => {
     await openAssignment(row, { permissions: [...permissions, TEAM], self: ANA.membershipId });
     // The choice would come from the team, which is read a moment after the tab opens: look only after it answered.
     await settled();
-    expect(within(panel(row)).queryByLabelText('Novo responsável')).toBeNull();
+    expect(within(panel(row)).queryByLabelText('Responsável')).toBeNull();
     expect(within(panel(row)).queryByRole('button', { name: 'Trocar responsável' })).toBeNull();
   });
 
-  it('offers it to who has conteudo.operar and conteudo.aprovar_pela_agencia, by name, and changes it', async () => {
+  it('offers it to who has conteudo.operar and conteudo.aprovar_pela_agencia, by name, and saves the choice with no button', async () => {
     const row = complete();
     const { calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
-    const select = (await within(panel(row)).findByLabelText('Novo responsável')) as HTMLSelectElement;
-    await waitFor(() => expect(Array.from(select.options).map((option) => option.textContent)).toEqual(['Escolha uma pessoa', 'Ana Souza', 'Bruno Lima', 'Carla Dias']));
+    const select = (await within(panel(row)).findByLabelText('Responsável')) as HTMLSelectElement;
+    await waitFor(() => expect(Array.from(select.options).map((option) => option.textContent)).toEqual(['Sem responsável', 'Ana Souza', 'Bruno Lima', 'Carla Dias']));
     expect(Array.from(select.options).some((option) => /[0-9a-f]{8}-/.test(option.textContent ?? ''))).toBe(false);
+    expect(within(panel(row)).queryByRole('button', { name: 'Trocar responsável' })).toBeNull();
 
     fireEvent.change(select, { target: { value: BRUNO.membershipId } });
-    click(row, 'Trocar responsável');
-    await waitFor(() => expect(within(panel(row)).getByText('Bruno Lima', { selector: 'p' })).toBeTruthy());
+    await waitFor(() => expect(within(panel(row)).getByText('Salvo')).toBeTruthy());
     expect(writes(calls).map((call) => [call.method, call.body])).toEqual([['PATCH', { ownerMembershipId: BRUNO.membershipId }]]);
-    expect((within(panel(row)).getByLabelText('Novo responsável') as HTMLSelectElement).value).toBe('');
+    expect(select.value).toBe(BRUNO.membershipId);
   });
 
-  it('sends nothing when nobody was chosen, and says so', async () => {
+  it('shows that it is saving while the request is on its way', async () => {
+    const row = complete();
+    const { world } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+    let release!: () => void;
+    world.hold = { match: /\/contents\/[^/]+$/, promise: new Promise<void>((resolve) => { release = resolve; }) };
+    await changeOwnerTo(row, BRUNO);
+    expect(await within(panel(row)).findByText('Salvando…')).toBeTruthy();
+    release();
+    expect(await within(panel(row)).findByText('Salvo')).toBeTruthy();
+  });
+
+  it('ends with the last choice when a new one is made before the previous answered, sending them in order', async () => {
+    const row = complete();
+    const { world, calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+    let release!: () => void;
+    world.hold = { match: /\/contents\/[^/]+$/, promise: new Promise<void>((resolve) => { release = resolve; }) };
+    await changeOwnerTo(row, BRUNO);
+    await changeOwnerTo(row, CARLA);
+    expect((within(panel(row)).getByLabelText('Responsável') as HTMLSelectElement).value).toBe(CARLA.membershipId);
+    release();
+    await waitFor(() => expect(within(panel(row)).getByText('Salvo')).toBeTruthy());
+    expect(writes(calls).map((call) => call.body)).toEqual([{ ownerMembershipId: BRUNO.membershipId }, { ownerMembershipId: CARLA.membershipId }]);
+    expect((within(panel(row)).getByLabelText('Responsável') as HTMLSelectElement).value).toBe(CARLA.membershipId);
+    expect(world.owner?.membershipId).toBe(CARLA.membershipId);
+  });
+
+  it('sends nothing when the saved person is chosen again', async () => {
     const row = complete();
     const { calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
-    await within(panel(row)).findByLabelText('Novo responsável');
-    click(row, 'Trocar responsável');
-    expect(await within(panel(row)).findByText('Escolha quem passa a ser o responsável.')).toBeTruthy();
+    await changeOwnerTo(row, ANA);
+    await settled();
+    expect(writes(calls)).toEqual([]);
+    expect(within(panel(row)).queryByText('Salvando…')).toBeNull();
+  });
+
+  it('does not send again the person that is already on its way when the choice goes back to it', async () => {
+    const row = complete();
+    const { world, calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+    let release!: () => void;
+    world.hold = { match: /\/contents\/[^/]+$/, promise: new Promise<void>((resolve) => { release = resolve; }) };
+    await changeOwnerTo(row, BRUNO);
+    await changeOwnerTo(row, CARLA);
+    await changeOwnerTo(row, BRUNO);
+    release();
+    await waitFor(() => expect(within(panel(row)).getByText('Salvo')).toBeTruthy());
+    await settled();
+    expect(writes(calls).map((call) => call.body)).toEqual([{ ownerMembershipId: BRUNO.membershipId }]);
+    expect(world.owner?.membershipId).toBe(BRUNO.membershipId);
+    expect((within(panel(row)).getByLabelText('Responsável') as HTMLSelectElement).value).toBe(BRUNO.membershipId);
+  });
+
+  it('drops the choices that waited when the one before them is refused, and a later choice does not bring them back', async () => {
+    const row = complete();
+    const { world, calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+    let release!: () => void;
+    world.hold = { match: /\/contents\/[^/]+$/, promise: new Promise<void>((resolve) => { release = resolve; }) };
+    world.failNext = { match: /\/contents\/[^/]+$/, response: () => failure(409, 'TRY_AGAIN') };
+    await changeOwnerTo(row, BRUNO);
+    await changeOwnerTo(row, CARLA);
+    release();
+    expect(await within(panel(row)).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeTruthy();
+    await waitFor(() => expect((within(panel(row)).getByLabelText('Responsável') as HTMLSelectElement).value).toBe(ANA.membershipId));
+    world.hold = undefined;
+    await changeOwnerTo(row, BRUNO);
+    await waitFor(() => expect(within(panel(row)).getByText('Salvo')).toBeTruthy());
+    await settled();
+    expect(writes(calls).map((call) => call.body)).toEqual([{ ownerMembershipId: BRUNO.membershipId }, { ownerMembershipId: BRUNO.membershipId }]);
+    expect(world.owner?.membershipId).toBe(BRUNO.membershipId);
+  });
+
+  it('reads the content again from the server after a refusal, and clears the reason at the next choice', async () => {
+    const row = complete();
+    const { world, calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+    world.failNext = { match: /\/contents\/[^/]+$/, response: () => failure(409, 'TRY_AGAIN') };
+    await changeOwnerTo(row, BRUNO);
+    expect(await within(panel(row)).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeTruthy();
+    const refused = calls.findIndex((call) => call.method === 'PATCH');
+    await waitFor(() => expect(calls.slice(refused + 1).some((call) => call.method === 'GET' && /\/contents\/[^/]+$/.test(call.path.split('?')[0]!))).toBe(true));
+    let release!: () => void;
+    world.hold = { match: /\/contents\/[^/]+$/, promise: new Promise<void>((resolve) => { release = resolve; }) };
+    await changeOwnerTo(row, CARLA);
+    expect(within(panel(row)).queryByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeNull();
+    release();
+    await waitFor(() => expect(within(panel(row)).getByText('Salvo')).toBeTruthy());
+  });
+
+  it('sends nothing when the empty option is chosen', async () => {
+    const row = complete();
+    const { calls } = await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId });
+    const select = (await within(panel(row)).findByLabelText('Responsável')) as HTMLSelectElement;
+    await waitFor(() => expect(select.options.length).toBe(4));
+    fireEvent.change(select, { target: { value: '' } });
+    await settled();
     expect(writes(calls)).toEqual([]);
   });
 
-  it('keeps the choice and the modal when the API refuses the person, with its own words', async () => {
+  it('goes back to the saved person and says why when the API refuses the choice, keeping the modal', async () => {
     const row = complete();
     await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId, team: [ANA, DIOGO] });
-    const select = (await within(panel(row)).findByLabelText('Novo responsável')) as HTMLSelectElement;
+    const select = (await within(panel(row)).findByLabelText('Responsável')) as HTMLSelectElement;
     await waitFor(() => expect(select.options.length).toBe(3));
     fireEvent.change(select, { target: { value: DIOGO.membershipId } });
-    click(row, 'Trocar responsável');
     expect(await within(panel(row)).findByText('A pessoa escolhida não pode ser responsável: precisa estar ativa e poder ver Conteúdo.')).toBeTruthy();
-    expect(select.value).toBe(DIOGO.membershipId);
-    expect(within(panel(row)).getByText('Ana Souza', { selector: 'p' })).toBeTruthy();
+    await waitFor(() => expect(select.value).toBe(ANA.membershipId));
     await settled();
     expect(screen.queryByRole('dialog')).not.toBeNull();
   });
@@ -494,7 +576,7 @@ describe('who is in charge of the content', () => {
     const row = complete();
     const { calls } = await openAssignment(row, { permissions: [VISUALIZE, READ_CLIENTS, OPERATE, APPROVE], self: ANA.membershipId });
     expect(within(panel(row)).getByText('Para escolher uma pessoa é preciso poder ver a equipe da agência.')).toBeTruthy();
-    expect(within(panel(row)).queryByLabelText('Novo responsável')).toBeNull();
+    expect(within(panel(row)).queryByLabelText('Responsável')).toBeNull();
     expect(calls.some((call) => /\/collaborators/.test(call.path))).toBe(false);
   });
 
@@ -503,10 +585,10 @@ describe('who is in charge of the content', () => {
     let release!: () => void;
     const teamGate = new Promise<void>((resolve) => { release = resolve; });
     await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId, teamGate });
-    expect(within(panel(row)).queryByLabelText('Novo responsável')).toBeNull();
+    expect(within(panel(row)).queryByLabelText('Responsável')).toBeNull();
     expect(panel(row).querySelector('[aria-hidden="true"]')).not.toBeNull();
     release();
-    expect(await within(panel(row)).findByLabelText('Novo responsável')).toBeTruthy();
+    expect(await within(panel(row)).findByLabelText('Responsável')).toBeTruthy();
   });
 
   it('says so and offers to try again when the team cannot be read', async () => {
@@ -514,7 +596,7 @@ describe('who is in charge of the content', () => {
     await openAssignment(row, { permissions: MANAGER, self: ANA.membershipId, teamStatus: 403 });
     expect(await within(panel(row)).findByText('Não foi possível carregar a equipe. Tente de novo.')).toBeTruthy();
     expect(within(panel(row)).getByRole('button', { name: 'Tentar de novo' })).toBeTruthy();
-    expect(within(panel(row)).queryByLabelText('Novo responsável')).toBeNull();
+    expect(within(panel(row)).queryByLabelText('Responsável')).toBeNull();
   });
 });
 
@@ -528,7 +610,6 @@ describe('a new subtask', () => {
   };
   const openForm = async (row: Stored, options: Partial<AssignmentOptions> = {}, extra: Parameters<typeof openAssignment>[2] = {}) => {
     const opened = await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, ...options }, extra);
-    click(row, 'Nova subtarefa');
     await waitFor(() => expect((within(dialogOf(row)).getByLabelText('Responsável pela subtarefa') as HTMLSelectElement).options.length).toBeGreaterThan(1));
     return opened;
   };
@@ -539,17 +620,17 @@ describe('a new subtask', () => {
   ])('offers no way to create one to who has %s', async (_name, permissions) => {
     const row = complete();
     await openAssignment(row, { permissions: [...permissions, TEAM], self: ANA.membershipId });
-    expect(within(panel(row)).queryByRole('button', { name: 'Nova subtarefa' })).toBeNull();
+    expect(within(panel(row)).queryByRole('button', { name: 'Adicionar subtarefa' })).toBeNull();
   });
 
-  it('sends the title, the person by link, the day and the description, then shows the new subtask and closes the form', async () => {
+  it('sends the title, the person by link, the day and the description, then shows the new subtask and empties the row', async () => {
     const row = complete();
     const { calls } = await openForm(row);
     fill(row, { title: '  Gravar o vídeo  ', person: CARLA.membershipId, due: '2026-10-18', description: 'Em 4K' });
-    click(row, 'Criar subtarefa');
+    click(row, 'Adicionar subtarefa');
     await waitFor(() => expect(taskItem(row, 'Gravar o vídeo').textContent).toContain('Responsável: Carla Dias · Prazo: 18/10/2026 · Pendente'));
     expect(writes(calls).map((call) => [call.method, call.body])).toEqual([['POST', { title: 'Gravar o vídeo', description: 'Em 4K', assigneeMembershipId: CARLA.membershipId, dueOn: '2026-10-18' }]]);
-    expect(within(panel(row)).queryByLabelText('Título da subtarefa')).toBeNull();
+    expect((within(panel(row)).getByLabelText('Título da subtarefa') as HTMLInputElement).value).toBe('');
     expect(within(panel(row)).getByRole('status').textContent).toBe('0 de 1 aprovada (0%)');
   });
 
@@ -557,7 +638,7 @@ describe('a new subtask', () => {
     const row = complete();
     const { calls } = await openForm(row);
     fill(row, { title: 'Sem descrição', person: BRUNO.membershipId, due: '2026-10-18', description: '   ' });
-    click(row, 'Criar subtarefa');
+    click(row, 'Adicionar subtarefa');
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
     expect(writes(calls)[0]!.body).toEqual({ title: 'Sem descrição', assigneeMembershipId: BRUNO.membershipId, dueOn: '2026-10-18' });
   });
@@ -573,7 +654,7 @@ describe('a new subtask', () => {
     const row = complete();
     const { calls } = await openForm(row);
     fill(row, values);
-    click(row, 'Criar subtarefa');
+    click(row, 'Adicionar subtarefa');
     expect(await within(dialogOf(row)).findByText(text)).toBeTruthy();
     await settled();
     expect(writes(calls)).toEqual([]);
@@ -584,7 +665,7 @@ describe('a new subtask', () => {
     const { calls, world } = await openForm(row);
     world.failNext = { match: /\/tasks$/, response: () => failure(409, 'TRY_AGAIN') };
     fill(row, { title: 'Gravar', person: BRUNO.membershipId, due: '2026-10-18', description: 'Em 4K' });
-    click(row, 'Criar subtarefa');
+    click(row, 'Adicionar subtarefa');
     expect(await within(dialogOf(row)).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeTruthy();
     expect((within(dialogOf(row)).getByLabelText('Título da subtarefa') as HTMLInputElement).value).toBe('Gravar');
     expect((within(dialogOf(row)).getByLabelText('Responsável pela subtarefa') as HTMLSelectElement).value).toBe(BRUNO.membershipId);
@@ -593,7 +674,7 @@ describe('a new subtask', () => {
     await settled();
     expect(screen.queryByRole('dialog')).not.toBeNull();
 
-    click(row, 'Criar subtarefa');
+    click(row, 'Adicionar subtarefa');
     await waitFor(() => expect(taskItem(row, 'Gravar')).toBeTruthy());
     expect(posts(calls)).toHaveLength(2);
   });
@@ -603,20 +684,39 @@ describe('a new subtask', () => {
     const { world } = await openForm(row, { team: [ANA, DIOGO] });
     void world;
     fill(row, { title: 'Gravar', person: DIOGO.membershipId, due: '2026-10-18' });
-    click(row, 'Criar subtarefa');
+    click(row, 'Adicionar subtarefa');
     expect(await within(dialogOf(row)).findByText('A pessoa escolhida não pode ser responsável: precisa estar ativa e poder ver Conteúdo.')).toBeTruthy();
     expect((within(dialogOf(row)).getByLabelText('Título da subtarefa') as HTMLInputElement).value).toBe('Gravar');
   });
 
-  it('closes the form without sending, and opens it empty the next time', async () => {
+  it('creates with Enter in the title, with no button pressed, and empties the row only once it is saved', async () => {
     const row = complete();
     const { calls } = await openForm(row);
-    fill(row, { title: 'Rascunho' });
-    click(row, 'Cancelar');
-    expect(within(dialogOf(row)).queryByLabelText('Título da subtarefa')).toBeNull();
-    click(row, 'Nova subtarefa');
-    expect((within(dialogOf(row)).getByLabelText('Título da subtarefa') as HTMLInputElement).value).toBe('Rascunho');
-    expect(writes(calls)).toEqual([]);
+    fill(row, { title: 'Gravar com Enter', person: BRUNO.membershipId, due: '2026-10-18' });
+    fireEvent.keyDown(within(dialogOf(row)).getByLabelText('Título da subtarefa'), { key: 'Enter' });
+    await waitFor(() => expect(taskItem(row, 'Gravar com Enter')).toBeTruthy());
+    expect(posts(calls).map((call) => call.body)).toEqual([{ title: 'Gravar com Enter', assigneeMembershipId: BRUNO.membershipId, dueOn: '2026-10-18' }]);
+    expect((within(dialogOf(row)).getByLabelText('Título da subtarefa') as HTMLInputElement).value).toBe('');
+  });
+
+  it('does not create with Enter while the plan blocks writes', async () => {
+    const row = complete();
+    const { calls } = await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, readOnly: true });
+    await within(panel(row)).findByLabelText('Título da subtarefa');
+    fill(row, { title: 'Bloqueada', person: BRUNO.membershipId, due: '2026-10-18' });
+    fireEvent.keyDown(within(dialogOf(row)).getByLabelText('Título da subtarefa'), { key: 'Enter' });
+    await settled();
+    expect(posts(calls)).toEqual([]);
+  });
+
+  it('keeps the title typed when the creation by Enter is refused, and says why', async () => {
+    const row = complete();
+    const { world } = await openForm(row);
+    world.failNext = { match: /\/tasks$/, response: () => failure(409, 'TRY_AGAIN') };
+    fill(row, { title: 'Não se perde', person: BRUNO.membershipId, due: '2026-10-18' });
+    fireEvent.keyDown(within(dialogOf(row)).getByLabelText('Título da subtarefa'), { key: 'Enter' });
+    expect(await within(dialogOf(row)).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeTruthy();
+    expect((within(dialogOf(row)).getByLabelText('Título da subtarefa') as HTMLInputElement).value).toBe('Não se perde');
   });
 
   describe('the limit of 50', () => {
@@ -625,7 +725,7 @@ describe('a new subtask', () => {
     it('offers no new subtask at 50, with the reason in its own words', async () => {
       const row = complete();
       await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, tasks: fifty() });
-      expect(within(panel(row)).queryByRole('button', { name: 'Nova subtarefa' })).toBeNull();
+      expect(within(panel(row)).queryByRole('button', { name: 'Adicionar subtarefa' })).toBeNull();
       expect(within(panel(row)).getByText('Um conteúdo leva no máximo 50 subtarefas.')).toBeTruthy();
     });
 
@@ -634,7 +734,7 @@ describe('a new subtask', () => {
       const { world } = await openForm(row, { tasks: fifty().slice(0, 40) });
       world.refuseLimit = true;
       fill(row, { title: 'Gravar', person: ANA.membershipId, due: '2026-10-18' });
-      click(row, 'Criar subtarefa');
+      click(row, 'Adicionar subtarefa');
       expect(await within(dialogOf(row)).findByText('Um conteúdo leva no máximo 50 subtarefas.')).toBeTruthy();
       expect((within(dialogOf(row)).getByLabelText('Título da subtarefa') as HTMLInputElement).value).toBe('Gravar');
     });
@@ -646,10 +746,10 @@ describe('a new subtask', () => {
       // Another operator created the 50th and the 51st in the meantime.
       world.tasks.push(task({ title: 'Do outro operador' }), task({ title: 'Do outro operador 2' }));
       fill(row, { title: 'Gravar', person: ANA.membershipId, due: '2026-10-18' });
-      click(row, 'Criar subtarefa');
+      click(row, 'Adicionar subtarefa');
       expect(await within(dialogOf(row)).findByText('Um conteúdo leva no máximo 50 subtarefas.')).toBeTruthy();
       await waitFor(() => expect(within(panel(row)).getByText('Do outro operador 2')).toBeTruthy());
-      expect(within(panel(row)).queryByRole('button', { name: 'Nova subtarefa' })).toBeNull();
+      expect(within(panel(row)).queryByRole('button', { name: 'Adicionar subtarefa' })).toBeNull();
       expect(posts(calls)).toHaveLength(1);
     });
   });
@@ -722,13 +822,12 @@ describe('editing a subtask that exists', () => {
     const tasks = two();
     const { calls, world } = await openEdit(row, 'Segunda', { tasks });
     fireEvent.change(titleBox(row, 'Segunda'), { target: { value: '  Segunda parte  ' } });
-    fireEvent.change(personBox(row, 'Segunda'), { target: { value: CARLA.membershipId } });
     fireEvent.change(dueBox(row, 'Segunda'), { target: { value: '25/10/2026' } });
     fireEvent.click(save(row, 'Segunda'));
 
-    await waitFor(() => expect(taskItem(row, 'Segunda parte').textContent).toContain('Responsável: Carla Dias · Prazo: 25/10/2026 · Entregue'));
-    expect(writes(calls).map((call) => [call.method, call.path.split('/').at(-1), call.body])).toEqual([['PATCH', tasks[1]!.id, { title: 'Segunda parte', assigneeMembershipId: CARLA.membershipId, dueOn: '2026-10-25' }]]);
-    expect(world.tasks.map((item) => [item.title, item.assignee?.name, item.dueOn])).toEqual([['Primeira', 'Ana Souza', '2026-10-20'], ['Segunda parte', 'Carla Dias', '2026-10-25']]);
+    await waitFor(() => expect(taskItem(row, 'Segunda parte').textContent).toContain('Responsável: Bruno Lima · Prazo: 25/10/2026 · Entregue'));
+    expect(writes(calls).map((call) => [call.method, call.path.split('/').at(-1), call.body])).toEqual([['PATCH', tasks[1]!.id, { title: 'Segunda parte', dueOn: '2026-10-25' }]]);
+    expect(world.tasks.map((item) => [item.title, item.assignee?.name, item.dueOn])).toEqual([['Primeira', 'Ana Souza', '2026-10-20'], ['Segunda parte', 'Bruno Lima', '2026-10-25']]);
     expect(taskItem(row, 'Primeira').textContent).toContain('Responsável: Ana Souza · Prazo: 20/10/2026 · Pendente');
     // Closed: the title it was named by has changed, so the whole family of its labels is looked for.
     expect(within(dialogOf(row)).queryByLabelText(/^Título de /)).toBeNull();
@@ -737,7 +836,6 @@ describe('editing a subtask that exists', () => {
 
   it.each(changes([
     ['only the title', { title: 'Nova' }, { title: 'Nova' }],
-    ['only the person', { person: CARLA.membershipId }, { assigneeMembershipId: CARLA.membershipId }],
     ['only the day', { due: '2026-10-30' }, { dueOn: '2026-10-30' }]
   ]))('sends %s when only that was changed', async (_name, change, body) => {
     const row = complete();
@@ -754,7 +852,6 @@ describe('editing a subtask that exists', () => {
     ['an empty title', { title: '' }, 'Informe o título da subtarefa, em uma linha e com até 120 caracteres.'],
     ['a title with an invisible character', { title: 'a​b' }, 'Informe o título da subtarefa, em uma linha e com até 120 caracteres.'],
     ['a title of 121 characters', { title: 'a'.repeat(121) }, 'Informe o título da subtarefa, em uma linha e com até 120 caracteres.'],
-    ['nobody in charge', { person: '' }, 'Escolha o responsável.'],
     ['no day', { due: '' }, 'Informe o prazo.']
   ]))('sends nothing with %s, and says why', async (_name, change, text) => {
     const row = complete();
@@ -788,18 +885,16 @@ describe('editing a subtask that exists', () => {
     const { calls, world } = await openEdit(row, 'Primeira');
     world.failNext = { match: /\/tasks\/[^/]+$/, response: () => failure(409, 'TRY_AGAIN') };
     fireEvent.change(titleBox(row, 'Primeira'), { target: { value: 'Primeira revisada' } });
-    fireEvent.change(personBox(row, 'Primeira'), { target: { value: BRUNO.membershipId } });
     fireEvent.change(dueBox(row, 'Primeira'), { target: { value: '28/10/2026' } });
     fireEvent.click(save(row, 'Primeira'));
     expect(await within(dialogOf(row)).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.')).toBeTruthy();
     expect(titleBox(row, 'Primeira').value).toBe('Primeira revisada');
-    expect(personBox(row, 'Primeira').value).toBe(BRUNO.membershipId);
     expect(dueBox(row, 'Primeira').value).toBe('28/10/2026');
     await settled();
     expect(screen.queryByRole('dialog')).not.toBeNull();
 
     fireEvent.click(save(row, 'Primeira'));
-    await waitFor(() => expect(taskItem(row, 'Primeira revisada').textContent).toContain('Responsável: Bruno Lima · Prazo: 28/10/2026'));
+    await waitFor(() => expect(taskItem(row, 'Primeira revisada').textContent).toContain('Responsável: Ana Souza · Prazo: 28/10/2026'));
     expect(writes(calls)).toHaveLength(2);
   });
 
@@ -822,13 +917,63 @@ describe('editing a subtask that exists', () => {
     expect(within(taskItem(row, 'Primeira')).queryByRole('alert')).toBeNull();
   });
 
-  it('says in its own words that the person cannot be in charge, when the API refuses the one that was chosen', async () => {
+  it('saves the person of a subtask as soon as she is chosen, with no button and only that field', async () => {
     const row = complete();
-    await openEdit(row, 'Primeira', { team: [ANA, DIOGO, BRUNO] });
-    fireEvent.change(personBox(row, 'Primeira'), { target: { value: DIOGO.membershipId } });
-    fireEvent.click(save(row, 'Primeira'));
+    const tasks = two();
+    const { calls } = await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, tasks });
+    const box = (await within(taskItem(row, 'Segunda')).findByLabelText('Responsável por “Segunda”')) as HTMLSelectElement;
+    await waitFor(() => expect(box.options.length).toBeGreaterThan(2));
+    fireEvent.change(box, { target: { value: CARLA.membershipId } });
+    await waitFor(() => expect(taskItem(row, 'Segunda').textContent).toContain('Responsável: Carla Dias'));
+    expect(writes(calls).map((call) => [call.method, call.path.split('/').at(-1), call.body])).toEqual([['PATCH', tasks[1]!.id, { assigneeMembershipId: CARLA.membershipId }]]);
+    expect(taskItem(row, 'Primeira').textContent).toContain('Responsável: Ana Souza');
+  });
+
+  it('keeps the person chosen live when the title is saved from a form opened before the choice', async () => {
+    const row = complete();
+    const tasks = two();
+    const { calls, world } = await openEdit(row, 'Segunda', { tasks });
+    fireEvent.change(personBox(row, 'Segunda'), { target: { value: CARLA.membershipId } });
+    await waitFor(() => expect(taskItem(row, 'Segunda').textContent).toContain('Responsável: Carla Dias'));
+    fireEvent.change(titleBox(row, 'Segunda'), { target: { value: 'Segunda parte' } });
+    fireEvent.click(save(row, 'Segunda'));
+    await waitFor(() => expect(writes(calls)).toHaveLength(2));
+    expect(writes(calls).map((call) => call.body)).toEqual([{ assigneeMembershipId: CARLA.membershipId }, { title: 'Segunda parte' }]);
+    expect(world.tasks[1]!.assignee?.membershipId).toBe(CARLA.membershipId);
+  });
+
+  it('sends the choice that goes back to the old person while the screen reads again, and ends with it', async () => {
+    const row = complete();
+    const tasks = two();
+    const { calls, world } = await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, tasks });
+    const box = (await within(taskItem(row, 'Segunda')).findByLabelText('Responsável por “Segunda”')) as HTMLSelectElement;
+    await waitFor(() => expect(box.options.length).toBeGreaterThan(2));
+    let release!: () => void;
+    world.holdRead = new Promise<void>((resolve) => { release = resolve; });
+    fireEvent.change(box, { target: { value: CARLA.membershipId } });
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    await settled();
+    fireEvent.change(box, { target: { value: BRUNO.membershipId } });
+    release();
+    await waitFor(() => expect(world.tasks[1]!.assignee?.membershipId).toBe(BRUNO.membershipId));
+    expect(writes(calls).map((call) => call.body)).toEqual([{ assigneeMembershipId: CARLA.membershipId }, { assigneeMembershipId: BRUNO.membershipId }]);
+  });
+
+  it('offers no choice of person on a subtask while the plan blocks writes', async () => {
+    const row = complete();
+    await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, tasks: two(), readOnly: true });
+    const box = (await within(taskItem(row, 'Segunda')).findByLabelText('Responsável por “Segunda”')) as HTMLSelectElement;
+    expect(box.disabled).toBe(true);
+  });
+
+  it('goes back to the saved person of the subtask and says why when the API refuses the one that was chosen', async () => {
+    const row = complete();
+    await openAssignment(row, { permissions: OPERATOR, self: ANA.membershipId, tasks: two(), team: [ANA, DIOGO, BRUNO] });
+    const box = (await within(taskItem(row, 'Primeira')).findByLabelText('Responsável por “Primeira”')) as HTMLSelectElement;
+    await waitFor(() => expect(box.options.length).toBeGreaterThan(2));
+    fireEvent.change(box, { target: { value: DIOGO.membershipId } });
     expect(await within(taskItem(row, 'Primeira')).findByText('A pessoa escolhida não pode ser responsável: precisa estar ativa e poder ver Conteúdo.')).toBeTruthy();
-    expect(personBox(row, 'Primeira').value).toBe(DIOGO.membershipId);
+    await waitFor(() => expect(box.value).toBe(ANA.membershipId));
   });
 
   it('closes the form without sending, and opens it again from what is saved, not from what was typed', async () => {
@@ -866,7 +1011,7 @@ describe('editing a subtask that exists', () => {
     const row = complete();
     await openAssignment(row, { permissions: [VISUALIZE, READ_CLIENTS, OPERATE], self: ANA.membershipId, tasks: two() });
     fireEvent.click(within(taskItem(row, 'Primeira')).getByRole('button', { name: 'Editar “Primeira”' }));
-    expect(await within(dialogOf(row)).findByText('Para escolher uma pessoa é preciso poder ver a equipe da agência.')).toBeTruthy();
+    expect((await within(dialogOf(row)).findAllByText('Para escolher uma pessoa é preciso poder ver a equipe da agência.')).length).toBeGreaterThan(0);
     expect(within(dialogOf(row)).queryByLabelText('Título de “Primeira”')).toBeNull();
   });
 });
@@ -977,7 +1122,7 @@ describe('what cannot be written', () => {
     expect(within(area).getByText('Cliente arquivado: o conteúdo é só leitura.')).toBeTruthy();
     expect(within(area).getByText('Em revisão')).toBeTruthy();
     expect(within(area).queryAllByRole('button')).toEqual([]);
-    expect(within(area).queryByLabelText('Novo responsável')).toBeNull();
+    expect(within(area).queryByLabelText('Responsável')).toBeNull();
   });
 
   it.each(['published', 'cancelled'] as const)('shows a %s content as read-only: no move, no new subtask, no change of owner', async (status) => {
@@ -985,6 +1130,6 @@ describe('what cannot be written', () => {
     await openAssignment(row, writableOptions);
     expect(within(panel(row)).getByText('Este conteúdo já foi publicado ou cancelado: a atribuição é só leitura.')).toBeTruthy();
     expect(within(panel(row)).queryAllByRole('button')).toEqual([]);
-    expect(within(panel(row)).queryByLabelText('Novo responsável')).toBeNull();
+    expect(within(panel(row)).queryByLabelText('Responsável')).toBeNull();
   });
 });

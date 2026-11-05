@@ -11,6 +11,7 @@ import { Button, Skeleton } from '@ageniza/ui';
 import { apiPath } from './api-path.js';
 import { useSeen } from './use-seen.js';
 import { useApiClient } from './http.js';
+import { RecoverableVideo } from './recoverable-video.js';
 import { signedUrlStaleTime } from './signed-url.js';
 
 const MEDIA_URL_PATH = '/clients/:clientId/contents/:contentId/media/:assetId/url';
@@ -79,15 +80,17 @@ function Slide({ ids, format, coverAssetId, item, position, total, title }: {
   }
   const label = `${title}: mídia ${position} de ${total}`;
   if (asVideo) {
-    return <video
+    return <RecoverableVideo
       className="portal-media__item"
-      src={url}
+      problemClassName="portal-media__problem"
+      url={url}
       poster={posterUrl}
-      controls
-      playsInline
-      preload="metadata"
-      aria-label={label}
-      onError={() => setFailed(true)}
+      label={label}
+      refreshing={original.isFetching}
+      refresh={async () => {
+        const answer = await original.refetch();
+        return answer.isError ? undefined : usableUrl(answer.data);
+      }}
     />;
   }
   return <img

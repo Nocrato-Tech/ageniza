@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, NavLink, Outlet, useLocation, useMatch, useOutletContext, useParams } from 'react-router-dom';
-import { Archive, ArrowLeft, ArrowRight, Circle, Clock, Pencil } from 'lucide-react';
+import { Archive, ArrowLeft, ArrowRight, CalendarDays, Circle, Clock, Pencil } from 'lucide-react';
 import { z } from 'zod';
 
 import { ClientDetailResponseSchema, ClientSchema, type ClientDetailResponse } from '@ageniza/contracts';
@@ -54,10 +54,9 @@ interface ClientTab {
   readonly label: string;
 }
 
-/** `specs/clientes.md` §7: seven tabs, with Acessos only for whoever manages portal access. */
+/** `specs/clientes.md` §7: six tabs, with Acessos only for whoever manages portal access. */
 const CLIENT_TABS: readonly ClientTab[] = [
   { slug: 'geral', label: 'Geral' },
-  { slug: 'conteudos', label: 'Conteúdos' },
   { slug: 'midias', label: 'Mídias' },
   { slug: 'tarefas', label: 'Tarefas' },
   { slug: 'estudo-de-marca', label: 'Estudo de marca' },
@@ -78,7 +77,10 @@ export const useClientDetail = (): ClientDetailResponse => {
 
 function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit: () => void }) {
   const canOperate = useCan('cliente.operar');
+  const canSeeContents = useCan('conteudo.visualizar');
   const blocked = useWriteBlocked();
+  const agency = useAgencyContext();
+  const location = useLocation();
   const active = client.status === 'active';
 
   return <header className="client-detail__header">
@@ -92,6 +94,8 @@ function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit
       </ul>
     </div>
     <div className="client-detail__actions">
+      {/* The calendar and the feed live only on the screen of Conteúdos (decision 2026-11-04); the roster address travels along, so coming back keeps it. */}
+      {canSeeContents && <ButtonLink as={Link} variant="secondary" leadingIcon={<CalendarDays />} state={location.state} to={`/agencia/${agency.agencyId}/conteudos/${client.id}`}>Abrir no Calendário Editorial</ButtonLink>}
       {canOperate && active && <Button variant="secondary" leadingIcon={<Pencil />} blockedReason={blocked} onClick={onEdit}>Editar</Button>}
       <ClientLifecycleActions client={client} />
     </div>
@@ -114,7 +118,6 @@ export function ClientDetailPage() {
   // A tab someone cannot see is not a screen: the whole address is the ordinary not-found, and
   // the header never reveals the client behind a hidden tab (specs/clientes.md §7).
   const accessTab = useMatch('/agencia/:agenciaId/clientes/:clienteId/acessos');
-  const contentsTab = useMatch('/agencia/:agenciaId/clientes/:clienteId/conteudos/*');
   const mediaTab = useMatch('/agencia/:agenciaId/clientes/:clienteId/midias/*');
   const normalizedId = clienteId.toLowerCase();
   const validId = ClientSchema.shape.id.safeParse(normalizedId).success;
@@ -133,7 +136,7 @@ export function ClientDetailPage() {
   const client = !notFound && detail.data?.id.toLowerCase() === normalizedId ? detail.data : undefined;
   useDocumentTitle(client === undefined ? 'Cliente — Ageniza' : `${client.name} — Ageniza`);
 
-  if (notFound || (accessTab !== null && !canSeeAccess) || ((contentsTab !== null || mediaTab !== null) && !canSeeContents)) return <NotFoundPage as="section" />;
+  if (notFound || (accessTab !== null && !canSeeAccess) || (mediaTab !== null && !canSeeContents)) return <NotFoundPage as="section" />;
 
   // The roster passes its own address (filters and page included) when it opens the detail
   // (review of #379, specs/clientes.md §7 "volta à carteira preservando busca, filtro e página").
@@ -173,8 +176,8 @@ export function ClientDetailPage() {
     </section>;
   }
 
-  // Vendas and Financeiro do not see Conteúdo, nor what Clientes shows of it: the calendar and the media (specs/conteudo.md section 2).
-  const visible = canSeeContents ? CLIENT_TABS : CLIENT_TABS.filter((tab) => tab.slug !== 'conteudos' && tab.slug !== 'midias');
+  // Vendas and Financeiro do not see Conteúdo, nor what Clientes shows of it: the media (specs/conteudo.md section 2).
+  const visible = canSeeContents ? CLIENT_TABS : CLIENT_TABS.filter((tab) => tab.slug !== 'midias');
   const tabs = canSeeAccess ? [...visible, ACCESS_TAB] : visible;
   return <section className="client-detail" aria-labelledby="client-detail-title">
     {back}
@@ -254,10 +257,6 @@ export function ClientGeneralTab() {
         <ArrowRight className="client-general__go" aria-hidden="true" />
       </Link>
       : portalBlock}
-    <section className="client-general__reserved" aria-labelledby="client-health-title">
-      <h2 id="client-health-title">Saúde do cliente</h2>
-      <p>Pendentes, atrasos e próximos posts aparecem quando os módulos de Conteúdo e Tarefas existirem.</p>
-    </section>
   </div>;
 }
 

@@ -81,16 +81,14 @@ export const newTaskBody = (values: NewTaskValues): { body: ReturnType<typeof Cr
 
 export interface EditTaskValues {
   readonly title: string;
-  readonly assigneeMembershipId: string;
   readonly dueOn: string;
 }
 
 export type EditTaskErrors = Partial<Record<keyof EditTaskValues, string>>;
 
-/** What a form of edition starts from: the subtask as it is saved. */
+/** What a form of edition starts from: the subtask as it is saved. The person is not here: she is saved as she is chosen. */
 export const editValuesOf = (task: ContentTask): EditTaskValues => ({
   title: task.title,
-  assigneeMembershipId: task.assignee?.membershipId ?? '',
   dueOn: task.dueOn
 });
 
@@ -100,7 +98,6 @@ export const canEditTask = (task: ContentTask): boolean => task.status !== 'appr
 /** Only what changed travels, like the Geral form; the title is compared as the API stores it (trimmed). */
 export const editedFields = (task: ContentTask, values: EditTaskValues): Partial<EditTaskValues> => ({
   ...(values.title.trim() !== task.title ? { title: values.title } : {}),
-  ...(values.assigneeMembershipId !== (task.assignee?.membershipId ?? '') ? { assigneeMembershipId: values.assigneeMembershipId } : {}),
   ...(values.dueOn !== task.dueOn ? { dueOn: values.dueOn } : {})
 });
 
@@ -115,7 +112,7 @@ export const editTaskBody = (task: ContentTask, values: EditTaskValues):
   const errors: EditTaskErrors = {};
   for (const issue of parsed.error.issues) {
     const field = issue.path[0];
-    if (field === 'title' || field === 'assigneeMembershipId' || field === 'dueOn') errors[field] ??= FIELD_TEXT[field];
+    if (field === 'title' || field === 'dueOn') errors[field] ??= FIELD_TEXT[field];
   }
   return { errors };
 };

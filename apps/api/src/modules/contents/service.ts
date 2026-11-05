@@ -1,6 +1,8 @@
 import type {
   Content,
   ContentDetail,
+  ContentFeedPosition,
+  ContentFeedResponse,
   ContentListItem,
   ContentTask,
   CreateContentRequest,
@@ -159,6 +161,95 @@ export const loadClientStatus = async (
   return result.rows[0]?.status;
 };
 
+const LIST_SELECT = `
+select
+  content.id, content.title, content.platform, content.format, content.publish_on::text as publish_on,
+  to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.status,
+  owner_link.id as owner_membership_id, owner_account.name as owner_name,
+  content.cover_asset_id, thumbnail.asset_id as thumbnail_asset_id, content.revision, content.published_on::text as published_on,
+  tasks.total as tasks_total, tasks.approved as tasks_approved
+from public.contents content
+${OWNER_JOINS}
+left join lateral (
+  select entry.asset_id
+  from (
+    select content.cover_asset_id as asset_id, 0 as item_position where content.cover_asset_id is not null
+    union all
+    select item.asset_id, item.position from public.content_media item where item.content_id = content.id
+  ) entry
+  join public.media_assets asset on asset.id = entry.asset_id
+  where asset.status = 'confirmed' and asset.removed_at is null
+  order by entry.item_position, entry.asset_id
+  limit 1
+) thumbnail on true
+left join lateral (
+  select count(*) as total, count(*) filter (where task.status = 'approved') as approved
+  from public.content_tasks task
+  where task.content_id = content.id
+) tasks on true
+`;
+
+const listItemOf = (row: ListRow): ContentListItem => ({
+  id: row.id,
+  title: row.title,
+  platform: row.platform,
+  format: row.format,
+  publishOn: row.publish_on,
+  publishAtTime: row.publish_at_time,
+  status: row.status,
+  owner: ownerOf(row),
+  coverAssetId: row.cover_asset_id,
+  thumbnailAssetId: row.thumbnail_asset_id,
+  revision: Number(row.revision),
+  publishedOn: row.published_on,
+  tasksTotal: Number(row.tasks_total),
+  tasksApproved: Number(row.tasks_approved)
+});
+
+/** The formats of the feed's grid; long videos and VSLs live in the calendar only (specs/conteudo.md section 7). */
+const FEED_FORMATS = ['image', 'carousel', 'reels'];
+/** A post with no time is the last of its day, as the calendar reads it. */
+const FEED_TIME = `coalesce(content.publish_at_time, time '24:00:00')`;
+const FEED_FILTER = `content.client_id = ?::uuid and content.format::text = any(?::text[]) and content.status <> 'cancelled'`;
+
+/**
+ * One page of the client's feed, the newest post first, independent of any period: day, time (none counts as the end of
+ * the day) and id, all descending, so a tie on day and time is broken by the id and a page never repeats or skips a post.
+ * `after` is the position of the last post of the page before. The counters are over the whole feed and are read
+ * only for the first page (no `after`), by `app_private.content_feed_counters`: a count under the policy of `contents` costs a
+ * permission check per row, and the reader keeps the first answer. Reads `limit + 1` to know whether another page exists.
+ */
+export const listFeed = async (
+  transaction: ContentTransaction,
+  input: { readonly clientId: string; readonly after: ContentFeedPosition | undefined; readonly limit: number }
+): Promise<{ readonly contents: ContentListItem[]; readonly next: ContentFeedPosition | undefined; readonly counters: ContentFeedResponse['data']['counters'] }> => {
+  const formats = `{${FEED_FORMATS.join(',')}}`;
+  const rows = await raw<RawRows<ListRow & { readonly feed_time: string }>>(transaction, `
+    ${LIST_SELECT.replace('select\n', `select\n  ${FEED_TIME}::text as feed_time,\n`)}
+    where ${FEED_FILTER}
+      ${input.after === undefined ? '' : `and (content.publish_on, ${FEED_TIME}, content.id) < (?::date, ?::time, ?::uuid)`}
+    order by content.publish_on desc, ${FEED_TIME} desc, content.id desc
+    limit ?
+  `, [
+    input.clientId, formats,
+    ...(input.after === undefined ? [] : [input.after.publishOn, input.after.time, input.after.id]),
+    input.limit + 1
+  ]);
+  // The function of the database checks the permission once and counts; the same count under the policy of `contents` runs
+  // has_agency_permission for every row. A caller it gives no row to (the guard of the route answered first) reads zeros.
+  const counted = input.after !== undefined ? undefined : await raw<RawRows<{ posts: string | number; approved: string | number; awaiting: string | number }>>(transaction, `
+    select posts, approved, awaiting from app_private.content_feed_counters(?::uuid, ?::text[])
+  `, [input.clientId, formats]);
+  const page = rows.rows.slice(0, input.limit);
+  const last = page[page.length - 1];
+  const counts = counted?.rows[0];
+  return {
+    contents: page.map(listItemOf),
+    next: rows.rows.length > input.limit && last !== undefined ? { publishOn: last.publish_on, time: last.feed_time, id: last.id } : undefined,
+    counters: counted === undefined ? null : { posts: Number(counts?.posts ?? 0), approved: Number(counts?.approved ?? 0), awaitingApproval: Number(counts?.awaiting ?? 0) }
+  };
+};
+
 /**
  * Both kinds of item of a period, each read one past the ceiling so the caller can tell "at the ceiling" from
  * "over it" without counting what it will refuse. One kind alone over the ceiling is over it for the two.
@@ -168,31 +259,7 @@ export const listPeriod = async (
   input: { readonly clientId: string; readonly from: string; readonly to: string; readonly limit: number }
 ): Promise<{ readonly contents: ContentListItem[]; readonly storyScripts: StoryScriptListItem[] }> => {
   const contents = await raw<RawRows<ListRow>>(transaction, `
-    select
-      content.id, content.title, content.platform, content.format, content.publish_on::text as publish_on,
-      to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.status,
-      owner_link.id as owner_membership_id, owner_account.name as owner_name,
-      content.cover_asset_id, thumbnail.asset_id as thumbnail_asset_id, content.revision, content.published_on::text as published_on,
-      tasks.total as tasks_total, tasks.approved as tasks_approved
-    from public.contents content
-    ${OWNER_JOINS}
-    left join lateral (
-      select entry.asset_id
-      from (
-        select content.cover_asset_id as asset_id, 0 as item_position where content.cover_asset_id is not null
-        union all
-        select item.asset_id, item.position from public.content_media item where item.content_id = content.id
-      ) entry
-      join public.media_assets asset on asset.id = entry.asset_id
-      where asset.status = 'confirmed' and asset.removed_at is null
-      order by entry.item_position, entry.asset_id
-      limit 1
-    ) thumbnail on true
-    left join lateral (
-      select count(*) as total, count(*) filter (where task.status = 'approved') as approved
-      from public.content_tasks task
-      where task.content_id = content.id
-    ) tasks on true
+    ${LIST_SELECT}
     where content.client_id = ?::uuid and content.publish_on between ?::date and ?::date
     order by content.publish_on, content.publish_at_time, content.id
     limit ?
@@ -207,22 +274,7 @@ export const listPeriod = async (
   `, [input.clientId, input.from, input.to, input.limit]);
 
   return {
-    contents: contents.rows.map((row) => ({
-      id: row.id,
-      title: row.title,
-      platform: row.platform,
-      format: row.format,
-      publishOn: row.publish_on,
-      publishAtTime: row.publish_at_time,
-      status: row.status,
-      owner: ownerOf(row),
-      coverAssetId: row.cover_asset_id,
-      thumbnailAssetId: row.thumbnail_asset_id,
-      revision: Number(row.revision),
-      publishedOn: row.published_on,
-      tasksTotal: Number(row.tasks_total),
-      tasksApproved: Number(row.tasks_approved)
-    })),
+    contents: contents.rows.map(listItemOf),
     storyScripts: scripts.rows.map((row) => ({ id: row.id, scriptOn: row.script_on, status: row.status }))
   };
 };
@@ -266,7 +318,7 @@ export const contentFromRow = (row: ContentRow): Content => ({
 /** The owner is omitted, never sent as null, so the column default (who creates) applies. */
 export const insertContent = async (
   transaction: ContentTransaction,
-  input: { readonly clientId: string; readonly body: Omit<CreateContentRequest, 'ownerMembershipId'>; readonly ownerUserId: string | undefined }
+  input: { readonly clientId: string; readonly body: Omit<CreateContentRequest, 'ownerMembershipId' | 'mediaAssetIds'>; readonly ownerUserId: string | undefined }
 ): Promise<string> => {
   const { body } = input;
   const result = await raw<RawRows<{ id: string }>>(transaction, `
@@ -284,9 +336,10 @@ export const insertContent = async (
 
 /**
  * What a PATCH writes into the row: the body without the link that names the owner, and the user that link resolved to. The route
- * resolves the link, because the column holds a user and no caller is given one.
+ * resolves the link, because the column holds a user and no caller is given one. The folder is no column to write here: it moves
+ * with the media, by `moveContentFolder`.
  */
-export type ContentChanges = Omit<UpdateContentRequest, 'ownerMembershipId'> & { readonly ownerUserId?: string };
+export type ContentChanges = Omit<UpdateContentRequest, 'ownerMembershipId' | 'folderId'> & { readonly ownerUserId?: string };
 
 /** Body field -> column and cast: the only columns a PATCH writes, in the order of the grant. */
 const UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof ContentChanges, string, string]> = [
@@ -295,7 +348,6 @@ const UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof ContentChanges, string, s
   ['publishOn', 'publish_on', '::date'],
   ['publishAtTime', 'publish_at_time', '::time'],
   ['caption', 'caption', ''],
-  ['folderId', 'folder_id', '::uuid'],
   ['coverAssetId', 'cover_asset_id', '::uuid'],
   ['ownerUserId', 'owner_user_id', '::uuid']
 ];
@@ -333,6 +385,28 @@ export const replaceContentMedia = async (
 ): Promise<void> => {
   // The ids are UUIDs the contract already checked; the array literal is the one way to hand the function a list.
   await raw(transaction, 'select app_private.set_content_media(?::uuid, ?::uuid[])', [input.contentId, `{${input.assetIds.join(',')}}`]);
+};
+
+/**
+ * A content born takes the media its folder holds and its format takes, newest first; the route calls it when the body names no list.
+ */
+export const inheritContentMedia = async (transaction: ContentTransaction, input: { readonly contentId: string }): Promise<void> => {
+  await raw(transaction, 'select app_private.inherit_content_media(?::uuid)', [input.contentId]);
+};
+
+/**
+ * The folder, the list and the cover change together: the list is `assetIds` when the caller names it, or what the new folder
+ * holds when it is `undefined`; the cover goes back to none. Asking for the folder the content already has only writes the list.
+ */
+export const moveContentFolder = async (
+  transaction: ContentTransaction,
+  input: { readonly contentId: string; readonly folderId: string; readonly assetIds: readonly string[] | undefined }
+): Promise<void> => {
+  await raw(transaction, 'select app_private.move_content_folder(?::uuid, ?::uuid, ?::uuid[])', [
+    input.contentId,
+    input.folderId,
+    input.assetIds === undefined ? null : `{${input.assetIds.join(',')}}`
+  ]);
 };
 
 /**

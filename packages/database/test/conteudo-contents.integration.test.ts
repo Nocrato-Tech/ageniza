@@ -86,7 +86,7 @@ describe('what ageniza_app may write on the three tables (issue #249)', () => {
       ['caption', 'client_id', 'cover_asset_id', 'folder_id', 'format', 'owner_user_id', 'platform', 'publish_at_time', 'publish_on', 'title']
     );
     expect(await w.columnsWithPrivilege('contents', 'update')).toEqual(
-      ['caption', 'cover_asset_id', 'folder_id', 'format', 'owner_user_id', 'publish_at_time', 'publish_on', 'title']
+      ['caption', 'cover_asset_id', 'format', 'owner_user_id', 'publish_at_time', 'publish_on', 'title']
     );
     expect(await w.tablePrivileges('contents')).toEqual({ can_select: true, table_insert: false, table_update: false, can_delete: false, can_truncate: false });
   });
@@ -329,7 +329,7 @@ describe('editing a content: what keeps the approval and what annuls it (issue #
 
     for (const patch of [
       { title: 'x' }, { publish_on: '2026-12-01' }, { publish_at_time: '10:00' }, { caption: 'x' }, { format: 'image' },
-      { owner_user_id: ids.managerA }, { folder_id: await w.folderOf(ids.clientA1, 'Imagens') }
+      { owner_user_id: ids.managerA }
     ]) {
       await expect(updateContent(ids.managerA, id, patch), JSON.stringify(patch)).rejects.toMatchObject({ code: 'A0062' });
     }
@@ -425,13 +425,15 @@ describe('editing a content: what keeps the approval and what annuls it (issue #
     expect((await w.contentRow(id)).owner_user_id).toBe(ids.productionA);
   });
 
-  it('refuses to move the folder of a content that has media or a cover, and moves it otherwise', async () => {
+  it('does not write the folder of a content by UPDATE at all: the move goes through move_content_folder', async () => {
     const withMedia = await reelsReady();
     const free = await w.seedContent(ids.clientA1);
     const images = await w.folderOf(ids.clientA1, 'Imagens');
 
-    await expect(updateContent(ids.adminA, withMedia, { folder_id: images })).rejects.toMatchObject(foreignKey('content_media_content_fk'));
-    expect(await updateContent(ids.adminA, free, { folder_id: images })).toBe(1);
+    await expect(updateContent(ids.adminA, withMedia, { folder_id: images })).rejects.toMatchObject({ code: '42501' });
+    await expect(updateContent(ids.adminA, free, { folder_id: images })).rejects.toMatchObject({ code: '42501' });
+    expect((await w.contentRow(free)).folder_id).not.toBe(images);
+    await w.asUser(ids.adminA, (transaction) => transaction.raw('select app_private.move_content_folder(?::uuid, ?::uuid, null)', [free, images]));
     expect((await w.contentRow(free)).folder_id).toBe(images);
   });
 

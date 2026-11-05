@@ -155,6 +155,11 @@ export interface MediaProcessingConfig {
   readonly ffmpegTimeoutSeconds: number;
   /** A video probed longer than this fails explicitly instead of burning CPU on a huge encode. */
   readonly maxDurationSeconds: number;
+  /** Seconds of preview-encode timeout per second of video, read by ffprobe. The timeout of the
+   * encode is `duration * this`, between `ffmpegTimeoutSeconds` (floor) and `maxTimeoutSeconds`. */
+  readonly timeoutPerMediaSecond: number;
+  /** Ceiling of the preview-encode timeout, and what the job's whole-job budget is sized from. */
+  readonly maxTimeoutSeconds: number;
   readonly thumbnailWidthPixels: number;
   /** Output height cap; a shorter source is never upscaled. */
   readonly previewMaxHeightPixels: number;
@@ -348,6 +353,11 @@ const workerSchema = sharedServerSchema.extend({
   MEDIA_PROCESSING_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(1_800).default(240),
   // A video probed longer than this is rejected explicitly instead of processed.
   MEDIA_PROCESSING_MAX_DURATION_SECONDS: z.coerce.number().int().min(1).max(24 * 3_600).default(1_800),
+  // The preview encode's timeout grows with the duration ffprobe reads: duration * this, never under
+  // MEDIA_PROCESSING_TIMEOUT_SECONDS and never over MEDIA_PROCESSING_MAX_TIMEOUT_SECONDS. Measured: a
+  // 30 min 1080p source encodes at about 3.8x real time on 2 logical CPUs (~475 s), so 0.5 leaves ~2x.
+  MEDIA_PROCESSING_TIMEOUT_PER_MEDIA_SECOND: z.coerce.number().min(0).max(10).default(0.5),
+  MEDIA_PROCESSING_MAX_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(7_200).default(1_200),
   MEDIA_THUMBNAIL_WIDTH_PIXELS: z.coerce.number().int().min(16).max(4_096).default(640),
   MEDIA_PREVIEW_MAX_HEIGHT_PIXELS: z.coerce.number().int().min(16).max(2_160).default(720),
   MEDIA_PREVIEW_MAX_OUTPUT_BYTES: z.coerce.number().int().min(1_048_576).default(300 * 1024 * 1024)
@@ -719,6 +729,8 @@ export const loadWorkerConfig = (env: ServerEnvironment): WorkerConfig => {
     mediaProcessing: {
       ffmpegTimeoutSeconds: result.data.MEDIA_PROCESSING_TIMEOUT_SECONDS,
       maxDurationSeconds: result.data.MEDIA_PROCESSING_MAX_DURATION_SECONDS,
+      timeoutPerMediaSecond: result.data.MEDIA_PROCESSING_TIMEOUT_PER_MEDIA_SECOND,
+      maxTimeoutSeconds: Math.max(result.data.MEDIA_PROCESSING_MAX_TIMEOUT_SECONDS, result.data.MEDIA_PROCESSING_TIMEOUT_SECONDS),
       thumbnailWidthPixels: result.data.MEDIA_THUMBNAIL_WIDTH_PIXELS,
       previewMaxHeightPixels: result.data.MEDIA_PREVIEW_MAX_HEIGHT_PIXELS,
       previewMaxOutputBytes: result.data.MEDIA_PREVIEW_MAX_OUTPUT_BYTES

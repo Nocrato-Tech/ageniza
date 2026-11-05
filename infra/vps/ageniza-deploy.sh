@@ -102,7 +102,9 @@ validate_runtime_env() {
       R2_FORCE_PATH_STYLE) [[ "$value" == true || "$value" == false ]] || die 'R2_FORCE_PATH_STYLE must be true or false' ;;
       MEDIA_UPLOAD_URL_EXPIRY_SECONDS|MEDIA_DOWNLOAD_URL_EXPIRY_SECONDS|MEDIA_MULTIPART_THRESHOLD_BYTES|MEDIA_MULTIPART_PART_BYTES|MEDIA_MAX_BYTES_IMAGE|MEDIA_MAX_BYTES_VIDEO|STORAGE_QUOTA_DEFAULT_BYTES|STORAGE_QUOTA_DEFAULT_OBJECT_COUNT) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
       # Video processing (issue #24): the worker's ffmpeg thumbnail/preview settings.
-      MEDIA_PROCESSING_TIMEOUT_SECONDS|MEDIA_PROCESSING_MAX_DURATION_SECONDS|MEDIA_THUMBNAIL_WIDTH_PIXELS|MEDIA_PREVIEW_MAX_HEIGHT_PIXELS|MEDIA_PREVIEW_MAX_OUTPUT_BYTES) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
+      MEDIA_PROCESSING_TIMEOUT_SECONDS|MEDIA_PROCESSING_MAX_TIMEOUT_SECONDS|MEDIA_PROCESSING_MAX_DURATION_SECONDS|MEDIA_THUMBNAIL_WIDTH_PIXELS|MEDIA_PREVIEW_MAX_HEIGHT_PIXELS|MEDIA_PREVIEW_MAX_OUTPUT_BYTES) [[ "$value" =~ ^[0-9]+$ ]] || die "$key must be a positive integer" ;;
+      # A factor in seconds of timeout per second of media (0.5): the one setting here that is a decimal, so its rule is its own and the integer rule above stays as it was.
+      MEDIA_PROCESSING_TIMEOUT_PER_MEDIA_SECOND) [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "$key must be a number such as 0.5" ;;
       # Identity storage (issue #100): a second bucket/token, separate from media, required together.
       IDENTITY_STORAGE_ENDPOINT|IDENTITY_STORAGE_ACCESS_KEY_ID|IDENTITY_STORAGE_SECRET_ACCESS_KEY|IDENTITY_STORAGE_BUCKET) [[ -n "$value" ]] || die "$key must not be blank" ;;
       IDENTITY_STORAGE_REGION) ;;
