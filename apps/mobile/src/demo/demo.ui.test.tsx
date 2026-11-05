@@ -36,7 +36,8 @@ it('requires confirmation and reuses the server agency after a partial failure',
  act(() => { fireEvent.click(button); fireEvent.click(button); });
  await screen.findByText('Upload interrompido');
  expect(setup.create).toHaveBeenCalledTimes(1); expect(enter).not.toHaveBeenCalled();
- fireEvent.click(screen.getByRole('button', { name: 'Continuar preparação dos exemplos' }));
+ await waitFor(() => expect(screen.getByRole('button', { name: 'Continuar preparação dos exemplos' }).getAttribute('aria-disabled')).not.toBe('true'));
+ await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continuar preparação dos exemplos' })); });
  await waitFor(() => expect(enter).toHaveBeenCalledExactlyOnceWith(context));
  expect(setup.create).toHaveBeenCalledTimes(1); expect(setup.populate).toHaveBeenCalledTimes(2);
 });
