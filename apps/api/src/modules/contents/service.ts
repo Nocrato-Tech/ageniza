@@ -215,8 +215,9 @@ const FEED_FILTER = `content.client_id = ?::uuid and content.format::text = any(
 /**
  * One page of the client's feed, the newest post first, independent of any period: day, time (none counts as the end of
  * the day) and id, all descending, so a tie on day and time is broken by the id and a page never repeats or skips a post.
- * `after` is the position of the last post of the page before. The counters are over the whole feed. Reads `limit + 1`
- * to know whether another page exists.
+ * `after` is the position of the last post of the page before. The counters are over the whole feed and are read
+ * only for the first page (no `after`): a count over the feed costs a pass over every row the policy lets through, and the
+ * reader keeps the first answer. Reads `limit + 1` to know whether another page exists.
  */
 export const listFeed = async (
   transaction: ContentTransaction,
@@ -234,7 +235,7 @@ export const listFeed = async (
     ...(input.after === undefined ? [] : [input.after.publishOn, input.after.time, input.after.id]),
     input.limit + 1
   ]);
-  const counted = await raw<RawRows<{ posts: string | number; approved: string | number; awaiting: string | number }>>(transaction, `
+  const counted = input.after !== undefined ? undefined : await raw<RawRows<{ posts: string | number; approved: string | number; awaiting: string | number }>>(transaction, `
     select
       count(*) as posts,
       count(*) filter (where content.status = 'approved') as approved,
@@ -244,11 +245,11 @@ export const listFeed = async (
   `, [input.clientId, formats]);
   const page = rows.rows.slice(0, input.limit);
   const last = page[page.length - 1];
-  const counts = counted.rows[0];
+  const counts = counted?.rows[0];
   return {
     contents: page.map(listItemOf),
     next: rows.rows.length > input.limit && last !== undefined ? { publishOn: last.publish_on, time: last.feed_time, id: last.id } : undefined,
-    counters: { posts: Number(counts?.posts ?? 0), approved: Number(counts?.approved ?? 0), awaitingApproval: Number(counts?.awaiting ?? 0) }
+    counters: counted === undefined ? null : { posts: Number(counts?.posts ?? 0), approved: Number(counts?.approved ?? 0), awaitingApproval: Number(counts?.awaiting ?? 0) }
   };
 };
 

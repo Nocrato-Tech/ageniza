@@ -24,7 +24,7 @@ interface FeedBody {
   data: {
     contents: Array<{ id: string; format: string; status: string; publishOn: string; publishAtTime: string | null; title: string }>;
     nextCursor: string | null;
-    counters: { posts: number; approved: number; awaitingApproval: number };
+    counters: { posts: number; approved: number; awaitingApproval: number } | null;
   };
   meta: { count: number };
 }
@@ -109,9 +109,11 @@ describe('the order and the pages', () => {
     expect(day[0]?.publishAtTime).toBeNull();
   });
 
-  it('counts the whole feed on every page, not the page', async () => {
+  it('counts the whole feed on the first page, not the page, and leaves the counters null on the others', async () => {
     const { pages } = await walk(clientA);
-    for (const body of pages) expect(body.data.counters).toEqual({ posts: 20, approved: 0, awaitingApproval: 0 });
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages[0]?.data.counters).toEqual({ posts: 20, approved: 0, awaitingApproval: 0 });
+    for (const body of pages.slice(1)) expect(body.data.counters).toBeNull();
   });
 
   it('answers an empty feed with no cursor and zeroes', async () => {
@@ -165,8 +167,8 @@ describe('isolation', () => {
     const mine = await walk(clientA);
     const owners = new Set((await Promise.all(mine.ids.map((id) => w.contentRow(id)))).map((row) => row.client_id));
     expect(owners).toEqual(new Set([clientA]));
-    expect(mine.pages[0]?.data.counters.posts).toBe(20);
-    expect(mine.pages[0]?.data.counters.approved).toBe(0);
+    expect(mine.pages[0]?.data.counters?.posts).toBe(20);
+    expect(mine.pages[0]?.data.counters?.approved).toBe(0);
     const other = await page(clientOther);
     expect(other.data.counters).toEqual({ posts: 2, approved: 1, awaitingApproval: 0 });
     expect(other.data.contents.map((content) => content.title).sort()).toEqual(['Do outro cliente', 'Do outro cliente 2']);

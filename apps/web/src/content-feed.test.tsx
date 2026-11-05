@@ -123,7 +123,8 @@ const makeFetch = (scenario: Scenario = {}) => {
         data: {
           contents: page,
           nextCursor: offset + CONTENT_FEED_PAGE_SIZE < rows.length ? `offset-${offset + CONTENT_FEED_PAGE_SIZE}` : null,
-          counters: scenario.counters?.(feed[1]!) ?? { posts: rows.length, approved: counted('approved'), awaitingApproval: counted('awaiting_approval') }
+          // Only the first page carries the counters, as the API does; the others say null.
+          counters: cursor !== null ? null : scenario.counters?.(feed[1]!) ?? { posts: rows.length, approved: counted('approved'), awaitingApproval: counted('awaiting_approval') }
         },
         meta: { count: page.length }
       });
@@ -744,6 +745,19 @@ describe('the phone scrolls inside its screen, nine posts at a time', () => {
     ]));
     await waitFor(() => expect(tileTexts()).toHaveLength(18));
     expect(tileTexts()[9]).toBe('Post 21 · Imagem · 21/10');
+  });
+
+  it('keeps the counters of the first page when the next pages bring none', async () => {
+    const { laid } = await open({
+      contents: { [padaria.id]: posts(30) },
+      counters: () => ({ posts: 57, approved: 3, awaitingApproval: 5 })
+    });
+    laid.scrollTo(laid.maxTop());
+    await waitFor(() => expect(tileTexts()).toHaveLength(18));
+    const counters = feedRegion().querySelector<HTMLElement>('.content-feed__counters')!;
+    expect(within(counters).getByText('posts').nextElementSibling?.textContent).toBe('57');
+    expect(within(counters).getByText('prontos').nextElementSibling?.textContent).toBe('3');
+    expect(within(counters).getByText('aguardando').nextElementSibling?.textContent).toBe('5');
   });
 
   it('loads on a wheel or a touch too: any scroll that nears the end', async () => {

@@ -239,7 +239,8 @@ export function ContentPhoneFeed({ onCreate, clientId, today, handle, profile }:
   const [edges, setEdges] = useState({ top: true, bottom: true });
 
   const items = feed.data?.pages.flatMap((page) => page.data.contents) ?? [];
-  const counters = feed.data?.pages[0]?.data.counters;
+  // Only the first page carries them (the API leaves the other pages with `null`): the profile keeps what that one said.
+  const counters = feed.data?.pages[0]?.data.counters ?? undefined;
   const more = feed.hasNextPage;
   const nextFailed = feed.isFetchNextPageError;
 

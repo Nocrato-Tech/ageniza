@@ -233,12 +233,12 @@ export const ContentFeedResponseSchema = z.object({
     contents: z.array(ContentListItemSchema),
     /** `null` on the last page. */
     nextCursor: z.string().nullable(),
-    /** Over the whole feed of the client (the same filter as the grid), not over the page. */
+    /** Over the whole feed of the client (the same filter as the grid), not over the page. Only the first page (no `cursor`) carries them; every other page has `null`, and the reader keeps what the first one said. */
     counters: z.object({
       posts: z.number().int().nonnegative(),
       approved: z.number().int().nonnegative(),
       awaitingApproval: z.number().int().nonnegative()
-    }).strict()
+    }).strict().nullable()
   }).strict(),
   meta: z.object({ count: z.number().int().nonnegative() }).strict()
 }).strict();

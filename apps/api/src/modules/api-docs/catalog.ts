@@ -1313,8 +1313,11 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       '(sem hora conta como o fim do dia) e id, todos do maior para o menor, então um empate nunca repete',
       'nem pula um post. A página tem 9 itens; `data.nextCursor` é o valor opaco que vai em `cursor` para',
       'a página seguinte e é `null` na última. Um `cursor` que esta rota não devolveu é `400 VALIDATION_ERROR`.',
-      '`data.counters` conta o feed inteiro (`posts`, `approved`, `awaitingApproval`), não a página. O item',
-      'tem o formato do item da consulta por período. Cliente arquivado também responde: o conteúdo dele é só leitura.'
+      '`data.counters` conta o feed inteiro (`posts`, `approved`, `awaitingApproval`), não a página, e só a primeira',
+      'página (sem `cursor`) os traz: nas demais é `null`, e quem lê guarda o que a primeira disse. O item',
+      'tem o formato do item da consulta por período. Cliente arquivado também responde: o conteúdo dele é só leitura.',
+      'Cada pessoa lê até 300 páginas por minuto (qualquer agência e cliente); a seguinte é `429 RATE_LIMITED` com `Retry-After`,',
+      'e o limite de uma pessoa não conta para outra.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'conteudo.visualizar',
@@ -1326,7 +1329,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 400, code: 'VALIDATION_ERROR' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
-      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 429, code: 'RATE_LIMITED' }
     ]
   },
   {

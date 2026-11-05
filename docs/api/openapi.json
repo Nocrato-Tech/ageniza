@@ -1737,7 +1737,10 @@
                 ]
               },
               "counters": {
-                "type": "object",
+                "type": [
+                  "object",
+                  "null"
+                ],
                 "properties": {
                   "posts": {
                     "type": "integer",
@@ -10734,7 +10737,7 @@
       "get": {
         "operationId": "listContentFeed",
         "summary": "Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9",
-        "description": "O celular ao lado do calendário: o feed do cliente inteiro, sem período. Só `image`, `carousel` e\n`reels`; cancelados, stories, vídeo longo e VSL ficam de fora (e dos contadores). Ordem: dia, hora\n(sem hora conta como o fim do dia) e id, todos do maior para o menor, então um empate nunca repete\nnem pula um post. A página tem 9 itens; `data.nextCursor` é o valor opaco que vai em `cursor` para\na página seguinte e é `null` na última. Um `cursor` que esta rota não devolveu é `400 VALIDATION_ERROR`.\n`data.counters` conta o feed inteiro (`posts`, `approved`, `awaitingApproval`), não a página. O item\ntem o formato do item da consulta por período. Cliente arquivado também responde: o conteúdo dele é só leitura.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "description": "O celular ao lado do calendário: o feed do cliente inteiro, sem período. Só `image`, `carousel` e\n`reels`; cancelados, stories, vídeo longo e VSL ficam de fora (e dos contadores). Ordem: dia, hora\n(sem hora conta como o fim do dia) e id, todos do maior para o menor, então um empate nunca repete\nnem pula um post. A página tem 9 itens; `data.nextCursor` é o valor opaco que vai em `cursor` para\na página seguinte e é `null` na última. Um `cursor` que esta rota não devolveu é `400 VALIDATION_ERROR`.\n`data.counters` conta o feed inteiro (`posts`, `approved`, `awaitingApproval`), não a página, e só a primeira\npágina (sem `cursor`) os traz: nas demais é `null`, e quem lê guarda o que a primeira disse. O item\ntem o formato do item da consulta por período. Cliente arquivado também responde: o conteúdo dele é só leitura.\nCada pessoa lê até 300 páginas por minuto (qualquer agência e cliente); a seguinte é `429 RATE_LIMITED` com `Retry-After`,\ne o limite de uma pessoa não conta para outra.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
         "tags": [
           "contents"
         ],
@@ -10880,6 +10883,25 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

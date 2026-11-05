@@ -22,6 +22,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import { isInsufficientPrivilegeError, tenantHolds } from '../tenancy/guards.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
+import { sharedUserRateLimit } from '../../plugins/infra/rate-limit.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import {
   clientArchived,
@@ -80,8 +81,13 @@ const requireTenant = (request: FastifyRequest): { readonly agencyId: string; re
   return tenant;
 };
 
+/** The feed is read page by page while the person scrolls, and every page is a pass over the client's rows: a fixed window per person, shared by every client and agency. Normal scrolling stays far under it, and a refetch of every loaded page counts once per page. */
+export const CONTENT_FEED_RATE_LIMIT = { max: 300, windowMs: 60 * 1_000 } as const;
+export const CONTENT_FEED_RATE_BUCKET = 'content-feed';
+
 export const registerContentModule = (app: FastifyInstance, dependencies: ContentModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
+  const feedLimiter = sharedUserRateLimit(app, CONTENT_FEED_RATE_BUCKET, CONTENT_FEED_RATE_LIMIT);
 
   const readable = (docs: DocumentedRouteConfig & { permission: string }) => ({
     preHandler: [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(docs.permission)],
@@ -196,7 +202,9 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
 
   // The phone beside the calendar: the client's feed, newest first, nine a page and independent of any period. The static
   // segment wins over `:contentId`, so `feed` is never read as an id.
-  app.get('/agencies/:agencyId/clients/:clientId/contents/feed', readable(feedDocs), async (request, reply) => {
+  // Per person, after the guards, so a refused request counts for nobody and 429 carries `Retry-After`.
+  const feedGuards = readable(feedDocs);
+  app.get('/agencies/:agencyId/clients/:clientId/contents/feed', { ...feedGuards, preHandler: [...feedGuards.preHandler, feedLimiter] }, async (request, reply) => {
     const auth = requireAuth(request);
     const tenant = requireTenant(request);
     const clientId = idFromRoute(request, 'clientId', clientNotFound);
