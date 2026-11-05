@@ -10,7 +10,7 @@ export type Comment = { id: string; body: string; side: Side; name: string; crea
 export type Post = { id: string; clientId: string; title: string; caption: string; format: ContentFormat; status: ContentStatus; date: string; time: string; ownerId: string; folderId: string; mediaIds: string[]; mediaKinds?: Record<string, 'image' | 'video'>; coverId: string | null; revision: number; tasks: Task[]; comments: Comment[]; priority?: boolean; thumbnailId?: string | null };
 export type PostInput = Pick<Post, 'clientId' | 'title' | 'caption' | 'format' | 'date' | 'time' | 'ownerId' | 'folderId' | 'mediaIds' | 'coverId'>;
 export type Activity = { id: string; title: string; body: string; postId?: string; read: boolean; at: string };
-export type Data = { version: 2; clients: Client[]; posts: Post[]; people: Person[]; folders: Folder[]; assets: Asset[]; activities: Activity[]; profile: { name: string; agency: string }; permissions: string[]; readOnly: boolean; onboardingPending?: boolean };
+export type Data = { version: 2; clients: Client[]; posts: Post[]; pendingApprovals?: Post[]; people: Person[]; folders: Folder[]; assets: Asset[]; activities: Activity[]; profile: { name: string; agency: string }; permissions: string[]; readOnly: boolean; onboardingPending?: boolean };
 export type Move = 'submit' | 'approve' | 'changes' | 'publish' | 'cancel' | 'reschedule' | 'unpublish' | 'approveByAgency';
 export interface Repository {
   demo: boolean;
