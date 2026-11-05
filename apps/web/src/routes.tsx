@@ -183,7 +183,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
           {/* The tab lives in the URL: a bare address goes to Geral (specs/clientes.md §7). */}
           <Route index element={<Navigate to="geral" replace />} />
           <Route path="geral" element={<ClientGeneralTab />} />
-          {/* The media library of the client; the permission gate is in ClientDetailPage, like the Conteúdos tab's. */}
+          {/* The media library of the client; the permission gate is in ClientDetailPage, like the other tabs'. */}
           <Route path="midias" element={<ClientMediaTab />} />
           <Route path="tarefas" element={<ClientSkeletonTab title="Tarefas" description="Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis." />} />
           <Route path="estudo-de-marca" element={<ClientBrandStudyTab />} />

@@ -423,6 +423,21 @@ describe('the feed beside the calendar', () => {
     expect(tileTexts()).toEqual(['Da padaria · Imagem · 14/10']);
   });
 
+  it('does not draw the phone, nor read the feed, below the width where it is hidden', async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({ matches: !query.includes('min-width: 48rem'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }) as unknown as MediaQueryList) as typeof window.matchMedia;
+    try {
+      const { impl, calls } = makeFetch({ contents: { [padaria.id]: [contentFixture({ publishOn: '2026-10-14' })] } });
+      renderScreen(impl, url(padaria.id));
+      await screen.findByRole('group', { name: 'Período' });
+      await new Promise<void>((done) => { setTimeout(done, 30); });
+      expect(screen.queryByRole('complementary', { name: 'Prévia do feed' })).toBeNull();
+      expect(calls.filter((call) => call.includes('contents/feed'))).toEqual([]);
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
   it('shows the handle of the client above the grid, and nothing when the client has none', async () => {
     const first = renderScreen(makeFetch().impl, url(padaria.id));
     expect(await screen.findByText('@padariacentral')).toBeTruthy();

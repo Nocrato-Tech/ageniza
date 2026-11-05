@@ -99,8 +99,9 @@ export function RecoverableVideo({ url, poster, label, className, problemClassNa
 
   const onError = (): void => {
     const video = videoRef.current;
-    const at = video !== null && video.currentTime > 0 ? video.currentTime : lastTime.current;
-    const play = playing.current || (video !== null && !video.paused);
+    const at = video !== null && video.currentTime > 0 ? video.currentTime : (resume.current?.at ?? lastTime.current);
+    // A video that was recovered and fails again before its metadata is paused and at zero, but it was playing before: that is kept.
+    const play = playing.current || (video !== null && !video.paused) || resume.current?.play === true;
     if (recoveries.current >= MAX_VIDEO_RECOVERIES) {
       resume.current = { at, play };
       setFailed(true);

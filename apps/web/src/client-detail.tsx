@@ -54,7 +54,7 @@ interface ClientTab {
   readonly label: string;
 }
 
-/** `specs/clientes.md` §7: seven tabs, with Acessos only for whoever manages portal access. */
+/** `specs/clientes.md` §7: six tabs, with Acessos only for whoever manages portal access. */
 const CLIENT_TABS: readonly ClientTab[] = [
   { slug: 'geral', label: 'Geral' },
   { slug: 'midias', label: 'Mídias' },

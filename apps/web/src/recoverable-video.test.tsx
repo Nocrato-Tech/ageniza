@@ -84,6 +84,21 @@ describe('RecoverableVideo', () => {
     expect(played).toEqual([{ at: 312.4, src: address(2) }]);
   });
 
+  it('keeps playing when the second address fails too before the video has its metadata', async () => {
+    render(player(address(1), slowRefresh()));
+    await refuse(312.4, true);
+    await settledOn(2);
+    // The element of the new address is paused and at zero: it fails before it ever loaded.
+    await act(async () => {
+      fireEvent.error(video());
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    await settledOn(3);
+    fireEvent.loadedMetadata(video());
+    expect(video().currentTime).toBe(312.4);
+    expect(played).toEqual([{ at: 312.4, src: address(3) }]);
+  });
+
   it('puts a paused video back in its place without playing it', async () => {
     render(player(address(1), slowRefresh()));
     await refuse(40, false);

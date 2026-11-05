@@ -76,19 +76,24 @@ const signalsOf = (client: ClientListItem): { key: string; text: string }[] =>
 
 /** Whether the screen is as narrow as a phone: the seven-column grid gives way to a list of days. */
 const NARROW_QUERY = '(max-width: 63.99rem)';
-const useNarrow = (): boolean => {
-  const read = (): boolean => typeof window.matchMedia === 'function' && window.matchMedia(NARROW_QUERY).matches;
-  const [narrow, setNarrow] = useState(read);
+/** The phone beside the calendar is hidden below this width (the Feed view is the way to the feed there), so it is not even read. */
+const PHONE_QUERY = '(min-width: 48rem)';
+
+/** Whether a media query holds now and while the screen changes; `unknown` is the answer where the browser cannot tell (tests). */
+const useMediaMatch = (media: string, unknown: boolean): boolean => {
+  const read = (): boolean => typeof window.matchMedia === 'function' ? window.matchMedia(media).matches : unknown;
+  const [matches, setMatches] = useState(read);
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return undefined;
-    const query = window.matchMedia(NARROW_QUERY);
-    const listener = (): void => setNarrow(query.matches);
+    const query = window.matchMedia(media);
+    const listener = (): void => setMatches(query.matches);
     listener();
     query.addEventListener('change', listener);
     return () => query.removeEventListener('change', listener);
-  }, []);
-  return narrow;
+  }, [media]);
+  return matches;
 };
+const useNarrow = (): boolean => useMediaMatch(NARROW_QUERY, false);
 
 /**
  * Clients as stories (`specs/conteudo.md` section 7): photo or initials and the name, in the
@@ -129,7 +134,7 @@ function ContentStories({ stories, selectedId }: { stories: StoryClients; select
   </>;
 }
 
-/** The stories of the client screen: its own component, so the tab of the client's detail never reads the roster for them. */
+/** The stories of the client screen: its own component, so the screen reads the roster for them only when it shows them. */
 function ClientStories({ selectedId }: { selectedId: string }) {
   return <ContentStories stories={useStoryClients()} selectedId={selectedId} />;
 }
@@ -240,7 +245,7 @@ const isLegacyFolders = (searchParams: URLSearchParams): boolean => searchParams
 /**
  * `/agencia/:agenciaId/conteudos/:clienteId`: the calendar of one client. The client is in the
  * path; the view (`visao`) and the day the period is built around (`data`) are in the query, so a
- * reload lands on the same period. The feed is the phone beside the calendar, not a view of its own, and the folders
+ * reload lands on the same period. The feed is both the phone beside the calendar and a view of its own (Mês, Semana and Feed), and the folders
  * are the Mídias tab of the client's detail: the old `?vista=pastas` address goes there, with the folder it had open.
 
  * The client's detail has no copy of it: its header links here, and the old `/clientes/:clienteId/conteudos` addresses redirect here.
@@ -258,6 +263,7 @@ export function ContentsClientPage() {
   // The feed on its own screen reads a month, like the month does; only the week is narrower. The phone beside the calendar reads no period.
   const calendarView: CalendarView = view === 'week' ? 'week' : 'month';
   const narrow = useNarrow();
+  const roomForPhone = useMediaMatch(PHONE_QUERY, true);
   const legacyFolders = isLegacyFolders(searchParams);
   const anchor = parseAnchor(searchParams.get('data'), today);
   const period = periodOf(calendarView, anchor);
@@ -437,7 +443,7 @@ export function ContentsClientPage() {
         </div>
         {loaded !== undefined && scriptLayer.list}
       </div>
-      {view !== 'feed' && <aside className="contents__feed" aria-label="Prévia do feed">
+      {view !== 'feed' && roomForPhone && <aside className="contents__feed" aria-label="Prévia do feed">
         <ContentPhoneFeed
           key={normalizedId}
           onCreate={canWriteScripts && blocked === undefined ? () => startContent(today) : undefined}
