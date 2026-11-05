@@ -188,3 +188,7 @@ Uma restauração nativa anônima que recebe 401 não invalida a prévia de um c
 Somente no mobile web dev, após confirmação do e-mail e dos termos, a seleção de contexto oferece criar uma agência de demonstração em teste grátis. A criação usa `POST /agencies`; a preparação grava dois clientes, pastas, imagem de exemplo, conteúdos e tarefas pelas rotas normais. Não há login fictício nem confirmação de e-mail dispensada. Nenhum convite é enviado automaticamente.
 
 A tela confirma a criação antes de escrever, preserva a agência criada se um passo falhar e oferece retomada ou entrada com dados parciais. O menu Mais da agência de demonstração permite continuar a preparação. Toda autorização continua sendo decidida no servidor. O inbox dev mantém a proteção existente.
+
+### Onde chegam os e-mails do dev
+
+No mobile web dev com demonstração habilitada, a confirmação, recuperação e reenvio apontam explicitamente para https://mail-dev.ageniza.com.br/. A caixa de testes mantém Cloudflare Access e não entrega mensagens a endereços pessoais. A tela oferece abrir a caixa e colar o link recebido; confirmação e autorização continuam iguais. Produção e a entrada nativa não exibem esse atalho de demonstração.

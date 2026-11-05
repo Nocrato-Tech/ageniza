@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { ReactNode } from 'react';
 
 const request = vi.hoisted(() => vi.fn());
+const mode = vi.hoisted(() => ({ demo: false }));
+vi.mock('../demo/config', () => ({ get demoWorkspaceEnabled() { return mode.demo; } }));
 const approvalRequest = vi.hoisted(() => vi.fn());
 vi.mock('../api/approval', () => ({ createApprovalClient: () => ({ request: approvalRequest, clear: async () => {} }) }));
 vi.mock('expo/fetch', () => ({ fetch: vi.fn() }));
@@ -20,7 +22,7 @@ import { AccountAction } from './AccountAction';
 import { ApprovalScreen } from './ApprovalScreen';
 
 beforeEach(() => {
-  request.mockReset(); approvalRequest.mockReset();
+  request.mockReset(); approvalRequest.mockReset(); mode.demo = false;
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) });
 });
 afterEach(cleanup);
@@ -87,4 +89,17 @@ describe('email approval actions', () => {
     expect(approvalRequest).toHaveBeenCalledWith('/portal-approval/contents/content-two/approve', { method: 'POST', body: { revision: 4 } });
     expect(screen.queryByRole('button', { name: 'Aprovar Segundo post' })).toBeNull();
   });
+});
+
+it('directs development email to the restricted test inbox without claiming personal delivery', async () => {
+  mode.demo = true; request.mockResolvedValue(undefined);
+  render(<Login onLogin={async () => {}} onLink={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Reenviar confirmação do e-mail' }));
+  enter('E-mail', 'tester@example.test');
+  fireEvent.click(screen.getByRole('button', { name: 'Enviar e-mail' }));
+  expect(await screen.findByText('Confira a caixa de testes')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Abrir caixa de e-mails de teste' })).toBeTruthy();
+  expect(screen.getByText(/A caixa exige acesso autorizado/)).toBeTruthy();
+  expect(screen.queryByText(/Confira também o spam/)).toBeNull();
+  expect(request).toHaveBeenCalledWith('/auth/email/verification/resend', { method: 'POST', body: { email: 'tester@example.test' } });
 });
