@@ -16,7 +16,15 @@ No Expo Go, escaneie o QR do Metro. SDK 54; no Android use o cliente compatível
 
 ## Funcionalidades
 
-Clientes, conteúdos em lista/kanban/calendário, criação e edição em três etapas, biblioteca e upload de mídia, prévia do Instagram, tarefas, comentários, aprovação e ajustes no portal. Os mesmos componentes usam um repositório real autenticado ou um repositório de demonstração explicitamente separado. Equipe, relatórios calculados e exportação CSV também estão disponíveis. As continuações do Figma são páginas roláveis.
+### Demonstração no aplicativo completo
+
+No web dev, `EXPO_PUBLIC_DEMO_WORKSPACE=true` habilita exemplos dentro da aplicação oficial. Login, cadastro, confirmação do e-mail, termos e permissões continuam reais. No seletor de contexto, a pessoa pode confirmar a criação de uma agência própria com clientes, pastas, imagem, conteúdos e tarefas fictícios gravados pela API. Falhas parciais oferecem retomada e acesso ao que já foi criado. Não há repositório local substituindo o backend.
+
+ML está no detalhe dos conteúdos (treino sintético explicitamente identificado), avisos locais na tela Notificações e pagamento simulado no plano/assinatura quando o servidor oferece esse provedor. A preparação não envia convites automaticamente. Leia [a SPEC](../../specs/demonstracao-mobile.md).
+
+`pnpm --filter @ageniza/mobile build:presentation` agora exporta e confere o aplicativo completo com base `/app-mobile/`, sem uma aplicação separada de apresentação. Saída: `launch-dist/presentation`. A imagem web dev habilita o mesmo recurso; produção não.
+
+Clientes, conteúdos em lista/kanban/calendário, criação e edição em três etapas, biblioteca e upload de mídia, prévia do Instagram, tarefas, comentários, aprovação e ajustes no portal. Todos os módulos usam o repositório real autenticado. Equipe, relatórios calculados e exportação CSV também estão disponíveis. As continuações do Figma são páginas roláveis.
 
 O aplicativo abre no login e exige uma conta e contexto válidos para entrar. A área de trabalho consome a API real e não troca erros de integração por dados de demonstração. Cadastro, convite, recuperação, gestão de clientes/equipe, estudo de marca, roteiros e perfil usam os contratos existentes.
 
@@ -40,4 +48,4 @@ A exportação gera bundles, não APK e não prova execução no aparelho. `eas.
 
 ## Vercel
 
-A publicação está em https://mobile-vercel-preview.vercel.app/. O artefato web exportado é publicado no projeto `mobile-vercel-preview`, da equipe `marcosvmgs-projects`. Isso não configura integração Git automática. Para importar o monorepo na Vercel, use Root Directory `apps/mobile`, cuja configuração está em `vercel.json`.
+A entrada oficial é https://dev.ageniza.com.br/app-mobile/, na mesma origem da API. A raiz e `/apresentacao/` de https://mobile-vercel-preview.vercel.app/ encaminham para ela; o redirecionamento está em `vercel.json`. Não publicar a interface independente como uma versão funcional. O projeto Vercel `mobile-vercel-preview`, da equipe `marcosvmgs-projects`, mantém o APK interno anterior em `/downloads/ageniza-android.apk`; uma publicação estática deve preservar esse artefato. Não há integração Git automática configurada. O código novo só chega ao dev após revisão, merge e o workflow Dev release.

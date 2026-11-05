@@ -6,6 +6,7 @@ import { Button, Field, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { AuthMessage, AuthPanel } from './auth-layout.js';
 import { useDocumentTitle } from './document-title.js';
+import { usePasswordHint } from './password-hint.js';
 import { ResendVerification } from './email-verification.js';
 import { validateForm } from './forms.js';
 import { GoogleSignInBlock } from './google-sign-in.js';
@@ -34,6 +35,7 @@ export function SignUpPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState(() => prefilledEmail(location.state));
   const [password, setPassword] = useState('');
+  const passwordHint = usePasswordHint(password);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({});
   const [formError, setFormError] = useState<string | undefined>();
@@ -94,8 +96,8 @@ export function SignUpPage() {
       <Field label="E-mail" id="sign-up-email" error={errors.email}>
         {(control) => <TextInput {...control} name="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} />}
       </Field>
-      <Field label="Senha" id="sign-up-password" hint="Mínimo de 10 caracteres" error={errors.password}>
-        {(control) => <TextInput {...control} name="password" type="password" autoComplete="new-password" value={password}
+      <Field label="Senha" id="sign-up-password" hint={passwordHint.hint} error={errors.password}>
+        {(control) => <TextInput {...control} name="password" type="password" autoComplete="new-password" {...passwordHint.focusProps} value={password}
           onChange={(event) => setPassword(event.target.value)} />}
       </Field>
       <label className="auth-check">

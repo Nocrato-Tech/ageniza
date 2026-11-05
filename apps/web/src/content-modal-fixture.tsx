@@ -192,17 +192,26 @@ export const paged = <T,>(rows: readonly T[], url: URL) => {
   return json({ data: rows.slice((page - 1) * pageSize, page * pageSize), meta: { page, pageSize, totalItems: rows.length, totalPages: Math.max(1, Math.ceil(rows.length / pageSize)) } });
 };
 
+/** What a folder gives a content of this format, in the order the fake lists it (the real API lists the newest first). */
+export const inheritedBy = (format: Format, folderAssets: ReadonlyArray<ReturnType<typeof asset>>): string[] => {
+  const fitting = folderAssets.filter((candidate) => format === 'carousel' || candidate.category === (format === 'image' ? 'image' : 'video'));
+  return fitting.slice(0, format === 'carousel' ? 20 : 1).map((candidate) => candidate.id);
+};
+
 /**
  * Behaves like the real API: 403 without the permission (a write needs `conteudo.operar` AND `conteudo.visualizar`),
  * 400 by the contract's own schemas, 404 for a content that is not the client's, 409 for a closed content, an archived
- * client, a folder that holds media, and a state the database decides itself (an approved content goes back to
- * "aguardando aprovação" when the caption, the media, the cover or the format changes).
+ * client, and a state the database decides itself (an approved content goes back to "aguardando aprovação" when the caption,
+ * the media, the cover or the format changes). A content born or moved to a folder takes what the folder holds for its format,
+ * unless the request names the list; a content that waits or is approved is never left without media.
  */
 export const makeFetch = (scenario: Scenario = {}) => {
   const calls: Call[] = [];
   const contents = [...(scenario.contents ?? [])];
   const folders = [...(scenario.folders ?? FOLDERS)];
-  const assets = scenario.assets ?? ASSETS;
+  // A copy: an upload adds to the folder, and a test must not leave its file in the next one's.
+  const assets: Record<string, Array<ReturnType<typeof asset>>> = Object.fromEntries(Object.entries(scenario.assets ?? ASSETS).map(([key, rows]) => [key, [...rows]]));
+  const uploading = new Map<string, { folderId: string; contentType: string; sizeBytes: number }>();
   const permissions = scenario.permissions ?? EDITOR;
   let created = 0;
   const conversations = new Map<string, ConversationFake>();
@@ -264,6 +273,29 @@ export const makeFetch = (scenario: Scenario = {}) => {
       return json({ url: `https://storage.test/${media[1]}.jpg`, expiresAt: '2026-10-12T01:45:00.000Z' });
     }
 
+    const upload = /\/agencies\/[^/]+\/media\/uploads$/.exec(url.pathname);
+    if (upload !== null && method === 'POST') {
+      if (!permissions.includes(VISUALIZE) || !permissions.includes(OPERATE)) return failure(403, 'FORBIDDEN');
+      const request = body as { contentType: string; declaredSizeBytes: number; folderId: string };
+      if (!folders.some((candidate) => candidate.id === request.folderId)) return failure(404, 'NOT_FOUND');
+      const assetId = `b1b1b1b1-0000-4000-8000-${String(uploading.size + 1).padStart(12, '0')}`;
+      uploading.set(assetId, { folderId: request.folderId, contentType: request.contentType, sizeBytes: request.declaredSizeBytes });
+      return json({
+        assetId,
+        objectKey: `${AGENCY}/${assetId}/original`,
+        category: request.contentType.startsWith('video/') ? 'video' : 'image',
+        upload: { type: 'single', url: `https://storage.test/put/${assetId}`, expiresAt: '2026-10-12T01:45:00.000Z' }
+      }, 201);
+    }
+    const uploaded = /\/agencies\/[^/]+\/media\/uploads\/([^/]+)\/complete$/.exec(url.pathname);
+    if (uploaded !== null && method === 'POST') {
+      const pending = uploading.get(uploaded[1]!);
+      if (pending === undefined) return failure(404, 'NOT_FOUND');
+      const category = pending.contentType.startsWith('video/') ? 'video' : 'image';
+      assets[pending.folderId] = [...(assets[pending.folderId] ?? []), { ...asset(900 + uploading.size, category, '12'), id: uploaded[1]!, sizeBytes: pending.sizeBytes }];
+      return json({ assetId: uploaded[1]!, status: 'confirmed', sizeBytes: pending.sizeBytes, contentType: pending.contentType });
+    }
+
     const scoped = /\/agencies\/[^/]+\/clients\/([^/]+)\/(contents|media-folders)(?:\/([^/]+))?(\/assets|\/submit|\/approve-by-agency|\/publish|\/unpublish|\/cancel|\/reschedule)?$/.exec(url.pathname);
     if (scoped === null) throw new Error(`unexpected ${method} ${url}`);
     const clientId = scoped[1]!;
@@ -299,6 +331,8 @@ export const makeFetch = (scenario: Scenario = {}) => {
       const parsed = CreateContentRequestSchema.safeParse(body);
       if (!parsed.success) return invalidField(String(parsed.error.issues[0]?.path[0] ?? 'title'));
       if (!folders.some((candidate) => candidate.id === parsed.data.folderId)) return failure(400, 'CONTENT_FOLDER_INVALID');
+      const inFolder = assets[parsed.data.folderId] ?? [];
+      if (parsed.data.mediaAssetIds?.some((id) => !inFolder.some((candidate) => candidate.id === id)) === true) return failure(400, 'CONTENT_MEDIA_INVALID');
       created += 1;
       const made = stored({
         id: `c1c1c1c1-0000-4000-8000-${String(created).padStart(12, '0')}`,
@@ -308,7 +342,9 @@ export const makeFetch = (scenario: Scenario = {}) => {
         publishOn: parsed.data.publishOn,
         publishAtTime: parsed.data.publishAtTime ?? null,
         caption: parsed.data.caption ?? null,
-        folderId: parsed.data.folderId
+        folderId: parsed.data.folderId,
+        coverAssetId: parsed.data.coverAssetId ?? null,
+        media: parsed.data.mediaAssetIds === undefined ? inheritedBy(parsed.data.format, inFolder) : [...parsed.data.mediaAssetIds]
       });
       contents.push(made);
       return json(detailOf(made), 201);
@@ -372,12 +408,12 @@ export const makeFetch = (scenario: Scenario = {}) => {
       if (!parsed.success) return invalidField(String(parsed.error.issues[0]?.path[0] ?? 'title'));
       if (found.status === 'published' || found.status === 'cancelled') return failure(409, 'CONTENT_NOT_EDITABLE');
       const change = parsed.data;
-      if (change.folderId !== undefined && change.folderId !== found.folderId) {
-        if (found.media.length > 0 || found.coverAssetId !== null) return failure(409, 'CONTENT_FOLDER_IN_USE');
-        if (!folders.some((candidate) => candidate.id === change.folderId)) return failure(400, 'CONTENT_FOLDER_INVALID');
-      }
+      const moving = change.folderId !== undefined && change.folderId !== found.folderId;
+      if (moving && !folders.some((candidate) => candidate.id === change.folderId)) return failure(400, 'CONTENT_FOLDER_INVALID');
       const folderId = change.folderId ?? found.folderId;
       const format = change.format ?? found.format;
+      const movedMedia = moving ? (change.mediaAssetIds ?? inheritedBy(format, assets[folderId] ?? [])) : undefined;
+      if (moving && (found.status === 'awaiting_approval' || found.status === 'approved') && movedMedia?.length === 0) return failure(409, 'CONTENT_MEDIA_INCOMPLETE');
       if (change.mediaAssetIds !== undefined) {
         const inFolder = (assets[folderId] ?? []).map((candidate) => candidate.id);
         if ((format !== 'carousel' && change.mediaAssetIds.length > 1) || change.mediaAssetIds.some((id) => !inFolder.includes(id))) return failure(400, 'CONTENT_MEDIA_INVALID');
@@ -385,15 +421,18 @@ export const makeFetch = (scenario: Scenario = {}) => {
       if (change.coverAssetId !== undefined && change.coverAssetId !== null
         && (assets[folderId] ?? []).find((candidate) => candidate.id === change.coverAssetId)?.category !== 'image') return failure(400, 'CONTENT_MEDIA_INVALID');
       const resets = found.status === 'approved'
-        && (change.caption !== undefined || change.mediaAssetIds !== undefined || change.coverAssetId !== undefined || change.format !== undefined);
+        && (change.caption !== undefined || change.mediaAssetIds !== undefined || change.coverAssetId !== undefined || change.format !== undefined
+          || (moving && (found.media.length > 0 || (movedMedia?.length ?? 0) > 0)));
       if (change.title !== undefined) found.title = change.title.trim();
       if (change.format !== undefined) found.format = change.format;
       if (change.publishOn !== undefined) found.publishOn = change.publishOn;
       if (change.publishAtTime !== undefined) found.publishAtTime = change.publishAtTime;
       if (change.caption !== undefined) found.caption = change.caption === null ? null : change.caption.trim();
       found.folderId = folderId;
+      if (moving) found.coverAssetId = null;
       if (change.coverAssetId !== undefined) found.coverAssetId = change.coverAssetId;
-      if (change.mediaAssetIds !== undefined) found.media = [...change.mediaAssetIds];
+      if (movedMedia !== undefined) found.media = [...movedMedia];
+      else if (change.mediaAssetIds !== undefined) found.media = [...change.mediaAssetIds];
       if (resets) { found.status = 'awaiting_approval'; found.revision += 1; }
       return json(detailOf(found));
     }

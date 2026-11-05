@@ -23,6 +23,8 @@ const config: WorkerConfig = {
   mediaProcessing: {
     ffmpegTimeoutSeconds: 240,
     maxDurationSeconds: 1_800,
+    timeoutPerMediaSecond: 0.5,
+    maxTimeoutSeconds: 1_200,
     thumbnailWidthPixels: 640,
     previewMaxHeightPixels: 720,
     previewMaxOutputBytes: 300 * 1024 * 1024

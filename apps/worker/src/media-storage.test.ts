@@ -94,3 +94,73 @@ describe('worker media storage client and the SDK checksum defaults (#292, #306)
     expect(checksumHeaders(fake.requests[0]?.headers ?? {})).toEqual([]);
   });
 });
+
+// The budget of a job reaches the store only through the signal each call is handed. A store that stops answering must be
+// let go when the signal aborts, at every step that talks to it: the request before its headers, a body that stops half way,
+// the upload and the delete. Each case aborts at 150 ms and wants an answer long before the 2 s sentinel.
+describe('worker media storage client and a store that stops answering', () => {
+  let running: Server | undefined;
+  let workdir: string | undefined;
+  afterEach(async () => {
+    const server = running;
+    running = undefined;
+    if (server !== undefined) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+    if (workdir !== undefined) rmSync(workdir, { recursive: true, force: true });
+    workdir = undefined;
+  });
+
+  const startStalledS3 = async (mode: 'silent' | 'half-body'): Promise<string> => {
+    const server = createServer((request, response) => {
+      request.resume();
+      if (mode === 'half-body' && request.method === 'GET') {
+        response.writeHead(200, { 'content-type': 'video/mp4', 'content-length': '1000000' });
+        response.write('partial');
+      }
+      // Nothing else is ever written: the connection stays open.
+    });
+    running = server;
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  };
+
+  /** What the call did: it rejected with an abort inside the sentinel, or it was still waiting (the signal never reached it). */
+  const outcomeOf = async (start: (signal: AbortSignal) => Promise<void>): Promise<'aborted' | 'still waiting' | 'resolved' | string> => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 150);
+    const waiting = Symbol('waiting');
+    const sentinel = new Promise<typeof waiting>((resolve) => setTimeout(() => resolve(waiting), 2_000));
+    const result = await Promise.race([
+      start(controller.signal).then(() => 'resolved' as const, (error: { name?: string }) => (error.name === 'AbortError' ? 'aborted' as const : `rejected: ${error.name ?? 'unknown'}`)),
+      sentinel
+    ]);
+    return result === waiting ? 'still waiting' : result;
+  };
+
+  it('lets go of a download whose store never answers', async () => {
+    const client = createMediaProcessingStorageClient(configFor(await startStalledS3('silent')));
+    workdir = mkdtempSync(join(tmpdir(), 'ageniza-worker-storage-'));
+    expect(await outcomeOf((signal) => client.downloadToFile({ key: 'k', destinationPath: join(workdir!, 'o'), signal }))).toBe('aborted');
+  }, 5_000);
+
+  it('lets go of a download whose body stops half way', async () => {
+    const client = createMediaProcessingStorageClient(configFor(await startStalledS3('half-body')));
+    workdir = mkdtempSync(join(tmpdir(), 'ageniza-worker-storage-'));
+    expect(await outcomeOf((signal) => client.downloadToFile({ key: 'k', destinationPath: join(workdir!, 'o'), signal }))).toBe('aborted');
+  }, 5_000);
+
+  it('lets go of an upload whose store never answers', async () => {
+    const client = createMediaProcessingStorageClient(configFor(await startStalledS3('silent')));
+    workdir = mkdtempSync(join(tmpdir(), 'ageniza-worker-storage-'));
+    const source = join(workdir, 'preview.mp4');
+    writeFileSync(source, Buffer.alloc(1024));
+    expect(await outcomeOf((signal) => client.uploadFile({ key: 'k', sourcePath: source, contentType: 'video/mp4', signal }))).toBe('aborted');
+  }, 5_000);
+
+  it('lets go of a delete whose store never answers', async () => {
+    const client = createMediaProcessingStorageClient(configFor(await startStalledS3('silent')));
+    expect(await outcomeOf((signal) => client.deleteObject({ key: 'k', signal }))).toBe('aborted');
+  }, 5_000);
+});

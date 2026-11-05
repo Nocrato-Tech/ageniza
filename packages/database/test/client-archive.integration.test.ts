@@ -315,7 +315,6 @@ describe('a write that races the archive of its client does not survive it (issu
       ['format', async () => ({ format: 'image' })],
       ['publish_on', async () => ({ publish_on: await daysFromToday(-2) })],
       ['publish_at_time', async () => ({ publish_at_time: '09:15:00' })],
-      ['folder_id', async (clientId) => ({ folder_id: await w.folderOf(clientId, 'Imagens') })],
       ['cover_asset_id', async (clientId) => ({ cover_asset_id: await w.seedAsset(clientId, await w.folderOf(clientId)) })],
       ['owner_user_id', async () => ({ owner_user_id: ids.managerA })]
     ];

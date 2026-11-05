@@ -62,10 +62,13 @@ import {
   CommentSchema,
   ApproveContentByAgencyRequestSchema,
   ContentDetailSchema,
+  ContentFeedQuerySchema,
+  ContentFeedResponseSchema,
   ContentPeriodQuerySchema,
   ContentPeriodResponseSchema,
   ContentTaskSchema,
   CreateContentRequestSchema,
+  encodeContentFeedCursor,
   CreateContentTaskRequestSchema,
   ContentMoveRequestSchema,
   PublishContentRequestSchema,
@@ -252,7 +255,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
   clients: 'Cadastro do cliente da agência: carteira com triagem, criar, ler o detalhe com o resumo, editar e trocar a foto; agendar, desmarcar, arquivar e reativar o contrato; estudo de marca e personas; a conversa em thread entre a agência e o cliente, pelos dois lados; as leituras do próprio cliente no portal; e os acessos ao portal vistos pela agência.',
-  contents: 'Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste.',
+  contents: 'Conteúdo do cliente na agência: a consulta por período (calendário e feed em tela cheia), a leitura do feed do cliente de 9 em 9 (o celular ao lado do calendário), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste.',
   'approval-link': 'O link de aprovação do e-mail "conteúdos para aprovar": trocar o token, que vai no fragmento da URL, pela sessão de aprovação; ler o lote com a prévia de celular; assinar a mídia; Aprovar e Pedir ajuste. Sem login, sem conta e só o lote daquele link.',
   collaborators: 'A equipe da agência: listagem com paginação, busca e filtros, detalhe, alteração de cargo e papel, remoção e reativação.',
   media: 'Upload direto ao armazenamento, confirmação e URLs assinadas de mídia; as pastas de mídia de um cliente, a listagem do que há nelas e a remoção.',
@@ -311,7 +314,6 @@ export const ERROR_MESSAGES: Record<string, string> = {
   CONTENT_MEDIA_INCOMPLETE: 'A mídia do conteúdo não cobre este formato. Para trocar entre carrossel e formato de uma mídia só depois do envio para aprovação, cancele e reagende o conteúdo.',
   CONTENT_MEDIA_INVALID: 'A mídia ou a capa escolhida não pode ser usada neste conteúdo.',
   CONTENT_FOLDER_INVALID: 'A pasta escolhida não é uma pasta deste cliente.',
-  CONTENT_FOLDER_IN_USE: 'A pasta não muda enquanto o conteúdo tem mídia ou capa.',
   CONTENT_OWNER_INVALID: 'O responsável precisa ser um colaborador ativo que vê Conteúdo.',
   CONTENT_STATE: 'O conteúdo não está no estado que esta ação exige.',
   CONTENT_REVISION_CHANGED: 'O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar.',
@@ -446,6 +448,15 @@ const contentPeriodExample = {
     storyScripts: [{ id: storyScriptId, scriptOn: '2026-10-21', status: 'draft' }]
   },
   meta: { from: '2026-10-01', to: '2026-10-31', count: 2 }
+} as const;
+
+const contentFeedExample = {
+  data: {
+    contents: contentPeriodExample.data.contents,
+    nextCursor: encodeContentFeedCursor({ publishOn: '2026-10-20', time: '18:30:00', id: contentId }),
+    counters: { posts: 24, approved: 3, awaitingApproval: 2 }
+  },
+  meta: { count: 1 }
 } as const;
 
 const portalContentOpenExample = {
@@ -1291,6 +1302,38 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     ]
   },
   {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/contents/feed',
+    operationId: 'listContentFeed',
+    module: 'contents',
+    summary: 'Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9',
+    description: [
+      'O celular ao lado do calendário: o feed do cliente inteiro, sem período. Só `image`, `carousel` e',
+      '`reels`; cancelados, stories, vídeo longo e VSL ficam de fora (e dos contadores). Ordem: dia, hora',
+      '(sem hora conta como o fim do dia) e id, todos do maior para o menor, então um empate nunca repete',
+      'nem pula um post. A página tem 9 itens; `data.nextCursor` é o valor opaco que vai em `cursor` para',
+      'a página seguinte e é `null` na última. Um `cursor` que esta rota não devolveu é `400 VALIDATION_ERROR`.',
+      '`data.counters` conta o feed inteiro (`posts`, `approved`, `awaitingApproval`), não a página, e só a primeira',
+      'página (sem `cursor`) os traz: nas demais é `null`, e quem lê guarda o que a primeira disse. O item',
+      'tem o formato do item da consulta por período. Cliente arquivado também responde: o conteúdo dele é só leitura.',
+      'Cada pessoa lê até 300 páginas por minuto (qualquer agência e cliente); a seguinte é `429 RATE_LIMITED` com `Retry-After`,',
+      'e o limite de uma pessoa não conta para outra.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientPathParamsSchema,
+    query: ContentFeedQuerySchema,
+    responses: [{ status: 200, description: 'Uma página do feed e os contadores do feed inteiro.', schema: ContentFeedResponseSchema, example: contentFeedExample }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
     method: 'post',
     path: '/agencies/:agencyId/clients/:clientId/contents',
     operationId: 'createContent',
@@ -1304,6 +1347,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       '(`null` para quem não tem vínculo com a agência). Nenhuma rota de conteúdo devolve o id de usuário de ninguém: quem aprovou vem como',
       '`approvedBy: { name, side }` (`agency` ou `client`) e o responsável de uma subtarefa como `assignee: { membershipId, name }`.',
       'A pasta e a capa são do próprio cliente (`400 CONTENT_FOLDER_INVALID`, `400 CONTENT_MEDIA_INVALID`).',
+      'O conteúdo usa a mídia da pasta: a que couber no formato, a mais nova primeiro (a primeira para imagem, vídeo curto e vídeo longo; até 20 para o carrossel),',
+      'a não ser que `mediaAssetIds` traga a lista inteira e ordenada. Pasta sem mídia deixa o conteúdo sem mídia.',
       'Título de uma linha até 120 caracteres e legenda até 2.200 caracteres recusam caractere de',
       'controle e invisível. Cliente arquivado responde `409 CLIENT_ARCHIVED`.'
     ].join('\n'),
@@ -1364,7 +1409,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'inteira e ordenada das mídias, gravada na mesma transação, depois do formato: assim um conteúdo em',
       'produção ou em ajuste troca de formato e de mídia numa só chamada. Depois do envio para aprovação, ir de',
       'carrossel para formato de uma mídia só (ou o inverso) é `409 CONTENT_MEDIA_INCOMPLETE`: cancele e',
-      'reagende. Conteúdo publicado ou cancelado responde `409 CONTENT_NOT_EDITABLE`.'
+      'reagende. Trocar `folderId` troca a lista e a capa pelo que a pasta nova tem (a que couber no formato, a mais nova primeiro; a capa volta a nenhuma),',
+      'ou por `mediaAssetIds` quando a mesma chamada o traz; a capa pedida na mesma chamada vale. Um conteúdo aprovado volta a `awaiting_approval`; um que espera aprovação ou está aprovado não fica sem mídia:',
+      'uma pasta que não completa o formato responde `409 CONTENT_MEDIA_INCOMPLETE` e nada muda. Conteúdo publicado ou cancelado responde `409 CONTENT_NOT_EDITABLE`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'conteudo.operar',
@@ -1385,7 +1432,6 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 409, code: 'CLIENT_ARCHIVED' },
       { status: 409, code: 'CONTENT_NOT_EDITABLE' },
       { status: 409, code: 'CONTENT_MEDIA_INCOMPLETE' },
-      { status: 409, code: 'CONTENT_FOLDER_IN_USE' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },
