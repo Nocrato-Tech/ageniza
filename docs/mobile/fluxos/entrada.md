@@ -182,3 +182,9 @@ O PR de publicação oferece `/app-mobile/` na imagem web de desenvolvimento (`V
 
 O servidor serve somente arquivos existentes nesse prefixo: um asset ausente responde 404 e não recebe o HTML do desktop. Links de conta e aprovação recebidos por e-mail mantêm seus destinos atuais; a opção de colar o link continua disponível no app. A URL só estará disponível depois da revisão, do merge e do deploy do dev; a Vercel continua sem autorização para sessões reais.
 Uma restauração nativa anônima que recebe 401 não invalida a prévia de um convite aberto em paralelo. Ao persistir a sessão de um novo login, o transporte avança sua geração; respostas da sessão anterior não podem apagar a nova sessão nem reaplicar seus cookies. O transporte nativo continua sendo `expo/fetch`, com redirecionamentos recusados.
+
+## Dados de demonstração no app completo (#833)
+
+Somente no mobile web dev, após confirmação do e-mail e dos termos, a seleção de contexto oferece criar uma agência de demonstração em teste grátis. A criação usa `POST /agencies`; a preparação grava dois clientes, pastas, imagem de exemplo, conteúdos e tarefas pelas rotas normais. Não há login fictício nem confirmação de e-mail dispensada. Nenhum convite é enviado automaticamente.
+
+A tela confirma a criação antes de escrever, preserva a agência criada se um passo falhar e oferece retomada ou entrada com dados parciais. O menu Mais da agência de demonstração permite continuar a preparação. Toda autorização continua sendo decidida no servidor. O inbox dev mantém a proteção existente.

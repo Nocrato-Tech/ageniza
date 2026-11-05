@@ -440,7 +440,7 @@ describe('the agency home in the Pauta look (#639)', () => {
   it('offers the contents only with both the contents and the roster, in the order of the menu', async () => {
     await openHome(['colaborador.visualizar', 'cliente.visualizar', 'conteudo.visualizar']);
     expect(shortcutsOf()).toEqual([
-      { name: 'Conteúdos', href: `/agencia/${AGENCY_A}/conteudos` },
+      { name: 'Calendário Editorial', href: `/agencia/${AGENCY_A}/conteudos` },
       { name: 'Clientes', href: `/agencia/${AGENCY_A}/clientes` },
       { name: 'Equipe', href: `/agencia/${AGENCY_A}/colaboradores` }
     ]);

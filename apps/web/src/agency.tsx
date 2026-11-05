@@ -156,7 +156,7 @@ export function AgencyHomePage() {
   useDocumentTitle(`${agency.agencyName} — Ageniza`);
 
   const shortcuts: Shortcut[] = [
-    ...(canSeeContents ? [{ to: 'conteudos', label: 'Conteúdos', description: 'Calendário do mês, aprovação e roteiros de stories.', icon: CalendarDays }] : []),
+    ...(canSeeContents ? [{ to: 'conteudos', label: 'Calendário Editorial', description: 'Calendário do mês, aprovação e roteiros de stories.', icon: CalendarDays }] : []),
     ...(canSeeClients ? [{ to: 'clientes', label: 'Clientes', description: 'Carteira, estudo de marca e conversas.', icon: Briefcase }] : []),
     ...(canSeeCollaborators ? [{ to: 'colaboradores', label: 'Equipe', description: 'Colaboradores, papéis e convites.', icon: Users }] : [])
   ];

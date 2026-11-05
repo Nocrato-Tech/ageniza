@@ -79,6 +79,6 @@ export const translateTransitionError = (error: unknown, action: TransitionActio
     case 'A0066': return tasksNotApproved();
     case 'A0067': return publishedOnInvalid();
     case 'A0068': return reasonInvalid();
-    default: return translateDatabaseError(error, { folderMoveKeepsCover: false });
+    default: return translateDatabaseError(error, { movesFolder: false });
   }
 };

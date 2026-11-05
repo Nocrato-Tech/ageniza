@@ -60,6 +60,8 @@ describe('server configuration', () => {
       mediaProcessing: {
         ffmpegTimeoutSeconds: 240,
         maxDurationSeconds: 1_800,
+        timeoutPerMediaSecond: 0.5,
+        maxTimeoutSeconds: 1_200,
         thumbnailWidthPixels: 640,
         previewMaxHeightPixels: 720,
         previewMaxOutputBytes: 300 * 1024 * 1024
@@ -599,16 +601,33 @@ describe('server configuration', () => {
       ...localEnvironment,
       MEDIA_PROCESSING_TIMEOUT_SECONDS: '120',
       MEDIA_PROCESSING_MAX_DURATION_SECONDS: '600',
+      MEDIA_PROCESSING_TIMEOUT_PER_MEDIA_SECOND: '1.5',
+      MEDIA_PROCESSING_MAX_TIMEOUT_SECONDS: '900',
       MEDIA_THUMBNAIL_WIDTH_PIXELS: '320',
       MEDIA_PREVIEW_MAX_HEIGHT_PIXELS: '480',
       MEDIA_PREVIEW_MAX_OUTPUT_BYTES: String(50 * 1024 * 1024)
     }).mediaProcessing).toEqual({
       ffmpegTimeoutSeconds: 120,
       maxDurationSeconds: 600,
+      timeoutPerMediaSecond: 1.5,
+      maxTimeoutSeconds: 900,
       thumbnailWidthPixels: 320,
       previewMaxHeightPixels: 480,
       previewMaxOutputBytes: 50 * 1024 * 1024
     });
+  });
+
+  it('never lets the preview timeout ceiling sit under the floor', () => {
+    expect(loadWorkerConfig({
+      ...localEnvironment,
+      MEDIA_PROCESSING_TIMEOUT_SECONDS: '600',
+      MEDIA_PROCESSING_MAX_TIMEOUT_SECONDS: '300'
+    }).mediaProcessing.maxTimeoutSeconds).toBe(600);
+  });
+
+  it('rejects a negative or absurd preview timeout factor', () => {
+    expect(() => loadWorkerConfig({ ...localEnvironment, MEDIA_PROCESSING_TIMEOUT_PER_MEDIA_SECOND: '-1' })).toThrow(ConfigValidationError);
+    expect(() => loadWorkerConfig({ ...localEnvironment, MEDIA_PROCESSING_TIMEOUT_PER_MEDIA_SECOND: '11' })).toThrow(ConfigValidationError);
   });
 
   it('rejects a multipart part size larger than the multipart threshold (issue #21)', () => {

@@ -9,6 +9,7 @@
     "ios": "expo start --ios --go",
     "web": "expo start --web",
     "build": "expo export --platform all",
+    "build:presentation": "node scripts/export-presentation.mjs",
     "lint": "eslint App.tsx index.ts src --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

@@ -45,11 +45,33 @@ const explicitFailureReason = (error: unknown, wholeJobTimedOut: boolean): strin
 const objectKeyFor = (agencyId: string, assetId: string, name: 'thumbnail.jpg' | 'preview.mp4'): string =>
   `${agencyId}/${assetId}/${name}`;
 
-export const mediaVideoHandlerTimeoutSeconds = (ffmpegTimeoutSeconds: number): number =>
-  ffmpegTimeoutSeconds * 3 + 120;
+type MediaTimeoutConfig = Pick<MediaProcessingConfig, 'ffmpegTimeoutSeconds' | 'timeoutPerMediaSecond' | 'maxTimeoutSeconds'>;
 
-export const mediaVideoExpireInSeconds = (ffmpegTimeoutSeconds: number): number =>
-  mediaVideoHandlerTimeoutSeconds(ffmpegTimeoutSeconds) + 60;
+/** The ceiling can never sit under the floor, whatever the configuration says. */
+const effectiveMaxTimeoutSeconds = (config: MediaTimeoutConfig): number =>
+  Math.max(config.maxTimeoutSeconds, config.ffmpegTimeoutSeconds);
+
+/**
+ * How long the preview encode may run, from the duration ffprobe read: `duration * factor`,
+ * never under the configured floor (`MEDIA_PROCESSING_TIMEOUT_SECONDS`, what every call had before)
+ * and never over the configured ceiling (`MEDIA_PROCESSING_MAX_TIMEOUT_SECONDS`). The probe and
+ * the thumbnail keep the floor: they seek and do not decode the whole file.
+ */
+export const mediaPreviewTimeoutSeconds = (durationSeconds: number, config: MediaTimeoutConfig): number =>
+  Math.min(
+    effectiveMaxTimeoutSeconds(config),
+    Math.max(config.ffmpegTimeoutSeconds, Math.ceil(durationSeconds * config.timeoutPerMediaSecond))
+  );
+
+/** Probe and thumbnail at the floor, preview at the ceiling (the duration is not known when the
+ * budget is set), plus 120s for the object-storage transfers. */
+export const mediaVideoHandlerTimeoutSeconds = (config: MediaTimeoutConfig): number =>
+  config.ffmpegTimeoutSeconds * 2 + effectiveMaxTimeoutSeconds(config) + 120;
+
+/** pg-boss expiry stays a crash-recovery backstop 60s after the handler's own abort, so the queue
+ * neither kills a job that is still inside its budget nor retries it on top of itself. */
+export const mediaVideoExpireInSeconds = (config: MediaTimeoutConfig): number =>
+  mediaVideoHandlerTimeoutSeconds(config) + 60;
 
 export const MEDIA_VIDEO_RETRY_LIMIT = 2;
 
@@ -71,7 +93,7 @@ export const mediaVideoProcessingJob = (
   concurrency: 1,
   // ffprobe plus two ffmpeg calls may each consume their own timeout. The handler aborts all
   // storage/process I/O first; pg-boss expiry remains a later crash-recovery backstop.
-  expireInSeconds: mediaVideoExpireInSeconds(dependencies.config.ffmpegTimeoutSeconds),
+  expireInSeconds: mediaVideoExpireInSeconds(dependencies.config),
   // Bounded: repeatedly retrying an expensive ffmpeg run against a genuinely broken upload is not
   // worth the CPU a shared VPS would spend on it.
   retryLimit: MEDIA_VIDEO_RETRY_LIMIT,
@@ -80,7 +102,7 @@ export const mediaVideoProcessingJob = (
     const payload = MediaVideoProcessingJobPayloadSchema.parse(job.payload);
     const { database, storage, config } = dependencies;
     const claims = createVerifiedUserClaims({ userId: payload.actorUserId });
-    const wholeJobTimeout = AbortSignal.timeout(mediaVideoHandlerTimeoutSeconds(config.ffmpegTimeoutSeconds) * 1_000);
+    const wholeJobTimeout = AbortSignal.timeout(mediaVideoHandlerTimeoutSeconds(config) * 1_000);
     const jobSignal = AbortSignal.any([context.signal, wholeJobTimeout]);
 
     const asset = await withAuthenticatedUserTransaction(database, claims, async (transaction) => {
@@ -124,6 +146,7 @@ export const mediaVideoProcessingJob = (
         });
         await generatePreview(originalPath, previewPath, {
           ...binaryOptions,
+          timeoutMs: mediaPreviewTimeoutSeconds(probe.durationSeconds, config) * 1_000,
           maxHeightPixels: config.previewMaxHeightPixels,
           maxOutputBytes: config.previewMaxOutputBytes
         });
@@ -154,11 +177,18 @@ export const mediaVideoProcessingJob = (
           storage.deleteObject({ key: thumbnailKey, signal: cleanupSignal }),
           storage.deleteObject({ key: previewKey, signal: cleanupSignal })
         ]);
+        // A file that does not fit its time budget would not fit it the next time either, and each try holds the one video queue
+        // of every agency for the whole budget: the time-out is final on the first attempt, with its reason on the row.
+        const outOfTime = reason === 'processing_timed_out';
         await withAuthenticatedUserTransaction(database, claims, (transaction) =>
-          job.attempt > MEDIA_VIDEO_RETRY_LIMIT
+          outOfTime || job.attempt > MEDIA_VIDEO_RETRY_LIMIT
             ? markVideoProcessingFailed(transaction, asset.id, reason)
             : markVideoProcessingRetrying(transaction, asset.id)
         );
+        if (outOfTime) {
+          context.logger.error({ status: 'failed', reason, attempt: job.attempt }, 'Video processing ran out of time; not retried.');
+          return;
+        }
         throw error;
       }
     } finally {

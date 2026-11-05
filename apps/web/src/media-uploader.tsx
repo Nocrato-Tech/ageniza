@@ -20,10 +20,13 @@ const percent = (sent: number, total: number): number => (total === 0 ? 0 : Math
  * when the upload is confirmed or the person picks another one. The picker is the button; the native input behind it is
  * only what the browser opens, so the folder's empty state can open it too (`inputRef`) and hide the button (`triggerHidden`).
  */
-export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel, heading, inputRef, triggerHidden = false }: {
+export function MediaUploader({ clientId, folderId, onUploaded, onSendingChange, sizeLabel, heading, inputRef, triggerHidden = false }: {
   clientId: string;
   folderId: string;
-  onUploaded: () => void;
+  /** The id of the media just confirmed, so a caller that wants it in a list can put it there. */
+  onUploaded: (assetId: string) => void;
+  /** Tells a caller whose form is open that a file is on its way. */
+  onSendingChange?: ((sending: boolean) => void) | undefined;
   sizeLabel: (bytes: number) => string;
   heading: ReactNode;
   inputRef: RefObject<HTMLInputElement | null>;
@@ -49,13 +52,13 @@ export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel, headi
     setSent(0);
     setPhase({ kind: 'sending' });
     uploadMedia({ httpClient, agencyId: agency.agencyId, clientId, folderId, file: chosen, onProgress: setSent, signal: own.signal })
-      .then(() => {
+      .then((assetId) => {
         if (controller.current !== own) return;
         setFile(null);
         if (inputRef.current !== null) inputRef.current.value = '';
         setPhase({ kind: 'done' });
         void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'media-folder-assets', clientId, folderId] });
-        onUploaded();
+        onUploaded(assetId);
       })
       .catch((error: unknown) => {
         if (controller.current !== own) return;
@@ -65,6 +68,10 @@ export function MediaUploader({ clientId, folderId, onUploaded, sizeLabel, headi
   };
 
   const sending = phase.kind === 'sending';
+  useEffect(() => {
+    onSendingChange?.(sending);
+    return () => { onSendingChange?.(false); };
+  }, [sending, onSendingChange]);
   const progress = file === null ? 0 : percent(sent, file.size);
   return <div className="media-uploader">
     <div className="content-folders__heading">

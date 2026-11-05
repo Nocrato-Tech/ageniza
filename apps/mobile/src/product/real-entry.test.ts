@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 describe('real application dependency graph', () => {
-  it('does not include seeded demo data or a synthetic prediction model from the application entry', () => {
+  it('keeps the normal/native entry separate from the academic presentation and seeded data', () => {
     const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
     const visited = new Set<string>();
     function visit(file: string) {
@@ -17,9 +17,10 @@ describe('real application dependency graph', () => {
         if (candidate) visit(candidate);
       }
     }
-    visit(resolve(root, 'App.tsx'));
+    visit(resolve(root, 'index.ts'));
     expect([...visited].some((file) => /[/\\]product[/\\]demo\.ts$/.test(file))).toBe(false);
     expect([...visited].some((file) => /[/\\]product[/\\]learning\.ts$/.test(file))).toBe(false);
+    expect([...visited].some((file) => /[/\\]presentation[/\\]/.test(file))).toBe(false);
     expect([...visited].some((file) => /[/\\]product[/\\]remote\.ts$/.test(file))).toBe(true);
   });
 });
