@@ -2,6 +2,8 @@
 
 **Data.** 2026-10-11
 
+> O item 6 foi substituído em 2026-11-04 por [`2026-11-04-a-pasta-e-como-um-drive-o-conteudo-herda-a-midia-e-troca-de-pasta`](2026-11-04-a-pasta-e-como-um-drive-o-conteudo-herda-a-midia-e-troca-de-pasta.md); os demais itens seguem valendo.
+
 **Contexto.** A issue #254 pede `PATCH .../contents/:contentId`, em que mover de data é editar `publishOn`, e traz requisitos da revisão de segurança do PR #383 (#249): o `42501` da troca de responsável vira 403 e nunca 500; os erros `A0065`, `A0069` e `A0074` são mapeados; e "um reels aprovado não vira carrossel no lugar": a rota oferece um caminho, por exemplo trocar formato e mídia numa só operação, ou documenta que é preciso cancelar e reagendar, e a escolha é registrada. A SPEC (§6) só diz que o `PATCH` devolve o conteúdo e anula a aprovação nos campos da regra 6.
 
 **Decisão.**

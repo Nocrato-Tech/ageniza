@@ -2,6 +2,8 @@
 
 **Data.** 2026-10-16
 
+> Para o celular ao lado do calendário, a paginação de nove em nove, o contador "1–9 de N" e os contadores do período foram substituídos em 2026-11-04 por [`2026-11-04-o-celular-do-calendario-mostra-o-feed-inteiro-do-cliente`](2026-11-04-o-celular-do-calendario-mostra-o-feed-inteiro-do-cliente.md).
+
 **Contexto.** A decisão de 2026-10-11, "O feed da agência é a grade do período na tela" (item 1), fez a grade do celular ao lado do calendário mostrar **todos** os posts do período, em colunas de três, sem limite de linhas, e desenhar nove casas pontilhadas quando vazia. Em teste manual, em 2026-10-16, o dono achou o celular feio e apertado: não parece um aparelho, um mês cheio vira uma coluna longa, e a página que não enche deixa espaço em branco. Pediu que o feed mostre sempre nove em nove e que o que não tem conteúdo vire um quadro com o ícone de "nada neste dia", sem espaço em branco. A imagem que ele mandou é um exemplo do visual, não um contrato: não vale por dado que a API não entrega.
 
 **Decisão.**
