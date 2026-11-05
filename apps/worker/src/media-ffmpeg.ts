@@ -27,6 +27,9 @@ export class MediaBinaryError extends Error {
 
 const MAX_CAPTURED_OUTPUT_BYTES = 64 * 1024;
 
+/** setTimeout fires at once past this; no deadline of a step comes near it. */
+const MAX_TIMER_MS = 2_147_483_647;
+
 const PROTOCOL_WHITELIST_ARGS = ['-protocol_whitelist', 'file,pipe'] as const;
 
 const runBinary = (
@@ -37,8 +40,6 @@ const runBinary = (
   new Promise((resolve, reject) => {
     const child = spawn(binary, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: options.timeoutMs,
-      killSignal: 'SIGKILL',
       // No shell: args are passed as an argv array, never interpolated into a command string.
       shell: false,
       windowsHide: true
@@ -50,6 +51,13 @@ const runBinary = (
     let timedOut = false;
     let aborted = false;
 
+    // The deadline is ours, not the spawn option's: a process that ends by SIGKILL or SIGTERM for another reason (the kernel out of
+    // memory, an operator) did not run out of time, and TIMEOUT ends the job with no new attempt.
+    const deadline = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, Math.min(options.timeoutMs, MAX_TIMER_MS));
+
     const onAbort = (): void => {
       aborted = true;
       child.kill('SIGKILL');
@@ -57,6 +65,7 @@ const runBinary = (
     options.signal?.addEventListener('abort', onAbort, { once: true });
 
     const cleanup = (): void => {
+      clearTimeout(deadline);
       options.signal?.removeEventListener('abort', onAbort);
     };
 
@@ -82,15 +91,12 @@ const runBinary = (
         reject(new MediaBinaryError(`${binary} was aborted before it finished.`, 'ABORTED'));
         return;
       }
-      if (signal === 'SIGKILL' || signal === 'SIGTERM') {
-        timedOut = true;
-      }
       if (timedOut) {
         reject(new MediaBinaryError(`${binary} did not finish within ${options.timeoutMs}ms and was killed.`, 'TIMEOUT'));
         return;
       }
       if (exitCode !== 0) {
-        reject(new MediaBinaryError(`${binary} exited with code ${exitCode ?? 'null'}.`, 'EXIT_FAILURE'));
+        reject(new MediaBinaryError(`${binary} ${signal === null ? `exited with code ${exitCode ?? 'null'}` : `was ended by ${signal}`}.`, 'EXIT_FAILURE'));
         return;
       }
       resolve({ stdout, stderr });
