@@ -123,7 +123,6 @@ describe('content editor recovery', () => {
     const save = vi.fn(async (_input, _id, created) => { created?.(contentId); });
     render(<ContentEditor data={data} repository={repository} clientId={clientId} busy={false} onSave={save} onError={() => {}} onRefresh={async () => {}} />);
     fireEvent.change(screen.getByRole('textbox', { name: 'Título interno *' }), { target: { value: 'Conteúdo real' } });
-    await waitFor(() => expect(screen.queryByText('Carregando biblioteca…')).toBeNull());
     await waitFor(() => expect(screen.getByRole('button', { name: 'Continuar para conteúdo' }).getAttribute('aria-disabled')).not.toBe('true'));
     fireEvent.click(screen.getByRole('button', { name: 'Continuar para conteúdo' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Conferir prévia' }));

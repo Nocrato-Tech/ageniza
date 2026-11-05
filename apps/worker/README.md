@@ -25,9 +25,7 @@ runtime.queue?.register<{ assetId: string }>({
 await runtime.start();
 ```
 
-The values above are the defaults. `WORKER_CONCURRENCY` (default `1`, at most `4`) is the global
-worker budget. Video processing below has its own concurrency of `1`, so raising the global ceiling
-can increase throughput for lighter queues without running multiple ffmpeg jobs at once.
+The values above are the defaults. `WORKER_CONCURRENCY` (default `1`, at most `4`) is how many jobs of **each queue** the worker runs at once (pg-boss `localConcurrency` is per `work()` registration, so queues never hold one another: a long video does not delay e-mail, notification or purge jobs). A job may only ask for less through its own `concurrency`; video processing asks for `1`, so there is never more than one ffmpeg at a time whatever the global value.
 
 ### Contract every handler must follow
 
@@ -40,7 +38,7 @@ Telemetry is automatic: each job logs its queue, job id, attempt, duration, and 
 
 ### Retries and failures
 
-A handler that throws is retried with exponential backoff until `retryLimit` is used up. It then ends in state `failed`, and pg-boss copies it into the queue's dead letter queue, `<name>.dead`. Nothing consumes a dead letter queue: the job stays visible there, in state `created`, until pg-boss retention removes it (14 days by default). To inspect failures without reading payloads:
+A handler that throws is retried with exponential backoff until `retryLimit` is used up. A handler that already knows a retry cannot help ends without throwing after recording the failure itself: the video job does this when a file runs past its time budget (`processing_timed_out` on the asset), because each repeat would hold the one video queue of every agency for the whole budget again. The job then ends as completed, not failed, and does not enter `<name>.dead`; the failure is recorded on the asset row (`video_processing_error`). A job that throws on its last attempt ends in state `failed`, and pg-boss copies it into the queue's dead letter queue, `<name>.dead`. Nothing consumes a dead letter queue: the job stays visible there, in state `created`, until pg-boss retention removes it (14 days by default). To inspect failures without reading payloads:
 
 ```sql
 select id, state, created_on from pgboss.job where name = 'media.thumbnail.dead' order by created_on desc;
@@ -109,12 +107,18 @@ database and RLS on every run -- see `src/media-repository.ts`), the handler:
 4. uploads both outputs back under the asset's own key prefix and records duration/sizes, or a
    short, non-sensitive failure reason -- never raw ffmpeg output or a signed URL.
 
-Every `ffmpeg`/`ffprobe` invocation is timeout-bounded (`MEDIA_PROCESSING_TIMEOUT_SECONDS`, killed
-with `SIGKILL` past it), restricted to the `file`/`pipe` protocols (a crafted input cannot make it
-reach the network), and the handler has a whole-job abort budget covering ffprobe, both ffmpeg
-calls and object-storage I/O. The AWS SDK streams receive the same abort signal. pg-boss expiry is
-60 seconds later (`3 * ffmpegTimeoutSeconds + 180`) as a crash-recovery backstop. The temporary
-directory is always removed in a `finally`, including on failure -- no file is left on disk.
+Every `ffmpeg`/`ffprobe` invocation is timeout-bounded (killed with `SIGKILL` past it), restricted
+to the `file`/`pipe` protocols (a crafted input cannot make it reach the network). The probe and the
+thumbnail get `MEDIA_PROCESSING_TIMEOUT_SECONDS` (default 240, the floor). The preview encode gets the
+duration `ffprobe` read times `MEDIA_PROCESSING_TIMEOUT_PER_MEDIA_SECOND` (default 0.5), never under
+that floor and never over `MEDIA_PROCESSING_MAX_TIMEOUT_SECONDS` (default 1200). Measured with the
+worker's exact encode on a 30 min 1080p source (about 8 Mbps): 170 s on 8 cores/16 threads, about
+475 s extrapolated on 2 logical CPUs, so a fixed 240 s left a long video on a small VPS without a
+preview. The handler's whole-job abort budget is `2 * floor + ceiling + 120` seconds (probe,
+thumbnail, a preview at the ceiling, and the object-storage transfers; the AWS SDK streams receive
+the same abort signal), and pg-boss expiry is 60 seconds later as a crash-recovery backstop, so the
+queue neither kills a job inside its budget nor retries it on top of itself. The temporary directory
+is always removed in a `finally`, including on failure -- no file is left on disk.
 
 ## In-process jobs
 

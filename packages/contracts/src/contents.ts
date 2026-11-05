@@ -98,7 +98,8 @@ export const ContentApproverSchema = z.object({
 
 /**
  * Body of `POST .../contents`. The state is not a field: a content is born in production, and the person in charge
- * (`ownerMembershipId`, an active link of a collaborator of the agency) defaults to who creates it.
+ * (`ownerMembershipId`, an active link of a collaborator of the agency) defaults to who creates it. The media is what the
+ * folder holds and the format takes (newest first) unless `mediaAssetIds` names the whole ordered list.
  */
 export const CreateContentRequestSchema = z.object({
   title: ContentTitleSchema,
@@ -109,13 +110,15 @@ export const CreateContentRequestSchema = z.object({
   caption: ContentCaptionSchema.nullable().optional(),
   folderId: z.string().uuid(),
   coverAssetId: z.string().uuid().nullable().optional(),
-  ownerMembershipId: z.string().uuid().optional()
+  ownerMembershipId: z.string().uuid().optional(),
+  mediaAssetIds: MediaAssetIdsSchema.optional()
 }).strict();
 
 /**
  * Body of `PATCH .../contents/:contentId`: any subset, and moving the date is just `publishOn`. `ownerMembershipId`
  * is a separate permission, and `mediaAssetIds` is the whole ordered list (never a delta), written in the same
- * transaction as the format so one request changes both.
+ * transaction as the format so one request changes both. A new `folderId` replaces the list and the cover by what the new
+ * folder holds, or by `mediaAssetIds` when the same request names it.
  */
 export const UpdateContentRequestSchema = z.object({
   title: ContentTitleSchema.optional(),
@@ -183,6 +186,61 @@ export const ContentListItemSchema = z.object({
   publishedOn: z.string().nullable(),
   tasksTotal: z.number().int().nonnegative(),
   tasksApproved: z.number().int().nonnegative()
+}).strict();
+
+/** The phone beside the calendar reads the client's feed nine posts a page, three rows of its grid. */
+export const CONTENT_FEED_PAGE_SIZE = 9;
+/** A cursor is a short opaque token; anything longer is not one this API made. */
+export const CONTENT_FEED_CURSOR_MAX_LENGTH = 200;
+
+/** Where the next page of the feed starts: the post it follows, by the three keys of the feed's order. `time` is `HH:MM:SS`, `24:00:00` for a post with none (the last of its day). */
+export interface ContentFeedPosition {
+  readonly publishOn: string;
+  readonly time: string;
+  readonly id: string;
+}
+
+const FEED_CURSOR_TIME = /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d{1,6})?$|^24:00:00$/;
+const FEED_CURSOR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** The token for a position: base64url of a JSON triple. The server makes it and the client sends it back untouched. */
+export const encodeContentFeedCursor = (position: ContentFeedPosition): string =>
+  btoa(JSON.stringify([position.publishOn, position.time, position.id])).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+
+/** The position a token names, or `undefined` when it is not one this API made (never throws). */
+export const decodeContentFeedCursor = (cursor: string): ContentFeedPosition | undefined => {
+  if (cursor.length === 0 || cursor.length > CONTENT_FEED_CURSOR_MAX_LENGTH || !/^[A-Za-z0-9_-]+$/.test(cursor)) return undefined;
+  try {
+    const padded = cursor.replaceAll('-', '+').replaceAll('_', '/');
+    const parsed: unknown = JSON.parse(atob(padded + '='.repeat((4 - (padded.length % 4)) % 4)));
+    if (!Array.isArray(parsed) || parsed.length !== 3) return undefined;
+    const [publishOn, time, id] = parsed as unknown[];
+    if (typeof publishOn !== 'string' || typeof time !== 'string' || typeof id !== 'string') return undefined;
+    if (!isCalendarDay(publishOn) || !FEED_CURSOR_TIME.test(time) || !FEED_CURSOR_ID.test(id)) return undefined;
+    return { publishOn, time, id };
+  } catch {
+    return undefined;
+  }
+};
+
+/** `cursor` is absent for the first page, and the `nextCursor` of the previous one after that. A malformed one is a 400. */
+export const ContentFeedQuerySchema = z.object({
+  cursor: z.string().refine((value) => decodeContentFeedCursor(value) !== undefined, 'must be a cursor returned by this endpoint').optional()
+}).strict();
+
+export const ContentFeedResponseSchema = z.object({
+  data: z.object({
+    contents: z.array(ContentListItemSchema),
+    /** `null` on the last page. */
+    nextCursor: z.string().nullable(),
+    /** Over the whole feed of the client (the same filter as the grid), not over the page. Only the first page (no `cursor`) carries them; every other page has `null`, and the reader keeps what the first one said. */
+    counters: z.object({
+      posts: z.number().int().nonnegative(),
+      approved: z.number().int().nonnegative(),
+      awaitingApproval: z.number().int().nonnegative()
+    }).strict().nullable()
+  }).strict(),
+  meta: z.object({ count: z.number().int().nonnegative() }).strict()
 }).strict();
 
 export const StoryScriptListItemSchema = z.object({
@@ -312,6 +370,7 @@ export type RescheduleContentRequest = z.infer<typeof RescheduleContentRequestSc
 export type ContentPeriodQuery = z.infer<typeof ContentPeriodQuerySchema>;
 export type ContentListItem = z.infer<typeof ContentListItemSchema>;
 export type StoryScriptListItem = z.infer<typeof StoryScriptListItemSchema>;
+export type ContentFeedResponse = z.infer<typeof ContentFeedResponseSchema>;
 export type ContentPeriodResponse = z.infer<typeof ContentPeriodResponseSchema>;
 export type Content = z.infer<typeof ContentSchema>;
 export type ContentDetail = z.infer<typeof ContentDetailSchema>;

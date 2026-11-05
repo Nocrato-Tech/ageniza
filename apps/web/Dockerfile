@@ -24,7 +24,7 @@ COPY docs/api/openapi.json docs/api/openapi.json
 RUN pnpm --filter @ageniza/web... build && printf '%s\n' "$VITE_APP_VERSION" > apps/web/dist/version.txt
 # Keep the native interface on the trusted dev origin, without changing auth or production output.
 RUN if [ "$VITE_DEV_DOCS" = "true" ]; then \
-      EXPO_PUBLIC_API_URL=https://dev.ageniza.com.br/api MOBILE_WEB_BASE_PATH=/app-mobile \
+      EXPO_PUBLIC_API_URL=https://dev.ageniza.com.br/api EXPO_PUBLIC_DEMO_WORKSPACE=true MOBILE_WEB_BASE_PATH=/app-mobile \
       pnpm --filter @ageniza/mobile exec expo export --platform web --output-dir ../web/dist/app-mobile; \
     fi
 FROM nginxinc/nginx-unprivileged:1.27-alpine

@@ -96,7 +96,7 @@ describe('agency side navigation (#628)', () => {
     renderAt(`/agencia/${AGENCY}/clientes`);
     const aside = await sidebar();
     const nav = within(aside).getByRole('navigation', { name: 'Navegação da agência' });
-    expect(linkNames(within(nav).getByRole('region', { name: 'Trabalho' }))).toEqual(['Início', 'Conteúdos', 'Clientes']);
+    expect(linkNames(within(nav).getByRole('region', { name: 'Trabalho' }))).toEqual(['Início', 'Calendário Editorial', 'Clientes']);
     expect(linkNames(within(nav).getByRole('region', { name: 'Agência' }))).toEqual(['Equipe']);
     expect(within(nav).queryByRole('link', { name: 'Ajustes' })).toBeNull();
   });
@@ -106,7 +106,7 @@ describe('agency side navigation (#628)', () => {
     ['only the team', ['colaborador.visualizar'], ['Início'], true],
     ['only the roster', ['cliente.visualizar'], ['Início', 'Clientes'], false],
     ['contents without the roster', ['conteudo.visualizar'], ['Início'], false],
-    ['contents with the roster', ['conteudo.visualizar', 'cliente.visualizar'], ['Início', 'Conteúdos', 'Clientes'], false]
+    ['contents with the roster', ['conteudo.visualizar', 'cliente.visualizar'], ['Início', 'Calendário Editorial', 'Clientes'], false]
   ])('offers the items a role with %s sees, and the Agência group only with the team', async (_name, permissions, work, hasAgencyGroup) => {
     renderAt(`/agencia/${AGENCY}`, permissions);
     const aside = await sidebar();
@@ -120,7 +120,7 @@ describe('agency side navigation (#628)', () => {
     const aside = await sidebar();
     const href = (name: string): string | null => within(aside).getByRole('link', { name }).getAttribute('href');
     expect(href('Início')).toBe(`/agencia/${AGENCY}`);
-    expect(href('Conteúdos')).toBe(`/agencia/${AGENCY}/conteudos`);
+    expect(href('Calendário Editorial')).toBe(`/agencia/${AGENCY}/conteudos`);
     expect(href('Clientes')).toBe(`/agencia/${AGENCY}/clientes`);
     expect(href('Equipe')).toBe(`/agencia/${AGENCY}/colaboradores`);
     expect(within(aside).getByRole('link', { name: 'Clientes' }).getAttribute('aria-current')).toBe('page');
@@ -150,7 +150,7 @@ describe('agency side navigation (#628)', () => {
     expect(within(aside).getByRole('img', { name: 'Ageniza' }).getAttribute('src')).toBe('/brand/simbolo-branco.svg');
     expect(within(aside).getAllByRole('img', { name: 'Ageniza' })).toHaveLength(1);
     expect(within(aside).getByRole('button', { name: 'Abrir navegação' }).getAttribute('aria-expanded')).toBe('false');
-    expect(linkNames(aside)).toContain('Conteúdos');
+    expect(linkNames(aside)).toContain('Calendário Editorial');
   });
 
   it.each([

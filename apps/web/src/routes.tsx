@@ -72,6 +72,18 @@ function PortalCalendarRedirect() {
 }
 
 /**
+ * `/clientes/:clienteId/conteudos[/novo|/:conteudoId]`, from when the profile had a calendar tab (until 2026-11-04):
+ * the same client, content and creation on the screen of Conteúdos, with the query (`visao`, `data`, `dia`...) and the navigation state kept.
+ */
+function LegacyClientContentsRedirect({ suffix }: { suffix?: string }) {
+  const { agenciaId = '', clienteId = '', conteudoId } = useParams();
+  const { search, hash, state } = useLocation();
+  const rest = suffix ?? conteudoId;
+  const pathname = `/agencia/${agenciaId}/conteudos/${clienteId}${rest === undefined ? '' : `/${rest}`}`;
+  return <Navigate to={{ pathname, search, hash }} state={state} replace />;
+}
+
+/**
  * The root has no page of its own (decision of the owner, 2026-10-29, #786): it is the login. A visitor lands on
  * `/entrar`; a person with a session lands there too, and the login sends them on through the resolve to the same
  * destination as after signing in. The query and the state travel along, so what the login reads from them
@@ -157,6 +169,12 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
             <ClientsPage />
           </AgencyPermissionRoute>
         } />
+        {/* The calendar tab of the profile is gone (decision 2026-11-04): its old addresses lead to the screen of Conteúdos, query and state kept. */}
+        <Route path=":clienteId/conteudos" element={<AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}><Outlet /></AgencyPermissionRoute>}>
+          <Route index element={<LegacyClientContentsRedirect />} />
+          <Route path="novo" element={<LegacyClientContentsRedirect suffix="novo" />} />
+          <Route path=":conteudoId" element={<LegacyClientContentsRedirect />} />
+        </Route>
         <Route path=":clienteId" element={
           <AgencyPermissionRoute permission="cliente.visualizar">
             <ClientDetailPage />
@@ -165,12 +183,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
           {/* The tab lives in the URL: a bare address goes to Geral (specs/clientes.md §7). */}
           <Route index element={<Navigate to="geral" replace />} />
           <Route path="geral" element={<ClientGeneralTab />} />
-          {/* The same view of the client as the Conteúdos screen, with its modal over it; the permission gate is in ClientDetailPage. */}
-          <Route path="conteudos" element={<ContentsClientPage pinned />}>
-            <Route path="novo" element={<ContentCreateRoute />} />
-            <Route path=":conteudoId" element={<ContentModalRoute />} />
-          </Route>
-          {/* The media library of the client; the permission gate is in ClientDetailPage, like the Conteúdos tab's. */}
+          {/* The media library of the client; the permission gate is in ClientDetailPage, like the other tabs'. */}
           <Route path="midias" element={<ClientMediaTab />} />
           <Route path="tarefas" element={<ClientSkeletonTab title="Tarefas" description="Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis." />} />
           <Route path="estudo-de-marca" element={<ClientBrandStudyTab />} />

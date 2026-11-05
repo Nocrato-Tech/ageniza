@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -48,6 +48,102 @@ const dayLabel = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)
 
 const EMPTY_TASK: NewTaskValues = { title: '', description: '', assigneeMembershipId: '', dueOn: '' };
 
+type SaveState = 'idle' | 'saving' | 'saved';
+
+/**
+ * A choice that saves as it is made (decision 2026-11-04): the select shows what was chosen at once, with "Salvando…" and then
+ * "Salvo". There is no button, and no way to click twice: a choice made while one is on its way waits and is sent after it,
+ * so the requests leave in the order of the choices and the last choice is the one that stays. A refusal brings the
+ * select back to what is saved (read again from the server) and says why. `current` is the saved value.
+ */
+function useLiveChoice({ current, save, refresh, refusal }: {
+  current: string;
+  save: (value: string) => Promise<unknown>;
+  refresh: () => Promise<unknown>;
+  refusal: (failed: unknown) => string;
+}): { value: string; state: SaveState; error: string | undefined; choose: (value: string) => void } {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [state, setState] = useState<SaveState>('idle');
+  const [error, setError] = useState<string | undefined>();
+  const flight = useRef<{ busy: boolean; queued: string | null; saved: string | null }>({ busy: false, queued: null, saved: null });
+  const latest = useRef({ save, refresh, refusal });
+  latest.current = { save, refresh, refusal };
+
+  useEffect(() => {
+    if (state !== 'saved') return undefined;
+    const timer = setTimeout(() => setState('idle'), 3000);
+    return () => clearTimeout(timer);
+  }, [state]);
+
+  const send = async (value: string): Promise<void> => {
+    flight.current.busy = true;
+    setState('saving');
+    try {
+      await latest.current.save(value);
+    } catch (failed) {
+      flight.current = { busy: false, queued: null, saved: null };
+      await Promise.resolve(latest.current.refresh()).catch(() => undefined);
+      setDraft(null);
+      setState('idle');
+      setError(latest.current.refusal(failed));
+      return;
+    }
+    flight.current.saved = value;
+    const next = flight.current.queued;
+    flight.current.queued = null;
+    if (next !== null && next !== value) { await send(next); return; }
+    flight.current.busy = false;
+    await Promise.resolve(latest.current.refresh()).catch(() => undefined);
+    // A choice made while the screen was reading again has its own request on its way, and its own end.
+    if (!flight.current.busy) { flight.current.saved = null; setDraft(null); setState('saved'); }
+  };
+
+  const choose = (value: string): void => {
+    if (value === '') return;
+    setError(undefined);
+    setDraft(value);
+    if (flight.current.busy) { flight.current.queued = value; return; }
+    // Between the write and the end of the next reading, what is saved is the last value written, not the `current` the screen still holds.
+    if (value === (flight.current.saved ?? current)) { setDraft(flight.current.saved === null ? null : value); return; }
+    void send(value);
+  };
+
+  return { value: draft ?? current, state, error, choose };
+}
+
+const SAVE_TEXT: Readonly<Record<SaveState, string>> = { idle: '', saving: 'Salvando…', saved: 'Salvo' };
+
+/** What says, under a live choice, that it is being saved or was: quiet text a screen reader announces, never a button. */
+function SaveStatus({ state }: { state: SaveState }) {
+  return <p className="content-assignment__save" aria-live="polite">{SAVE_TEXT[state]}</p>;
+}
+
+/** The person in charge of a subtask: chosen from the team, saved as it is chosen. */
+function TaskAssignee({ task, options, save, refresh, disabled }: {
+  task: ContentTask;
+  disabled: boolean;
+  options: readonly { value: string; label: string }[];
+  save: (value: string) => Promise<unknown>;
+  refresh: () => Promise<unknown>;
+}) {
+  const live = useLiveChoice({ current: task.assignee?.membershipId ?? '', save, refresh, refusal: (failed) => taskRefusal(failed, 'update') });
+  return <div className="content-assignment__live">
+    <Select
+      label={`Responsável por “${task.title}”`}
+      value={live.value}
+      options={task.assignee !== null && !options.some((option) => option.value === task.assignee?.membershipId)
+        ? [{ value: task.assignee.membershipId, label: task.assignee.name }, ...options]
+        : options}
+      placeholder="Escolha uma pessoa"
+      disabled={disabled}
+      loading={live.state === 'saving'}
+      onChange={live.choose}
+    />
+    <SaveStatus state={live.state} />
+    {live.error !== undefined && <FieldMessage role="alert">{live.error}</FieldMessage>}
+  </div>;
+}
+
 /** The two blocks of the Atribuição tab (`specs/conteudo.md` section 7): who is in charge of the content, and its subtasks. */
 export function ContentAssignment({ clientId, content, archived }: { clientId: string; content: ContentDetail; archived: boolean }) {
   const httpClient = useApiClient();
@@ -69,12 +165,9 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
   const [sending, setSending] = useState<string | null>(null);
   const busy = sending !== null;
 
-  const [owner, setOwner] = useState('');
-  const [ownerError, setOwnerError] = useState<string | undefined>();
   const [taskErrors, setTaskErrors] = useState<Readonly<Record<string, string>>>({});
   const [returning, setReturning] = useState<{ taskId: string; comment: string; problem?: string | undefined } | null>(null);
   const [editing, setEditing] = useState<{ taskId: string; values: EditTaskValues; errors: EditTaskErrors; error?: string | undefined } | null>(null);
-  const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<NewTaskValues>(EMPTY_TASK);
   const [draftErrors, setDraftErrors] = useState<NewTaskErrors>({});
   const [createError, setCreateError] = useState<string | undefined>();
@@ -99,17 +192,26 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
   const contentPath = apiPath(CONTENT_PATH, { agencyId: agency.agencyId, clientId, contentId: content.id });
   const taskPath = (taskId: string, move: TaskMove): string => `${apiPath(TASKS_PATH, { agencyId: agency.agencyId, clientId, contentId: content.id })}/${taskId}/${move}`;
 
-  const changeOwner = async (): Promise<void> => {
-    if (owner === '') { setOwnerError('Escolha quem passa a ser o responsável.'); return; }
-    setOwnerError(undefined);
-    const result = await run('owner', () => httpClient.request({
+  const refresh = (): Promise<unknown> => queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', clientId] });
+
+  const ownerChoice = useLiveChoice({
+    current: content.owner?.membershipId ?? '',
+    save: (value) => httpClient.request({
       path: contentPath,
       method: 'PATCH',
-      body: { ownerMembershipId: owner } satisfies UpdateContentRequest,
+      body: { ownerMembershipId: value } satisfies UpdateContentRequest,
       response: ContentDetailSchema
-    }));
-    if (result === undefined) setOwner(''); else if (result.failed !== undefined) setOwnerError(ownerRefusal(result.failed));
-  };
+    }),
+    refresh,
+    refusal: ownerRefusal
+  });
+
+  const assignTask = (task: ContentTask) => (value: string): Promise<unknown> => httpClient.request({
+    path: `${apiPath(TASKS_PATH, { agencyId: agency.agencyId, clientId, contentId: content.id })}/${task.id}`,
+    method: 'PATCH',
+    body: { assigneeMembershipId: value } satisfies UpdateContentTaskRequest,
+    response: ContentTaskSchema
+  });
 
   const move = async (task: ContentTask, action: TaskMove, body?: ReturnContentTaskRequest): Promise<boolean> => {
     setTaskErrors((current) => ({ ...current, [task.id]: '' }));
@@ -165,7 +267,8 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
       body: built.body,
       response: ContentTaskSchema
     }));
-    if (result === undefined) { setDraft(EMPTY_TASK); setCreating(false); } else if (result.failed !== undefined) setCreateError(taskRefusal(result.failed, 'create'));
+    // The title and the rest stay in the row when the server refuses: only a saved subtask empties it.
+    if (result === undefined) setDraft(EMPTY_TASK); else if (result.failed !== undefined) setCreateError(taskRefusal(result.failed, 'create'));
   };
 
   const edit = (patch: Partial<NewTaskValues>, field: keyof NewTaskValues): void => {
@@ -195,21 +298,23 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
 
     <section className="content-assignment__block" aria-labelledby={`${ids}-owner`}>
       <h3 id={`${ids}-owner`}>Responsável pelo conteúdo</h3>
-      <p>{content.owner?.name ?? 'Sem responsável'}</p>
+      {!(canChangeOwner && teamReady) && <p>{content.owner?.name ?? 'Sem responsável'}</p>}
       {canChangeOwner && (teamReady
-        ? <div className="form-stack">
+        ? <div className="content-assignment__live">
           <Select
-            label="Novo responsável"
-            value={owner}
-            options={teamOptions}
-            placeholder="Escolha uma pessoa"
-            disabled={busy}
-            onChange={(value) => { setOwner(value); setOwnerError(undefined); }}
+            label="Responsável"
+            value={ownerChoice.value}
+            options={content.owner !== null && !teamOptions.some((option) => option.value === content.owner?.membershipId)
+              ? [{ value: content.owner.membershipId, label: content.owner.name }, ...teamOptions]
+              : teamOptions}
+            placeholder="Sem responsável"
+            disabled={blocked !== undefined}
+            loading={ownerChoice.state === 'saving'}
+            onChange={ownerChoice.choose}
           />
-          {ownerError !== undefined && <FieldMessage role="alert">{ownerError}</FieldMessage>}
-          <div className="form-actions">
-            <Button variant="secondary" loading={sending === 'owner'} disabled={busy} blockedReason={blocked} onClick={() => { void changeOwner(); }}>Trocar responsável</Button>
-          </div>
+          <SaveStatus state={ownerChoice.state} />
+          {blocked !== undefined && <p className="form-hint">{blocked}</p>}
+          {ownerChoice.error !== undefined && <FieldMessage role="alert">{ownerChoice.error}</FieldMessage>}
         </div>
         : teamBlocked)}
     </section>
@@ -239,6 +344,7 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
             </p>
             {task.description !== null && <p className="content-assignment__task-description">{task.description}</p>}
             {task.status === 'pending' && task.returnComment !== null && <p className="content-assignment__task-return">Devolvida: {task.returnComment}</p>}
+            {editable && teamReady && <TaskAssignee task={task} options={teamOptions} save={assignTask(task)} refresh={refresh} disabled={blocked !== undefined} />}
             {(deliver || judge || editable) && <div className="form-actions">
               {deliver && <Button
                 size="sm"
@@ -290,17 +396,6 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
                   />
                   {form.errors.title !== undefined && <FieldMessage role="alert">{form.errors.title}</FieldMessage>}
                 </div>
-                <Select
-                  label={`Responsável por “${task.title}”`}
-                  value={form.values.assigneeMembershipId}
-                  options={task.assignee !== null && !teamOptions.some((option) => option.value === task.assignee?.membershipId)
-                    ? [{ value: task.assignee.membershipId, label: task.assignee.name }, ...teamOptions]
-                    : teamOptions}
-                  placeholder="Escolha uma pessoa"
-                  disabled={busy}
-                  onChange={(value) => changeEdit({ assigneeMembershipId: value }, 'assigneeMembershipId')}
-                />
-                {form.errors.assigneeMembershipId !== undefined && <FieldMessage role="alert">{form.errors.assigneeMembershipId}</FieldMessage>}
                 <div className="form-field">
                   <label htmlFor={`${ids}-edit-due-${task.id}`}>Prazo de “{task.title}”</label>
                   <DatePicker
@@ -347,63 +442,61 @@ export function ContentAssignment({ clientId, content, archived }: { clientId: s
 
       {canCreate && (atLimit
         ? <p className="form-hint" role="note">{TASK_LIMIT_TEXT}</p>
-        : creating
-          ? (teamReady
-            ? <div className="form-stack content-assignment__new">
-              <div className="form-field">
-                <label htmlFor={`${ids}-title`}>Título da subtarefa</label>
-                <TextInput
-                  id={`${ids}-title`}
-                  value={draft.title}
-                  disabled={busy}
-                  onChange={(event) => edit({ title: event.target.value }, 'title')}
-                  aria-invalid={draftErrors.title !== undefined}
-                />
-                {draftErrors.title !== undefined && <FieldMessage role="alert">{draftErrors.title}</FieldMessage>}
-              </div>
-              <Select
-                label="Responsável pela subtarefa"
-                value={draft.assigneeMembershipId}
-                options={teamOptions}
-                placeholder="Escolha uma pessoa"
+        : (teamReady
+          ? <div className="form-stack content-assignment__new" role="group" aria-label="Nova subtarefa">
+            <div className="form-field">
+              <label htmlFor={`${ids}-title`}>Título da subtarefa</label>
+              <TextInput
+                id={`${ids}-title`}
+                value={draft.title}
                 disabled={busy}
-                onChange={(value) => edit({ assigneeMembershipId: value }, 'assigneeMembershipId')}
+                onChange={(event) => edit({ title: event.target.value }, 'title')}
+                onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+                  if (event.key === 'Enter') { event.preventDefault(); if (blocked === undefined) void create(); }
+                }}
+                aria-invalid={draftErrors.title !== undefined}
               />
-              {draftErrors.assigneeMembershipId !== undefined && <FieldMessage role="alert">{draftErrors.assigneeMembershipId}</FieldMessage>}
-              <div className="form-field">
-                <label htmlFor={`${ids}-due`}>Prazo da subtarefa</label>
-                <DatePicker
-                  id={`${ids}-due`}
-                  today={todayInSaoPaulo()}
-                  value={draft.dueOn}
-                  disabled={busy}
-                  onChange={(day) => edit({ dueOn: day }, 'dueOn')}
-                  aria-invalid={draftErrors.dueOn === undefined ? undefined : true}
-                />
-                {draftErrors.dueOn !== undefined && <FieldMessage role="alert">{draftErrors.dueOn}</FieldMessage>}
-              </div>
-              <div className="form-field">
-                <label htmlFor={`${ids}-description`}>Descrição da subtarefa (opcional)</label>
-                <Textarea
-                  id={`${ids}-description`}
-                  rows={3}
-                  value={draft.description}
-                  disabled={busy}
-                  onChange={(event) => edit({ description: event.target.value }, 'description')}
-                  aria-invalid={draftErrors.description !== undefined}
-                />
-                {draftErrors.description !== undefined && <FieldMessage role="alert">{draftErrors.description}</FieldMessage>}
-              </div>
-              {createError !== undefined && <FieldMessage role="alert">{createError}</FieldMessage>}
-              <div className="form-actions">
-                <Button loading={sending === 'create'} disabled={busy} onClick={() => { void create(); }}>Criar subtarefa</Button>
-                <Button variant="ghost" disabled={busy} onClick={() => { setCreating(false); }}>Cancelar</Button>
-              </div>
+              {draftErrors.title !== undefined && <FieldMessage role="alert">{draftErrors.title}</FieldMessage>}
             </div>
-            : teamBlocked)
-          : <div className="form-actions">
-            <Button variant="secondary" disabled={busy} blockedReason={blocked} onClick={() => { setCreating(true); }}>Nova subtarefa</Button>
-          </div>)}
+            <Select
+              label="Responsável pela subtarefa"
+              value={draft.assigneeMembershipId}
+              options={teamOptions}
+              placeholder="Escolha uma pessoa"
+              disabled={busy}
+              onChange={(value) => edit({ assigneeMembershipId: value }, 'assigneeMembershipId')}
+            />
+            {draftErrors.assigneeMembershipId !== undefined && <FieldMessage role="alert">{draftErrors.assigneeMembershipId}</FieldMessage>}
+            <div className="form-field">
+              <label htmlFor={`${ids}-due`}>Prazo da subtarefa</label>
+              <DatePicker
+                id={`${ids}-due`}
+                today={todayInSaoPaulo()}
+                value={draft.dueOn}
+                disabled={busy}
+                onChange={(day) => edit({ dueOn: day }, 'dueOn')}
+                aria-invalid={draftErrors.dueOn === undefined ? undefined : true}
+              />
+              {draftErrors.dueOn !== undefined && <FieldMessage role="alert">{draftErrors.dueOn}</FieldMessage>}
+            </div>
+            <div className="form-field">
+              <label htmlFor={`${ids}-description`}>Descrição da subtarefa (opcional)</label>
+              <Textarea
+                id={`${ids}-description`}
+                rows={2}
+                value={draft.description}
+                disabled={busy}
+                onChange={(event) => edit({ description: event.target.value }, 'description')}
+                aria-invalid={draftErrors.description !== undefined}
+              />
+              {draftErrors.description !== undefined && <FieldMessage role="alert">{draftErrors.description}</FieldMessage>}
+            </div>
+            {createError !== undefined && <FieldMessage role="alert">{createError}</FieldMessage>}
+            <div className="form-actions">
+              <Button variant="secondary" loading={sending === 'create'} disabled={busy} blockedReason={blocked} onClick={() => { void create(); }}>Adicionar subtarefa</Button>
+            </div>
+          </div>
+          : canChangeOwner ? null : teamBlocked))}
     </section>
   </div>;
 }

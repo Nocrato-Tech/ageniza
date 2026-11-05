@@ -7,9 +7,10 @@ import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within }
 import { MemoryRouter, type Location, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { UpdateContentRequestSchema } from '@ageniza/contracts';
+import { CONTENT_FEED_PAGE_SIZE, UpdateContentRequestSchema, type ContentListItem } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { feedItems } from './content-feed.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -157,6 +158,8 @@ interface Scenario {
   /** Contents of one client, by its id; the fake filters them by the period like the API does. */
   readonly contents?: Readonly<Record<string, readonly ReturnType<typeof contentFixture>[]>>;
   readonly period?: (clientId: string, from: string, to: string, call: number) => Response | Promise<Response> | undefined;
+  /** The feed of the phone, by cursor; the default pages the client's `contents` nine at a time like the API. */
+  readonly feed?: (clientId: string, cursor: string | null, call: number) => Response | Promise<Response> | undefined;
   readonly detail?: (clientId: string) => Response | Promise<Response> | undefined;
 }
 
@@ -169,6 +172,7 @@ const makeFetch = (scenario: Scenario = {}) => {
   const calls: string[] = [];
   const patches: Array<{ clientId: string; contentId: string; body: unknown }> = [];
   let periodCalls = 0;
+  let feedCalls = 0;
   const permissions = scenario.permissions ?? [VISUALIZE, READ_CLIENTS];
   const roster = scenario.roster ?? ROSTER;
   const impl: typeof fetch = async (input, init) => {
@@ -201,6 +205,29 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (custom !== undefined) return custom;
       const rows = (scenario.contents?.[clientId] ?? []).filter((content) => content.publishOn >= from && content.publishOn <= to);
       return periodResponse(rows, from, to);
+    }
+    const feedRoute = /\/agencies\/([^/]+)\/clients\/([^/]+)\/contents\/feed$/.exec(path);
+    if (feedRoute !== null && method === 'GET') {
+      if (!permissions.includes(VISUALIZE)) return forbidden();
+      const clientId = feedRoute[2]!;
+      if (!roster.some((client) => client.id === clientId)) return notFound();
+      const cursor = url.searchParams.get('cursor');
+      feedCalls += 1;
+      await new Promise<void>((done) => { setTimeout(done, 0); });
+      const custom = scenario.feed?.(clientId, cursor, feedCalls);
+      if (custom !== undefined) return custom;
+      const rows = feedItems((scenario.contents?.[clientId] ?? []) as unknown as ContentListItem[]);
+      const offset = cursor === null ? 0 : Number(cursor.replace('offset-', ''));
+      const page = rows.slice(offset, offset + CONTENT_FEED_PAGE_SIZE);
+      const counted = (status: string): number => rows.filter((row) => row.status === status).length;
+      return json({
+        data: {
+          contents: page,
+          nextCursor: offset + CONTENT_FEED_PAGE_SIZE < rows.length ? `offset-${offset + CONTENT_FEED_PAGE_SIZE}` : null,
+          counters: { posts: rows.length, approved: counted('approved'), awaitingApproval: counted('awaiting_approval') }
+        },
+        meta: { count: page.length }
+      });
     }
     const media = /\/agencies\/([^/]+)\/media\/([^/]+)\/download-url$/.exec(path);
     if (media !== null && method === 'GET') {
@@ -277,6 +304,7 @@ function Harness({ store }: { store: AuthSessionStore }) {
 interface Probe {
   pathname: string;
   search: string;
+  hash: string;
   state: unknown;
   navigate: NavigateFunction;
 }
@@ -285,18 +313,19 @@ function LocationProbe({ probe }: { probe: Probe }) {
   useCommittedLocation((location: Location, navigate) => {
     probe.pathname = location.pathname;
     probe.search = location.search;
+    probe.hash = location.hash;
     probe.state = location.state;
     probe.navigate = navigate;
   });
   return null;
 }
 
-const render_ = (impl: typeof fetch, entry: string | { pathname: string; search?: string; state: unknown } = `/agencia/${AGENCY_A}/conteudos`) => {
+const render_ = (impl: typeof fetch, entry: string | { pathname: string; search?: string; hash?: string; state: unknown } = `/agencia/${AGENCY_A}/conteudos`) => {
   const sessionEnd = createSessionEndSignal();
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: sessionEnd.notify });
   const queryClient = createQueryClient();
   const store = createAuthSessionStore(client);
-  const probe: Probe = { pathname: '', search: '', state: undefined, navigate: () => undefined };
+  const probe: Probe = { pathname: '', search: '', hash: '', state: undefined, navigate: () => undefined };
   const rendered = render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={queryClient}>
@@ -346,16 +375,16 @@ const shapeOf = (cover: Element | null | undefined): string | null => {
   return names.length === 0 ? null : names[0]!.slice('lucide-'.length);
 };
 
-describe('the Conteúdos item and the guard', () => {
+describe('the Calendário Editorial item and the guard', () => {
   it('gives the item to whoever has conteudo.visualizar, linked to the selector', async () => {
     const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS] });
     render_(impl, `/agencia/${AGENCY_A}`);
 
-    const link = await screen.findByRole('link', { name: 'Conteúdos' });
+    const link = await screen.findByRole('link', { name: 'Calendário Editorial' });
     expect(link.getAttribute('href')).toBe(`/agencia/${AGENCY_A}/conteudos`);
     fireEvent.click(link);
-    expect(await screen.findByRole('heading', { name: 'Conteúdos' })).toBeTruthy();
-    expect(await screen.findByText('Escolha um cliente para ver o calendário editorial.')).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Calendário Editorial' })).toBeTruthy();
+    expect(await screen.findByRole('link', { name: 'Padaria Central' })).toBeTruthy();
   });
 
   // Vendas and Financeiro hold neither content permission; each row below is a role with one permission.
@@ -368,7 +397,7 @@ describe('the Conteúdos item and the guard', () => {
     const { impl, calls } = makeFetch({ permissions });
     const { unmount } = render_(impl, `/agencia/${AGENCY_A}`);
     await screen.findByRole('link', { name: 'Início' });
-    expect(screen.queryByRole('link', { name: 'Conteúdos' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Calendário Editorial' })).toBeNull();
     unmount();
 
     for (const address of [`/agencia/${AGENCY_A}/conteudos`, contentsUrl(padaria.id)]) {
@@ -386,7 +415,7 @@ describe('the Conteúdos item and the guard', () => {
     const { impl, calls } = makeFetch({ permissions: [VISUALIZE] });
     const { unmount } = render_(impl, `/agencia/${AGENCY_A}`);
     await screen.findByRole('link', { name: 'Início' });
-    expect(screen.queryByRole('link', { name: 'Conteúdos' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Calendário Editorial' })).toBeNull();
     unmount();
 
     for (const address of [`/agencia/${AGENCY_A}/conteudos`, contentsUrl(padaria.id)]) {
@@ -404,7 +433,7 @@ describe('the stories (/agencia/:agenciaId/conteudos)', () => {
     render_(impl);
 
     const nav = await screen.findByRole('navigation', { name: 'Clientes' });
-    const names = within(nav).getAllByRole('link').map((link) => link.querySelector('.ui-client-strip__name')?.textContent);
+    const names = within(nav).getAllByRole('link').map((link) => link.querySelector('.content-clients__name')?.textContent);
     // The archived client is not here, and the order is the server's, not alphabetical.
     expect(names).toEqual(['Padaria Central', 'Academia Corpo', 'Confeitaria Doce']);
     expect(screen.queryByText('Barbearia Lima')).toBeNull();
@@ -435,13 +464,13 @@ describe('the stories (/agencia/:agenciaId/conteudos)', () => {
     const { impl } = makeFetch({ clients: () => held.promise });
     const { container } = render_(impl);
 
-    await screen.findByRole('heading', { name: 'Conteúdos' });
-    await waitFor(() => expect(container.querySelector('.content-stories__skeleton')).not.toBeNull());
+    await screen.findByRole('heading', { name: 'Calendário Editorial' });
+    await waitFor(() => expect(container.querySelector('.content-clients__skeleton')).not.toBeNull());
     expect(screen.queryByRole('navigation', { name: 'Clientes' })).toBeNull();
 
     held.resolve(json({ data: [padaria], meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } }));
     expect(await screen.findByRole('link', { name: 'Padaria Central' })).toBeTruthy();
-    expect(container.querySelector('.content-stories__skeleton')).toBeNull();
+    expect(container.querySelector('.content-clients__skeleton')).toBeNull();
   });
 
   it('shows the error with "Tentar de novo", and the retry brings the clients back', async () => {
@@ -502,7 +531,7 @@ describe('the ring on the stories (contentIndicators of #261)', () => {
     const ringedClient = withIndicators('5e5e5e5e-5555-4555-8555-555555555555', 'Cliente com Pedido', indicators(counts));
     const quiet = withIndicators('6f6f6f6f-6666-4666-8666-666666666666', 'Cliente Quieto', indicators({}));
     const { impl } = makeFetch({ roster: [ringedClient, quiet] });
-    render_(impl);
+    render_(impl, contentsUrl(quiet.id));
 
     const link = await screen.findByRole('link', { name: new RegExp(`^Cliente com Pedido\\s*,\\s*${reason}$`) });
     expect(ringed(link)).toBe(true);
@@ -514,7 +543,7 @@ describe('the ring on the stories (contentIndicators of #261)', () => {
     const flowOnly = withIndicators('6f6f6f6f-6666-4666-8666-666666666666', 'Só Fluxo', indicators({ pending: 7, inReview: 3 }));
     const unknown = withIndicators('7a7a7a7a-7777-4777-8777-777777777777', 'Sem Indicadores');
     const { impl } = makeFetch({ roster: [everything, flowOnly, unknown] });
-    render_(impl);
+    render_(impl, contentsUrl(unknown.id));
 
     const all = await screen.findByRole('link', { name: /^Tudo Junto\s*,\s*em ajuste, em atraso, com prazo em dois dias$/ });
     expect(ringed(all)).toBe(true);
@@ -656,7 +685,7 @@ describe('the month calendar', () => {
     await screen.findByText('Lançamento do pão');
 
     const day = dayCell('2026-10-14');
-    expect(within(day).getAllByRole('article').map((card) => within(card).getByText(/./, { selector: '.content-card__link' }).textContent)).toEqual(['Lançamento do pão', 'Bastidores']);
+    expect(within(day).getAllByRole('article').map((card) => card.querySelector('.content-card__title')?.textContent)).toEqual(['Lançamento do pão', 'Bastidores']);
     const launch = within(day).getByText('Lançamento do pão').closest('article')!;
     expect(within(launch).getByText('Carrossel')).toBeTruthy();
     expect(within(launch).getByText('18:00')).toBeTruthy();
@@ -707,7 +736,7 @@ describe('the month calendar', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Passou');
 
-    const alertsOf = (title: string): (string | null)[] => Array.from(screen.getByText(title).closest('article')!.querySelectorAll('.content-card__badge--overdue, .content-card__badge--due-soon')).map((badge) => badge.textContent);
+    const alertsOf = (title: string): (string | null)[] => Array.from(screen.getByText(title).closest('article')!.querySelectorAll('.ui-late-badge, .content-card__meta')).map((badge) => badge.textContent).filter((text) => text === 'Atrasado' || text === 'Prazo em dois dias');
     expect(alertsOf('Passou')).toEqual(['Atrasado']);
     expect(alertsOf('Para hoje')).toEqual(['Prazo em dois dias']);
     expect(alertsOf('Em dois dias')).toEqual(['Prazo em dois dias']);
@@ -845,15 +874,15 @@ describe('the period controls and the URL', () => {
     expect(probe.search).toBe('?data=2026-10-04');
   });
 
-  it('chooses the scale as a group of two options with the arrow keys, one tab stop, and no longer as two buttons', async () => {
+  it('chooses the view as a group of three options with the arrow keys, one tab stop, and not as buttons', async () => {
     const { impl } = makeFetch();
     const { probe } = render_(impl, contentsUrl(padaria.id));
     await screen.findByRole('heading', { name: 'Outubro 2026' });
 
-    const group = screen.getByRole('radiogroup', { name: 'Escala do calendário' });
-    expect(within(group).getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Mês', 'Semana']);
+    const group = screen.getByRole('radiogroup', { name: 'Visualização' });
+    expect(within(group).getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Mês', 'Semana', 'Feed']);
     expect(screen.queryByRole('button', { name: 'Semana' })).toBeNull();
-    expect(screen.queryByRole('group', { name: 'Escala do calendário' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Visualização' })).toBeNull();
     const month = within(group).getByRole('radio', { name: 'Mês' });
     const week = within(group).getByRole('radio', { name: 'Semana' });
     expect([month.getAttribute('tabindex'), week.getAttribute('tabindex')]).toEqual(['0', '-1']);
@@ -915,13 +944,13 @@ describe('the period controls and the URL', () => {
 });
 
 describe('the places left for the next parts', () => {
-  it('has the calendar with the feed at its side and no selector of views: the feed is the phone, and the folders are the Mídias tab', async () => {
+  it('has the calendar with the feed at its side, the three views in one selector, and the folders in the Mídias tab', async () => {
     const { impl } = makeFetch();
     render_(impl, contentsUrl(padaria.id));
     await screen.findByRole('heading', { name: 'Outubro 2026' });
     await calendarReady();
 
-    for (const name of ['Calendário', 'Feed', 'Pastas']) {
+    for (const name of ['Calendário', 'Pastas']) {
       expect(screen.queryByRole('tab', { name }), `tab ${name}`).toBeNull();
       expect(screen.queryByRole('radio', { name }), `radio ${name}`).toBeNull();
       expect(screen.queryByRole('button', { name }), `button ${name}`).toBeNull();
@@ -941,7 +970,7 @@ describe('every request goes through apiPath', () => {
 
     const agencyCalls = calls.filter((call) => call.includes('/agencies/'));
     expect(agencyCalls.length).toBeGreaterThan(2);
-    for (const call of agencyCalls) expect(call).toMatch(new RegExp(`^GET /agencies/${AGENCY_A}/(me|clients(/${padaria.id}(/contents\\?from=\\d{4}-\\d{2}-\\d{2}&to=\\d{4}-\\d{2}-\\d{2})?|\\?page=1&pageSize=100)?)$`));
+    for (const call of agencyCalls) expect(call).toMatch(new RegExp(`^GET /agencies/${AGENCY_A}/(me|clients(/${padaria.id}(/contents(\\?from=\\d{4}-\\d{2}-\\d{2}&to=\\d{4}-\\d{2}-\\d{2}|/feed))?|\\?page=1&pageSize=100)?)$`));
     // The id in the address is lower-cased before it becomes a request: the API compares it as is.
     expect(calls.some((call) => call.includes(padaria.id.toUpperCase()))).toBe(false);
   });
@@ -1052,7 +1081,7 @@ describe('moving a content to another day (drag)', () => {
   });
 
   it('lets each of the four open states be dragged', async () => {
-    const rows = (['in_production', 'awaiting_approval', 'adjusting', 'approved'] as const).map((status) => contentFixture({ title: `Post ${status}`, publishOn: '2026-10-14', status }));
+    const rows = (['in_production', 'awaiting_approval', 'adjusting', 'approved'] as const).map((status, index) => contentFixture({ title: `Post ${status}`, publishOn: `2026-10-${15 + index}`, status }));
     open(rows);
     await screen.findByText('Post approved');
     for (const row of rows) expect(cardOf(row.title).getAttribute('draggable'), String(row.status)).toBe('true');
@@ -1206,12 +1235,12 @@ class FakeIntersectionObserver {
   hide(element: Element): void { this.callback([{ isIntersecting: false, target: element } as IntersectionObserverEntry], this as unknown as IntersectionObserver); }
 }
 
-describe('the cover of a card', () => {
+describe('the cover of a tile of the feed beside the calendar (the cell of the calendar draws none)', () => {
   const coverCalls = (calls: readonly string[]): string[] => calls.filter((call) => /\/download-url/.test(call));
   const cardOf = (title: string): HTMLElement => {
-    const card = screen.getByText(title).closest('article');
-    if (card === null) throw new Error(`The card of ${title} was not rendered.`);
-    return card;
+    const tile = [...document.querySelectorAll<HTMLElement>('.content-feed__tile')].find((candidate) => (candidate.textContent ?? '').includes(`${title} ·`));
+    if (tile === undefined) throw new Error(`The tile of ${title} was not rendered.`);
+    return tile;
   };
 
   it('reads the thumbnail address of the cover of its own asset, never the original, and draws it without a text of its own', async () => {
@@ -1256,7 +1285,7 @@ describe('the cover of a card', () => {
     await screen.findByText('Sem quadro');
 
     await waitFor(() => expect(coverCalls(calls)).toHaveLength(1));
-    await waitFor(() => expect(shapeOf(cardOf('Sem quadro').querySelector('.content-card__cover--placeholder'))).toBe('clapperboard'));
+    await waitFor(() => expect(shapeOf(cardOf('Sem quadro').querySelector('.content-feed__cover--placeholder'))).toBe('clapperboard'));
     expect(cardOf('Sem quadro').querySelector('img')).toBeNull();
   });
 
@@ -1267,7 +1296,7 @@ describe('the cover of a card', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Capa removida');
 
-    expect(shapeOf(cardOf('Capa removida').querySelector('.content-card__cover--placeholder'))).toBe('clapperboard');
+    expect(shapeOf(cardOf('Capa removida').querySelector('.content-feed__cover--placeholder'))).toBe('clapperboard');
     expect(coverCalls(calls)).toEqual([]);
   });
 
@@ -1279,8 +1308,8 @@ describe('the cover of a card', () => {
     await screen.findByText('Sem capa');
 
     expect(cardOf('Sem capa').querySelector('img')).toBeNull();
-    expect(shapeOf(cardOf('Sem capa').querySelector('.content-card__cover--placeholder'))).toBe('gallery-vertical');
-    expect(shapeOf(cardOf('Filme').querySelector('.content-card__cover--placeholder'))).toBe('clapperboard');
+    expect(shapeOf(cardOf('Sem capa').querySelector('.content-feed__cover--placeholder'))).toBe('gallery-vertical');
+    expect(shapeOf(cardOf('Filme').querySelector('.content-feed__cover--placeholder'))).toBe('clapperboard');
     expect(coverCalls(calls)).toEqual([]);
   });
 
@@ -1292,9 +1321,9 @@ describe('the cover of a card', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Sem miniatura');
 
-    await waitFor(() => expect(cardOf('Sem miniatura').querySelector('.content-card__cover--placeholder')).not.toBeNull());
+    await waitFor(() => expect(cardOf('Sem miniatura').querySelector('.content-feed__cover--placeholder')).not.toBeNull());
     expect(cardOf('Sem miniatura').querySelector('img')).toBeNull();
-    expect(within(cardOf('Sem miniatura')).getByText('Pronto para publicar')).toBeTruthy();
+    expect(within(cardOf('Sem miniatura')).getByText('Pronto')).toBeTruthy();
   });
 
   it.each([[403, 'FORBIDDEN'], [404, 'NOT_FOUND']] as const)('keeps the placeholder when the route answers %s', async (status, code) => {
@@ -1304,8 +1333,8 @@ describe('the cover of a card', () => {
     });
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Recusada');
-    await waitFor(() => expect(cardOf('Recusada').querySelector('.content-card__cover--placeholder')).not.toBeNull());
-    expect(shapeOf(cardOf('Recusada').querySelector('.content-card__cover--placeholder'))).toBe('clapperboard');
+    await waitFor(() => expect(cardOf('Recusada').querySelector('.content-feed__cover--placeholder')).not.toBeNull());
+    expect(shapeOf(cardOf('Recusada').querySelector('.content-feed__cover--placeholder'))).toBe('clapperboard');
     expect(cardOf('Recusada').querySelector('img')).toBeNull();
   });
 
@@ -1322,7 +1351,7 @@ describe('the cover of a card', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Três');
 
-    await waitFor(() => expect(document.querySelectorAll('.content-card img')).toHaveLength(3));
+    await waitFor(() => expect(document.querySelectorAll('.content-feed__tile img')).toHaveLength(3));
     expect(cardOf('Um').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_A}.jpg`);
     expect(cardOf('Dois').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_B}.jpg`);
     expect(cardOf('Três').querySelector('img')?.getAttribute('src')).toBe(`https://storage.test/${ASSET_A}.jpg`);
@@ -1332,16 +1361,15 @@ describe('the cover of a card', () => {
     ]);
   });
 
-  it('does not read an address again when the person leaves the period and comes back before it expires', async () => {
+  it('does not read an address again when the person leaves for another client and comes back before it expires', async () => {
     const { impl, calls } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Volta', publishOn: '2026-10-14', coverAssetId: ASSET_A })] } });
     render_(impl, contentsUrl(padaria.id));
-    await waitFor(() => expect(document.querySelector('.content-card img')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector('.content-feed__tile img')).not.toBeNull());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }));
-    await screen.findByRole('heading', { name: 'Novembro 2026' });
-    await waitFor(() => expect(document.querySelector('.content-card')).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }));
-    await waitFor(() => expect(document.querySelector('.content-card img')).not.toBeNull());
+    fireEvent.click(screen.getByRole('link', { name: 'Confeitaria Doce' }));
+    await waitFor(() => expect(document.querySelector('.content-feed__tile')).toBeNull());
+    fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
+    await waitFor(() => expect(document.querySelector('.content-feed__tile img')).not.toBeNull());
     expect(coverCalls(calls)).toHaveLength(1);
   });
 
@@ -1353,12 +1381,11 @@ describe('the cover of a card', () => {
       cover: () => { issued += 1; return json({ url: `https://storage.test/${issued}.jpg`, expiresAt: '2026-10-12T01:29:00.000Z' }); }
     });
     render_(impl, contentsUrl(padaria.id));
-    await waitFor(() => expect(document.querySelector('.content-card img')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector('.content-feed__tile img')).not.toBeNull());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Próximo mês' }));
-    await screen.findByRole('heading', { name: 'Novembro 2026' });
-    await waitFor(() => expect(document.querySelector('.content-card')).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'Mês anterior' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Confeitaria Doce' }));
+    await waitFor(() => expect(document.querySelector('.content-feed__tile')).toBeNull());
+    fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
     await waitFor(() => expect(coverCalls(calls)).toHaveLength(2));
   });
 
@@ -1374,10 +1401,10 @@ describe('the cover of a card', () => {
 
     await waitFor(() => expect(cardOf('Quebrada').querySelector('img')).not.toBeNull());
     expect(cardOf('Script').querySelector('img')).toBeNull();
-    expect(cardOf('Script').querySelector('.content-card__cover--placeholder')).not.toBeNull();
+    expect(cardOf('Script').querySelector('.content-feed__cover--placeholder')).not.toBeNull();
     fireEvent.error(cardOf('Quebrada').querySelector('img')!);
     await waitFor(() => expect(cardOf('Quebrada').querySelector('img')).toBeNull());
-    expect(cardOf('Quebrada').querySelector('.content-card__cover--placeholder')).not.toBeNull();
+    expect(cardOf('Quebrada').querySelector('.content-feed__cover--placeholder')).not.toBeNull();
   });
 
   describe('with an observer of what is on screen', () => {
@@ -1437,7 +1464,7 @@ describe('the detail on a card (hover and focus)', () => {
   };
   const point = (element: HTMLElement): void => pointer('pointerOver', element);
   const unpoint = (element: HTMLElement): void => pointer('pointerOut', element);
-  const detailCalls = (calls: readonly string[]): string[] => calls.filter((call) => /\/contents\/[^/?]+$/.test(call) && call.startsWith('GET'));
+  const detailCalls = (calls: readonly string[]): string[] => calls.filter((call) => /\/contents\/(?!feed$)[^/?]+$/.test(call) && call.startsWith('GET'));
   const withDetail = (row: ReturnType<typeof contentFixture>, extra: Record<string, unknown>) => (_client: string, id: string) =>
     id === row.id ? json({ ...detailOfContent(padaria.id, row), ...extra }) : undefined;
 
@@ -1468,13 +1495,13 @@ describe('the detail on a card (hover and focus)', () => {
     expect(within(tooltip).getByText('3 comentários · último em 11/10')).toBeTruthy();
     expect(await within(tooltip).findByText('Cliente: “Podemos trocar a foto da capa?” · 11/10')).toBeTruthy();
     expect(calls).toContain(`GET /agencies/${AGENCY_A}/clients/${padaria.id}/threads?contentId=${row.id}`);
-    expect(within(cardOf('Lançamento')).getByRole('link', { name: 'Lançamento' }).getAttribute('aria-controls')).toBe(tooltip.id);
-    expect(cardOf('Lançamento').getAttribute('aria-describedby')).toBe(tooltip.id);
+    expect(within(cardOf('Lançamento')).getByRole('link', { name: /Lançamento/ }).getAttribute('aria-controls')).toBe(tooltip.id);
+    expect(within(cardOf('Lançamento')).getByRole('link').getAttribute('aria-describedby')).toBe(tooltip.id);
     expect(detailCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/clients/${padaria.id}/contents/${row.id}`]);
 
     unpoint(cardOf('Lançamento'));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(within(cardOf('Lançamento')).getByRole('link', { name: 'Lançamento' }).hasAttribute('aria-controls')).toBe(false);
+    expect(within(cardOf('Lançamento')).getByRole('link', { name: /Lançamento/ }).hasAttribute('aria-controls')).toBe(false);
     expect(cardOf('Lançamento').getAttribute('aria-describedby')).toBeNull();
   });
 
@@ -1632,15 +1659,17 @@ describe('the detail on a card (hover and focus)', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Teclado');
 
-    expect(cardOf('Teclado').getAttribute('tabindex')).toBe('0');
-    // Tab reaches the card and then its link: a real focus, which the browser marks as keyboard focus, opens the card at once.
-    act(() => { cardOf('Teclado').focus(); });
+    const link = within(cardOf('Teclado')).getByRole('link');
+    // The card has one stop, its link: a real focus, which the browser marks as keyboard focus, opens the floating card at once.
+    expect(cardOf('Teclado').getAttribute('tabindex')).toBeNull();
+    act(() => { link.focus(); });
     expect(await screen.findByRole('dialog', { name: 'Detalhes de Teclado' })).toBeTruthy();
-    fireEvent.keyDown(cardOf('Teclado'), { key: 'Escape' });
+    fireEvent.keyDown(link, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
     // Closed by Escape, the focus stays where it was: the card does not reopen by itself.
-    expect(document.activeElement).toBe(cardOf('Teclado'));
-    act(() => { screen.getByRole('link', { name: 'Teclado' }).focus(); });
+    expect(document.activeElement).toBe(link);
+    act(() => { link.blur(); });
+    act(() => { link.focus(); });
     expect(await screen.findByRole('dialog')).toBeTruthy();
     // Moving from the card into its own floating card keeps it open; leaving both closes it.
     act(() => { (document.activeElement as HTMLElement).blur(); });
@@ -1861,53 +1890,51 @@ describe('where the floating card of a calendar card opens', () => {
   });
 });
 
-describe('the Conteúdos tab of the client (#272)', () => {
-  const tabUrl = (search = '') => `/agencia/${AGENCY_A}/clientes/${padaria.id}/conteudos${search}`;
-  const tabNav = (): HTMLElement => screen.getByRole('navigation', { name: 'Seções do cliente' });
+describe('the calendar lives only on the screen of Conteúdos, and the profile leads to it (decision 2026-11-04)', () => {
+  const oldTab = (suffix = '', search = '') => `/agencia/${AGENCY_A}/clientes/${padaria.id}/conteudos${suffix}${search}`;
   const treino = () => contentFixture({ title: 'Treino da semana', publishOn: '2026-10-14' });
   const ROSTER_ADDRESS = `/agencia/${AGENCY_A}/clientes?search=padaria&page=2`;
   const OPERATOR = [VISUALIZE, READ_CLIENTS, 'conteudo.operar'];
 
-  it('gives the tab to who reads contents, and opens the calendar of that client with no stories and no second client header', async () => {
-    const row = treino();
-    const { impl, calls } = makeFetch({ contents: { [padaria.id]: [row] } });
-    const { probe } = render_(impl, `/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`);
-
-    const link = await within(await screen.findByRole('navigation', { name: 'Seções do cliente' })).findByRole('link', { name: 'Conteúdos' });
-    fireEvent.click(link);
-    await waitFor(() => expect(probe.pathname).toBe(tabUrl()));
+  it('redirects the old tab address to the screen, keeping the query and the roster address, replacing the history entry', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: [treino()] } });
+    const { probe } = render_(impl, { pathname: oldTab(), search: '?visao=semana&data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
+    await waitFor(() => expect(probe.pathname).toBe(contentsUrl(padaria.id)));
+    expect(probe.search).toBe('?visao=semana&data=2026-10-14');
+    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
     expect(await screen.findByText('Treino da semana')).toBeTruthy();
-    expect(within(tabNav()).getByRole('link', { name: 'Conteúdos' }).getAttribute('aria-current')).toBe('page');
-    expect(calls).toContain(periodCall(padaria.id, OCTOBER.from, OCTOBER.to));
-    expect(screen.queryByRole('navigation', { name: 'Clientes' })).toBeNull();
-    expect(calls.filter((call) => /\/clients\?/.test(call))).toEqual([]);
-    expect(screen.getAllByRole('heading', { name: 'Padaria Central' })).toHaveLength(1);
-    expect(screen.getByRole('complementary', { name: 'Prévia do feed' })).toBeTruthy();
-    expect(document.title).toBe('Padaria Central — Ageniza');
+    expect(screen.getByRole('heading', { level: 1, name: 'Calendário Editorial' })).toBeTruthy();
   });
 
-  it('draws the skeleton while the period loads and the empty state when it has nothing, as the screen does', async () => {
-    const gate = deferred<Response>();
-    const { impl } = makeFetch({ period: () => gate.promise });
-    render_(impl, tabUrl());
-    await screen.findByRole('heading', { name: 'Padaria Central' });
-    await waitFor(() => expect(document.querySelector('.contents__skeleton')?.getAttribute('aria-hidden')).toBe('true'));
-    expect(screen.queryByText('Nenhum conteúdo planejado neste período.')).toBeNull();
-    gate.resolve(periodResponse([], OCTOBER.from, OCTOBER.to));
-    expect(await screen.findByText('Nenhum conteúdo planejado neste período.')).toBeTruthy();
-    expect(document.querySelector('.contents__skeleton')).toBeNull();
+  it('keeps the hash of the old tab address too', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: [treino()] } });
+    const { probe } = render_(impl, { pathname: oldTab(), search: '?visao=semana', hash: '#feed', state: { clientListUrl: ROSTER_ADDRESS } });
+    await waitFor(() => expect(probe.pathname).toBe(contentsUrl(padaria.id)));
+    expect(probe.hash).toBe('#feed');
   });
 
-  it('keeps the client of the address fixed while the scale changes: week and back', async () => {
-    const { impl, calls } = makeFetch({ contents: { [padaria.id]: [treino()] } });
-    const { probe } = render_(impl, tabUrl());
-    await screen.findByText('Treino da semana');
+  it('redirects the old modal and creation addresses to the equivalents on the screen, with the query', async () => {
+    const row = treino();
+    const { impl } = makeFetch({ permissions: OPERATOR, contents: { [padaria.id]: [row] } });
+    const opened = render_(impl, { pathname: oldTab(`/${row.id}`), search: '?visao=semana&data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
+    await waitFor(() => expect(opened.probe.pathname).toBe(`${contentsUrl(padaria.id)}/${row.id}`));
+    expect(opened.probe.search).toBe('?visao=semana&data=2026-10-14');
+    expect(opened.probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    opened.unmount();
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Semana' }));
-    await waitFor(() => expect(probe.search).toBe('?visao=semana'));
-    expect(probe.pathname).toBe(tabUrl());
-    await waitFor(() => expect(periodCalls(calls).some((call) => call.includes('from=2026-10-05&to=2026-10-11'))).toBe(true));
-    expect(periodCalls(calls).every((call) => call.includes(`/clients/${padaria.id}/`))).toBe(true);
+    const created = render_(impl, { pathname: oldTab('/novo'), search: '?data=2026-10-14&dia=2026-10-20', state: { clientListUrl: ROSTER_ADDRESS } });
+    await waitFor(() => expect(created.probe.pathname).toBe(`${contentsUrl(padaria.id)}/novo`));
+    expect(created.probe.search).toBe('?data=2026-10-14&dia=2026-10-20');
+    expect(created.probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
+    expect(await screen.findByRole('dialog', { name: 'Novo conteúdo' })).toBeTruthy();
+  });
+
+  it('sends the old folders address through the screen to the Mídias tab, with the folder it had open', async () => {
+    const { impl } = makeFetch({});
+    const { probe } = render_(impl, oldTab('', '?vista=pastas&pasta=abc'));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${padaria.id}/midias`));
+    expect(probe.search).toBe('?pasta=abc');
   });
 
   // Vendas and Financeiro hold neither content permission; each row is a role with permissions that never include conteudo.visualizar.
@@ -1915,94 +1942,37 @@ describe('the Conteúdos tab of the client (#272)', () => {
     ['cliente.visualizar only (Vendas)', [READ_CLIENTS]],
     ['conteudo.operar, without visualizar', [READ_CLIENTS, 'conteudo.operar']],
     ['cliente.visualizar and financeiro.visualizar (Financeiro)', [READ_CLIENTS, 'financeiro.visualizar']]
-  ])('has no tab, and every address of it is "não encontrado" without the client behind it: %s', async (_name, permissions) => {
+  ])('keeps every old address "não encontrado" without the client behind it: %s', async (_name, permissions) => {
     const row = treino();
     const { impl, calls } = makeFetch({ permissions, contents: { [padaria.id]: [row] } });
-    const { unmount } = render_(impl, `/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`);
-    await screen.findByRole('heading', { name: 'Padaria Central' });
-    expect(within(tabNav()).queryByRole('link', { name: 'Conteúdos' })).toBeNull();
-    expect(within(tabNav()).getAllByRole('link').map((item) => item.textContent)).toEqual(['Geral', 'Tarefas', 'Estudo de marca', 'Relatórios']);
-    unmount();
-
-    for (const address of [tabUrl(), `${tabUrl()}/novo`, `${tabUrl()}/${row.id}`, tabUrl('?vista=pastas')]) {
+    for (const address of [oldTab(), oldTab('/novo'), oldTab(`/${row.id}`), oldTab('', '?vista=pastas')]) {
       const view = render_(impl, address);
       expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
       expect(screen.queryByRole('heading', { name: 'Padaria Central' })).toBeNull();
+      expect(view.probe.pathname).toBe(address.split('?')[0]);
       view.unmount();
     }
     expect(calls.filter((call) => /\/contents|\/media-folders|\/threads/.test(call))).toEqual([]);
   });
 
-  it('goes to the screen of Conteúdos and back keeping the client, the period and the roster address', async () => {
+  it('links the calendar to the profile, keeping the roster address, so "← Clientes" still returns to the search', async () => {
     const { impl } = makeFetch({ contents: { [padaria.id]: [treino()] } });
-    const { probe } = render_(impl, { pathname: tabUrl(), search: '?visao=semana&data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
+    const { probe } = render_(impl, { pathname: contentsUrl(padaria.id), search: '?visao=semana&data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
     await screen.findByText('Treino da semana');
-    const back = (): HTMLElement => screen.getByRole('link', { name: 'Voltar para Clientes' });
-    expect(back().getAttribute('href')).toBe(ROSTER_ADDRESS);
-
-    const toScreen = screen.getByRole('link', { name: 'Abrir na tela de Conteúdos' });
-    expect(toScreen.getAttribute('href')).toBe(`${contentsUrl(padaria.id)}?visao=semana&data=2026-10-14`);
-    fireEvent.click(toScreen);
-    await waitFor(() => expect(probe.pathname).toBe(contentsUrl(padaria.id)));
-    expect(probe.search).toBe('?visao=semana&data=2026-10-14');
-    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-    expect(await screen.findByRole('navigation', { name: 'Clientes' })).toBeTruthy();
-    expect(await screen.findByText('Treino da semana')).toBeTruthy();
-
-    const toTab = screen.getByRole('link', { name: 'Abrir no cadastro do cliente' });
-    expect(toTab.getAttribute('href')).toBe(`${tabUrl()}?visao=semana&data=2026-10-14`);
-    fireEvent.click(toTab);
-    await waitFor(() => expect(probe.pathname).toBe(tabUrl()));
-    expect(probe.search).toBe('?visao=semana&data=2026-10-14');
+    const toProfile = screen.getByRole('link', { name: 'Abrir no cadastro do cliente' });
+    expect(toProfile.getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`);
+    fireEvent.click(toProfile);
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`));
     expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
     expect((await screen.findByRole('link', { name: 'Voltar para Clientes' })).getAttribute('href')).toBe(ROSTER_ADDRESS);
+    expect(screen.queryByRole('link', { name: 'Abrir na tela do Calendário Editorial' })).toBeNull();
   });
 
-  it('opens a content inside the tab, and closing it comes back to the same tab, period and roster address', async () => {
-    const row = treino();
-    const { impl } = makeFetch({ contents: { [padaria.id]: [row] } });
-    const { probe } = render_(impl, { pathname: tabUrl(), search: '?visao=semana&data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
-
-    const card = await screen.findByRole('link', { name: 'Treino da semana' });
-    expect(card.getAttribute('href')).toBe(`${tabUrl()}/${row.id}?visao=semana&data=2026-10-14`);
-    fireEvent.click(card);
-    await waitFor(() => expect(probe.pathname).toBe(`${tabUrl()}/${row.id}`));
-    expect(probe.search).toBe('?visao=semana&data=2026-10-14');
-    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Fechar conteúdo' }));
-    await waitFor(() => expect(probe.pathname).toBe(tabUrl()));
-    expect(probe.search).toBe('?visao=semana&data=2026-10-14');
-    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-    expect(screen.queryByRole('dialog')).toBeNull();
-  });
-
-  it('creates a content from the tab, on an address of the tab, and closing comes back to it', async () => {
-    const { impl } = makeFetch({ permissions: OPERATOR, contents: { [padaria.id]: [treino()] } });
-    const { probe } = render_(impl, { pathname: tabUrl(), search: '?data=2026-10-14', state: { clientListUrl: ROSTER_ADDRESS } });
-    await screen.findByText('Treino da semana');
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Nova publicação' }));
-    await waitFor(() => expect(probe.pathname).toBe(`${tabUrl()}/novo`));
-    // The form of a new content, not the reading of a content called "novo": the route of the creation is in the tab.
-    const modal = await screen.findByRole('dialog', { name: 'Novo conteúdo' });
-    expect(await within(modal).findByRole('button', { name: 'Criar conteúdo' })).toBeTruthy();
-    expect((within(modal).getByLabelText('Título') as HTMLInputElement).value).toBe('');
-    expect(new URLSearchParams(probe.search).get('dia')).toBe(TODAY);
-    expect(new URLSearchParams(probe.search).get('data')).toBe('2026-10-14');
-    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Fechar conteúdo' }));
-    await waitFor(() => expect(probe.pathname).toBe(tabUrl()));
-    expect(new URLSearchParams(probe.search).get('dia')).toBeNull();
-    expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-  });
-
-  it('keeps the screen of Conteúdos on its own addresses: the card and the modal stay in /conteudos', async () => {
+  it('opens a content on the screen and closing it comes back to the screen', async () => {
     const row = treino();
     const { impl } = makeFetch({ contents: { [padaria.id]: [row] } });
     const { probe } = render_(impl, contentsUrl(padaria.id));
-    const card = await screen.findByRole('link', { name: 'Treino da semana' });
+    const card = (await screen.findAllByRole('link', { name: /Treino da semana/ })).find((link) => link.classList.contains('content-card__link'))!;
     expect(card.getAttribute('href')).toBe(`${contentsUrl(padaria.id)}/${row.id}`);
     fireEvent.click(card);
     await waitFor(() => expect(probe.pathname).toBe(`${contentsUrl(padaria.id)}/${row.id}`));
@@ -2012,14 +1982,13 @@ describe('the Conteúdos tab of the client (#272)', () => {
 });
 
 describe('the header and the grid of the calendar', () => {
-  it('names the screen with a large title and says what it is for, and keeps "Conteúdos" as the heading of the page', async () => {
+  it('names the screen with one title, the same as before a client was chosen, and no filler text', async () => {
     const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS, 'conteudo.operar'] });
     render_(impl, contentsUrl(padaria.id));
     await calendarReady();
 
-    expect(screen.getByRole('heading', { name: 'Calendário Editorial' })).toBeTruthy();
-    expect(screen.getByText('Planeje, agende e acompanhe todas as publicações.')).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 1, name: 'Conteúdos' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Calendário Editorial' })).toBeTruthy();
+    expect(screen.queryByText('Planeje, agende e acompanhe todas as publicações.')).toBeNull();
     expect(await screen.findByRole('button', { name: 'Nova publicação' })).toBeTruthy();
   });
 
@@ -2028,21 +1997,22 @@ describe('the header and the grid of the calendar', () => {
 
     it.each([
       ['carousel', 'carousel', 'Carrossel'], ['reels', 'reels', 'Reels'], ['image', 'static', 'Imagem'], ['long_video', 'static', 'Vídeo longo'], ['vsl', 'static', 'VSL']
-    ] as const)('tints a %s card as %s and names the format in front of the title and in a filled tag', async (format, tone, label) => {
+    ] as const)('names a %s card by its icon and short name in front of the title, and keeps its tone %s', async (format, tone, label) => {
       const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Um post', publishOn: '2026-10-20', format })] } });
       render_(impl, contentsUrl(padaria.id));
       await screen.findByText('Um post');
 
       const card = cardTitled('Um post');
       expect(card.getAttribute('data-format')).toBe(tone);
-      expect(card.querySelector('.content-card__title')?.textContent).toBe(`${label}: Um post`);
-      expect(card.querySelector(`.ui-format-tag--${tone}`)?.textContent).toBe(label);
+      expect(card.querySelector('.content-card__title')?.textContent).toBe('Um post');
+      expect(card.querySelector('.content-card__format')?.textContent).toBe(label);
+      expect(card.querySelector('.content-card__format svg')).not.toBeNull();
     });
 
     it.each([
       ['in_production', 'production', 'Em produção'], ['awaiting_approval', 'waiting', 'Aguardando aprovação'], ['adjusting', 'adjust', 'Em ajuste'],
       ['approved', 'ready', 'Pronto para publicar'], ['published', 'published', 'Publicado'], ['cancelled', 'production', 'Cancelado']
-    ] as const)('draws the state %s as an outlined tag of the %s kind, with its words', async (status, kind, label) => {
+    ] as const)('draws the state %s as a tag of the %s kind, with its icon and its words', async (status, kind, label) => {
       const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Estado', publishOn: '2026-10-25', status })] } });
       render_(impl, contentsUrl(padaria.id));
       await screen.findByText('Estado');
@@ -2074,7 +2044,7 @@ describe('the header and the grid of the calendar', () => {
       }
     });
 
-    it('is text only when the post has no media, and keeps the cover when it has one', async () => {
+    it('draws no cover inside the cell, with or without media: the cover is for the floating card and the feed', async () => {
       const { impl } = makeFetch({
         contents: { [padaria.id]: [
           contentFixture({ title: 'Sem mídia', publishOn: '2026-10-20', format: 'carousel' }),
@@ -2084,9 +2054,9 @@ describe('the header and the grid of the calendar', () => {
       render_(impl, contentsUrl(padaria.id));
       await screen.findByText('Sem mídia');
 
-      expect(cardTitled('Sem mídia').querySelector('.content-card__cover--bare')).not.toBeNull();
-      expect(cardTitled('Com mídia').querySelector('.content-card__cover--bare')).toBeNull();
-      expect(cardTitled('Com mídia').querySelector('.content-card__cover')).not.toBeNull();
+      expect(cardTitled('Sem mídia').querySelector('.content-card__cover')).toBeNull();
+      expect(cardTitled('Com mídia').querySelector('.content-card__cover')).toBeNull();
+      expect(cardTitled('Com mídia').querySelector('img')).toBeNull();
     });
 
     it('shows the time of a post on its own line, and nothing when it has none', async () => {
@@ -2128,25 +2098,23 @@ describe('the header and the grid of the calendar', () => {
       expect(body('.content-calendar')).toMatch(/overflow-x:\s*auto;/);
       expect(body('.content-calendar')).toMatch(/min-width:\s*0;/);
       expect(body('.content-calendar')).not.toMatch(/min-width:\s*42rem/);
-      expect(body('.content-calendar__days')).toMatch(/min-width:\s*42rem;/);
+      expect(body('.content-calendar__days')).toMatch(/min-width:\s*40rem;/);
     });
 
-    it('tints the card and its title by format with the format tokens, and keeps the late edge red', () => {
-      for (const [tone, name] of [['carousel', 'carousel'], ['reels', 'reels'], ['static', 'static']] as const) {
-        expect(body(`.content-card[data-format='${tone}']`)).toContain(`background: var(--format-${name}-bg);`);
-        expect(body(`.content-card[data-format='${tone}']`)).toContain(`--content-card-title: var(--format-${name}-fg);`);
+    it('gives the card one colour, the token of its state, and trades it for the red of the state when it is late', () => {
+      expect(body('.content-card')).toMatch(/border-left:\s*3px solid var\(--content-card-tone\);/);
+      for (const [status, token] of [['awaiting_approval', 'waiting'], ['adjusting', 'adjust'], ['approved', 'ready'], ['published', 'published']] as const) {
+        expect(body(`.content-card[data-status='${status}']`)).toContain(`--content-card-tone: var(--status-${token}-fg);`);
       }
-      expect(body('.content-card[data-late]')).toMatch(/border-color:\s*var\(--status-late-fg\)/);
+      expect(body('.content-card')).toContain('--content-card-tone: var(--status-production-fg);');
+      expect(body('.content-card[data-late]')).toContain('--content-card-tone: var(--status-late-fg);');
+      expect(body('.content-card')).not.toMatch(/gradient|backdrop-filter|box-shadow/);
     });
 
-    it('cuts the title at four lines, hides the cover of a post with no media, and lets a day shrink its cards', () => {
-      expect(body('.content-card__title')).toMatch(/-webkit-line-clamp:\s*4;/);
-      expect(body('.content-card__cover--bare')).toMatch(/display:\s*none;/);
+    it('cuts the title at two lines, and lets a day and the link of the card shrink', () => {
+      expect(body('.content-card__title')).toMatch(/-webkit-line-clamp:\s*2;/);
       expect(body('.content-day')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
-    });
-
-    it('lets the card shrink to its day: one shrinking column, or the longest word of a tag widens it past the day', () => {
-      expect(body('.content-card')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
+      expect(body('.content-card__link')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
     });
 
     it('places the floating card on the screen, so the scrolling calendar cannot clip it, and gives the card no shadow of its own', () => {
@@ -2167,5 +2135,176 @@ describe('the header and the grid of the calendar', () => {
       expect(body('.contents__feed')).not.toMatch(/box-shadow/);
       expect(body('.content-feed__status')).toMatch(/font:\s*var\(--caption\);/);
     });
+  });
+});
+
+describe('the Calendário Editorial: the title, the three views, the whole card (#703)', () => {
+  const OPERATE = [VISUALIZE, READ_CLIENTS, 'conteudo.operar'];
+  const titles = (): string[] => screen.getAllByRole('heading', { level: 1 }).map((heading) => heading.textContent ?? '');
+
+  it('keeps the same title, as the one heading of level 1, before and after a client is chosen, and the client becomes a secondary line', async () => {
+    const { impl } = makeFetch();
+    render_(impl, `/agencia/${AGENCY_A}/conteudos`);
+    await screen.findByRole('link', { name: /Padaria Central/ });
+    expect(titles()).toEqual(['Calendário Editorial']);
+    expect(document.title).toBe('Calendário Editorial — Ageniza');
+    expect(screen.queryByText('Escolha um cliente para ver o calendário editorial.')).toBeNull();
+
+    fireEvent.click(screen.getByRole('link', { name: /Padaria Central/ }));
+    await calendarReady();
+    expect(titles()).toEqual(['Calendário Editorial']);
+    expect(screen.getByRole('heading', { level: 2, name: 'Padaria Central' })).toBeTruthy();
+    await waitFor(() => expect(document.title).toBe('Calendário Editorial de Padaria Central — Ageniza'));
+  });
+
+  it('draws the three views in one selector, and reads the feed view from the address, with no phone around the profile', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Um post', publishOn: '2026-10-14', format: 'image' })] } });
+    render_(impl, contentsUrl(padaria.id, '?visao=feed'));
+
+    const group = await screen.findByRole('radiogroup', { name: 'Visualização' });
+    expect(within(group).getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Mês', 'Semana', 'Feed']);
+    expect(within(group).getByRole('radio', { name: 'Feed' }).getAttribute('aria-checked')).toBe('true');
+    await waitFor(() => expect(document.querySelector('.content-feed-full .content-feed__grid')).not.toBeNull());
+    expect(document.querySelector('.content-phone')).toBeNull();
+    expect(screen.queryByRole('complementary', { name: 'Prévia do feed' })).toBeNull();
+    expect(document.querySelector('.content-calendar')).toBeNull();
+  });
+
+  it('writes each view to the address, and a reload on that address lands on the same view', async () => {
+    const { impl } = makeFetch();
+    const { probe } = render_(impl, contentsUrl(padaria.id));
+    await calendarReady();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Feed' }));
+    await waitFor(() => expect(probe.search).toBe('?visao=feed'));
+    expect(screen.getByRole('radio', { name: 'Feed' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByRole('radio', { name: 'Semana' }));
+    await waitFor(() => expect(probe.search).toBe('?visao=semana'));
+    expect(screen.getByRole('radio', { name: 'Semana' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByRole('radio', { name: 'Mês' }));
+    await waitFor(() => expect(probe.search).toBe(''));
+    expect(screen.getByRole('radio', { name: 'Mês' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('shows every post of the period in the feed view, with no page of nine', async () => {
+    const rows = Array.from({ length: 12 }, (_value, index) => contentFixture({ title: `Post ${index + 1}`, publishOn: `2026-10-${String(index + 1).padStart(2, '0')}`, format: 'image' }));
+    const { impl } = makeFetch({ contents: { [padaria.id]: rows } });
+    render_(impl, contentsUrl(padaria.id, '?visao=feed'));
+    await waitFor(() => expect(document.querySelectorAll('.content-feed-full .content-feed__tile')).toHaveLength(12));
+    // Twelve fit in the page of the feed view (thirty): no pager is needed.
+    expect(document.querySelector('.content-feed-full .content-feed__pager')).toBeNull();
+  });
+
+  it('counts the month by state above the calendar, from the contents it already read', async () => {
+    const rows = [
+      contentFixture({ title: 'A', publishOn: '2026-10-14', status: 'in_production' }),
+      contentFixture({ title: 'B', publishOn: '2026-10-08', status: 'approved' }),
+      contentFixture({ title: 'C', publishOn: '2026-10-25', status: 'approved' }),
+      contentFixture({ title: 'Do mês seguinte', publishOn: '2026-11-01', status: 'approved' })
+    ];
+    const { impl } = makeFetch({ contents: { [padaria.id]: rows } });
+    render_(impl, contentsUrl(padaria.id));
+    const counters = await screen.findByRole('list', { name: 'Conteúdos do mês por situação' });
+
+    const read = (label: string): string => within(counters).getByText(label).previousElementSibling?.textContent ?? '';
+    expect(read('Em produção')).toBe('1');
+    expect(read('Pronto para publicar')).toBe('2');
+    expect(read('Publicado')).toBe('0');
+    expect(read('Atrasados')).toBe('1');
+  });
+
+  describe('the whole card opens its content', () => {
+    const pair = () => [
+      contentFixture({ title: 'Primeiro post', publishOn: '2026-10-20', format: 'image' }),
+      contentFixture({ title: 'Segundo post', publishOn: '2026-10-20', format: 'reels' })
+    ];
+
+    it('opens the content of the row that was pressed, on any point of the card and not only on its title', async () => {
+      const [first, second] = pair() as [ReturnType<typeof contentFixture>, ReturnType<typeof contentFixture>];
+      const { impl } = makeFetch({ contents: { [padaria.id]: [first, second] } });
+      const { probe } = render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Segundo post');
+
+      const card = screen.getByText('Segundo post').closest('article')!;
+      fireEvent.click(card.querySelector('.content-card__format')!);
+      await waitFor(() => expect(probe.pathname).toBe(`${contentsUrl(padaria.id)}/${second.id}`));
+    });
+
+    it('opens the first one when the first is pressed, by the line of its state', async () => {
+      const [first, second] = pair() as [ReturnType<typeof contentFixture>, ReturnType<typeof contentFixture>];
+      const { impl } = makeFetch({ contents: { [padaria.id]: [first, second] } });
+      const { probe } = render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Primeiro post');
+
+      fireEvent.click(screen.getByText('Primeiro post').closest('article')!.querySelector('.content-card__foot')!);
+      await waitFor(() => expect(probe.pathname).toBe(`${contentsUrl(padaria.id)}/${first.id}`));
+    });
+
+    it('has one stop for the keyboard on a card, named by the format, the title and the state it shows', async () => {
+      const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Receita', publishOn: '2026-10-20', format: 'reels', status: 'adjusting' })] } });
+      render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Receita');
+
+      const card = screen.getByText('Receita').closest('article')!;
+      expect(card.getAttribute('tabindex')).toBeNull();
+      expect(card.querySelectorAll('a, button')).toHaveLength(1);
+      expect(within(card).getByRole('link').textContent).toBe('ReelsReceitaEm ajuste');
+    });
+
+    it('does not open the content when the card is dragged, even if the browser then fires a click', async () => {
+      const [first, second] = pair() as [ReturnType<typeof contentFixture>, ReturnType<typeof contentFixture>];
+      const { impl } = makeFetch({ permissions: OPERATE, contents: { [padaria.id]: [first, second] } });
+      const { probe } = render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Segundo post');
+      await waitFor(() => expect(screen.getByText('Segundo post').closest('article')?.getAttribute('draggable')).toBe('true'));
+
+      const card = screen.getByText('Segundo post').closest('article')!;
+      fireEvent.dragStart(card);
+      fireEvent.dragEnd(card);
+      fireEvent.click(card.querySelector('.content-card__link')!);
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+      expect(probe.pathname).toBe(contentsUrl(padaria.id));
+
+      // A press after the drag is a press again.
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+      fireEvent.click(card.querySelector('.content-card__link')!);
+      await waitFor(() => expect(probe.pathname).toBe(`${contentsUrl(padaria.id)}/${second.id}`));
+    });
+
+    it('opens the content of a tile of the feed when the tile is pressed', async () => {
+      const [first, second] = pair() as [ReturnType<typeof contentFixture>, ReturnType<typeof contentFixture>];
+      const { impl } = makeFetch({ contents: { [padaria.id]: [first, second] } });
+      const { probe } = render_(impl, contentsUrl(padaria.id, '?visao=feed'));
+      await waitFor(() => expect(document.querySelectorAll('.content-feed__tile')).toHaveLength(2));
+
+      const tile = [...document.querySelectorAll('.content-feed__tile')].find((candidate) => (candidate.textContent ?? '').includes('Primeiro post'))!;
+      fireEvent.click(tile.querySelector('a')!);
+      await waitFor(() => expect(probe.pathname).toBe(`${contentsUrl(padaria.id)}/${first.id}`));
+    });
+  });
+
+  it('sums up a crowded day of the month as "+N" and opens the week of that day with it', async () => {
+    const rows = Array.from({ length: 5 }, (_value, index) => contentFixture({ title: `Do dia ${index + 1}`, publishOn: '2026-10-20', format: 'image' }));
+    const { impl } = makeFetch({ contents: { [padaria.id]: rows } });
+    const { probe } = render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Do dia 1');
+
+    expect(within(dayCell('2026-10-20')).getAllByRole('link')).toHaveLength(3);
+    fireEvent.click(within(dayCell('2026-10-20')).getByRole('button', { name: /^\+2/ }));
+    await waitFor(() => expect(probe.search).toBe('?visao=semana&data=2026-10-20'));
+    await waitFor(() => expect(within(dayCell('2026-10-20')).getAllByRole('link')).toHaveLength(5));
+  });
+
+  it('offers the way to plan the first post in the empty feed to who can create, and not to who cannot', async () => {
+    const reader = makeFetch();
+    const first = render_(reader.impl, contentsUrl(padaria.id));
+    await screen.findByText('Nenhum post planejado ainda.');
+    expect(screen.queryByRole('button', { name: 'Planejar um post' })).toBeNull();
+    first.unmount();
+
+    const operator = makeFetch({ permissions: OPERATE });
+    const { probe } = render_(operator.impl, contentsUrl(padaria.id));
+    fireEvent.click(await screen.findByRole('button', { name: 'Planejar um post' }));
+    await waitFor(() => expect(probe.pathname).toBe(`${contentsUrl(padaria.id)}/novo`));
   });
 });
