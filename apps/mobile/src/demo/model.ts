@@ -28,7 +28,7 @@ export function train(history: readonly Observation[]) {
   };
 }
 
-export function presentationModel() {
+export function flowModel() {
   const history = syntheticHistory();
   const training = history.slice(0, 72);
   const heldOut = history.slice(72);

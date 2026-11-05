@@ -1,4 +1,6 @@
-# Apresentação acadêmica web
+# Apresentação acadêmica web — substituída
+
+**Histórico:** esta abordagem independente foi rejeitada em 05/11/2026. A implementação vigente segue `demonstracao-mobile.md` e #833. O conteúdo abaixo documenta a interpretação anterior, não os critérios de entrega atuais.
 
 | | |
 |---|---|

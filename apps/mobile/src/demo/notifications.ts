@@ -6,11 +6,11 @@ async function requestPermission(): Promise<NotificationPermission> {
     return await Promise.race([pending, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('A permissão está pendente no navegador. Confira o aviso deste site e tente novamente.')), 15_000); })]);
   } finally { if (timer) clearTimeout(timer); }
 }
-export async function sendPresentationNotification(): Promise<NotificationOutcome> {
+export async function sendContentNotification(count: number): Promise<NotificationOutcome> {
   if (typeof window === 'undefined' || !window.isSecureContext || typeof Notification === 'undefined' || !('serviceWorker' in navigator)) return 'unsupported';
   const permission = Notification.permission === 'default' ? await requestPermission() : Notification.permission;
   if (permission !== 'granted') return 'denied';
-  const registration = await navigator.serviceWorker.register('/presentation-notifications.js', { scope: '/apresentacao/' });
+  const registration = await navigator.serviceWorker.register('/app-mobile/content-notifications.js', { scope: '/app-mobile/' });
   if (!registration.active) {
     const worker = registration.installing ?? registration.waiting;
     if (!worker) throw new Error('Não foi possível iniciar as notificações. Tente novamente.');
@@ -22,6 +22,6 @@ export async function sendPresentationNotification(): Promise<NotificationOutcom
       change();
     });
   }
-  await registration.showNotification('Ageniza · aprovação pendente', { body: 'Demonstração: um conteúdo está pronto para você revisar.', tag: 'ageniza-academic-demo', icon: '/favicon.ico' });
+  await registration.showNotification('Ageniza · atividades do fluxo', { body: `${count} atividade(s) no período. Abra o Ageniza para consultar.`, tag: 'ageniza-content-activity' });
   return 'sent';
 }

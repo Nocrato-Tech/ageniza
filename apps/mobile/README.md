@@ -16,13 +16,15 @@ No Expo Go, escaneie o QR do Metro. SDK 54; no Android use o cliente compatível
 
 ## Funcionalidades
 
-### Apresentação acadêmica web
+### Demonstração no aplicativo completo
 
-Com `EXPO_PUBLIC_PRESENTATION_FEATURES=true` na exportação web, `/apresentacao/` abre os recursos autorizados para apresentar à professora: ML k-NN treinado/avaliado em histórico sintético identificado, notificações locais do navegador e cobrança simulada com aprovação, recusa e cancelamento. Não requer conta, não acessa a API e não altera o aplicativo nativo ou a assinatura real. Consulte [o fluxo de apresentação](../../docs/mobile/fluxos/apresentacao.md). A disponibilidade das notificações depende do navegador e da permissão escolhida pela pessoa.
+No web dev, `EXPO_PUBLIC_DEMO_WORKSPACE=true` habilita exemplos dentro da aplicação oficial. Login, cadastro, confirmação do e-mail, termos e permissões continuam reais. No seletor de contexto, a pessoa pode confirmar a criação de uma agência própria com clientes, pastas, imagem, conteúdos e tarefas fictícios gravados pela API. Falhas parciais oferecem retomada e acesso ao que já foi criado. Não há repositório local substituindo o backend.
 
-`pnpm --filter @ageniza/mobile build:presentation` habilita essa exportação e verifica a entrada web, o chunk da apresentação e o service worker. Os arquivos saem em `apps/mobile/launch-dist/presentation`. O workflow Mobile review executa essa verificação além da exportação normal.
+ML está no detalhe dos conteúdos (treino sintético explicitamente identificado), avisos locais na tela Notificações e pagamento simulado no plano/assinatura quando o servidor oferece esse provedor. A preparação não envia convites automaticamente. Leia [a SPEC](../../specs/demonstracao-mobile.md).
 
-Clientes, conteúdos em lista/kanban/calendário, criação e edição em três etapas, biblioteca e upload de mídia, prévia do Instagram, tarefas, comentários, aprovação e ajustes no portal. Os mesmos componentes usam um repositório real autenticado ou um repositório de demonstração explicitamente separado. Equipe, relatórios calculados e exportação CSV também estão disponíveis. As continuações do Figma são páginas roláveis.
+`pnpm --filter @ageniza/mobile build:presentation` agora exporta e confere o aplicativo completo com base `/app-mobile/`, sem uma aplicação separada de apresentação. Saída: `launch-dist/presentation`. A imagem web dev habilita o mesmo recurso; produção não.
+
+Clientes, conteúdos em lista/kanban/calendário, criação e edição em três etapas, biblioteca e upload de mídia, prévia do Instagram, tarefas, comentários, aprovação e ajustes no portal. Todos os módulos usam o repositório real autenticado. Equipe, relatórios calculados e exportação CSV também estão disponíveis. As continuações do Figma são páginas roláveis.
 
 O aplicativo abre no login e exige uma conta e contexto válidos para entrar. A área de trabalho consome a API real e não troca erros de integração por dados de demonstração. Cadastro, convite, recuperação, gestão de clientes/equipe, estudo de marca, roteiros e perfil usam os contratos existentes.
 
