@@ -20,6 +20,7 @@ import { BrandStudy } from './BrandStudy';
 import { ClientManagement } from './ClientManagement';
 import { ClientListQuerySchema, CollaboratorListQuerySchema } from '@ageniza/contracts';
 import { ClientPhoto } from './ClientPhoto';
+import { SubscriptionScreen } from './SubscriptionScreen';
 import { ContentEditor } from '../product/ContentEditor';
 import type { Data, Repository } from '../product/types';
 
@@ -30,6 +31,65 @@ beforeEach(() => {
 afterEach(cleanup);
 
 const agency = { type: 'agency' as const, agencyId: 'agency-one', agencyName: 'Agência Um', roleKey: 'production', roleName: 'Produção', isOwner: false };
+
+describe('subscription server state', () => {
+  const subscription = {
+    planKey: 'profissional', provider: 'asaas', extraClients: 0, extraStorageGib: 0,
+    currentPeriodEnd: '2026-11-05T01:30:00Z', cancelAtPeriodEnd: false, pending: null,
+    monthlyCents: 19700, nextMonthlyCents: 9700, clientLimit: 30, storageBytes: 100 * 1024 ** 3,
+    usedClients: 12, usedBytes: 25 * 1024 ** 3, graceEndsOn: null
+  };
+  function respond(overrides = {}, readOnly = false) {
+    request.mockImplementation(async (path: string) => {
+      if (path.endsWith('/me')) return { plan: { kind: 'ativo', readOnly, trialEndsAt: null } };
+      if (path.endsWith('/plans')) return { plans: [{ key: 'profissional', name: 'Profissional', monthlyCents: 19700, clientLimit: 30, storageBytes: 100 * 1024 ** 3 }, { key: 'essencial', name: 'Essencial', monthlyCents: 9700, clientLimit: 10, storageBytes: 20 * 1024 ** 3 }] };
+      return { subscription: { ...subscription, ...overrides }, paymentProvider: null };
+    });
+  }
+  it('shows server limits, pending terms and Sao Paulo dates without creating a charge', async () => {
+    respond({ pending: { planKey: 'essencial', extraClients: 3, extraStorageGib: 10 } });
+    render(<SubscriptionScreen context={{ ...agency, isOwner: true }} />);
+    expect(await screen.findByText('12 de 30 clientes em uso')).toBeTruthy();
+    expect(screen.getByText('25.00 de 100.00 GB utilizados')).toBeTruthy();
+    expect(screen.getByText('Fim do período: 04/11/2026')).toBeTruthy();
+    expect(screen.getByText('Próxima mensalidade: R$ 97,00')).toBeTruthy();
+    expect(screen.getByText('Redução agendada para o próximo período')).toBeTruthy();
+    expect(screen.getByText('Essencial · 3 clientes extras · 10 GB extras. Os limites atuais continuam neste período.')).toBeTruthy();
+    expect(request.mock.calls).toHaveLength(3);
+    expect(request.mock.calls.every(([, options]) => !options.method)).toBe(true);
+  });
+  it('shows the payment grace date from the server instead of claiming the subscription is active', async () => {
+    respond({ graceEndsOn: '2026-11-07' });
+    render(<SubscriptionScreen context={{ ...agency, isOwner: true }} />);
+    expect(await screen.findByText('Pagamento pendente: atualize o pagamento até 07/11/2026')).toBeTruthy();
+    expect(screen.getByText('Pagamento pendente')).toBeTruthy();
+    expect(screen.queryByText('Assinatura ativa')).toBeNull();
+  });
+  it('does not infer permission to write from a future period end', async () => {
+    respond({}, true);
+    render(<SubscriptionScreen context={{ ...agency, isOwner: true }} />);
+    expect(await screen.findByText('Assinatura sem liberação para alterações')).toBeTruthy();
+    expect(screen.getByText('Somente leitura')).toBeTruthy();
+    expect(screen.queryByText('Assinatura ativa')).toBeNull();
+  });
+  it('distinguishes courtesy from an active paid renewal and omits absent dates and prices', async () => {
+    respond({ provider: 'cortesia', currentPeriodEnd: null, nextMonthlyCents: null });
+    render(<SubscriptionScreen context={{ ...agency, isOwner: true }} />);
+    expect(await screen.findByText('Plano de cortesia')).toBeTruthy();
+    expect(screen.queryByText(/Fim do período:/)).toBeNull();
+    expect(screen.queryByText(/Próxima mensalidade:/)).toBeNull();
+  });
+  it('loads visibly, reports a failed request and retries the actual read', async () => {
+    request.mockRejectedValue(new Error('Sem conexão com o servidor.'));
+    render(<SubscriptionScreen context={{ ...agency, isOwner: true }} />);
+    expect(screen.getByText('Carregando assinatura…')).toBeTruthy();
+    expect(await screen.findByText('Sem conexão com o servidor.')).toBeTruthy();
+    respond();
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar assinatura' }));
+    expect(await screen.findByText('12 de 30 clientes em uso')).toBeTruthy();
+    expect(screen.queryByText('Sem conexão com o servidor.')).toBeNull();
+  });
+});
 const people = [
   { membershipId: 'member-one', name: 'Ana Design', email: 'ana@example.test', jobTitle: 'Designer', role: { key: 'production', name: 'Produção' }, isOwner: false, isSelf: true, status: 'active', joinedAt: '2026-10-01T00:00:00Z' },
   { membershipId: 'member-two', name: 'Bruno Vídeo', email: 'bruno@example.test', jobTitle: 'Editor', role: { key: 'production', name: 'Produção' }, isOwner: false, isSelf: false, status: 'active', joinedAt: '2026-10-01T00:00:00Z' }

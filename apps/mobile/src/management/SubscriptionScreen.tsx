@@ -7,18 +7,22 @@ import { Action, Card, ErrorText, Field, Heading, Info, Selector, Txt } from '..
 import { useRemoteResource } from './useRemoteResource';
 
 const money = (cents: number) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const date = (instant: string) => new Date(instant).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+const day = (value: string) => value.split('-').reverse().join('/');
 export function SubscriptionScreen({ context }: { context: Extract<Context, { type: 'agency' }> }) {
   const root = `/agencies/${context.agencyId}`;
   const load = useCallback(async (signal: AbortSignal) => {
     const [me, overview, plans] = await Promise.all([api.request<AgencyMeResponse>(`${root}/me`, { signal }), api.request<SubscriptionOverviewResponse>(`${root}/subscription`, { signal }), api.request<SubscriptionPlansResponse>(`${root}/subscription/plans`, { signal })]);
     return { me, overview, plans };
   }, [root]);
-  const { data, busy, error, notice, run } = useRemoteResource(load);
+  const { data, loading, busy, error, notice, run, refresh, setError } = useRemoteResource(load);
   const [planKey, setPlanKey] = useState('');
   const [extraClients, setExtraClients] = useState('0');
   const [extraStorage, setExtraStorage] = useState('0');
   const [quote, setQuote] = useState<SubscriptionQuoteResponse>();
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const subscription = data?.overview.subscription;
+  const planName = (key: string) => data?.plans.plans.find((plan) => plan.key === key)?.name ?? key;
   const [review, setReview] = useState<{ input: SubscriptionChangeRequest; quote: SubscriptionQuoteResponse }>();
   const [charge, setCharge] = useState<SubscriptionChargeResponse>();
   const invalidate = () => { setQuote(undefined); setReview(undefined); };
@@ -28,11 +32,20 @@ export function SubscriptionScreen({ context }: { context: Extract<Context, { ty
     if (!parsed.success) throw new Error('Escolha um plano e confira os extras.');
     return parsed.data;
   };
-  return <View style={{ gap: 16 }}><Heading title="Plano e assinatura" subtitle="Somente o proprietário gerencia a assinatura da agência." />{!!error && <ErrorText text={error} />}{!!notice && <Info title={notice} />}
-    {data && <><Card><Txt kind="section">{data.overview.subscription?.planKey ?? (data.me.plan.kind === 'trial' ? 'Teste grátis' : 'Sem assinatura')}</Txt><Txt>{data.me.plan.readOnly ? 'Somente leitura' : 'Operação liberada'}</Txt>{data.me.plan.trialEndsAt && <Txt>Teste até {new Date(data.me.plan.trialEndsAt).toLocaleDateString('pt-BR')}</Txt>}{data.overview.subscription && <><Txt>Mensalidade: {money(data.overview.subscription.monthlyCents)}</Txt><Txt>{data.overview.subscription.usedClients} clientes em uso</Txt><Txt>{(data.overview.subscription.usedBytes / 1024 ** 3).toFixed(2)} GB utilizados</Txt><Txt>{data.overview.subscription.cancelAtPeriodEnd ? 'Cancelada ao fim do período' : 'Assinatura ativa'}</Txt></>}</Card>
+  return <View style={{ gap: 16 }}><Heading title="Plano e assinatura" subtitle="Somente o proprietário gerencia a assinatura da agência." />{loading && !data && <Txt>Carregando assinatura…</Txt>}{!!error && <><ErrorText text={error} /><Action soft label="Atualizar assinatura" busy={loading || busy} onPress={() => { setError(''); void refresh().catch(() => {}); }} /></>}{!!notice && <Info title={notice} />}
+    {data && <><Card><Txt kind="section">{subscription ? planName(subscription.planKey) : data.me.plan.kind === 'trial' ? 'Teste grátis' : 'Sem assinatura'}</Txt><Txt>{data.me.plan.readOnly ? 'Somente leitura' : 'Operação liberada'}</Txt>{data.me.plan.trialEndsAt && <Txt>Teste até {date(data.me.plan.trialEndsAt)}</Txt>}{subscription && <>
+      <Txt>Mensalidade: {money(subscription.monthlyCents)}</Txt>
+      <Txt>{subscription.usedClients} de {subscription.clientLimit} clientes em uso</Txt>
+      <Txt>{(subscription.usedBytes / 1024 ** 3).toFixed(2)} de {(subscription.storageBytes / 1024 ** 3).toFixed(2)} GB utilizados</Txt>
+      {subscription.currentPeriodEnd && <Txt>Fim do período: {date(subscription.currentPeriodEnd)}</Txt>}
+      <Txt>{data.me.plan.readOnly ? 'Assinatura sem liberação para alterações' : subscription.cancelAtPeriodEnd ? 'Cancelada ao fim do período' : subscription.graceEndsOn ? 'Pagamento pendente' : subscription.provider === 'cortesia' ? 'Plano de cortesia' : 'Assinatura ativa'}</Txt>
+      {subscription.nextMonthlyCents !== null && <Txt>Próxima mensalidade: {money(subscription.nextMonthlyCents)}</Txt>}
+    </>}</Card>
+      {subscription?.graceEndsOn && <Info warning title={`Pagamento pendente: atualize o pagamento até ${day(subscription.graceEndsOn)}`} text="A agência está no período de tolerância informado pelo servidor. Depois dele, as alterações ficam bloqueadas se o pagamento não for confirmado." />}
+      {subscription?.pending && <Info title="Redução agendada para o próximo período" text={`${planName(subscription.pending.planKey)} · ${subscription.pending.extraClients} clientes extras · ${subscription.pending.extraStorageGib} GB extras. Os limites atuais continuam neste período.`} />}
       {data.plans.plans.map((plan) => <Card key={plan.key}><Txt kind="section">{plan.name}</Txt><Txt>{money(plan.monthlyCents)}/mês</Txt><Txt>{plan.clientLimit} clientes · {Math.round(plan.storageBytes / 1024 ** 3)} GB</Txt></Card>)}
       {!charge && <><Selector label="Plano desejado" value={planKey} options={data.plans.plans.map((plan) => ({ id: plan.key, label: plan.name }))} onChange={(value) => { setPlanKey(value); invalidate(); }} /><Field label="Clientes extras" value={extraClients} keyboardType="number-pad" onChangeText={(value) => { setExtraClients(value); invalidate(); }} /><Field label="GB extras" value={extraStorage} keyboardType="number-pad" onChangeText={(value) => { setExtraStorage(value); invalidate(); }} /><Action soft label="Calcular alteração sem cobrar" busy={busy} onPress={() => void run(async () => { const request = input(); const result = await api.request<SubscriptionQuoteResponse>(`${root}/subscription/quote`, { method: 'POST', body: request }); setQuote(result); setReview({ input: request, quote: result }); }, 'Cotação calculada. Nenhuma cobrança foi criada.')} /></>}
-      {quote && <Info title={`Agora: ${money(quote.amountCents)} · Mensal: ${money(quote.monthlyCents)}`} text={`Efeito: ${quote.effect === 'downgrade' ? 'redução no próximo período' : quote.effect === 'upgrade' ? 'aumento de limites' : 'início de assinatura'}. Vigência: ${new Date(quote.effectiveAt).toLocaleDateString('pt-BR')}.`} />}
+      {quote && <Info title={`Agora: ${money(quote.amountCents)} · Mensal: ${money(quote.monthlyCents)}`} text={`Efeito: ${quote.effect === 'downgrade' ? 'redução no próximo período' : quote.effect === 'upgrade' ? 'aumento de limites' : 'início de assinatura'}. Vigência: ${date(quote.effectiveAt)}.`} />}
       <Info warning title={data.overview.paymentProvider === 'simulado' ? 'Ambiente com pagamento simulado' : 'Pagamento no aplicativo ainda não liberado'} text={data.overview.paymentProvider === 'simulado' ? 'Nenhum dinheiro é movimentado. O servidor registra a alteração e só libera o plano após confirmar o pagamento simulado.' : 'A consulta e a cotação usam a API. Este ambiente não oferece pagamento pelo aplicativo.'} />
       {data.overview.paymentProvider === 'simulado' && <>
         {review && !charge && <Card><Txt kind="strong">Confira antes de confirmar</Txt><Txt>Plano: {data.plans.plans.find((plan) => plan.key === review.input.planKey)?.name ?? review.input.planKey} · {review.input.extraClients} clientes extras · {review.input.extraStorageGib} GB extras.</Txt><Txt>Agora: {money(review.quote.amountCents)} · Mensalidade: {money(review.quote.monthlyCents)}</Txt><Txt>A simulação poderá alterar os limites desta agência no servidor.</Txt><Action label="Confirmar alteração no ambiente simulado" busy={busy} onPress={() => void run(async () => { const result = await api.request<SubscriptionChargeResponse>(`${root}/subscription/charges`, { method: 'POST', body: review.input }); setReview(undefined); setQuote(undefined); if (result.chargeId) setCharge(result); }, 'Solicitação registrada no servidor.')} /><Action plain disabled={busy} label="Voltar à escolha do plano" onPress={() => setReview(undefined)} /></Card>}

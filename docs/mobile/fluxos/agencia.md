@@ -347,8 +347,10 @@ Colaboradores são ilimitados, e o portal do cliente é grátis. Os extras são 
 - O **downgrade** vale no próximo ciclo e nunca fica abaixo do uso atual.
 - **Cancelar** mantém o acesso até o fim do período pago; depois, a agência fica em modo leitura. Dá para reativar até o fim do período.
 - O pagamento atrasado tem **3 dias de tolerância**. Cancelar durante a tolerância leva direto ao modo leitura.
+- No Expo, a consulta mostra uso e limites de clientes/armazenamento, fim do período, próxima mensalidade e redução agendada. `graceEndsOn` gera o aviso de pagamento com a data recebida; `plan.readOnly` determina o modo leitura, sem inferir acesso pelo relógio do aparelho. Datas de instantes usam São Paulo; o dia de tolerância não passa por conversão de fuso.
+- Falha de carregamento da assinatura oferece uma nova leitura das três rotas, sem criar cobrança. A cotação continua separada de contratação e pagamento.
 - Chame sempre `quote` antes de `charges`, para mostrar o valor à pessoa.
-- A renovação automática da assinatura ainda está em desenvolvimento.
+- A renovação automática é executada pelo worker (#790). O provedor real de pagamento segue o escopo de #785; a renovação simulada fora de produção não comprova cobrança real.
 
 ## Cliente Expo
 
