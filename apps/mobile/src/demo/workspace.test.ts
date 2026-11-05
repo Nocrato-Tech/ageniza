@@ -32,7 +32,14 @@ function world() {
     if (/\/assets\?/.test(path)) return { data: assets.filter((row) => row.folder === path.split('/media-folders/')[1].split('/')[0]), meta: { totalPages: 1 } };
     if (path.endsWith('/media/uploads')) { const assetId = id(); uploads.set(assetId, body.folderId); return { assetId, upload: { type: 'single', url: 'https://storage.example.test/upload' } }; }
     if (path.endsWith('/complete')) { const assetId = path.split('/uploads/')[1].split('/')[0]; assets.push({ id: assetId, folder: uploads.get(assetId)!, category: 'image' }); return; }
-    if (/\/contents\?/.test(path)) return { data: { contents: posts.filter((row) => row.client === client) }, meta: {} };
+    if (/\/contents\/feed/.test(path)) {
+      const mine = posts.filter((row) => row.client === client); const start = Number(new URL(path, 'https://api.example.test').searchParams.get('cursor') ?? 0);
+      return { data: { contents: mine.slice(start, start + 2), nextCursor: start + 2 < mine.length ? String(start + 2) : null, counters: null }, meta: { count: 0 } };
+    }
+    if (/\/contents\?/.test(path)) {
+      const query = new URL(path, 'https://api.example.test').searchParams;
+      return { data: { contents: posts.filter((row) => row.client === client && row.publishOn >= query.get('from')! && row.publishOn <= query.get('to')!) }, meta: {} };
+    }
     if (path.endsWith('/contents') && method === 'POST') {
       if (body.title === failTitle) throw new Error('network interrupted');
       const row = { id: id(), client: client!, title: body.title, publishOn: body.publishOn, tasks: [] }; posts.push(row); return row;
@@ -65,7 +72,15 @@ describe('demo uses real endpoint contracts', () => {
     expect(transport).toHaveBeenCalledTimes(2);
     expect(w.request.mock.calls.some(([path]) => path.includes('/invitations') || path.includes('/simulated-payment'))).toBe(false);
   });
-  it('refuses a normal agency or a non-owner before reading or writing', async () => {
+  it('resumes in another month without creating the contents and tasks again', async () => {
+    const w = world(); const transport = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const populate = (at: Date) => populateDemoWorkspace(w.api, agency, new Blob(['png']), vi.fn(), at, transport);
+    w.fail('Check-up: por onde começar?');
+    await expect(populate(new Date('2026-11-30T23:00:00Z'))).rejects.toThrow('network interrupted');
+    w.fail(''); await populate(new Date('2026-12-01T12:00:00Z')); await populate(new Date('2027-01-15T12:00:00Z'));
+    expect(w.posts).toHaveLength(6);
+    expect(w.posts.every((post) => post.tasks.length === 1)).toBe(true);
+  });  it('refuses a normal agency or a non-owner before reading or writing', async () => {
     const w = world();
     for (const context of [{ ...agency, isOwner: false }, { ...agency, agencyName: 'Actual agency' }]) await expect(populateDemoWorkspace(w.api, context, new Blob(), vi.fn(), now)).rejects.toThrow('agência de demonstração');
     expect(w.request).not.toHaveBeenCalled();
