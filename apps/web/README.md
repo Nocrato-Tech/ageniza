@@ -4,6 +4,10 @@ The product SPA is a React/Vite application with deliberate public and protected
 
 ## Browser configuration
 
+The Nginx API proxy keeps a 1 MiB general request-body ceiling. Only `/api/me/photo` and `/api/agencies/:agencyId/clients/:clientId/photo` allow 14 MiB, enough to transport a 10 MiB identity image in base64 JSON; Fastify still enforces its configured image limit, session and permission checks. Media uploads continue going directly to their presigned storage URL. The proxy admits at most 32 active API requests across the server, with an additional shared ceiling of 4 identity-photo requests, returning 429 above either ceiling. These bounds reduce concurrent parsing exposure; they are not a guarantee against all memory exhaustion. Static health and mobile assets do not consume these API slots.
+
+`nginx-api-proxy.inc` contains the forwarding policy shared by both locations, including the empty upstream `Connection` header. The `Mobile review` workflow runs `scripts/ci/verify-nginx-api.mjs` against the actual dev/production web images and a disposable test upstream, without a database or customer data. It checks allowed and oversized photo bodies, unchanged generic limits, forwarding, cross-location concurrency and static health. Six deliberate mutations must fail. This does not replace the authenticated identity-storage integration tests or independent security review. Nginx references: [body limit](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size), [shared connection limits](https://nginx.org/en/docs/http/ngx_http_limit_conn_module.html), [upstream headers](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header).
+
 The app loads configuration exclusively from `@ageniza/config/browser`. Set only the public Vite variables below; do not put server credentials in any `VITE_` variable.
 
 ```text

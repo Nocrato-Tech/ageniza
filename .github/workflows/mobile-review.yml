@@ -3,10 +3,10 @@ name: Mobile review
 on:
   push:
     branches: ['codex/mobile-*']
-    paths: ['apps/mobile/**', 'apps/web/Dockerfile', 'apps/web/nginx.conf', '.github/workflows/mobile-review.yml']
+    paths: ['apps/mobile/**', 'apps/web/Dockerfile', 'apps/web/nginx*', 'scripts/ci/verify-nginx-api.mjs', 'scripts/ci/fixtures/nginx-api-upstream.mjs', '.github/workflows/mobile-review.yml']
   pull_request:
     branches: ['develop']
-    paths: ['apps/mobile/**', 'apps/web/Dockerfile', 'apps/web/nginx.conf', '.github/workflows/mobile-review.yml']
+    paths: ['apps/mobile/**', 'apps/web/Dockerfile', 'apps/web/nginx*', 'scripts/ci/verify-nginx-api.mjs', 'scripts/ci/fixtures/nginx-api-upstream.mjs', '.github/workflows/mobile-review.yml']
 
 permissions:
   contents: read
@@ -38,6 +38,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
       - name: Build the dev image with the mobile interface
         run: docker build -f apps/web/Dockerfile --build-arg VITE_DEV_DOCS=true --build-arg VITE_API_BASE_URL=/api -t ageniza-mobile-web-review:dev .
       - name: Verify static routes without an API or customer data
@@ -65,3 +68,7 @@ jobs:
           trap 'docker logs ageniza-mobile-web-production; docker rm -f ageniza-mobile-web-production' EXIT
           curl --fail --retry 10 --retry-all-errors --retry-delay 1 --max-time 5 http://127.0.0.1:18081/health
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/app-mobile/)" = 404
+      - name: Verify API proxy limits and mutation guards with a test upstream
+        run: |
+          node scripts/ci/verify-nginx-api.mjs ageniza-mobile-web-review:dev --mutate
+          node scripts/ci/verify-nginx-api.mjs ageniza-mobile-web-review:production

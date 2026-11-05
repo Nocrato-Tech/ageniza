@@ -32,5 +32,6 @@ ARG APP_VERSION=unknown
 LABEL org.opencontainers.image.revision=$APP_VERSION
 ENV APP_VERSION=$APP_VERSION
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY apps/web/nginx-api-proxy.inc /etc/nginx/ageniza-api-proxy.inc
 COPY --from=build /workspace/apps/web/dist /usr/share/nginx/html
 EXPOSE 8080
