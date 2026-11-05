@@ -2,12 +2,17 @@ import {
   AgencyClientContentPathParamsSchema,
   AgencyClientPathParamsSchema,
   CONTENT_PERIOD_MAX_ITEMS,
+  CONTENT_FEED_PAGE_SIZE,
   ContentDetailSchema,
+  ContentFeedQuerySchema,
+  ContentFeedResponseSchema,
   ContentPeriodQuerySchema,
   ContentPeriodResponseSchema,
   CreateContentRequestSchema,
   UpdateContentRequestSchema,
-  contentPeriodIssue
+  contentPeriodIssue,
+  decodeContentFeedCursor,
+  encodeContentFeedCursor
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
@@ -17,6 +22,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import { isInsufficientPrivilegeError, tenantHolds } from '../tenancy/guards.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
+import { sharedUserRateLimit } from '../../plugins/infra/rate-limit.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import {
   clientArchived,
@@ -32,11 +38,14 @@ import {
 import { CONTENT_OWNER_CHANGE_PERMISSION, CONTENT_READ_PERMISSION } from './policy.js';
 import {
   changesColumns,
+  inheritContentMedia,
   insertContent,
+  listFeed,
   listPeriod,
   loadClientStatus,
   loadContent,
   loadContentDetail,
+  moveContentFolder,
   replaceContentMedia,
   resolveCollaboratorLink,
   updateContent,
@@ -72,8 +81,13 @@ const requireTenant = (request: FastifyRequest): { readonly agencyId: string; re
   return tenant;
 };
 
+/** The feed is read page by page while the person scrolls, and every page is a pass over the client's rows: a fixed window per person, shared by every client and agency. Normal scrolling stays far under it, and a refetch of every loaded page counts once per page. */
+export const CONTENT_FEED_RATE_LIMIT = { max: 300, windowMs: 60 * 1_000 } as const;
+export const CONTENT_FEED_RATE_BUCKET = 'content-feed';
+
 export const registerContentModule = (app: FastifyInstance, dependencies: ContentModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
+  const feedLimiter = sharedUserRateLimit(app, CONTENT_FEED_RATE_BUCKET, CONTENT_FEED_RATE_LIMIT);
 
   const readable = (docs: DocumentedRouteConfig & { permission: string }) => ({
     preHandler: [requireSession, dependencies.requireAgencyAccess, dependencies.requirePermission(docs.permission)],
@@ -97,6 +111,11 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
     permission: CONTENT_READ_PERMISSION,
     responseStatus: 200,
     schemas: { params: AgencyClientPathParamsSchema, query: ContentPeriodQuerySchema, response: ContentPeriodResponseSchema }
+  } satisfies DocumentedRouteConfig;
+  const feedDocs = {
+    permission: CONTENT_READ_PERMISSION,
+    responseStatus: 200,
+    schemas: { params: AgencyClientPathParamsSchema, query: ContentFeedQuerySchema, response: ContentFeedResponseSchema }
   } satisfies DocumentedRouteConfig;
   const createDocs = {
     permission: 'conteudo.operar',
@@ -141,7 +160,7 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
     scope: { readonly agencyId: string; readonly clientId: string },
     work: (transaction: ContentTransaction, context: WriteContext) => Promise<TResult>
   ): Promise<TResult> => {
-    const context: WriteContext = { folderMoveKeepsCover: false };
+    const context: WriteContext = { movesFolder: false };
     try {
       return await withAuthenticatedUserTransaction(dependencies.database, requireAuth(request).claims, (transaction) => work(transaction, context));
     } catch (error) {
@@ -181,6 +200,31 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
     }));
   });
 
+  // The phone beside the calendar: the client's feed, newest first, nine a page and independent of any period. The static
+  // segment wins over `:contentId`, so `feed` is never read as an id.
+  // Per person, after the guards, so a refused request counts for nobody and 429 carries `Retry-After`.
+  const feedGuards = readable(feedDocs);
+  app.get('/agencies/:agencyId/clients/:clientId/contents/feed', { ...feedGuards, preHandler: [...feedGuards.preHandler, feedLimiter] }, async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = idFromRoute(request, 'clientId', clientNotFound);
+    const query = routeQuery(feedDocs, request);
+    const after = query.cursor === undefined ? undefined : decodeContentFeedCursor(query.cursor);
+
+    const page = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+      if (await loadClientStatus(transaction, { agencyId: tenant.agencyId, clientId }) === undefined) throw clientNotFound();
+      return listFeed(transaction, { clientId, after, limit: CONTENT_FEED_PAGE_SIZE });
+    });
+    return reply.send(routeResponse(feedDocs, request, {
+      data: {
+        contents: page.contents,
+        nextCursor: page.next === undefined ? null : encodeContentFeedCursor(page.next),
+        counters: page.counters
+      },
+      meta: { count: page.contents.length }
+    }));
+  });
+
   app.post('/agencies/:agencyId/clients/:clientId/contents', writable(createDocs), async (request, reply) => {
     const tenant = requireTenant(request);
     const clientId = idFromRoute(request, 'clientId', clientNotFound);
@@ -189,12 +233,15 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
 
     const detail = await write(request, scope, async (transaction) => {
       await requireActiveClient(transaction, scope);
-      const { ownerMembershipId, ...fields } = body;
+      const { ownerMembershipId, mediaAssetIds, ...fields } = body;
       const ownerUserId = ownerMembershipId === undefined
         ? undefined
         : await resolveCollaboratorLink(transaction, { agencyId: tenant.agencyId, membershipId: ownerMembershipId });
       if (ownerMembershipId !== undefined && ownerUserId === undefined) throw ownerInvalid();
       const contentId = await insertContent(transaction, { clientId, body: fields, ownerUserId });
+      // The folder is a drive: what it holds is the content's unless the caller names the list.
+      if (mediaAssetIds === undefined) await inheritContentMedia(transaction, { contentId });
+      else await replaceContentMedia(transaction, { contentId, assetIds: mediaAssetIds });
       const row = await loadContent(transaction, { clientId, contentId });
       if (row === undefined) throw new Error('The content just inserted could not be read back.');
       return loadContentDetail(transaction, row);
@@ -231,7 +278,7 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
       if (current === undefined) throw contentNotFound();
 
       // The person is named by a link of the agency, never by an id: the link is read here, and the column gets the user it names.
-      const { ownerMembershipId, ...fields } = body;
+      const { ownerMembershipId, folderId, mediaAssetIds, ...fields } = body;
       const ownerUserId = ownerMembershipId === undefined
         ? undefined
         : await resolveCollaboratorLink(transaction, { agencyId: tenant.agencyId, membershipId: ownerMembershipId });
@@ -245,12 +292,18 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
       if (ownerMembershipId !== undefined && ownerUserId === undefined) throw ownerInvalid();
       const changes: ContentChanges = ownerUserId === undefined ? fields : { ...fields, ownerUserId };
 
-      context.folderMoveKeepsCover = body.folderId !== undefined && body.folderId !== current.folder_id
-        && current.cover_asset_id !== null && body.coverAssetId === undefined;
+      context.movesFolder = folderId !== undefined && folderId !== current.folder_id;
 
-      // The format first: the list that follows is checked against the format the content is moving to.
-      if (changesColumns(changes) && !await updateContent(transaction, { clientId, contentId, changes })) throw contentNotFound();
-      if (body.mediaAssetIds !== undefined) await replaceContentMedia(transaction, { contentId, assetIds: body.mediaAssetIds });
+      // The cover of a request that moves the folder is written last: the move clears it, and the one asked must be of the new folder.
+      const { coverAssetId, ...withoutCover } = changes;
+      const coverLast = folderId !== undefined && coverAssetId !== undefined;
+      const first = coverLast ? withoutCover : changes;
+
+      // The format first: the list that follows (and the one the new folder gives) is checked against the format the content is moving to.
+      if (changesColumns(first) && !await updateContent(transaction, { clientId, contentId, changes: first })) throw contentNotFound();
+      if (folderId !== undefined) await moveContentFolder(transaction, { contentId, folderId, assetIds: mediaAssetIds });
+      else if (mediaAssetIds !== undefined) await replaceContentMedia(transaction, { contentId, assetIds: mediaAssetIds });
+      if (coverLast && !await updateContent(transaction, { clientId, contentId, changes: { coverAssetId } })) throw contentNotFound();
 
       const row = await loadContent(transaction, { clientId, contentId });
       if (row === undefined) throw contentNotFound();

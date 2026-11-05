@@ -48,10 +48,11 @@ export const folderInvalid = (): HttpError => new HttpError({
   message: 'A pasta escolhida não é uma pasta deste cliente.'
 });
 
-export const folderInUse = (): HttpError => new HttpError({
+// Same code as `mediaIncomplete`: the content stays as it was; only the reason differs, so the words say it.
+export const folderMediaIncomplete = (): HttpError => new HttpError({
   statusCode: 409,
-  code: 'CONTENT_FOLDER_IN_USE',
-  message: 'A pasta não muda enquanto o conteúdo tem mídia ou capa.'
+  code: 'CONTENT_MEDIA_INCOMPLETE',
+  message: 'A pasta escolhida não tem mídia que complete este formato, e um conteúdo enviado para aprovação não fica sem mídia.'
 });
 
 export const ownerInvalid = (): HttpError => new HttpError({
@@ -62,8 +63,8 @@ export const ownerInvalid = (): HttpError => new HttpError({
 
 /** What a write needs to read a refusal of the database the way the route would have answered it. */
 export interface WriteContext {
-  /** The body moves the folder of a content that already holds a cover: the cover's own key is then the folder's. */
-  folderMoveKeepsCover: boolean;
+  /** The body moves the folder of the content: a list that does not cover the format is then the new folder's, not the old list's. */
+  movesFolder: boolean;
 }
 
 /**
@@ -78,15 +79,14 @@ export const translateDatabaseError = (error: unknown, context: WriteContext): H
     case 'A0061': return clientArchived();
     case 'A0060': return contentNotFound();
     case 'A0062': return contentNotEditable();
-    case 'A0065': return mediaIncomplete();
+    case 'A0065': return context.movesFolder ? folderMediaIncomplete() : mediaIncomplete();
     case 'A0069': return mediaInvalid();
     case 'A0073': return ownerInvalid();
     case 'A0074': return forbidden();
     case '23503': {
       switch ((error as { constraint?: unknown }).constraint) {
         case 'contents_folder_fk': return folderInvalid();
-        case 'contents_cover_fk': return context.folderMoveKeepsCover ? folderInUse() : mediaInvalid();
-        case 'content_media_content_fk': return folderInUse();
+        case 'contents_cover_fk': return mediaInvalid();
         case 'contents_owner_user_id_fkey': return ownerInvalid();
         default: return undefined;
       }

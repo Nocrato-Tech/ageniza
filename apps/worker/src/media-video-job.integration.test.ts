@@ -53,6 +53,8 @@ const storageConfig: WorkerStorageConfig = {
 const mediaProcessingConfig: MediaProcessingConfig = {
   ffmpegTimeoutSeconds: 30,
   maxDurationSeconds: 30,
+  timeoutPerMediaSecond: 0.5,
+  maxTimeoutSeconds: 120,
   thumbnailWidthPixels: 160,
   previewMaxHeightPixels: 480,
   previewMaxOutputBytes: 20 * 1024 * 1024
@@ -266,10 +268,12 @@ describe('media video processing job (real PostgreSQL + LocalStack, real ffmpeg)
 
     // An impossibly small timeout forces the probe/encode step to be killed rather than hang.
     // (0 would disable Node's spawn timeout entirely, so this uses a tiny fractional second.)
-    await expect(runJob({ ...mediaProcessingConfig, ffmpegTimeoutSeconds: 0.001 }, { assetId, agencyId, actorUserId: userId })).rejects.toThrow();
+    // A time-out is final at once (the queue is not asked to repeat it), even on the first attempt, with its reason on the row.
+    await expect(runJob({ ...mediaProcessingConfig, ffmpegTimeoutSeconds: 0.001 }, { assetId, agencyId, actorUserId: userId }, { attempt: 1 })).resolves.toBeUndefined();
 
     const row = await videoProcessingRow(assetId);
     expect(row.video_processing_status).toBe('failed');
+    expect(row.video_processing_error).toBe('processing_timed_out');
   }, 30_000);
 
   it('honours an already-aborted signal before storage I/O starts', async () => {

@@ -16,6 +16,7 @@ type Transaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 
 export interface Reply {
   readonly statusCode: number;
+  readonly headers: Record<string, string | string[] | number | undefined>;
   json<T = any>(): T; // eslint-disable-line @typescript-eslint/no-explicit-any -- test helper over untyped JSON
 }
 

@@ -1691,27 +1691,6 @@ a.client-general__block:focus-visible {
   accent-color: var(--text-primary);
 }
 
-/* What the later modules will fill: a quiet line under the blocks, not a block of its own. */
-.client-general__reserved {
-  display: grid;
-  grid-column: 1 / -1;
-  gap: var(--space-1);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.client-general__reserved h2 {
-  margin: 0;
-  color: var(--text-secondary);
-  font: var(--label-md);
-}
-
-.client-general__reserved p {
-  margin: 0;
-  color: var(--text-muted);
-  font: var(--body-md);
-}
-
 /* Edit client modal: specs/clientes.md section 7 (issue #137). */
 .edit-client__photo {
   display: grid;
@@ -3369,9 +3348,17 @@ a.client-general__block:focus-visible {
     flex-direction: column;
     justify-content: center;
     gap: var(--space-1);
-    width: 4rem;
-    padding: var(--space-2) 0;
+    width: 4.5rem;
+    padding: var(--space-2) var(--space-1);
     font: var(--label-sm);
+    text-align: center;
+  }
+
+  /* A label of two words breaks between them; a word is never cut and never wider than the rail. */
+  .agency-sidebar[data-collapsed='true'] .agency-nav a span {
+    max-width: 100%;
+    overflow-wrap: normal;
+    word-break: normal;
   }
 
   .agency-sidebar[data-collapsed='true'] .agency-sidebar__foot {
@@ -5519,6 +5506,7 @@ html:has(.portal-post__bar) {
    the room of the feed (#263) on the right. */
 .contents {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
 }
 
@@ -5556,6 +5544,7 @@ html:has(.portal-post__bar) {
 
 .contents__workspace {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
 }
 
@@ -5567,6 +5556,7 @@ html:has(.portal-post__bar) {
 
 .contents__client {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
@@ -5575,14 +5565,10 @@ html:has(.portal-post__bar) {
   margin-left: auto;
 }
 
-.contents__switch-row {
-  margin: 0;
-  text-align: right;
-}
-
 .contents__client-name {
   margin: 0;
-  font: var(--heading-md);
+  color: var(--text-secondary);
+  font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
@@ -5596,29 +5582,141 @@ html:has(.portal-post__bar) {
   height: 3rem;
 }
 
-.contents__header {
+/* The title is the screen's own and is drawn the same with or without a client; the client is a line below it. */
+.contents__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
 }
 
-.contents__heading {
-  display: grid;
-  gap: var(--space-2);
-}
-
 .contents__title {
   margin: 0;
-  font: var(--display-lg);
+  font: var(--heading-xl);
   letter-spacing: -0.02em;
 }
 
-.contents__subtitle {
+/* The picker of the index: a link for each client, the avatar and name on the left, what asks for action under them. */
+.content-clients {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-3);
   margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-clients > li {
+  display: grid;
+  min-width: 0;
+}
+
+.content-clients__skeleton {
+  height: 5.5rem;
+}
+
+.content-clients__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-height: 5.5rem;
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: border-color var(--motion-fast);
+}
+
+.content-clients__item:hover {
+  border-color: var(--border-default);
+}
+
+.content-clients__item .ui-avatar {
+  grid-row: span 2;
+}
+
+.content-clients__name {
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.content-clients__signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  grid-column: 2;
   color: var(--text-secondary);
-  font: var(--body-md);
+  font: var(--caption);
+}
+
+.content-clients__signals--calm {
+  color: var(--text-muted);
+}
+
+.content-clients__signal[data-signal='overdue'] {
+  color: var(--status-late-fg);
+  font-weight: 600;
+}
+
+/* A counter of the month: the number and the state, a dot of the state's own token beside it; a zero reads quieter. */
+.contents__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contents__count {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.contents__count::before {
+  content: '';
+  align-self: center;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-production-fg);
+}
+
+.contents__count[data-status='awaiting_approval']::before {
+  background: var(--status-waiting-fg);
+}
+
+.contents__count[data-status='adjusting']::before {
+  background: var(--status-adjust-fg);
+}
+
+.contents__count[data-status='approved']::before {
+  background: var(--status-ready-fg);
+}
+
+.contents__count[data-status='published']::before {
+  background: var(--status-published-fg);
+}
+
+.contents__count[data-status='late']::before {
+  background: var(--status-late-fg);
+}
+
+.contents__count-number {
+  color: var(--text-primary);
+  font: var(--title-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.contents__count[data-empty] .contents__count-number {
+  color: var(--text-muted);
 }
 
 .contents__actions,
@@ -5681,11 +5779,40 @@ html:has(.portal-post__bar) {
   min-width: 0;
 }
 
-@media (min-width: 64rem) {
+/* The calendar takes the width the page has and the phone keeps its own, fixed at the right; below this the phone goes under the calendar. */
+.agency-body > .agency-content:has(> .contents[data-screen]) {
+  max-width: none;
+}
+
+.contents[data-view='feed'] .contents__panel {
+  justify-self: stretch;
+}
+
+@media (max-width: 47.99rem) {
+  .contents__feed {
+    display: none;
+  }
+
+  /* On a phone the period's title takes a line, and its three controls and the views share the next ones. */
+  .contents__panel-head {
+    padding: var(--space-4);
+  }
+
+  .contents__period-title {
+    flex: 1 0 100%;
+    margin: 0;
+  }
+}
+
+@media (min-width: 80rem) {
   .contents__workspace {
     grid-template-columns: minmax(0, 1fr) 22rem;
     gap: var(--space-8);
     align-items: start;
+  }
+
+  .contents[data-view='feed'] .contents__workspace {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /* The phone stays in view while the month scrolls, like the screen of a device held beside the calendar. */
@@ -5706,7 +5833,7 @@ html:has(.portal-post__bar) {
 .content-calendar__days {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  min-width: 42rem;
+  min-width: 40rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -5732,7 +5859,7 @@ html:has(.portal-post__bar) {
   align-content: start;
   gap: var(--space-3);
   min-width: 0;
-  min-height: 10rem;
+  min-height: 8rem;
   padding: var(--space-3) var(--space-2);
   border-top: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
@@ -5744,10 +5871,11 @@ html:has(.portal-post__bar) {
 }
 
 .content-calendar[data-view='week'] .content-day {
-  min-height: 18rem;
+  min-height: 16rem;
 }
 
 .content-day--outside {
+  background: var(--bg-canvas);
   color: var(--text-muted);
 }
 
@@ -5776,15 +5904,6 @@ html:has(.portal-post__bar) {
   font: var(--caption);
 }
 
-/* A tag wraps its words inside a card as narrow as a day. */
-.content-card .ui-format-tag,
-.content-card .ui-status-tag,
-.content-card .ui-late-badge {
-  min-width: 0;
-  padding: 0 var(--space-1);
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
 
 .content-day__items > li {
   min-width: 0;
@@ -6045,91 +6164,222 @@ html:has(.portal-post__bar) {
   gap: var(--space-3);
 }
 
+/* The card is a compact tile on the canvas: the state's token is the one colour it carries (a bar at the edge and a faint wash),
+   and the late card trades it for the red of the state, so lateness is the only strong signal. */
 .content-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-2);
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+  --content-card-tone: var(--status-production-fg);
+
+  position: relative;
   min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--content-card-tone);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--content-card-tone) 8%, var(--bg-canvas));
+  color: var(--text-primary);
 }
 
-/* The card is tinted by its format (`format/*`); the state is the tag, and the late card is the one with a red edge. */
-.content-card[data-format='carousel'] {
-  background: var(--format-carousel-bg);
-  --content-card-title: var(--format-carousel-fg);
+.content-card[data-status='awaiting_approval'] {
+  --content-card-tone: var(--status-waiting-fg);
 }
 
-.content-card[data-format='reels'] {
-  background: var(--format-reels-bg);
-  --content-card-title: var(--format-reels-fg);
+.content-card[data-status='adjusting'] {
+  --content-card-tone: var(--status-adjust-fg);
 }
 
-.content-card[data-format='static'] {
-  background: var(--format-static-bg);
-  --content-card-title: var(--format-static-fg);
+.content-card[data-status='approved'] {
+  --content-card-tone: var(--status-ready-fg);
+}
+
+.content-card[data-status='published'] {
+  --content-card-tone: var(--status-published-fg);
+}
+
+.content-card[data-late] {
+  --content-card-tone: var(--status-late-fg);
 }
 
 .content-card:hover {
   border-color: var(--border-default);
+  border-left-color: var(--content-card-tone);
 }
 
-.content-card[data-late] {
-  border-color: var(--status-late-fg);
+/* The link is the whole card: a press anywhere on it opens the content, and its focus ring is the card's. */
+.content-card__link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: inherit;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.content-card__link:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.content-card__format {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.content-card__format svg {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .content-card__title {
-  margin: 0;
-  padding: 0 var(--space-1);
-  color: var(--content-card-title, var(--text-primary));
   font: var(--label-md);
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
 }
 
-.content-card__meta {
-  margin: 0;
+.content-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+/* The state is its icon and word with no outline of its own: the card is already the frame. */
+.content-card .ui-status-tag {
+  min-width: min-content;
+  padding: 0;
+  border-color: transparent;
+  overflow-wrap: normal;
+  white-space: normal;
+}
+
+.content-card .ui-late-badge {
+  min-width: min-content;
   padding: 0 var(--space-1);
+  overflow-wrap: normal;
+  white-space: normal;
+}
+
+.content-card__meta {
   color: var(--text-secondary);
   font: var(--caption);
   font-variant-numeric: tabular-nums;
 }
 
-.content-card__badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.content-card__badge {
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font: var(--caption);
-}
-
-.content-card__badge--due-soon {
-  border-color: var(--text-primary);
-  color: var(--text-primary);
-}
-
-.content-card--movable {
+.content-card--movable,
+.content-card--movable .content-card__link {
   cursor: grab;
 }
 
 .content-card--busy {
   opacity: 0.55;
+}
+
+/* "+N": the rest of a crowded day is one press away, in the week it belongs to. */
+.content-day__more {
+  width: 100%;
+  min-height: 1.75rem;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--label-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.content-day__more:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* The agenda of a narrow screen: a block for each day, the date on the left and the same cards on the right. */
+.content-agenda {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-agenda__day {
+  position: relative;
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: var(--space-3);
+  min-height: 3.5rem;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.content-agenda__day--today {
+  background: var(--calendar-today-bg);
+}
+
+.content-agenda__label {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.content-agenda__weekday,
+.content-agenda__number {
+  display: block;
+}
+
+.content-agenda__weekday {
+  color: var(--text-muted);
+  font: var(--label-sm);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.content-agenda__number {
+  font: var(--title-md);
+}
+
+.content-agenda__today {
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.content-agenda__day--empty .content-agenda__label {
+  color: var(--text-muted);
+}
+
+.content-agenda__body {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-right: var(--space-8);
+}
+
+.content-agenda__day .content-day__tools .ui-menu__trigger {
+  top: var(--space-2);
+  right: var(--space-2);
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  opacity: 1;
+}
+
+.content-agenda__day .content-day__tools .ui-menu__content {
+  right: var(--space-2);
+  left: auto;
+}
+
+.content-agenda__day .content-day__scripts {
+  padding-right: var(--space-8);
 }
 
 .contents__note,
@@ -6141,18 +6391,6 @@ html:has(.portal-post__bar) {
   color: var(--text-danger);
 }
 
-.content-card {
-  position: relative;
-}
-
-.content-card__cover {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  aspect-ratio: 16 / 11;
-  overflow: hidden;
-  border-radius: var(--radius-sm);
-}
 
 
 .content-feed {
@@ -6216,6 +6454,73 @@ html:has(.portal-post__bar) {
   background: var(--bg-hover);
 }
 
+/* The tile is the link to its content: a press anywhere on it opens it. */
+.content-feed__link {
+  position: absolute;
+  inset: 0;
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.content-feed__link:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+/* The feed on its own screen: the profile of the client on the page, a header and three columns, with no device around it. */
+.content-feed-full {
+  width: 100%;
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: var(--space-6);
+}
+
+.content-feed-full .content-feed {
+  gap: var(--space-6);
+}
+
+.content-feed-full .content-feed__handle {
+  padding: 0;
+  color: var(--text-secondary);
+}
+
+.content-feed-full .content-feed__profile {
+  gap: var(--space-6);
+  padding: 0;
+}
+
+.content-feed__name {
+  margin: 0;
+  font: var(--heading-lg);
+  overflow-wrap: anywhere;
+}
+
+.content-feed-full .content-feed__counters {
+  flex: 0 1 24rem;
+  margin-left: auto;
+}
+
+.content-feed-full .content-feed__grid {
+  gap: var(--space-1);
+}
+
+@media (max-width: 47.99rem) {
+  .content-feed-full {
+    padding: var(--space-4);
+  }
+
+  .content-feed-full .content-feed__profile {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+
+  .content-feed-full .content-feed__counters {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}
+
 .content-feed__cover {
   display: flex;
   align-items: center;
@@ -6225,21 +6530,10 @@ html:has(.portal-post__bar) {
 }
 
 
-.content-card__cover img,
 .content-feed__cover img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.content-card__cover--bare {
-  display: none;
-}
-
-.content-card__cover--placeholder {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  font: var(--heading-md);
 }
 
 .content-feed__cover--placeholder {
@@ -6398,22 +6692,49 @@ html:has(.portal-post__bar) {
   filter: drop-shadow(0 0 2px rgb(0 0 0 / 0.6));
 }
 
-.content-feed__planned {
+.content-feed__tags {
   position: absolute;
+  right: var(--space-1);
   bottom: var(--space-1);
   left: var(--space-1);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.content-feed__date {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.content-feed__planned {
   padding: 0 var(--space-2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-full);
   background: var(--bg-surface);
   color: var(--text-primary);
   font: var(--caption);
+  white-space: nowrap;
 }
 
 .content-feed__empty {
-  margin: 0;
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) 0;
   color: var(--text-secondary);
   text-align: center;
+}
+
+.content-feed__empty p {
+  margin: 0;
 }
 
 /* The phone the agency's feed is drawn on: an ink bezel, the camera island and the home bar around a screen with room.
@@ -6478,26 +6799,32 @@ html:has(.portal-post__bar) {
   gap: var(--space-1);
 }
 
-.content-phone .content-feed__tile,
-.content-feed__slot {
+.content-phone .content-feed__tile {
   border-radius: var(--radius-sm);
 }
 
-/* A slot with nothing in it keeps the grid whole: a dashed frame and the icon that says there is nothing on that day. */
-.content-feed__slot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  aspect-ratio: 1;
-  border: 1px dashed var(--border-default);
-  background: var(--bg-canvas);
-  color: var(--text-muted);
+/* The phone tiles are small: the state takes the whole width of the tile, so "Aguardando" is never cut, and the format icon moves to the bottom corner the "planned" tag leaves (true of every tile here, so it stays for the reader of the screen only). */
+.content-phone .content-feed__status {
+  max-width: calc(100% - 2 * var(--space-1));
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.content-feed__slot svg {
-  width: 1.5rem;
-  height: 1.5rem;
-  stroke-width: 1.75;
+.content-phone .content-feed__format {
+  top: auto;
+  bottom: var(--space-1);
+}
+
+.content-phone .content-feed__planned {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .content-feed__pager {
@@ -6505,6 +6832,68 @@ html:has(.portal-post__bar) {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+}
+
+/* The phone beside the calendar has a screen of a fixed height and the grid scrolls inside it: wheel, touch and keyboard.
+   The bar is hidden (it would sit on the bezel), the region is still a stop of the keyboard and shows its focus. */
+.content-phone--fixed .content-phone__screen {
+  grid-template-rows: minmax(0, 1fr);
+  height: 42rem;
+  min-height: 0;
+  padding-bottom: var(--space-8);
+  overflow: hidden;
+}
+
+.content-feed--scroll {
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.content-feed__scroller {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.content-feed__scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.content-feed__scroller:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.content-feed__scrolled {
+  display: grid;
+  gap: var(--space-4);
+  padding: 0 0 var(--space-2);
+}
+
+.content-feed__scrolled .content-feed__grid {
+  gap: var(--space-1);
+}
+
+.content-feed__error,
+.content-feed__loading {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  text-align: center;
+}
+
+.content-feed__error p {
+  margin: 0;
+}
+
+/* The two arrows of the phone sit side by side at the middle of the foot of the screen. */
+.content-phone--fixed .content-feed__pager {
+  justify-content: center;
+  gap: var(--space-4);
 }
 
 .content-feed__range {
@@ -6806,16 +7195,6 @@ html:has(.portal-post__bar) {
   .folder-media__skeleton {
     height: 7rem;
   }
-}
-
-.content-card__link {
-  color: inherit;
-  text-decoration: none;
-}
-
-.content-card__link:hover,
-.content-card__link:focus-visible {
-  text-decoration: underline;
 }
 
 /* Modal do conteúdo (#633). It stays on the Dialog's own surface (bg/surface), so fields and links are where the pairs of docs/design-system.md 20.1
@@ -7232,6 +7611,24 @@ html:has(.portal-post__bar) {
   color: var(--text-secondary);
   font: var(--caption);
   text-align: center;
+}
+
+.content-media__confirm {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.content-media__confirm p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.content-media__confirm-title {
+  font: var(--label-md);
 }
 
 .content-media__new-folder {

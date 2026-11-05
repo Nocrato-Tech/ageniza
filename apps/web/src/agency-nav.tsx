@@ -48,7 +48,7 @@ export function AgencySidebar({ agenciaId, agencyName, permissions }: { agenciaI
 
   const work: NavItem[] = [
     { to: base, label: 'Início', icon: House, end: true },
-    ...(canSeeContents ? [{ to: `${base}/conteudos`, label: 'Conteúdos', icon: CalendarDays }] : []),
+    ...(canSeeContents ? [{ to: `${base}/conteudos`, label: 'Calendário Editorial', icon: CalendarDays }] : []),
     ...(canSeeClients ? [{ to: `${base}/clientes`, label: 'Clientes', icon: Briefcase }] : [])
   ];
   const agency: NavItem[] = canSeeCollaborators ? [{ to: `${base}/colaboradores`, label: 'Equipe', icon: Users }] : [];

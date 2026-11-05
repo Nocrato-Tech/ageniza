@@ -23,12 +23,13 @@ export const triageSealOf = (client: ClientListItem, visible: TriageVisibility):
 
 const plural = (count: number, one: string, many: string): string => count === 1 ? one : many;
 
-export type ClientTabSlug = 'geral' | 'conteudos' | 'estudo-de-marca' | 'acessos';
+/** Where a card leads: a tab of the detail, or the client's calendar on the screen of Conteúdos (the profile has no calendar tab). */
+export type ClientTarget = 'geral' | 'calendario' | 'estudo-de-marca' | 'acessos';
 
 export interface NextAction {
   readonly label: string;
-  /** The tab of the detail that holds what the action is about. */
-  readonly tab: ClientTabSlug;
+  /** The tab of the detail, or the calendar screen, that holds what the action is about. */
+  readonly target: ClientTarget;
   /** The short number behind the action, when there is one. */
   readonly figure: { readonly value: number; readonly caption: string } | null;
 }
@@ -38,19 +39,19 @@ export const nextAction = (client: ClientListItem, visible: TriageVisibility): N
   if (client.status === 'archived') return null;
   const indicators = contentIndicators(client, visible);
   if (indicators !== undefined && indicators.overdue > 0) {
-    return { label: 'Resolver atraso', tab: 'conteudos', figure: { value: indicators.overdue, caption: plural(indicators.overdue, 'post atrasado', 'posts atrasados') } };
+    return { label: 'Resolver atraso', target: 'calendario', figure: { value: indicators.overdue, caption: plural(indicators.overdue, 'post atrasado', 'posts atrasados') } };
   }
   if (indicators !== undefined && indicators.dueSoon > 0) {
-    return { label: 'Ver prazos', tab: 'conteudos', figure: { value: indicators.dueSoon, caption: plural(indicators.dueSoon, 'post com prazo em até 2 dias', 'posts com prazo em até 2 dias') } };
+    return { label: 'Ver prazos', target: 'calendario', figure: { value: indicators.dueSoon, caption: plural(indicators.dueSoon, 'post com prazo em até 2 dias', 'posts com prazo em até 2 dias') } };
   }
   if (client.threadsAwaitingAgency > 0) {
-    return { label: 'Ver sugestões', tab: 'estudo-de-marca', figure: { value: client.threadsAwaitingAgency, caption: plural(client.threadsAwaitingAgency, 'sugestão para responder', 'sugestões para responder') } };
+    return { label: 'Ver sugestões', target: 'estudo-de-marca', figure: { value: client.threadsAwaitingAgency, caption: plural(client.threadsAwaitingAgency, 'sugestão para responder', 'sugestões para responder') } };
   }
   const invitations = pendingInvitations(client, visible);
   if (invitations > 0) {
-    return { label: 'Ver convites', tab: 'acessos', figure: { value: invitations, caption: plural(invitations, 'convite em aberto', 'convites em aberto') } };
+    return { label: 'Ver convites', target: 'acessos', figure: { value: invitations, caption: plural(invitations, 'convite em aberto', 'convites em aberto') } };
   }
-  return { label: 'Abrir cliente', tab: 'geral', figure: null };
+  return { label: 'Abrir cliente', target: 'geral', figure: null };
 };
 
 export interface TriageSentencePart {

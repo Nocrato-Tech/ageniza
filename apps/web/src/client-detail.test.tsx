@@ -175,6 +175,7 @@ function Harness({ store }: { store: AuthSessionStore }) {
 interface ProbeTarget {
   pathname: string;
   search: string;
+  state: unknown;
   navigate: NavigateFunction;
 }
 
@@ -182,6 +183,7 @@ function Probe({ probe }: { probe: ProbeTarget }) {
   useCommittedLocation((location, navigate) => {
     probe.pathname = location.pathname;
     probe.search = location.search;
+    probe.state = location.state;
     probe.navigate = navigate;
   });
   return null;
@@ -189,12 +191,12 @@ function Probe({ probe }: { probe: ProbeTarget }) {
 
 const clientUrl = (clientId = CLIENT_ID, tab = 'geral') => `/agencia/${AGENCY_A}/clientes/${clientId}/${tab}`;
 
-const renderClientDetail = (impl: typeof fetch, entry = clientUrl()) => {
+const renderClientDetail = (impl: typeof fetch, entry: string | { pathname: string; state?: unknown } = clientUrl()) => {
   const sessionEnd = createSessionEndSignal();
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: sessionEnd.notify });
   const queryClient = createQueryClient();
   const store = createAuthSessionStore(client);
-  const probe: ProbeTarget = { pathname: '', search: '', navigate: () => undefined };
+  const probe: ProbeTarget = { pathname: '', search: '', state: undefined, navigate: () => undefined };
   const rendered = render(
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={queryClient}>
@@ -266,7 +268,7 @@ describe('client detail (#136)', () => {
     expect(screen.getByText('2 aguardando a agência')).toBeTruthy();
     expect(screen.getByText('1 com resposta da agência')).toBeTruthy();
     expect(screen.getByText('3 pessoas com acesso')).toBeTruthy();
-    expect(screen.getByText('Pendentes, atrasos e próximos posts aparecem quando os módulos de Conteúdo e Tarefas existirem.')).toBeTruthy();
+    expect(screen.queryByText('Saúde do cliente')).toBeNull();
     const progress = screen.getByRole('progressbar') as HTMLProgressElement;
     expect(progress.value).toBe(5);
     expect(progress.max).toBe(7);
@@ -280,6 +282,36 @@ describe('client detail (#136)', () => {
     expect(screen.queryByText('0 pessoas com acesso')).toBeNull();
   });
 
+  it('has no Calendário Editorial tab, and a button in the header opens the calendar of the client with the roster address kept', async () => {
+    const roster = `/agencia/${AGENCY_A}/clientes?search=padaria&page=2`;
+    const { impl } = makeFetch();
+    const { probe } = renderClientDetail(impl, { pathname: clientUrl(), state: { clientListUrl: roster } });
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+
+    const nav = screen.getByRole('navigation', { name: 'Seções do cliente' });
+    expect(within(nav).queryByRole('link', { name: 'Calendário Editorial' })).toBeNull();
+    expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual(['Geral', 'Mídias', 'Tarefas', 'Estudo de marca', 'Relatórios', 'Acessos']);
+
+    const button = screen.getByRole('link', { name: 'Abrir no Calendário Editorial' });
+    expect(button.getAttribute('href')).toBe(`/agencia/${AGENCY_A}/conteudos/${CLIENT_ID}`);
+    fireEvent.click(button);
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/conteudos/${CLIENT_ID}`));
+    // The way back to the roster the person came from travels with the button.
+    expect(probe.state).toEqual({ clientListUrl: roster });
+  });
+
+  it('shows the button for an archived client too, as the tab was, and hides it without conteudo.visualizar', async () => {
+    const archived = makeFetch({ client: () => json(archivedClient) });
+    renderClientDetail(archived.impl);
+    expect(await screen.findByRole('link', { name: 'Abrir no Calendário Editorial' })).toBeTruthy();
+    cleanup();
+
+    const reader = makeFetch({ permissions: READER_PERMISSIONS });
+    renderClientDetail(reader.impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    expect(screen.queryByRole('link', { name: 'Abrir no Calendário Editorial' })).toBeNull();
+  });
+
   it('gives every tab its own URL and keeps the tab on a reload', async () => {
     const { impl } = makeFetch();
     const { probe } = renderClientDetail(impl);
@@ -288,7 +320,6 @@ describe('client detail (#136)', () => {
     // Every tab's own content heading; the two content tabs of #138/#140 render their real area
     // instead of the skeleton sentence.
     const tabHeadings = [
-      ['Conteúdos', 'conteudos', 'Conteúdos'],
       ['Tarefas', 'tarefas', 'Tarefas'],
       ['Estudo de marca', 'estudo-de-marca', 'Estudo de marca'],
       ['Relatórios', 'relatorios', 'Relatórios'],
@@ -344,8 +375,8 @@ describe('client detail (#136)', () => {
     expect(back().getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
 
     // A tab click inside the detail must not drop the roster address (review of #379 r2).
-    fireEvent.click(within(await screen.findByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Conteúdos' }));
-    expect(await screen.findByRole('heading', { name: 'Conteúdos' })).toBeTruthy();
+    fireEvent.click(within(await screen.findByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Tarefas' }));
+    expect(await screen.findByRole('heading', { name: 'Tarefas' })).toBeTruthy();
     expect(back().getAttribute('href')).toBe(`/agencia/${AGENCY_A}/clientes?search=padaria&status=archived&page=2`);
 
     fireEvent.click(back());

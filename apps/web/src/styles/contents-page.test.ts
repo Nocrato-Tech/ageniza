@@ -12,28 +12,28 @@ const rem = (value: string | undefined): number => {
 };
 
 describe('the month of the Conteúdos calendar has room (#703)', () => {
-  it('gives a day of the month 10rem, and a day of the week 18rem, with its content one step in from the line', () => {
-    expect(rem(rule('.content-day').get('min-height'))).toBe(10);
-    expect(rem(rule(".content-calendar[data-view='week'] .content-day").get('min-height'))).toBe(18);
+  it('gives a day of the month 8rem, and a day of the week 16rem, with its content one step in from the line', () => {
+    expect(rem(rule('.content-day').get('min-height'))).toBe(8);
+    expect(rem(rule(".content-calendar[data-view='week'] .content-day").get('min-height'))).toBe(16);
     expect(rule('.content-day').get('padding')).toBe('var(--space-3) var(--space-2)');
     expect(rule('.content-day').get('gap')).toBe('var(--space-3)');
   });
 
-  it('separates the cards of a day by a step and gives each one room inside', () => {
+  it('separates the cards of a day by a step and gives the link of each one room inside', () => {
     expect(rule('.content-day__items').get('gap')).toBe('var(--space-3)');
-    expect(rule('.content-card').get('padding')).toBe('var(--space-3) var(--space-2)');
+    expect(rule('.content-card__link').get('padding')).toBe('var(--space-2)');
   });
 
   it('lines the weekday labels up with the day numbers, and gives the head of the panel its own air', () => {
     expect(rule('.content-calendar__weekdays li').get('padding')).toBe('var(--space-3) var(--space-4)');
     expect(rule('.content-day__number').get('padding')).toBe('0 var(--space-2)');
-    expect(rule('.contents__panel-head').get('padding')).toBe('var(--space-6) var(--space-6) var(--space-4)');
+    expect(css).toMatch(/\.contents__panel-head \{[^}]*padding: var\(--space-6\) var\(--space-6\) var\(--space-4\);/);
     expect(rule('.contents__panel-head').get('gap')).toBe('var(--space-4)');
   });
 
   it('keeps the track of the grid able to shrink, so the roomier cell never pushes a card out of its day', () => {
     expect(rule('.content-day').get('grid-template-columns')).toBe('minmax(0, 1fr)');
-    expect(rule('.content-card').get('grid-template-columns')).toBe('minmax(0, 1fr)');
+    expect(rule('.content-card__link').get('grid-template-columns')).toBe('minmax(0, 1fr)');
     expect(rule('.content-day__items').get('grid-template-columns')).toBe('minmax(0, 1fr)');
     expect(rule('.content-day').get('min-width')).toBe('0');
   });
@@ -97,21 +97,11 @@ describe('the phone beside the calendar (#703)', () => {
     }
   });
 
-  it('gives the column of the phone 22rem beside the calendar and keeps it in view while the month scrolls', () => {
-    expect(css).toMatch(/@media \(min-width: 64rem\) \{\s*\.contents__workspace \{\s*grid-template-columns: minmax\(0, 1fr\) 22rem;\s*gap: var\(--space-8\);/);
-    expect(css).toMatch(/@media \(min-width: 64rem\) \{[\s\S]*?\.contents__feed \{\s*position: sticky;\s*top: var\(--space-6\);/);
+  it('gives the column of the phone 22rem beside the calendar from 80rem and keeps it in view while the month scrolls', () => {
+    expect(css).toMatch(/@media \(min-width: 80rem\) \{\s*\.contents__workspace \{\s*grid-template-columns: minmax\(0, 1fr\) 22rem;\s*gap: var\(--space-8\);/);
+    expect(css).toMatch(/@media \(min-width: 80rem\) \{[\s\S]*?\.contents__feed \{\s*position: sticky;\s*top: var\(--space-6\);/);
     expect(rule('.contents__feed').get('justify-items')).toBe('center');
     expect(rule('.contents__feed').get('border')).toBeUndefined();
-  });
-
-  it('frames an empty slot with a dashed line and the icon of the day with nothing, in the size of every icon', () => {
-    const slot = rule('.content-feed__slot');
-
-    expect(slot.get('aspect-ratio')).toBe('1');
-    expect(slot.get('border')).toBe('1px dashed var(--border-default)');
-    expect(slot.get('background')).toBe('var(--bg-canvas)');
-    expect(rule('.content-feed__slot svg').get('width')).toBe('1.5rem');
-    expect(rule('.content-feed__slot svg').get('stroke-width')).toBe('1.75');
   });
 
   it('puts the pager at the foot of the phone, shows the range in small tabular numbers and dims an end button', () => {

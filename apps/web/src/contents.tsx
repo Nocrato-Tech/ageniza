@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
@@ -18,11 +18,12 @@ import { Avatar, Button, ClientStrip, IconButton, Segmented, Skeleton } from '@a
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
-import { contentsAddress, ContentsHomeContext } from './content-address.js';
+import { contentsAddress } from './content-address.js';
 import { ContentCalendar } from './content-calendar.js';
 import type { ContentsOutletContext } from './content-modal.js';
-import { ContentFeed, ContentFeedSkeleton } from './content-feed.js';
+import { ContentFeed, ContentPhoneFeed } from './content-feed.js';
 import { daysOf, parseAnchor, periodOf, periodTitle, shiftAnchor, todayInSaoPaulo, type CalendarView } from './content-dates.js';
+import { deadlineAlert, STATUS_LABELS } from './content-labels.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { NotFoundPage } from './status-pages.js';
@@ -65,6 +66,35 @@ const ATTENTION_REASONS = [
 const attentionOf = (client: ClientListItem): string[] =>
   ATTENTION_REASONS.filter(([key]) => (client.contentIndicators?.[key] ?? 0) > 0).map(([, label]) => label);
 
+/** The same reasons with their counts, for the picker of the index: "2 em atraso", the late one first. */
+const signalsOf = (client: ClientListItem): { key: string; text: string }[] =>
+  ([['overdue', 'em atraso'], ['dueSoon', 'com prazo em dois dias'], ['adjusting', 'em ajuste']] as const)
+    .flatMap(([key, label]) => {
+      const count = client.contentIndicators?.[key] ?? 0;
+      return count > 0 ? [{ key, text: `${count} ${label}` }] : [];
+    });
+
+/** Whether the screen is as narrow as a phone: the seven-column grid gives way to a list of days. */
+const NARROW_QUERY = '(max-width: 63.99rem)';
+/** The phone beside the calendar is hidden below this width (the Feed view is the way to the feed there), so it is not even read. */
+const PHONE_QUERY = '(min-width: 48rem)';
+
+/** Whether a media query holds now and while the screen changes; `unknown` is the answer where the browser cannot tell (tests). */
+const useMediaMatch = (media: string, unknown: boolean): boolean => {
+  const read = (): boolean => typeof window.matchMedia === 'function' ? window.matchMedia(media).matches : unknown;
+  const [matches, setMatches] = useState(read);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const query = window.matchMedia(media);
+    const listener = (): void => setMatches(query.matches);
+    listener();
+    query.addEventListener('change', listener);
+    return () => query.removeEventListener('change', listener);
+  }, [media]);
+  return matches;
+};
+const useNarrow = (): boolean => useMediaMatch(NARROW_QUERY, false);
+
 /**
  * Clients as stories (`specs/conteudo.md` section 7): photo or initials and the name, in the
  * roster's order, active ones only (the listing's default). Every link carries the navigation
@@ -104,21 +134,69 @@ function ContentStories({ stories, selectedId }: { stories: StoryClients; select
   </>;
 }
 
-/** The stories of the client screen: its own component, so the tab of the client's detail never reads the roster for them. */
+/** The stories of the client screen: its own component, so the screen reads the roster for them only when it shows them. */
 function ClientStories({ selectedId }: { selectedId: string }) {
   return <ContentStories stories={useStoryClients()} selectedId={selectedId} />;
+}
+
+/** The name of the screen: the same words, in the same place, before and after a client is chosen. */
+const SCREEN_TITLE = 'Calendário Editorial';
+
+/**
+ * The picker of the index: one link per client, with what asks for action in words ("2 em atraso"), the late ones in the
+ * red of the state. A caller without `conteudo.visualizar` has no indicators, so no line is drawn for her.
+ */
+function ClientPicker({ stories }: { stories: StoryClients }) {
+  const agency = useAgencyContext();
+  const location = useLocation();
+
+  if (stories.isPending) {
+    return <ul className="content-clients" aria-hidden="true">
+      {Array.from({ length: 6 }, (_value, index) => <li key={index}><Skeleton className="content-clients__skeleton" /></li>)}
+    </ul>;
+  }
+  if (stories.isError) {
+    return <div className="content-stories__error" role="alert">
+      <p>Não foi possível carregar os clientes. Tente de novo.</p>
+      <Button onClick={() => { void stories.refetch(); }}>Tentar de novo</Button>
+    </div>;
+  }
+  if (stories.data.data.length === 0) return <p className="content-stories__empty">Nenhum cliente ativo ainda.</p>;
+  const total = stories.data.meta.totalItems;
+  return <>
+    <nav aria-label="Clientes">
+      <ul className="content-clients">
+        {stories.data.data.map((client) => {
+          const signals = signalsOf(client);
+          return <li key={client.id}>
+            <Link className="content-clients__item" to={`/agencia/${agency.agencyId}/conteudos/${client.id}`} state={location.state}>
+              <Avatar name={client.name} photoUrl={client.photoUrl} size="md" />
+              <span className="content-clients__name">{client.name}</span>
+              {client.contentIndicators !== undefined && (signals.length === 0
+                ? <span className="content-clients__signals content-clients__signals--calm">Em dia</span>
+                : <span className="content-clients__signals">
+                  {signals.map((signal) => <span key={signal.key} className="content-clients__signal" data-signal={signal.key}>{signal.text}</span>)}
+                </span>)}
+            </Link>
+          </li>;
+        })}
+      </ul>
+    </nav>
+    {total > stories.data.data.length && <p className="content-stories__note">Mostrando {stories.data.data.length} de {total} clientes.</p>}
+  </>;
 }
 
 /** `/agencia/:agenciaId/conteudos`: the client picker, before a client is chosen. */
 export function ContentsPage() {
   const stories = useStoryClients();
-  useDocumentTitle('Conteúdos — Ageniza');
+  useDocumentTitle(`${SCREEN_TITLE} — Ageniza`);
 
   if (stories.isError && isNotVisible(stories.error)) return <NotFoundPage as="section" />;
-  return <section aria-labelledby="contents-title" className="contents">
-    <h1 id="contents-title">Conteúdos</h1>
-    <ContentStories stories={stories} />
-    {stories.data !== undefined && stories.data.data.length > 0 && <p>Escolha um cliente para ver o calendário editorial.</p>}
+  return <section aria-labelledby="contents-title" className="contents" data-screen="">
+    <header className="contents__head">
+      <h1 id="contents-title" className="contents__title">{SCREEN_TITLE}</h1>
+    </header>
+    <ClientPicker stories={stories} />
   </section>;
 }
 
@@ -133,7 +211,33 @@ const moveErrorMessage = (error: unknown): string => {
   return 'Não foi possível mover o conteúdo. Tente de novo.';
 };
 
-const parseView = (raw: string | null): CalendarView => (raw === 'semana' ? 'week' : 'month');
+/** The three views of the screen: the month and the week are the calendar with the phone beside it, the feed is the profile on its own. */
+type ScreenView = CalendarView | 'feed';
+
+const VIEW_PARAMS: Readonly<Record<ScreenView, string | null>> = { month: null, week: 'semana', feed: 'feed' };
+
+const parseView = (raw: string | null): ScreenView => (raw === 'semana' ? 'week' : raw === 'feed' ? 'feed' : 'month');
+
+/** What the strip above the grid counts: the states of the flow, and the one derived from the day, which overlaps them. */
+const SUMMARY_STATUSES = ['in_production', 'awaiting_approval', 'adjusting', 'approved', 'published'] as const;
+
+/** The counters of the period on screen, from the contents the screen already read; a month counts its own days, not its neighbours'. */
+function ContentSummary({ contents, today, scope }: { contents: readonly ContentListItem[]; today: string; scope: string }) {
+  const late = contents.filter((content) => deadlineAlert(content, today) === 'overdue').length;
+  return <ul className="contents__summary" aria-label={`Conteúdos ${scope} por situação`}>
+    {SUMMARY_STATUSES.map((status) => {
+      const count = contents.filter((content) => content.status === status).length;
+      return <li key={status} className="contents__count" data-status={status} data-empty={count === 0 || undefined}>
+        <span className="contents__count-number">{count}</span>
+        <span className="contents__count-label">{STATUS_LABELS[status]}</span>
+      </li>;
+    })}
+    <li className="contents__count" data-status="late" data-empty={late === 0 || undefined}>
+      <span className="contents__count-number">{late}</span>
+      <span className="contents__count-label">Atrasados</span>
+    </li>
+  </ul>;
+}
 
 /** The address the folders had here (`?vista=pastas`) before they became the Mídias tab of the client's detail. */
 const isLegacyFolders = (searchParams: URLSearchParams): boolean => searchParams.get('vista') === 'pastas';
@@ -141,13 +245,12 @@ const isLegacyFolders = (searchParams: URLSearchParams): boolean => searchParams
 /**
  * `/agencia/:agenciaId/conteudos/:clienteId`: the calendar of one client. The client is in the
  * path; the view (`visao`) and the day the period is built around (`data`) are in the query, so a
- * reload lands on the same period. The feed is the phone beside the calendar, not a view of its own, and the folders
+ * reload lands on the same period. The feed is both the phone beside the calendar and a view of its own (Mês, Semana and Feed), and the folders
  * are the Mídias tab of the client's detail: the old `?vista=pastas` address goes there, with the folder it had open.
- *
- * `pinned` is the same view inside the tab of the client's detail (`/clientes/:clienteId/conteudos`): the client is the
- * one of the page around it, so there are no stories and no client header, and every address it builds stays in the tab.
+
+ * The client's detail has no copy of it: its header links here, and the old `/clientes/:clienteId/conteudos` addresses redirect here.
  */
-export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
+export function ContentsClientPage() {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   const { clienteId = '' } = useParams();
@@ -157,9 +260,13 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
   const validId = ClientSchema.shape.id.safeParse(normalizedId).success;
   const today = todayInSaoPaulo();
   const view = parseView(searchParams.get('visao'));
+  // The feed on its own screen reads a month, like the month does; only the week is narrower. The phone beside the calendar reads no period.
+  const calendarView: CalendarView = view === 'week' ? 'week' : 'month';
+  const narrow = useNarrow();
+  const roomForPhone = useMediaMatch(PHONE_QUERY, true);
   const legacyFolders = isLegacyFolders(searchParams);
   const anchor = parseAnchor(searchParams.get('data'), today);
-  const period = periodOf(view, anchor);
+  const period = periodOf(calendarView, anchor);
 
   const client = useQuery({
     queryKey: clientDetailQueryKey(agency.agencyId, normalizedId),
@@ -200,7 +307,7 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
     // Settled only after the period is read again: the card never waits on its old day with the move already done.
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'contents', normalizedId] })
   });
-  const address = contentsAddress(pinned ? 'tab' : 'screen', agency.agencyId, normalizedId);
+  const address = contentsAddress(agency.agencyId, normalizedId);
   const canWriteScripts = canOperate && client.data?.id.toLowerCase() === normalizedId && client.data.status !== 'archived';
   const navigate = useNavigate();
   const location = useLocation();
@@ -219,17 +326,16 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
   });
 
   const name = client.data?.name;
-  // In the tab the page around it already names the client in the title.
-  useDocumentTitle(pinned
-    ? (name === undefined ? 'Cliente — Ageniza' : `${name} — Ageniza`)
-    : (name === undefined ? 'Conteúdos — Ageniza' : `Conteúdos de ${name} — Ageniza`));
+  useDocumentTitle(name === undefined ? `${SCREEN_TITLE} — Ageniza` : `${SCREEN_TITLE} de ${name} — Ageniza`);
 
-  const setPeriod = (nextView: CalendarView, nextAnchor: string | null): void => {
+  // Moving through periods rewrites the address; choosing another view adds a step to it, so "voltar" returns to the view before.
+  const setPeriod = (nextView: ScreenView, nextAnchor: string | null, replace = true): void => {
     setMoveError(null);
     const next = new URLSearchParams(searchParams);
-    if (nextView === 'week') next.set('visao', 'semana'); else next.delete('visao');
+    const param = VIEW_PARAMS[nextView];
+    if (param === null) next.delete('visao'); else next.set('visao', param);
     if (nextAnchor === null) next.delete('data'); else next.set('data', nextAnchor);
-    setSearchParams(next, { replace: true });
+    setSearchParams(next, { replace });
   };
 
   if (legacyFolders && validId) {
@@ -248,65 +354,60 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
   const clientData = client.data?.id.toLowerCase() === normalizedId ? client.data : undefined;
   const failed = (client.isError && clientData === undefined) || (contents.isError && contents.data === undefined);
   const loaded = contents.data;
-  const unitLabel = view === 'week' ? 'semana' : 'mês';
+  const unitLabel = calendarView === 'week' ? 'semana' : 'mês';
   const archived = clientData?.status === 'archived';
   const canEdit = canOperate && clientData !== undefined && !archived;
   const canMove = canEdit && blocked === undefined;
 
-  const Title = pinned ? 'h2' : 'h1';
-  // The other home of the same view, on the same client and period, and with the roster's address carried along.
-  const otherHome = <Link
+  // The client's profile, with the roster's address carried along so "← Clientes" there still returns to the search it left.
+  const toProfile = <Link
     className="contents__switch"
-    to={{ pathname: contentsAddress(pinned ? 'screen' : 'tab', agency.agencyId, normalizedId), search: location.search }}
+    to={`/agencia/${agency.agencyId}/clientes/${normalizedId}/geral`}
     state={location.state}
-  >{pinned ? 'Abrir na tela de Conteúdos' : 'Abrir no cadastro do cliente'}</Link>;
+  >Abrir no cadastro do cliente</Link>;
+  // What the summary counts: the days of the month on screen (not the neighbours' the grid spills into), or the week.
+  const counted = loaded === undefined ? [] : loaded.data.contents.filter((content) => calendarView === 'week' || content.publishOn.slice(0, 7) === anchor.slice(0, 7));
 
-  return <ContentsHomeContext.Provider value={pinned ? 'tab' : 'screen'}><section aria-labelledby="contents-title" className="contents">
-    <Title id="contents-title" className="visually-hidden">Conteúdos</Title>
-    {!pinned && <ClientStories selectedId={normalizedId} />}
+  return <section aria-labelledby="contents-title" className="contents" data-view={view} data-screen="">
+    <header className="contents__head">
+      {/* The title is the screen's, the same with or without a client. */}
+      <h1 id="contents-title" className="contents__title">{SCREEN_TITLE}</h1>
+      <div className="contents__actions">
+        {canWriteScripts && <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => startContent(today)}>Nova publicação</Button>}
+      </div>
+    </header>
+    <ClientStories selectedId={normalizedId} />
     {failed ? <div className="contents__error" role="alert">
       <p>Não foi possível carregar os conteúdos. Tente de novo.</p>
       <Button onClick={() => { void client.refetch(); void contents.refetch(); }}>Tentar de novo</Button>
     </div> : <div className="contents__workspace">
       <div className="contents__main">
-        {pinned
-          ? <p className="contents__switch-row">{otherHome}</p>
-          : <header className="contents__client">
-            {clientData === undefined
-              ? <Skeleton className="contents__client-skeleton" aria-hidden="true" />
-              : <>
-                <Avatar name={clientData.name} photoUrl={clientData.photoUrl} size="md" />
-                <div>
-                  <h2 className="contents__client-name">{clientData.name}</h2>
-                </div>
-                {otherHome}
-              </>}
-          </header>}
-        <div className="contents__header">
-          {!pinned && <div className="contents__heading">
-            <h2 className="contents__title">Calendário Editorial</h2>
-            <p className="contents__subtitle">Planeje, agende e acompanhe todas as publicações.</p>
-          </div>}
-          <div className="contents__actions">
-            {canWriteScripts && <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => startContent(today)}>Nova publicação</Button>}
-          </div>
-        </div>
+        <header className="contents__client">
+          {clientData === undefined
+            ? <Skeleton className="contents__client-skeleton" aria-hidden="true" />
+            : <>
+              <Avatar name={clientData.name} photoUrl={clientData.photoUrl} size="sm" />
+              <h2 className="contents__client-name">{clientData.name}</h2>
+              {toProfile}
+            </>}
+        </header>
         {archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
         {moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
         {move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
+        {loaded !== undefined && <ContentSummary contents={counted} today={today} scope={calendarView === 'week' ? 'da semana' : 'do mês'} />}
         <div className="contents__panel">
           <div className="contents__panel-head">
             <div className="contents__period" role="group" aria-label="Período">
-              <h2 className="contents__period-title" aria-live="polite">{periodTitle(view, anchor)}</h2>
-              <IconButton variant="secondary" icon={<ChevronLeft />} label={`${unitLabel === 'mês' ? 'Mês' : 'Semana'} anterior`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, -1))} />
+              <h2 className="contents__period-title" aria-live="polite">{periodTitle(calendarView, anchor)}</h2>
+              <IconButton variant="secondary" icon={<ChevronLeft />} label={`${unitLabel === 'mês' ? 'Mês' : 'Semana'} anterior`} onClick={() => setPeriod(view, shiftAnchor(calendarView, anchor, -1))} />
               <Button variant="ghost" onClick={() => setPeriod(view, null)}>Hoje</Button>
-              <IconButton variant="secondary" icon={<ChevronRight />} label={`Próxim${view === 'week' ? 'a semana' : 'o mês'}`} onClick={() => setPeriod(view, shiftAnchor(view, anchor, 1))} />
+              <IconButton variant="secondary" icon={<ChevronRight />} label={`Próxim${calendarView === 'week' ? 'a semana' : 'o mês'}`} onClick={() => setPeriod(view, shiftAnchor(calendarView, anchor, 1))} />
             </div>
-            <Segmented<CalendarView>
-              label="Escala do calendário"
+            <Segmented<ScreenView>
+              label="Visualização"
               value={view}
-              onChange={(next) => setPeriod(next, searchParams.get('data'))}
-              options={[{ value: 'month', label: 'Mês' }, { value: 'week', label: 'Semana' }]}
+              onChange={(next) => setPeriod(next, searchParams.get('data'), false)}
+              options={[{ value: 'month', label: 'Mês' }, { value: 'week', label: 'Semana' }, { value: 'feed', label: 'Feed' }]}
             />
           </div>
           {loaded === undefined
@@ -314,33 +415,44 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
             : <>
               {contents.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
               {loaded.data.contents.length === 0 && !contents.isPlaceholderData && <p className="contents__empty">Nenhum conteúdo planejado neste período.</p>}
-              <ContentCalendar
-                clientId={normalizedId}
-                view={view}
-                anchor={anchor}
-                today={today}
-                days={daysOf(period)}
-                contents={loaded.data.contents}
-                canMove={canMove}
-                movingId={move.isPending ? move.variables.content.id : null}
-                onMove={(content, day) => move.mutate({ content, day })}
-                dayExtras={scriptLayer.dayExtras}
-              />
+              {view === 'feed'
+                ? <ContentFeed
+                  onCreate={canWriteScripts && blocked === undefined ? () => startContent(today) : undefined}
+                  clientId={normalizedId}
+                  scope={`${normalizedId}|${period.from}|${period.to}`}
+                  contents={loaded.data.contents}
+                  today={today}
+                  handle={clientData?.instagramHandle ?? null}
+                  profile={clientData === undefined ? undefined : { name: clientData.name, photoUrl: clientData.photoUrl }}
+                />
+                : <ContentCalendar
+                  clientId={normalizedId}
+                  view={calendarView}
+                  layout={narrow ? 'agenda' : 'grid'}
+                  anchor={anchor}
+                  today={today}
+                  days={daysOf(period)}
+                  contents={loaded.data.contents}
+                  canMove={canMove}
+                  movingId={move.isPending ? move.variables.content.id : null}
+                  onMove={(content, day) => move.mutate({ content, day })}
+                  dayExtras={scriptLayer.dayExtras}
+                  onOpenDay={(day) => setPeriod('week', day, false)}
+                />}
             </>}
         </div>
         {loaded !== undefined && scriptLayer.list}
       </div>
-      <aside className="contents__feed" aria-label="Prévia do feed">
-        {loaded === undefined
-          ? <ContentFeedSkeleton />
-          : <ContentFeed
-            scope={`${normalizedId}|${period.from}|${period.to}`}
-            contents={loaded.data.contents}
-            today={today}
-            handle={clientData?.instagramHandle ?? null}
-            profile={clientData === undefined ? undefined : { name: clientData.name, photoUrl: clientData.photoUrl }}
-          />}
-      </aside>
+      {view !== 'feed' && roomForPhone && <aside className="contents__feed" aria-label="Prévia do feed">
+        <ContentPhoneFeed
+          key={normalizedId}
+          onCreate={canWriteScripts && blocked === undefined ? () => startContent(today) : undefined}
+          clientId={normalizedId}
+          today={today}
+          handle={clientData?.instagramHandle ?? null}
+          profile={clientData === undefined ? undefined : { name: clientData.name, photoUrl: clientData.photoUrl }}
+        />
+      </aside>}
     </div>}
     {scriptLayer.modal}
     <Outlet context={{
@@ -350,5 +462,5 @@ export function ContentsClientPage({ pinned = false }: { pinned?: boolean }) {
       archived,
       handle: clientData?.instagramHandle ?? null
     } satisfies ContentsOutletContext} />
-  </section></ContentsHomeContext.Provider>;
+  </section>;
 }
