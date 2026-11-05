@@ -53,8 +53,10 @@ cancelados, da data mais recente para a mais antiga (dia, hora e id, todos decre
 meta: { count } }`: o item tem o formato do item da consulta por período, `nextCursor` é `null` na última página e
 os contadores são do feed inteiro, não da página, e vêm só na primeira página (sem `cursor`); nas seguintes `counters` é `null` e quem lê guarda o que a primeira disse. A rota tem limite de 300 leituras por minuto por pessoa: a 301ª responde `429 RATE_LIMITED` com `Retry-After`. O cursor é opaco (base64url de dia, hora e id do último post da
 página) e vai de volta sem mudar; um que a rota não devolveu é `400 VALIDATION_ERROR`. O cliente é sempre o do caminho,
-na agência do caminho (outro cliente ou outra agência é o mesmo `404`), e o cliente arquivado também responde. Sem
-migration: o índice `(client_id, publish_on)` basta para a ordem e para os contadores no tamanho de um cliente.
+na agência do caminho (outro cliente ou outra agência é o mesmo `404`), e o cliente arquivado também responde. Os
+contadores vêm de `app_private.content_feed_counters` (migration `20261104000300`), que confere `conteudo.visualizar` na agência do cliente uma vez e conta; a mesma
+contagem sob a política de `contents` chama a permissão para cada linha (de 2,5 a 3,8 s em 40 mil conteúdos) e prendia o pool da API. Quem a política não deixa ver
+não recebe linha da função e lê zeros, como antes. O índice `(client_id, publish_on)` basta para a ordem.
 
 ## O que o banco decide e a rota só traduz
 

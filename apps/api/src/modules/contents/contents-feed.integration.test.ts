@@ -116,6 +116,21 @@ describe('the order and the pages', () => {
     for (const body of pages.slice(1)) expect(body.data.counters).toBeNull();
   });
 
+  it('counts through the function of the database on the first page and never counts public.contents under the policy', async () => {
+    // A count over the rows the policy lets through costs a pass of has_agency_permission per row (2.5 to 3.8 s at 40 000 contents):
+    // the first page asks the function, which checks the permission once, and the other pages ask no count at all.
+    w.statements.length = 0;
+    const first = await w.call('GET', people.admin.cookie, feedUrl(clientA));
+    expect(first.statusCode).toBe(200);
+    expect(w.statements.filter((statement) => /content_feed_counters/.test(statement))).toHaveLength(1);
+    expect(w.statements.some((statement) => /count[(][*][)] as posts/i.test(statement))).toBe(false);
+
+    w.statements.length = 0;
+    const next = await w.call('GET', people.admin.cookie, feedUrl(clientA, w.agencyA, `?cursor=${first.json().data.nextCursor as string}`));
+    expect(next.statusCode).toBe(200);
+    expect(w.statements.some((statement) => /content_feed_counters|as posts/i.test(statement))).toBe(false);
+  });
+
   it('answers an empty feed with no cursor and zeroes', async () => {
     const body = await page(clientOther);
     expect(body.data).toEqual({ contents: [], nextCursor: null, counters: { posts: 0, approved: 0, awaitingApproval: 0 } });

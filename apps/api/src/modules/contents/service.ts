@@ -216,8 +216,8 @@ const FEED_FILTER = `content.client_id = ?::uuid and content.format::text = any(
  * One page of the client's feed, the newest post first, independent of any period: day, time (none counts as the end of
  * the day) and id, all descending, so a tie on day and time is broken by the id and a page never repeats or skips a post.
  * `after` is the position of the last post of the page before. The counters are over the whole feed and are read
- * only for the first page (no `after`): a count over the feed costs a pass over every row the policy lets through, and the
- * reader keeps the first answer. Reads `limit + 1` to know whether another page exists.
+ * only for the first page (no `after`), by `app_private.content_feed_counters`: a count under the policy of `contents` costs a
+ * permission check per row, and the reader keeps the first answer. Reads `limit + 1` to know whether another page exists.
  */
 export const listFeed = async (
   transaction: ContentTransaction,
@@ -235,13 +235,10 @@ export const listFeed = async (
     ...(input.after === undefined ? [] : [input.after.publishOn, input.after.time, input.after.id]),
     input.limit + 1
   ]);
+  // The function of the database checks the permission once and counts; the same count under the policy of `contents` runs
+  // has_agency_permission for every row. A caller it gives no row to (the guard of the route answered first) reads zeros.
   const counted = input.after !== undefined ? undefined : await raw<RawRows<{ posts: string | number; approved: string | number; awaiting: string | number }>>(transaction, `
-    select
-      count(*) as posts,
-      count(*) filter (where content.status = 'approved') as approved,
-      count(*) filter (where content.status = 'awaiting_approval') as awaiting
-    from public.contents content
-    where ${FEED_FILTER}
+    select posts, approved, awaiting from app_private.content_feed_counters(?::uuid, ?::text[])
   `, [input.clientId, formats]);
   const page = rows.rows.slice(0, input.limit);
   const last = page[page.length - 1];
