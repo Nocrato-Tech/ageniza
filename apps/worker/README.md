@@ -38,7 +38,7 @@ Telemetry is automatic: each job logs its queue, job id, attempt, duration, and 
 
 ### Retries and failures
 
-A handler that throws is retried with exponential backoff until `retryLimit` is used up. It then ends in state `failed`, and pg-boss copies it into the queue's dead letter queue, `<name>.dead`. Nothing consumes a dead letter queue: the job stays visible there, in state `created`, until pg-boss retention removes it (14 days by default). To inspect failures without reading payloads:
+A handler that throws is retried with exponential backoff until `retryLimit` is used up. A handler that already knows a retry cannot help ends without throwing after recording the failure itself: the video job does this when a file runs past its time budget (`processing_timed_out` on the asset), because each repeat would hold the one video queue of every agency for the whole budget again. It then ends in state `failed`, and pg-boss copies it into the queue's dead letter queue, `<name>.dead`. Nothing consumes a dead letter queue: the job stays visible there, in state `created`, until pg-boss retention removes it (14 days by default). To inspect failures without reading payloads:
 
 ```sql
 select id, state, created_on from pgboss.job where name = 'media.thumbnail.dead' order by created_on desc;

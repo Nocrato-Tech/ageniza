@@ -94,3 +94,118 @@ describe('media video job wiring of the preview timeout', () => {
     vi.doUnmock('node:fs/promises');
   });
 });
+
+class TestBinaryError extends Error {
+  constructor(readonly code: string) { super(code); }
+}
+
+/** The job with its collaborators replaced: what the ffmpeg steps do is chosen by each test, and the calls on the row are recorded. */
+const loadJob = async (steps: { probe?: () => Promise<unknown>; thumbnail?: () => Promise<void>; preview?: () => Promise<void>; download?: (options: { signal: AbortSignal }) => Promise<void> }) => {
+  vi.resetModules();
+  const row = { failed: [] as string[], retrying: 0, ready: 0 };
+  vi.doMock('node:fs/promises', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    stat: vi.fn(async () => ({ size: 10 }))
+  }));
+  vi.doMock('./media-ffmpeg.js', () => ({
+    MediaBinaryError: TestBinaryError,
+    probeVideo: vi.fn(steps.probe ?? (async () => ({ durationSeconds: 60, width: 1920, height: 1080 }))),
+    generateThumbnail: vi.fn(steps.thumbnail ?? (async () => undefined)),
+    generatePreview: vi.fn(steps.preview ?? (async () => undefined))
+  }));
+  vi.doMock('./media-repository.js', () => ({
+    lockConfirmedVideoAsset: vi.fn(async () => ({ id: '00000000-0000-4000-8000-000000000002', agency_id: '00000000-0000-4000-8000-000000000001', object_key: 'k', video_processing_status: 'pending' })),
+    markVideoProcessingStarted: vi.fn(async () => undefined),
+    markVideoProcessingReady: vi.fn(async () => { row.ready += 1; }),
+    markVideoProcessingFailed: vi.fn(async (_transaction: unknown, _id: string, reason: string) => { row.failed.push(reason); }),
+    markVideoProcessingRetrying: vi.fn(async () => { row.retrying += 1; })
+  }));
+  vi.doMock('@ageniza/database', () => ({
+    createVerifiedUserClaims: vi.fn(() => ({})),
+    withAuthenticatedUserTransaction: vi.fn(async (_db: unknown, _claims: unknown, work: (t: unknown) => unknown) => work({}))
+  }));
+  const { mediaVideoProcessingJob: build } = await import('./media-video-job.js');
+  const storage = { downloadToFile: vi.fn(steps.download ?? (async () => undefined)), uploadFile: vi.fn(async () => undefined), deleteObject: vi.fn(async () => undefined) };
+  const definition = build({
+    database: {} as never,
+    storage: storage as never,
+    config: { ...config, maxDurationSeconds: 1_800, thumbnailWidthPixels: 160, previewMaxHeightPixels: 480, previewMaxOutputBytes: 1_000_000 },
+    tempRootDir: tmpdir()
+  });
+  const logger = { info: vi.fn(), error: vi.fn() };
+  const run = (attempt: number, signal: AbortSignal = new AbortController().signal) => definition.handler(
+    { id: 'j', name: definition.name, attempt, payload: { assetId: '00000000-0000-4000-8000-000000000002', agencyId: '00000000-0000-4000-8000-000000000001', actorUserId: '00000000-0000-4000-8000-000000000003' } },
+    { logger: logger as never, signal }
+  );
+  return { run, row, storage, logger };
+};
+
+const unmock = (): void => {
+  vi.doUnmock('./media-ffmpeg.js');
+  vi.doUnmock('./media-repository.js');
+  vi.doUnmock('@ageniza/database');
+  vi.doUnmock('node:fs/promises');
+};
+
+describe('a video that ran out of time is not tried again', () => {
+  it('records the time-out as the final failure on the first attempt and ends the job without an error, so the queue does not repeat it', async () => {
+    const job = await loadJob({ preview: async () => { throw new TestBinaryError('TIMEOUT'); } });
+    await expect(job.run(1)).resolves.toBeUndefined();
+    expect(job.row.failed).toEqual(['processing_timed_out']);
+    expect(job.row.retrying).toBe(0);
+    expect(job.row.ready).toBe(0);
+    expect(job.logger.error).toHaveBeenCalledTimes(1);
+    unmock();
+  });
+
+  it('still returns the asset to pending and raises the error for a failure that may pass, while a retry is left', async () => {
+    const job = await loadJob({ preview: async () => { throw new TestBinaryError('EXIT'); } });
+    await expect(job.run(1)).rejects.toThrow();
+    expect(job.row.failed).toEqual([]);
+    expect(job.row.retrying).toBe(1);
+    unmock();
+  });
+
+  it('treats the end of the budget of the whole job like the time-out of a step', async () => {
+    const budget = new AbortController();
+    const real = AbortSignal.timeout.bind(AbortSignal);
+    let first = true;
+    const spy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((milliseconds: number) => {
+      if (first) { first = false; return budget.signal; }
+      return real(milliseconds);
+    });
+    try {
+      let heard: boolean | undefined;
+      const job = await loadJob({
+        download: async ({ signal }) => {
+          // The budget of the job ends while the file is coming down: what storage was handed must have heard it.
+          budget.abort();
+          heard = signal.aborted;
+          throw new DOMException('aborted', 'AbortError');
+        }
+      });
+      await expect(job.run(1)).resolves.toBeUndefined();
+      expect(heard).toBe(true);
+      expect(job.row.failed).toEqual(['processing_timed_out']);
+      expect(job.row.retrying).toBe(0);
+      expect(spy.mock.calls[0]?.[0]).toBe(mediaVideoHandlerTimeoutSeconds({ ...config }) * 1_000);
+    } finally {
+      spy.mockRestore();
+      unmock();
+    }
+  });
+
+  it('does not take a shutdown of the worker for a time-out: that one is still retried', async () => {
+    const shutdown = new AbortController();
+    const job = await loadJob({
+      download: async () => {
+        shutdown.abort();
+        throw new DOMException('aborted', 'AbortError');
+      }
+    });
+    await expect(job.run(1, shutdown.signal)).rejects.toThrow();
+    expect(job.row.failed).toEqual([]);
+    expect(job.row.retrying).toBe(1);
+    unmock();
+  });
+});

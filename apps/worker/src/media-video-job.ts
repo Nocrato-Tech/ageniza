@@ -177,11 +177,18 @@ export const mediaVideoProcessingJob = (
           storage.deleteObject({ key: thumbnailKey, signal: cleanupSignal }),
           storage.deleteObject({ key: previewKey, signal: cleanupSignal })
         ]);
+        // A file that does not fit its time budget would not fit it the next time either, and each try holds the one video queue
+        // of every agency for the whole budget: the time-out is final on the first attempt, with its reason on the row.
+        const outOfTime = reason === 'processing_timed_out';
         await withAuthenticatedUserTransaction(database, claims, (transaction) =>
-          job.attempt > MEDIA_VIDEO_RETRY_LIMIT
+          outOfTime || job.attempt > MEDIA_VIDEO_RETRY_LIMIT
             ? markVideoProcessingFailed(transaction, asset.id, reason)
             : markVideoProcessingRetrying(transaction, asset.id)
         );
+        if (outOfTime) {
+          context.logger.error({ status: 'failed', reason, attempt: job.attempt }, 'Video processing ran out of time; not retried.');
+          return;
+        }
         throw error;
       }
     } finally {
