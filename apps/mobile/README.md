@@ -48,4 +48,4 @@ A exportação gera bundles, não APK e não prova execução no aparelho. `eas.
 
 ## Vercel
 
-A publicação está em https://mobile-vercel-preview.vercel.app/. O artefato web exportado é publicado no projeto `mobile-vercel-preview`, da equipe `marcosvmgs-projects`. Isso não configura integração Git automática. Para importar o monorepo na Vercel, use Root Directory `apps/mobile`, cuja configuração está em `vercel.json`.
+A entrada oficial é https://dev.ageniza.com.br/app-mobile/, na mesma origem da API. A raiz e `/apresentacao/` de https://mobile-vercel-preview.vercel.app/ encaminham para ela; o redirecionamento está em `vercel.json`. Não publicar a interface independente como uma versão funcional. O projeto Vercel `mobile-vercel-preview`, da equipe `marcosvmgs-projects`, mantém o APK interno anterior em `/downloads/ageniza-android.apk`; uma publicação estática deve preservar esse artefato. Não há integração Git automática configurada. O código novo só chega ao dev após revisão, merge e o workflow Dev release.
