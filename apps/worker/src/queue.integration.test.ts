@@ -110,6 +110,42 @@ describe('durable job queue on PostgreSQL', { timeout: 60_000 }, () => {
     await closeQueue(worker);
   });
 
+  it('keeps a long job in one queue from holding the jobs of the others, with the worker budget at one', async () => {
+    const slowName = `${prefix}.slow`;
+    const lightName = `${prefix}.light`;
+    const release = deferred();
+    const slowStarted = deferred();
+    let slowRunning = 0;
+    let slowPeak = 0;
+    const worker = await openQueue([
+      {
+        name: slowName,
+        concurrency: 1,
+        handler: async () => {
+          slowRunning += 1;
+          slowPeak = Math.max(slowPeak, slowRunning);
+          slowStarted.resolve();
+          await release.promise;
+          slowRunning -= 1;
+        }
+      },
+      { name: lightName, handler: async () => undefined }
+    ], { concurrency: 1 });
+
+    const slowIds = [await worker.send(slowName, {}), await worker.send(slowName, {})];
+    await slowStarted.promise;
+    const lightId = await worker.send(lightName, {});
+    // The light job finishes while the first slow one still runs and the second one waits.
+    await waitForState(lightId, 'completed');
+    expect(await stateOf(slowIds[0] as string)).toBe('active');
+    expect(await stateOf(slowIds[1] as string)).toBe('created');
+    release.resolve();
+    for (const id of slowIds) await waitForState(id, 'completed');
+    // Never two of the slow (ffmpeg) job at once.
+    expect(slowPeak).toBe(1);
+    await closeQueue(worker);
+  });
+
   it('retries a transient failure with backoff and then completes it', async () => {
     const name = `${prefix}.transient`;
     const attempts: Array<{ attempt: number; at: number }> = [];

@@ -2091,11 +2091,12 @@ Lê o estudo de marca, no portal.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
-### contents — Conteúdo do cliente na agência: a consulta por período (calendário e feed), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste.
+### contents — Conteúdo do cliente na agência: a consulta por período (calendário e feed em tela cheia), a leitura do feed do cliente de 9 em 9 (o celular ao lado do calendário), criar, ler o detalhe, editar e mover de data; e as transições: enviar para aprovação, aprovar fora da plataforma, publicar, desfazer a publicação, cancelar e reagendar; as subtarefas: criar, editar, entregar, aprovar e devolver; e, no portal, os conteúdos de um período, o que espera aprovação, o post, aprovar e pedir ajuste.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents` | Sessão + vínculo com a agência | `conteudo.visualizar` | Consulta os conteúdos e os roteiros de stories de um período |
+| `GET` | `/agencies/:agencyId/clients/:clientId/contents/feed` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9 |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents` | Sessão + vínculo com a agência | `conteudo.operar` | Cria um conteúdo em produção |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.operar` | Edita um conteúdo; mover de data é editar `publishOn` |
@@ -2176,6 +2177,54 @@ Consulta os conteúdos e os roteiros de stories de um período.
 ```
 
 **Erros:** `400 CONTENT_PERIOD_TOO_LARGE` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/contents/feed`
+
+Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — Uma página do feed e os contadores do feed inteiro.
+
+```json
+{
+  "data": {
+    "contents": [
+      {
+        "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "title": "Lançamento da coleção de outono",
+        "platform": "instagram",
+        "format": "reels",
+        "publishOn": "2026-10-20",
+        "publishAtTime": "18:30",
+        "status": "in_production",
+        "owner": {
+          "membershipId": "22222222-2222-4222-8222-222222222222",
+          "name": "Ana Souza"
+        },
+        "coverAssetId": null,
+        "thumbnailAssetId": "44444444-4444-4444-8444-444444444444",
+        "revision": 1,
+        "publishedOn": null,
+        "tasksTotal": 3,
+        "tasksApproved": 1
+      }
+    ],
+    "nextCursor": "WyIyMDI2LTEwLTIwIiwiMTg6MzA6MDAiLCJmZmZmZmZmZi1mZmZmLTRmZmYtOGZmZi1mZmZmZmZmZmZmZmYiXQ",
+    "counters": {
+      "posts": 24,
+      "approved": 3,
+      "awaitingApproval": 2
+    }
+  },
+  "meta": {
+    "count": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents`
 
@@ -2391,7 +2440,7 @@ Edita um conteúdo; mover de data é editar `publishOn`.
 }
 ```
 
-**Erros:** `400 CONTENT_FOLDER_INVALID` · `400 CONTENT_MEDIA_INVALID` · `400 CONTENT_OWNER_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_FOLDER_IN_USE` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_NOT_EDITABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_FOLDER_INVALID` · `400 CONTENT_MEDIA_INVALID` · `400 CONTENT_OWNER_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_NOT_EDITABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/submit`
 
@@ -4666,7 +4715,6 @@ Avança o relógio da assinatura simulada (só fora de produção).
 | `CONTENT_MEDIA_INCOMPLETE` | A mídia do conteúdo não cobre este formato. Para trocar entre carrossel e formato de uma mídia só depois do envio para aprovação, cancele e reagende o conteúdo. |
 | `CONTENT_MEDIA_INVALID` | A mídia ou a capa escolhida não pode ser usada neste conteúdo. |
 | `CONTENT_FOLDER_INVALID` | A pasta escolhida não é uma pasta deste cliente. |
-| `CONTENT_FOLDER_IN_USE` | A pasta não muda enquanto o conteúdo tem mídia ou capa. |
 | `CONTENT_OWNER_INVALID` | O responsável precisa ser um colaborador ativo que vê Conteúdo. |
 | `CONTENT_STATE` | O conteúdo não está no estado que esta ação exige. |
 | `CONTENT_REVISION_CHANGED` | O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. |

@@ -622,7 +622,7 @@ describe('collaborator detail (#103)', () => {
     expect(within(modal).getByText('A troca de e-mail é feita pela operação.')).toBeTruthy();
     expect(within(modal).getByRole('tab', { name: 'Detalhes' }).getAttribute('aria-selected')).toBe('true');
     for (const name of ['Performance', 'Entregas']) expect(within(modal).getByRole('tab', { name }).hasAttribute('disabled')).toBe(true);
-    expect(within(modal).getAllByText('Disponível quando o módulo de Tarefas existir.')).toHaveLength(2);
+    expect(within(modal).getAllByText('Ainda não disponível.')).toHaveLength(2);
     expect(within(modal).queryByRole('textbox')).toBeNull();
     expect(modal.textContent).not.toMatch(/salário|remuneração|salvar|remover/i);
   });
@@ -3093,8 +3093,8 @@ describe('team screens in the Pauta language (#638)', () => {
 
       const reasons = Array.from(modal.querySelectorAll('.collaborator-detail__soon > div')).map((row) => [row.querySelector('dt')?.textContent, row.querySelector('dd')?.textContent]);
       expect(reasons).toEqual([
-        ['Performance', 'Disponível quando o módulo de Tarefas existir.'],
-        ['Entregas', 'Disponível quando o módulo de Tarefas existir.']
+        ['Performance', 'Ainda não disponível.'],
+        ['Entregas', 'Ainda não disponível.']
       ]);
     });
 

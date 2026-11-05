@@ -16,6 +16,7 @@ import { AuthMessage, AuthPanel } from './auth-layout.js';
 import { apiPath } from './api-path.js';
 import { contextDestination, rememberContext, type ContextTarget } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
+import { usePasswordHint } from './password-hint.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { forgetGoogleInvite, GoogleSignInBlock } from './google-sign-in.js';
@@ -45,6 +46,7 @@ export function InvitationPage() {
   const session = useAuthSession(authStore);
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
+  const passwordHint = usePasswordHint(password);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; password?: string }>({});
   const [formError, setFormError] = useState<string | undefined>();
@@ -215,8 +217,8 @@ export function InvitationPage() {
         <Field label="Nome" id="invite-name" error={errors.name}>
           {(control) => <TextInput {...control} name="name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} />}
         </Field>
-        <Field label="Senha" id="invite-password" hint="Mínimo de 10 caracteres" error={errors.password}>
-          {(control) => <TextInput {...control} name="password" type="password" autoComplete="new-password" value={password}
+        <Field label="Senha" id="invite-password" hint={passwordHint.hint} error={errors.password}>
+          {(control) => <TextInput {...control} name="password" type="password" autoComplete="new-password" {...passwordHint.focusProps} value={password}
             onChange={(event) => setPassword(event.target.value)} />}
         </Field>
         <label className="auth-check">

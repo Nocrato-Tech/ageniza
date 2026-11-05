@@ -9,6 +9,7 @@ import {
   ContentTitleSchema,
   type ContentDetail,
   type ContentFormat,
+  type MediaFolderAsset,
   type UpdateContentRequest
 } from '@ageniza/contracts';
 
@@ -72,6 +73,38 @@ export const validate = (values: ContentFormValues): ContentFieldErrors => {
   return errors;
 };
 
+/** What a format takes: one image, one video, or up to 20 of either (`app_private.content_media_is_complete`). */
+export const acceptedCategory = (format: ContentFormat): MediaFolderAsset['category'] | null => {
+  if (format === 'carousel') return null;
+  return format === 'image' ? 'image' : 'video';
+};
+
+type FolderAsset = Pick<MediaFolderAsset, 'id' | 'category'>;
+
+const fits = (format: ContentFormat, asset: FolderAsset): boolean => {
+  const accepted = acceptedCategory(format);
+  return accepted === null || asset.category === accepted;
+};
+
+const maxMedia = (format: ContentFormat): number => (format === 'carousel' ? CONTENT_CAROUSEL_MAX_MEDIA : 1);
+
+/**
+ * What a folder gives a content of this format, in the order the folder lists it (the newest first): the first one that fits for
+ * a format of one media, up to 20 for a carousel. The database applies the same rule when it moves the folder (`folder_media_for`);
+ * this one shows the choice before it is saved.
+ */
+export const mediaFromFolder = (format: ContentFormat, assets: readonly FolderAsset[]): string[] =>
+  assets.filter((asset) => fits(format, asset)).slice(0, maxMedia(format)).map((asset) => asset.id);
+
+/**
+ * The selection a format change leaves: what already fits stays, in order; when nothing fits, the folder gives its own. A media the
+ * folder no longer lists does not fit anything.
+ */
+export const fitMedia = (format: ContentFormat, selected: readonly string[], assets: readonly FolderAsset[]): string[] => {
+  const kept = selected.filter((id) => assets.some((asset) => asset.id === id && fits(format, asset))).slice(0, maxMedia(format));
+  return kept.length > 0 ? kept : mediaFromFolder(format, assets);
+};
+
 const sameList = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((id, index) => id === b[index]);
 
 /** Only what changed: a save of the title never carries the media list, and never touches the approval it does not change. */
@@ -84,13 +117,18 @@ export const changesOf = (saved: ContentFormValues, form: ContentFormValues): Up
   if (form.caption.trim() !== saved.caption.trim()) changes.caption = form.caption.trim() === '' ? null : form.caption;
   if (form.folderId !== saved.folderId) changes.folderId = form.folderId;
   if (form.coverAssetId !== saved.coverAssetId) changes.coverAssetId = form.coverAssetId;
-  if (!sameList(form.mediaAssetIds, saved.mediaAssetIds)) changes.mediaAssetIds = [...form.mediaAssetIds];
+  // A new folder always carries the list on screen: what the person saw is what is saved, not what the folder holds by then.
+  if (form.folderId !== saved.folderId || !sameList(form.mediaAssetIds, saved.mediaAssetIds)) changes.mediaAssetIds = [...form.mediaAssetIds];
   return changes;
 };
 
-/** What makes an approved content go back to "aguardando aprovação" (`specs/conteudo.md` rule 6): the caption, the media, the cover or the format. */
-export const resetsApproval = (changes: UpdateContentRequest): boolean =>
-  changes.caption !== undefined || changes.mediaAssetIds !== undefined || changes.coverAssetId !== undefined || changes.format !== undefined;
+/**
+ * What makes an approved content go back to "aguardando aprovação" (`specs/conteudo.md` rule 6): the caption, the media, the cover or
+ * the format. A new folder counts through its list: one that takes nothing out and puts nothing in changes no media.
+ */
+export const resetsApproval = (saved: ContentFormValues, changes: UpdateContentRequest): boolean =>
+  changes.caption !== undefined || changes.coverAssetId !== undefined || changes.format !== undefined
+  || (changes.mediaAssetIds !== undefined && (changes.mediaAssetIds.length > 0 || saved.mediaAssetIds.length > 0));
 
 const ISSUE_FIELDS: ReadonlyArray<readonly [string, ContentField]> = [
   ['title', 'title'],
@@ -134,7 +172,7 @@ export interface SaveRefusal {
 export const SAVE_FAILED = 'Não foi possível salvar o conteúdo. Tente de novo.';
 
 /** The screen's own words for each refusal of a save: what the server wrote is never shown. */
-export const saveRefusal = (error: unknown, creating = false): SaveRefusal => {
+export const saveRefusal = (error: unknown, creating = false, movesFolder = false): SaveRefusal => {
   if (error instanceof HttpClientError) {
     if (error.status === 400 && error.code === 'VALIDATION_ERROR') {
       const fields = refusedFields(error.details);
@@ -144,11 +182,11 @@ export const saveRefusal = (error: unknown, creating = false): SaveRefusal => {
     if (error.status === 400 && error.code === 'CONTENT_FOLDER_INVALID') return { message: 'A pasta escolhida não é uma pasta deste cliente.', fields: { folderId: 'Escolha outra pasta.' } };
     if (error.status === 409 && error.code === 'CLIENT_ARCHIVED') return { message: 'Este cliente está arquivado: o conteúdo é só leitura.', fields: {} };
     if (error.status === 409 && error.code === 'CONTENT_NOT_EDITABLE') return { message: 'Este conteúdo já foi publicado ou cancelado e não pode mais ser editado.', fields: {} };
+    if (error.status === 409 && error.code === 'CONTENT_MEDIA_INCOMPLETE' && movesFolder) {
+      return { message: 'Esta pasta não tem mídia que complete o formato, e um conteúdo enviado para aprovação não fica sem mídia. Escolha outra pasta ou envie a mídia aqui antes de salvar.', fields: { folderId: 'Esta pasta não completa o formato.' } };
+    }
     if (error.status === 409 && error.code === 'CONTENT_MEDIA_INCOMPLETE') {
       return { message: 'A mídia não cobre este formato. Depois do envio para aprovação, não se troca entre carrossel e uma mídia só: cancele e reagende o conteúdo.', fields: { media: 'A mídia não cobre este formato.' } };
-    }
-    if (error.status === 409 && error.code === 'CONTENT_FOLDER_IN_USE') {
-      return { message: 'A pasta não muda enquanto o conteúdo tem mídia ou capa. Tire as duas, salve, e escolha a outra pasta.', fields: { folderId: 'Tire a mídia e a capa antes de trocar a pasta.' } };
     }
     if (error.status === 409 && error.code === 'TRY_AGAIN') return { message: 'Outra alteração aconteceu ao mesmo tempo. Salve de novo.', fields: {} };
     if (error.status === 403) return { message: 'Você não tem permissão para alterar conteúdos.', fields: {} };

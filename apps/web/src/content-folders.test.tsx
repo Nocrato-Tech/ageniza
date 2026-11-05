@@ -40,6 +40,7 @@ const READ_ONLY = ['conteudo.visualizar', 'cliente.visualizar'];
 const AGENCY = '11111111-1111-4111-8111-111111111111';
 const calendarUrl = `/agencia/${AGENCY}/conteudos/${padaria.id}`;
 const contentsTabUrl = `/agencia/${AGENCY}/clientes/${padaria.id}/conteudos`;
+const generalUrl = `/agencia/${AGENCY}/clientes/${padaria.id}/geral`;
 const mediaUrl = `/agencia/${AGENCY}/clientes/${padaria.id}/midias`;
 
 const open = (world: World, entry?: Parameters<typeof renderFolders>[1]) => renderFolders(makeFetch(world), entry);
@@ -47,19 +48,19 @@ const heading = (name: string) => screen.findByRole('heading', { name, level: 3 
 const mediaCalls = (world: World): string[] => world.calls.filter((call) => /\/assets(\?|$)/.test(call));
 
 describe('the Mídias tab: navigation and the address', () => {
-  it('opens from the tab after Conteúdos, lists the default and own folders of the first level and none of the calendar', async () => {
+  it('opens from the tab after Geral, lists the default and own folders of the first level and none of the calendar', async () => {
     const world = makeWorld();
-    const { probe } = open(world, contentsTabUrl);
+    const { probe } = open(world, generalUrl);
 
     const tabs = within(await screen.findByRole('navigation', { name: 'Seções do cliente' }));
-    expect(tabs.getAllByRole('link').map((link) => link.textContent).slice(0, 3)).toEqual(['Geral', 'Conteúdos', 'Mídias']);
+    expect(tabs.getAllByRole('link').map((link) => link.textContent).slice(0, 2)).toEqual(['Geral', 'Mídias']);
     fireEvent.click(tabs.getByRole('link', { name: 'Mídias' }));
     await heading('Pastas');
 
     expect(probe.pathname).toBe(mediaUrl);
     expect(probe.search).toBe('');
     expect(tabs.getByRole('link', { name: 'Mídias' }).getAttribute('aria-current')).toBe('page');
-    expect(tabs.getByRole('link', { name: 'Conteúdos' }).getAttribute('aria-current')).toBeNull();
+    expect(tabs.queryByRole('link', { name: 'Calendário Editorial' })).toBeNull();
     for (const name of ['Vídeos Padrão', 'Imagens Padrão', 'Carrosséis Padrão', 'Ensaio fotográfico Padrão', 'Campanha de Natal']) {
       expect(screen.getByRole('link', { name })).toBeTruthy();
     }
@@ -171,13 +172,13 @@ describe('the Mídias tab: navigation and the address', () => {
     expect(probe.state).toEqual(state);
   });
 
-  it('leaves the folder out of the address when the person goes to the Conteúdos tab', async () => {
+  it('leaves the folder out of the address when the person goes to the calendar from the header', async () => {
     const { probe } = open(makeWorld(), foldersUrl(`&pasta=${VIDEOS}&subpasta=${WORK}&pagina=2`));
     await heading('Gravação de outubro');
 
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Conteúdos' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Abrir no Calendário Editorial' }));
     await screen.findByRole('group', { name: 'Período' });
-    expect(probe.pathname).toBe(contentsTabUrl);
+    expect(probe.pathname).toBe(calendarUrl);
     expect(probe.search).toBe('');
   });
 
@@ -263,7 +264,7 @@ describe('the Mídias tab: who sees it', () => {
 
     const tabs = within(await screen.findByRole('navigation', { name: 'Seções do cliente' }));
     expect(tabs.getByRole('link', { name: 'Geral' })).toBeTruthy();
-    expect(tabs.queryByRole('link', { name: 'Conteúdos' })).toBeNull();
+    expect(tabs.queryByRole('link', { name: 'Calendário Editorial' })).toBeNull();
     expect(tabs.queryByRole('link', { name: 'Mídias' })).toBeNull();
   });
 
@@ -870,16 +871,16 @@ describe('the media of a folder', () => {
 });
 
 describe('the calendar is not asked while the folders are open', () => {
-  it('asks the contents of the period only on the calendar, and not again on the Mídias tab', async () => {
+  it('asks the contents of the period only on the calendar, and not on the Mídias tab', async () => {
     const world = makeWorld({
       override: (_method, path) => (/\/contents$/.test(path) ? json({ data: { contents: [], storyScripts: [] }, meta: { from: '2026-10-01', to: '2026-10-31', count: 0 } }) : undefined)
     });
-    open(world, contentsTabUrl);
-    await screen.findByRole('group', { name: 'Período' });
-    expect(world.calls.filter((call) => /\/contents\?/.test(call))).toHaveLength(1);
-
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Seções do cliente' })).getByRole('link', { name: 'Mídias' }));
+    open(world, mediaUrl);
     await heading('Pastas');
+    expect(world.calls.filter((call) => /\/contents\?/.test(call))).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('link', { name: 'Abrir no Calendário Editorial' }));
+    await screen.findByRole('group', { name: 'Período' });
     expect(world.calls.filter((call) => /\/contents\?/.test(call))).toHaveLength(1);
   });
 });

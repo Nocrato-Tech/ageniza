@@ -1107,29 +1107,6 @@ describe('format, folder, cover and media in one request (issue #254)', () => {
     expect(reply.json().folderId).toBe(otherFolder);
   });
 
-  it('answers 409 CONTENT_FOLDER_IN_USE to a move of the folder of a content with media', async () => {
-    const contentId = await w.seedContent(clientA);
-    await w.attach(contentId, [await w.seedAsset(clientA, folderA, { category: 'video' })]);
-    const reply = await patch(contentId, { folderId: await w.newFolder(clientA, 'Outra pasta') });
-    expect(reply.statusCode).toBe(409);
-    expect(reply.json().error.code).toBe('CONTENT_FOLDER_IN_USE');
-    expect((await w.contentRow(contentId)).folder_id).toBe(folderA);
-  });
-
-  it('answers 409 CONTENT_FOLDER_IN_USE to a move of the folder of a content with a cover, and 400 when the cover is the one that does not fit', async () => {
-    const cover = await w.seedAsset(clientA, folderA, { category: 'image' });
-    const contentId = await w.seedContent(clientA, { coverAssetId: cover });
-    const moved = await patch(contentId, { folderId: await w.newFolder(clientA, 'Outra pasta') });
-    expect(moved.statusCode).toBe(409);
-    expect(moved.json().error.code).toBe('CONTENT_FOLDER_IN_USE');
-
-    const foreignCover = await w.seedAsset(clientA, await w.newFolder(clientA, 'Pasta da capa'), { category: 'image' });
-    const wrongCover = await patch(contentId, { coverAssetId: foreignCover });
-    expect(wrongCover.statusCode).toBe(400);
-    expect(wrongCover.json().error.code).toBe('CONTENT_MEDIA_INVALID');
-    expect((await w.contentRow(contentId)).cover_asset_id).toBe(cover);
-  });
-
   it.each([
     ['of another client', () => folderA2],
     ['of another agency', () => folderB],

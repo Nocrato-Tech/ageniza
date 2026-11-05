@@ -7,8 +7,10 @@ import {
   CalendarDaySchema,
   ContentDetailSchema,
   type ContentDetail,
+  type ContentFormat,
   type ContentStatus,
   type CreateContentRequest,
+  type MediaFolderAsset,
   type UpdateContentRequest
 } from '@ageniza/contracts';
 import { Button, DatePicker, Dialog, Field, FieldMessage, FormatTag, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput } from '@ageniza/ui';
@@ -19,7 +21,9 @@ import { useContentsAddress } from './content-address.js';
 import { todayInSaoPaulo } from './content-dates.js';
 import {
   changesOf,
+  fitMedia,
   hasCover,
+  mediaFromFolder,
   resetsApproval,
   saveRefusal,
   validate,
@@ -30,7 +34,7 @@ import {
 import { ContentActions } from './content-action-bar.js';
 import { FORMAT_LABELS, FORMAT_TONES, isClosed, STATUS_LABELS, STATUS_TAGS } from './content-labels.js';
 import { ContentAssignment } from './content-assignment.js';
-import { CoverField, FolderField, MediaField } from './content-media.js';
+import { CoverField, FolderField, MediaField, useFreshFolder } from './content-media.js';
 import { Conversation } from './conversation.js';
 import { captionCounter, ContentPreview } from './content-preview.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -108,7 +112,35 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const writable = editable && blocked === undefined;
   const changes = saved === null ? null : changesOf(valuesOf(saved), form);
   const dirty = saved === null || (changes !== null && Object.keys(changes).length > 0);
-  const approvalWarning = saved?.status === 'approved' && changes !== null && resetsApproval(changes);
+  const approvalWarning = saved?.status === 'approved' && changes !== null && resetsApproval(valuesOf(saved), changes);
+  const movesFolder = changes?.folderId !== undefined;
+
+  // The folder is read when the person chooses it, and the form shows what the content would take from it. The API decides again
+  // when the content is saved; what is held here is only the choice on screen.
+  const readFolder = useFreshFolder(clientId);
+  const [inheriting, setInheriting] = useState(false);
+  const [folderUnread, setFolderUnread] = useState(false);
+  // A file going up into the folder is part of the form: saving now would leave it out and close the modal over it.
+  const [sendingFile, setSendingFile] = useState(false);
+  const folderTicket = useRef(0);
+  // What the last reading was for, so that a failed one can be asked again as it was, even for the same folder.
+  const lastReading = useRef<{ folderId: string; pick: (assets: MediaFolderAsset[], current: ContentFormValues) => string[] } | null>(null);
+  const inherit = async (folderId: string, pick: (assets: MediaFolderAsset[], current: ContentFormValues) => string[]): Promise<void> => {
+    const ticket = folderTicket.current + 1;
+    folderTicket.current = ticket;
+    lastReading.current = { folderId, pick };
+    setInheriting(true);
+    setFolderUnread(false);
+    try {
+      const assets = await readFolder(folderId);
+      if (folderTicket.current !== ticket) return;
+      setForm((current) => (current.folderId === folderId ? { ...current, mediaAssetIds: pick(assets, current) } : current));
+    } catch {
+      if (folderTicket.current === ticket) setFolderUnread(true);
+    } finally {
+      if (folderTicket.current === ticket) setInheriting(false);
+    }
+  };
 
   const save = useMutation({
     mutationFn: async (): Promise<ContentDetail> => {
@@ -125,7 +157,9 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
               publishOn: form.publishOn,
               publishAtTime: form.publishAtTime === '' ? null : form.publishAtTime,
               caption: form.caption,
-              folderId: form.folderId
+              folderId: form.folderId,
+              mediaAssetIds: [...form.mediaAssetIds],
+              ...(form.coverAssetId === null ? {} : { coverAssetId: form.coverAssetId })
             } satisfies CreateContentRequest,
             response: ContentDetailSchema
           });
@@ -155,7 +189,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
     },
     onError: (error) => {
       const failure = error instanceof SaveFailed ? error : new SaveFailed(false, error);
-      const refusal = saveRefusal(failure.reason, saved === null && !failure.created);
+      const refusal = saveRefusal(failure.reason, saved === null && !failure.created, movesFolder);
       setErrors(refusal.fields);
       setFormError(failure.created ? `${refusal.message} O conteúdo já foi criado: ao salvar de novo, só o que falta é enviado.` : refusal.message);
       // A refusal means the calendar behind the modal may be stale (the client was archived, another operator moved it).
@@ -184,13 +218,38 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     setFormError(undefined);
+    if (inheriting || folderUnread || sendingFile) return;
     const problems = validate(form);
     setErrors(problems);
     if (Object.keys(problems).length > 0) return;
     save.mutate();
   };
 
-  const locked = saved !== null && (saved.media.length > 0 || saved.coverAssetId !== null);
+  const chooseFolder = (folderId: string): void => {
+    edit({ folderId, mediaAssetIds: [], coverAssetId: null }, 'folderId');
+    void inherit(folderId, (assets, current) => mediaFromFolder(current.format, assets));
+  };
+  const chooseFormat = (format: ContentFormat): void => {
+    edit({ format, ...(hasCover(format) ? {} : { coverAssetId: null }) }, 'media');
+    if (form.folderId !== '') void inherit(form.folderId, (assets, current) => fitMedia(current.format, current.mediaAssetIds, assets));
+  };
+
+  /** What choosing another folder does to a content that exists, said before it happens; nothing to say when nothing is lost. */
+  const folderWarning = ((): string | undefined => {
+    if (saved === null) return undefined;
+    const hasMedia = form.mediaAssetIds.length > 0;
+    const hasCoverNow = form.coverAssetId !== null;
+    const sent = saved.status === 'awaiting_approval' || saved.status === 'approved';
+    if (!hasMedia && !hasCoverNow && !sent) return undefined;
+    const sentences: string[] = [];
+    if (hasMedia && hasCoverNow) sentences.push('A mídia e a capa de agora saem do conteúdo, e entram as da pasta nova.');
+    else if (hasMedia) sentences.push('A mídia de agora sai do conteúdo, e entra a da pasta nova.');
+    else if (hasCoverNow) sentences.push('A capa de agora sai do conteúdo.');
+    else sentences.push('A mídia do conteúdo passa a ser a da pasta nova.');
+    if (saved.status === 'approved') sentences.push('O conteúdo está aprovado e volta para “Aguardando aprovação”.');
+    if (sent) sentences.push('Um conteúdo enviado para aprovação não fica sem mídia: se a pasta nova estiver vazia, envie uma mídia aqui antes de salvar.');
+    return sentences.join(' ');
+  })();
   const note = !context.canEdit
     ? (context.archived ? 'Cliente arquivado: o conteúdo é só leitura.' : 'Você pode ver este conteúdo, mas não editar.')
     : closed ? 'Este conteúdo já foi publicado ou cancelado e não pode mais ser editado.' : blocked;
@@ -241,7 +300,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
 
   const formActions = <div className="content-modal__form-actions">
     <Button variant="ghost" disabled={busy} onClick={onDone}>Fechar</Button>
-    {editable && <Button type="submit" form={formId} variant={dirty ? 'primary' : 'secondary'} leadingIcon={<Save />} loading={busy} disabled={busy || (!dirty && blocked === undefined)} blockedReason={blocked}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
+    {editable && <Button type="submit" form={formId} variant={dirty ? 'primary' : 'secondary'} leadingIcon={<Save />} loading={busy} disabled={busy || inheriting || folderUnread || sendingFile || (!dirty && blocked === undefined)} blockedReason={blocked}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
   </div>;
 
   return <div className="content-modal">
@@ -262,7 +321,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
           disabled={busy || !writable}
           onChange={(value) => {
             const format = FORMAT_OPTIONS.find((option) => option.value === value)?.value;
-            if (format !== undefined) edit({ format, ...(hasCover(format) ? {} : { coverAssetId: null }) }, 'media');
+            if (format !== undefined) chooseFormat(format);
           }}
         />
         <div className="content-modal__when">
@@ -272,24 +331,26 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
         <FolderField
           clientId={clientId}
           value={form.folderId}
-          locked={locked}
           disabled={busy || !writable}
           canCreate={context.canEdit && blocked === undefined}
-          error={errors.folderId}
-          onChange={(folderId) => edit({ folderId, mediaAssetIds: [], coverAssetId: null }, 'folderId')}
+          error={errors.folderId ?? (folderUnread ? 'Não foi possível ler a pasta. Tente de novo.' : undefined)}
+          onRetry={folderUnread && !inheriting ? () => { const last = lastReading.current; if (last !== null) void inherit(last.folderId, last.pick); } : undefined}
+          hint="O conteúdo usa a mídia que está na pasta. Pasta vazia? Envie a mídia por aqui."
+          warning={folderWarning}
+          onChange={chooseFolder}
         />
-        {saved === null
-          ? <p className="form-hint">A mídia e a capa se escolhem da pasta; escolha-as agora ou depois de criar o conteúdo.</p>
-          : null}
         <MediaField
           clientId={clientId}
           folderId={form.folderId}
           format={form.format}
           selected={form.mediaAssetIds}
           disabled={busy || !writable}
+          canSend={context.canEdit && blocked === undefined}
           error={errors.media}
           onChange={(mediaAssetIds) => edit({ mediaAssetIds }, 'media')}
+          onSendingChange={setSendingFile}
         />
+        {sendingFile && <p className="form-hint" role="status">Aguarde o envio da mídia terminar para salvar o conteúdo.</p>}
         {hasCover(form.format) && <CoverField
           clientId={clientId}
           folderId={form.folderId}
@@ -313,7 +374,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
           </>}
         </Field>
         {approvalWarning && <p className="form-hint" role="status">
-          Este conteúdo está aprovado. Mudar a legenda, a mídia, a capa ou o formato o devolve para “Aguardando aprovação”.
+          Este conteúdo está aprovado. Mudar a legenda, a mídia, a capa, a pasta ou o formato o devolve para “Aguardando aprovação”.
         </p>}
         {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
       </form>

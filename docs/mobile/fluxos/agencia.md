@@ -132,8 +132,9 @@ stateDiagram-v2
 
 | método | rota | permissão | o que faz |
 |---|---|---|---|
-| `GET` | `…/clients/:clientId/contents` | `conteudo.visualizar` | conteúdos e roteiros de um período (calendário e feed) |
-| `POST` | `…/clients/:clientId/contents` | `conteudo.operar` | cria, em produção |
+| `GET` | `…/clients/:clientId/contents` | `conteudo.visualizar` | conteúdos e roteiros de um período (calendário e feed em tela cheia) |
+| `GET` | `…/clients/:clientId/contents/feed?cursor=` | `conteudo.visualizar` | o feed inteiro do cliente (image, carousel e reels não cancelados), do mais recente ao mais antigo, 9 por página; os contadores só vêm na primeira página (`null` nas outras) e há limite de 300 leituras por minuto por pessoa (`429 RATE_LIMITED` com `Retry-After`) |
+| `POST` | `…/clients/:clientId/contents` | `conteudo.operar` | cria, em produção. Sem `mediaAssetIds` no corpo, o conteúdo **herda a mídia da pasta** (a que serve ao formato); com a lista, vale a lista, e `[]` cria sem mídia |
 | `GET` | `…/clients/:clientId/contents/:contentId` | `conteudo.visualizar` | detalhe com as mídias, as subtarefas e a conversa |
 | `PATCH` | `…/clients/:clientId/contents/:contentId` | `conteudo.operar` | edita; mudar a data é editar `publishOn` |
 | `POST` | `…/clients/:clientId/contents/:contentId/submit` | `conteudo.operar` | envia para aprovação (ou reenvia depois do ajuste) |
@@ -277,6 +278,7 @@ sequenceDiagram
 - Só imagem e vídeo; outros tipos recebem `415 UNSUPPORTED_MEDIA_TYPE`.
 - A mídia conta na cota da agência (`409 QUOTA_EXCEEDED`).
 - Um conteúdo só usa mídias da pasta do próprio cliente.
+- Escolher a pasta dá ao conteúdo a mídia que serve ao formato (carrossel: toda, até 20; os outros: a primeira), uma vez; mídia nova na pasta não entra em conteúdo existente. Trocar a pasta é permitido e substitui a mídia e a capa: o aprovado volta para "aguardando aprovação", e o app confirma antes. Pasta vazia deixa o conteúdo sem mídia; um conteúdo que aguarda ou está aprovado recusa a troca que o deixa sem mídia, e `mediaAssetIds: []` nele também volta `CONTENT_MEDIA_INCOMPLETE`. O envio de arquivo na criação do conteúdo vai para a pasta e entra no conteúdo. `CONTENT_FOLDER_IN_USE` não existe mais.
 - Mídia usada em conteúdo aguardando aprovação, aprovado ou publicado não pode ser removida.
 
 ## Equipe

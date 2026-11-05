@@ -649,7 +649,7 @@ describe('breakpoints of docs/design-system.md 19', () => {
   const used = (): Set<string> => new Set([...css.matchAll(/@media \((?:min|max)-width: (\d+(?:\.\d+)?rem)\)/g)].map((match) => match[1]!));
 
   it('registers the points and their complements, not the width of a card that has no breakpoint', () => {
-    expect([...registered()].sort()).toEqual(['40.0625rem', '40rem', '47.99rem', '48rem', '64rem']);
+    expect([...registered()].sort()).toEqual(['40.0625rem', '40rem', '47.99rem', '48rem', '64rem', '80rem']);
   });
 
   it('registers every width a media query of the stylesheet uses', () => {

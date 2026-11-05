@@ -27,6 +27,7 @@ import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS } from './portal-status.js';
+import { RecoverableVideo } from './recoverable-video.js';
 import { COMMENT_MESSAGES, RequestChangesDialog, type RequestError } from './request-changes-dialog.js';
 import { signUpEmailState } from './sign-up.js';
 import { URL_MARGIN_MS } from './signed-url.js';
@@ -298,35 +299,34 @@ function Slide({ content, item, position, total }: {
   total: number;
 }) {
   const [failed, setFailed] = useState(false);
-  // The address a video was playing from: a new `src` would restart it, so it keeps this one until it stops, ends or fails.
-  const [playingFrom, setPlayingFrom] = useState<string | undefined>();
   const asVideo = item.kind === 'video';
   const original = useApprovalMediaUrl(content.id, item.id, 'original');
   const poster = useApprovalMediaUrl(content.id, isVideoFormat(content.format) ? (content.coverAssetId ?? item.id) : item.id, 'thumbnail', asVideo);
-  const url = failed ? usableUrl(original.data) : playingFrom ?? usableUrl(original.data);
+  const url = usableUrl(original.data);
   const posterUrl = usableUrl(poster.data);
 
   if (original.isPending) return <Skeleton className="approval-post__skeleton" aria-busy="true" />;
-  if (url === undefined || failed) {
+  if (url === undefined || (failed && !asVideo)) {
     return <div className="approval-post__problem" role="alert">
       <p>{MESSAGES.mediaFailed}</p>
       <Button variant="secondary" loading={original.isFetching} onClick={() => { void original.refetch().then(() => { setFailed(false); }); }}>Tentar de novo</Button>
     </div>;
   }
   const label = `${content.title}: mídia ${position} de ${total}`;
+  // A video that is playing keeps its address (a new `src` would restart it) and, when the browser refuses it after it
+  // expired, asks for another through the same request as the renewal and goes on from where it was.
   return asVideo
-    ? <video
+    ? <RecoverableVideo
       className="approval-post__item"
-      src={url}
+      problemClassName="approval-post__problem"
+      url={url}
       poster={posterUrl}
-      controls
-      playsInline
-      preload="metadata"
-      aria-label={label}
-      onPlay={() => { setPlayingFrom(url); }}
-      onPause={() => { setPlayingFrom(undefined); }}
-      onEnded={() => { setPlayingFrom(undefined); }}
-      onError={() => { setPlayingFrom(undefined); setFailed(true); }}
+      label={label}
+      refreshing={original.isFetching}
+      refresh={async () => {
+        const answer = await original.refetch();
+        return answer.isError ? undefined : usableUrl(answer.data);
+      }}
     />
     : <img className="approval-post__item" src={url} alt={label} onError={() => { setFailed(true); }} />;
 }
