@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const root = fileURLToPath(new URL('../', import.meta.url));
+execFileSync(process.execPath, [require.resolve('expo/bin/cli'), 'export', '--platform', 'web', '--output-dir', 'launch-dist/presentation'], { cwd: root, stdio: 'inherit', env: { ...process.env, EXPO_PUBLIC_PRESENTATION_FEATURES: 'true' } });
+const output = resolve(root, 'launch-dist/presentation');
+const html = readFileSync(resolve(output, 'index.html'), 'utf8');
+const paths = [...html.matchAll(/src="(\/_expo\/[^"?]+\.js)"/g)].map((match) => match[1]);
+assert.ok(paths.length, 'The exported HTML must reference its web bundle.');
+const entry = paths.map((path) => readFileSync(resolve(output, `.${path}`), 'utf8')).join('\n');
+const chunks = readdirSync(resolve(output, '_expo/static/js/web')).filter((name) => /^PresentationApp-.*\.js$/.test(name));
+assert.equal(chunks.length, 1, 'The web platform must resolve the presentation entry.');
+assert.ok(entry.includes(chunks[0]), 'The web entry must load the presentation chunk.');
+const bundle = `${entry}\n${readFileSync(resolve(output, '_expo/static/js/web', chunks[0]), 'utf8')}`;
+for (const marker of ['Antecipe os atrasos', 'DEMO-', 'ageniza-academic-demo', '/apresentacao']) assert.ok(bundle.includes(marker), `Presentation web entry missing: ${marker}`);
+assert.ok(readFileSync(resolve(output, 'presentation-notifications.js'), 'utf8').includes("addEventListener('notificationclick'"));
+console.log('Presentation web entry, ML, billing and notification worker verified.');
