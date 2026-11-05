@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildTestApp, TEST_APP_PUBLIC_URL, type TestApp } from '../auth/test-support/harness.js';
 import { createRecorder, createWorld, type Person, type World } from './test-support/world.js';
+import { cardDataSnapshot } from './test-support/card-data-snapshot.js';
 
 // Issue #772 and the contracts of the security review of #781: the simulated payment is the only path that confirms a charge here.
 // It fails closed, it ties the charge to the agency of the Owner who pays before it confirms anything, it validates what the provider
@@ -315,7 +316,7 @@ describe('no part of a card reaches the server', () => {
     const agency = await world.agency(owner);
     const chargeId = await open(owner, agency);
     expect((await world.call(owner, 'POST', payUrl(agency, chargeId), { outcome: 'approved' })).statusCode).toBe(200);
-    const rows = JSON.stringify([
+    const rows = cardDataSnapshot([
       await world.chargesOf(agency),
       await world.subscriptionOf(agency),
       (await world.owner.knex.raw('select * from audit.events where agency_id = ?', [agency])).rows
