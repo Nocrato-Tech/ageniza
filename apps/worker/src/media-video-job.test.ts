@@ -100,7 +100,7 @@ class TestBinaryError extends Error {
 }
 
 /** The job with its collaborators replaced: what the ffmpeg steps do is chosen by each test, and the calls on the row are recorded. */
-const loadJob = async (steps: { probe?: () => Promise<unknown>; thumbnail?: () => Promise<void>; preview?: () => Promise<void>; download?: (options: { signal: AbortSignal }) => Promise<void> }) => {
+const loadJob = async (steps: { probe?: (path: string, options: { signal: AbortSignal }) => Promise<unknown>; thumbnail?: (input: string, output: string, options: { signal: AbortSignal }) => Promise<void>; preview?: (input: string, output: string, options: { signal: AbortSignal }) => Promise<void>; download?: (options: { signal: AbortSignal }) => Promise<void>; upload?: (options: { key: string; signal: AbortSignal }) => Promise<void> }) => {
   vi.resetModules();
   const row = { failed: [] as string[], retrying: 0, ready: 0 };
   vi.doMock('node:fs/promises', async (importOriginal) => ({
@@ -125,7 +125,7 @@ const loadJob = async (steps: { probe?: () => Promise<unknown>; thumbnail?: () =
     withAuthenticatedUserTransaction: vi.fn(async (_db: unknown, _claims: unknown, work: (t: unknown) => unknown) => work({}))
   }));
   const { mediaVideoProcessingJob: build } = await import('./media-video-job.js');
-  const storage = { downloadToFile: vi.fn(steps.download ?? (async () => undefined)), uploadFile: vi.fn(async () => undefined), deleteObject: vi.fn(async () => undefined) };
+  const storage = { downloadToFile: vi.fn(steps.download ?? (async () => undefined)), uploadFile: vi.fn(steps.upload ?? (async () => undefined)), deleteObject: vi.fn(async () => undefined) };
   const definition = build({
     database: {} as never,
     storage: storage as never,
@@ -195,6 +195,35 @@ describe('a video that ran out of time is not tried again', () => {
     }
   });
 
+  it('does not take a shutdown that stops an encode for a time-out either: the binary says ABORTED and the job is retried', async () => {
+    const shutdown = new AbortController();
+    const job = await loadJob({
+      preview: async () => {
+        shutdown.abort();
+        throw new TestBinaryError('ABORTED');
+      }
+    });
+    await expect(job.run(1, shutdown.signal)).rejects.toThrow();
+    expect(job.row.failed).toEqual([]);
+    expect(job.row.retrying).toBe(1);
+    expect(job.logger.error).not.toHaveBeenCalled();
+    unmock();
+  });
+
+  it('records a shutdown that stops the encode on the last attempt as a final failure, with the aborted reason', async () => {
+    const shutdown = new AbortController();
+    const job = await loadJob({
+      preview: async () => {
+        shutdown.abort();
+        throw new TestBinaryError('ABORTED');
+      }
+    });
+    await expect(job.run(4, shutdown.signal)).rejects.toThrow();
+    expect(job.row.failed).toEqual(['processing_aborted']);
+    expect(job.row.retrying).toBe(0);
+    unmock();
+  });
+
   it('does not take a shutdown of the worker for a time-out: that one is still retried', async () => {
     const shutdown = new AbortController();
     const job = await loadJob({
@@ -207,5 +236,44 @@ describe('a video that ran out of time is not tried again', () => {
     expect(job.row.failed).toEqual([]);
     expect(job.row.retrying).toBe(1);
     unmock();
+  });
+});
+
+describe('the budget of the whole job reaches every step that can stall', () => {
+  type Step = 'download' | 'probe' | 'thumbnail' | 'preview' | 'upload of the thumbnail' | 'upload of the preview';
+  const steps: readonly Step[] = ['download', 'probe', 'thumbnail', 'preview', 'upload of the thumbnail', 'upload of the preview'];
+
+  it.each(steps)('hands the %s the signal that hears the end of the budget, not only the one of the queue', async (step) => {
+    const budget = new AbortController();
+    const real = AbortSignal.timeout.bind(AbortSignal);
+    let first = true;
+    const spy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((milliseconds: number) => {
+      if (first) { first = false; return budget.signal; }
+      return real(milliseconds);
+    });
+    try {
+      let heard: boolean | undefined;
+      // The budget ends inside the step under test; what the step was handed must already know it.
+      const stall = async (signal: AbortSignal): Promise<never> => {
+        budget.abort();
+        heard = signal.aborted;
+        throw new DOMException('aborted', 'AbortError');
+      };
+      const job = await loadJob({
+        download: step === 'download' ? ({ signal }) => stall(signal) : undefined,
+        probe: step === 'probe' ? (_path, options) => stall(options.signal) : undefined,
+        thumbnail: step === 'thumbnail' ? (_input, _output, options) => stall(options.signal) : undefined,
+        preview: step === 'preview' ? (_input, _output, options) => stall(options.signal) : undefined,
+        upload: step.startsWith('upload')
+          ? async ({ key, signal }) => { if (key.endsWith(step === 'upload of the thumbnail' ? 'thumbnail.jpg' : 'preview.mp4')) await stall(signal); }
+          : undefined
+      });
+      await expect(job.run(1)).resolves.toBeUndefined();
+      expect(heard).toBe(true);
+      expect(job.row.failed).toEqual(['processing_timed_out']);
+    } finally {
+      spy.mockRestore();
+      unmock();
+    }
   });
 });
