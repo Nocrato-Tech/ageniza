@@ -124,8 +124,9 @@ describe('content editor recovery', () => {
     render(<ContentEditor data={data} repository={repository} clientId={clientId} busy={false} onSave={save} onError={() => {}} onRefresh={async () => {}} />);
     fireEvent.change(screen.getByRole('textbox', { name: 'Título interno *' }), { target: { value: 'Conteúdo real' } });
     await waitFor(() => expect(screen.queryByText('Carregando biblioteca…')).toBeNull());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Continuar para conteúdo' }).getAttribute('aria-disabled')).not.toBe('true'));
     fireEvent.click(screen.getByRole('button', { name: 'Continuar para conteúdo' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Conferir prévia' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Conferir prévia' }));
     fireEvent.click(screen.getByRole('button', { name: 'Criar conteúdo' }));
     expect(await screen.findByText('Conteúdo já criado')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
