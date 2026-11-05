@@ -1,4 +1,4 @@
-import type { AgencyMeResponse, ClientListResponse, CollaboratorListResponse, ContentDetail, ContentPeriodResponse, Context, CreateMediaUploadResponse, MediaFolder, MediaFolderAsset, PortalClientResponse, PortalContentDetail, PortalContentPeriodResponse, RequestMediaUploadPartsResponse } from '@ageniza/contracts';
+import type { AgencyMeResponse, ClientListResponse, CollaboratorListResponse, ContentDetail, ContentPeriodResponse, Context, CreateMediaUploadResponse, MediaFolder, MediaFolderAsset, PortalClientResponse, PortalContentDetail, PortalContentPeriodResponse, PortalContentAwaitingResponse, RequestMediaUploadPartsResponse } from '@ageniza/contracts';
 import { CreateContentRequestSchema, UpdateContentRequestSchema, CreateContentTaskRequestSchema, PortalApproveContentRequestSchema, PortalRequestContentChangesRequestSchema, CreateClientRequestSchema, UpdateMyProfileRequestSchema, CreateMediaFolderRequestSchema, CommentBodySchema, UpdateContentTaskRequestSchema, ApproveContentByAgencyRequestSchema, PublishContentRequestSchema, RescheduleContentRequestSchema } from '@ageniza/contracts';
 import type { ApiClient } from '../api/client';
 import type { Asset, Client, Comment, Data, Folder, Post, PostInput, Repository } from './types';
@@ -19,7 +19,7 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
   const repo: Repository = {
     demo: false, context,
     load: async (from, to) => {
-      const data = { ...empty, clients: [] as Client[], posts: [] as Post[], folders: [] as Folder[], assets: [] as Asset[] };
+      const data = { ...empty, clients: [] as Client[], posts: [] as Post[], pendingApprovals: [] as Post[], folders: [] as Folder[], assets: [] as Asset[] };
       if (agency) {
         const me = await api.request<AgencyMeResponse>(`${root}/me`);
         data.permissions = me.permissions; data.readOnly = me.plan.readOnly;
@@ -43,6 +43,8 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
         data.readOnly = client.agencyReadOnly; data.onboardingPending = client.onboardingSeenAt === null;
         const period = await api.request<PortalContentPeriodResponse>(`${base(clientId)}/contents?from=${from}&to=${to}`);
         data.posts = period.data.map((post) => ({ ...fromDetail(clientId, post.status === 'in_production' ? post : { ...post, revision: 0, caption: null, media: [] }), thumbnailId: 'thumbnailAssetId' in post ? post.thumbnailAssetId : null }));
+        const awaiting = await all<PortalContentAwaitingResponse['data'][number]>(`${base(clientId)}/contents/awaiting-approval`);
+        data.pendingApprovals = awaiting.map((post) => ({ ...fromDetail(clientId, { ...post, revision: 0, caption: null, media: [] }), thumbnailId: post.thumbnailAssetId }));
       }
       data.activities = data.posts.filter((post) => agency ? post.status === 'adjusting' || post.status === 'awaiting_approval' : post.status === 'awaiting_approval' || post.status === 'published').map((post) => ({ id: `${post.id}:${post.status}:${post.revision}`, title: post.status === 'adjusting' ? 'Ajuste solicitado' : post.status === 'published' ? 'Conteúdo publicado' : agency ? 'Aguardando o cliente' : 'Sua aprovação está pendente', body: post.title, postId: post.id, read: false, at: post.date }));
       return data;

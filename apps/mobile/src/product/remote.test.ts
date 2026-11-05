@@ -40,7 +40,7 @@ describe('real API adapter boundaries', () => {
     expect(request).not.toHaveBeenCalled();
   });
   it('honors portal read-only status and does not synthesize private content fields', async () => {
-    const request = vi.fn().mockImplementation(async (path: string) => path.includes('/contents?') ? { data: [{ id: contentId, title: 'Em produção', format: 'image', status: 'in_production', publishOn: '2026-11-12' }] } : { name: 'Clínica', instagramHandle: 'clinica', agencyReadOnly: true });
+    const request = vi.fn().mockImplementation(async (path: string) => path.includes('/awaiting-approval?') ? { data: [], meta: { totalPages: 1 } } : path.includes('/contents?') ? { data: [{ id: contentId, title: 'Em produção', format: 'image', status: 'in_production', publishOn: '2026-11-12' }] } : { name: 'Clínica', instagramHandle: 'clinica', agencyReadOnly: true });
     const data = await remoteRepository(client(request), { type: 'client', clientId, clientName: 'Clínica', agencyId, agencyName: 'Agência', onboardingPending: false }).load('2026-11-01', '2026-11-30');
     expect(data.readOnly).toBe(true);
     expect(data.posts[0].caption).toBe(''); expect(data.posts[0].tasks).toEqual([]); expect(data.posts[0].mediaIds).toEqual([]);
@@ -84,5 +84,25 @@ describe('real API adapter boundaries', () => {
     const data = await repo.load('2026-11-01', '2026-11-30');
     expect(data.assets).toEqual([]);
     expect(request.mock.calls.some(([path]) => String(path).includes('media-folders'))).toBe(false);
+  });
+});
+
+
+describe('portal approval inbox', () => {
+  it('loads every pending page independently of the calendar month and only from its own portal', async () => {
+    const first = { ...post, publishOn: '2026-10-15', thumbnailAssetId: null };
+    const second = { ...post, id: '44444444-4444-4444-8444-444444444444', publishOn: '2026-12-10', thumbnailAssetId: null };
+    const request = vi.fn().mockImplementation(async (path: string) => {
+      if (path.includes('/awaiting-approval?')) return { data: [path.includes('page=2&') ? second : first], meta: { totalPages: 2 } };
+      if (path.includes('/contents?')) return { data: [] };
+      return { name: 'Marca', instagramHandle: null, agencyReadOnly: false, onboardingSeenAt: '2026-10-01' };
+    });
+    const repo = remoteRepository(client(request), { type: 'client', clientId, clientName: 'Marca', agencyId, agencyName: 'Agência', onboardingPending: false });
+    const data = await repo.load('2026-11-01', '2026-11-30');
+    expect(data.posts).toEqual([]);
+    expect(data.pendingApprovals?.map((item) => [item.id, item.date])).toEqual([[contentId, '2026-10-15'], [second.id, '2026-12-10']]);
+    expect(request.mock.calls.filter(([path]) => String(path).includes('/awaiting-approval?'))).toEqual([[`/clients/${clientId}/contents/awaiting-approval?page=1&pageSize=100`], [`/clients/${clientId}/contents/awaiting-approval?page=2&pageSize=100`]]);
+    expect(request.mock.calls.every(([path]) => String(path).startsWith(`/clients/${clientId}`))).toBe(true);
+    expect(data.pendingApprovals?.every((item) => item.caption === '' && item.mediaIds.length === 0)).toBe(true);
   });
 });
