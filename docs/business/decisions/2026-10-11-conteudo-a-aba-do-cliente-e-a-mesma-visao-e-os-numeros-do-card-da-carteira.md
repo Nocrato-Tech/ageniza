@@ -2,8 +2,6 @@
 
 **Data.** 2026-10-11
 
-> Os itens 1 a 3 foram substituídos em 2026-11-04 por [`2026-11-04-o-perfil-do-cliente-nao-tem-copia-do-calendario`](2026-11-04-o-perfil-do-cliente-nao-tem-copia-do-calendario.md); os itens 4 a 6 seguem valendo.
-
 **Contexto.** A #272 pede que a aba Conteúdos do detalhe do cliente (`/agencia/:agenciaId/clientes/:clienteId/conteudos`) mostre "a mesma visão de Conteúdos daquele cliente" e que os indicadores da #261 e a ordem por atraso entrem na carteira (`specs/conteudo.md` seções 2 e 7). A SPEC não diz onde mora o modal do conteúdo quando se está na aba, quem vê a aba, nem como os três números aparecem no card. O que ela deixa em aberto, e alguém tentaria de novo:
 
 **Decisão.**

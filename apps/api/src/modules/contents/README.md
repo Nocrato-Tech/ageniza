@@ -49,9 +49,9 @@ O celular ao lado do calendário lê o feed do cliente inteiro, sem período (de
 `2026-11-04-o-celular-do-calendario-mostra-o-feed-inteiro-do-cliente`). É a leitura própria porque a consulta por
 período tem teto de 93 dias e 500 itens. `GET .../contents/feed?cursor=`: só `image`, `carousel` e `reels`, sem
 cancelados, da data mais recente para a mais antiga (dia, hora e id, todos decrescentes; sem hora conta como o fim do dia),
-9 itens por página. A resposta é `{ data: { contents, nextCursor, counters: { posts, approved, awaitingApproval } },
+9 itens por página. A resposta é `{ data: { contents, nextCursor, counters: { posts, approved, awaitingApproval } | null },
 meta: { count } }`: o item tem o formato do item da consulta por período, `nextCursor` é `null` na última página e
-os contadores são do feed inteiro, não da página. O cursor é opaco (base64url de dia, hora e id do último post da
+os contadores são do feed inteiro, não da página, e vêm só na primeira página (sem `cursor`); nas seguintes `counters` é `null` e quem lê guarda o que a primeira disse. A rota tem limite de 300 leituras por minuto por pessoa: a 301ª responde `429 RATE_LIMITED` com `Retry-After`. O cursor é opaco (base64url de dia, hora e id do último post da
 página) e vai de volta sem mudar; um que a rota não devolveu é `400 VALIDATION_ERROR`. O cliente é sempre o do caminho,
 na agência do caminho (outro cliente ou outra agência é o mesmo `404`), e o cliente arquivado também responde. Sem
 migration: o índice `(client_id, publish_on)` basta para a ordem e para os contadores no tamanho de um cliente.

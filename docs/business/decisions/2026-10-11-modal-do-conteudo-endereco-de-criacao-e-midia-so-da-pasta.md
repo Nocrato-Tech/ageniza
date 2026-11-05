@@ -2,8 +2,6 @@
 
 **Data.** 2026-10-11
 
-> O item 4 e a parte do item 2 que dizia que o modal não sobe arquivo foram substituídos em 2026-11-04 por [`2026-11-04-a-pasta-e-como-um-drive-o-conteudo-herda-a-midia-e-troca-de-pasta`](2026-11-04-a-pasta-e-como-um-drive-o-conteudo-herda-a-midia-e-troca-de-pasta.md); o resto segue valendo.
-
 **Contexto.** A #264 abre o conteúdo num modal com endereço compartilhável (`/agencia/:agenciaId/conteudos/:clienteId/:conteudoId`) e traz a criação (o "Criar conteúdo" da barra e a opção "Conteúdo" do **+** do dia, que esperavam este modal). A SPEC (seção 7) desenha o formulário, mas não diz qual é o endereço da criação, de onde vem a mídia dentro do modal, nem o que a tela faz quando a API recusa trocar a pasta de um conteúdo que já tem mídia. Decisão tomada pela Âncora ao implementar a parte A da #264 (ver, editar e criar), para a validação do dono.
 
 **Decisão.**

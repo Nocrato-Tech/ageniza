@@ -2,8 +2,6 @@
 
 **Data.** 2026-10-16
 
-> A vista Feed e o seletor voltaram em 2026-11-04 ([`2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga`](2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga.md)): o primeiro item (o seletor sai inteiro) foi substituído; os demais seguem valendo.
-
 **Contexto.** A tela de Conteúdos de um cliente (`/agencia/:agenciaId/conteudos/:clienteId`, e a aba Conteúdos do detalhe, que mostra a mesma visão) tinha um seletor de três vistas: Calendário, Feed e Pastas (decisões de 2026-10-11, "O feed da agência é a grade do período e vista própria" e "A aba do cliente é a mesma visão"). Em teste manual, em 2026-10-16, o dono viu que o celular desenhado à direita do calendário já é o feed, e que a vista Feed repetia a mesma grade no lugar do calendário. Perguntado onde ficariam as pastas, que só eram alcançáveis por essa vista (`?vista=pastas`), decidiu que ganham um lugar próprio.
 
 **Decisão.**

@@ -14,12 +14,14 @@
 
 Esta decisão **substitui os itens 1 a 3** da de 2026-10-11 (uma visão em dois endereços, o modal na aba, os dois endereços ligados). **Os itens 4 a 6 seguem valendo:** quem vê o que era a aba (agora o botão e a aba Mídias), os três números do card da carteira e a ordem da API.
 
+**Substitui.** Os itens 1 a 3 de [`2026-10-11-conteudo-a-aba-do-cliente-e-a-mesma-visao-e-os-numeros-do-card-da-carteira`](2026-10-11-conteudo-a-aba-do-cliente-e-a-mesma-visao-e-os-numeros-do-card-da-carteira.md); os itens 4 a 6 seguem valendo.
+
 **Consequência.**
 
 - O modo `tab`/`pinned` da tela do cliente e o `ContentsHomeContext` saem; `content-address.ts` guarda só o endereço da tela.
 - Quem guardou um link da aba continua chegando ao mesmo lugar.
 - Se o dono quiser a aba de volta, é reverter esta decisão e a rota.
 
-**Origem.** Dono, em 2026-11-04, nesta sessão. Substitui os itens 1 a 3 de `2026-10-11-conteudo-a-aba-do-cliente-e-a-mesma-visao-e-os-numeros-do-card-da-carteira`.
+**Origem.** Dono, em 2026-11-04, nesta sessão.
 
 **Validação.** Pendente de validação do dono.

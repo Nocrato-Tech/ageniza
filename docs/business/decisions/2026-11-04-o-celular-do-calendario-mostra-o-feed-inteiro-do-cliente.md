@@ -17,6 +17,8 @@
 
 **Consequência.** Substitui, para o celular ao lado do calendário, a paginação "nove por página" com "1–9 de N" das decisões de 2026-10-16. Uma segunda leitura do mesmo conteúdo (o feed) existe agora ao lado da consulta por período; as duas devolvem o mesmo formato de item e quem muda um filtro do feed muda os dois lados (a leitura e a tela).
 
+**Substitui.** Para o celular ao lado do calendário, a paginação de nove em nove, o contador "1–9 de N" e os contadores do período de [`2026-10-16-feed-do-celular-de-nove-em-nove-e-quadro-nada-neste-dia`](2026-10-16-feed-do-celular-de-nove-em-nove-e-quadro-nada-neste-dia.md). O resto dela segue valendo.
+
 **Origem.** Pedido do dono no teste manual de 2026-11-04.
 
 **Validação.** Pendente de validação do dono.

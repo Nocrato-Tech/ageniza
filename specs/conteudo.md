@@ -249,8 +249,8 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 
 | tela | rota | o que mostra | quem acessa |
 |---|---|---|---|
-| Conteúdos | `/agencia/:agenciaId/conteudos` | seletor de clientes em stories | `conteudo.visualizar` |
-| Conteúdos do cliente (Calendário Editorial) | `/agencia/:agenciaId/conteudos/:clienteId` | seletor Mês, Semana e Feed (`?visao=`); no Mês e na Semana, o calendário e, ao lado, o celular com o feed 3×3 | `conteudo.visualizar` |
+| Calendário Editorial | `/agencia/:agenciaId/conteudos` | seletor de clientes em stories | `conteudo.visualizar` |
+| Calendário Editorial do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | seletor Mês, Semana e Feed (`?visao=`); no Mês e na Semana, o calendário e, ao lado, o celular com o feed 3×3 | `conteudo.visualizar` |
 | Modal do conteúdo | `/agencia/:agenciaId/conteudos/:clienteId/:conteudoId` | abas Geral e Atribuição | `conteudo.visualizar` |
 | Aba Conteúdos do cliente (extinta) | `/agencia/:agenciaId/clientes/:clienteId/conteudos[/novo\|/:conteudoId]` | não há mais aba: o endereço redireciona (com `replace`, mantendo a query e o estado de navegação) para o equivalente em `/conteudos/:clienteId`; o perfil do cliente tem o botão "Abrir no Calendário Editorial" (decisão `2026-11-04-o-perfil-do-cliente-nao-tem-copia-do-calendario`) | `conteudo.visualizar` (sem ela, "não encontrado") |
 | Aba Mídias do cliente | `/agencia/:agenciaId/clientes/:clienteId/midias` | as pastas e as mídias do cliente, com o envio; o endereço antigo `…/conteudos/:clienteId?vista=pastas` leva para cá | `conteudo.visualizar` (escrever: `conteudo.operar`) |
@@ -268,16 +268,16 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 │ ( ◉ )  ( ◉ )  ( ○ )  ( ○ )  ( ○ )   ← clientes em stories         │
 │ Padaria Ótica  Café   Moda   Pet       anel = algo pedindo ação   │
 ├──────────────────────────────────────┬────────────────────────────┤
-│ ‹ Outubro 2026 ›   [Mês|Semana]      │  @padariacentral           │
+│ ‹ Outubro 2026 ›  [Mês|Semana|Feed]  │  @padariacentral           │
 │ [+ Criar conteúdo]                   │ ┌──┬──┬──┐                 │
 │                                      │ │  │  │  │  feed 3×3       │
 │ seg  ter  qua  qui  sex  sáb  dom    │ ├──┼──┼──┤  mais recente   │
 │      ┌─────┐       ┌─────┐           │ │  │  │  │  primeiro;      │
-│      │capa │       │capa │  +        │ ├──┼──┼──┤  futuros com    │
-│      │título│      │título│          │ │  │  │  │  marca de       │
-│      │reels│       │🎬 ⚠ │           │ └──┴──┴──┘  planejado      │
-│      │2/4  │       │      │          │                            │
-│      └─────┘       └─────┘  stories ●│                            │
+│      │título│      │título│  +       │ ├──┼──┼──┤  futuros com    │
+│      │reels │       │reels │         │ │  │  │  │  marca de       │
+│      │18:30 │       │⚠ 2/4 │         │ └──┴──┴──┘  planejado      │
+│      └─────┘       └─────┘           │                            │
+│                             stories ●│                            │
 └──────────────────────────────────────┴────────────────────────────┘
 ```
 
@@ -344,7 +344,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 | Admin, Owner | tudo |
 | Gestor de conta | tudo |
 | Produção | opera e publica; sem Aprovar pela agência, sem Cancelar |
-| Vendas, Financeiro | o item Conteúdos, a aba Mídias e o botão "Abrir no Calendário Editorial" do perfil não existem; carteira sem indicadores de conteúdo |
+| Vendas, Financeiro | o item Calendário Editorial, a aba Mídias e o botão "Abrir no Calendário Editorial" do perfil não existem; carteira sem indicadores de conteúdo |
 | Pessoa do portal | aprova, pede ajuste, comenta a partir de aguardando aprovação, marca roteiro como gravado |
 
 ### Estados da tela

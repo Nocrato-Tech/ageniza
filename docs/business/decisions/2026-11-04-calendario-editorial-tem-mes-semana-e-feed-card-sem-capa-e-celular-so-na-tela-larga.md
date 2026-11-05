@@ -11,7 +11,7 @@
 3. **Card sem capa.** O card do calendário é compacto e **não mostra a capa**: título, formato, data e hora, o estado (com o tom do estado), o alerta de prazo ou atraso e o percentual das subtarefas. Um toque em qualquer ponto do card abre o conteúdo; arrastar não abre. O dia com muitos conteúdos mostra o resumo **+N**, que abre a semana daquele dia.
 4. **Celular só na tela larga.** O celular ao lado do calendário aparece a partir de 48 rem de largura e, abaixo disso, **fica escondido**. Em tela estreita o caminho para ver o feed é a vista **Feed** do seletor. Entre 48 rem e 80 rem o celular fica abaixo do calendário.
 
-**Substitui em parte** a decisão de 2026-10-16 `pastas-viram-a-aba-midias-do-cliente-e-o-feed-deixa-de-ser-vista`, no que ela diz que o seletor de vistas sai inteiro e que `?vista=feed` não tem efeito: o seletor volta com a vista Feed. O resto dela (as pastas na aba Mídias, o redirecionamento de `?vista=pastas`) segue valendo.
+**Substitui.** O primeiro item de [`2026-10-16-pastas-viram-a-aba-midias-do-cliente-e-o-feed-deixa-de-ser-vista`](2026-10-16-pastas-viram-a-aba-midias-do-cliente-e-o-feed-deixa-de-ser-vista.md), no que ela diz que o seletor de vistas sai inteiro e que `?vista=feed` não tem efeito: o seletor volta com a vista Feed. O resto dela (as pastas na aba Mídias, o redirecionamento de `?vista=pastas`) segue valendo.
 
 **Consequência.**
 
