@@ -1,0 +1,10 @@
+import { View } from 'react-native';
+import { Info, Txt, colors } from './ui';
+import type { UploadProgress } from './types';
+
+const labels = { preparing: 'Preparando arquivo', sending: 'Enviando arquivo', confirming: 'Confirmando envio', ready: 'Envio confirmado', failed: 'Não foi possível concluir o envio' };
+export function UploadStatus({ progress }: { progress?: UploadProgress }) {
+  if (!progress) return null;
+  const percent = progress.totalBytes > 0 ? Math.floor(progress.completedBytes / progress.totalBytes * 100) : 0;
+  return <View style={{ gap: 8 }} accessibilityLiveRegion="polite"><Info warning={progress.phase === 'failed'} title={`${labels[progress.phase]} · ${progress.name}`} text={progress.phase === 'ready' ? 'O arquivo foi recebido. Vídeos podem continuar em processamento; consulte o estado na biblioteca.' : progress.phase === 'failed' ? progress.completedBytes > 0 ? 'Parte do arquivo foi enviada, mas a confirmação não terminou. Confira a biblioteca antes de tentar novamente.' : 'Tente selecionar o arquivo novamente. Os demais arquivos foram mantidos.' : progress.phase === 'sending' ? progress.completedBytes > 0 ? `${percent}% das partes enviadas. A confirmação do arquivo ainda está pendente.` : 'Aguarde o envio do arquivo. O progresso será atualizado quando uma parte terminar.' : progress.phase === 'confirming' ? 'O servidor está conferindo o arquivo recebido.' : 'Conferindo o arquivo selecionado.'} />{progress.phase === 'sending' && progress.totalBytes > 0 && <><View accessibilityRole="progressbar" accessibilityLabel={`Envio de ${progress.name}`} accessibilityValue={{ min: 0, max: progress.totalBytes, now: progress.completedBytes }} style={{ height: 4, borderRadius: 4, backgroundColor: colors.border }}><View style={{ width: `${percent}%`, height: 4, borderRadius: 4, backgroundColor: colors.indigo }} /></View><Txt kind="small" color={colors.muted}>{(progress.completedBytes / 1024 ** 2).toFixed(1)} de {(progress.totalBytes / 1024 ** 2).toFixed(1)} MB enviados</Txt></>}</View>;
+}

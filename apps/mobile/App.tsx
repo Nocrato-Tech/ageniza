@@ -16,6 +16,7 @@ import type { Entry } from './src/auth/session';
 import { Button, Copy, Notice, styles, ThemeContext } from './src/ui/components';
 import { dark, light, space } from './src/ui/theme';
 import { MobileApp } from './src/product/MobileApp';
+import { clearDrafts } from './src/product/draft-store';
 import { logoutLocally } from './src/auth/logout';
 import { AccountAction } from './src/auth/AccountAction';
 import { parseAccountLink } from './src/auth/links';
@@ -35,7 +36,7 @@ export default function App() {
   const resolvingAccess = useRef(false);
   const active = entry?.kind === 'active';
   const t = active && entry.context.type === 'agency' ? dark : light;
-  const expire = useCallback(() => { generation.current += 1; setEntry(null); setRestoring(false); setRestoreFailure(''); setError(''); }, []);
+  const expire = useCallback(() => { try { if (typeof window !== 'undefined') clearDrafts(window.sessionStorage); } catch { /* Browser storage can be unavailable; session expiry must still complete. */ } generation.current += 1; setEntry(null); setRestoring(false); setRestoreFailure(''); setError(''); }, []);
   useEffect(() => {
     let alive = true;
     const receive = (url: string) => { const link = parseAccountLink(url, webUrl); if (alive && link) { if (typeof window !== 'undefined' && window.location) { if (link.kind === 'approval' && window.location.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search); else if ((link.kind === 'verify' || link.kind === 'reset') && window.location.pathname === '/app-mobile/') window.history.replaceState(null, '', window.location.pathname); } setAccountLink(link); } };

@@ -9,7 +9,7 @@ import { Action, Avatar, Card, Field, Heading, Info, InstagramPreview, Status, T
 import type { Data, Move, Post, Repository, Side } from './types';
 import { displayDay, formatNames } from '../contents/period';
 
-export function PostDetail({ post, data, side, repository, busy, onMove, onUpdate, onEdit, onError }: { post: Post; data: Data; side: Side; repository: Repository; busy: boolean; onMove(action: Move, comment?: string, date?: string): Promise<void>; onUpdate(action: () => Promise<Post>): Promise<boolean>; onEdit(): void; onError(message: string): void }) {
+export function PostDetail({ post, data, side, repository, busy, onMove, onUpdate, onEdit, onError }: { post: Post; data: Data; side: Side; repository: Repository; busy: boolean; onMove(action: Move, comment?: string, date?: string): Promise<void>; onUpdate(action: () => Promise<Post>, successMessage?: string): Promise<boolean>; onEdit(): void; onError(message: string): void }) {
   const [tab, setTab] = useState('summary');
   const [changes, setChanges] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
@@ -19,7 +19,7 @@ export function PostDetail({ post, data, side, repository, busy, onMove, onUpdat
   const can = (permission: string) => !data.readOnly && (data.permissions.includes('*') || data.permissions.includes(permission));
   const hidden = side === 'client' && post.status === 'in_production';
   const canEdit = side === 'agency' && can('conteudo.operar') && !['cancelled', 'published'].includes(post.status);
-  async function sendComment() { if (!comment.trim()) { onError('Escreva o comentário antes de enviar.'); return; } if (await onUpdate(() => repository.comment(post, comment))) setComment(''); }
+  async function sendComment() { if (!comment.trim()) { onError('Escreva o comentário antes de enviar.'); return; } if (await onUpdate(() => repository.comment(post, comment), 'Comentário enviado nesta publicação.')) setComment(''); }
   return <>
     <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={ui.body}>
       <View style={[ui.row, { justifyContent: 'space-between' }]}><Status status={post.status} client={side === 'client'} /><Txt kind="small" color={colors.muted}>Versão {post.revision || 1}</Txt></View>
