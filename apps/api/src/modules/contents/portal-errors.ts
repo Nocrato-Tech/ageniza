@@ -19,16 +19,17 @@ import { revisionChanged } from './transition-errors.js';
  * - `40P01` and `40001`: a lost race, "try again".
  */
 
-export type PortalContentAction = 'approve' | 'request-changes';
+export type PortalContentAction = 'approve' | 'request-changes' | 'withdraw-approval';
 
 const STATE_MESSAGES: Record<PortalContentAction, string> = {
   approve: 'Só um conteúdo aguardando aprovação é aprovado.',
-  'request-changes': 'Só um conteúdo aguardando aprovação recebe um pedido de ajuste.'
+  'request-changes': 'Só um conteúdo aguardando aprovação recebe um pedido de ajuste.',
+  'withdraw-approval': 'Só é possível desfazer a aprovação antes da publicação.'
 };
 
 export const notAwaitingApproval = (action: PortalContentAction): HttpError => new HttpError({
   statusCode: 409,
-  code: 'CONTENT_NOT_AWAITING_APPROVAL',
+  code: action === 'withdraw-approval' ? 'CONTENT_APPROVAL_CANNOT_BE_WITHDRAWN' : 'CONTENT_NOT_AWAITING_APPROVAL',
   message: STATE_MESSAGES[action]
 });
 

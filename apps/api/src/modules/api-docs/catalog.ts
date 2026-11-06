@@ -1926,6 +1926,31 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
   },
   {
     method: 'post',
+    path: '/clients/:clientId/contents/:contentId/withdraw-approval',
+    operationId: 'withdrawPortalContentApproval',
+    module: 'contents',
+    summary: 'Desfaz a aprovação de um conteúdo antes da publicação, no portal',
+    description: 'Uma pessoa ativa do portal devolve um conteúdo aprovado para aguardando aprovação. Preserva legenda, mídias e revisão; exige a revisão lida. Repetir na mesma revisão já aguardando aprovação não cria outro evento. Publicado ou em ajuste é conflito; outro cliente, cancelado, inexistente ou acesso removido é 404. Registra content.approval_withdrawn. Não é uma ação do link de aprovação sem conta.',
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: PortalContentPathParamsSchema,
+    body: PortalApproveContentRequestSchema,
+    requestExample: { revision: 1 },
+    responses: [{ status: 200, description: 'Conteúdo aguardando aprovação.', schema: PortalContentDetailSchema, example: { ...portalContentDetailExample, status: 'awaiting_approval' } }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND' },
+      { status: 409, code: 'CONTENT_APPROVAL_CANNOT_BE_WITHDRAWN' },
+      { status: 409, code: 'CONTENT_REVISION_CHANGED' },
+      { status: 409, code: 'AGENCY_READ_ONLY' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
     path: '/clients/:clientId/contents/:contentId/approve',
     operationId: 'approvePortalContent',
     module: 'contents',

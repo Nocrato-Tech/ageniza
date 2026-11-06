@@ -12,6 +12,8 @@ O portal é usado pela pessoa do cliente que tem conta, no contexto `client`. To
 
 ## Rotas
 
+No detalhe de um conteúdo aprovado, **Desfazer aprovação** abre uma confirmação. Confirmar chama `POST …/contents/:contentId/withdraw-approval` com `{ revision }` e devolve o conteúdo para aguardando aprovação, sem mudar legenda, mídias ou revisão. Qualquer pessoa ativa daquele portal pode fazê-lo. Não aparece para publicado, agência ou modo leitura. O servidor recusa revisão desatualizada e serializa com publicação e arquivamento. A repetição na mesma revisão já aguardando aprovação não cria outro evento. Links de aprovação sem conta não oferecem essa ação. Decisão: [cancelamento de aprovação](../../business/decisions/2026-11-06-cliente-pode-desfazer-aprovacao-antes-da-publicacao.md).
+
 | método | rota | o que faz |
 |---|---|---|
 | `GET` | `…` | cadastro do próprio cliente e o resumo do Início |

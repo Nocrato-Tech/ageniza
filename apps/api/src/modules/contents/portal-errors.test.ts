@@ -51,4 +51,10 @@ describe('the refusals of the database the portal answers by name (issue #257)',
       expect(translatePortalError(failure(code), 'approve')?.message).not.toMatch(/A00\d\d|40P01|40001|database/);
     }
   });
+
+  it('reports a withdrawal conflict separately from a decision awaiting approval', () => {
+    expect(answer('A0062', 'withdraw-approval')).toEqual({ status: 409, code: 'CONTENT_APPROVAL_CANNOT_BE_WITHDRAWN' });
+    expect(translatePortalError(failure('A0062'), 'withdraw-approval')?.message).toBe('Só é possível desfazer a aprovação antes da publicação.');
+    expect(answer('A0063', 'withdraw-approval')).toEqual({ status: 409, code: 'CONTENT_REVISION_CHANGED' });
+  });
 });

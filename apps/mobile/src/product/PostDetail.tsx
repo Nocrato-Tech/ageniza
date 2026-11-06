@@ -12,6 +12,7 @@ import { displayDay, formatNames } from '../contents/period';
 export function PostDetail({ post, data, side, repository, busy, onMove, onUpdate, onEdit, onError }: { post: Post; data: Data; side: Side; repository: Repository; busy: boolean; onMove(action: Move, comment?: string, date?: string): Promise<void>; onUpdate(action: () => Promise<Post>): Promise<boolean>; onEdit(): void; onError(message: string): void }) {
   const [tab, setTab] = useState('summary');
   const [changes, setChanges] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
   const [comment, setComment] = useState('');
   const client = data.clients.find((item) => item.id === post.clientId)!;
   const owner = data.people.find((person) => person.id === post.ownerId);
@@ -42,7 +43,7 @@ export function PostDetail({ post, data, side, repository, busy, onMove, onUpdat
       {side === 'agency' && can('conteudo.operar') && ['in_production', 'adjusting'].includes(post.status) && <Action label="Enviar para aprovação" busy={busy} onPress={() => void onMove('submit')} />}
       {side === 'agency' && can('conteudo.publicar') && post.status === 'approved' && <Action label="Marcar como publicado" busy={busy} onPress={() => void onMove('publish')} />}
       {side === 'client' && !data.readOnly && post.status === 'awaiting_approval' && (changes ? <><Action label="Enviar solicitação de ajuste" busy={busy} onPress={() => { if (!comment.trim()) { onError('Descreva o ajuste antes de enviar.'); return; } void onMove('changes', comment); }} /><Action plain label="Cancelar solicitação" onPress={() => setChanges(false)} /></> : <><Action label="Aprovar publicação" busy={busy} onPress={() => void onMove('approve')} /><Action plain label="Solicitar ajustes" onPress={() => { setChanges(true); setComment(''); }} /></>)}
-      {side === 'client' && post.status === 'approved' && <Info title="Conteúdo aprovado" text="A agência já pode seguir com a publicação." />}
+      {side === 'client' && post.status === 'approved' && <><Info title="Conteúdo aprovado" text="A agência já pode seguir com a publicação." />{!data.readOnly && (withdrawing ? <><Info warning title="Desfazer esta aprovação?" text="O conteúdo voltará para aguardando aprovação. A legenda e as mídias serão mantidas." /><Action label="Confirmar retirada da aprovação" busy={busy} onPress={() => void onMove('withdraw-approval')} /><Action plain label="Manter aprovado" disabled={busy} onPress={() => setWithdrawing(false)} /></> : <Action plain label="Desfazer aprovação" disabled={busy} onPress={() => setWithdrawing(true)} />)}</>}
       {side === 'client' && post.status === 'adjusting' && <Info title="Ajustes enviados" text="A agência recebeu seu pedido. Uma nova versão será enviada para revisão." />}
     </View>}
   </>;

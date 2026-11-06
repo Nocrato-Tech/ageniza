@@ -140,6 +140,7 @@ publicado ───────────▶ aprovado               # conteudo
 (qualquer, menos publicado) ▶ cancelado       # conteudo.cancelar; ou o arquivamento do cliente
 cancelado ───────────▶ em produção            # conteudo.operar (reagendar)
 aprovado ────────────▶ aguardando aprovação   # automático ao mudar legenda, mídia, capa ou formato
+aprovado ────────────▶ aguardando aprovação   # pessoa ativa do portal desfaz a aprovação; exige revisão lida, antes de publicar (#850)
 ```
 
 - Na agência, "aprovado" aparece como **pronto para publicar**; no portal, como **Aprovado**.

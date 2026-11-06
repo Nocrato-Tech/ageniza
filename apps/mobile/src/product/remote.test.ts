@@ -29,8 +29,12 @@ describe('real API adapter boundaries', () => {
     await repo.move(post, 'approve');
     expect(request).toHaveBeenCalledWith(`/clients/${clientId}/contents/${contentId}/approve`, { method: 'POST', body: { revision: 7 } });
     expect(request.mock.calls.every(([path]) => !String(path).startsWith('/agencies'))).toBe(true);
+    await repo.move({ ...post, status: 'approved' }, 'withdraw-approval');
+    expect(request).toHaveBeenCalledWith(`/clients/${clientId}/contents/${contentId}/withdraw-approval`, { method: 'POST', body: { revision: 7 } });
     request.mockClear();
     await expect(repo.move(post, 'submit')).rejects.toThrow('agência');
+    expect(request).not.toHaveBeenCalled();
+    await expect(remoteRepository(client(request), { type: 'agency', agencyId, agencyName: 'Agência', roleKey: 'admin', roleName: 'Admin', isOwner: false }).move(post, 'withdraw-approval')).rejects.toThrow('acesso próprio');
     expect(request).not.toHaveBeenCalled();
   });
   it('rejects blank client adjustments before sending and never approves through an agency session', async () => {

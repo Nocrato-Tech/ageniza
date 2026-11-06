@@ -203,6 +203,10 @@ export const approveContent = async (transaction: ContentTransaction, input: { r
   await raw(transaction, 'select app_private.approve_content(?::uuid, ?::integer)', [input.contentId, input.revision]);
 };
 
+export const withdrawContentApproval = async (transaction: ContentTransaction, input: { readonly contentId: string; readonly revision: number }): Promise<void> => {
+  await raw(transaction, 'select app_private.withdraw_content_approval(?::uuid, ?::integer)', [input.contentId, input.revision]);
+};
+
 /**
  * `app_private.request_content_changes`: opens (or finds) the conversation of the content, writes the comment as the client and moves
  * the content to "in adjustment", in one transaction; a comment that is refused leaves neither a conversation nor a state behind.
