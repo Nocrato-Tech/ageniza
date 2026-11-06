@@ -81,11 +81,13 @@ const useCloseTo = (clientId: string): (() => void) => {
   };
 };
 
-function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
+function ContentEditor({ context, initial, initialDay, onBusyChange, onDirtyChange, onClose, onDone }: {
   context: ContentsOutletContext;
   initial: ContentDetail | null;
   initialDay: string;
   onBusyChange: (busy: boolean) => void;
+  onDirtyChange: (dirty: boolean) => void;
+  onClose: () => void;
   onDone: () => void;
 }) {
   const httpClient = useApiClient();
@@ -104,6 +106,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const [form, setForm] = useState<ContentFormValues>(() => initial === null
     ? { title: '', format: 'image', publishOn: initialDay, publishAtTime: '', folderId: '', caption: '', mediaAssetIds: [], coverAssetId: null }
     : valuesOf(initial));
+  const initialForm = useRef(form);
   const [errors, setErrors] = useState<ContentFieldErrors>({});
   const [formError, setFormError] = useState<string | undefined>();
 
@@ -112,6 +115,8 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   const writable = editable && blocked === undefined;
   const changes = saved === null ? null : changesOf(valuesOf(saved), form);
   const dirty = saved === null || (changes !== null && Object.keys(changes).length > 0);
+  const unsaved = editable && (saved === null ? JSON.stringify(form) !== JSON.stringify(initialForm.current) : dirty);
+  useEffect(() => { onDirtyChange(unsaved); }, [unsaved, onDirtyChange]);
   const approvalWarning = saved?.status === 'approved' && changes !== null && resetsApproval(valuesOf(saved), changes);
   const movesFolder = changes?.folderId !== undefined;
 
@@ -207,7 +212,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
 
   const [moving, setMoving] = useState(false);
   const busy = save.isPending || moving;
-  useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
+  useEffect(() => { onBusyChange(busy || sendingFile); }, [busy, sendingFile, onBusyChange]);
 
   const edit = (patch: Partial<ContentFormValues>, field?: keyof ContentFieldErrors): void => {
     setForm((current) => ({ ...current, ...patch }));
@@ -299,7 +304,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDone }: {
   };
 
   const formActions = <div className="content-modal__form-actions">
-    <Button variant="ghost" disabled={busy} onClick={onDone}>Fechar</Button>
+    <Button variant="ghost" disabled={busy || sendingFile} onClick={onClose}>Fechar</Button>
     {editable && <Button type="submit" form={formId} variant={dirty ? 'primary' : 'secondary'} leadingIcon={<Save />} loading={busy} disabled={busy || inheriting || folderUnread || sendingFile || (!dirty && blocked === undefined)} blockedReason={blocked}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
   </div>;
 
@@ -414,10 +419,11 @@ function ContentTags({ content }: { content: ContentDetail }) {
  * The modal around the editor: the tabs and a close that waits for a write. Geral stays mounted while Atribuição is open, so what was typed
  * in the form is still there when the person comes back. Atribuição exists once there is a content to attribute (`assignment`).
  */
-function ContentDialog({ title, onClose, busy, summary, assignment, children }: {
+function ContentDialog({ title, onClose, busy, summary, assignment, confirmation, children }: {
   title: string;
   onClose: () => void;
   busy: boolean;
+  confirmation?: ReactNode;
   summary?: ReactNode;
   assignment?: ReactNode;
   children: ReactNode;
@@ -436,7 +442,22 @@ function ContentDialog({ title, onClose, busy, summary, assignment, children }: 
         { value: 'assignment', label: 'Atribuição', disabled: assignment === undefined, content: assignment }
       ]}
     />
+    {confirmation}
   </Dialog>;
+}
+
+function useContentCloseGuard(close: () => void, busy: boolean) {
+  const [dirty, setDirty] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const requestClose = () => { if (busy) return; if (dirty) setConfirming(true); else close(); };
+  const confirmation = confirming ? <Dialog
+    title="Descartar alterações?"
+    closeLabel="Fechar confirmação de descarte"
+    description="As alterações não salvas serão perdidas. Continue editando para salvá-las."
+    onClose={() => setConfirming(false)}
+    actions={<><Button variant="secondary" onClick={() => setConfirming(false)}>Continuar editando</Button><Button variant="destructive" onClick={close}>Descartar alterações</Button></>}
+  /> : null;
+  return { requestClose, setDirty, confirmation };
 }
 
 /** `/agencia/:agenciaId/conteudos/:clienteId/:conteudoId`: one content, read when it is opened and edited in place. */
@@ -447,6 +468,7 @@ export function ContentModalRoute() {
   const { conteudoId = '' } = useParams();
   const close = useCloseTo(context.clientId);
   const [busy, setBusy] = useState(false);
+  const { requestClose, setDirty, confirmation } = useContentCloseGuard(close, busy);
   const contentId = conteudoId.toLowerCase();
   const validId = ContentDetailSchema.shape.id.safeParse(contentId).success;
 
@@ -470,7 +492,7 @@ export function ContentModalRoute() {
     || (content.data !== undefined && data === undefined);
 
   const assignment = data === undefined || !context.ready ? undefined : <ContentAssignment clientId={context.clientId} content={data} archived={context.archived} />;
-  return <ContentDialog title={data?.title ?? 'Conteúdo'} onClose={close} busy={busy} summary={data === undefined ? undefined : <ContentTags content={data} />} assignment={assignment}>
+  return <ContentDialog title={data?.title ?? 'Conteúdo'} onClose={requestClose} busy={busy} confirmation={confirmation} summary={data === undefined ? undefined : <ContentTags content={data} />} assignment={assignment}>
     {hidden
       ? <div className="form-stack content-modal__notice" role="alert">
         <p>Este conteúdo não existe mais ou você não tem acesso a ele.</p>
@@ -486,7 +508,7 @@ export function ContentModalRoute() {
         </div>
         : data === undefined || !context.ready
           ? <div className="content-modal__loading" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
-          : <ContentEditor key={data.id} context={context} initial={data} initialDay={data.publishOn} onBusyChange={setBusy} onDone={close} />}
+          : <ContentEditor key={data.id} context={context} initial={data} initialDay={data.publishOn} onBusyChange={setBusy} onDirtyChange={setDirty} onClose={requestClose} onDone={close} />}
   </ContentDialog>;
 }
 
@@ -496,12 +518,13 @@ export function ContentCreateRoute() {
   const [searchParams] = useSearchParams();
   const close = useCloseTo(context.clientId);
   const [busy, setBusy] = useState(false);
+  const { requestClose, setDirty, confirmation } = useContentCloseGuard(close, busy);
   const day = CalendarDaySchema.safeParse(searchParams.get('dia'));
-  return <ContentDialog title="Novo conteúdo" onClose={close} busy={busy}>
+  return <ContentDialog title="Novo conteúdo" onClose={requestClose} busy={busy} confirmation={confirmation}>
     {!context.ready
       ? <div className="content-modal__loading" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
       : context.canEdit
-      ? <ContentEditor context={context} initial={null} initialDay={day.success ? day.data : todayInSaoPaulo()} onBusyChange={setBusy} onDone={close} />
+      ? <ContentEditor context={context} initial={null} initialDay={day.success ? day.data : todayInSaoPaulo()} onBusyChange={setBusy} onDirtyChange={setDirty} onClose={requestClose} onDone={close} />
       : <div className="form-stack content-modal__notice" role="alert">
         <p>{context.archived ? 'Este cliente está arquivado: não recebe conteúdo novo.' : 'Você não tem permissão para criar conteúdos.'}</p>
         <div className="form-actions"><Button variant="secondary" onClick={close}>Fechar</Button></div>
