@@ -1,5 +1,5 @@
 import { View } from 'react-native';
-import { Check, Image as ImageIcon } from 'lucide-react-native';
+import { Check, Image as ImageIcon } from './icons';
 import type { Asset, PostInput, Repository } from './types';
 import { Action, Card, ErrorText, Txt, useColors } from './ui';
 import { Touch } from './motion';

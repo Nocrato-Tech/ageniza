@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, View } from 'react-native';
-import { CheckCircle2, Circle } from 'lucide-react-native';
+import { CheckCircle2, Circle } from '../product/icons';
 import { Txt, useColors } from '../product/ui';
 import { useReducedMotion } from '../product/motion';
 import { assessPassword } from './password-assessment';

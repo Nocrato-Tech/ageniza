@@ -4,7 +4,7 @@ import { ContentTasks } from './ContentTasks';
 import { ContentActions } from './ContentActions';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import { MessageCircle } from 'lucide-react-native';
+import { MessageCircle } from './icons';
 import { Action, Avatar, Card, Field, Heading, Info, InstagramPreview, Status, Tabs, Txt, ui, colors } from './ui';
 import type { Data, Move, Post, Repository, Side } from './types';
 import { displayDay, formatNames } from '../contents/period';

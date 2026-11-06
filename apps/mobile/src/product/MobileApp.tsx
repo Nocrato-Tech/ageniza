@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, Modal, Platform, Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { BarChart3, Bell, ChevronRight, Folder as FolderIcon, Image as ImageIcon, Plus, Settings, ShieldCheck, SlidersHorizontal, Users } from 'lucide-react-native';
+import { BarChart3, Bell, ChevronRight, Folder as FolderIcon, Image as ImageIcon, Plus, Settings, ShieldCheck, SlidersHorizontal, Users } from './icons';
 import * as DocumentPicker from 'expo-document-picker';
 import type { AuthSessionResponse, Context } from '@ageniza/contracts';
 import { api } from '../api/runtime';

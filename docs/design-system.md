@@ -330,7 +330,7 @@ Este projeto **não usa shadcn/ui nem Tailwind hoje**. O dono do produto decidiu
 
 > shadcn define a mecânica do primitive; Ageniza define semântica, aparência e API pública.
 
-Todos os componentes abaixo moram em [`packages/ui`](../packages/ui/src/index.tsx), usam só tokens e têm uma entrada no registro da página `/design-system` (seção 24). **Antes de criar um componente, confira esta lista**: uma tela que monta um botão, uma etiqueta ou um vazio à mão está quebrando a seção 14. O ícone é sempre de `lucide-react`, o único conjunto do app: 20 px na interface e 16 px dentro de pílula, aba e etiqueta (12 px), traço 1,75. Ele fica fora da árvore de acessibilidade (`aria-hidden`), então o rótulo continua sendo o nome do controle.
+Todos os componentes abaixo moram em [`packages/ui`](../packages/ui/src/index.tsx), usam só tokens e têm uma entrada no registro da página `/design-system` (seção 24). **Antes de criar um componente, confira esta lista**: uma tela que monta um botão, uma etiqueta ou um vazio à mão está quebrando a seção 14. No desktop, o ícone é sempre de `lucide-react`, o único conjunto dessa interface: 20 px na interface e 16 px dentro de pílula, aba e etiqueta (12 px), traço 1,75. Ele fica fora da árvore de acessibilidade (`aria-hidden`), então o rótulo continua sendo o nome do controle.
 
 ### 13.1 Ação
 
@@ -731,3 +731,7 @@ A lista anti-slop abaixo tem quatro exceções, aprovadas com o canvas v2 (2026-
 - **Modal só quando a tarefa exige interrupção** e foco protegido (seção 13.4).
 
 Mais as regras de tela da issue do épico: uma única ação primária; no máximo três tamanhos de texto por tela; só tokens de `apps/web/src/styles` (nenhum HEX novo além de `violet/400` e `teal/700`); capturas em 1440 e 390 (viewport emulado) ao lado da artboard do canvas.
+
+### Iconografia do app mobile
+
+Por solicitação do responsável de UI/UX, o mobile usa exclusivamente Hugeicons. O vocabulário está em `apps/mobile/src/product/icons.tsx`, sem fallback Lucide. Na web, `HugeIcon.web.tsx` usa os componentes originais de Hugeicons Animated com Motion, fixados em fonte MIT e animando partes internas do SVG. A área inteira do controle responde a hover, toque, clique e foco; desabilitação, movimento reduzido e remoção de listeners são respeitados. Não se atrasa navegação para terminar animações. Ícones passivos não ficam em loop. O bundle nativo mantém os mesmos desenhos em repouso; isso não é uma validação de movimento em aparelho físico.
