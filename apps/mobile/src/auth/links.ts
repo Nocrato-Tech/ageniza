@@ -11,7 +11,8 @@ export function parseAccountLink(input: string, trustedWebUrl: string): AccountL
     if (url.hash) return null;
     const invitation = /^\/convite\/([A-Za-z0-9_-]{1,2048})\/?$/.exec(path);
     if (invitation) return { kind: 'invitation', token: invitation[1] };
-    const kind = path === '/email/verificar' ? 'verify' : path === '/senha/redefinir' ? 'reset' : path === '/email/confirmar' ? 'emailChange' : null;
+    const mobileVerification = !native && path === '/app-mobile/' && url.searchParams.getAll('action').length === 1 && url.searchParams.get('action') === 'verify';
+    const kind = path === '/email/verificar' || mobileVerification ? 'verify' : path === '/senha/redefinir' ? 'reset' : path === '/email/confirmar' ? 'emailChange' : null;
     const tokens = url.searchParams.getAll('token');
     if (!kind || tokens.length !== 1 || !tokens[0] || tokens[0].length > 2048) return null;
     return { kind, token: tokens[0] };

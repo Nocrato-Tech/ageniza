@@ -436,3 +436,36 @@ describe('POST /auth/email/verify asks for the password (finding A1 of the revie
     expect(legal.json()).toMatchObject({ documents: [{ document: 'terms', pending: true }, { document: 'privacy', pending: true }] });
   });
 });
+
+
+describe('mobile web verification destination (#845)', () => {
+  it.each([['mobile-web', true], ['https://evil.example', true], ['mobile-web, desktop', true], ['', true], ['mobile-web', false]] as const)('uses only the exact mobile-web hint on an enabled deployment (%s, %s)', async (hint, enabled) => {
+    const sender = createFakeEmailSender();
+    const app = await buildTestApp({ sender, config: enabled ? { deployTarget: 'dev' } : {} });
+    openApps.push(app);
+    const email = newEmail('mobile-return');
+    const headers = { ...origin, 'x-ageniza-client': hint };
+    const signup = await app.app.inject({ method: 'POST', url: '/auth/sign-up', headers, payload: { name: 'Mobile Return', email, password, acceptTerms: true } });
+    expect(signup.statusCode).toBe(202);
+    expect(signup.headers['set-cookie']).toBeUndefined();
+    await flush(app);
+    const expected = enabled && hint === 'mobile-web' ? '/app-mobile/?action=verify&token=' : '/email/verificar?token=';
+    expect(messagesTo(sender, email)[0]?.text).toContain(TEST_APP_PUBLIC_URL + expected);
+    expect((await userRow(email))?.emailVerified).toBe(false);
+    const resent = await app.app.inject({ method: 'POST', url: '/auth/email/verification/resend', headers, payload: { email } });
+    expect(resent.statusCode).toBe(202);
+    expect(resent.headers['set-cookie']).toBeUndefined();
+    await flush(app);
+    const message = messagesTo(sender, email).at(-1);
+    expect(message?.text).toContain(TEST_APP_PUBLIC_URL + expected);
+    const rawToken = /[?&]token=([^\s"&<]+)/.exec(message?.text ?? '')?.[1];
+    expect(rawToken).toBeTruthy();
+    const token = decodeURIComponent(rawToken!);
+    const wrongPassword = await verify(app, token, 'incorrect account password');
+    expect(wrongPassword.statusCode).toBe(400);
+    expect((await userRow(email))?.emailVerified).toBe(false);
+    expect((await verify(app, token)).statusCode).toBe(200);
+    expect((await userRow(email))?.emailVerified).toBe(true);
+    expect((await verify(app, token)).statusCode).toBe(400);
+  });
+});

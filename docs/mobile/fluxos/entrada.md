@@ -192,3 +192,10 @@ A tela confirma a criação antes de escrever, preserva a agência criada se um 
 ### Onde chegam os e-mails do dev
 
 No mobile web dev com demonstração habilitada, a confirmação, recuperação e reenvio apontam explicitamente para https://mail-dev.ageniza.com.br/. A caixa de testes mantém Cloudflare Access e não entrega mensagens a endereços pessoais. A tela oferece abrir a caixa e colar o link recebido; confirmação e autorização continuam iguais. Produção e a entrada nativa não exibem esse atalho de demonstração.
+
+
+## Confirmação iniciada no mobile web (#845)
+
+O cliente web mobile identifica pedidos de cadastro e reenvio com `x-ageniza-client: mobile-web`. O servidor gera um destino fixo da mesma origem: `/app-mobile/?action=verify&token=…`. O destino mobile só é habilitado no deploy `dev`, que publica essa interface. Em produção, ou sem essa indicação exata, mantém `/email/verificar?token=…`. A indicação não concede acesso nem troca regras de autenticação.
+
+Ao abrir o link, o mobile captura o token, remove a consulta da barra e apresenta sua tela de confirmação. A senha e o token são validados pela rota oficial; depois, os acessos e a criação de agência continuam no mobile. Nenhum segredo é salvo para redirecionamento. Links antigos continuam usando seu destino original e podem ser colados em “Abrir convite ou link recebido” no mobile.

@@ -40,6 +40,7 @@ export function createApiClient(baseUrl: string, storage: SessionStorage, native
     let requestEpoch = epoch;
     await writes;
     const headers = new Headers({ Accept: 'application/json' });
+    if (!native && (path === '/auth/sign-up' || path === '/auth/email/verification/resend')) headers.set('x-ageniza-client', 'mobile-web');
     if (options.body !== undefined) headers.set('Content-Type', 'application/json');
     if (native) {
       headers.set('expo-origin', 'ageniza://');
