@@ -42,6 +42,17 @@ export const ownerWorld = (over: Partial<SubscriptionWorld> = {}): SubscriptionW
   ...over
 });
 
+const DAY = 86_400_000;
+
+/** An agency in the free trial with `days` whole days left; `0` is a trial that ended, read-only. */
+export const trialWorld = (days: number, over: Partial<SubscriptionWorld> = {}): SubscriptionWorld => ownerWorld({
+  subscription: null,
+  plan: days > 0
+    ? { kind: 'trial', trialEndsAt: new Date(Date.now() + days * DAY - 3_600_000).toISOString(), readOnly: false }
+    : { kind: 'trial', trialEndsAt: new Date(Date.now() - DAY).toISOString(), readOnly: true },
+  ...over
+});
+
 const overview = (world: SubscriptionWorld) => {
   const current = world.subscription;
   if (current === null) return { subscription: null, paymentProvider: world.provider };

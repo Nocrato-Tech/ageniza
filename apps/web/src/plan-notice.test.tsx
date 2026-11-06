@@ -25,7 +25,7 @@ describe('the plan notices of the agency shell (#773)', () => {
     expect(link.getAttribute('href')).toBe(`${HOME}/assinatura`);
     fireEvent.click(link);
     expect(await screen.findByRole('heading', { level: 1, name: 'Assinatura' })).toBeTruthy();
-    expect(await screen.findByText('A agência está no período de teste. Escolha um plano para continuar depois dele.')).toBeTruthy();
+    expect(await screen.findByText(/Você está no teste grátis: faltam 10 dias\./)).toBeTruthy();
   });
 
   it('shows the same days to an Admin, without the button', async () => {

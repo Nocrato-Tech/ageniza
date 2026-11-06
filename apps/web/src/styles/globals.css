@@ -8532,10 +8532,136 @@ html:has(.portal-post__bar) {
   color: var(--text-danger);
 }
 
-.subscription__plans {
+.subscription--pricing {
+  max-width: 64rem;
+}
+
+.subscription__state {
+  color: var(--text-secondary);
+}
+
+.plan-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--space-4);
+}
+
+.plan-card {
+  display: grid;
+  align-content: start;
   gap: var(--space-3);
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+/* Recommended first when the cards stack, in the middle when they sit side by side. */
+.plan-card--recommended {
+  order: -1;
+  border-color: var(--action-primary-bg);
+  box-shadow: 0 0 0 1px var(--action-primary-bg);
+}
+
+.plan-card__tags {
+  display: flex;
+  gap: var(--space-2);
+  min-height: 1.5rem;
+}
+
+.plan-card__name {
+  margin: 0;
+  font: var(--heading-md);
+}
+
+.plan-card__price {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.plan-card__amount {
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+}
+
+.plan-card__period,
+.plan-card__audience {
+  color: var(--text-secondary);
+}
+
+.plan-card__limits,
+.plan-includes ul {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.plan-card__limits li,
+.plan-includes li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.plan-card__limits svg,
+.plan-includes svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  color: var(--action-primary-bg);
+}
+
+.plan-card .ui-button {
+  align-self: end;
+  justify-content: center;
+}
+
+.plan-includes {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--bg-hover);
+}
+
+.plan-includes ul {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.subscription__target {
+  margin: 0;
+  font: var(--label-md);
+}
+
+.subscription__tools {
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-default);
+  color: var(--text-secondary);
+}
+
+.subscription__tools summary {
+  cursor: pointer;
+  font: var(--label-md);
+}
+
+.subscription__tools[open] {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.subscription-card__plan {
+  color: var(--text-secondary);
+}
+
+@media (min-width: 48rem) {
+  .plan-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .plan-card--recommended {
+    order: 0;
+  }
 }
 
 .subscription__extras {
