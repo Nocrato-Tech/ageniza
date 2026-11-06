@@ -1,3 +1,4 @@
+import { ScreenMotion } from '../product/motion';
 import { useRef, useState } from 'react';
 import type { TextInput } from 'react-native';
 import { PasswordField } from './PasswordField';
@@ -67,22 +68,22 @@ export function Login({ onLogin, onLink }: { onLogin(): Promise<void>; onLink(li
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível concluir. Tente novamente.'); }
     finally { pending.current = false; setBusy(false); }
   }
-  return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={[ui.body, { flexGrow: 1, justifyContent: 'center', width: '100%', maxWidth: 560, alignSelf: 'center' }]} keyboardShouldPersistTaps="handled">
+  return <ScreenMotion identity={form} fill><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={[ui.body, { flexGrow: 1, justifyContent: 'center', width: '100%', maxWidth: 560, alignSelf: 'center' }]} keyboardShouldPersistTaps="handled">
     <Header /><Heading title={titles[form]} subtitle={form === 'login' ? 'Conteúdos, clientes e aprovações. Tudo no mesmo lugar.' : undefined} />
     {browserPreview && <Info warning title="Acesso real pelo aplicativo" text="Este endereço web de desenvolvimento ainda não permite login com a API. Use o aplicativo nativo para entrar na sua conta e acessar seus dados." />}
     {sent ? <><Info title="Confira seu e-mail" text={form === 'forgot' ? 'Se houver uma conta com esse endereço, enviaremos um link para redefinir a senha.' : 'Se for necessário confirmar esse endereço, você receberá as instruções. Confira também o spam.'} /><Action soft label="Já tenho o link" onPress={() => changeForm('link')} />{demoWorkspaceEnabled && <Action soft label="Caixa de testes da equipe" onPress={() => void Linking.openURL('https://mail-dev.ageniza.com.br/')} />}</> : <>
       {form === 'link' ? <Field ref={(value) => { inputs.current.link = value; }} error={fieldErrors.link} label="Link recebido por e-mail" value={linkText} onChangeText={change('link', setLinkText)} autoCapitalize="none" autoCorrect={false} editable={!busy} /> : <>
         {form === 'signup' && <Field ref={(value) => { inputs.current.name = value; }} error={fieldErrors.name} label="Seu nome" value={name} onChangeText={change('name', setName)} autoComplete="name" editable={!busy} />}
         <Field ref={(value) => { inputs.current.email = value; }} error={fieldErrors.email} label="E-mail" value={email} onChangeText={change('email', setEmail)} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" editable={!busy} />
-        {(form === 'login' || form === 'signup') && <PasswordField key={form} ref={(value) => { inputs.current.password = value; }} error={fieldErrors.password} hint={form === 'signup' ? passwordHint : undefined} label="Senha" value={password} onChangeText={change('password', setPassword)} autoCapitalize="none" autoCorrect={false} autoComplete={form === 'login' ? 'current-password' : 'new-password'} editable={!busy} onSubmitEditing={() => void submit()} />}
-        {form === 'signup' && <><PasswordField ref={(value) => { inputs.current.confirm = value; }} error={fieldErrors.confirm} label="Confirme a senha" value={confirm} onChangeText={change('confirm', setConfirm)} autoComplete="new-password" autoCapitalize="none" editable={!busy} /><TermsConsent accepted={accepted} onChange={(value) => { setAccepted(value); setFieldErrors((current) => ({ ...current, accepted: undefined })); }} disabled={busy} />{fieldErrors.accepted && <ErrorText text={fieldErrors.accepted} />}</>}
+        {(form === 'login' || form === 'signup') && <PasswordField key={form} ref={(value) => { inputs.current.password = value; }} error={fieldErrors.password} newPassword={form === 'signup'} hint={form === 'signup' ? passwordHint : undefined} label="Senha" value={password} onChangeText={change('password', setPassword)} autoCapitalize="none" autoCorrect={false} autoComplete={form === 'login' ? 'current-password' : 'new-password'} editable={!busy} onSubmitEditing={() => void submit()} />}
+        {form === 'signup' && <><PasswordField ref={(value) => { inputs.current.confirm = value; }} error={fieldErrors.confirm} confirmationFor={password} label="Confirme a senha" value={confirm} onChangeText={change('confirm', setConfirm)} autoComplete="new-password" autoCapitalize="none" editable={!busy} /><TermsConsent accepted={accepted} onChange={(value) => { setAccepted(value); setFieldErrors((current) => ({ ...current, accepted: undefined })); }} disabled={busy} />{fieldErrors.accepted && <ErrorText text={fieldErrors.accepted} />}</>}
       </>}
       <Action label={form === 'login' ? 'Entrar' : form === 'signup' ? 'Criar minha conta' : form === 'link' ? 'Abrir link no app' : 'Enviar e-mail'} busy={busy} onPress={() => void submit()} />
     </>}
     {!!error && <ErrorText text={error} />}
     {form === 'login' ? <><Action plain label="Esqueci minha senha" disabled={busy} onPress={() => changeForm('forgot')} /><Action soft label="Criar conta" disabled={busy} onPress={() => changeForm('signup')} /><Action plain label="Reenviar confirmação do e-mail" disabled={busy} onPress={() => changeForm('resend')} /><Action plain label="Abrir convite ou link recebido" disabled={busy} onPress={() => changeForm('link')} /></> : <Action plain label="Voltar para entrar" disabled={busy} onPress={() => changeForm('login')} />}
     <Txt kind="micro" color={colors.muted} center>Ageniza · sua agência, organizada em fluxo.</Txt>
-  </ScrollView></KeyboardAvoidingView>;
+  </ScrollView></KeyboardAvoidingView></ScreenMotion>;
 }
 
 export function EntryScreen({ entry, onSelect, onContinue, busy, onLink }: { entry: Exclude<Entry, { kind: 'active' }>; onSelect(context: Context): void; onContinue(): Promise<Entry | void>; busy: boolean; onLink(link: AccountLink): void }) {

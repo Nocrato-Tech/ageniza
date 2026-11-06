@@ -1,0 +1,1 @@
+Icons adapted from https://github.com/enesgules/hugeicons-animated at cd1eeed1b51eac9aa65f58ef6663e49fc2310ca9 (MIT). SVG geometry is retained; interaction motion is adapted for Expo/web without the upstream DOM-only Motion dependency. No icon runs continuously. Reduced motion renders a static icon.
