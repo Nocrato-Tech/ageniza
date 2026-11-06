@@ -436,6 +436,33 @@ describe('client lifecycle actions (#139)', () => {
     expect(screen.getByRole('button', { name: 'Reativar' })).toBeTruthy();
   });
 
+  it('reactivating over the client limit shows the limit with the way to plans for the Owner, and keeps the client archived', async () => {
+    const { impl } = makeFetch({
+      permissions: [...ADMIN_PERMISSIONS, 'assinatura.gerenciar'],
+      client: () => json(archivedClient),
+      reactivate: () => json({ error: { code: 'PLAN_CLIENT_LIMIT', message: 'x' } }, 409)
+    });
+    renderLifecycle(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('A agência chegou ao limite de clientes ativos do plano. Suba de plano ou compre extras para continuar.');
+    expect(within(alert).getByRole('link', { name: 'Ver planos e extras' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/assinatura`);
+    expect(screen.getByRole('button', { name: 'Reativar' })).toBeTruthy();
+  });
+
+  it('reactivating over the client limit tells an Admin whom to ask, with no link', async () => {
+    const { impl } = makeFetch({ client: () => json(archivedClient), reactivate: () => json({ error: { code: 'TRIAL_CLIENT_LIMIT', message: 'x' } }, 409) });
+    renderLifecycle(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Peça a quem criou a agência para subir o plano ou comprar extras.');
+    expect(within(alert).queryByRole('link')).toBeNull();
+  });
+
   it('schedules the closing and shows both badges without a reload', async () => {
     const target = agencyToday();
     let current: typeof padaria = { ...padaria };

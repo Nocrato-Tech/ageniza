@@ -249,7 +249,9 @@ describe('client portal shell (#141)', () => {
   it('says the portal is read-only when the trial of the agency ended, and nothing otherwise (issue #714)', async () => {
     renderPortal(makeFetch({ portal: () => json(portalClient({ agencyReadOnly: true })) }).impl);
     const notice = await screen.findByRole('region', { name: 'Portal somente leitura' });
-    expect(notice.textContent).toContain('O plano de Agência Um precisa ser renovado para aprovar, pedir ajustes e comentar.');
+    expect(notice.textContent).toBe('A aprovação está pausada no momento. A equipe de Agência Um já foi avisada. Tudo continua visível.');
+    // The client is never told about the agency's billing (decision 2026-11-06).
+    expect(notice.textContent).not.toMatch(/plano|renov|assin|cobran|pag/i);
     cleanup();
 
     renderPortal(makeFetch({ portal: () => json(portalClient()) }).impl);

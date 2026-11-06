@@ -6,6 +6,7 @@ import { Button, FieldMessage } from '@ageniza/ui';
 
 import { useAgencyContext, useWriteBlocked } from './agency.js';
 import { useApiClient } from './http.js';
+import { PlanLimitNotice } from './plan-limit.js';
 import { UPLOAD_FAILURE_TEXT, UploadError, uploadMedia, type UploadFailure } from './media-upload.js';
 
 type Phase = { readonly kind: 'idle' } | { readonly kind: 'sending' } | { readonly kind: 'failed'; readonly failure: UploadFailure } | { readonly kind: 'cancelled' } | { readonly kind: 'done' };
@@ -114,7 +115,8 @@ export function MediaUploader({ clientId, folderId, onUploaded, onSendingChange,
               : <Button variant="secondary" leadingIcon={<Upload />} onClick={() => send(file)}>Enviar</Button>}
       </div>
     </div>}
-    {phase.kind === 'failed' && <FieldMessage role="alert"><CircleAlert size={16} aria-hidden="true" />{UPLOAD_FAILURE_TEXT[phase.failure]}</FieldMessage>}
+    {phase.kind === 'failed' && phase.failure === 'quota' && <PlanLimitNotice limit="storage" />}
+    {phase.kind === 'failed' && phase.failure !== 'quota' && <FieldMessage role="alert"><CircleAlert size={16} aria-hidden="true" />{UPLOAD_FAILURE_TEXT[phase.failure]}</FieldMessage>}
     {phase.kind === 'cancelled' && <p className="media-uploader__done" role="status">{UPLOAD_FAILURE_TEXT.cancelled}</p>}
     {phase.kind === 'done' && <p className="media-uploader__done" role="status"><Check size={16} aria-hidden="true" />Mídia enviada.</p>}
   </div>;

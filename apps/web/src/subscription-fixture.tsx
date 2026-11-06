@@ -23,7 +23,7 @@ const PLANS = [
 
 export interface SubscriptionWorld {
   /** `null`: the agency is in trial. */
-  subscription: null | { planKey: string; extraClients: number; extraStorageGib: number; cancelAtPeriodEnd?: boolean; graceEndsOn?: string | null; provider?: string };
+  subscription: null | { planKey: string; extraClients: number; extraStorageGib: number; cancelAtPeriodEnd?: boolean; graceEndsOn?: string | null; provider?: string; periodEnd?: string };
   provider: 'simulado' | null;
   permissions: string[];
   plan: Record<string, unknown>;
@@ -53,7 +53,7 @@ const overview = (world: SubscriptionWorld) => {
       extraClients: current.extraClients,
       extraStorageGib: current.extraStorageGib,
       provider: current.provider ?? 'simulado',
-      currentPeriodEnd: '2026-12-01T01:30:00.000Z',
+      currentPeriodEnd: current.periodEnd ?? '2026-12-01T01:30:00.000Z',
       cancelAtPeriodEnd: current.cancelAtPeriodEnd ?? false,
       pending: null,
       monthlyCents: monthly,

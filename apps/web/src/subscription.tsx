@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AuthNoContentResponseSchema,
   SubscriptionChargeResponseSchema,
-  SubscriptionOverviewResponseSchema,
   SubscriptionPlansResponseSchema,
   SubscriptionQuoteResponseSchema,
   type SubscriptionChangeRequest,
@@ -16,6 +15,7 @@ import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { subscriptionOverviewQuery } from './subscription-queries.js';
 import { CancelSubscriptionDialog } from './subscription-cancel.js';
 import { formatBrl, formatDay, formatGb, formatInstant, totalLine } from './subscription-format.js';
 import { SimulatedCardStep, type PaymentResult } from './subscription-payment.js';
@@ -70,10 +70,7 @@ export function SubscriptionPage() {
     queryKey: [...agencyKey, 'subscription-plans'],
     queryFn: () => httpClient.request({ path: apiPath('/agencies/:agenciaId/subscription/plans', { agenciaId: agency.agencyId }), response: SubscriptionPlansResponseSchema })
   });
-  const overviewQuery = useQuery({
-    queryKey: [...agencyKey, 'subscription'],
-    queryFn: () => httpClient.request({ path: apiPath('/agencies/:agenciaId/subscription', { agenciaId: agency.agencyId }), response: SubscriptionOverviewResponseSchema })
-  });
+  const overviewQuery = useQuery(subscriptionOverviewQuery(httpClient, agency.agencyId));
 
   const [choice, setChoice] = useState<{ planKey: string; clients: string; gib: string } | null>(null);
   const [step, setStep] = useState<Step>({ kind: 'pick' });
