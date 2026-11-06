@@ -34,6 +34,9 @@ describe('withdrawing approval from the authenticated portal (#850)', () => {
   it.each(['portalOne', ...DUAL_PEOPLE] as const)('allows %s only through its own portal membership and records the real actor once', async (person) => {
     const clientId = await freshClient(`withdraw-${person}`, [person]);
     const id = await seedOpen(clientId, 'approved');
+    const folderId = (await w.contentRow(id)).folder_id as string;
+    const mediaId = await w.seedAsset(clientId, folderId, { category: 'video' });
+    await w.attach(id, [mediaId]);
     const before = await w.contentRow(id);
     const reply = await post(person, withdrawUrl(clientId, id), { revision: 1 });
     expect(reply.statusCode).toBe(200);
@@ -43,6 +46,32 @@ describe('withdrawing approval from the authenticated portal (#850)', () => {
     expect(await events(id)).toMatchObject([{ actor_user_id: p.people[person].id, agency_id: w.agencyA, target_type: 'content' }]);
     expect((await post(person, withdrawUrl(clientId, id), { revision: 1 })).statusCode).toBe(200);
     expect(await events(id)).toHaveLength(1);
+    expect(await w.getOwner().knex('content_media').where({ content_id: id }).select('asset_id')).toEqual([{ asset_id: mediaId }]);
+  });
+
+  it('enforces access inside the definer even when called directly by the application role', async () => {
+    const id = await seedOpen(p.clientA1, 'approved');
+    for (const actor of [undefined, people.admin.id, p.people.removed.id, p.people.portalOther.id, p.people.portalB.id]) {
+      const connection = await w.getApp().pool.connect();
+      try {
+        await connection.query('begin');
+        expect((await connection.query('select current_user as name')).rows[0]?.name).toBe('ageniza_app');
+        if (actor) await connection.query('select app_private.bind_actor($1::uuid)', [actor]);
+        await expect(connection.query('select app_private.withdraw_content_approval($1::uuid, 1)', [id])).rejects.toMatchObject({ code: 'A0060' });
+      } finally { await connection.query('rollback'); connection.release(); }
+    }
+    expect(await statusOf(id)).toBe('approved');
+    expect(await events(id)).toHaveLength(0);
+  });
+
+  it('refuses a non READ COMMITTED snapshot at the database boundary', async () => {
+    const id = await seedOpen(p.clientA1, 'approved');
+    const connection = await w.getApp().pool.connect();
+    try {
+      await connection.query('begin isolation level repeatable read');
+      await connection.query('select app_private.bind_actor($1::uuid)', [p.people.portalOne.id]);
+      await expect(connection.query('select app_private.withdraw_content_approval($1::uuid, 1)', [id])).rejects.toMatchObject({ code: '40001' });
+    } finally { await connection.query('rollback'); connection.release(); }
   });
 
   it('rejects absent sessions, agency-only users, removed access, other clients and cross-client ids', async () => {
@@ -94,6 +123,8 @@ describe('withdrawing approval from the authenticated portal (#850)', () => {
   it('rereads status after publication wins the content lock', async () => {
     const clientId = await freshClient('withdraw-publish-race');
     const id = await seedOpen(clientId, 'approved');
+    const folderId = (await w.contentRow(id)).folder_id as string;
+    await w.attach(id, [await w.seedAsset(clientId, folderId, { category: 'video' })]);
     const held = await holdContent(id);
     try {
       const publishing = w.call('POST', people.admin.cookie, `${agencyUrl(clientId, id)}/publish`, {});
@@ -138,6 +169,37 @@ describe('withdrawing approval from the authenticated portal (#850)', () => {
       expect(await events(id)).toHaveLength(0);
     } finally { w.clearHook(); }
   });
+
+  it('serializes repeated withdrawals and records one event', async () => {
+    const clientId = await freshClient('withdraw-twice', ['portalOne', 'portalMulti']);
+    const id = await seedOpen(clientId, 'approved');
+    const held = await holdContent(id);
+    try {
+      const first = post('portalOne', withdrawUrl(clientId, id), { revision: 1 });
+      const second = post('portalMulti', withdrawUrl(clientId, id), { revision: 1 });
+      await waitForBlocked(held.pid, 2);
+      await held.release();
+      expect((await Promise.all([first, second])).map((reply) => reply.statusCode)).toEqual([200, 200]);
+      expect(await events(id)).toHaveLength(1);
+    } finally { await held.release(); }
+  });
+
+  it('holds the active client until withdrawal completes, so archiving waits', async () => {
+    const clientId = await freshClient('withdraw-before-archive');
+    const id = await seedOpen(clientId, 'approved');
+    const held = await holdContent(id);
+    let archive: Promise<number> | undefined;
+    try {
+      const pending = post('portalOne', withdrawUrl(clientId, id), { revision: 1 });
+      const routePid = await waitForBackendBlockedBy(w, held.pid);
+      archive = w.getOwner().knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() }).then((count) => count);
+      await waitForBackendBlockedBy(w, routePid);
+      await held.release();
+      expect((await pending).statusCode).toBe(200);
+      expect(await archive).toBe(1);
+      expect(await events(id)).toHaveLength(1);
+    } finally { await held.release(); if (archive) await archive; }
+  }, 30_000);
 
   it('returns not found when archiving won before the function, including a dual identity', async () => {
     const clientId = await freshClient('withdraw-archived', ['dualBare']);
