@@ -185,6 +185,8 @@ describe('content editor recovery', () => {
     const save = vi.fn();
     render(<ContentEditor data={data} repository={repository} clientId={clientId} busy={false} onSave={save} onError={() => {}} onRefresh={async () => {}} />);
     fireEvent.change(screen.getByRole('textbox', { name: 'Título interno *' }), { target: { value: 'Carrossel' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Formato da publicação' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Selecionar Carrossel' }));
     await waitFor(() => expect(screen.queryByText('Carregando biblioteca…')).toBeNull());
     await waitFor(() => expect(screen.getByRole('button', { name: 'Continuar para conteúdo' }).getAttribute('aria-busy')).toBe('false'));
     fireEvent.click(screen.getByRole('button', { name: 'Continuar para conteúdo' }));
@@ -199,7 +201,7 @@ describe('content editor recovery', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mover Reel.mp4 antes' }));
     expect(screen.getAllByText('1. Reel.mp4')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Mover Reel.mp4 antes' }).getAttribute('aria-disabled')).toBe('true');
-    expect(assetUrl).toHaveBeenCalledWith(clientId, 'preview', 'image-one', 'original');
+    expect(assetUrl).toHaveBeenCalledWith(clientId, undefined, 'image-one', 'original');
     fireEvent.click(screen.getByRole('button', { name: 'Remover Capa.png da publicação' }));
     expect(screen.queryByRole('button', { name: 'Remover Capa.png da publicação' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Remover Reel.mp4 da publicação' })).toBeTruthy();

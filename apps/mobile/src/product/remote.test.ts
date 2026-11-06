@@ -8,6 +8,16 @@ const agencyId = '33333333-3333-4333-8333-333333333333';
 const post: Post = { id: contentId, clientId, title: 'Post', caption: 'Legenda', date: '2026-11-12', time: '', format: 'image', status: 'awaiting_approval', revision: 7, ownerId: '', folderId: '', coverId: null, mediaIds: [], comments: [], tasks: [] };
 function client(request: ReturnType<typeof vi.fn>): ApiClient { return { request, clearSession: async () => {}, onExpired: () => {}, onAccessRequired: () => {} } as ApiClient; }
 describe('real API adapter boundaries', () => {
+  it('creates with exactly the selected media in one write, keeping a cover out of the reel list', async () => {
+    const videoId = '44444444-4444-4444-8444-444444444444';
+    const coverId = '55555555-5555-4555-8555-555555555555';
+    const request = vi.fn(async (path: string, options?: { method?: string }) => options?.method === 'POST' ? { id: contentId } : path.includes('/threads') ? { data: [], meta: { totalPages: 1 } } : path.includes('/assets') ? { data: [], meta: { totalPages: 1 } } : { ...post, folderId: clientId, publishOn: post.date, media: [], tasks: [] });
+    const repo = remoteRepository(client(request), { type: 'agency', agencyId, agencyName: 'Agência', roleKey: 'admin', roleName: 'Admin', isOwner: false });
+    await repo.save({ ...post, format: 'reels', folderId: clientId, mediaIds: [videoId], coverId });
+    const writes = request.mock.calls.filter(([, options]) => options?.method === 'POST' || options?.method === 'PATCH');
+    expect(writes).toHaveLength(1);
+    expect(writes[0][1]).toEqual({ method: 'POST', body: expect.objectContaining({ mediaAssetIds: [videoId], coverAssetId: coverId }) });
+  });
   it('reports uploaded bytes only after successful parts and ready only after server confirmation', async () => {
     let finish: () => void = () => {};
     const confirmed = new Promise<void>((resolve) => { finish = resolve; });
@@ -30,7 +40,7 @@ describe('real API adapter boundaries', () => {
       expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'ready', name: 'Reel.mp4' }));
     } finally { finish(); vi.unstubAllGlobals(); }
   });
-  it('reports the created id before a later media attachment fails, allowing a PATCH retry', async () => {
+  it('reports the created id before a later detail reload fails, allowing a PATCH retry', async () => {
     const mediaId = '44444444-4444-4444-8444-444444444444';
     const input = { ...post, folderId: clientId, coverId: null, mediaIds: [mediaId] };
     const request = vi.fn().mockResolvedValueOnce({ id: contentId }).mockRejectedValueOnce(new Error('network'));

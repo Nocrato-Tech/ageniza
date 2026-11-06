@@ -208,3 +208,7 @@ Pedidos `/auth/password/forgot`, inclusive pelo perfil, usam a mesma indicação
 ## UX de autenticação
 
 Os campos de senha permitem mostrar/ocultar sem trocar o valor. Cadastro e redefinição antecipam a política canônica de 10–128 caracteres; o login não aplica esse mínimo a credenciais existentes. Erros de preenchimento aparecem junto ao campo e o primeiro campo textual inválido recebe foco. As respostas neutras da API permanecem.
+
+### Orientação de senha no app mobile
+
+Cadastro, redefinição e convite para conta nova mostram os limites reais de 10 a 128 caracteres e o que falta durante a digitação. A barra de força é uma estimativa local separada da validade; não consulta vazamentos nem cria exigência de maiúsculas ou números. Confirmação compara os dois campos em tempo real. Login e convites para conta existente preservam o contrato de senha atual. A preferência de movimento reduzido remove a animação da barra e dos ícones.

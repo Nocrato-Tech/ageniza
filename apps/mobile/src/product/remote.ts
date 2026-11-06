@@ -59,9 +59,8 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
     save: async (input: PostInput, id, onCreated) => {
       agencyOnly();
       const fields = { title: input.title, format: input.format, publishOn: input.date, publishAtTime: input.time || null, caption: input.caption, folderId: input.folderId, coverAssetId: input.coverId, ...(input.ownerId ? { ownerMembershipId: input.ownerId } : {}) };
-      const value = await api.request<ContentDetail>(`${base(input.clientId)}/contents${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', body: id ? UpdateContentRequestSchema.parse({ ...fields, mediaAssetIds: input.mediaIds }) : CreateContentRequestSchema.parse(fields) });
+      const value = await api.request<ContentDetail>(`${base(input.clientId)}/contents${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', body: id ? UpdateContentRequestSchema.parse({ ...fields, mediaAssetIds: input.mediaIds }) : CreateContentRequestSchema.parse({ ...fields, mediaAssetIds: input.mediaIds }) });
       if (!id) onCreated?.(value.id);
-      if (!id && input.mediaIds.length) await api.request(`${base(input.clientId)}/contents/${value.id}`, { method: 'PATCH', body: UpdateContentRequestSchema.parse({ mediaAssetIds: input.mediaIds }) });
       return repo.detail(input.clientId, value.id);
     },
     move: async (post, action, comment, date) => {
@@ -83,7 +82,7 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
       const folders = await all<MediaFolder>(`${base(clientId)}/media-folders`);
       const library = { folders: folders.map((folder) => ({ id: folder.id, clientId, name: folder.name, parentId: folder.parentId })), assets: [] as Asset[] };
       for (let index = 0; index < folders.length; index += 4) {
-        const batches = await Promise.all(folders.slice(index, index + 4).map(async (folder) => (await all<MediaFolderAsset>(`${base(clientId)}/media-folders/${folder.id}/assets`)).map((asset) => ({ id: asset.id, clientId, folderId: folder.id, name: `${asset.category}-${asset.id.slice(0, 8)}`, kind: asset.category, size: asset.sizeBytes, processing: asset.videoProcessingStatus }))));
+        const batches = await Promise.all(folders.slice(index, index + 4).map(async (folder) => (await all<MediaFolderAsset>(`${base(clientId)}/media-folders/${folder.id}/assets`)).map((asset) => ({ id: asset.id, clientId, folderId: folder.id, name: `${asset.category}-${asset.id.slice(0, 8)}`, kind: asset.category, size: asset.sizeBytes, contentType: asset.contentType, processing: asset.videoProcessingStatus }))));
         library.assets.push(...batches.flat());
       }
       libraries.set(clientId, library); return library;
@@ -126,7 +125,7 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
         checkCancelled(); confirming = true; report('confirming');
         await api.request(`${root}/media/uploads/${created.assetId}/complete`, { method: 'POST', body: created.upload.type === 'single' ? {} : { parts } });
         libraries.delete(clientId); report('ready');
-        return { id: created.assetId, clientId, folderId, name: file.name, kind: created.category, size: blob.size };
+        return { id: created.assetId, clientId, folderId, name: file.name, kind: created.category, size: blob.size, contentType: file.mimeType };
       } catch (cause) { report(signal?.aborted && !confirming ? 'cancelled' : 'failed'); throw cause; }
     },
     assetUrl: async (clientId, postId, id, variant = 'original') => { const path = agency ? `${root}/media/${id}/download-url?variant=${variant}` : `${base(clientId)}/contents/${postId}/media/${id}/url?variant=${variant}`; return (await api.request<{ url: string }>(path)).url; },
