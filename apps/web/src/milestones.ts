@@ -45,3 +45,12 @@ export const takeMilestone = (agencyId: string, facts: MilestoneFacts, storage: 
     return null;
   }
 };
+
+/** True when this browser already recorded the milestone: what was achieved stays achieved even if the data later steps back (an approval withdrawn or cleared by an edit). */
+export const milestoneSeen = (agencyId: string, key: MilestoneKey, storage: () => Storage = () => window.localStorage): boolean => {
+  try {
+    return readSeen(storage(), agencyId)?.includes(key) === true;
+  } catch {
+    return false;
+  }
+};

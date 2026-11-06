@@ -9,7 +9,7 @@ import { ButtonLink } from '@ageniza/ui';
 import { useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { useApiClient } from './http.js';
-import type { MilestoneFacts } from './milestones.js';
+import { milestoneSeen, type MilestoneFacts, type MilestoneKey } from './milestones.js';
 
 interface Step {
   readonly key: string;
@@ -28,12 +28,15 @@ export function useActivationFacts(agencyId: string, enabled: boolean) {
   const clients = useQuery({
     queryKey: ['agency', agencyId, 'activation', 'clients'],
     queryFn: () => httpClient.request({ path: `${apiPath('/agencies/:agencyId/clients', { agencyId })}?page=1&pageSize=1`, response: ClientListResponseSchema }),
-    enabled
+    enabled,
+    // A step done elsewhere must show the moment the person comes back; the default 30 s would keep the old answer.
+    refetchOnMount: 'always'
   });
   const contents = useQuery({
     queryKey: ['agency', agencyId, 'activation', 'contents'],
     queryFn: () => httpClient.request({ path: apiPath('/agencies/:agencyId/contents/activation', { agencyId }), response: ContentActivationResponseSchema }),
-    enabled
+    enabled,
+    refetchOnMount: 'always'
   });
 
   const rosterSize = clients.data?.meta.totalItems;
@@ -43,7 +46,13 @@ export function useActivationFacts(agencyId: string, enabled: boolean) {
     if (rosterSize === undefined || flags === undefined) return undefined;
     return { client: rosterSize > 0 || flags.hasContent, content: flags.hasContent, sent: flags.sentForApproval, approved: flags.approvedByClient, published: flags.published };
   }, [rosterSize, flags]);
-  return { facts, firstClientId };
+  // The path is history: what this browser already recorded stays done, even when the data steps back (an edit clears the approval).
+  const pathFacts = useMemo<MilestoneFacts | undefined>(() => {
+    if (facts === undefined) return undefined;
+    const kept = (key: MilestoneKey): boolean => facts[key] || milestoneSeen(agencyId, key);
+    return { client: kept('client'), content: kept('content'), sent: kept('sent'), approved: kept('approved'), published: kept('published') };
+  }, [agencyId, facts]);
+  return { facts, pathFacts, firstClientId };
 }
 
 /** Four steps from the first client to the first approval; each one leads to the screen that resolves it, when the role can do it. */

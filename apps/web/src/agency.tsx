@@ -167,7 +167,7 @@ export function AgencyHomePage() {
   return <section aria-labelledby="agency-home-title" className="agency-home">
     <h1 id="agency-home-title">{agency.agencyName}</h1>
     <MilestoneCelebration agencyId={agency.agencyId} facts={activation.facts} />
-    <ActivationPath facts={activation.facts} firstClientId={activation.firstClientId} />
+    <ActivationPath facts={activation.pathFacts} firstClientId={activation.firstClientId} />
     {shortcuts.length === 0
       ? <EmptyState
           className="agency-home__empty"
