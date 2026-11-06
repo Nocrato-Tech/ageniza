@@ -389,3 +389,7 @@ Na etapa Conteúdo do editor, cada mídia selecionada aparece na ordem da public
 O cabeçalho identifica a agência ativa e oferece troca entre acessos existentes. Voltar do detalhe preserva busca, filtros, mês e dia do calendário. O editor apresenta validação por etapa, seleção compacta de mídias, ordenação por botões e prévia sob demanda. Retirar da seleção não exclui da biblioteca.
 
 Uploads mostram bytes de partes concluídas e aguardam a confirmação real do servidor; processamento de vídeo é um estado separado. Uma gravação confirmada seguida de falha na atualização da lista é comunicada sem pedir repetir a operação. Rascunhos web seguem a [decisão de retenção](../../business/decisions/2026-11-06-rascunho-mobile-na-sessao-do-navegador.md); alterações não salvas pedem confirmação antes de sair.
+
+Cadastro de cliente, convite de colaborador e acesso ao portal usam erros por campo e foco no primeiro campo textual inválido. Valores e papel selecionado são mantidos; entradas inválidas não disparam escrita. Estados vazios distinguem busca, removidos/arquivados e ausência inicial. Convite de equipe e acesso ao portal continuam permissões e vínculos diferentes.
+
+O upload mobile permite interromper preparação/envio real e repetir com o mesmo arquivo mantido em memória. Depois de iniciada a confirmação do servidor, não oferece cancelamento; se a resposta for incerta, bloqueia repetição automática e orienta conferir a biblioteca. Trocar cliente/pasta não anexa a resposta antiga ao novo conteúdo. Nenhum arquivo é guardado no rascunho persistido.

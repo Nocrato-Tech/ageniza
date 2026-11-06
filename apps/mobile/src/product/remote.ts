@@ -89,37 +89,45 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
       libraries.set(clientId, library); return library;
     },
     removeAsset: async (asset) => { agencyOnly(); await api.request(`${base(asset.clientId)}/media-folders/${asset.folderId}/assets/${asset.id}/remove`, { method: 'POST' }); libraries.delete(asset.clientId); },
-    upload: async (clientId, folderId, file, onProgress) => {
+    upload: async (clientId, folderId, file, onProgress, signal) => {
       agencyOnly();
       let completedBytes = 0;
       let totalBytes = file.size;
-      const report = (phase: 'preparing' | 'sending' | 'confirming' | 'ready' | 'failed') => onProgress?.({ name: file.name, phase, completedBytes, totalBytes });
+      let confirming = false;
+      const report = (phase: 'preparing' | 'sending' | 'confirming' | 'ready' | 'failed' | 'cancelled') => onProgress?.({ name: file.name, phase, completedBytes, totalBytes, ...((phase === 'failed' || phase === 'cancelled') ? { retryable: !confirming } : {}) });
+      const checkCancelled = () => { if (signal?.aborted) throw new Error('Envio interrompido.'); };
       report('preparing');
       try {
-        const blob = file.file ?? await (await fetch(file.uri)).blob();
+        checkCancelled();
+        const blob = file.file ?? await (await fetch(file.uri, signal ? { signal } : undefined)).blob();
+        checkCancelled();
         totalBytes = blob.size;
-        const created = await api.request<CreateMediaUploadResponse>(`${root}/media/uploads`, { method: 'POST', body: { fileName: file.name, contentType: file.mimeType, declaredSizeBytes: blob.size, clientId, folderId } });
+        const created = await api.request<CreateMediaUploadResponse>(`${root}/media/uploads`, { method: 'POST', body: { fileName: file.name, contentType: file.mimeType, declaredSizeBytes: blob.size, clientId, folderId }, ...(signal ? { signal } : {}) });
+        checkCancelled();
         report('sending');
         const parts: { partNumber: number; eTag: string }[] = [];
         if (created.upload.type === 'single') {
-          const response = await fetch(created.upload.url, { method: 'PUT', headers: { 'Content-Type': file.mimeType }, body: blob });
+          const response = await fetch(created.upload.url, { method: 'PUT', headers: { 'Content-Type': file.mimeType }, body: blob, ...(signal ? { signal } : {}) });
+          checkCancelled();
           if (!response.ok) throw new Error('O envio falhou. Tente selecionar o arquivo novamente.');
           completedBytes = blob.size; report('sending');
         } else {
           for (let number = 1; number <= created.upload.partCount; number += 1) {
-            const signed = await api.request<RequestMediaUploadPartsResponse>(`${root}/media/uploads/${created.assetId}/parts`, { method: 'POST', body: { partNumbers: [number] } });
+            const signed = await api.request<RequestMediaUploadPartsResponse>(`${root}/media/uploads/${created.assetId}/parts`, { method: 'POST', body: { partNumbers: [number] }, ...(signal ? { signal } : {}) });
+            checkCancelled();
             const chunk = blob.slice((number - 1) * created.upload.partSizeBytes, number * created.upload.partSizeBytes);
-            const response = await fetch(signed.parts[0].url, { method: 'PUT', body: chunk });
+            const response = await fetch(signed.parts[0].url, { method: 'PUT', body: chunk, ...(signal ? { signal } : {}) });
+            checkCancelled();
             const eTag = response.headers.get('etag');
             if (!response.ok || !eTag) throw new Error('Não foi possível confirmar uma parte do vídeo. Tente novamente.');
             parts.push({ partNumber: number, eTag }); completedBytes += chunk.size; report('sending');
           }
         }
-        report('confirming');
+        checkCancelled(); confirming = true; report('confirming');
         await api.request(`${root}/media/uploads/${created.assetId}/complete`, { method: 'POST', body: created.upload.type === 'single' ? {} : { parts } });
         libraries.delete(clientId); report('ready');
         return { id: created.assetId, clientId, folderId, name: file.name, kind: created.category, size: blob.size };
-      } catch (cause) { report('failed'); throw cause; }
+      } catch (cause) { report(signal?.aborted && !confirming ? 'cancelled' : 'failed'); throw cause; }
     },
     assetUrl: async (clientId, postId, id, variant = 'original') => { const path = agency ? `${root}/media/${id}/download-url?variant=${variant}` : `${base(clientId)}/contents/${postId}/media/${id}/url?variant=${variant}`; return (await api.request<{ url: string }>(path)).url; },
     profile: async (name) => { await api.request('/me/profile', { method: 'PATCH', body: UpdateMyProfileRequestSchema.parse({ name }) }); }
