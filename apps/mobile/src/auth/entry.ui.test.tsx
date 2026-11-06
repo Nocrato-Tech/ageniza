@@ -204,3 +204,14 @@ it('conceals the next auth flow after revealing the password in another flow', (
   fireEvent.click(screen.getByRole('button', { name: 'Criar conta' }));
   expect((screen.getByLabelText('Senha') as HTMLInputElement).type).toBe('password');
 });
+
+it('associates the compact password toggle with its input and announces reveal state', () => {
+  render(<Login onLogin={async () => {}} onLink={() => {}} />);
+  const input = screen.getByLabelText('Senha');
+  const toggle = screen.getByRole('button', { name: 'Mostrar Senha' });
+  expect(input.id).not.toBe('');
+  expect(toggle.getAttribute('aria-controls')).toBe(input.id);
+  expect(toggle.getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(toggle);
+  expect(screen.getByRole('button', { name: 'Ocultar Senha' }).getAttribute('aria-pressed')).toBe('true');
+});
