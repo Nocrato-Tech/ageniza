@@ -16,6 +16,7 @@ import { ClientDetailPage, ClientGeneralTab, ClientSkeletonTab } from './client-
 import { ClientMediaTab } from './client-media.js';
 import { ClientsPage } from './clients.js';
 import { CollaboratorsPage } from './collaborators.js';
+import { SubscriptionPage } from './subscription.js';
 import { ContentCreateRoute, ContentModalRoute } from './content-modal.js';
 import { ContentsClientPage, ContentsPage } from './contents.js';
 import { ContextSelectPage } from './contexts.js';
@@ -145,6 +146,11 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="colaboradores" element={
         <AgencyPermissionRoute permission="colaborador.visualizar">
           <CollaboratorsPage />
+        </AgencyPermissionRoute>
+      } />
+      <Route path="assinatura" element={
+        <AgencyPermissionRoute permission="assinatura.gerenciar">
+          <SubscriptionPage />
         </AgencyPermissionRoute>
       } />
       <Route path="conteudos">

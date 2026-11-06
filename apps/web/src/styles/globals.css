@@ -8480,3 +8480,129 @@ html:has(.portal-post__bar) {
   font: var(--body-md);
   overflow-wrap: anywhere;
 }
+/* Assinatura (issue #773): plans, extras and the simulated card, in the Pauta look (one primary action per view). */
+.subscription {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 48rem;
+}
+
+.subscription h1 {
+  margin: 0;
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.subscription h2,
+.subscription-card__title {
+  margin: 0;
+  font: var(--heading-md);
+}
+
+.subscription__block {
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-default);
+}
+
+.subscription p,
+.subscription ul {
+  margin: 0;
+  font: var(--body-md);
+}
+
+.subscription__facts {
+  display: grid;
+  gap: var(--space-1);
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+}
+
+.subscription__notice {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.subscription__notice--alert {
+  color: var(--text-danger);
+}
+
+.subscription__plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--space-3);
+}
+
+.subscription__extras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-4);
+}
+
+.subscription__summary {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+}
+
+.subscription__total {
+  color: var(--text-primary);
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.subscription__actions,
+.subscription-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.subscription-card {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.subscription-card__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.subscription-card__title svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+}
+
+.subscription-card__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-4);
+}
+
+.subscription-cancel {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.subscription-cancel h3 {
+  margin: 0 0 var(--space-2);
+  font: var(--label-md);
+}
+
+.subscription-cancel ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+}
