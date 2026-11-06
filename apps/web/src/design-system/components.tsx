@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { ArrowRight, LayoutGrid, List, Plus, Store } from 'lucide-react';
 import {
   Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, ClientStrip, DatePicker, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, ErrorSummary, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
-  Modal, Pagination, Popover, Realce, Segmented, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput
+  Modal, Pagination, PasswordInput, Popover, Realce, Segmented, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput
 } from '@ageniza/ui';
 
 /** `hover` and `focus` are real interactions on the default render, so they are not states a component implements. */
@@ -200,6 +200,12 @@ export const componentEntries: readonly ComponentEntry[] = [
       { label: 'com rótulo', render: (state) => stateOnly(state, ['default', 'disabled'], <label>Nome<TextInput defaultValue="Maria" disabled={state === 'disabled'} /></label>) },
       { label: 'com erro', render: (state) => stateOnly(state, ['default'], <><TextInput aria-label="E-mail" aria-invalid defaultValue="maria@" /><FieldMessage>Informe um e-mail válido.</FieldMessage></>) }
     ]
+  },
+  {
+    id: 'password-input',
+    name: 'PasswordInput',
+    covers: ['PasswordInput'],
+    examples: [{ label: 'mostrar e ocultar senha', render: (state) => stateOnly(state, ['default', 'disabled'], <Field label="Senha" hint="De 10 a 128 caracteres.">{(control) => <PasswordInput {...control} name="password" autoComplete="new-password" disabled={state === 'disabled'} />}</Field>) }]
   },
   {
     id: 'textarea',
