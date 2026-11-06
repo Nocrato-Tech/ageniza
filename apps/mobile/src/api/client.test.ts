@@ -180,3 +180,21 @@ it('does not persist a queued old cookie after logout changes the generation', a
   await clearing;
   expect(storage.set).toHaveBeenCalledTimes(1); expect(await storage.get()).toBeNull();
 });
+
+
+describe('web mobile confirmation destination', () => {
+  it.each(['/auth/sign-up', '/auth/email/verification/resend'])('marks %s only on the web client', async (path) => {
+    for (const native of [false, true]) {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({}));
+      const api = createApiClient('https://dev.ageniza.com.br/api', memory(), native, codec, fetcher);
+      await api.request(path, { method: 'POST', body: {} });
+      expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('x-ageniza-client')).toBe(native ? null : 'mobile-web');
+    }
+  });
+  it('does not add a destination hint to login or business requests', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({}));
+    const api = createApiClient('https://dev.ageniza.com.br/api', memory(), false, codec, fetcher);
+    await api.request('/auth/login', { method: 'POST', body: {} });
+    expect(new Headers(fetcher.mock.calls[0][1]?.headers).has('x-ageniza-client')).toBe(false);
+  });
+});

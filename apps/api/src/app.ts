@@ -184,6 +184,7 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
       : options.invitations.invitationTokenLookup ?? createInvitationTokenLookup(options.invitations.database);
     registerAuthModule(app, {
       ...options.auth,
+      mobileWebVerification: options.config.deployTarget === 'dev',
       invitationTokenLookup
     });
   }

@@ -38,7 +38,7 @@ export default function App() {
   const expire = useCallback(() => { generation.current += 1; setEntry(null); setRestoring(false); setRestoreFailure(''); setError(''); }, []);
   useEffect(() => {
     let alive = true;
-    const receive = (url: string) => { const link = parseAccountLink(url, webUrl); if (alive && link) { if (link.kind === 'approval' && typeof window !== 'undefined' && window.location?.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search); setAccountLink(link); } };
+    const receive = (url: string) => { const link = parseAccountLink(url, webUrl); if (alive && link) { if (typeof window !== 'undefined' && window.location) { if (link.kind === 'approval' && window.location.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search); else if (link.kind === 'verify' && window.location.pathname === '/app-mobile/') window.history.replaceState(null, '', window.location.pathname); } setAccountLink(link); } };
     void Linking.getInitialURL().then((url) => { if (url) receive(url); }).catch(() => {});
     const subscription = Linking.addEventListener('url', ({ url }) => receive(url));
     return () => { alive = false; subscription.remove(); };

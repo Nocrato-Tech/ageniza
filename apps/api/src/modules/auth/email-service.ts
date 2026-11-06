@@ -54,6 +54,7 @@ export interface SendAccountNoticeInput {
 export interface SendEmailVerificationInput {
   readonly to: string;
   readonly token: string;
+  readonly mobileWeb?: boolean;
 }
 
 /** The sign-up confirmation link lives this long (2026-10-26 decision on the public sign-up). */
@@ -94,8 +95,8 @@ const PASSWORD_RESET_OPERATION = 'auth.password_reset_email';
 const actionUrlFor = (appPublicUrl: string, token: string): string =>
   `${appPublicUrl.replace(/\/$/, '')}/senha/redefinir?token=${encodeURIComponent(token)}`;
 
-const verificationActionUrlFor = (appPublicUrl: string, token: string): string =>
-  `${appPublicUrl.replace(/\/$/, '')}/email/verificar?token=${encodeURIComponent(token)}`;
+const verificationActionUrlFor = (appPublicUrl: string, token: string, mobileWeb = false): string =>
+  `${appPublicUrl.replace(/\/$/, '')}${mobileWeb ? '/app-mobile/?action=verify&token=' : '/email/verificar?token='}${encodeURIComponent(token)}`;
 
 const resetActionUrlFor = (appPublicUrl: string, token: string, inviteToken?: string): string => {
   const actionUrl = actionUrlFor(appPublicUrl, token);
@@ -223,7 +224,7 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
     },
     sendEmailVerification(input): void {
       sendNotice(input.to, emailVerificationEmail({
-        actionUrl: verificationActionUrlFor(options.config.appPublicUrl, input.token),
+        actionUrl: verificationActionUrlFor(options.config.appPublicUrl, input.token, input.mobileWeb),
         expiresInMinutes: EMAIL_VERIFICATION_EXPIRES_IN_MINUTES
       }), 'email-verification');
     },

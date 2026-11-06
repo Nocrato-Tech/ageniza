@@ -5,6 +5,7 @@ const trusted = 'https://dev.ageniza.com.br';
 describe('account links', () => {
   it.each([
     ['ageniza://email/verificar?token=one', 'verify'],
+    [`${trusted}/app-mobile/?action=verify&token=mobile`, 'verify'],
     [`${trusted}/senha/redefinir?token=two`, 'reset'],
     [`${trusted}/convite/abc_123`, 'invitation'],
     ['ageniza://email/confirmar?token=three', 'emailChange']
@@ -25,6 +26,13 @@ describe('account links', () => {
     'ageniza://email/verificar?cookie=secret&token=one',
     'ageniza://email/verificar?token=',
     'ageniza://email/verificar?token=one#cookie=secret',
+    'https://evil.example/app-mobile/?action=verify&token=one',
+    `${trusted}/app-mobile/?action=reset&token=one`,
+    `${trusted}/app-mobile/?action=verify&action=reset&token=one`,
+    `${trusted}/app-mobile/?action=verify&token=one&token=two`,
+    `${trusted}/app-mobile/?action=verify&token=one#cookie=secret`,
+    `${trusted}/app-mobile/?action=verify&token=`,
+    'ageniza://app-mobile/?action=verify&token=one',
     'javascript:alert(1)'
   ])('refuses foreign, ambiguous or session-bearing links', (url) => {
     expect(parseAccountLink(url, trusted)).toBeNull();

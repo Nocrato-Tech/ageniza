@@ -299,3 +299,8 @@ compromised. The planned hardening (tracked for a later issue, not this one) is 
 PostgreSQL role, `ageniza_auth`, scoped to the `auth` schema only, with its own connection pool in
 `better-auth.ts`/`server.ts` — the rest of the application would keep using `ageniza_app` and would
 have no access to `auth` at all.
+
+
+### Destino da confirmação no mobile web (#845)
+
+No deploy `dev`, o cadastro e o reenvio com o cabeçalho exato `x-ageniza-client: mobile-web` geram um link fixo para `/app-mobile/?action=verify&token=…`. Produção e demais pedidos continuam no destino desktop. O cabeçalho não é credencial e não altera autorização, sessão, validade ou consumo do token. Não se aceita uma URL de retorno fornecida pelo cliente.

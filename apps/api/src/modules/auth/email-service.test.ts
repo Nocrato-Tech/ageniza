@@ -119,3 +119,22 @@ describe('auth email service', () => {
     expect(logged).not.toContain('SMTP rejected message');
   });
 });
+
+
+describe('verification interface destination', () => {
+  it.each([
+    [true, '/app-mobile/?action=verify&token='],
+    [false, '/email/verificar?token='],
+    [undefined, '/email/verificar?token=']
+  ])('uses the fixed intended destination for mobileWeb=%s', async (mobileWeb, path) => {
+    const sent: OutgoingEmail[] = [];
+    const sender = senderFor(async (message) => { sent.push(message); });
+    const service = createEmailService({ sender, config, logger: createLogger({ enabled: false }) });
+    service.sendEmailVerification({ to: 'person@example.com', token: 'token with &/?', ...(mobileWeb === undefined ? {} : { mobileWeb }) });
+    await service.drain();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.text).toContain(`https://app.ageniza.example${path}token%20with%20%26%2F%3F`);
+    expect(sent[0]?.html).toContain('https://app.ageniza.example' + path.replaceAll('&', '&amp;'));
+    expect(sent[0]?.text).not.toContain(mobileWeb ? '/email/verificar?' : '/app-mobile/');
+  });
+});

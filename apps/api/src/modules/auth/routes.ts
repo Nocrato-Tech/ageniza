@@ -52,6 +52,7 @@ export interface AuthModuleDependencies {
   /** The public sign-up writes the account, its acceptances and its confirmation link (issue #706). */
   readonly database: DatabaseClient;
   readonly emailService: EmailService;
+  readonly mobileWebVerification?: boolean;
   /** The versions in force, recorded at sign-up exactly like the invitation's new account. */
   readonly legalVersions: { readonly terms: string; readonly privacy: string };
   /** Present only when Google sign-in is configured (issue #707); without it the Google routes answer 404. */
@@ -134,7 +135,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
   registerGoogleRoutes(app, { auth: dependencies.auth, ...(dependencies.google === undefined ? {} : { google: dependencies.google }) });
 
   /** Issues and sends a new link when the address has an account waiting; nothing otherwise. */
-  const sendConfirmationIfPending = async (email: string): Promise<void> => {
+  const sendConfirmationIfPending = async (email: string, mobileWeb = false): Promise<void> => {
     const token = await dependencies.database.transaction(async (transaction) => {
       const pending = await raw<{ rows: Array<{ id: string }> }>(transaction, `
         select id from auth."user" where email = ? and "emailVerified" = false
@@ -142,7 +143,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
       const user = pending.rows[0];
       return user === undefined ? undefined : issueEmailConfirmation(transaction, user.id);
     });
-    if (token !== undefined) dependencies.emailService.sendEmailVerification({ to: email, token });
+    if (token !== undefined) dependencies.emailService.sendEmailVerification({ to: email, token, mobileWeb });
   };
 
   app.post('/auth/login', { ...perIpRateLimit(AUTH_RATE_LIMITS.login.ip, loginDocs), onRequest: noStore }, async (request, reply) => {
@@ -226,7 +227,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
 
     // A taken address, confirmed or not, gets a notice and never a link (finding A1 of the review of
     // PR #720), and the response is the same either way.
-    if (token !== undefined) dependencies.emailService.sendEmailVerification({ to: body.email, token });
+    if (token !== undefined) dependencies.emailService.sendEmailVerification({ to: body.email, token, mobileWeb: dependencies.mobileWebVerification === true && request.headers['x-ageniza-client'] === 'mobile-web' });
     else dependencies.emailService.sendSignUpWithExistingAccount({ to: body.email });
     return reply.status(202).send(routeResponse(signUpDocs, request, {}));
   });
@@ -235,7 +236,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     const body = routeBody(resendVerificationDocs, request);
     dependencies.limiter.consume('resendVerification', normalizeRateLimitIp(request.ip), body.email);
 
-    await sendConfirmationIfPending(body.email);
+    await sendConfirmationIfPending(body.email, dependencies.mobileWebVerification === true && request.headers['x-ageniza-client'] === 'mobile-web');
     return reply.status(202).send(routeResponse(resendVerificationDocs, request, {}));
   });
 
