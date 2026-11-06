@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 interface AuditContext {
   readonly requestId: string;
   readonly passwordResetInviteToken?: string;
+  readonly passwordResetMobileWeb?: boolean;
 }
 
 const storage = new AsyncLocalStorage<AuditContext>();
@@ -27,3 +28,8 @@ export const runWithPasswordResetInviteToken = <T>(inviteToken: string | undefin
   storage.run({ ...storage.getStore(), requestId: storage.getStore()?.requestId ?? '', ...(inviteToken === undefined ? {} : { passwordResetInviteToken: inviteToken }) }, work);
 
 export const currentPasswordResetInviteToken = (): string | undefined => storage.getStore()?.passwordResetInviteToken;
+
+export const runWithPasswordResetMobileWeb = <T>(mobileWeb: boolean, work: () => Promise<T>): Promise<T> =>
+  storage.run({ ...storage.getStore(), requestId: storage.getStore()?.requestId ?? '', passwordResetMobileWeb: mobileWeb }, work);
+
+export const currentPasswordResetMobileWeb = (): boolean => storage.getStore()?.passwordResetMobileWeb === true;

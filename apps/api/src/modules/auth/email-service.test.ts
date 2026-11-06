@@ -138,3 +138,16 @@ describe('verification interface destination', () => {
     expect(sent[0]?.text).not.toContain(mobileWeb ? '/email/verificar?' : '/app-mobile/');
   });
 });
+
+
+it('keeps mobile password recovery inside the fixed app path and preserves invitation continuation', async () => {
+  const sent: OutgoingEmail[] = [];
+  const service = createEmailService({ sender: senderFor(async (message) => { sent.push(message); }), config, logger: createLogger({ enabled: false }) });
+  service.sendPasswordReset({ to: 'one@example.test', token: 'a&b', mobileWeb: true });
+  service.sendPasswordReset({ to: 'two@example.test', token: 'other', mobileWeb: true, inviteToken: 'invite' });
+  service.sendPasswordReset({ to: 'three@example.test', token: 'desktop' });
+  await service.drain();
+  expect(sent[0]?.text).toContain('https://app.ageniza.example/app-mobile/?action=reset&token=a%26b');
+  expect(sent[1]?.text).toContain('https://app.ageniza.example/senha/redefinir?token=other&invite=invite');
+  expect(sent[2]?.text).toContain('https://app.ageniza.example/senha/redefinir?token=desktop');
+});

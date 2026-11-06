@@ -54,9 +54,9 @@ describe('App session wiring', () => {
 });
 
 
-it('opens the mobile verification action and removes its token before confirmation', async () => {
-  state.initialUrl = 'https://dev.ageniza.com.br/app-mobile/?action=verify&token=mail-token';
-  window.history.replaceState(null, '', '/app-mobile/?action=verify&token=mail-token');
+it.each(['verify', 'reset'])('opens the mobile %s action and removes its token before submission', async (action) => {
+  state.initialUrl = `https://dev.ageniza.com.br/app-mobile/?action=${action}&token=mail-token`;
+  window.history.replaceState(null, '', `/app-mobile/?action=${action}&token=mail-token`);
   state.request.mockRejectedValue(new Error('not signed in'));
   render(<App />);
   expect(await screen.findByText('Account action')).toBeTruthy();
