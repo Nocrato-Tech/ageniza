@@ -16,10 +16,12 @@ export type PaymentResult = 'approved' | 'declined' | 'failed';
  * fields is read, held in state or sent: what leaves this screen is the outcome the person chose, for a charge opened before.
  * "Simular recusa" is the way to test the failure path.
  */
-export function SimulatedCardStep({ agencyId, chargeId, amountCents, onFinish, onLeave }: {
+export function SimulatedCardStep({ agencyId, chargeId, amountCents, summary, onFinish, onLeave }: {
   agencyId: string;
   chargeId: string;
   amountCents: number;
+  /** What is being bought, as the server quoted it. */
+  summary?: { planName: string; monthlyCents: number } | undefined;
   onFinish: (result: PaymentResult) => void;
   onLeave: () => void;
 }) {
@@ -52,6 +54,7 @@ export function SimulatedCardStep({ agencyId, chargeId, amountCents, onFinish, o
     <p className="subscription-card__lead">
       Isto é um pagamento de teste: qualquer dado serve, nenhum dado de cartão sai do seu navegador e nada é cobrado de verdade.
     </p>
+    {summary !== undefined && <p className="subscription-card__plan">Plano <strong>{summary.planName}</strong>, {formatBrl(summary.monthlyCents)}/mês</p>}
     <p className="subscription-card__amount">Valor desta cobrança: <strong>{formatBrl(amountCents)}</strong></p>
     <div className="subscription-card__fields">
       <Field label="Número do cartão">{(control) => <TextInput {...control} inputMode="numeric" autoComplete="off" placeholder="0000 0000 0000" />}</Field>
