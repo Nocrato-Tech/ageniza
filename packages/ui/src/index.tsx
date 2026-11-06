@@ -74,3 +74,5 @@ export const ChoiceCard = forwardRef<HTMLButtonElement, ChoiceCardProps>(functio
     </button>
   );
 });
+
+export { PasswordInput, type PasswordInputProps } from './password-input.js';

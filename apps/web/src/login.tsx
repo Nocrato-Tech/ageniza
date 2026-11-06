@@ -5,7 +5,7 @@ import {
   AuthLoginResponseSchema,
   ContextResolveResponseSchema
 } from '@ageniza/contracts';
-import { Button, Field, TextInput, useFormErrors } from '@ageniza/ui';
+import { Button, Field, PasswordInput, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { useAuthSession, useAuthSessionStore } from './auth.js';
 import { AuthMessage, AuthPanel } from './auth-layout.js';
@@ -169,10 +169,10 @@ export function LoginPage() {
       </Field>
       <div className="auth-field-link">
         <Field label="Senha" id="login-password" error={errors.password}>
-          {(control) => <TextInput
+          {(control) => <PasswordInput
             {...control}
             name="password"
-            type="password"
+
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}

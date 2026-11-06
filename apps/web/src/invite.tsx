@@ -8,7 +8,7 @@ import {
   InvitationPreviewResponseSchema,
   type InvitationContext
 } from '@ageniza/contracts';
-import { Button, Field, LiveStatus, Skeleton, TextInput, useFormErrors } from '@ageniza/ui';
+import { Button, Field, PasswordInput, LiveStatus, Skeleton, TextInput, useFormErrors } from '@ageniza/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSession, useAuthSessionStore } from './auth.js';
@@ -16,7 +16,7 @@ import { AuthMessage, AuthPanel } from './auth-layout.js';
 import { apiPath } from './api-path.js';
 import { contextDestination, rememberContext, type ContextTarget } from './context-destination.js';
 import { useDocumentTitle } from './document-title.js';
-import { usePasswordHint } from './password-hint.js';
+import { NEW_PASSWORD_HINT } from './password-hint.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { forgetGoogleInvite, GoogleSignInBlock } from './google-sign-in.js';
@@ -46,7 +46,6 @@ export function InvitationPage() {
   const session = useAuthSession(authStore);
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
-  const passwordHint = usePasswordHint(password);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; password?: string }>({});
   const [formError, setFormError] = useState<string | undefined>();
@@ -217,8 +216,8 @@ export function InvitationPage() {
         <Field label="Nome" id="invite-name" error={errors.name}>
           {(control) => <TextInput {...control} name="name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} />}
         </Field>
-        <Field label="Senha" id="invite-password" hint={passwordHint.hint} error={errors.password}>
-          {(control) => <TextInput {...control} name="password" type="password" autoComplete="new-password" {...passwordHint.focusProps} value={password}
+        <Field label="Senha" id="invite-password" hint={NEW_PASSWORD_HINT} error={errors.password}>
+          {(control) => <PasswordInput {...control} name="password" autoComplete="new-password" value={password}
             onChange={(event) => setPassword(event.target.value)} />}
         </Field>
         <label className="auth-check">

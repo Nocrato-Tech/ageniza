@@ -236,23 +236,16 @@ describe('the invitation form in the new layout', () => {
 });
 
 describe('the other auth screens in the new layout', () => {
-  it('hides the password rule on opening, shows it on focus or with content, and links it to the control', async () => {
+  it('shows the actual new-password rule before interaction and keeps it linked after blur', async () => {
     renderAt('/senha/redefinir?token=abc');
-
     const input = await screen.findByLabelText('Nova senha');
-    expect(screen.queryByText('Mínimo de 10 caracteres')).toBeNull();
-    expect(input.getAttribute('aria-describedby')).toBeNull();
-
-    fireEvent.focus(input);
-    const hint = screen.getByText('Mínimo de 10 caracteres');
+    const hint = screen.getByText('De 10 a 128 caracteres.');
     expect(input.getAttribute('aria-describedby')).toBe(hint.id);
-
+    fireEvent.focus(input);
     fireEvent.blur(input);
-    expect(screen.queryByText('Mínimo de 10 caracteres')).toBeNull();
-
+    expect(input.getAttribute('aria-describedby')).toBe(hint.id);
     fireEvent.change(input, { target: { value: 'abc' } });
-    fireEvent.blur(input);
-    expect(input.getAttribute('aria-describedby')).toBe(screen.getByText('Mínimo de 10 caracteres').id);
+    expect(screen.getByText('De 10 a 128 caracteres.')).toBe(hint);
   });
 
   it('announces the e-mail change as a status, with its icon, above the way back to the sign-in', async () => {

@@ -7,7 +7,7 @@ import {
   AuthEmailVerifyResponseSchema
 } from '@ageniza/contracts';
 import { ArrowLeft } from 'lucide-react';
-import { Button, Field, TextInput, useFormErrors } from '@ageniza/ui';
+import { Button, Field, PasswordInput, TextInput, useFormErrors } from '@ageniza/ui';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useOptionalAuthSessionStore, type AuthSessionSnapshot } from './auth.js';
@@ -156,7 +156,7 @@ export function VerifyEmailPage() {
     </div>}
     <form ref={formRef} className="auth-form" onSubmit={onSubmit} noValidate>
       <Field label="Senha" id="verify-password" error={passwordError}>
-        {(control) => <TextInput {...control} name="password" type="password" autoComplete="current-password" value={password}
+        {(control) => <PasswordInput {...control} name="password" autoComplete="current-password" value={password}
           onChange={(event) => setPassword(event.target.value)} />}
       </Field>
       {refused && <AuthMessage tone="danger" role="alert">

@@ -5,13 +5,13 @@ import {
   AuthPasswordResetRequestSchema,
   AuthPasswordResetResponseSchema
 } from '@ageniza/contracts';
-import { Button, Field, TextInput, useFormErrors } from '@ageniza/ui';
+import { Button, Field, PasswordInput, useFormErrors } from '@ageniza/ui';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuthSessionStore } from './auth.js';
 import { AUTH_LINK_BUTTON_CLASS, AuthMessage, AuthPanel } from './auth-layout.js';
 import { useDocumentTitle } from './document-title.js';
-import { usePasswordHint } from './password-hint.js';
+import { NEW_PASSWORD_HINT } from './password-hint.js';
 import { validateForm } from './forms.js';
 import { HttpClientError, useApiClient } from './http.js';
 
@@ -34,7 +34,6 @@ export function ResetPasswordPage() {
   const token = searchParams.get('token') ?? '';
   const inviteToken = searchParams.get('invite') ?? undefined;
   const [password, setPassword] = useState('');
-  const passwordHint = usePasswordHint(password);
   const [error, setError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
   const [invalid, setInvalid] = useState(token.length === 0);
@@ -99,12 +98,12 @@ export function ResetPasswordPage() {
   return <AuthPanel titleId="reset-title" title="Definir nova senha">
     <form ref={formRef} className="auth-form" onSubmit={onSubmit} noValidate>
       {summary}
-      <Field label="Nova senha" id="reset-password" hint={passwordHint.hint} error={error}>
-        {(control) => <TextInput
+      <Field label="Nova senha" id="reset-password" hint={NEW_PASSWORD_HINT} error={error}>
+        {(control) => <PasswordInput
           {...control}
           name="newPassword"
-          type="password"
-          autoComplete="new-password" {...passwordHint.focusProps}
+
+          autoComplete="new-password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />}
