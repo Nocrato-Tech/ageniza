@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight } from './icons';
 import { Card, IconButton, Txt, ui, useColors } from './ui';
 import type { Post } from './types';
 import { statusNames } from '../contents/period';

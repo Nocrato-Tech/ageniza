@@ -1,0 +1,97 @@
+// MIT source: enesgules/hugeicons-animated @ cd1eeed1b51eac9aa65f58ef6663e49fc2310ca9
+'use client';
+
+import type { Variants } from 'motion/react';
+import { motion, useAnimation } from 'motion/react';
+import type { HTMLAttributes } from 'react';
+import { forwardRef } from 'react';
+import { useIconAnimation } from './use-icon-animation';
+import { cn } from './utils';
+
+export interface Message01IconHandle {
+  startAnimation: () => void;
+  stopAnimation: () => void;
+}
+
+interface Message01IconProps extends HTMLAttributes<HTMLDivElement> {
+  size?: number;
+}
+
+// The bubble speaks: it squashes down onto its tail, springs up and out from
+// the tail like a word leaving the mouth, and wobbles to rest. The text rides
+// a beat behind the outline, like jelly.
+const speakTransition = (delay: number) => ({
+  duration: 0.85,
+  delay,
+  ease: 'easeInOut' as const,
+  times: [0, 0.22, 0.46, 0.66, 0.84, 1],
+});
+
+const bubbleVariants: Variants = {
+  normal: { scaleX: 1, scaleY: 1, rotate: 0 },
+  animate: (delay: number) => ({
+    scaleX: [1, 1.05, 0.96, 1.02, 0.99, 1],
+    scaleY: [1, 0.88, 1.09, 0.97, 1.01, 1],
+    rotate: [0, 2, -3, 1, 0, 0],
+    transition: speakTransition(delay),
+  }),
+};
+
+const Message01Icon = forwardRef<Message01IconHandle, Message01IconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const { handleMouseEnter, handleMouseLeave } = useIconAnimation({
+      controls,
+      loops: false,
+      onMouseEnter,
+      onMouseLeave,
+      ref,
+    });
+
+    return (
+      <div
+        className={cn(className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          fill="none"
+          overflow="visible"
+        >
+          <motion.path
+            d="M8.5 14.5H15.5M8.5 9.5H12"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.5"
+            variants={bubbleVariants}
+            custom={0.05}
+            animate={controls}
+            initial="normal"
+            style={{ transformBox: 'view-box', originX: 3.2 / 24, originY: 21.4 / 24 }}
+          />
+          <motion.path
+            d="M14.1706 20.8905C18.3536 20.6125 21.6856 17.2332 21.9598 12.9909C22.0134 12.1607 22.0134 11.3009 21.9598 10.4707C21.6856 6.22838 18.3536 2.84913 14.1706 2.57107C12.7435 2.47621 11.2536 2.47641 9.8294 2.57107C5.64639 2.84913 2.31441 6.22838 2.04024 10.4707C1.98659 11.3009 1.98659 12.1607 2.04024 12.9909C2.1401 14.536 2.82343 15.9666 3.62791 17.1746C4.09501 18.0203 3.78674 19.0758 3.30021 19.9978C2.94941 20.6626 2.77401 20.995 2.91484 21.2351C3.05568 21.4752 3.37026 21.4829 3.99943 21.4982C5.24367 21.5285 6.08268 21.1757 6.74868 20.6846C7.1264 20.4061 7.31527 20.2668 7.44544 20.2508C7.5756 20.2348 7.83177 20.3403 8.34401 20.5513C8.8044 20.7409 9.33896 20.8579 9.8294 20.8905C11.2536 20.9852 12.7435 20.9854 14.1706 20.8905Z"
+            stroke="currentColor"
+            strokeLinejoin="round"
+            strokeWidth="1.5"
+            variants={bubbleVariants}
+            custom={0}
+            animate={controls}
+            initial="normal"
+            style={{ transformBox: 'view-box', originX: 3.2 / 24, originY: 21.4 / 24 }}
+          />
+        </svg>
+      </div>
+    );
+  }
+);
+
+Message01Icon.displayName = 'Message01Icon';
+
+export { Message01Icon };

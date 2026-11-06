@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
-import { Image as ImageIcon, Play } from 'lucide-react-native';
+import { Image as ImageIcon, Play } from './icons';
 import type { Asset, Post, Repository } from './types';
 import { Action, Card, MediaDisplay, Txt, useColors } from './ui';
 

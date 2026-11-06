@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 import { CalendarDaySchema, ContentReasonSchema, ContentTaskDescriptionSchema, ContentTitleSchema } from '@ageniza/contracts';
-import { Check, Circle } from 'lucide-react-native';
+import { Check, Circle } from './icons';
 import { Action, Card, Field, Info, Selector, Txt, useColors, ui, ErrorText } from './ui';
 import type { Data, Post, Repository, Task } from './types';
 import { displayDay } from '../contents/period';
