@@ -6,7 +6,7 @@ import type { Pool } from 'pg';
 import type { ApiConfig } from '@ageniza/config/server';
 import { captureUnexpectedError, type CoreLogger } from '@ageniza/core';
 
-import { currentAuditRequestId, currentPasswordResetInviteToken } from './audit-context.js';
+import { currentAuditRequestId, currentPasswordResetInviteToken, currentPasswordResetMobileWeb } from './audit-context.js';
 import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { EmailService } from './email-service.js';
 import { createGoogleUserInfo } from './google.js';
@@ -136,7 +136,7 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
       resetPasswordTokenExpiresIn: 60 * 30,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, token }): Promise<void> => {
-        dependencies.sender.sendPasswordReset({ to: user.email, token, inviteToken: currentPasswordResetInviteToken() });
+        dependencies.sender.sendPasswordReset({ to: user.email, token, inviteToken: currentPasswordResetInviteToken(), mobileWeb: currentPasswordResetMobileWeb() });
       },
       onPasswordReset: async ({ user }): Promise<void> => {
         // The reset link reached the mailbox, so it confirms an unconfirmed account and voids its

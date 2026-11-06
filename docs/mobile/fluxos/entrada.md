@@ -199,3 +199,8 @@ No mobile web dev com demonstração habilitada, a confirmação, recuperação 
 O cliente web mobile identifica pedidos de cadastro e reenvio com `x-ageniza-client: mobile-web`. O servidor gera um destino fixo da mesma origem: `/app-mobile/?action=verify&token=…`. O destino mobile só é habilitado no deploy `dev`, que publica essa interface. Em produção, ou sem essa indicação exata, mantém `/email/verificar?token=…`. A indicação não concede acesso nem troca regras de autenticação.
 
 Ao abrir o link, o mobile captura o token, remove a consulta da barra e apresenta sua tela de confirmação. A senha e o token são validados pela rota oficial; depois, os acessos e a criação de agência continuam no mobile. Nenhum segredo é salvo para redirecionamento. Links antigos continuam usando seu destino original e podem ser colados em “Abrir convite ou link recebido” no mobile.
+
+
+## Recuperação iniciada no mobile web (#847)
+
+Pedidos `/auth/password/forgot`, inclusive pelo perfil, usam a mesma indicação fixa `x-ageniza-client: mobile-web`. No dev, sem continuação de convite, o e-mail abre `/app-mobile/?action=reset&token=…`. O token é retirado da barra. A redefinição mantém a revogação das sessões e retorna ao login mobile. Produção e continuação de convite preservam o destino desktop.

@@ -20,7 +20,7 @@ import { HttpError } from '@ageniza/core';
 import { createVerifiedUserClaims, raw, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import { APIError } from 'better-auth';
 
-import { runWithAuditRequestId, runWithPasswordResetInviteToken } from './audit-context.js';
+import { runWithAuditRequestId, runWithPasswordResetInviteToken, runWithPasswordResetMobileWeb } from './audit-context.js';
 import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { InMemoryAuthLimiter } from './auth-limiter.js';
 import { unconfirmedAccountMayHoldSession, type AuthInstance } from './better-auth.js';
@@ -370,10 +370,10 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
     // Never awaited past this call's own (fast) DB work: the email itself is fire-and-forget
     // inside EmailService, so the response below never depends on SMTP latency or the account
     // actually existing.
-    await runWithPasswordResetInviteToken(inviteContinuation, () => dependencies.auth.api.requestPasswordReset({
+    await runWithPasswordResetMobileWeb(dependencies.mobileWebVerification === true && request.headers['x-ageniza-client'] === 'mobile-web', () => runWithPasswordResetInviteToken(inviteContinuation, () => dependencies.auth.api.requestPasswordReset({
       body: { email: body.email },
       headers: toAuthHeaders(request)
-    })).catch((error) => {
+    }))).catch((error) => {
       request.log.error({
         operation: 'auth.password_forgot',
         status: 'failed',

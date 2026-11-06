@@ -1041,3 +1041,18 @@ describe('Better Auth\'s own sign-up is never reachable (#14)', () => {
     }
   });
 });
+
+
+describe('mobile password recovery destination (#847)', () => {
+  it.each([['mobile-web', true], ['https://evil.example', true], ['mobile-web', false]] as const)('uses a fixed mobile destination only for enabled requests (%s, %s)', async (hint, enabled) => {
+    const sender = createFakeEmailSender();
+    const app = await openApp({ sender, config: enabled ? { deployTarget: 'dev' } : {} });
+    const user = await makeUser(app, 'forgot-mobile');
+    const response = await app.app.inject({ method: 'POST', url: '/auth/password/forgot', headers: { ...origin, 'x-ageniza-client': hint }, payload: { email: user.email } });
+    expect(response.statusCode).toBe(202);
+    expect(response.headers['set-cookie']).toBeUndefined();
+    await app.emailService.drain();
+    const prefix = enabled && hint === 'mobile-web' ? '/app-mobile/?action=reset&token=' : '/senha/redefinir?token=';
+    expect(sender.sent[0]?.text).toContain(TEST_APP_PUBLIC_URL + prefix);
+  });
+});

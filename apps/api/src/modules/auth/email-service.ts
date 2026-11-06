@@ -21,6 +21,7 @@ export interface AuthEmailConfig {
 }
 
 export interface SendPasswordResetInput {
+  readonly mobileWeb?: boolean;
   readonly to: string;
   readonly token: string;
   /** Reserved for the invitation flow; password reset does not use it yet. */
@@ -98,7 +99,8 @@ const actionUrlFor = (appPublicUrl: string, token: string): string =>
 const verificationActionUrlFor = (appPublicUrl: string, token: string, mobileWeb = false): string =>
   `${appPublicUrl.replace(/\/$/, '')}${mobileWeb ? '/app-mobile/?action=verify&token=' : '/email/verificar?token='}${encodeURIComponent(token)}`;
 
-const resetActionUrlFor = (appPublicUrl: string, token: string, inviteToken?: string): string => {
+const resetActionUrlFor = (appPublicUrl: string, token: string, inviteToken?: string, mobileWeb = false): string => {
+  if (mobileWeb && inviteToken === undefined) return `${appPublicUrl.replace(/\/$/, '')}/app-mobile/?action=reset&token=${encodeURIComponent(token)}`;
   const actionUrl = actionUrlFor(appPublicUrl, token);
   if (inviteToken === undefined) return actionUrl;
   return `${actionUrl}&invite=${encodeURIComponent(inviteToken)}`;
@@ -191,7 +193,7 @@ export const createEmailService = (options: CreateEmailServiceOptions): EmailSer
   return {
     sendPasswordReset(input): void {
       const message = passwordResetEmail({
-        actionUrl: resetActionUrlFor(options.config.appPublicUrl, input.token, input.inviteToken),
+        actionUrl: resetActionUrlFor(options.config.appPublicUrl, input.token, input.inviteToken, input.mobileWeb),
         expiresInMinutes: 30
       });
 

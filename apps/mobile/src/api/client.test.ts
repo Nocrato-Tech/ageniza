@@ -183,7 +183,7 @@ it('does not persist a queued old cookie after logout changes the generation', a
 
 
 describe('web mobile confirmation destination', () => {
-  it.each(['/auth/sign-up', '/auth/email/verification/resend'])('marks %s only on the web client', async (path) => {
+  it.each(['/auth/sign-up', '/auth/email/verification/resend', '/auth/password/forgot'])('marks %s only on the web client', async (path) => {
     for (const native of [false, true]) {
       const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({}));
       const api = createApiClient('https://dev.ageniza.com.br/api', memory(), native, codec, fetcher);
