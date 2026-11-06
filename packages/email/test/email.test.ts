@@ -1,4 +1,5 @@
 import { createLogger } from '@ageniza/core';
+import nodemailer from 'nodemailer';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -19,7 +20,46 @@ import {
   type EmailTransport
 } from '../src/index.js';
 
-const actionUrl = 'https://app.ageniza.example/activate?token=super-secret-token';
+describe('transport TLS policy (issue #835)', () => {
+  const build = (smtpUrl: string): Record<string, unknown> => {
+    const spy = vi.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail: vi.fn(), close: vi.fn() } as never);
+    createEmailSender({ smtpUrl, from: 'no-reply@ageniza.example', logger: createLogger({ level: 'silent' }, new PassThrough()) });
+    const options = spy.mock.calls[0]?.[0] as Record<string, unknown>;
+    spy.mockRestore();
+    return options;
+  };
+
+  it('requires STARTTLS and a valid certificate on the submission port', () => {
+    expect(build('smtp://user:key@smtp.ageniza.example:587')).toMatchObject({ requireTLS: true, tls: { rejectUnauthorized: true } });
+  });
+
+  it('never relaxes certificate validation on implicit TLS', () => {
+    expect(build('smtps://user:key@smtp.ageniza.example:465')).toMatchObject({ tls: { rejectUnauthorized: true } });
+  });
+
+  it('ignores query parameters of the URL, so none can weaken TLS or enable logging', () => {
+    const spy = vi.spyOn(nodemailer, 'createTransport');
+    createEmailSender({
+      smtpUrl: 'smtp://user:key@smtp.ageniza.example:587?requireTLS=false&ignoreTLS=true&tls.rejectUnauthorized=false&debug=true&logger=true',
+      from: 'no-reply@ageniza.example',
+      logger: createLogger({ level: 'silent' }, new PassThrough())
+    });
+    const effective = (spy.mock.results[0]?.value as { transporter: { options: Record<string, unknown> } }).transporter.options;
+    spy.mockRestore();
+    expect(effective).toMatchObject({ host: 'smtp.ageniza.example', port: 587, secure: false, requireTLS: true, auth: { user: 'user', pass: 'key' }, tls: { rejectUnauthorized: true } });
+    expect(effective.ignoreTLS).toBeFalsy();
+    expect(effective.debug).toBeFalsy();
+    expect(effective.logger).toBeFalsy();
+  });
+
+  it('leaves the plain in-network sink alone', () => {
+    const options = build('smtp://mailpit:1025');
+    expect(options).not.toHaveProperty('requireTLS');
+    expect(options).not.toHaveProperty('tls');
+  });
+});
+
+const actionUrl ='https://app.ageniza.example/activate?token=super-secret-token';
 
 const captureLogs = () => {
   const stream = new PassThrough();

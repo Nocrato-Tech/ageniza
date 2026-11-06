@@ -407,6 +407,84 @@ describe('server configuration', () => {
       }
     });
 
+    describe('the explicit real-email opt-in (issue #835)', () => {
+      const optedIn = { ...dev, DEV_REAL_EMAIL: '1' };
+      const external = { SMTP_URL: 'smtps://user:key@smtp.ageniza.example:465', EMAIL_FROM: 'Ageniza Dev <no-reply@dev.ageniza.example>' };
+
+      it('accepts an upper-case provider host, normalised to the same rules', () => {
+        expect(loadApiConfig({ ...optedIn, ...external, SMTP_URL: 'smtps://user:key@SMTP.Ageniza.Example:465' }).smtpUrl).toContain('SMTP.Ageniza.Example');
+      });
+
+      it('accepts smtps and smtp on 587 to a public host, in the API and in the worker', () => {
+        for (const smtpUrl of ['smtps://user:key@smtp.ageniza.example:465', 'smtps://user:key@smtp.ageniza.example', 'smtp://user:key@smtp.ageniza.example:587']) {
+          expect(loadApiConfig({ ...optedIn, ...external, SMTP_URL: smtpUrl }).smtpUrl).toBe(smtpUrl);
+          expect(loadWorkerConfig({ ...optedIn, ...external, SMTP_URL: smtpUrl }).smtpUrl).toBe(smtpUrl);
+        }
+      });
+
+      it('keeps the Mailpit sink working when the opt-in is on', () => {
+        expect(loadApiConfig(optedIn).smtpUrl).toBe('smtp://mailpit:1025');
+      });
+
+      it.each([
+        ['a provider without the opt-in', undefined, 'smtps://user:key@smtp.ageniza.example:465'],
+        ['an empty opt-in', '', 'smtps://user:key@smtp.ageniza.example:465']
+      ])('keeps refusing %s', (_label, flag, smtpUrl) => {
+        for (const load of [loadApiConfig, loadWorkerConfig]) {
+          expect(() => load({ ...dev, DEV_REAL_EMAIL: flag, SMTP_URL: smtpUrl, EMAIL_FROM: external.EMAIL_FROM })).toThrow('must be smtp://mailpit:1025 when DEPLOY_TARGET is dev');
+        }
+      });
+
+      it('refuses an opt-in value that is not 1', () => {
+        expect(() => loadApiConfig({ ...optedIn, ...external, DEV_REAL_EMAIL: 'true' })).toThrow('DEV_REAL_EMAIL');
+      });
+
+      it.each([
+        ['plaintext smtp on 25', 'smtp://user:key@smtp.ageniza.example:25'],
+        ['smtp with no port', 'smtp://user:key@smtp.ageniza.example'],
+        ['smtp on 465', 'smtp://user:key@smtp.ageniza.example:465'],
+        ['localhost', 'smtps://user:key@localhost:465'],
+        ['the in-network sink over TLS', 'smtps://user:key@mailpit:465'],
+        ['a single-label host', 'smtps://user:key@postgres:465'],
+        ['an internal suffix', 'smtps://user:key@smtp.corp.internal:465'],
+        ['a private IPv4', 'smtps://user:key@10.0.0.5:465'],
+        ['a 192.168 IPv4', 'smtps://user:key@192.168.1.10:465'],
+        ['a 172.16 IPv4', 'smtps://user:key@172.16.0.9:465'],
+        ['the cloud metadata address', 'smtps://user:key@169.254.169.254:465'],
+        ['loopback IPv4', 'smtps://user:key@127.0.0.1:465'],
+        ['loopback IPv6', 'smtps://user:key@[::1]:465'],
+        ['a unique-local IPv6', 'smtps://user:key@[fd00::1]:465'],
+        ['a trailing dot on localhost', 'smtps://user:key@localhost.:465'],
+        ['a trailing dot on the sink', 'smtps://user:key@mailpit.:465'],
+        ['a hex IPv4 form', 'smtps://user:key@0x7f.1:465'],
+        ['a NAT64 metadata address', 'smtps://user:key@[64:ff9b::a9fe:a9fe]:465'],
+        ['an upper-case internal suffix', 'smtps://user:key@SMTP.CORP.INTERNAL:465'],
+        ['a query that would override the transport', 'smtp://user:key@smtp.ageniza.example:587?requireTLS=false'],
+        ['a query before an @ that hides the real host', 'smtp://user:key@smtp.ageniza.example:587?requireTLS=false&x=@smtp.ageniza.example:587'],
+        ['a fragment', 'smtps://user:key@smtp.ageniza.example:465#x'],
+        ['a path', 'smtps://user:key@smtp.ageniza.example:465/path'],
+        ['no password', 'smtps://user@smtp.ageniza.example:465'],
+        ['no credentials', 'smtps://smtp.ageniza.example:465']
+      ])('refuses %s without echoing credentials or host', (_label, smtpUrl) => {
+        for (const load of [loadApiConfig, loadWorkerConfig]) {
+          const attempt = (): unknown => load({ ...optedIn, ...external, SMTP_URL: smtpUrl });
+          expect(attempt).toThrow(/SMTP_URL: must (point to a public SMTP host|be smtps or smtp on port 587|not point to a loopback|not carry a path|carry a user)/);
+          expect(attempt).not.toThrow(/user:key|smtp\.ageniza|169\.254|192\.168|postgres/);
+        }
+      });
+
+      it('refuses a sender that is not an email address', () => {
+        expect(() => loadApiConfig({ ...optedIn, ...external, EMAIL_FROM: 'Ageniza Dev' })).toThrow('EMAIL_FROM: must be a valid email address');
+        expect(() => loadWorkerConfig({ ...optedIn, ...external, EMAIL_FROM: 'Dev <not-an-address>' })).toThrow('EMAIL_FROM');
+      });
+
+      it('changes nothing for the real production, where the opt-in has no effect', () => {
+        const production = { ...optedIn, ...external, DEPLOY_TARGET: undefined };
+        expect(loadApiConfig(production).smtpUrl).toBe(external.SMTP_URL);
+        expect(() => loadApiConfig({ ...production, SMTP_URL: undefined, EMAIL_FROM: undefined })).toThrow('SMTP_URL and EMAIL_FROM are required');
+      });
+    });
+
     it('leaves every other deployment free to use a real provider', () => {
       const withoutTarget = { ...dev, DEPLOY_TARGET: undefined, SMTP_URL: productionEmailSettings.SMTP_URL, EMAIL_FROM: productionEmailSettings.EMAIL_FROM };
       expect(loadApiConfig(withoutTarget).smtpUrl).toBe(productionEmailSettings.SMTP_URL);

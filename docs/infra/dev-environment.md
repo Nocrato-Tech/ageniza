@@ -3,7 +3,7 @@
 The dev environment runs on the same Hostinger VPS as production will, is published automatically on every merge to `develop`, and is capped so it can never take CPU or memory from production ([ADR 0013](../adr/0013-dev-environment-on-the-vps.md); the product decision is `docs/business/decisions/2026-10-29-estrutural-ambiente-de-dev-na-vps.md`). It reuses the mechanism of the [production deploy](production-deploy.md) and the edge of [ADR 0012](../adr/0012-cloudflare-tunnel-edge.md), as a second independent copy.
 
 - App and API: `https://dev.ageniza.com.br` (the web container serves the SPA and proxies `/api`).
-- Every e-mail the product sends: the Mailpit inbox at `https://mail-dev.ageniza.com.br`, behind Cloudflare Access (the owner's e-mail only). Nothing is delivered to a real address.
+- Every e-mail the product sends: the Mailpit inbox at `https://mail-dev.ageniza.com.br`, behind Cloudflare Access (the owner's e-mail only). Nothing is delivered to a real address unless the owner turns on the optional real e-mail (see below).
 - Payments: `PAYMENTS_PROVIDER=simulado` (the deploy requires the variable). The API and the worker run with `APP_ENV=production` here, so what tells this environment from the real production is `DEPLOY_TARGET=dev`, which only `compose.dev.yml` sets: the simulated provider runs only with it (`runsAsProduction` in `@ageniza/config`), and the production deploy refuses both keys in its `runtime.env`. The dev image is built with the simulated code; the production release is built without it (`PAYMENTS_SIMULATED=exclude`, removed in the build stage of [`apps/api/Dockerfile`](../../apps/api/Dockerfile) and [`apps/worker/Dockerfile`](../../apps/worker/Dockerfile)). The worker renews the subscriptions there; `PAYMENTS_SIMULATED_RENEWAL=declined` in the dev `runtime.env` (optional, `approved` or `declined`) makes every renewal fail, to exercise the three days of grace.
 
 Nothing here needs the repository on the VPS at runtime, and no secret lives in the repository or in GitHub except the dev SSH key.
@@ -167,7 +167,22 @@ The first deploy needs no command: it happens on the next merge to `develop`, or
 
 `runtime.env` accepts only the keys listed in the installed `/usr/local/sbin/ageniza-deploy-dev`, which does not update with a release. When a new key reaches `develop`, re-run `install-dev-deploy.sh` from a checkout of `develop` before adding it; otherwise the deploy stops with `contains a key that is not allowed` and no release reaches dev until that is fixed (#803).
 
-`SMTP_URL`, `EMAIL_FROM`, `DEPLOY_TARGET` and `API_TRUSTED_PROXY_CIDRS` must not be in `runtime.env`: `compose.dev.yml` fixes them, and `ageniza-deploy-dev` refuses a file that names them. The entrypoint also refuses a `runtime.env` whose `APP_PUBLIC_URL` is not `https://dev.ageniza.com.br`, whose payments provider is not the simulated one, or whose R2 buckets do not have `dev` in the name.
+`SMTP_URL`, `EMAIL_FROM`, `DEPLOY_TARGET` and `API_TRUSTED_PROXY_CIDRS` must not be in `runtime.env`: `compose.dev.yml` fixes them (the mail pair only changes through the three `DEV_*` keys of [Real e-mail in dev](#real-e-mail-in-dev-optional-off-by-default)), and `ageniza-deploy-dev` refuses a file that names them. The entrypoint also refuses a `runtime.env` whose `APP_PUBLIC_URL` is not `https://dev.ageniza.com.br`, whose payments provider is not the simulated one, or whose R2 buckets do not have `dev` in the name.
+
+### Real e-mail in dev (optional, off by default)
+
+By default nothing leaves the Mailpit inbox. The owner can let the dev environment send through one authenticated SMTP provider, so testers receive their own links ([decision](../business/decisions/2026-11-05-envio-real-de-e-mail-opcional-no-dev.md), issue #835). Production is not affected.
+
+Turn it on (as root on the VPS; never put these values in the repository, an issue or a chat):
+
+1. At the provider, validate the sender domain and confirm the SPF, DKIM and DMARC records are valid for it; note the sending quotas. Use a dedicated SMTP credential for dev, never the production one.
+2. Add three lines to `/etc/ageniza-dev/runtime.env` (mode `0600`, `sudoedit`): `DEV_REAL_EMAIL=1`, `DEV_SMTP_URL=smtps://<user>:<password>@<public-host>:465` (or `smtp://<user>:<password>@<public-host>:587`, which requires STARTTLS) and `DEV_EMAIL_FROM=Ageniza Dev <no-reply@<verified-domain>>`. Percent-encode special characters of the user and password. All three or none: the deploy refuses a partial set, plaintext SMTP, a host that is not a public DNS name, and never prints the values.
+3. Re-run `sudo bash infra/vps/install-dev-deploy.sh` from a checkout of `develop` (the installed entrypoint does not update with a release), then re-run the latest **Dev release** deploy in GitHub Actions. That is the official restart: it recreates the API and the worker with the new values.
+4. Check: create an account with an address you own and confirm the link arrives; look at `docker logs` of the worker for `email.send` lines (they show the template and a masked recipient, never the link or the credential). A failed delivery shows as `status: failed`.
+
+Turn it off: delete the three lines from `runtime.env` and re-run the **Dev release** deploy; the API and the worker go back to Mailpit. Revoke or rotate the provider credential if it was exposed.
+
+The API and the worker validate it again at start (`DEPLOY_TARGET=dev` plus `DEV_REAL_EMAIL=1`): only `smtps`, or `smtp` on port 587 with STARTTLS required and a valid certificate, to a public host. Email confirmation, password, cookies, CSRF and rate limits are unchanged, and accounts are never confirmed automatically.
 
 ## Operations
 

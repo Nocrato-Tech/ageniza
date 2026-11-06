@@ -154,6 +154,67 @@ describe('validate_runtime_env of the dev entrypoint', () => {
     expect(result.stderr).toMatch(_label === 'a key nobody declared' ? /not allowed/ : /is fixed by compose\.dev\.yml and must not appear/);
   });
 
+  describe('the optional real-mail opt-in (issue #835)', () => {
+    const optIn = ['DEV_REAL_EMAIL=1', 'DEV_SMTP_URL=smtps://user:s3cret%21@smtp.provider.example:465', 'DEV_EMAIL_FROM=Ageniza Dev <no-reply@dev.ageniza.com.br>'];
+    const withOptIn = (replace = {}) => [...fromExample(), ...optIn.map((line) => { const key = line.split('=')[0]; return key in replace ? `${key}=${replace[key]}` : line; })];
+
+    it('accepts smtps and smtp on 587, with the sender', () => {
+      expect(validate(withOptIn()).status).toBe(0);
+      expect(validate(withOptIn({ DEV_SMTP_URL: 'smtp://user:key@smtp.provider.example:587' })).status).toBe(0);
+      expect(validate(withOptIn({ DEV_EMAIL_FROM: 'no-reply@dev.ageniza.com.br' })).status).toBe(0);
+    });
+
+    it.each([
+      ['plaintext smtp on 25', 'smtp://user:key@smtp.provider.example:25'],
+      ['smtp with no port', 'smtp://user:key@smtp.provider.example'],
+      ['no credentials', 'smtps://smtp.provider.example:465'],
+      ['the sink', 'smtp://mailpit:1025'],
+      ['localhost', 'smtps://user:key@localhost:465'],
+      ['a single-label host', 'smtps://user:key@postgres:465'],
+      ['an IP literal', 'smtps://user:key@10.0.0.5:465'],
+      ['an internal suffix', 'smtps://user:key@smtp.corp.internal:465'],
+      ['another scheme', 'https://user:key@smtp.provider.example:465'],
+      ['a query that overrides TLS', 'smtp://user:key@smtp.provider.example:587?requireTLS=false'],
+      ['a query that hides the host behind an @', 'smtp://user:key@smtp.provider.example:587?requireTLS=false&x=@smtp.provider.example:587'],
+      ['a fragment', 'smtps://user:key@smtp.provider.example:465#x'],
+      ['a question mark inside the password', 'smtps://user:ke?y@smtp.provider.example:465'],
+      ['an upper-case internal suffix', 'smtps://user:key@SMTP.CORP.INTERNAL:465']
+    ])('refuses DEV_SMTP_URL with %s without printing it', (_label, value) => {
+      const result = validate(withOptIn({ DEV_SMTP_URL: value }));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('DEV_SMTP_URL');
+      expect(result.stderr + result.stdout).not.toMatch(/key@|user:|10\.0\.0\.5|provider\.example/);
+    });
+
+    it.each(['0', 'true', ''])('refuses DEV_REAL_EMAIL=%j', (value) => {
+      expect(validate(withOptIn({ DEV_REAL_EMAIL: value })).status).toBe(1);
+    });
+
+    it('refuses a sender that is not an address', () => {
+      const result = validate(withOptIn({ DEV_EMAIL_FROM: 'Ageniza Dev' }));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('DEV_EMAIL_FROM');
+    });
+
+    it.each(optIn.map((line) => line.split('=')[0]))('refuses the opt-in without %s', (key) => {
+      const result = validate(withOptIn().filter((line) => !line.startsWith(`${key}=`)));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('set together');
+    });
+
+    it('hands the three values to compose from the vetted snapshot, and nothing else', () => {
+      const body = functionsOf(deploy, 'compose_app');
+      for (const key of ['DEV_REAL_EMAIL', 'DEV_SMTP_URL', 'DEV_EMAIL_FROM']) expect(body).toContain(`read_value "$RUNTIME_SNAPSHOT" ${key}`);
+      expect(body).not.toMatch(/\bSMTP_URL=|\bEMAIL_FROM=/);
+    });
+
+    it('never prints the credential on any refusal', () => {
+      const result = validate([...withOptIn(), 'SMTP_URL=smtps://user:s3cret@smtp.provider.example:465']);
+      expect(result.status).toBe(1);
+      expect(result.stderr + result.stdout).not.toContain('s3cret');
+    });
+  });
+
   it.each([
     ['PAYMENTS_PROVIDER', 'asaas'],
     ['PAYMENTS_PROVIDER', ''],
@@ -418,9 +479,11 @@ describe('the mail path fixed by compose.dev.yml', () => {
 
   it.each(['api', 'worker'])('fixes the sink, the sender and the dev target in the %s, above the runtime file', (name) => {
     const block = serviceBlock(name);
-    expect(block).toMatch(/environment: !override\n(?:\s+[A-Z_]+: .*\n)*?\s+SMTP_URL: smtp:\/\/mailpit:1025\n/);
+    // The sink and the dev sender are the defaults; only the three opt-in variables of issue #835 can replace them.
+    expect(block).toMatch(/environment: !override\n(?:\s+[A-Z_]+: .*\n)*?\s+SMTP_URL: \$\{DEV_SMTP_URL:-smtp:\/\/mailpit:1025\}\n/);
     expect(block).toMatch(/\n\s+DEPLOY_TARGET: dev\n/);
-    expect(block).toMatch(/\n\s+EMAIL_FROM: Ageniza Dev <no-reply@dev\.ageniza\.com\.br>\n/);
+    expect(block).toMatch(/\n\s+DEV_REAL_EMAIL: \$\{DEV_REAL_EMAIL:-\}\n/);
+    expect(block).toMatch(/\n\s+EMAIL_FROM: \$\{DEV_EMAIL_FROM:-Ageniza Dev <no-reply@dev\.ageniza\.com\.br>\}\n/);
     expect(block).toMatch(/env_file:\n\s+- path: \$\{AGENIZA_RUNTIME_ENV_FILE/);
   });
 
