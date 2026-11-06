@@ -204,3 +204,7 @@ Ao abrir o link, o mobile captura o token, remove a consulta da barra e apresent
 ## Recuperação iniciada no mobile web (#847)
 
 Pedidos `/auth/password/forgot`, inclusive pelo perfil, usam a mesma indicação fixa `x-ageniza-client: mobile-web`. No dev, sem continuação de convite, o e-mail abre `/app-mobile/?action=reset&token=…`. O token é retirado da barra. A redefinição mantém a revogação das sessões e retorna ao login mobile. Produção e continuação de convite preservam o destino desktop.
+
+## UX de autenticação
+
+Os campos de senha permitem mostrar/ocultar sem trocar o valor. Cadastro e redefinição antecipam a política canônica de 10–128 caracteres; o login não aplica esse mínimo a credenciais existentes. Erros de preenchimento aparecem junto ao campo e o primeiro campo textual inválido recebe foco. As respostas neutras da API permanecem.

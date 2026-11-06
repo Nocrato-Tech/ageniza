@@ -141,3 +141,66 @@ describe('entry without an agency', () => {
     expect(await screen.findByText('Nenhum acesso novo encontrado.')).toBeTruthy();
   });
 });
+it('reveals and conceals a password without changing its value or credential semantics', () => {
+  render(<Login onLogin={async () => {}} onLink={() => {}} />);
+  enter('Senha', 'keep this password');
+  const input = screen.getByLabelText('Senha') as HTMLInputElement;
+  input.focus(); input.setSelectionRange(3, 7);
+  fireEvent.click(screen.getByRole('button', { name: 'Mostrar Senha' }));
+  expect(document.activeElement).toBe(input);
+  expect(input.selectionStart).toBe(3);
+  expect(input.selectionEnd).toBe(7);
+  expect(input.type).toBe('text');
+  expect(input.value).toBe('keep this password');
+  expect(input.autocomplete).toBe('current-password');
+  fireEvent.click(screen.getByRole('button', { name: 'Ocultar Senha' }));
+  expect(input.type).toBe('password');
+});
+
+it('identifies the invalid sign-in field, focuses it and preserves valid values without calling the API', () => {
+  render(<Login onLogin={async () => {}} onLink={() => {}} />);
+  enter('E-mail', 'invalid'); enter('Senha', 'existing');
+  fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+  expect(screen.getByText('Informe um e-mail válido.')).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByLabelText('E-mail'));
+  expect((screen.getByLabelText('Senha') as HTMLInputElement).value).toBe('existing');
+  expect(request).not.toHaveBeenCalled();
+  enter('E-mail', 'person@example.test');
+  expect(screen.queryByText('Informe um e-mail válido.')).toBeNull();
+});
+
+it('shows the real new-password policy before submit and focuses mismatched confirmation', () => {
+  render(<AccountAction link={{ kind: 'reset', token: 'opaque' }} onDone={async () => {}} onClose={() => {}} />);
+  expect(screen.getByText('Use de 10 a 128 caracteres.')).toBeTruthy();
+  enter('Nova senha', 'a-long-password'); enter('Confirme a senha', 'different-password');
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar e continuar' }));
+  expect(screen.getByText('As senhas precisam ser iguais.')).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByLabelText('Confirme a senha'));
+  expect(request).not.toHaveBeenCalled();
+});
+
+it('presents an existing short password to the server without applying the new-password policy', async () => {
+  request.mockRejectedValue(new Error('Credenciais inválidas.'));
+  render(<Login onLogin={async () => {}} onLink={() => {}} />);
+  enter('E-mail', 'person@example.test'); enter('Senha', 'short');
+  fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+  await screen.findByText('Credenciais inválidas.');
+  expect(request).toHaveBeenCalledWith('/auth/login', { method: 'POST', body: { email: 'person@example.test', password: 'short' } });
+  expect(screen.queryByText('Use de 10 a 128 caracteres.')).toBeNull();
+});
+
+it('communicates a verification resend as information instead of an error', async () => {
+  request.mockResolvedValue(undefined);
+  render(<EntryScreen entry={{ kind: 'unverified', email: 'person@example.test' }} busy={false} onSelect={() => {}} onContinue={async () => {}} onLink={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Reenviar confirmação' }));
+  expect(await screen.findByText('Confira sua caixa de entrada')).toBeTruthy();
+  expect(request).toHaveBeenCalledWith('/auth/email/verification/resend', { method: 'POST', body: { email: 'person@example.test' } });
+});
+
+it('conceals the next auth flow after revealing the password in another flow', () => {
+  render(<Login onLogin={async () => {}} onLink={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Mostrar Senha' }));
+  expect((screen.getByLabelText('Senha') as HTMLInputElement).type).toBe('text');
+  fireEvent.click(screen.getByRole('button', { name: 'Criar conta' }));
+  expect((screen.getByLabelText('Senha') as HTMLInputElement).type).toBe('password');
+});

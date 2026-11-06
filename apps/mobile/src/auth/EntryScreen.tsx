@@ -1,4 +1,8 @@
 import { useRef, useState } from 'react';
+import type { TextInput } from 'react-native';
+import { PasswordField } from './PasswordField';
+import { passwordHint, validateCredentials } from './validation';
+import type { AuthErrors, AuthField } from './validation';
 import { KeyboardAvoidingView, Linking, Platform, ScrollView, Switch, View } from 'react-native';
 import { AuthEmailSchema, AuthLoginRequestSchema, AuthSignUpRequestSchema, CreateAgencyRequestSchema } from '@ageniza/contracts';
 import type { Context, CreateAgencyResponse } from '@ageniza/contracts';
@@ -26,9 +30,15 @@ export function Login({ onLogin, onLink }: { onLogin(): Promise<void>; onLink(li
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const pending = useRef(false);
-  const changeForm = (next: Form) => { setForm(next); setSent(false); setError(''); setPassword(''); setConfirm(''); setAccepted(false); };
+  const [fieldErrors, setFieldErrors] = useState<AuthErrors>({});
+  const inputs = useRef<Partial<Record<AuthField, TextInput | null>>>({});
+  const change = (field: AuthField, update: (value: string) => void) => (value: string) => { update(value); setFieldErrors((current) => ({ ...current, [field]: undefined, ...(field === 'password' ? { confirm: undefined } : {}) })); };
+  const showErrors = (errors: AuthErrors) => { setFieldErrors(errors); const first = Object.keys(errors)[0] as AuthField | undefined; if (first) inputs.current[first]?.focus(); return !!first; };
+  const changeForm = (next: Form) => { setForm(next); setSent(false); setError(''); setPassword(''); setConfirm(''); setAccepted(false); setFieldErrors({}); };
   async function submit() {
     if (pending.current) return;
+    const fields = form === 'link' ? (!parseAccountLink(linkText, webUrl) ? { link: 'Cole o link completo enviado pelo Ageniza. Links de outros sites não são aceitos.' } : {}) : validateCredentials({ email, ...(form === 'login' || form === 'signup' ? { password } : {}), ...(form === 'signup' ? { name, confirm, accepted, newAccount: true } : {}) });
+    if (showErrors(fields)) return;
     pending.current = true; setBusy(true); setError('');
     try {
       if (form === 'link') {
@@ -57,15 +67,15 @@ export function Login({ onLogin, onLink }: { onLogin(): Promise<void>; onLink(li
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível concluir. Tente novamente.'); }
     finally { pending.current = false; setBusy(false); }
   }
-  return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={[ui.body, { flexGrow: 1, justifyContent: 'center' }]} keyboardShouldPersistTaps="handled">
+  return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={[ui.body, { flexGrow: 1, justifyContent: 'center', width: '100%', maxWidth: 560, alignSelf: 'center' }]} keyboardShouldPersistTaps="handled">
     <Header /><Heading title={titles[form]} subtitle={form === 'login' ? 'Conteúdos, clientes e aprovações. Tudo no mesmo lugar.' : undefined} />
     {browserPreview && <Info warning title="Acesso real pelo aplicativo" text="Este endereço web de desenvolvimento ainda não permite login com a API. Use o aplicativo nativo para entrar na sua conta e acessar seus dados." />}
     {sent ? <><Info title="Confira seu e-mail" text={form === 'forgot' ? 'Se houver uma conta com esse endereço, enviaremos um link para redefinir a senha.' : 'Se for necessário confirmar esse endereço, você receberá as instruções. Confira também o spam.'} /><Action soft label="Já tenho o link" onPress={() => changeForm('link')} />{demoWorkspaceEnabled && <Action soft label="Caixa de testes da equipe" onPress={() => void Linking.openURL('https://mail-dev.ageniza.com.br/')} />}</> : <>
-      {form === 'link' ? <Field label="Link recebido por e-mail" value={linkText} onChangeText={setLinkText} autoCapitalize="none" autoCorrect={false} editable={!busy} /> : <>
-        {form === 'signup' && <Field label="Seu nome" value={name} onChangeText={setName} autoComplete="name" editable={!busy} />}
-        <Field label="E-mail" value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" editable={!busy} />
-        {(form === 'login' || form === 'signup') && <Field label="Senha" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete={form === 'login' ? 'current-password' : 'new-password'} editable={!busy} onSubmitEditing={() => void submit()} />}
-        {form === 'signup' && <><Field label="Confirme a senha" value={confirm} onChangeText={setConfirm} secureTextEntry autoComplete="new-password" autoCapitalize="none" editable={!busy} /><TermsConsent accepted={accepted} onChange={setAccepted} disabled={busy} /></>}
+      {form === 'link' ? <Field ref={(value) => { inputs.current.link = value; }} error={fieldErrors.link} label="Link recebido por e-mail" value={linkText} onChangeText={change('link', setLinkText)} autoCapitalize="none" autoCorrect={false} editable={!busy} /> : <>
+        {form === 'signup' && <Field ref={(value) => { inputs.current.name = value; }} error={fieldErrors.name} label="Seu nome" value={name} onChangeText={change('name', setName)} autoComplete="name" editable={!busy} />}
+        <Field ref={(value) => { inputs.current.email = value; }} error={fieldErrors.email} label="E-mail" value={email} onChangeText={change('email', setEmail)} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" editable={!busy} />
+        {(form === 'login' || form === 'signup') && <PasswordField key={form} ref={(value) => { inputs.current.password = value; }} error={fieldErrors.password} hint={form === 'signup' ? passwordHint : undefined} label="Senha" value={password} onChangeText={change('password', setPassword)} autoCapitalize="none" autoCorrect={false} autoComplete={form === 'login' ? 'current-password' : 'new-password'} editable={!busy} onSubmitEditing={() => void submit()} />}
+        {form === 'signup' && <><PasswordField ref={(value) => { inputs.current.confirm = value; }} error={fieldErrors.confirm} label="Confirme a senha" value={confirm} onChangeText={change('confirm', setConfirm)} autoComplete="new-password" autoCapitalize="none" editable={!busy} /><TermsConsent accepted={accepted} onChange={(value) => { setAccepted(value); setFieldErrors((current) => ({ ...current, accepted: undefined })); }} disabled={busy} />{fieldErrors.accepted && <ErrorText text={fieldErrors.accepted} />}</>}
       </>}
       <Action label={form === 'login' ? 'Entrar' : form === 'signup' ? 'Criar minha conta' : form === 'link' ? 'Abrir link no app' : 'Enviar e-mail'} busy={busy} onPress={() => void submit()} />
     </>}
@@ -81,11 +91,12 @@ export function EntryScreen({ entry, onSelect, onContinue, busy, onLink }: { ent
   const [creating, setCreating] = useState(false);
   const [linkText, setLinkText] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
   const pending = useRef(false);
   async function save(action: () => Promise<void>) {
     if (pending.current) return;
-    pending.current = true; setSaving(true); setError('');
+    pending.current = true; setSaving(true); setError(''); setNotice('');
     try { await action(); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível concluir. Tente novamente.'); }
     finally { pending.current = false; setSaving(false); }
   }
@@ -108,9 +119,10 @@ export function EntryScreen({ entry, onSelect, onContinue, busy, onLink }: { ent
     {entry.kind === 'empty' && entry.canCreateAgency === false && <Info title="Sua conta ainda não tem acesso a uma agência" text="Peça um convite a quem administra a agência e cole o link recebido abaixo." />}
     {canCreate && <><Info title="Seu teste começa com sua agência" text="14 dias para organizar até 3 clientes, com 3 colaboradores e 2 GB de armazenamento." />{creating || entry.kind === 'empty' ? <><Field label="Nome da agência" value={agencyName} onChangeText={setAgencyName} editable={!saving} /><Action label="Criar agência e começar" busy={saving} disabled={busy} onPress={createAgency} /></> : <Action soft label="Criar agência" onPress={() => setCreating(true)} />}</>}
     {canCreate && <DemoWorkspace onEnter={onSelect} />}
-    {(entry.kind === 'empty' || entry.kind === 'unverified') && <><Info title={entry.kind === 'unverified' ? 'O e-mail ainda não foi confirmado' : 'Recebeu um convite?'} text="Cole o link completo recebido por e-mail para continuar aqui no aplicativo." /><Field label="Link do e-mail" value={linkText} onChangeText={setLinkText} autoCapitalize="none" autoCorrect={false} /><Action soft label="Abrir link" onPress={() => { const link = parseAccountLink(linkText, webUrl); if (link) { setLinkText(''); onLink(link); } else setError('Cole um link válido do Ageniza.'); }} />{entry.kind === 'unverified' && <Action soft busy={saving} label="Reenviar confirmação" onPress={() => void save(async () => { await api.request('/auth/email/verification/resend', { method: 'POST', body: { email: entry.email } }); setError('Se necessário, um novo e-mail será enviado. Confira sua caixa de entrada.'); })} />}<Action plain label="Atualizar meus acessos" busy={busy} onPress={refresh} /></>}
+    {(entry.kind === 'empty' || entry.kind === 'unverified') && <><Info title={entry.kind === 'unverified' ? 'O e-mail ainda não foi confirmado' : 'Recebeu um convite?'} text="Cole o link completo recebido por e-mail para continuar aqui no aplicativo." /><Field label="Link do e-mail" value={linkText} onChangeText={setLinkText} autoCapitalize="none" autoCorrect={false} /><Action soft label="Abrir link" onPress={() => { const link = parseAccountLink(linkText, webUrl); if (link) { setLinkText(''); onLink(link); } else setError('Cole um link válido do Ageniza.'); }} />{entry.kind === 'unverified' && <Action soft busy={saving} label="Reenviar confirmação" onPress={() => void save(async () => { await api.request('/auth/email/verification/resend', { method: 'POST', body: { email: entry.email } }); setNotice('Se necessário, um novo e-mail será enviado. Confira também o spam.'); })} />}<Action plain label="Atualizar meus acessos" busy={busy} onPress={refresh} /></>}
     {entry.kind === 'legal' && <><Txt>Leia os documentos vigentes antes de registrar seu aceite.</Txt><Action soft label="Ler Termos de Uso" onPress={() => void Linking.openURL(`${webUrl}/termos`)} /><Action soft label="Ler Política de Privacidade" onPress={() => void Linking.openURL(`${webUrl}/privacidade`)} /><View style={ui.row}><Switch accessibilityLabel="Li e aceito os documentos pendentes" value={accepted} onValueChange={setAccepted} disabled={saving} /><View style={{ flex: 1 }}><Txt>Li e aceito os documentos pendentes.</Txt></View></View><Action label="Aceitar e continuar" disabled={!accepted || busy} busy={saving} onPress={() => void save(async () => { for (const document of entry.documents.filter((item) => item.pending)) await api.request('/me/legal-acceptances', { method: 'POST', body: { document: document.document } }); await onContinue(); })} /></>}
     {entry.kind === 'unverified' && <><Info title="Confirmação do e-mail" text="Enviamos um link de confirmação para o seu e-mail. Confira também o spam." />{demoWorkspaceEnabled && <Action soft label="Caixa de testes da equipe" onPress={() => void Linking.openURL('https://mail-dev.ageniza.com.br/')} />}</>}
+    {!!notice && <View accessibilityLiveRegion="polite"><Info title="Confira sua caixa de entrada" text={notice} /></View>}
     {!!error && <ErrorText text={error} />}
   </ScrollView>;
 }
