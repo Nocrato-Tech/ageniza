@@ -8480,3 +8480,158 @@ html:has(.portal-post__bar) {
   font: var(--body-md);
   overflow-wrap: anywhere;
 }
+/* Activation path of a new agency's Início (decision 2026-11-06): four steps, each done or pending. */
+.activation {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.activation__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.activation__header h2,
+.activation__header p {
+  margin: 0;
+}
+
+.activation__header h2 {
+  font: var(--title-md);
+}
+
+.activation__header p,
+.activation__description,
+.activation__state {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.activation__steps {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activation__step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.activation__mark {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--text-secondary);
+}
+
+.activation__step[data-done='true'] .activation__mark {
+  color: var(--status-ready-fg);
+}
+
+.activation__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.activation__title {
+  font: var(--title-md);
+}
+
+@media (max-width: 40rem) {
+  .activation__step {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .activation__step > .ui-button {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+/* Milestones: a message that never blocks, and confetti that catches no click and goes away by itself. */
+.milestone {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.milestone--toast {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  z-index: 20;
+  max-width: min(26rem, calc(100vw - 2 * var(--space-4)));
+  box-shadow: var(--shadow-floating);
+}
+
+.milestone__icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--status-ready-fg);
+}
+
+.milestone__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.milestone__text span {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.confetti {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.confetti__piece {
+  position: absolute;
+  top: -1rem;
+  left: var(--confetti-x);
+  width: 0.5rem;
+  height: 0.875rem;
+  border-radius: var(--radius-sm);
+  background: var(--confetti-color);
+  animation: confetti-fall 2400ms var(--motion-easing-standard) var(--confetti-delay) both;
+}
+
+@keyframes confetti-fall {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(var(--confetti-drift), 105vh) rotate(540deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    display: none;
+  }
+}

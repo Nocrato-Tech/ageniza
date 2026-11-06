@@ -46,6 +46,19 @@ A equipe da agência, no contexto `agency`. Todas as rotas começam com `/agenci
 
 **Listas.** São paginadas, com `pageSize` de no máximo 100. Itens arquivados só aparecem quando pedidos.
 
+## Início: caminho de ativação e marcos
+
+Para quem vê clientes e conteúdos, o Início mostra "Primeiros passos" até a agência ter a primeira aprovação de um cliente (decisão de 2026-11-06). Nada é guardado: o progresso vem de duas leituras.
+
+| método | rota | permissão | o que faz |
+|---|---|---|---|
+| `GET` | `…/clients?page=1&pageSize=1` | `cliente.visualizar` | `meta.totalItems` diz se há cliente; o primeiro `id` leva aos passos 2 a 4 |
+| `GET` | `…/contents/activation` | `conteudo.visualizar` | `hasContent`, `sentForApproval`, `approvedByClient` e `published` |
+
+1. Passos: cadastrar o primeiro cliente (`cliente.cadastrar`, vai a Clientes); criar o primeiro conteúdo (`conteudo.operar`, vai ao calendário do cliente); enviar para aprovação (`conteudo.operar`, mesmo destino); receber a primeira aprovação (`cliente.convidar_usuario`, vai aos acessos do portal do cliente). Sem a permissão do passo, ele aparece sem botão; com o plano em `readOnly`, nenhum botão de escrita.
+2. Feito = cliente existe (ou há conteúdo); há conteúdo; algum saiu da produção; algum foi aprovado por pessoa do cliente (a aprovação fora da plataforma não conta). Com os quatro feitos, o caminho some.
+3. Marcos celebrados uma vez por agência (cliente, conteúdo, enviado, primeira aprovação, primeiro `published`): mensagem em português, confete que não bloqueia toque e some sozinho, sem confete se o aparelho pede menos movimento. O que já foi celebrado fica só no aparelho (no navegador, `localStorage`); a primeira abertura apenas registra o que já existe, sem celebrar.
+
 ## Clientes
 
 | método | rota | permissão | o que faz |

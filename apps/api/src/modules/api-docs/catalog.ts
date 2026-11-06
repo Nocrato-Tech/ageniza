@@ -63,6 +63,7 @@ import {
   ApproveContentByAgencyRequestSchema,
   ContentDetailSchema,
   ContentFeedQuerySchema,
+  ContentActivationResponseSchema,
   ContentFeedResponseSchema,
   ContentPeriodQuerySchema,
   ContentPeriodResponseSchema,
@@ -1331,6 +1332,34 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/contents/activation',
+    operationId: 'readContentActivation',
+    module: 'contents',
+    summary: 'Lê os fatos do caminho de ativação da agência',
+    description: [
+      'O Início da agência nova mostra o caminho de ativação (decisão de 2026-11-06) e lê aqui o que falta saber: se a agência tem algum',
+      'conteúdo (`hasContent`), se algum já saiu da produção para o cliente (`sentForApproval`), se algum foi postado (`published`) e se algum foi aprovado por',
+      'uma pessoa do cliente (`approvedByClient`; a aprovação fora da plataforma, que sempre traz motivo, não conta). É leitura',
+      'sob a mesma política do calendário: o que a pessoa não pode ler não entra. Nenhuma contagem nem conteúdo sai por aqui.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Os fatos.',
+      schema: ContentActivationResponseSchema,
+      example: { data: { hasContent: true, sentForApproval: true, approvedByClient: false, published: false } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND' }
     ]
   },
   {
