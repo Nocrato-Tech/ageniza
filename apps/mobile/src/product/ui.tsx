@@ -50,7 +50,10 @@ export const Field = forwardRef<TextInput, TextInputProps & { label: string; err
   const describedBy = [hint ? `${id}-hint` : '', error ? `${id}-error` : '', props['aria-describedby'] ?? ''].filter(Boolean).join(' ') || undefined;
   return <View style={{ gap: 8 }}><Txt kind="label" color={c.muted}>{label}</Txt><View style={{ position: 'relative' }}><TextInput ref={ref} nativeID={props.nativeID ?? id} accessibilityLabel={label} placeholderTextColor={c.muted} {...props} aria-invalid={!!error} aria-describedby={describedBy} style={[ui.field, { backgroundColor: c.surface, color: c.text, borderColor: error ? c.danger : c.muted }, trailing ? { paddingRight: 56 } : undefined, props.style]} />{trailing && <View style={{ position: 'absolute', right: 4, top: 0, bottom: 0, justifyContent: 'center' }}>{trailing}</View>}</View>{!!hint && <Text nativeID={`${id}-hint`} style={{ color: c.muted, fontSize: 12, lineHeight: 18 }}>{hint}</Text>}{!!error && <View nativeID={`${id}-error`}><ErrorText text={error} /></View>}</View>;
 });
-export function ErrorText({ text }: { text: string }) { return <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={{ fontFamily: fontFamily('Inter'), color: colors.danger, fontSize: 14, lineHeight: 21 }}>{text}</Text>; }
+export function ErrorText({ text }: { text: string }) {
+  const c = useColors();
+  return <ScreenMotion identity={text} variant="feedback"><View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}><View style={{ paddingTop: 2 }}><HugeIcon name="alert-circle" size={18} color={c.danger} trigger /></View><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={{ flex: 1, fontFamily: fontFamily('Inter'), color: c.danger, fontSize: 14, lineHeight: 21 }}>{text}</Text></View></ScreenMotion>;
+}
 export function Info({ title, text, warning = false, tone = warning ? 'warning' : 'info', onDismiss }: { title: string; text?: string; warning?: boolean; tone?: 'info' | 'warning' | 'success'; onDismiss?(): void }) {
   const c = useColors();
   const foreground = tone === 'success' ? c.teal : tone === 'warning' ? c.amber : c.indigo;
