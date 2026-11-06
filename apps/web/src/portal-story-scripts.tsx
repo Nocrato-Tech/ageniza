@@ -9,7 +9,7 @@ import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth } from './client-detail.js';
 import { todayInSaoPaulo } from './content-dates.js';
 import { HttpClientError, useApiClient } from './http.js';
-import { PLAN_RENEWAL_REASON } from './plan-notice.js';
+import { PORTAL_PAUSED_REASON } from './plan-notice.js';
 import { usePortalClient } from './portal.js';
 
 const LIST_PATH = '/clients/:clientId/story-scripts';
@@ -18,6 +18,7 @@ const RECORDED_PATH = '/clients/:clientId/story-scripts/:scriptId/recorded';
 /** The words of each refusal of "marcar como gravado", in the client's language: what the server wrote is never shown. */
 export const recordRefusal = (error: unknown): string => {
   if (error instanceof HttpClientError) {
+    if (error.code === 'AGENCY_READ_ONLY') return PORTAL_PAUSED_REASON;
     if (error.status === 409 && error.code === 'TRY_AGAIN') return 'Outra alteração aconteceu ao mesmo tempo. Tente de novo.';
     if (error.status === 409) return 'Este roteiro mudou e a tela foi atualizada com o que há agora.';
     if (error.status === 404) return 'Este roteiro não existe mais.';
@@ -48,7 +49,7 @@ function Script({ script, number, several, sending, onRecord }: {
         aria-label={several ? `Já gravei o roteiro ${number}` : undefined}
         loading={sending === script.id}
         disabled={sending !== null}
-        blockedReason={readOnly ? PLAN_RENEWAL_REASON : undefined}
+        blockedReason={readOnly ? PORTAL_PAUSED_REASON : undefined}
         leadingIcon={<Check />}
         onClick={() => onRecord(script)}
       >Já gravei</Button>

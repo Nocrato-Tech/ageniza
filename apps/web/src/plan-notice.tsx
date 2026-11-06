@@ -27,6 +27,9 @@ export const PLAN_RENEWAL_REASON = 'O plano precisa ser renovado para usar esta 
 
 export const AGENCY_READ_ONLY_TEXT = 'O seu plano precisa ser renovado para usar as opções bloqueadas. Os seus dados estão guardados.';
 
+/** What the client of the agency is told wherever the portal blocks a decision: nothing about the agency's plan (decision 2026-11-06). */
+export const PORTAL_PAUSED_REASON = 'A aprovação está pausada no momento. A agência já foi avisada.';
+
 const READ_ONLY_CONSEQUENCE = 'a agência fica somente leitura: tudo continua visível, mas ninguém cria nem edita.';
 
 function SubscribeLink({ agencyId, children }: { agencyId: string; children: string }) {

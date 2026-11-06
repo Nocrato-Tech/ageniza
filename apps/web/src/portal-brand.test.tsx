@@ -92,6 +92,8 @@ interface Scenario {
   readonly failStudy?: () => Response;
   /** The person is also a collaborator of the agency of this client (the "pessoa dupla"). */
   readonly alsoCollaborator?: boolean;
+  /** The plan of the agency ended: the portal is read-only. */
+  readonly agencyReadOnly?: boolean;
 }
 
 const makeWorld = (scenario: Scenario = {}) => {
@@ -128,7 +130,7 @@ const makeWorld = (scenario: Scenario = {}) => {
       return json({ agencyId: AGENCY_ID, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['cliente.visualizar', 'cliente.operar', 'cliente.arquivar'] });
     }
     for (const clientId of Object.keys(names)) {
-      if (path === `/clients/${clientId}`) return json(portalClientBody(clientId, names[clientId]!));
+      if (path === `/clients/${clientId}`) return json({ ...portalClientBody(clientId, names[clientId]!), agencyReadOnly: scenario.agencyReadOnly ?? false });
       if (path === `/clients/${clientId}/brand-study`) {
         if (held !== undefined) { const release = held; held = undefined; await release; }
         if (failStudy !== undefined) { const make = failStudy; failStudy = undefined; return make(); }
@@ -243,6 +245,21 @@ describe('portal Marca (#143)', () => {
     expect(screen.queryByText(NOT_PREPARED)).toBeNull();
     expect(calls).toContain(`GET /clients/${CLIENT_ID}/brand-study`);
     expect(document.title).toBe('Marca — Portal do cliente — Ageniza');
+  });
+
+  it('while the agency is read-only, every suggest button says the neutral reason and nothing on the page speaks of the plan (decision 2026-11-06)', async () => {
+    const { impl } = makeWorld({ agencyReadOnly: true });
+    renderPortal(impl);
+    const main = await page();
+
+    const buttons = within(main).getAllByRole('button');
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) {
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      const reason = (button.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent).join(' ');
+      expect(reason).toBe('A aprovação está pausada no momento. A agência já foi avisada.');
+    }
+    expect(document.body.textContent).not.toMatch(/plano|renov/i);
   });
 
   it('has no control to edit the study: the only buttons of the page are the suggestions, one per part', async () => {
