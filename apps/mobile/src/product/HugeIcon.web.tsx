@@ -21,13 +21,11 @@ export function HugeIcon({ name, size = 22, color = 'currentColor', trigger = fa
     target.addEventListener('pointerdown', start);
     target.addEventListener('click', start);
     target.addEventListener('focusin', start);
-    target.addEventListener('pointerleave', stop);
     return () => {
       target.removeEventListener('pointerenter', start);
       target.removeEventListener('pointerdown', start);
       target.removeEventListener('click', start);
       target.removeEventListener('focusin', start);
-      target.removeEventListener('pointerleave', stop);
       stop();
     };
   }, [name, reduced]);

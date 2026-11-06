@@ -27,7 +27,7 @@ it('animates from the whole parent target on hover, touch, click and focus witho
   fireEvent.pointerDown(button, { pointerType: 'touch' }); expect(calls.start).toHaveBeenCalledTimes(2);
   fireEvent.click(button); expect(calls.start).toHaveBeenCalledTimes(3); expect(action).toHaveBeenCalledOnce();
   fireEvent.focusIn(button); expect(calls.start).toHaveBeenCalledTimes(4);
-  fireEvent.pointerLeave(button); expect(calls.stop).toHaveBeenCalled();
+  fireEvent.pointerLeave(button); expect(calls.stop).not.toHaveBeenCalled();
   view.unmount(); calls.start.mockClear(); fireEvent.pointerDown(button); expect(calls.start).not.toHaveBeenCalled();
 });
 it('prevents disabled interaction and cancels current animation when reduced motion is enabled', () => {
