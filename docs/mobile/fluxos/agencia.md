@@ -361,6 +361,9 @@ Colaboradores são ilimitados, e o portal do cliente é grátis. Os extras são 
   6. Depois de pagar, recarregue `…/subscription` e `…/me` (o plano da agência muda).
   7. Antes de cancelar, mostre o que a agência tem (clientes ativos e armazenamento em uso, de `…/subscription`) e o que acontece no fim do período; confirmar chama `cancel` uma vez. Em tolerância, diga que a agência vira somente leitura na hora.
   8. Sem `paymentProvider` simulado, não abra cobrança que a pessoa não poderia pagar: explique que o pagamento não está disponível.
+  9. **Avisos (só o Owner vê o caminho para assinar):** no teste, mostre os dias restantes e o botão Assinar; a partir de 3 dias antes do fim do teste, ou do fim de um período cancelado (`plan.canceled` e `currentPeriodEnd` de `…/subscription`), destaque o que acontece (a agência fica somente leitura) e o caminho para assinar ou manter. O Admin vê só os dias, sem botão. Teste vencido ou período cancelado já terminado (`plan.readOnly`): aviso fixo, com o botão para o Owner.
+  10. **Limite atingido** (`TRIAL_CLIENT_LIMIT`, `PLAN_CLIENT_LIMIT`, `TRIAL_COLLABORATOR_LIMIT`, `QUOTA_EXCEEDED`): diga qual limite e leve o Owner à tela de assinatura (subir de plano ou comprar extra); quem não é Owner vê a quem pedir.
+  11. **Portal do cliente somente leitura:** a mensagem é neutra ("A aprovação está pausada no momento. A equipe de {agência} já foi avisada.") e nunca fala de plano, renovação ou cobrança da agência (decisão 2026-11-06).
 - A renovação automática é executada pelo worker (#790). O provedor real de pagamento segue o escopo de #785; a renovação simulada fora de produção não comprova cobrança real.
 
 ## Cliente Expo

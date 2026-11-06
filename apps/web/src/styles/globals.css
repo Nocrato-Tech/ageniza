@@ -8732,3 +8732,35 @@ html:has(.portal-post__bar) {
   margin: 0;
   padding-left: var(--space-4);
 }
+
+/* The last days before the read-only mode: the same strip, with a heavier border and the icon in the danger tone (no fill, no side border). */
+.trial-notice--urgent {
+  border-color: var(--border-control);
+}
+
+.trial-notice--urgent .shell-notice__icon {
+  color: var(--status-late-fg);
+}
+
+/* A plan ceiling reached inside a form or a dialog: what blocked, and the way out. */
+.plan-limit {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.plan-limit__text {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.plan-limit__text svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: var(--space-1);
+}

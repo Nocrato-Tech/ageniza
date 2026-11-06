@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tan
 import {
   AuthNoContentResponseSchema,
   SubscriptionChargeResponseSchema,
-  SubscriptionOverviewResponseSchema,
   SubscriptionPlansResponseSchema,
   SubscriptionQuoteResponseSchema,
   type SubscriptionChangeRequest,
@@ -17,6 +16,7 @@ import { apiPath } from './api-path.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { trialDaysLeft } from './plan-notice.js';
+import { subscriptionOverviewQuery } from './subscription-queries.js';
 import { CancelSubscriptionDialog } from './subscription-cancel.js';
 import { formatBrl, formatDay, formatGb, formatInstant, totalLine } from './subscription-format.js';
 import { SimulatedCardStep, type PaymentResult } from './subscription-payment.js';
@@ -102,10 +102,7 @@ export function SubscriptionPage() {
     queryKey: [...agencyKey, 'subscription-plans'],
     queryFn: () => httpClient.request({ path: apiPath('/agencies/:agenciaId/subscription/plans', { agenciaId: agency.agencyId }), response: SubscriptionPlansResponseSchema })
   });
-  const overviewQuery = useQuery({
-    queryKey: [...agencyKey, 'subscription'],
-    queryFn: () => httpClient.request({ path: apiPath('/agencies/:agenciaId/subscription', { agenciaId: agency.agencyId }), response: SubscriptionOverviewResponseSchema })
-  });
+  const overviewQuery = useQuery(subscriptionOverviewQuery(httpClient, agency.agencyId));
 
   const [view, setView] = useState<View>('overview');
   const [target, setTarget] = useState<string | null>(null);

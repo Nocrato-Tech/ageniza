@@ -380,7 +380,9 @@ describe('a failed upload keeps the file the person chose', () => {
     await choose(picture());
     send();
 
-    await alertText('O armazenamento da agência está cheio.');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('O armazenamento da agência está cheio.');
+    expect(alert.textContent).toMatch(/Peça a quem criou a agência para subir o plano ou comprar extras\.|Suba de plano ou compre extras para continuar\./);
     expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeTruthy();
     expect(FakeXhr.all).toHaveLength(0);
   });
