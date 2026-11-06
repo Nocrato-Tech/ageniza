@@ -494,6 +494,27 @@ a.ui-button {
   color: var(--text-primary);
 }
 
+.ui-password-field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.ui-password-input {
+  position: relative;
+}
+
+.ui-password-input > .ui-text-input {
+  padding-inline-end: var(--space-12);
+}
+
+.ui-password-input__toggle {
+  padding: 0;
+  position: absolute;
+  inset-inline-end: 0;
+  top: 0;
+  height: 100%;
+}
+
 .ui-field-message {
   display: flex;
   align-items: center;

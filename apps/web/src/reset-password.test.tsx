@@ -124,6 +124,8 @@ describe('ResetPasswordPage (/senha/redefinir)', () => {
   it('sends only the token and the new password, even when the link carries an invitation', async () => {
     const { impl, resetBodies } = makeFetch();
     const { probe } = renderReset(impl, '?token=reset-token&invite=invite-value');
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar senha' }));
+    expect((screen.getByLabelText('Nova senha') as HTMLInputElement).type).toBe('text');
     submit('a new correct password');
 
     await waitFor(() => expect(probe.pathname).toBe('/entrar'));

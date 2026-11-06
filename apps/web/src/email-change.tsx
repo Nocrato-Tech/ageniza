@@ -7,7 +7,7 @@ import {
   EmailChangeRequestResponseSchema,
   EmailChangeRequestSchema
 } from '@ageniza/contracts';
-import { Button, Field, Modal, TextInput, useFormErrors } from '@ageniza/ui';
+import { Button, Field, PasswordInput, Modal, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { useOptionalAuthSessionStore } from './auth.js';
 import { AUTH_LINK_BUTTON_CLASS, AuthMessage, AuthPanel } from './auth-layout.js';
@@ -116,10 +116,9 @@ export function EmailChangeDialog({ onClose, viaGoogle = false, returnTo = '/con
               </div>
             : <>
                 <Field label='Senha atual' id='email-change-password' error={passwordError}>
-                  {(control) => <TextInput
+                  {(control) => <PasswordInput
                     {...control}
                     name='currentPassword'
-                    type='password'
                     autoComplete='current-password'
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
