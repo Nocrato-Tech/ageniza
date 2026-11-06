@@ -42,7 +42,8 @@ import {
   loadPortalMediaAsset,
   openListItemFrom,
   portalAccessHolds,
-  requestContentChanges
+  requestContentChanges,
+  withdrawContentApproval
 } from './portal-service.js';
 import type { ContentTransaction } from './service.js';
 
@@ -304,6 +305,17 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     });
 
     return reply.send(routeResponse(approveDocs, request, detail));
+  });
+
+  app.post('/clients/:clientId/contents/:contentId/withdraw-approval', portalGuards(approveDocs), async (request, reply) => {
+    const scope = { clientId: portalClientIdOf(request), contentId: contentIdFromRoute(request) };
+    const body = routeBody(approveDocs, request);
+    const result = await portalMove(request, scope, 'withdraw-approval', async (transaction) => {
+      await readForMove(transaction, scope, 'withdraw-approval');
+      await withdrawContentApproval(transaction, { contentId: scope.contentId, revision: body.revision });
+      return readBack(transaction, scope);
+    });
+    return reply.send(routeResponse(approveDocs, request, result));
   });
 
   app.post('/clients/:clientId/contents/:contentId/request-changes', portalGuards(requestChangesDocs), async (request, reply) => {

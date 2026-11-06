@@ -29,6 +29,27 @@ import type { Data, Post, Repository } from './types';
 
 const post: Post = { id: 'p1', clientId: 'c1', title: 'Conteúdo de teste', caption: 'Legenda', format: 'image', status: 'in_production', date: '2026-11-10', time: '10:00', ownerId: 'm1', folderId: '', mediaIds: [], coverId: null, revision: 1, tasks: [], comments: [] };
 const data: Data = { version: 2, clients: [{ id: 'c1', name: 'Marca', handle: '' }], people: [{ id: 'm1', name: 'Pessoa', job: '', role: 'Dono', email: 'p@example.test', self: true, owner: true }], posts: [post], activities: [], profile: { name: 'Pessoa', agency: 'Agência' }, permissions: ['*'], readOnly: false, assets: [], folders: [] };
+
+it('confirms withdrawal before sending the selected content action and can keep approval without a write', () => {
+  const onMove = vi.fn(async () => {});
+  const props = { post: { ...post, status: 'approved' as const }, data, side: 'client' as const, repository: repository as unknown as Repository, busy: false, onMove, onUpdate: async () => true, onEdit: () => {}, onError: () => {} };
+  const view = render(<PostDetail {...props} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Desfazer aprovação' }));
+  expect(screen.getByText('O conteúdo voltará para aguardando aprovação. A legenda e as mídias serão mantidas.')).toBeTruthy();
+  expect(onMove).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Manter aprovado' }));
+  expect(onMove).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Desfazer aprovação' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar retirada da aprovação' }));
+  expect(onMove).toHaveBeenCalledExactlyOnceWith('withdraw-approval');
+  view.rerender(<PostDetail {...props} busy />);
+  expect(screen.getByRole('button', { name: 'Confirmar retirada da aprovação' }).getAttribute('aria-disabled')).toBe('true');
+});
+
+it.each([{ side: 'agency' as const, status: 'approved' as const, readOnly: false }, { side: 'client' as const, status: 'published' as const, readOnly: false }, { side: 'client' as const, status: 'approved' as const, readOnly: true }])('hides withdrawal for $side, $status, readOnly=$readOnly', ({ side, status, readOnly }) => {
+  render(<PostDetail post={{ ...post, status }} data={{ ...data, readOnly }} side={side} repository={repository as unknown as Repository} busy={false} onMove={async () => {}} onUpdate={async () => true} onEdit={() => {}} onError={() => {}} />);
+  expect(screen.queryByRole('button', { name: 'Desfazer aprovação' })).toBeNull();
+});
 const context = (name: string) => ({ type: 'agency' as const, agencyId: 'one', agencyName: name, isOwner: true, roleKey: 'owner', roleName: 'Owner' });
 beforeEach(() => {
   gate.enabled = false; request.mockReset().mockResolvedValue({}); repository.load.mockReset().mockResolvedValue(data);

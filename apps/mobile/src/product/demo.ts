@@ -28,6 +28,9 @@ export function transition(post: Post, action: Parameters<Repository['move']>[1]
     if (side !== 'agency' || !['in_production', 'adjusting'].includes(post.status)) throw new Error('Este conteúdo não pode ser enviado agora.');
     if (!post.mediaIds.length || post.format === 'carousel' && (post.mediaIds.length < 2 || post.mediaIds.length > 20) || post.format !== 'carousel' && post.mediaIds.length !== 1 || post.tasks.some((task) => task.status !== 'approved')) throw new Error('Confira as mídias do formato e aprove todas as tarefas antes de enviar.');
     next.status = 'awaiting_approval';
+  } else if (action === 'withdraw-approval') {
+    if (side !== 'client' || post.status !== 'approved') throw new Error('Só é possível desfazer a aprovação antes da publicação.');
+    next.status = 'awaiting_approval';
   } else if (action === 'approve' || action === 'changes') {
     if (side !== 'client' || post.status !== 'awaiting_approval') throw new Error('Esta publicação não está aguardando sua aprovação.');
     if (action === 'changes') CommentBodySchema.parse(comment);

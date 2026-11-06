@@ -27,6 +27,126 @@ const awaitingUrl = (clientId: string, query = ''): string => `/clients/${client
 const oneUrl = (clientId: string, contentId: string): string => `/clients/${clientId}/contents/${contentId}`;
 const approveUrl = (clientId: string, contentId: string): string => `${oneUrl(clientId, contentId)}/approve`;
 const changesUrl = (clientId: string, contentId: string): string => `${oneUrl(clientId, contentId)}/request-changes`;
+const withdrawUrl = (clientId: string, contentId: string): string => `${oneUrl(clientId, contentId)}/withdraw-approval`;
+
+describe('withdrawing approval from the authenticated portal (#850)', () => {
+  const events = (id: string) => w.getOwner().knex('audit.events').where({ action: 'content.approval_withdrawn', target_id: id });
+  it.each(['portalOne', ...DUAL_PEOPLE] as const)('allows %s only through its own portal membership and records the real actor once', async (person) => {
+    const clientId = await freshClient(`withdraw-${person}`, [person]);
+    const id = await seedOpen(clientId, 'approved');
+    const before = await w.contentRow(id);
+    const reply = await post(person, withdrawUrl(clientId, id), { revision: 1 });
+    expect(reply.statusCode).toBe(200);
+    expect(reply.json()).toMatchObject({ id, status: 'awaiting_approval', revision: 1, caption: before.caption });
+    const row = await w.contentRow(id);
+    expect(row).toMatchObject({ status: 'awaiting_approval', approved_by: null, approved_at: null, approved_by_portal_access_id: null, approved_by_agency_reason: null, revision: before.revision, caption: before.caption, folder_id: before.folder_id });
+    expect(await events(id)).toMatchObject([{ actor_user_id: p.people[person].id, agency_id: w.agencyA, target_type: 'content' }]);
+    expect((await post(person, withdrawUrl(clientId, id), { revision: 1 })).statusCode).toBe(200);
+    expect(await events(id)).toHaveLength(1);
+  });
+
+  it('rejects absent sessions, agency-only users, removed access, other clients and cross-client ids', async () => {
+    const id = await seedOpen(p.clientA1, 'approved');
+    const url = withdrawUrl(p.clientA1, id);
+    expect((await w.getApp().app.inject({ method: 'POST', url, headers: { origin: TEST_APP_PUBLIC_URL }, payload: { revision: 1 } })).statusCode).toBe(401);
+    expect((await w.call('POST', people.admin.cookie, url, { revision: 1 })).statusCode).toBe(404);
+    for (const person of ['removed', 'portalOther', 'portalB'] as const) expect((await post(person, url, { revision: 1 })).statusCode).toBe(404);
+    expect((await post('portalMulti', withdrawUrl(p.clientA2, id), { revision: 1 })).statusCode).toBe(404);
+    expect(await statusOf(id)).toBe('approved');
+    expect(await events(id)).toHaveLength(0);
+  });
+
+  it('refuses invalid bodies and stale revisions without changing content or recording an event', async () => {
+    const clientId = await freshClient('withdraw-input');
+    const id = await seedOpen(clientId, 'approved');
+    const before = await snapshotOf(id);
+    for (const input of [undefined, {}, { revision: 0 }, { revision: 1, status: 'awaiting_approval' }]) expect((await post('portalOne', withdrawUrl(clientId, id), input)).statusCode).toBe(400);
+    const stale = await post('portalOne', withdrawUrl(clientId, id), { revision: 2 });
+    expect(stale.statusCode).toBe(409);
+    expect(errorOf(stale).code).toBe('CONTENT_REVISION_CHANGED');
+    expect(await snapshotOf(id)).toEqual(before);
+    expect(await events(id)).toHaveLength(0);
+  });
+
+  it.each(['published', 'adjusting', 'in_production', 'cancelled'] as const)('does not withdraw from %s', async (status) => {
+    const clientId = await freshClient(`withdraw-${status}`);
+    const id = await w.seedContent(clientId, { status });
+    const before = await snapshotOf(id);
+    expect((await post('portalOne', withdrawUrl(clientId, id), { revision: 1 })).statusCode).toBe(status === 'cancelled' ? 404 : 409);
+    expect(await snapshotOf(id)).toEqual(before);
+    expect(await events(id)).toHaveLength(0);
+  });
+
+  it('refuses a read-only agency and writes no audit', async () => {
+    const clientId = await freshClient('withdraw-readonly');
+    const id = await seedOpen(clientId, 'approved');
+    const db = w.getOwner().knex;
+    await db('agencies').where({ id: w.agencyA }).update({ plan: 'trial', trial_ends_at: db.raw("now() - interval '1 minute'"), trial_owner_email_key: db.raw('coalesce(trial_owner_email_key, id::text)') });
+    try {
+      const reply = await post('portalOne', withdrawUrl(clientId, id), { revision: 1 });
+      expect(reply.statusCode).toBe(409);
+      expect(errorOf(reply).code).toBe('AGENCY_READ_ONLY');
+      expect(await statusOf(id)).toBe('approved');
+      expect(await events(id)).toHaveLength(0);
+    } finally { await db('agencies').where({ id: w.agencyA }).update({ plan: 'isenta', trial_ends_at: null, trial_owner_email_key: null }); }
+  });
+
+  it('rereads status after publication wins the content lock', async () => {
+    const clientId = await freshClient('withdraw-publish-race');
+    const id = await seedOpen(clientId, 'approved');
+    const held = await holdContent(id);
+    try {
+      const publishing = w.call('POST', people.admin.cookie, `${agencyUrl(clientId, id)}/publish`, {});
+      await waitForBlocked(held.pid, 1);
+      const withdrawing = post('portalOne', withdrawUrl(clientId, id), { revision: 1 });
+      await waitForBlocked(held.pid, 2);
+      await held.release();
+      expect((await publishing).statusCode).toBe(200);
+      const reply = await withdrawing;
+      expect(reply.statusCode).toBe(409);
+      expect(errorOf(reply).code).toBe('CONTENT_APPROVAL_CANNOT_BE_WITHDRAWN');
+      expect(await statusOf(id)).toBe('published');
+      expect(await events(id)).toHaveLength(0);
+    } finally { await held.release(); }
+  });
+
+  it('rejects an edit that won the lock even when it already returned the content to awaiting approval', async () => {
+    const clientId = await freshClient('withdraw-edit-race');
+    const id = await seedOpen(clientId, 'approved');
+    const held = await holdContent(id);
+    try {
+      const editing = w.call('PATCH', people.manager.cookie, agencyUrl(clientId, id), { caption: 'Legenda nova' });
+      await waitForBlocked(held.pid, 1);
+      const withdrawing = post('portalOne', withdrawUrl(clientId, id), { revision: 1 });
+      await waitForBlocked(held.pid, 2);
+      await held.release();
+      expect((await editing).statusCode).toBe(200);
+      const reply = await withdrawing;
+      expect(reply.statusCode).toBe(409);
+      expect(errorOf(reply).code).toBe('CONTENT_REVISION_CHANGED');
+      expect(await events(id)).toHaveLength(0);
+    } finally { await held.release(); }
+  });
+
+  it('rereads access removed between the route guard and the database function', async () => {
+    const clientId = await freshClient('withdraw-removed');
+    const id = await seedOpen(clientId, 'approved');
+    w.runBeforeStatement(/select app_private.withdraw_content_approval/, async () => { await setPortalAccessStatus(w.getOwner().knex, clientId, p.people.portalOne.id, 'removed'); });
+    try {
+      expect((await post('portalOne', withdrawUrl(clientId, id), { revision: 1 })).statusCode).toBe(404);
+      expect(await statusOf(id)).toBe('approved');
+      expect(await events(id)).toHaveLength(0);
+    } finally { w.clearHook(); }
+  });
+
+  it('returns not found when archiving won before the function, including a dual identity', async () => {
+    const clientId = await freshClient('withdraw-archived', ['dualBare']);
+    const id = await seedOpen(clientId, 'approved');
+    const reply = await archiveBeforeStatement(w, clientId, /select app_private.withdraw_content_approval/, () => post('dualBare', withdrawUrl(clientId, id), { revision: 1 }));
+    expect(reply.statusCode).toBe(404);
+    expect(await events(id)).toHaveLength(0);
+  });
+});
 const agencyUrl = (clientId: string, contentId: string): string => `/agencies/${w.agencyA}/clients/${clientId}/contents/${contentId}`;
 
 const get = (person: PortalPerson, url: string): Promise<Reply> => w.call('GET', p.people[person].cookie, url);

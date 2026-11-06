@@ -11,6 +11,7 @@ provou. As decisões estão em `docs/business/decisions/2026-10-11-conteudo-port
 | `GET` | `/clients/:clientId/contents/:contentId` | o post: legenda, `revision` e mídia a partir de "aguardando aprovação" |
 | `GET` | `/clients/:clientId/contents/:contentId/media/:assetId/url?variant=` | a URL assinada da capa ou de um item da mídia (#584) |
 | `POST` | `/clients/:clientId/contents/:contentId/approve` | `{ revision }`: aguardando aprovação → aprovado |
+| `POST` | `/clients/:clientId/contents/:contentId/withdraw-approval` | `{ revision }`: aprovado → aguardando aprovação, com vínculo próprio ativo e evento `content.approval_withdrawn`; publicado é conflito |
 | `POST` | `/clients/:clientId/contents/:contentId/request-changes` | `{ revision, comment }`: aguardando aprovação → em ajuste, e o comentário entra na conversa |
 
 ## Onde cada regra mora

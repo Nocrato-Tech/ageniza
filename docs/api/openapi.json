@@ -2900,7 +2900,7 @@
         ],
         "additionalProperties": false
       },
-      "approvePortalContentRequest": {
+      "withdrawPortalContentApprovalRequest": {
         "type": "object",
         "properties": {
           "revision": {
@@ -14349,6 +14349,196 @@
         }
       }
     },
+    "/clients/{clientId}/contents/{contentId}/withdraw-approval": {
+      "post": {
+        "operationId": "withdrawPortalContentApproval",
+        "summary": "Desfaz a aprovação de um conteúdo antes da publicação, no portal",
+        "description": "Uma pessoa ativa do portal devolve um conteúdo aprovado para aguardando aprovação. Preserva legenda, mídias e revisão; exige a revisão lida. Repetir na mesma revisão já aguardando aprovação não cria outro evento. Publicado ou em ajuste é conflito; outro cliente, cancelado, inexistente ou acesso removido é 404. Registra content.approval_withdrawn. Não é uma ação do link de aprovação sem conta.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/withdrawPortalContentApprovalRequest"
+              },
+              "example": {
+                "revision": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conteúdo aguardando aprovação.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getPortalContentResponse"
+                },
+                "example": {
+                  "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                  "title": "Lançamento da coleção de outono",
+                  "platform": "instagram",
+                  "format": "reels",
+                  "publishOn": "2026-10-20",
+                  "publishAtTime": "18:30",
+                  "status": "awaiting_approval",
+                  "coverAssetId": null,
+                  "publishedOn": null,
+                  "caption": "Novidades de outono chegando!",
+                  "revision": 1,
+                  "media": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "position": 1,
+                      "kind": "image"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Resource not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CONTENT_APPROVAL_CANNOT_BE_WITHDRAWN: | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | AGENCY_READ_ONLY: O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CONTENT_APPROVAL_CANNOT_BE_WITHDRAWN",
+                    "message": "Request failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/clients/{clientId}/contents/{contentId}/approve": {
       "post": {
         "operationId": "approvePortalContent",
@@ -14383,7 +14573,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/approvePortalContentRequest"
+                "$ref": "#/components/schemas/withdrawPortalContentApprovalRequest"
               },
               "example": {
                 "revision": 1
@@ -26172,7 +26362,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/approvePortalContentRequest"
+                "$ref": "#/components/schemas/withdrawPortalContentApprovalRequest"
               },
               "example": {
                 "revision": 1

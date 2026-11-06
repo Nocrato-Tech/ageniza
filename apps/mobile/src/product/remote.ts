@@ -65,10 +65,10 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
       return repo.detail(input.clientId, value.id);
     },
     move: async (post, action, comment, date) => {
-      if (action === 'approve' || action === 'changes') { if (agency) throw new Error('A aprovação deve ser feita no acesso próprio do cliente.'); }
+      if (action === 'approve' || action === 'changes' || action === 'withdraw-approval') { if (agency) throw new Error('A aprovação deve ser feita no acesso próprio do cliente.'); }
       else agencyOnly();
       const endpoint = action === 'changes' ? 'request-changes' : action === 'approveByAgency' ? 'approve-by-agency' : action;
-      const body = action === 'approve' ? PortalApproveContentRequestSchema.parse({ revision: post.revision }) : action === 'changes' ? PortalRequestContentChangesRequestSchema.parse({ revision: post.revision, comment }) : action === 'approveByAgency' ? ApproveContentByAgencyRequestSchema.parse({ revision: post.revision, reason: comment }) : action === 'publish' ? PublishContentRequestSchema.parse(date ? { publishedOn: date } : {}) : action === 'reschedule' ? RescheduleContentRequestSchema.parse(date ? { publishOn: date } : {}) : {};
+      const body = action === 'approve' || action === 'withdraw-approval' ? PortalApproveContentRequestSchema.parse({ revision: post.revision }) : action === 'changes' ? PortalRequestContentChangesRequestSchema.parse({ revision: post.revision, comment }) : action === 'approveByAgency' ? ApproveContentByAgencyRequestSchema.parse({ revision: post.revision, reason: comment }) : action === 'publish' ? PublishContentRequestSchema.parse(date ? { publishedOn: date } : {}) : action === 'reschedule' ? RescheduleContentRequestSchema.parse(date ? { publishOn: date } : {}) : {};
       await api.request(`${base(post.clientId)}/contents/${post.id}/${endpoint}`, { method: 'POST', body });
       return repo.detail(post.clientId, post.id);
     },
