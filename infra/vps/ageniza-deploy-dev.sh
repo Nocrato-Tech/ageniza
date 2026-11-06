@@ -89,7 +89,7 @@ valid_app_image() {
 # fixed by compose.dev.yml, so the file may not even name them. Payments stay simulated, and the object storage must be
 # dev buckets, so a copy of the production file cannot be applied here by mistake.
 validate_runtime_env() {
-  local line key value required
+  local line key value required host
   local sender_pattern='^([^<>]+ )?<?[^[:space:]@<>]+@[^[:space:]@<>.]+\.[^[:space:]@<>]+>?$'
   declare -A seen=()
   require_root_file "$RUNTIME_ENV" '600'
@@ -105,10 +105,12 @@ validate_runtime_env() {
       # Optional real mail (issue #835): all three or none. The values are never printed; the API and worker validate them again at start.
       DEV_REAL_EMAIL) [[ "$value" == 1 ]] || die 'DEV_REAL_EMAIL must be 1 (or be left out)' ;;
       DEV_SMTP_URL)
+        [[ "$value" != *[?#]* ]] || die 'DEV_SMTP_URL must not carry a query or a fragment (value not shown)'
         [[ "$value" =~ ^smtps://[^[:space:]@/:]+:[^[:space:]@/]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(:[0-9]+)?$ \
           || "$value" =~ ^smtp://[^[:space:]@/:]+:[^[:space:]@/]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}:587$ ]] \
           || die 'DEV_SMTP_URL must be an authenticated smtps URL, or an smtp URL on port 587, with a public host name (value not shown)'
-        [[ ! "${value#*@}" =~ (^|\.)(localhost|local|internal|lan|home|corp|localdomain|test|invalid)(:[0-9]+)?$ ]] || die 'DEV_SMTP_URL must name a public host (value not shown)' ;;
+        host="${value#*@}"; host="${host,,}"
+        [[ ! "$host" =~ (^|\.)(localhost|local|internal|lan|home|corp|localdomain|test|invalid)(:[0-9]+)?$ ]] || die 'DEV_SMTP_URL must name a public host (value not shown)' ;;
       DEV_EMAIL_FROM) [[ "$value" =~ $sender_pattern ]] || die 'DEV_EMAIL_FROM must be an email address, optionally with a display name (value not shown)' ;;
       APP_ENV) [[ "$value" == production ]] || die 'APP_ENV must be production' ;;
       PAYMENTS_PROVIDER) [[ "$value" == simulado ]] || die 'PAYMENTS_PROVIDER must be simulado in dev' ;;

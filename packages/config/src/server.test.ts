@@ -411,6 +411,10 @@ describe('server configuration', () => {
       const optedIn = { ...dev, DEV_REAL_EMAIL: '1' };
       const external = { SMTP_URL: 'smtps://user:key@smtp.ageniza.example:465', EMAIL_FROM: 'Ageniza Dev <no-reply@dev.ageniza.example>' };
 
+      it('accepts an upper-case provider host, normalised to the same rules', () => {
+        expect(loadApiConfig({ ...optedIn, ...external, SMTP_URL: 'smtps://user:key@SMTP.Ageniza.Example:465' }).smtpUrl).toContain('SMTP.Ageniza.Example');
+      });
+
       it('accepts smtps and smtp on 587 to a public host, in the API and in the worker', () => {
         for (const smtpUrl of ['smtps://user:key@smtp.ageniza.example:465', 'smtps://user:key@smtp.ageniza.example', 'smtp://user:key@smtp.ageniza.example:587']) {
           expect(loadApiConfig({ ...optedIn, ...external, SMTP_URL: smtpUrl }).smtpUrl).toBe(smtpUrl);
@@ -449,11 +453,22 @@ describe('server configuration', () => {
         ['the cloud metadata address', 'smtps://user:key@169.254.169.254:465'],
         ['loopback IPv4', 'smtps://user:key@127.0.0.1:465'],
         ['loopback IPv6', 'smtps://user:key@[::1]:465'],
-        ['a unique-local IPv6', 'smtps://user:key@[fd00::1]:465']
+        ['a unique-local IPv6', 'smtps://user:key@[fd00::1]:465'],
+        ['a trailing dot on localhost', 'smtps://user:key@localhost.:465'],
+        ['a trailing dot on the sink', 'smtps://user:key@mailpit.:465'],
+        ['a hex IPv4 form', 'smtps://user:key@0x7f.1:465'],
+        ['a NAT64 metadata address', 'smtps://user:key@[64:ff9b::a9fe:a9fe]:465'],
+        ['an upper-case internal suffix', 'smtps://user:key@SMTP.CORP.INTERNAL:465'],
+        ['a query that would override the transport', 'smtp://user:key@smtp.ageniza.example:587?requireTLS=false'],
+        ['a query before an @ that hides the real host', 'smtp://user:key@smtp.ageniza.example:587?requireTLS=false&x=@smtp.ageniza.example:587'],
+        ['a fragment', 'smtps://user:key@smtp.ageniza.example:465#x'],
+        ['a path', 'smtps://user:key@smtp.ageniza.example:465/path'],
+        ['no password', 'smtps://user@smtp.ageniza.example:465'],
+        ['no credentials', 'smtps://smtp.ageniza.example:465']
       ])('refuses %s without echoing credentials or host', (_label, smtpUrl) => {
         for (const load of [loadApiConfig, loadWorkerConfig]) {
           const attempt = (): unknown => load({ ...optedIn, ...external, SMTP_URL: smtpUrl });
-          expect(attempt).toThrow(/SMTP_URL: must (point to a public SMTP host|be smtps or smtp on port 587|not point to a loopback)/);
+          expect(attempt).toThrow(/SMTP_URL: must (point to a public SMTP host|be smtps or smtp on port 587|not point to a loopback|not carry a path|carry a user)/);
           expect(attempt).not.toThrow(/user:key|smtp\.ageniza|169\.254|192\.168|postgres/);
         }
       });

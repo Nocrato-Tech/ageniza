@@ -52,9 +52,16 @@ export const createEmailSender = (options: EmailSenderOptions): EmailSender => {
   const timeoutMs = options.timeoutMs ?? 10_000;
   // Submission port 587 must upgrade with STARTTLS or fail, never fall back to plaintext; a certificate that does not validate is never accepted.
   // smtps (implicit TLS) and the plain in-network Mailpit sink are unchanged.
-  const startTlsRequired = protocol === 'smtp:' && new URL(options.smtpUrl).port === '587';
+  // The options are built from the URL's host, port and credentials only, never passed as `url`: nodemailer lets URL query parameters
+  // (requireTLS, tls.rejectUnauthorized, debug, logger) override the options, which would undo the policy above or leak the credential.
+  const parsed = new URL(options.smtpUrl);
+  const startTlsRequired = protocol === 'smtp:' && parsed.port === '587';
+  const secure = protocol === 'smtps:';
   const transport: EmailTransport = options.transport ?? nodemailer.createTransport({
-    url: options.smtpUrl,
+    host: parsed.hostname.replace(/^\[|\]$/g, ''),
+    port: parsed.port === '' ? (secure ? 465 : 587) : Number(parsed.port),
+    secure,
+    ...(parsed.username === '' ? {} : { auth: { user: decodeURIComponent(parsed.username), pass: decodeURIComponent(parsed.password) } }),
     ...(startTlsRequired ? { requireTLS: true } : {}),
     ...(protocol === 'smtps:' || startTlsRequired ? { tls: { rejectUnauthorized: true } } : {}),
     connectionTimeout: timeoutMs,

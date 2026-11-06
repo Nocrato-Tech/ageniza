@@ -173,7 +173,12 @@ describe('validate_runtime_env of the dev entrypoint', () => {
       ['a single-label host', 'smtps://user:key@postgres:465'],
       ['an IP literal', 'smtps://user:key@10.0.0.5:465'],
       ['an internal suffix', 'smtps://user:key@smtp.corp.internal:465'],
-      ['another scheme', 'https://user:key@smtp.provider.example:465']
+      ['another scheme', 'https://user:key@smtp.provider.example:465'],
+      ['a query that overrides TLS', 'smtp://user:key@smtp.provider.example:587?requireTLS=false'],
+      ['a query that hides the host behind an @', 'smtp://user:key@smtp.provider.example:587?requireTLS=false&x=@smtp.provider.example:587'],
+      ['a fragment', 'smtps://user:key@smtp.provider.example:465#x'],
+      ['a question mark inside the password', 'smtps://user:ke?y@smtp.provider.example:465'],
+      ['an upper-case internal suffix', 'smtps://user:key@SMTP.CORP.INTERNAL:465']
     ])('refuses DEV_SMTP_URL with %s without printing it', (_label, value) => {
       const result = validate(withOptIn({ DEV_SMTP_URL: value }));
       expect(result.status).toBe(1);

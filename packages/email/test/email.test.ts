@@ -37,6 +37,21 @@ describe('transport TLS policy (issue #835)', () => {
     expect(build('smtps://user:key@smtp.ageniza.example:465')).toMatchObject({ tls: { rejectUnauthorized: true } });
   });
 
+  it('ignores query parameters of the URL, so none can weaken TLS or enable logging', () => {
+    const spy = vi.spyOn(nodemailer, 'createTransport');
+    createEmailSender({
+      smtpUrl: 'smtp://user:key@smtp.ageniza.example:587?requireTLS=false&ignoreTLS=true&tls.rejectUnauthorized=false&debug=true&logger=true',
+      from: 'no-reply@ageniza.example',
+      logger: createLogger({ level: 'silent' }, new PassThrough())
+    });
+    const effective = (spy.mock.results[0]?.value as { transporter: { options: Record<string, unknown> } }).transporter.options;
+    spy.mockRestore();
+    expect(effective).toMatchObject({ host: 'smtp.ageniza.example', port: 587, secure: false, requireTLS: true, auth: { user: 'user', pass: 'key' }, tls: { rejectUnauthorized: true } });
+    expect(effective.ignoreTLS).toBeFalsy();
+    expect(effective.debug).toBeFalsy();
+    expect(effective.logger).toBeFalsy();
+  });
+
   it('leaves the plain in-network sink alone', () => {
     const options = build('smtp://mailpit:1025');
     expect(options).not.toHaveProperty('requireTLS');
