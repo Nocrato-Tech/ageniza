@@ -1790,6 +1790,39 @@
         ],
         "additionalProperties": false
       },
+      "readContentActivationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "hasContent": {
+                "type": "boolean"
+              },
+              "sentForApproval": {
+                "type": "boolean"
+              },
+              "approvedByClient": {
+                "type": "boolean"
+              },
+              "published": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "hasContent",
+              "sentForApproval",
+              "approvedByClient",
+              "published"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
       "createContentResponse": {
         "type": "object",
         "properties": {
@@ -10902,6 +10935,124 @@
                   "error": {
                     "code": "RATE_LIMITED",
                     "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/contents/activation": {
+      "get": {
+        "operationId": "readContentActivation",
+        "summary": "Lê os fatos do caminho de ativação da agência",
+        "description": "O Início da agência nova mostra o caminho de ativação (decisão de 2026-11-06) e lê aqui o que falta saber: se a agência tem algum\nconteúdo (`hasContent`), se algum já saiu da produção para o cliente (`sentForApproval`), se algum foi postado (`published`) e se algum foi aprovado por\numa pessoa do cliente (`approvedByClient`; a aprovação fora da plataforma, que sempre traz motivo, não conta). É leitura\nsob a mesma política do calendário: o que a pessoa não pode ler não entra. Nenhuma contagem nem conteúdo sai por aqui.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Os fatos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/readContentActivationResponse"
+                },
+                "example": {
+                  "data": {
+                    "hasContent": true,
+                    "sentForApproval": true,
+                    "approvedByClient": false,
+                    "published": false
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Resource not found."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

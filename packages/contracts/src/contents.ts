@@ -243,6 +243,16 @@ export const ContentFeedResponseSchema = z.object({
   meta: z.object({ count: z.number().int().nonnegative() }).strict()
 }).strict();
 
+/** What the agency's Início reads to show the activation path: three facts, no content and no count. */
+export const ContentActivationResponseSchema = z.object({
+  data: z.object({
+    hasContent: z.boolean(),
+    sentForApproval: z.boolean(),
+    approvedByClient: z.boolean(),
+    published: z.boolean()
+  }).strict()
+}).strict();
+
 export const StoryScriptListItemSchema = z.object({
   id: z.string().uuid(),
   scriptOn: z.string(),
@@ -371,6 +381,7 @@ export type ContentPeriodQuery = z.infer<typeof ContentPeriodQuerySchema>;
 export type ContentListItem = z.infer<typeof ContentListItemSchema>;
 export type StoryScriptListItem = z.infer<typeof StoryScriptListItemSchema>;
 export type ContentFeedResponse = z.infer<typeof ContentFeedResponseSchema>;
+export type ContentActivationResponse = z.infer<typeof ContentActivationResponseSchema>;
 export type ContentPeriodResponse = z.infer<typeof ContentPeriodResponseSchema>;
 export type Content = z.infer<typeof ContentSchema>;
 export type ContentDetail = z.infer<typeof ContentDetailSchema>;
