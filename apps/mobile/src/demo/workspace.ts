@@ -1,4 +1,4 @@
-import type { Context, CreateAgencyResponse, CreateMediaUploadResponse, ContentDetail, ContentPeriodResponse, CollaboratorListResponse, MediaFolderAsset } from '@ageniza/contracts';
+import type { Context, CreateAgencyResponse, CreateMediaUploadResponse, ContentDetail, ContentFeedResponse, ContentPeriodResponse, CollaboratorListResponse, MediaFolderAsset } from '@ageniza/contracts';
 import { CreateAgencyRequestSchema, CreateClientRequestSchema, CreateContentRequestSchema, CreateContentTaskRequestSchema } from '@ageniza/contracts';
 import type { ApiClient } from '../api/client';
 import { monthPeriod } from '../contents/period';
@@ -48,10 +48,16 @@ export async function populateDemoWorkspace(api: ApiClient, context: Agency, ima
       await api.request(`${root}/media/uploads/${upload.assetId}/complete`, { method: 'POST', body: {} });
       assetId = upload.assetId;
     }
-    const existing = await api.request<ContentPeriodResponse>(`${base}/contents?from=${period.from}&to=${period.to}`);
+    // The month asked for lists every format; the whole feed (image, carousel and reels only) finds what an earlier run created in another month.
+    const month = await api.request<ContentPeriodResponse>(`${base}/contents?from=${period.from}&to=${period.to}`);
+    const existing: { id: string; title: string; publishOn: string }[] = [...month.data.contents];
+    for (let cursor: string | null = null, first = true; first || cursor !== null; first = false) {
+      const page: ContentFeedResponse = await api.request<ContentFeedResponse>(`${base}/contents/feed${cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`}`);
+      existing.push(...page.data.contents.filter((item) => !existing.some((known) => known.id === item.id))); cursor = page.data.nextCursor;
+    }
     for (const [index, title] of brand.titles.entries()) {
       progress(`Preparando conteúdo: ${title}`);
-      let post: Pick<ContentDetail, 'id' | 'publishOn'> | undefined = existing.data.contents.find((value) => value.title === title);
+      let post: Pick<ContentDetail, 'id' | 'publishOn'> | undefined = existing.find((value) => value.title === title);
       if (!post) {
         const created = await api.request<ContentDetail>(`${base}/contents`, { method: 'POST', body: CreateContentRequestSchema.parse({ title, format: 'image', publishOn: day([5, 15, 25][index]), publishAtTime: '10:00', folderId: folder.id, mediaAssetIds: [assetId], caption: `${title}. Informação de exemplo para demonstrar o planejamento de conteúdo da agência.\n\nEste material é fictício e não constitui orientação médica.`, ownerMembershipId: self.membershipId }) });
         post = created;
