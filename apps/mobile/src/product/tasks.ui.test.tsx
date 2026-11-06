@@ -1,0 +1,51 @@
+// @vitest-environment jsdom
+import { afterEach, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
+vi.mock('react-native', async () => Object.fromEntries(await Promise.all(['View', 'Text', 'TextInput', 'Pressable', 'ScrollView', 'StyleSheet', 'Image', 'Modal', 'Platform', 'Animated', 'Easing', 'AccessibilityInfo', 'Switch', 'ActivityIndicator'].map(async (name) => [name, (await vi.importActual<{ default: unknown }>(`react-native-web/dist/exports/${name}/index.js`)).default]))));
+vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({ addListener: () => ({ remove() {} }) }) }));
+vi.mock('react-native-svg', async () => { const { createElement } = await import('react'); const part = ({ children }: { children?: ReactNode }) => createElement('svg', {}, children); return { default: part, ...Object.fromEntries(['Svg', 'Defs', 'LinearGradient', 'Stop', 'Rect', 'Path', 'Circle', 'Line', 'Polyline', 'Polygon', 'Ellipse', 'G', 'ClipPath'].map((key) => [key, part])) }; });
+import { ContentTasks } from './ContentTasks';
+import type { Data, Post, Repository } from './types';
+afterEach(cleanup);
+it('delivers the chosen task with a contextual success message through the real update callback', async () => {
+  const tasks = [{ id: 'first', title: 'Primeira tarefa', status: 'pending', dueOn: '2026-11-06', assigneeId: 'self' }, { id: 'second', title: 'Revisar legenda', status: 'pending', dueOn: '2026-11-06', assigneeId: 'self' }];
+  const post = { id: 'post', status: 'in_production', ownerId: 'self', tasks } as Post;
+  const data = { readOnly: false, permissions: ['conteudo.visualizar'], people: [{ id: 'self', self: true, name: 'Pessoa' }] } as Data;
+  const task = vi.fn(async () => post);
+  const onUpdate = vi.fn<(action: () => Promise<Post>, message?: string) => Promise<boolean>>(async (action) => { await action(); return true; });
+  render(<ContentTasks post={post} data={data} repository={{ task, demo: false } as unknown as Repository} busy={false} onUpdate={onUpdate} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Entregar: Revisar legenda' }));
+  await waitFor(() => expect(task).toHaveBeenCalledExactlyOnceWith(post, tasks[1], 'deliver'));
+  expect(onUpdate.mock.calls[0][1]).toBe('Tarefa entregue para conferência: Revisar legenda.');
+});
+it('keeps invalid task dates beside the field without calling the API', async () => {
+  const post = { id: 'post', date: '2026-11-06', status: 'in_production', ownerId: 'self', tasks: [] } as unknown as Post;
+  const data = { readOnly: false, permissions: ['*'], people: [{ id: 'self', self: true, name: 'Pessoa' }] } as Data;
+  const onUpdate = vi.fn(async () => true);
+  render(<ContentTasks post={post} data={data} repository={{ demo: false } as Repository} busy={false} onUpdate={onUpdate} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Adicionar tarefa' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Título da tarefa' }), { target: { value: 'Revisar capa' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Prazo da tarefa (AAAA-MM-DD)' }), { target: { value: '2026-02-31' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar tarefa' }));
+  expect(await screen.findByText('Informe uma data válida no formato AAAA-MM-DD.')).toBeTruthy();
+  expect(onUpdate).not.toHaveBeenCalled();
+  expect(screen.getByRole('textbox', { name: 'Título da tarefa' }).getAttribute('value')).toBe('Revisar capa');
+});
+it('preserves adjustment guidance after a failed return and clears it only after success', async () => {
+  const task = { id: 'second', title: 'Revisar legenda', status: 'delivered', dueOn: '2026-11-06', assigneeId: 'self' };
+  const post = { id: 'post', status: 'in_production', ownerId: 'self', tasks: [task] } as Post;
+  const data = { readOnly: false, permissions: ['conteudo.visualizar'], people: [{ id: 'self', self: true, name: 'Pessoa' }] } as Data;
+  const updateTask = vi.fn(async () => post);
+  const onUpdate = vi.fn<(action: () => Promise<Post>, message?: string) => Promise<boolean>>(async (action) => { await action(); return false; });
+  render(<ContentTasks post={post} data={data} repository={{ task: updateTask, demo: false } as unknown as Repository} busy={false} onUpdate={onUpdate} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Devolver tarefa: Revisar legenda' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Motivo da devolução' }), { target: { value: 'Corrigir a chamada da legenda' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar devolução' }));
+  await waitFor(() => expect(updateTask).toHaveBeenCalledExactlyOnceWith(post, task, 'return', 'Corrigir a chamada da legenda'));
+  expect((screen.getByRole('textbox', { name: 'Motivo da devolução' }) as HTMLTextAreaElement).value).toBe('Corrigir a chamada da legenda');
+  expect(onUpdate.mock.calls[0][1]).toBe('Tarefa devolvida com orientação de ajuste: Revisar legenda.');
+  onUpdate.mockImplementationOnce(async (action) => { await action(); return true; });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar devolução' }));
+  await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Motivo da devolução' })).toBeNull());
+});
