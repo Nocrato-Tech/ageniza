@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import type { ContentFormat } from '@ageniza/contracts';
-import { Action, Card, Field, Heading, Info, InstagramPreview, Selector, Txt, ui, colors } from './ui';
+import { Action, Card, Field, Heading, Info, InstagramPreview, MediaDisplay, Selector, Txt, ui, colors } from './ui';
 import { validateInput } from './validation';
 import type { Data, Post, PostInput, Repository } from './types';
 import { monthPeriod } from '../contents/period';
@@ -41,6 +41,10 @@ export function ContentEditor({ data, repository, clientId, existing, busy, onSa
       </>}
       {step === 1 && <>
         <Heading title="O que vamos publicar?" subtitle={`${client?.name ?? ''} · ${input.format === 'reels' ? 'Reel' : input.format === 'carousel' ? 'Carrossel' : 'Post'}`} />
+        {input.mediaIds.map((id, index) => {
+          const asset = library.assets.find((item) => item.id === id);
+          return asset ? <Card key={id}><Txt kind="strong">{index + 1}. {asset.name}</Txt><MediaDisplay asset={asset} repository={repository} post={preview} /><Action plain label={`Remover ${asset.name} da publicação`} onPress={() => setInput((current) => ({ ...current, mediaIds: current.mediaIds.filter((mediaId) => mediaId !== id), coverId: current.coverId === id ? null : current.coverId }))} /></Card> : null;
+        })}
         <Card><Txt kind="strong">Mídias da publicação</Txt><Txt kind="small" color={colors.muted}>Selecione na biblioteca ou envie um arquivo. A ordem da seleção define o carrossel.</Txt><View style={{ gap: 8 }}>{folderAssets.map((asset) => <Action key={asset.id} soft={!input.mediaIds.includes(asset.id)} label={`${input.mediaIds.includes(asset.id) ? `${input.mediaIds.indexOf(asset.id) + 1}. ` : ''}${asset.name}`} onPress={() => { update('mediaIds', input.mediaIds.includes(asset.id) ? input.mediaIds.filter((id) => id !== asset.id) : [...input.mediaIds, asset.id]); }} />)}</View><Action label="Enviar imagem ou vídeo" soft busy={picking} onPress={() => void upload()} /></Card>
         <Selector label="Capa da publicação" value={input.coverId ?? ''} options={[{ id: '', label: 'Primeira mídia' }, ...folderAssets.filter((asset) => asset.kind === 'image' || asset.sample).map((asset) => ({ id: asset.id, label: asset.name }))]} onChange={(id) => update('coverId', id || null)} />
         <Field label="Legenda da publicação" placeholder="O que sua marca vai dizer?" value={input.caption} onChangeText={(value) => update('caption', value)} multiline maxLength={2200} style={{ minHeight: 160, textAlignVertical: 'top' }} /><Txt kind="micro" color={colors.muted}>{input.caption.length} / 2.200 caracteres</Txt>

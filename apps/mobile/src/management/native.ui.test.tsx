@@ -5,10 +5,11 @@ import type { ReactNode } from 'react';
 
 const request = vi.hoisted(() => vi.fn());
 const pick = vi.hoisted(() => vi.fn());
+const videoSource = vi.hoisted(() => vi.fn());
 vi.mock('expo-document-picker', () => ({ getDocumentAsync: pick }));
 vi.mock('../api/runtime', () => ({ api: { request }, browserPreview: false, webUrl: 'https://dev.ageniza.com.br' }));
 vi.mock('react-native', async () => Object.fromEntries(await Promise.all(['View', 'Text', 'TextInput', 'Pressable', 'ScrollView', 'StyleSheet', 'Image', 'Modal', 'Platform', 'Animated', 'Easing', 'AccessibilityInfo', 'Switch', 'KeyboardAvoidingView', 'ActivityIndicator', 'Linking'].map(async (name) => [name, (await vi.importActual<{ default: unknown }>(`react-native-web/dist/exports/${name}/index.js`)).default]))));
-vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: () => ({ addListener: () => ({ remove() {} }) }) }));
+vi.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: (uri: string) => { videoSource(uri); return { addListener: () => ({ remove() {} }) }; } }));
 vi.mock('react-native-svg', async () => {
   const { createElement } = await import('react');
   const part = ({ children }: { children?: ReactNode }) => createElement('svg', {}, children);
@@ -25,7 +26,7 @@ import { ContentEditor } from '../product/ContentEditor';
 import type { Data, Repository } from '../product/types';
 
 beforeEach(() => {
-  request.mockReset(); pick.mockReset();
+  request.mockReset(); pick.mockReset(); videoSource.mockReset();
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) });
 });
 afterEach(cleanup);
@@ -174,6 +175,30 @@ describe('client photo boundaries', () => {
 });
 
 describe('content editor recovery', () => {
+  it('previews selected images and playable videos in selection order before review and removes only the chosen media', async () => {
+    const clientId = '11111111-1111-4111-8111-111111111111';
+    const folderId = '22222222-2222-4222-8222-222222222222';
+    const assets = [{ id: 'image-one', clientId, folderId, name: 'Capa.png', kind: 'image' as const, size: 10 }, { id: 'video-two', clientId, folderId, name: 'Reel.mp4', kind: 'video' as const, size: 20 }];
+    const data: Data = { version: 2, clients: [{ id: clientId, name: 'Marca', handle: '' }], people: [], posts: [], activities: [], profile: { name: 'Pessoa', agency: 'Agência' }, permissions: [], readOnly: false, assets, folders: [{ id: folderId, clientId, name: 'Publicações' }] };
+    const assetUrl = vi.fn(async (_client, _post, id) => `https://media.example.test/${id}`);
+    const repository = { library: async () => ({ folders: data.folders, assets }), assetUrl } as unknown as Repository;
+    const save = vi.fn();
+    render(<ContentEditor data={data} repository={repository} clientId={clientId} busy={false} onSave={save} onError={() => {}} onRefresh={async () => {}} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Título interno *' }), { target: { value: 'Carrossel' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Continuar para conteúdo' }).getAttribute('aria-disabled')).not.toBe('true'));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar para conteúdo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Capa.png' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reel.mp4' }));
+    expect(await screen.findAllByText('1. Capa.png')).toHaveLength(2);
+    expect(screen.getAllByText('2. Reel.mp4')).toHaveLength(2);
+    await waitFor(() => expect(document.querySelector('img')?.getAttribute('src')).toBe('https://media.example.test/image-one'));
+    await waitFor(() => expect(videoSource).toHaveBeenCalledWith('https://media.example.test/video-two'));
+    expect(assetUrl).toHaveBeenCalledWith(clientId, 'preview', 'image-one', 'original');
+    fireEvent.click(screen.getByRole('button', { name: 'Remover Capa.png da publicação' }));
+    expect(screen.queryByRole('button', { name: 'Remover Capa.png da publicação' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Remover Reel.mp4 da publicação' })).toBeTruthy();
+    expect(save).not.toHaveBeenCalled();
+  });
   it('retries an already created draft by its server id instead of creating it again', async () => {
     const clientId = '11111111-1111-4111-8111-111111111111';
     const folderId = '22222222-2222-4222-8222-222222222222';
