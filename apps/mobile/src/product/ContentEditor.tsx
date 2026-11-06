@@ -7,9 +7,10 @@ import { Action, Card, Field, Heading, Info, InstagramPreview, ErrorText, Select
 import { editorErrors, type EditorDraft } from './editor-state';
 import { EditorMedia } from './EditorMedia';
 import { EditorDateTime } from './EditorDateTime';
+import { useUploadTransfer } from './useUploadTransfer';
 import { UploadStatus } from './UploadStatus';
 export type { EditorDraft } from './editor-state';
-import type { Data, Post, PostInput, Repository, UploadProgress } from './types';
+import type { Data, Post, PostInput, Repository } from './types';
 import { monthPeriod } from '../contents/period';
 
 export function ContentEditor({ data, repository, clientId, existing, busy, onSave, onError, onRefresh, initialDraft, onDraftChange, onDirtyChange, onWorkingChange }: { onWorkingChange?(working: boolean): void; initialDraft?: EditorDraft; onDraftChange?(draft: EditorDraft | undefined): void; onDirtyChange?(dirty: boolean): void; data: Data; repository: Repository; clientId: string; existing?: Post; busy: boolean; onSave(input: PostInput, id?: string, onCreated?: (id: string) => void): Promise<void>; onError(message: string): void; onRefresh(): Promise<void> }) {
@@ -18,6 +19,7 @@ export function ContentEditor({ data, repository, clientId, existing, busy, onSa
   const [createdId, setCreatedId] = useState<string | undefined>(acceptedDraft?.createdId);
   const [input, setInput] = useState<PostInput>(() => acceptedDraft ? { ...acceptedDraft.input, mediaIds: [...acceptedDraft.input.mediaIds] } : existing ? { clientId: existing.clientId, title: existing.title, caption: existing.caption, format: existing.format, date: existing.date, time: existing.time, ownerId: existing.ownerId, folderId: existing.folderId, mediaIds: [...existing.mediaIds], coverId: existing.coverId } : { clientId: clientId || data.clients[0]?.id || '', title: '', caption: '', format: 'reels', date: monthPeriod().from, time: '18:00', ownerId: data.people[0]?.id ?? '', folderId: data.folders.find((folder) => folder.clientId === (clientId || data.clients[0]?.id))?.id ?? '', mediaIds: [], coverId: null });
   const restored = useRef(!!acceptedDraft);
+  const currentInput = useRef(input); currentInput.current = input;
   const baseline = useRef(JSON.stringify(existing ? { clientId: existing.clientId, title: existing.title, caption: existing.caption, format: existing.format, date: existing.date, time: existing.time, ownerId: existing.ownerId, folderId: existing.folderId, mediaIds: existing.mediaIds, coverId: existing.coverId } : input));
   const [attempted, setAttempted] = useState(false);
   const errors = attempted ? editorErrors(input, step) : {};
@@ -33,18 +35,22 @@ export function ContentEditor({ data, repository, clientId, existing, busy, onSa
   const folderAssets = library.assets.filter((asset) => asset.clientId === input.clientId && asset.folderId === input.folderId);
   const preview: Post = { ...input, id: existing?.id ?? 'preview', status: existing?.status ?? 'in_production', revision: existing?.revision ?? 1, tasks: existing?.tasks ?? [], comments: existing?.comments ?? [] };
   const [picking, setPicking] = useState(false);
+  const [uploadNotice, setUploadNotice] = useState('');
   useEffect(() => { onWorkingChange?.(picking); return () => onWorkingChange?.(false); }, [picking, onWorkingChange]);
-  const [uploadProgress, setUploadProgress] = useState<UploadProgress>();
-  async function upload() {
-    setPicking(true); setUploadProgress(undefined);
+  const transfer = useUploadTransfer(repository);
+  const uploadProgress = transfer.progress;
+  async function upload(retry = false) {
+    setPicking(true); setUploadNotice('');
     try {
-      const picked = await DocumentPicker.getDocumentAsync({ type: ['image/*', 'video/*'], copyToCacheDirectory: true });
-      if (picked.canceled) return;
-      const file = picked.assets[0];
-      const asset = await repository.upload(input.clientId, input.folderId, { uri: file.uri, name: file.name, mimeType: file.mimeType ?? 'application/octet-stream', size: file.size ?? 0, file: file.file }, setUploadProgress);
-      setInput((current) => ({ ...current, mediaIds: [...current.mediaIds, asset.id], coverId: current.coverId ?? (asset.kind === 'image' ? asset.id : null) }));
-      setLibrary((current) => ({ ...current, assets: [...current.assets.filter((item) => item.id !== asset.id), asset] }));
-      try { setLibrary(await repository.library(input.clientId)); await onRefresh(); }
+      const picked = retry ? undefined : await DocumentPicker.getDocumentAsync({ type: ['image/*', 'video/*'], copyToCacheDirectory: true });
+      if (picked?.canceled) return;
+      const file = picked?.assets[0];
+      const asset = retry ? transfer.matches(input.clientId, input.folderId) ? await transfer.retry() : undefined : file ? await transfer.transfer(input.clientId, input.folderId, { uri: file.uri, name: file.name, mimeType: file.mimeType ?? 'application/octet-stream', size: file.size ?? 0, file: file.file }) : undefined;
+      if (!asset) return;
+      setInput((current) => current.clientId === asset.clientId && current.folderId === asset.folderId ? { ...current, mediaIds: [...current.mediaIds, asset.id], coverId: current.coverId ?? (asset.kind === 'image' ? asset.id : null) } : current);
+      if (currentInput.current.clientId !== asset.clientId || currentInput.current.folderId !== asset.folderId) setUploadNotice('O arquivo foi recebido na pasta original do envio. Como o cliente ou a pasta da publicação mudou, ele não foi anexado.');
+      if (currentInput.current.clientId === asset.clientId) setLibrary((current) => ({ ...current, assets: [...current.assets.filter((item) => item.id !== asset.id), asset] }));
+      try { const refreshed = await repository.library(asset.clientId); if (currentInput.current.clientId === asset.clientId) setLibrary(refreshed); await onRefresh(); }
       catch { onError('A mídia foi enviada e selecionada, mas a biblioteca não pôde ser atualizada. Não envie o mesmo arquivo novamente.'); }
     } catch (error) { onError(error instanceof Error ? error.message : 'Não foi possível enviar a mídia.'); }
     finally { setPicking(false); }
@@ -57,6 +63,7 @@ export function ContentEditor({ data, repository, clientId, existing, busy, onSa
       {restored.current && <Info title="Rascunho recuperado" text="Confira as informações antes de salvar. Estas alterações ainda não foram enviadas ao servidor." />}
       <View style={{ flexDirection: 'row', gap: 8 }}>{['Formato', 'Conteúdo', 'Revisão'].map((label, index) => <View key={label} style={{ flex: 1, gap: 6 }}><View style={{ height: 4, borderRadius: 4, backgroundColor: index <= step ? colors.indigo : colors.border }} /><Txt kind="micro" color={index <= step ? colors.indigo : colors.muted}>{index + 1}. {label}</Txt></View>)}</View>
       {libraryLoading && <Info title="Carregando biblioteca…" />}
+      {!!uploadNotice && <Info title="Arquivo recebido" text={uploadNotice} />}
       {!libraryLoading && !library.folders.some((folder) => folder.clientId === input.clientId) && <Action plain label="Recarregar biblioteca" onPress={() => setLibraryRetry((value) => value + 1)} />}
       {step === 0 && <>
         <Heading title="Dê forma à próxima ideia" subtitle="Escolha o cliente e o formato." />
@@ -77,7 +84,7 @@ export function ContentEditor({ data, repository, clientId, existing, busy, onSa
           const asset = library.assets.find((item) => item.id === id);
           return asset ? <EditorMedia key={id} asset={asset} post={preview} repository={repository} index={index} count={input.mediaIds.length} isCover={input.coverId === id || (!input.coverId && index === 0)} onMove={(offset) => moveMedia(id, offset)} onRemove={() => removeMedia(id)} /> : null;
         })}
-        <Card><Txt kind="strong">Mídias da publicação</Txt><Txt kind="small" color={colors.muted}>Selecione na biblioteca ou envie um arquivo. Use Mover antes ou Mover depois para organizar o carrossel. Remover da publicação mantém o arquivo na biblioteca.</Txt><View style={{ gap: 8 }}>{folderAssets.map((asset) => <Action key={asset.id} soft={!input.mediaIds.includes(asset.id)} label={`${input.mediaIds.includes(asset.id) ? `${input.mediaIds.indexOf(asset.id) + 1}. ` : ''}${asset.name}`} onPress={() => input.mediaIds.includes(asset.id) ? removeMedia(asset.id) : update('mediaIds', [...input.mediaIds, asset.id])} />)}</View><Action label="Enviar imagem ou vídeo" soft busy={picking} onPress={() => void upload()} />{uploadProgress && <UploadStatus progress={uploadProgress} />}</Card>
+        <Card><Txt kind="strong">Mídias da publicação</Txt><Txt kind="small" color={colors.muted}>Selecione na biblioteca ou envie um arquivo. Use Mover antes ou Mover depois para organizar o carrossel. Remover da publicação mantém o arquivo na biblioteca.</Txt><View style={{ gap: 8 }}>{folderAssets.map((asset) => <Action key={asset.id} soft={!input.mediaIds.includes(asset.id)} label={`${input.mediaIds.includes(asset.id) ? `${input.mediaIds.indexOf(asset.id) + 1}. ` : ''}${asset.name}`} onPress={() => input.mediaIds.includes(asset.id) ? removeMedia(asset.id) : update('mediaIds', [...input.mediaIds, asset.id])} />)}</View><Action label="Enviar imagem ou vídeo" soft busy={picking} onPress={() => void upload()} />{uploadProgress && <UploadStatus progress={uploadProgress} onCancel={transfer.cancel} onRetry={transfer.canRetry && transfer.matches(input.clientId, input.folderId) ? () => void upload(true) : undefined} />}</Card>
         <Selector label="Capa da publicação" value={input.coverId ?? ''} options={[{ id: '', label: 'Usar primeira mídia da publicação' }, ...folderAssets.filter((asset) => asset.kind === 'image' || asset.sample).map((asset) => ({ id: asset.id, label: asset.name }))]} onChange={(id) => update('coverId', id || null)} />
         <Field error={errors.caption} label="Legenda da publicação" placeholder="O que sua marca vai dizer?" value={input.caption} onChangeText={(value) => update('caption', value)} multiline maxLength={2200} style={{ minHeight: 160, textAlignVertical: 'top' }} /><Txt kind="micro" color={colors.muted}>{input.caption.length} / 2.200 caracteres</Txt>
         <EditorDateTime kind="date" error={errors.date} value={input.date} onChange={(value) => update('date', value)} />
