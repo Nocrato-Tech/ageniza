@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -79,6 +79,7 @@ export function SubscriptionPage() {
   const [step, setStep] = useState<Step>({ kind: 'pick' });
   const [notice, setNotice] = useState<Notice | undefined>();
   const [canceling, setCanceling] = useState(false);
+  const requesting = useRef(false);
 
   const plans = plansQuery.data;
   const subscription = overviewQuery.data?.subscription ?? null;
@@ -261,7 +262,12 @@ export function SubscriptionPage() {
           loading={request.isPending}
           disabled={quote === undefined}
           blockedReason={blockedReason}
-          onClick={() => { if (terms !== undefined) request.mutate(terms); }}
+          onClick={() => {
+            // A synchronous guard: `isPending` only changes on the next render, and two clicks in one tick would both pass it.
+            if (terms === undefined || requesting.current) return;
+            requesting.current = true;
+            request.mutate(terms, { onSettled: () => { requesting.current = false; } });
+          }}
         >{actionLabel}</Button>
       </div>
     </section>}

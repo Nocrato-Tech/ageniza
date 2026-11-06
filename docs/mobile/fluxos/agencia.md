@@ -350,6 +350,15 @@ Colaboradores são ilimitados, e o portal do cliente é grátis. Os extras são 
 - No Expo, a consulta mostra uso e limites de clientes/armazenamento, fim do período, próxima mensalidade e redução agendada. `graceEndsOn` gera o aviso de pagamento com a data recebida; `plan.readOnly` determina o modo leitura, sem inferir acesso pelo relógio do aparelho. Datas de instantes usam São Paulo; o dia de tolerância não passa por conversão de fuso.
 - Falha de carregamento da assinatura oferece uma nova leitura das três rotas, sem criar cobrança. A cotação continua separada de contratação e pagamento.
 - Chame sempre `quote` antes de `charges`, para mostrar o valor à pessoa.
+- **Tela da web (#773), o fluxo que o app segue igual:**
+  1. Abra a assinatura com `GET …/subscription/plans` e `GET …/subscription`; `paymentProvider` diz se há pagamento neste ambiente.
+  2. A cada mudança de plano ou de extras, chame `quote` e mostre o total (`R$ 197 + R$ 42 = R$ 239/mês`) e o que é cobrado agora; o cliente nunca calcula nem envia valor.
+  3. Ao confirmar, `charges` recebe só `planKey`, `extraClients` e `extraStorageGib`. Se vier `chargeId`, há cobrança a pagar; se vier `null`, a mudança já está feita ou agendada (descer).
+  4. Só com `paymentProvider: "simulado"` existe a tela de cartão: aceita qualquer dado, não envia nenhum campo de cartão e chama `simulated-payment` com `{ outcome }` (`approved` para pagar, `declined` para simular a recusa). Quem manda no resultado é a resposta (`confirmed` ou `declined`), não o que foi pedido.
+  5. Recusa, falha e abandono do cartão não mudam o plano. A próxima tentativa abre uma cobrança nova; a antiga não se reaproveita.
+  6. Depois de pagar, recarregue `…/subscription` e `…/me` (o plano da agência muda).
+  7. Antes de cancelar, mostre o que a agência tem (clientes ativos e armazenamento em uso, de `…/subscription`) e o que acontece no fim do período; confirmar chama `cancel` uma vez. Em tolerância, diga que a agência vira somente leitura na hora.
+  8. Sem `paymentProvider` simulado, não abra cobrança que a pessoa não poderia pagar: explique que o pagamento não está disponível.
 - A renovação automática é executada pelo worker (#790). O provedor real de pagamento segue o escopo de #785; a renovação simulada fora de produção não comprova cobrança real.
 
 ## Cliente Expo

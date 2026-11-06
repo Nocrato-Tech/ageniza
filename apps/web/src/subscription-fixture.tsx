@@ -53,7 +53,7 @@ const overview = (world: SubscriptionWorld) => {
       extraClients: current.extraClients,
       extraStorageGib: current.extraStorageGib,
       provider: current.provider ?? 'simulado',
-      currentPeriodEnd: '2026-12-01T12:00:00.000Z',
+      currentPeriodEnd: '2026-12-01T01:30:00.000Z',
       cancelAtPeriodEnd: current.cancelAtPeriodEnd ?? false,
       pending: null,
       monthlyCents: monthly,
@@ -75,7 +75,7 @@ const quoteOf = (world: SubscriptionWorld, body: { planKey: string; extraClients
   const current = world.subscription;
   const currentMonthly = current === null ? 0 : overview(world).subscription!.monthlyCents;
   const effect = current === null ? 'subscribe' : monthly >= currentMonthly ? 'upgrade' : 'downgrade';
-  return { effect, monthlyCents: monthly, amountCents: effect === 'downgrade' ? 0 : monthly - currentMonthly, effectiveAt: '2026-11-10T12:00:00.000Z' };
+  return { effect, monthlyCents: monthly, amountCents: effect === 'downgrade' ? 0 : monthly - currentMonthly, effectiveAt: '2026-11-10T01:30:00.000Z' };
 };
 
 export const makeSubscriptionApi = (world: SubscriptionWorld) => {

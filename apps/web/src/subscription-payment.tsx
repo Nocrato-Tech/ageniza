@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+﻿import { useRef, useState, type FormEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { CreditCard } from 'lucide-react';
 
@@ -54,7 +54,7 @@ export function SimulatedCardStep({ agencyId, chargeId, amountCents, onFinish, o
     </p>
     <p className="subscription-card__amount">Valor desta cobrança: <strong>{formatBrl(amountCents)}</strong></p>
     <div className="subscription-card__fields">
-      <Field label="Número do cartão">{(control) => <TextInput {...control} inputMode="numeric" autoComplete="off" placeholder="0000 0000 0000 0000" />}</Field>
+      <Field label="Número do cartão">{(control) => <TextInput {...control} inputMode="numeric" autoComplete="off" placeholder="0000 0000 0000" />}</Field>
       <Field label="Validade">{(control) => <TextInput {...control} autoComplete="off" placeholder="MM/AA" />}</Field>
       <Field label="CVV">{(control) => <TextInput {...control} inputMode="numeric" autoComplete="off" placeholder="000" />}</Field>
       <Field label="Nome impresso no cartão">{(control) => <TextInput {...control} autoComplete="off" />}</Field>

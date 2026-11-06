@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { AuthNoContentResponseSchema, type SubscriptionOverviewResponse } from '@ageniza/contracts';
@@ -31,6 +32,7 @@ export function CancelSubscriptionDialog({ agencyId, subscription, onClose, onCa
     }),
     onSuccess: onCanceled
   });
+  const confirming = useRef(false);
   const inGrace = subscription.graceEndsOn !== null;
   const failure = cancel.error instanceof HttpClientError && cancel.error.status === 409 ? cancel.error.message : 'Não foi possível cancelar agora. Tente de novo.';
 
@@ -41,7 +43,11 @@ export function CancelSubscriptionDialog({ agencyId, subscription, onClose, onCa
     onClose={() => { if (!cancel.isPending) onClose(); }}
     actions={<>
       <Button variant="secondary" disabled={cancel.isPending} onClick={onClose}>Manter a assinatura</Button>
-      <Button variant="destructive" loading={cancel.isPending} onClick={() => { cancel.mutate(); }}>Cancelar a assinatura</Button>
+      <Button variant="destructive" loading={cancel.isPending} onClick={() => {
+        if (confirming.current) return;
+        confirming.current = true;
+        cancel.mutate(undefined, { onSettled: () => { confirming.current = false; } });
+      }}>Cancelar a assinatura</Button>
     </>}
   >
     <div className="subscription-cancel">

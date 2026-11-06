@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { makeSubscriptionApi, ownerWorld, renderSubscription, type Recorded } from './subscription-fixture.js';
@@ -43,7 +43,7 @@ describe('the plans and subscription screen (#773)', () => {
     expect(await screen.findByText('Clientes: 4 de 10')).toBeTruthy();
     expect(screen.getByRole('heading', { level: 1, name: 'Assinatura' })).toBeTruthy();
     expect(screen.getByText('Armazenamento: 1 GB de 20 GB')).toBeTruthy();
-    expect(screen.getByText(/Próxima renovação em 1 de dezembro de 2026/)).toBeTruthy();
+    expect(screen.getByText(/Próxima renovação em 30 de novembro de 2026/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /Plano atual.*Essencial.*10 clientes, 20 GB · R\$ 97\/mês/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Profissional.*30 clientes, 100 GB · R\$ 197\/mês/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Agência.*60 clientes, 300 GB · R\$ 397\/mês/ })).toBeTruthy();
@@ -246,12 +246,23 @@ describe('the plans and subscription screen (#773)', () => {
     renderSubscription(impl);
     await choosePlan(/Essencial/);
 
-    expect(await screen.findByText(/Nada é cobrado agora\. A mudança vale a partir de 10 de novembro de 2026\./)).toBeTruthy();
+    expect(await screen.findByText(/Nada é cobrado agora\. A mudança vale a partir de 9 de novembro de 2026\./)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Descer o plano' }));
 
-    expect(await screen.findByText('Mudança agendada para 10 de novembro de 2026.')).toBeTruthy();
+    expect(await screen.findByText('Mudança agendada para 9 de novembro de 2026.')).toBeTruthy();
     expect(screen.queryByRole('heading', { name: /Pagamento simulado/ })).toBeNull();
     expect(posts(recorded, '/simulated-payment')).toHaveLength(0);
+  });
+
+  it('two clicks in the same tick on the action open one charge', async () => {
+    const { impl, recorded } = makeSubscriptionApi(ownerWorld());
+    renderSubscription(impl);
+    await choosePlan(/Profissional/);
+    const action = await screen.findByRole('button', { name: 'Subir o plano' });
+    act(() => { fireEvent.click(action); fireEvent.click(action); });
+
+    await screen.findByRole('heading', { name: /Pagamento simulado/ });
+    expect(posts(recorded, '/charges')).toHaveLength(1);
   });
 
   it('says the conditions are already the subscription’s and offers no action', async () => {
@@ -272,7 +283,7 @@ describe('the plans and subscription screen (#773)', () => {
       const dialog = await screen.findByRole('dialog', { name: 'Cancelar a assinatura?' });
       expect(within(dialog).getByText('4 clientes ativos')).toBeTruthy();
       expect(within(dialog).getByText('1 GB de mídia guardada')).toBeTruthy();
-      expect(within(dialog).getByText(/O acesso continua até 1 de dezembro de 2026, sem nova cobrança\. Depois, a agência fica somente leitura\./)).toBeTruthy();
+      expect(within(dialog).getByText(/O acesso continua até 30 de novembro de 2026, sem nova cobrança\. Depois, a agência fica somente leitura\./)).toBeTruthy();
       expect(within(dialog).getByText('Os dados continuam guardados e visíveis.')).toBeTruthy();
       expect(posts(recorded, '/cancel')).toHaveLength(0);
 
@@ -281,6 +292,17 @@ describe('the plans and subscription screen (#773)', () => {
       expect(posts(recorded, '/cancel')).toHaveLength(1);
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(await screen.findByRole('button', { name: 'Manter a assinatura' })).toBeTruthy();
+    });
+
+    it('two clicks in the same tick on the confirmation cancel once', async () => {
+      const { impl, recorded } = makeSubscriptionApi(ownerWorld());
+      renderSubscription(impl);
+      fireEvent.click(await screen.findByRole('button', { name: 'Cancelar a assinatura' }));
+      const confirm = within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancelar a assinatura' });
+      act(() => { fireEvent.click(confirm); fireEvent.click(confirm); });
+
+      await screen.findByText('Assinatura cancelada. O acesso continua até o fim do período.');
+      expect(posts(recorded, '/cancel')).toHaveLength(1);
     });
 
     it('keeping the subscription closes the dialog and cancels nothing', async () => {
@@ -311,7 +333,7 @@ describe('the plans and subscription screen (#773)', () => {
       const { impl, recorded } = makeSubscriptionApi(world);
       renderSubscription(impl);
 
-      expect(await screen.findByText(/A assinatura está cancelada\. Depois de 1 de dezembro de 2026, a agência fica somente leitura\./)).toBeTruthy();
+      expect(await screen.findByText(/A assinatura está cancelada\. Depois de 30 de novembro de 2026, a agência fica somente leitura\./)).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Cancelar a assinatura' })).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Manter a assinatura' }));
 
