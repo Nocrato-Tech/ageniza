@@ -91,15 +91,27 @@ describe('email approval actions', () => {
   });
 });
 
-it('directs development email to the restricted test inbox without claiming personal delivery', async () => {
-  mode.demo = true; request.mockResolvedValue(undefined);
+async function sendResend() {
+  request.mockResolvedValue(undefined);
   render(<Login onLogin={async () => {}} onLink={() => {}} />);
   fireEvent.click(screen.getByRole('button', { name: 'Reenviar confirmação do e-mail' }));
   enter('E-mail', 'tester@example.test');
   fireEvent.click(screen.getByRole('button', { name: 'Enviar e-mail' }));
-  expect(await screen.findByText('Confira a caixa de testes')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Abrir caixa de e-mails de teste' })).toBeTruthy();
-  expect(screen.getByText(/A caixa exige acesso autorizado/)).toBeTruthy();
-  expect(screen.queryByText(/Confira também o spam/)).toBeNull();
+  expect(await screen.findByText('Confira seu e-mail')).toBeTruthy();
+  expect(screen.getByText(/Confira também o spam/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Já tenho o link' })).toBeTruthy();
   expect(request).toHaveBeenCalledWith('/auth/email/verification/resend', { method: 'POST', body: { email: 'tester@example.test' } });
+}
+
+it('shows the normal check-your-email text outside demo builds, with no test inbox button', async () => {
+  await sendResend();
+  expect(screen.queryByText(/caixa de testes/i)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Caixa de testes da equipe' })).toBeNull();
+});
+
+it('shows the same real-email text in demo builds, plus only a discreet team test inbox button', async () => {
+  mode.demo = true;
+  await sendResend();
+  expect(screen.getByRole('button', { name: 'Caixa de testes da equipe' })).toBeTruthy();
+  expect(screen.queryByText(/A caixa exige acesso autorizado/)).toBeNull();
 });
