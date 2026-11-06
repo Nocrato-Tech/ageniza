@@ -381,3 +381,5 @@ A interface web dev usa a mesma sessão e API do aplicativo. ML aparece no detal
 Assinatura: cotação → revisão → `POST …/subscription/charges` → pagamento aprovado/recusado por `POST …/charges/:chargeId/simulated-payment`. Ações simuladas só aparecem se o servidor devolver `paymentProvider=simulado`. O plano e os limites só mudam conforme resposta e nova consulta ao servidor. Cancelamento e reativação continuam nas rotas oficiais. Nenhum número de cartão é solicitado.
 
 Avisos locais na tela Notificações usam apenas contagem de atividades carregadas. Permissão explícita e tratamento de recusa/indisponibilidade; não há push remoto. Worker sem fetch tem escopo `/app-mobile/`.
+
+Na etapa Conteúdo do editor, cada mídia selecionada aparece na ordem da publicação, com imagem ou player de vídeo usando a URL assinada do original. Remover da publicação desfaz apenas a seleção e limpa a capa se era essa imagem; não exclui o arquivo da biblioteca. A prévia final do Instagram continua disponível antes de salvar (#849).
