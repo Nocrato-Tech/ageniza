@@ -50,8 +50,13 @@ export const createEmailSender = (options: EmailSenderOptions): EmailSender => {
   if (protocol !== 'smtp:' && protocol !== 'smtps:') throw new Error('Email transport URL must use smtp or smtps.');
 
   const timeoutMs = options.timeoutMs ?? 10_000;
+  // Submission port 587 must upgrade with STARTTLS or fail, never fall back to plaintext; a certificate that does not validate is never accepted.
+  // smtps (implicit TLS) and the plain in-network Mailpit sink are unchanged.
+  const startTlsRequired = protocol === 'smtp:' && new URL(options.smtpUrl).port === '587';
   const transport: EmailTransport = options.transport ?? nodemailer.createTransport({
     url: options.smtpUrl,
+    ...(startTlsRequired ? { requireTLS: true } : {}),
+    ...(protocol === 'smtps:' || startTlsRequired ? { tls: { rejectUnauthorized: true } } : {}),
     connectionTimeout: timeoutMs,
     greetingTimeout: timeoutMs,
     socketTimeout: timeoutMs

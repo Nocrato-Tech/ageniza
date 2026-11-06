@@ -90,6 +90,7 @@ valid_app_image() {
 # dev buckets, so a copy of the production file cannot be applied here by mistake.
 validate_runtime_env() {
   local line key value required
+  local sender_pattern='^([^<>]+ )?<?[^[:space:]@<>]+@[^[:space:]@<>.]+\.[^[:space:]@<>]+>?$'
   declare -A seen=()
   require_root_file "$RUNTIME_ENV" '600'
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -101,6 +102,14 @@ validate_runtime_env() {
     seen[$key]=1
     case "$key" in
       SMTP_URL|EMAIL_FROM|DEPLOY_TARGET|API_TRUSTED_PROXY_CIDRS) die "$key is fixed by compose.dev.yml and must not appear in $RUNTIME_ENV" ;;
+      # Optional real mail (issue #835): all three or none. The values are never printed; the API and worker validate them again at start.
+      DEV_REAL_EMAIL) [[ "$value" == 1 ]] || die 'DEV_REAL_EMAIL must be 1 (or be left out)' ;;
+      DEV_SMTP_URL)
+        [[ "$value" =~ ^smtps://[^[:space:]@/:]+:[^[:space:]@/]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(:[0-9]+)?$ \
+          || "$value" =~ ^smtp://[^[:space:]@/:]+:[^[:space:]@/]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}:587$ ]] \
+          || die 'DEV_SMTP_URL must be an authenticated smtps URL, or an smtp URL on port 587, with a public host name (value not shown)'
+        [[ ! "${value#*@}" =~ (^|\.)(localhost|local|internal|lan|home|corp|localdomain|test|invalid)(:[0-9]+)?$ ]] || die 'DEV_SMTP_URL must name a public host (value not shown)' ;;
+      DEV_EMAIL_FROM) [[ "$value" =~ $sender_pattern ]] || die 'DEV_EMAIL_FROM must be an email address, optionally with a display name (value not shown)' ;;
       APP_ENV) [[ "$value" == production ]] || die 'APP_ENV must be production' ;;
       PAYMENTS_PROVIDER) [[ "$value" == simulado ]] || die 'PAYMENTS_PROVIDER must be simulado in dev' ;;
       PAYMENTS_SIMULATED_RENEWAL) [[ "$value" == approved || "$value" == declined ]] || die 'PAYMENTS_SIMULATED_RENEWAL must be approved or declined' ;;
@@ -123,6 +132,8 @@ validate_runtime_env() {
       *) die "$RUNTIME_ENV contains a key that is not allowed: $key" ;;
     esac
   done < "$RUNTIME_ENV"
+  [[ "${seen[DEV_REAL_EMAIL]+x}${seen[DEV_SMTP_URL]+x}${seen[DEV_EMAIL_FROM]+x}" == '' || "${seen[DEV_REAL_EMAIL]+x}${seen[DEV_SMTP_URL]+x}${seen[DEV_EMAIL_FROM]+x}" == xxx ]] \
+    || die 'DEV_REAL_EMAIL, DEV_SMTP_URL and DEV_EMAIL_FROM must be set together or all left out'
   for required in APP_ENV BETTER_AUTH_SECRET APP_PUBLIC_URL AUTH_TERMS_VERSION AUTH_PRIVACY_VERSION DATABASE_URL API_CORS_ORIGINS PAYMENTS_PROVIDER WORKER_SMOKE_JOB R2_ENDPOINT R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET IDENTITY_STORAGE_ENDPOINT IDENTITY_STORAGE_ACCESS_KEY_ID IDENTITY_STORAGE_SECRET_ACCESS_KEY IDENTITY_STORAGE_BUCKET; do
     [[ -n "${seen[$required]+x}" ]] || die "$RUNTIME_ENV is missing $required"
   done
@@ -184,7 +195,13 @@ pull_verified_image() {
 }
 
 compose_app() {
-  AGENIZA_RUNTIME_ENV_FILE="$RUNTIME_SNAPSHOT" \
+  # The optional real-mail opt-in (issue #835) reaches compose.dev.yml by interpolation; validate_runtime_env already vetted it. Empty means the Mailpit sink.
+  local dev_real_email='' dev_smtp_url='' dev_email_from=''
+  dev_real_email="$(read_value "$RUNTIME_SNAPSHOT" DEV_REAL_EMAIL || true)"
+  dev_smtp_url="$(read_value "$RUNTIME_SNAPSHOT" DEV_SMTP_URL || true)"
+  dev_email_from="$(read_value "$RUNTIME_SNAPSHOT" DEV_EMAIL_FROM || true)"
+  DEV_REAL_EMAIL="$dev_real_email" DEV_SMTP_URL="$dev_smtp_url" DEV_EMAIL_FROM="$dev_email_from" \
+    AGENIZA_RUNTIME_ENV_FILE="$RUNTIME_SNAPSHOT" \
     AGENIZA_API_IMAGE="$API_IMAGE" AGENIZA_WEB_IMAGE="$WEB_IMAGE" AGENIZA_WORKER_IMAGE="$WORKER_IMAGE" \
     docker compose -p "$APP_PROJECT" --env-file "$LIMITS_ENV" -f "$APP_COMPOSE" -f "$DEV_COMPOSE" "$@"
 }

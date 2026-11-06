@@ -1,4 +1,4 @@
-import { isIP } from 'node:net';
+import { BlockList, isIP } from 'node:net';
 
 import { z } from 'zod';
 
@@ -208,7 +208,9 @@ const sharedServerSchema = z.object({
   APP_VERSION: z.string().trim().min(1).max(128).optional().default('unknown'),
   APP_CONTAINER_LOCAL: z.enum(['true', 'false']).optional().default('false'),
   // Set only by compose.dev.yml: the shared dev environment may never deliver mail outside its Mailpit sink.
-  DEPLOY_TARGET: z.preprocess((value) => typeof value === 'string' && value.trim() === '' ? undefined : value, z.enum(['dev']).optional())
+  DEPLOY_TARGET: z.preprocess((value) => typeof value === 'string' && value.trim() === '' ? undefined : value, z.enum(['dev']).optional()),
+  // Explicit opt-in (compose.dev.yml, from the host runtime file): lets the dev environment use an authenticated public SMTP provider instead of Mailpit.
+  DEV_REAL_EMAIL: z.preprocess((value) => typeof value === 'string' && value.trim() === '' ? undefined : value, z.enum(['1']).optional())
 });
 const commaSeparatedValues = (value: string): string[] => value.split(',').map((item) => item.trim()).filter(Boolean);
 
@@ -368,6 +370,36 @@ const isDevMailSink = (value: string): boolean => {
   return url.protocol === 'smtp:' && url.hostname === 'mailpit' && url.port === '1025';
 };
 
+const nonPublicAddresses = new BlockList();
+for (const [network, prefix] of [
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
+  ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 3]
+] as const) nonPublicAddresses.addSubnet(network, prefix, 'ipv4');
+for (const [network, prefix] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8], ['::ffff:0:0', 96], ['2001:db8::', 32]] as const) {
+  nonPublicAddresses.addSubnet(network, prefix, 'ipv6');
+}
+
+/** A DNS name with a public-looking suffix, or an IP literal outside every private, loopback, link-local, metadata and documentation range. */
+const isPublicSmtpHost = (hostname: string): boolean => {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const version = isIP(host);
+  if (version !== 0) return !nonPublicAddresses.check(host, version === 4 ? 'ipv4' : 'ipv6');
+  if (!host.includes('.') || /^[0-9.]+$/.test(host)) return false;
+  return !/(^|\.)(localhost|local|internal|lan|home|corp|localdomain|test|invalid)$/.test(host);
+};
+
+const emailFromAddressPattern = /^[^\s@<>]+@[^\s@<>.]+\.[^\s@<>]+$/;
+
+/** The opt-in dev path: authenticated SMTP to a public provider, with TLS from the first byte (smtps) or required STARTTLS (587). */
+const assertDevRealEmail = (serviceName: 'API' | 'Worker', smtpUrl: string, emailFrom: string): void => {
+  const url = new URL(smtpUrl);
+  const refuse = (path: string, message: string): never => { throw new ConfigValidationError(serviceName, [{ path, message: `${message}; supplied values are redacted` }]); };
+  if (url.protocol === 'smtp:' && url.port !== '587') refuse('SMTP_URL', 'must be smtps or smtp on port 587 (STARTTLS) when DEV_REAL_EMAIL is set');
+  if (!isPublicSmtpHost(url.hostname)) refuse('SMTP_URL', 'must point to a public SMTP host when DEV_REAL_EMAIL is set');
+  const address = emailFrom.includes('<') ? emailFrom.slice(emailFrom.lastIndexOf('<') + 1, emailFrom.lastIndexOf('>')) : emailFrom;
+  if (!emailFromAddressPattern.test(address.trim())) refuse('EMAIL_FROM', 'must be a valid email address when DEV_REAL_EMAIL is set');
+};
+
 const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'], env: ServerEnvironment): ServerConfig => {
   const environment = loadRuntimeEnvironment(env.APP_ENV);
   const result = sharedServerSchema.safeParse(env);
@@ -394,7 +426,9 @@ const loadServerConfig = (service: ApiConfig['service'] | WorkerConfig['service'
       throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{ path: 'SMTP_URL', message: 'must use smtp or smtps; supplied values are redacted' }]);
     }
     assertRuntimeUrlSafety(environment, 'SMTP_URL', config.SMTP_URL, { allowLocalContainerHosts });
-    if (config.DEPLOY_TARGET === 'dev' && !isDevMailSink(config.SMTP_URL)) {
+    if (config.DEPLOY_TARGET === 'dev' && config.DEV_REAL_EMAIL === '1' && !isDevMailSink(config.SMTP_URL)) {
+      assertDevRealEmail(service === 'api' ? 'API' : 'Worker', config.SMTP_URL, config.EMAIL_FROM ?? '');
+    } else if (config.DEPLOY_TARGET === 'dev' && !isDevMailSink(config.SMTP_URL)) {
       throw new ConfigValidationError(service === 'api' ? 'API' : 'Worker', [{ path: 'SMTP_URL', message: 'must be smtp://mailpit:1025 when DEPLOY_TARGET is dev; supplied values are redacted' }]);
     }
   }
