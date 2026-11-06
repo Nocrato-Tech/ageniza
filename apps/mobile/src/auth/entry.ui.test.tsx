@@ -17,7 +17,7 @@ vi.mock('react-native-svg', async () => {
   const part = ({ children }: { children?: ReactNode }) => createElement('svg', {}, children);
   return { default: part, ...Object.fromEntries(['Svg', 'Defs', 'LinearGradient', 'Stop', 'Rect', 'Path', 'Circle', 'Line', 'Polyline', 'Polygon', 'Ellipse', 'G', 'ClipPath'].map((key) => [key, part])) };
 });
-import { Login } from './EntryScreen';
+import { EntryScreen, Login } from './EntryScreen';
 import { AccountAction } from './AccountAction';
 import { ApprovalScreen } from './ApprovalScreen';
 
@@ -91,15 +91,53 @@ describe('email approval actions', () => {
   });
 });
 
-it('directs development email to the restricted test inbox without claiming personal delivery', async () => {
-  mode.demo = true; request.mockResolvedValue(undefined);
+async function sendResend() {
+  request.mockResolvedValue(undefined);
   render(<Login onLogin={async () => {}} onLink={() => {}} />);
   fireEvent.click(screen.getByRole('button', { name: 'Reenviar confirmação do e-mail' }));
   enter('E-mail', 'tester@example.test');
   fireEvent.click(screen.getByRole('button', { name: 'Enviar e-mail' }));
-  expect(await screen.findByText('Confira a caixa de testes')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Abrir caixa de e-mails de teste' })).toBeTruthy();
-  expect(screen.getByText(/A caixa exige acesso autorizado/)).toBeTruthy();
-  expect(screen.queryByText(/Confira também o spam/)).toBeNull();
+  expect(await screen.findByText('Confira seu e-mail')).toBeTruthy();
+  expect(screen.getByText(/Confira também o spam/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Já tenho o link' })).toBeTruthy();
   expect(request).toHaveBeenCalledWith('/auth/email/verification/resend', { method: 'POST', body: { email: 'tester@example.test' } });
+}
+
+it('shows the normal check-your-email text outside demo builds, with no test inbox button', async () => {
+  await sendResend();
+  expect(screen.queryByText(/caixa de testes/i)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Caixa de testes da equipe' })).toBeNull();
+});
+
+it('shows the same real-email text in demo builds, plus only a discreet team test inbox button', async () => {
+  mode.demo = true;
+  await sendResend();
+  expect(screen.getByRole('button', { name: 'Caixa de testes da equipe' })).toBeTruthy();
+  expect(screen.queryByText(/A caixa exige acesso autorizado/)).toBeNull();
+});
+
+describe('entry without an agency', () => {
+  it('explains a 409 TRIAL_ALREADY_EXISTS when creating the agency', async () => {
+    const { ApiError } = await import('../api/client');
+    request.mockRejectedValue(new ApiError(409, 'TRIAL_ALREADY_EXISTS', 'conflict'));
+    render(<EntryScreen entry={{ kind: 'empty' }} busy={false} onSelect={() => {}} onContinue={async () => {}} onLink={() => {}} />);
+    enter('Nome da agência', 'Minha agência');
+    fireEvent.click(screen.getByRole('button', { name: 'Criar agência e começar' }));
+    expect(await screen.findByText(/Sua conta já tem uma agência em período de teste\. Entre com a conta dona dessa agência ou peça um convite\./)).toBeTruthy();
+  });
+  it('hides agency creation and the demo when the account cannot create one', () => {
+    mode.demo = true;
+    render(<EntryScreen entry={{ kind: 'empty', canCreateAgency: false }} busy={false} onSelect={() => {}} onContinue={async () => {}} onLink={() => {}} />);
+    expect(screen.getByText('Sua conta ainda não tem acesso a uma agência')).toBeTruthy();
+    expect(screen.getByLabelText('Link do e-mail')).toBeTruthy();
+    expect(screen.queryByLabelText('Nome da agência')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Criar agência/ })).toBeNull();
+    expect(screen.queryByText(/demonstração/i)).toBeNull();
+  });
+  it('says so when refreshing finds nothing new', async () => {
+    const entry = { kind: 'empty' as const, canCreateAgency: false };
+    render(<EntryScreen entry={entry} busy={false} onSelect={() => {}} onContinue={async () => ({ ...entry })} onLink={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar meus acessos' }));
+    expect(await screen.findByText('Nenhum acesso novo encontrado.')).toBeTruthy();
+  });
 });

@@ -43,10 +43,11 @@ export default function App() {
     const subscription = Linking.addEventListener('url', ({ url }) => receive(url));
     return () => { alive = false; subscription.remove(); };
   }, []);
-  async function resolve(preferred?: string) {
+  async function resolve(preferred?: string): Promise<Entry> {
     const current = generation.current;
     const next = await resolveEntry(api, preferred);
     if (generation.current === current) { setEntry(next); setError(''); setRestoreFailure(''); }
+    return next;
   }
   async function restore() {
     setRestoring(true);
@@ -105,7 +106,7 @@ export default function App() {
         <View style={styles.row}>{active && <View style={{ flex: 1 }}><Button secondary disabled={busy} label="Trocar acesso" onPress={() => void run(async () => { const next = await listContexts(api); setEntry(next); })} /></View>}<View style={{ flex: 1 }}><Button secondary label="Sair" busy={busy} onPress={() => void run(logout)} /></View></View>
       </View>}
       {error && <ScrollView style={{ maxHeight: 120 }} contentContainerStyle={{ padding: space.lg }}><Notice message={error} /></ScrollView>}
-      {restoreFailure ? <View style={styles.body}><Copy title>Vamos recuperar seu acesso</Copy><Notice message={restoreFailure} /><Button label="Tentar novamente" onPress={() => void restore()} /><Button secondary label="Sair deste aparelho" onPress={() => void logout()} /></View> : !entry ? <Login onLogin={resolve} onLink={setAccountLink} /> : <EntryScreen key={entry.kind} entry={entry} busy={busy} onSelect={select} onContinue={resolve} onLink={setAccountLink} />}
+      {restoreFailure ? <View style={styles.body}><Copy title>Vamos recuperar seu acesso</Copy><Notice message={restoreFailure} /><Button label="Tentar novamente" onPress={() => void restore()} /><Button secondary label="Sair deste aparelho" onPress={() => void logout()} /></View> : !entry ? <Login onLogin={async () => { await resolve(); }} onLink={setAccountLink} /> : <EntryScreen key={entry.kind} entry={entry} busy={busy} onSelect={select} onContinue={resolve} onLink={setAccountLink} />}
     </>}
   </SafeAreaView></ThemeContext.Provider>}</SafeAreaProvider>;
 }
