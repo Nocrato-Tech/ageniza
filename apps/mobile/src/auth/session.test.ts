@@ -28,9 +28,10 @@ describe('entry follows the server decision', () => {
     expect(await resolveEntry(pending)).toMatchObject({ kind: 'legal' }); expect(pending.request).toHaveBeenCalledTimes(2);
   });
   it.each([{ decision: 'none' }, { decision: 'select', contexts: [agency] }])('handles $decision without choosing another context', async (decision) => {
-    const api = client([session, legal, decision]); const result = await resolveEntry(api);
+    const api = client([session, legal, decision, { contexts: [], canCreateAgency: false }]); const result = await resolveEntry(api);
     expect(result.kind).toBe(decision.decision === 'none' ? 'empty' : 'contexts');
-    expect(api.request).toHaveBeenCalledTimes(3);
+    expect(api.request).toHaveBeenCalledTimes(decision.decision === 'none' ? 4 : 3);
+    if (decision.decision === 'none') expect(result).toEqual({ kind: 'empty', canCreateAgency: false });
   });
   it('passes the accepted invitation context to the server resolver instead of choosing the last agency', async () => {
     const api = client([session, legal, { decision: 'enter', context: agency }, undefined]);

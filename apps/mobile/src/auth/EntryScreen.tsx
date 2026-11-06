@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Linking, Platform, ScrollView, Switch, View } fro
 import { AuthEmailSchema, AuthLoginRequestSchema, AuthSignUpRequestSchema, CreateAgencyRequestSchema } from '@ageniza/contracts';
 import type { Context, CreateAgencyResponse } from '@ageniza/contracts';
 import { api, browserPreview, webUrl } from '../api/runtime';
+import { ApiError } from '../api/client';
 import { Action, ErrorText, Field, Header, Heading, Info, Txt, colors, ui } from '../product/ui';
 import type { Entry } from './session';
 import { DemoWorkspace } from '../demo/DemoWorkspace';
@@ -74,7 +75,7 @@ export function Login({ onLogin, onLink }: { onLogin(): Promise<void>; onLink(li
   </ScrollView></KeyboardAvoidingView>;
 }
 
-export function EntryScreen({ entry, onSelect, onContinue, busy, onLink }: { entry: Exclude<Entry, { kind: 'active' }>; onSelect(context: Context): void; onContinue(): Promise<void>; busy: boolean; onLink(link: AccountLink): void }) {
+export function EntryScreen({ entry, onSelect, onContinue, busy, onLink }: { entry: Exclude<Entry, { kind: 'active' }>; onSelect(context: Context): void; onContinue(): Promise<Entry | void>; busy: boolean; onLink(link: AccountLink): void }) {
   const [accepted, setAccepted] = useState(false);
   const [agencyName, setAgencyName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -91,15 +92,23 @@ export function EntryScreen({ entry, onSelect, onContinue, busy, onLink }: { ent
   const createAgency = () => void save(async () => {
     const parsed = CreateAgencyRequestSchema.safeParse({ name: agencyName });
     if (!parsed.success) throw new Error('Informe um nome válido para sua agência, com até 256 caracteres.');
-    const response = await api.request<CreateAgencyResponse>('/agencies', { method: 'POST', body: parsed.data });
+    let response: CreateAgencyResponse;
+    try { response = await api.request<CreateAgencyResponse>('/agencies', { method: 'POST', body: parsed.data }); }
+    catch (cause) {
+      if (cause instanceof ApiError && cause.code === 'TRIAL_ALREADY_EXISTS') throw new Error('Sua conta já tem uma agência em período de teste. Entre com a conta dona dessa agência ou peça um convite.');
+      throw cause;
+    }
     onSelect(response.context);
   });
+  const canCreate = entry.kind === 'empty' ? entry.canCreateAgency !== false : entry.kind === 'contexts' && !!entry.canCreateAgency;
+  const refresh = () => void save(async () => { const next = await onContinue(); if (next && JSON.stringify(next) === JSON.stringify(entry)) setError('Nenhum acesso novo encontrado.'); });
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={ui.body}>
     <Heading title={entry.kind === 'unverified' ? 'Confirme seu e-mail' : entry.kind === 'legal' ? 'Antes de continuar' : entry.kind === 'empty' ? 'Bem-vindo ao Ageniza' : 'Onde vamos trabalhar?'} />
     {entry.kind === 'contexts' && <><Txt color={colors.muted}>Escolha uma agência ou o portal de um cliente.</Txt>{entry.contexts.map((context) => <Action key={context.type === 'agency' ? context.agencyId : context.clientId} soft disabled={busy || saving} label={context.type === 'agency' ? `${context.agencyName} · ${context.isOwner ? 'Proprietário' : context.roleName}` : `${context.clientName} · Portal de ${context.agencyName}`} onPress={() => onSelect(context)} />)}</>}
-    {(entry.kind === 'empty' || entry.kind === 'contexts' && entry.canCreateAgency) && <><Info title="Seu teste começa com sua agência" text="14 dias para organizar até 3 clientes, com 3 colaboradores e 2 GB de armazenamento." />{creating || entry.kind === 'empty' ? <><Field label="Nome da agência" value={agencyName} onChangeText={setAgencyName} editable={!saving} /><Action label="Criar agência e começar" busy={saving} disabled={busy} onPress={createAgency} /></> : <Action soft label="Criar agência" onPress={() => setCreating(true)} />}</>}
-    {(entry.kind === 'empty' || entry.kind === 'contexts' && entry.canCreateAgency) && <DemoWorkspace onEnter={onSelect} />}
-    {(entry.kind === 'empty' || entry.kind === 'unverified') && <><Info title={entry.kind === 'unverified' ? 'O e-mail ainda não foi confirmado' : 'Recebeu um convite?'} text="Cole o link completo recebido por e-mail para continuar aqui no aplicativo." /><Field label="Link do e-mail" value={linkText} onChangeText={setLinkText} autoCapitalize="none" autoCorrect={false} /><Action soft label="Abrir link" onPress={() => { const link = parseAccountLink(linkText, webUrl); if (link) { setLinkText(''); onLink(link); } else setError('Cole um link válido do Ageniza.'); }} />{entry.kind === 'unverified' && <Action soft busy={saving} label="Reenviar confirmação" onPress={() => void save(async () => { await api.request('/auth/email/verification/resend', { method: 'POST', body: { email: entry.email } }); setError('Se necessário, um novo e-mail será enviado. Confira sua caixa de entrada.'); })} />}<Action plain label="Atualizar meus acessos" busy={busy} onPress={() => void onContinue()} /></>}
+    {entry.kind === 'empty' && entry.canCreateAgency === false && <Info title="Sua conta ainda não tem acesso a uma agência" text="Peça um convite a quem administra a agência e cole o link recebido abaixo." />}
+    {canCreate && <><Info title="Seu teste começa com sua agência" text="14 dias para organizar até 3 clientes, com 3 colaboradores e 2 GB de armazenamento." />{creating || entry.kind === 'empty' ? <><Field label="Nome da agência" value={agencyName} onChangeText={setAgencyName} editable={!saving} /><Action label="Criar agência e começar" busy={saving} disabled={busy} onPress={createAgency} /></> : <Action soft label="Criar agência" onPress={() => setCreating(true)} />}</>}
+    {canCreate && <DemoWorkspace onEnter={onSelect} />}
+    {(entry.kind === 'empty' || entry.kind === 'unverified') && <><Info title={entry.kind === 'unverified' ? 'O e-mail ainda não foi confirmado' : 'Recebeu um convite?'} text="Cole o link completo recebido por e-mail para continuar aqui no aplicativo." /><Field label="Link do e-mail" value={linkText} onChangeText={setLinkText} autoCapitalize="none" autoCorrect={false} /><Action soft label="Abrir link" onPress={() => { const link = parseAccountLink(linkText, webUrl); if (link) { setLinkText(''); onLink(link); } else setError('Cole um link válido do Ageniza.'); }} />{entry.kind === 'unverified' && <Action soft busy={saving} label="Reenviar confirmação" onPress={() => void save(async () => { await api.request('/auth/email/verification/resend', { method: 'POST', body: { email: entry.email } }); setError('Se necessário, um novo e-mail será enviado. Confira sua caixa de entrada.'); })} />}<Action plain label="Atualizar meus acessos" busy={busy} onPress={refresh} /></>}
     {entry.kind === 'legal' && <><Txt>Leia os documentos vigentes antes de registrar seu aceite.</Txt><Action soft label="Ler Termos de Uso" onPress={() => void Linking.openURL(`${webUrl}/termos`)} /><Action soft label="Ler Política de Privacidade" onPress={() => void Linking.openURL(`${webUrl}/privacidade`)} /><View style={ui.row}><Switch accessibilityLabel="Li e aceito os documentos pendentes" value={accepted} onValueChange={setAccepted} disabled={saving} /><View style={{ flex: 1 }}><Txt>Li e aceito os documentos pendentes.</Txt></View></View><Action label="Aceitar e continuar" disabled={!accepted || busy} busy={saving} onPress={() => void save(async () => { for (const document of entry.documents.filter((item) => item.pending)) await api.request('/me/legal-acceptances', { method: 'POST', body: { document: document.document } }); await onContinue(); })} /></>}
     {entry.kind === 'unverified' && <><Info title="Confirmação do e-mail" text="Enviamos um link de confirmação para o seu e-mail. Confira também o spam." />{demoWorkspaceEnabled && <Action soft label="Caixa de testes da equipe" onPress={() => void Linking.openURL('https://mail-dev.ageniza.com.br/')} />}</>}
     {!!error && <ErrorText text={error} />}
