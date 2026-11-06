@@ -89,3 +89,7 @@ O portal exige contexto de cliente autenticado. Boas-vindas usam o campo de prim
 
 
 A aba Aprovações do aplicativo usa a rota própria `contents/awaiting-approval`, percorre todas as páginas e não restringe as pendências ao mês do calendário. O feed e o calendário continuam no período escolhido. A lista não inventa legenda, mídias ou revisão; ao abrir, o detalhe atual da API fornece o conteúdo e a revisão que serão usados na decisão.
+
+## Contexto e comunicação no mobile
+
+O cabeçalho identifica o portal do cliente, separado da área da agência. Trocar contexto usa somente vínculos existentes. Aprovar, retirar aprovação e solicitar ajuste mantêm os contratos e a revisão da API; cada resultado comunica a ação confirmada. O calendário preserva o dia selecionado ao voltar da publicação e anuncia quantidade e estados além da cor.

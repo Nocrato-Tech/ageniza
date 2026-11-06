@@ -8,6 +8,28 @@ const agencyId = '33333333-3333-4333-8333-333333333333';
 const post: Post = { id: contentId, clientId, title: 'Post', caption: 'Legenda', date: '2026-11-12', time: '', format: 'image', status: 'awaiting_approval', revision: 7, ownerId: '', folderId: '', coverId: null, mediaIds: [], comments: [], tasks: [] };
 function client(request: ReturnType<typeof vi.fn>): ApiClient { return { request, clearSession: async () => {}, onExpired: () => {}, onAccessRequired: () => {} } as ApiClient; }
 describe('real API adapter boundaries', () => {
+  it('reports uploaded bytes only after successful parts and ready only after server confirmation', async () => {
+    let finish: () => void = () => {};
+    const confirmed = new Promise<void>((resolve) => { finish = resolve; });
+    const request = vi.fn(async (path: string, options?: { body?: { partNumbers?: number[] } }) => {
+      if (path.endsWith('/media/uploads')) return { assetId: contentId, category: 'video', upload: { type: 'multipart', partCount: 2, partSizeBytes: 3 } };
+      if (path.endsWith('/parts')) return { parts: [{ url: `https://storage.test/${options?.body?.partNumbers?.[0]}` }] };
+      if (path.endsWith('/complete')) await confirmed;
+      return {};
+    });
+    const put = vi.fn(async () => new Response('', { status: 200, headers: { etag: 'part-etag' } }));
+    vi.stubGlobal('fetch', put);
+    const progress = vi.fn();
+    try {
+      const repo = remoteRepository(client(request), { type: 'agency', agencyId, agencyName: 'Agência', roleKey: 'admin', roleName: 'Admin', isOwner: false });
+      const pending = repo.upload(clientId, clientId, { uri: '', name: 'Reel.mp4', mimeType: 'video/mp4', size: 6, file: new File(['abcdef'], 'Reel.mp4') }, progress);
+      await vi.waitFor(() => expect(progress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'confirming', completedBytes: 6, totalBytes: 6 })));
+      expect(progress.mock.calls.some(([state]) => state.phase === 'ready')).toBe(false);
+      expect(progress.mock.calls.filter(([state]) => state.phase === 'sending').map(([state]) => state.completedBytes)).toEqual([0, 3, 6]);
+      finish(); await pending;
+      expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'ready', name: 'Reel.mp4' }));
+    } finally { finish(); vi.unstubAllGlobals(); }
+  });
   it('reports the created id before a later media attachment fails, allowing a PATCH retry', async () => {
     const mediaId = '44444444-4444-4444-8444-444444444444';
     const input = { ...post, folderId: clientId, coverId: null, mediaIds: [mediaId] };

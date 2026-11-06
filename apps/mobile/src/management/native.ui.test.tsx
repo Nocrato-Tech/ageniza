@@ -192,11 +192,35 @@ describe('content editor recovery', () => {
     expect(await screen.findAllByText('1. Capa.png')).toHaveLength(2);
     expect(screen.getAllByText('2. Reel.mp4')).toHaveLength(2);
     await waitFor(() => expect(document.querySelector('img')?.getAttribute('src')).toBe('https://media.example.test/image-one'));
+    expect(videoSource).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Visualizar Reel.mp4' }));
     await waitFor(() => expect(videoSource).toHaveBeenCalledWith('https://media.example.test/video-two'));
+    fireEvent.click(screen.getByRole('button', { name: 'Mover Reel.mp4 antes' }));
+    expect(screen.getAllByText('1. Reel.mp4')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Mover Reel.mp4 antes' }).getAttribute('aria-disabled')).toBe('true');
     expect(assetUrl).toHaveBeenCalledWith(clientId, 'preview', 'image-one', 'original');
     fireEvent.click(screen.getByRole('button', { name: 'Remover Capa.png da publicação' }));
     expect(screen.queryByRole('button', { name: 'Remover Capa.png da publicação' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Remover Reel.mp4 da publicação' })).toBeTruthy();
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir prévia' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Criar conteúdo' }));
+    expect(save.mock.calls[0][0].mediaIds).toEqual(['video-two']);
+    expect(save.mock.calls[0][0].coverId).toBeNull();
+  });
+  it('restores an in-memory draft and reports edits without saving or persisting them', async () => {
+    const clientId = '11111111-1111-4111-8111-111111111111';
+    const folderId = '22222222-2222-4222-8222-222222222222';
+    const data: Data = { version: 2, clients: [{ id: clientId, name: 'Marca', handle: '' }], people: [], posts: [], activities: [], profile: { name: 'Pessoa', agency: 'Agência' }, permissions: [], readOnly: false, assets: [], folders: [{ id: folderId, clientId, name: 'Publicações' }] };
+    const repository = { library: async () => ({ folders: data.folders, assets: [] }) } as unknown as Repository;
+    const onDraftChange = vi.fn(); const onDirtyChange = vi.fn(); const save = vi.fn();
+    const draft = { input: { clientId, folderId, title: 'Legenda em elaboração', caption: 'Texto preservado', format: 'image' as const, date: '2026-11-06', time: '18:00', ownerId: '', mediaIds: [], coverId: null } };
+    render(<ContentEditor data={data} repository={repository} clientId={clientId} initialDraft={draft} onDraftChange={onDraftChange} onDirtyChange={onDirtyChange} busy={false} onSave={save} onError={() => {}} onRefresh={async () => {}} />);
+    expect(screen.getByRole('textbox', { name: 'Título interno *' }).getAttribute('value')).toBe('Legenda em elaboração');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Título interno *' }), { target: { value: 'Título atualizado' } });
+    await waitFor(() => expect(onDraftChange.mock.lastCall?.[0].input.title).toBe('Título atualizado'));
+    expect(onDraftChange.mock.lastCall?.[0].input.caption).toBe('Texto preservado');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
     expect(save).not.toHaveBeenCalled();
   });
   it('retries an already created draft by its server id instead of creating it again', async () => {

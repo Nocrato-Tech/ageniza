@@ -33,17 +33,17 @@ export function Touch({ children, style, onPressIn, onPressOut, ...props }: Omit
   return <AnimatedPressable {...props} onPressIn={(event) => { animate(true); onPressIn?.(event); }} onPressOut={(event) => { animate(false); onPressOut?.(event); }} style={[style, { opacity: progress.interpolate({ inputRange: [0, 1], outputRange: props.disabled ? [0.45, 0.45] : [1, 0.78] }), transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.98] }) }] }]}>{children}</AnimatedPressable>;
 }
 
-export function ScreenMotion({ children, identity, fill = false }: { children: ReactNode; identity: string; fill?: boolean }) {
+export function ScreenMotion({ children, identity, fill = false, quiet = false }: { children: ReactNode; identity: string; fill?: boolean; quiet?: boolean }) {
   const reduced = useReducedMotion();
   const progress = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     progress.stopAnimation();
-    if (reduced) { progress.setValue(1); return; }
+    if (reduced || quiet) { progress.setValue(1); return; }
     progress.setValue(0);
     const animation = Animated.timing(progress, { toValue: 1, duration: 190, easing: Easing.out(Easing.cubic), useNativeDriver: true });
     animation.start();
     return () => animation.stop();
-  }, [identity, reduced, progress]);
+  }, [identity, reduced, quiet, progress]);
   return <Animated.View style={{ flex: fill ? 1 : undefined, opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0.65, 1] }), transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}>{children}</Animated.View>;
 }
 
