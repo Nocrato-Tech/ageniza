@@ -1,4 +1,4 @@
-import type { Context, CreateAgencyResponse, CreateMediaUploadResponse, ContentDetail, ContentFeedResponse, CollaboratorListResponse, MediaFolderAsset } from '@ageniza/contracts';
+import type { Context, CreateAgencyResponse, CreateMediaUploadResponse, ContentDetail, ContentFeedResponse, ContentPeriodResponse, CollaboratorListResponse, MediaFolderAsset } from '@ageniza/contracts';
 import { CreateAgencyRequestSchema, CreateClientRequestSchema, CreateContentRequestSchema, CreateContentTaskRequestSchema } from '@ageniza/contracts';
 import type { ApiClient } from '../api/client';
 import { monthPeriod } from '../contents/period';
@@ -48,11 +48,12 @@ export async function populateDemoWorkspace(api: ApiClient, context: Agency, ima
       await api.request(`${root}/media/uploads/${upload.assetId}/complete`, { method: 'POST', body: {} });
       assetId = upload.assetId;
     }
-    // The whole feed of the client, not the current month: a retry after the month turned must find what an earlier run created.
-    const existing: { id: string; title: string; publishOn: string }[] = [];
+    // The month asked for lists every format; the whole feed (image, carousel and reels only) finds what an earlier run created in another month.
+    const month = await api.request<ContentPeriodResponse>(`${base}/contents?from=${period.from}&to=${period.to}`);
+    const existing: { id: string; title: string; publishOn: string }[] = [...month.data.contents];
     for (let cursor: string | null = null, first = true; first || cursor !== null; first = false) {
       const page: ContentFeedResponse = await api.request<ContentFeedResponse>(`${base}/contents/feed${cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`}`);
-      existing.push(...page.data.contents); cursor = page.data.nextCursor;
+      existing.push(...page.data.contents.filter((item) => !existing.some((known) => known.id === item.id))); cursor = page.data.nextCursor;
     }
     for (const [index, title] of brand.titles.entries()) {
       progress(`Preparando conteúdo: ${title}`);

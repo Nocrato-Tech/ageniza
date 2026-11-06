@@ -14,7 +14,8 @@ vi.mock('react-native-svg', async () => {
   const { createElement } = await import('react');
   const part = ({ children }: { children?: ReactNode }) => createElement('svg', {}, children);
   return { default: part, ...Object.fromEntries(['Svg', 'Defs', 'LinearGradient', 'Stop', 'Rect', 'Path', 'Circle', 'Line', 'Polyline', 'Polygon', 'Ellipse', 'G', 'ClipPath'].map((key) => [key, part])) };
-});vi.mock('./config', () => ({ demoWorkspaceEnabled: false }));
+});
+vi.mock('./config', () => ({ demoWorkspaceEnabled: false }));
 import { DemoWorkspace } from './DemoWorkspace';
 afterEach(cleanup);
 

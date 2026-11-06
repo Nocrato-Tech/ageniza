@@ -15,7 +15,7 @@ function world() {
   const clients: { id: string; name: string }[] = [];
   const folders: { id: string; name: string; client: string }[] = [];
   const assets: { id: string; folder: string; category: string }[] = [];
-  const posts: { id: string; client: string; title: string; publishOn: string; tasks: { title: string }[] }[] = [];
+  const posts: { id: string; client: string; title: string; publishOn: string; format: string; tasks: { title: string }[] }[] = [];
   const uploads = new Map<string, string>();
   let failTitle = '';
   const request = vi.fn(async (path: string, options?: { method?: string; body?: unknown }) => {
@@ -33,7 +33,9 @@ function world() {
     if (path.endsWith('/media/uploads')) { const assetId = id(); uploads.set(assetId, body.folderId); return { assetId, upload: { type: 'single', url: 'https://storage.example.test/upload' } }; }
     if (path.endsWith('/complete')) { const assetId = path.split('/uploads/')[1].split('/')[0]; assets.push({ id: assetId, folder: uploads.get(assetId)!, category: 'image' }); return; }
     if (/\/contents\/feed/.test(path)) {
-      const mine = posts.filter((row) => row.client === client); const start = Number(new URL(path, 'https://api.example.test').searchParams.get('cursor') ?? 0);
+      // The real feed lists these formats only.
+      const mine = posts.filter((row) => row.client === client && ['image', 'carousel', 'reels'].includes(row.format));
+      const start = Number(new URL(path, 'https://api.example.test').searchParams.get('cursor') ?? 0);
       return { data: { contents: mine.slice(start, start + 2), nextCursor: start + 2 < mine.length ? String(start + 2) : null, counters: null }, meta: { count: 0 } };
     }
     if (/\/contents\?/.test(path)) {
@@ -42,7 +44,7 @@ function world() {
     }
     if (path.endsWith('/contents') && method === 'POST') {
       if (body.title === failTitle) throw new Error('network interrupted');
-      const row = { id: id(), client: client!, title: body.title, publishOn: body.publishOn, tasks: [] }; posts.push(row); return row;
+      const row = { id: id(), client: client!, title: body.title, publishOn: body.publishOn, format: body.format, tasks: [] }; posts.push(row); return row;
     }
     const postId = path.split('/contents/')[1]?.split('/')[0];
     const post = posts.find((row) => row.id === postId);
@@ -80,7 +82,17 @@ describe('demo uses real endpoint contracts', () => {
     w.fail(''); await populate(new Date('2026-12-01T12:00:00Z')); await populate(new Date('2027-01-15T12:00:00Z'));
     expect(w.posts).toHaveLength(6);
     expect(w.posts.every((post) => post.tasks.length === 1)).toBe(true);
-  });  it('refuses a normal agency or a non-owner before reading or writing', async () => {
+  });
+  it('does not create again a content switched to a format the feed does not list', async () => {
+    const w = world(); const transport = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const populate = () => populateDemoWorkspace(w.api, agency, new Blob(['png']), vi.fn(), now, transport);
+    await populate();
+    w.posts[0].format = 'long_video';
+    await populate();
+    expect(w.posts).toHaveLength(6);
+    expect(w.posts.every((post) => post.tasks.length === 1)).toBe(true);
+  });
+  it('refuses a normal agency or a non-owner before reading or writing', async () => {
     const w = world();
     for (const context of [{ ...agency, isOwner: false }, { ...agency, agencyName: 'Actual agency' }]) await expect(populateDemoWorkspace(w.api, context, new Blob(), vi.fn(), now)).rejects.toThrow('agência de demonstração');
     expect(w.request).not.toHaveBeenCalled();

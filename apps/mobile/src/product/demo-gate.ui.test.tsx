@@ -14,7 +14,8 @@ vi.mock('react-native-svg', async () => {
   const { createElement } = await import('react');
   const part = ({ children }: { children?: ReactNode }) => createElement('svg', {}, children);
   return { default: part, ...Object.fromEntries(['Svg', 'Defs', 'LinearGradient', 'Stop', 'Rect', 'Path', 'Circle', 'Line', 'Polyline', 'Polygon', 'Ellipse', 'G', 'ClipPath'].map((key) => [key, part])) };
-});const gate = vi.hoisted(() => ({ enabled: false }));
+});
+const gate = vi.hoisted(() => ({ enabled: false }));
 const agencyName = 'Agência Horizonte · Demonstração';
 vi.mock('../demo/config', () => ({ get demoWorkspaceEnabled() { return gate.enabled; }, demoAgencyName: 'Agência Horizonte · Demonstração' }));
 vi.mock('../demo/DemoWorkspace', () => ({ DemoWorkspace: () => <p>Demo workspace screen</p> }));
