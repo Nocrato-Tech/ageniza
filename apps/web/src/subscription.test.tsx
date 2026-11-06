@@ -161,6 +161,20 @@ describe('the plans and subscription screen (#773)', () => {
       expect(posts(recorded, '/simulated-payment').map((entry) => entry.path)).toEqual(['/subscription/charges/00000000-0000-4000-8000-000000000002/simulated-payment']);
     });
 
+    it('leaving is closed while the payment is in flight: Voltar sem pagar does not say nothing was charged, and the approval is what shows', async () => {
+      const { impl, recorded } = makeSubscriptionApi(ownerWorld());
+      renderSubscription(impl);
+      await startPayment(/Profissional/);
+      fireEvent.click(screen.getByRole('button', { name: /^Pagar/ }));
+      const leave = screen.getByRole('button', { name: 'Voltar sem pagar' }) as HTMLButtonElement;
+      expect(leave.disabled).toBe(true);
+      fireEvent.click(leave);
+
+      expect(await screen.findByText('Pagamento aprovado. A sua assinatura já vale.')).toBeTruthy();
+      expect(screen.queryByText(/Você saiu sem pagar/)).toBeNull();
+      expect(posts(recorded, '/simulated-payment')).toHaveLength(1);
+    });
+
     it('two quick clicks on Pagar send one payment', async () => {
       const { impl, recorded } = makeSubscriptionApi(ownerWorld());
       renderSubscription(impl);
