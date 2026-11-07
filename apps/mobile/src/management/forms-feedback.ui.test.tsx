@@ -21,6 +21,7 @@ vi.mock('react-native-svg', async () => {
 import { ClientAccess } from './ClientAccess';
 import { TeamScreen } from './TeamScreen';
 import { ClientManagement } from './ClientManagement';
+import { StoriesScreen } from './StoriesScreen';
 
 afterEach(cleanup);
 beforeEach(() => { request.mockReset().mockResolvedValue({ data: [], meta: { totalPages: 1 } }); Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) }); });
@@ -75,4 +76,44 @@ it('keeps the real portal-access POST contract after correcting the email', asyn
   fireEvent.click(screen.getByRole('button', { name: 'Adicionar e enviar boas-vindas' }));
   expect(await screen.findByText('Acesso adicionado.')).toBeTruthy();
   expect(request).toHaveBeenCalledWith('/agencies/one/clients/two/members', { method: 'POST', body: { email: 'person@example.test' } });
+});
+
+
+it('uses the branded closing-date picker and preserves the date-only closing PUT', async () => {
+  const detail = { id: 'two', name: 'Clínica Vida', status: 'active', closingDate: '2026-12-15', summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, activePortalMembers: 0 } };
+  request.mockResolvedValue(detail);
+  render(<ClientManagement context={{ type: 'agency', agencyId: 'one', agencyName: 'Agência', isOwner: true, roleKey: 'owner', roleName: 'Owner' }} initialClientId="two" permissions={['cliente.arquivar']} readOnly={false} onChanged={async () => {}} onContents={() => {}} />);
+  const date = await screen.findByLabelText('Último dia do contrato (AAAA-MM-DD)');
+  expect(date.getAttribute('type')).toBe('text');
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir calendário' }));
+  fireEvent.change(await screen.findByLabelText('Data (AAAA-MM-DD)'), { target: { value: '2026-12-20' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar data' }));
+  expect((date as HTMLInputElement).value).toBe('2026-12-20');
+  fireEvent.click(screen.getByRole('button', { name: 'Agendar encerramento' }));
+  expect(await screen.findByText('Encerramento agendado.')).toBeTruthy();
+  expect(request).toHaveBeenCalledWith('/agencies/one/clients/two/closing', { method: 'PUT', body: { closingDate: '2026-12-20' } });
+});
+
+it('uses the branded story picker and saves the selected calendar day unchanged', async () => {
+  request.mockImplementation(async (path: string, options: { method?: string; body?: { scriptOn: string; scenes: unknown[] } }) => options.method === 'POST' ? { id: 'script-one', status: 'draft', scriptOn: options.body?.scriptOn, scenes: options.body?.scenes } : { data: { storyScripts: [] } });
+  render(<StoriesScreen context={{ type: 'agency', agencyId: 'one', agencyName: 'Agência', isOwner: true, roleKey: 'owner', roleName: 'Owner' }} clients={[{ id: 'two', name: 'Clínica Vida', handle: '' }]} permissions={['conteudo.operar']} readOnly={false} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Criar roteiro' }));
+  const date = screen.getByLabelText('Data do roteiro (AAAA-MM-DD)');
+  expect(date.getAttribute('type')).toBe('text');
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir calendário' }));
+  fireEvent.change(await screen.findByLabelText('Data (AAAA-MM-DD)'), { target: { value: '2026-12-20' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar data' }));
+  fireEvent.change(screen.getByLabelText('Texto da cena 1'), { target: { value: 'Apresente a novidade.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar roteiro' }));
+  expect(await screen.findByText('Roteiro salvo.')).toBeTruthy();
+  expect(request).toHaveBeenCalledWith('/agencies/one/clients/two/story-scripts', { method: 'POST', body: { scriptOn: '2026-12-20', scenes: [{ text: 'Apresente a novidade.', guidance: null }] } });
+});
+
+it('keeps the portal story date read-only without exposing a date picker', async () => {
+  request.mockResolvedValue({ data: [{ id: 'script-one', scriptOn: '2026-11-12', status: 'sent', scenes: [{ text: 'Apresente a novidade.', guidance: null }] }] });
+  render(<StoriesScreen context={{ type: 'client', clientId: 'two', clientName: 'Clínica Vida', agencyId: 'one', agencyName: 'Agência', onboardingPending: false }} clients={[]} permissions={[]} readOnly />);
+  fireEvent.click(await screen.findByRole('button', { name: /Abrir roteiro de/ }));
+  expect((screen.getByLabelText('Data do roteiro (AAAA-MM-DD)') as HTMLInputElement).readOnly).toBe(true);
+  expect(screen.queryByRole('button', { name: 'Abrir calendário' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Salvar roteiro' })).toBeNull();
 });

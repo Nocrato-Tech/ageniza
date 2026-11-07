@@ -54,3 +54,16 @@ it('continues an interrupted navigation from its displayed position instead of r
     { opacity: 1, transform: 'translate3d(0, 0, 0)' }
   ]);
 });
+
+
+it('gives peer navigation a directional spatial arrival and reverses it without remounting its content', () => {
+  Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
+  const animate = vi.fn<(frames: Keyframe[]) => { cancel: ReturnType<typeof vi.fn>; playState: string }>(() => ({ cancel: vi.fn(), playState: 'finished' }));
+  Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+  const { rerender, getByLabelText } = render(<ScreenMotion identity="home" variant="peer"><input aria-label="Stable draft" /></ScreenMotion>);
+  const draft = getByLabelText('Stable draft');
+  expect(animate.mock.calls[0]?.[0]).toEqual([{ opacity: 0.88, transform: 'translate3d(28px, 0px, 0)' }, { opacity: 1, transform: 'translate3d(0, 0, 0)' }]);
+  rerender(<ScreenMotion identity="clients" variant="peer" direction="back"><input aria-label="Stable draft" /></ScreenMotion>);
+  expect(animate.mock.calls[1]?.[0]).toEqual([{ opacity: 0.88, transform: 'translate3d(-28px, 0px, 0)' }, { opacity: 1, transform: 'translate3d(0, 0, 0)' }]);
+  expect(getByLabelText('Stable draft')).toBe(draft);
+});

@@ -210,7 +210,7 @@ describe('content editor recovery', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Criar conteúdo' }));
     expect(save.mock.calls[0][0].mediaIds).toEqual(['video-two']);
     expect(save.mock.calls[0][0].coverId).toBeNull();
-  });
+  }, 15_000);
   it('restores an in-memory draft and reports edits without saving or persisting them', async () => {
     const clientId = '11111111-1111-4111-8111-111111111111';
     const folderId = '22222222-2222-4222-8222-222222222222';

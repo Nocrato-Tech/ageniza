@@ -1,3 +1,4 @@
+import { Disclosure } from './Disclosure';
 import { useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
 import { Image as ImageIcon, Play } from './icons';
@@ -27,7 +28,7 @@ export function EditorMedia({ asset, post, repository, index, count, isCover, on
     </View>
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><Action plain disabled={index === 0} label={`Mover ${asset.name} antes`} onPress={() => onMove(-1)} /><Action plain disabled={index === count - 1} label={`Mover ${asset.name} depois`} onPress={() => onMove(1)} /></View>
     <Action soft label={`${expanded ? 'Ocultar' : 'Visualizar'} ${asset.name}`} onPress={() => setExpanded((value) => !value)} />
-    {expanded && <MediaDisplay asset={asset} repository={repository} post={post} />}
+    <Disclosure open={expanded}>{expanded && <MediaDisplay asset={asset} repository={repository} post={post} />}</Disclosure>
     <Action plain label={`Remover ${asset.name} da publicação`} onPress={onRemove} />
   </Card>;
 }

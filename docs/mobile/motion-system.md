@@ -28,3 +28,15 @@ O comportamento líquido e a animação de lista são específicos da web. Andro
 Testar seleção adjacente, distante e diagonal, interrupção por nova seleção, redimensionamento, teclado, fechamento/reabertura de seletor, retorno de foco e mudança de movimento reduzido durante uma animação. Preservar os testes de identidade de formulário e as chamadas funcionais existentes.
 
 As skills instaladas `animate`, `animate-expo` e `animation-performance` já cobrem construção, plataforma e custo de renderização; não foi adicionada outra biblioteca nem uma skill redundante.
+
+## Cobertura dos fluxos de trabalho
+
+- Início, clientes e conteúdos usam chegada espacial direcional de 28px/240ms; trocar filtros de cliente e lista/kanban atualiza a identidade da transição. Interromper uma navegação retoma a transformação exibida.
+- O anel de cliente viaja entre avatares. Os rótulos e o estado selecionado mudam imediatamente; grupos independentes não compartilham a seleção.
+- Edição de cadastro, marca e personas, cancelamento, conversas e confirmação de arquivamento usam disclosure com saída inerte. Digitar não reinicia a chegada nem remonta o campo.
+- Equipe, convites, tarefas, comentários e mídias selecionadas usam chaves estáveis para inserção, remoção e reposicionamento. O estado assíncrono continua governado pela resposta real da API.
+- O progresso do editor usa escala com mola. A biblioteca mostra miniaturas antes da seleção; abrir/fechar prévias e análise do conteúdo conserva uma saída visível.
+- Data proposta, prazo de tarefa, encerramento de cliente e roteiro usam o mesmo seletor próprio na web. Calendário com seleção líquida, troca de mês direcional e teclado; horário com colunas de horas/minutos e atalhos. Alterações ficam locais até confirmar; cancelar restaura o valor anterior. Não existem inputs web date/time nesses fluxos.
+- O foco do formulário desloca somente o rótulo em 2px e muda sua cor. O texto digitado e o placeholder não ficam se movendo durante a leitura. Movimento reduzido remove o deslocamento.
+
+A validação automatizada cobre cancelamento, teclado, datas inválidas, formato ISO enviado à API, permissões somente leitura e identidade dos campos. A verificação em navegador complementa esses testes; exportação não prova desempenho em um aparelho físico.
