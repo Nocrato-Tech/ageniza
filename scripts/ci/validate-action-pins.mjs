@@ -3,10 +3,11 @@ import { join } from 'node:path';
 
 // A workflow that runs rarely (production release, branch guard) can carry an action pinned to a
 // SHA that does not exist, and nothing notices until the day it runs. This resolves every pin.
-const pinnedUse = /uses:\s*([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)@([0-9a-f]{40})\b/g;
-const anyUse = /uses:\s*([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)@([^\s#]+)/g;
+// `owner/repo[/path]@ref`: a sub-action such as `actions/cache/restore@<sha>` lives in `owner/repo`, so the pin resolves there.
+const pinnedUse = /uses:\s*(?!\.{1,2}\/)([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)(?:\/[A-Za-z0-9._/-]+)?@([0-9a-f]{40})\b/g;
+const anyUse = /uses:\s*(?!\.{1,2}\/)([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)(?:\/[A-Za-z0-9._/-]+)?@([^\s#]+)/g;
 
-/** Collects `owner/repo@<40-hex>` pins from workflow text. Local `./.github/...` uses are skipped. */
+/** Collects `owner/repo@<40-hex>` pins (also `owner/repo/path@<40-hex>`) from workflow text. Local `./.github/...` uses are skipped. */
 export const collectActionPins = (content) => {
   const pins = [];
   for (const [, repository, sha] of content.matchAll(pinnedUse)) pins.push({ repository, sha });
