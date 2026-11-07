@@ -40,3 +40,9 @@ As skills instaladas `animate`, `animate-expo` e `animation-performance` já cob
 - O foco do formulário desloca somente o rótulo em 2px e muda sua cor. O texto digitado e o placeholder não ficam se movendo durante a leitura. Movimento reduzido remove o deslocamento.
 
 A validação automatizada cobre cancelamento, teclado, datas inválidas, formato ISO enviado à API, permissões somente leitura e identidade dos campos. A verificação em navegador complementa esses testes; exportação não prova desempenho em um aparelho físico.
+
+## Polimento de estabilidade
+
+A seleção da equipe permanece montada enquanto os dados da aba são consultados. Variações de arredondamento de até 1px entre células não reiniciam a seleção líquida. Filtros de cliente e lista/kanban não fazem parte da identidade de chegada da página: o cabeçalho e a faixa de clientes ficam imóveis.
+
+No estudo de marca, leitura e edição compartilham uma troca de estado com a saída sobreposta e recortada, evitando duas alturas expandidas ao mesmo tempo. Conteúdo em saída fica inerte. A paleta oferece amostras, hexadecimal e canais RGB; inclusão e retirada conservam chaves locais estáveis. Identidade, tom de voz e posicionamento usam campos guiados gravados como texto legível no contrato existente, sem migração de dados nem descarte de conteúdo anterior. Arquétipos usam escolhas visuais com rótulos e navegação por teclado. Campos vazios não contam como seção preenchida só por conter títulos.

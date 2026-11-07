@@ -34,7 +34,7 @@ export function LiquidIndicator({ target, color, radius = 12, immediate = false,
   useLayoutEffect(() => {
     if (!valid || !target) { previous.current = null; return; }
     const old = previous.current;
-    const snap = reduced || immediate || !old || old.revision !== revision || old.width !== target.width || old.height !== target.height;
+    const snap = reduced || immediate || !old || old.revision !== revision || Math.abs(old.width - target.width) > 1 || Math.abs(old.height - target.height) > 1;
     width.set(target.width);
     height.set(target.height);
     const x = target.x + target.width / 2;

@@ -397,3 +397,8 @@ O upload mobile permite interromper preparação/envio real e repetir com o mesm
 ### Mídias e capa no editor mobile
 
 A sequência da publicação e a capa têm seleções separadas. Enviar imagem de capa não a acrescenta à sequência de um vídeo. A capa personalizada é uma imagem da mesma pasta e cliente; vídeos podem usar quadro automático. A interface informa tipo e quantidade esperados pelo formato e mantém rascunhos incompletos em produção. A criação envia `mediaAssetIds` explicitamente, na ordem escolhida, no mesmo POST do conteúdo; não usa a seleção implícita de toda a pasta. Erros aparecem junto da revisão com retorno à seleção sem perder o rascunho. Navegação e etapas usam transições curtas, canceláveis e compatíveis com movimento reduzido.
+
+
+## Estudo de marca visual no mobile
+
+Cores são editadas em uma paleta com amostras visíveis, nomes, hexadecimal e ajustes RGB na web, limitada às 24 cores do contrato. Identidade, tom de voz e posicionamento apresentam perguntas específicas; textos existentes são preservados e as orientações continuam gravadas como texto legível, sem formato novo na API. Arquétipo é uma escolha visual entre as opções oficiais. Cancelar descarta somente o rascunho; salvar usa a mesma rota de seção. O portal vê as orientações e a paleta sem controles de edição.
