@@ -65,6 +65,7 @@ describe('the database of an API integration file (issue #792)', () => {
 describe('the wait for requests queued behind a held lock', () => {
   const LOCK_THE_ROW = 'select id from public.agencies where id = $1::uuid for update';
   const SLOT = "select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('lock-queue-stray', 0))";
+  const CHAIN_SLOT = "select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('lock-queue-chain', 0))";
 
   const begin = async (): Promise<Client> => {
     const client = new Client({ connectionString: OWNER_DATABASE_URL });
@@ -110,6 +111,37 @@ describe('the wait for requests queued behind a held lock', () => {
 
       expect(await waitForBackendsBlockedBy(owner.knex, held.pid)).toHaveLength(1);
     });
+  });
+
+  // An advisory lock makes every request wait for the holder and for each request ahead of it, so the same backend is reachable
+  // along more than one path of the chain and has to be counted once.
+  it('counts each queued request once, though several backends ahead of it hold it up', async () => {
+    const holder = await begin();
+    const queued: Array<{ readonly client: Client; readonly locking: Promise<unknown> }> = [];
+    const queue = async (): Promise<void> => {
+      const client = await begin();
+      queued.push({ client, locking: client.query(CHAIN_SLOT) });
+    };
+    try {
+      await holder.query(CHAIN_SLOT);
+      const holderPid = await pidOf(holder);
+      await queue();
+      await queue();
+      await waitForQueueBehind(owner.knex, holderPid, 2);
+
+      await expect(waitForQueueBehind(owner.knex, holderPid, 3, 300)).rejects.toThrow(/ever queued/);
+
+      await queue();
+      await waitForQueueBehind(owner.knex, holderPid, 3);
+    } finally {
+      await holder.query('rollback');
+      await holder.end();
+      for (const { client, locking } of queued) {
+        await Promise.allSettled([locking]);
+        await client.query('rollback');
+        await client.end();
+      }
+    }
   });
 
   it('does not count a backend that waits for something else, and counts the request once it queues', async () => {
