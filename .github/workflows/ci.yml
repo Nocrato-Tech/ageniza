@@ -152,13 +152,17 @@ jobs:
             git --no-pager diff -- docs/api
             exit 1
           fi
-      # Only this job saves the cache (the others restore it), and only when every gate passed, so a run that died early
-      # cannot become the "latest" entry the next run restores. Entries nobody wrote for a week are dropped first: turbo
-      # never evicts, and a restored cache is saved back whole.
+      # Only this job saves the cache (the others restore it), only when every gate passed (a run that died early cannot
+      # become the "latest" entry the next run restores) and only on a push to develop: a pull request writes to its own
+      # ref scope, which its next commit would restore first, so code of commit A could plant an entry that commit B
+      # replays as a green gate. A pull request restores what develop saved and saves nothing.
+      # Entries nobody wrote for a week are dropped first: turbo never evicts, and a restored cache is saved back whole.
       - name: Drop Turborepo cache entries older than a week
+        if: github.event_name == 'push'
         run: |
           if [ -d .turbo/cache ]; then find .turbo/cache -type f -mtime +7 -delete; fi
       - name: Save the Turborepo cache
+        if: github.event_name == 'push'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .turbo/cache
