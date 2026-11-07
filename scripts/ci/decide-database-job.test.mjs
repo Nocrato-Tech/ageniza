@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { ciJob, stepName } from './ci-workflow.mjs';
+import { ciJob, readCiWorkflow, stepName } from './ci-workflow.mjs';
 import { decide, isAllowed } from './decide-database-job.mjs';
 
 const root = join(import.meta.dirname, '..', '..');
@@ -305,11 +305,16 @@ describe('the two jobs that hold the database suites take one decision', () => {
     expect(index('pnpm storage:start')).toBeLessThan(suite);
   });
 
-  it('no longer runs the API suite in the database job, and still runs the database and worker suites there', () => {
-    const { text } = ciJob('database-local');
-    expect(text).not.toContain('@ageniza/api test:integration');
-    expect(text).toContain('pnpm db:test:local');
-    expect(text).toContain('@ageniza/worker test:integration');
+  // Counted over the whole file, not over a recorded job: a suite moved to a job with another spelling of its key
+  // (api_suite, apiSuite, a trailing comment) would otherwise leave the job tests looking at an empty job.
+  it.each([
+    ['pnpm --filter @ageniza/api test:integration', 'api-integration'],
+    ['pnpm db:test:local', 'database-local'],
+    ['pnpm --filter @ageniza/worker test:integration', 'database-local'],
+  ])('runs "%s" exactly once in ci.yml, inside %s', (command, id) => {
+    const workflow = readCiWorkflow();
+    expect(workflow.split(command).length - 1).toBe(1);
+    expect(ciJob(id).text).toContain(command);
   });
 });
 

@@ -9,10 +9,11 @@ export const readCiWorkflow = () => readFileSync(join(root, '.github', 'workflow
 /** A job of ci.yml: its text up to the next job, split into the header (before `steps:`) and the steps. */
 export const ciJob = (id) => {
   const workflow = readCiWorkflow();
-  const start = workflow.indexOf(`\n  ${id}:\n`);
-  if (start === -1) throw new Error(`ci.yml has no job "${id}"`);
-  const rest = workflow.slice(start + 1);
-  const next = /\n {2}[a-z][a-z0-9-]*:\n/.exec(rest.slice(1));
+  const found = new RegExp(`\\n {2}${id}:[^\\n]*\\n`).exec(workflow);
+  if (found === null) throw new Error(`ci.yml has no job "${id}"`);
+  const rest = workflow.slice(found.index + 1);
+  // Any other key at two spaces of indentation ends the job, whatever its spelling; comments at that indentation do not.
+  const next = /\n {2}[^ #\n]/.exec(rest.slice(1));
   const job = next ? rest.slice(0, next.index + 1) : rest;
   const marker = '\n    steps:';
   const header = job.slice(0, job.indexOf(marker));
