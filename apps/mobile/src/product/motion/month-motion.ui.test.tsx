@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 // @vitest-environment-options {"pretendToBeVisual":true}
-import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterAll, afterEach, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-const preference = vi.hoisted(() => ({ reduced: false }));
+const preference = vi.hoisted(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance', 'requestAnimationFrame', 'cancelAnimationFrame'] }); return { reduced: false }; });
 vi.mock('../motion', () => ({ useReducedMotion: () => preference.reduced }));
 import { MonthMotion } from './MonthMotion.web';
 
-afterEach(() => { cleanup(); preference.reduced = false; });
+afterEach(async () => { cleanup(); preference.reduced = false; await vi.advanceTimersByTimeAsync(64); });
+afterAll(() => vi.useRealTimers());
+const advance = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
 const panel = (container: HTMLElement, month: string) => container.querySelector<HTMLElement>(`[data-month-panel="${month}"]`)!;
 const x = (element: HTMLElement) => Number(/translate3d\(([-\d.]+)/.exec(element.style.transform)?.[1]);
 
@@ -28,12 +30,12 @@ it('slides the grid forward with an inert outgoing month and leaves header focus
   expect(select).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '2026-12' }));
   expect(select).toHaveBeenCalledOnce();
-  await waitFor(() => {
-    expect(x(panel(container, '2026-12'))).toBeGreaterThan(0);
-    expect(x(panel(container, '2026-12'))).toBeLessThan(100);
-    expect(x(panel(container, '2026-11'))).toBeLessThan(0);
-  });
-  await waitFor(() => expect(panel(container, '2026-11')).toBeNull());
+  await advance(80);
+  expect(x(panel(container, '2026-12'))).toBeGreaterThan(0);
+  expect(x(panel(container, '2026-12'))).toBeLessThan(100);
+  expect(x(panel(container, '2026-11'))).toBeLessThan(0);
+  await advance(400);
+  expect(panel(container, '2026-11')).toBeNull();
   expect(x(panel(container, '2026-12'))).toBe(0);
 });
 
@@ -42,17 +44,17 @@ it('reverses an unfinished month change from its current position and restores o
   const { container, rerender } = render(calendar('2026-11'));
   const november = panel(container, '2026-11');
   rerender(calendar('2026-12'));
-  await waitFor(() => {
-    expect(x(november)).toBeLessThan(-1);
-    expect(x(november)).toBeGreaterThan(-99);
-  });
+  await advance(64);
+  expect(x(november)).toBeLessThan(-1);
+  expect(x(november)).toBeGreaterThan(-99);
   const current = x(november);
   rerender(calendar('2026-11'));
   expect(panel(container, '2026-11')).toBe(november);
   expect(x(november)).toBeCloseTo(current);
   expect(november.hasAttribute('inert')).toBe(false);
   expect(screen.queryByRole('button', { name: '2026-12' })).toBeNull();
-  await waitFor(() => expect(panel(container, '2026-12')).toBeNull());
+  await advance(400);
+  expect(panel(container, '2026-12')).toBeNull();
   expect(x(november)).toBe(0);
 });
 
@@ -63,11 +65,11 @@ it('brings earlier months in from the left and cancels ongoing movement for redu
   expect(x(panel(container, '2026-11'))).toBeLessThan(0);
   preference.reduced = true;
   rerender(calendar('2026-11'));
-  await waitFor(() => {
-    expect(panel(container, '2026-12')).toBeNull();
-    expect(x(panel(container, '2026-11'))).toBe(0);
-  }, { timeout: 100 });
+  await advance(16);
+  expect(panel(container, '2026-12')).toBeNull();
+  expect(x(panel(container, '2026-11'))).toBe(0);
   rerender(calendar('2026-10'));
-  await waitFor(() => expect(panel(container, '2026-11')).toBeNull());
+  await advance(16);
+  expect(panel(container, '2026-11')).toBeNull();
   expect(x(panel(container, '2026-10'))).toBe(0);
 });
