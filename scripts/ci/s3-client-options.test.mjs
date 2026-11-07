@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 // It does not look for one shape of call: every production file that mentions the SDK must be in `expected`, and
 // inside it every use of the client must be a construction of exactly the allowed shape.
 const root = join(import.meta.dirname, '..', '..');
-const skipped = new Set(['node_modules', 'dist', '.git', '.turbo', '.local', '.maestri']);
+const skipped = new Set(['node_modules', 'dist', '.git', '.turbo', '.local', '.claude']);
 
 const expected = {
   'apps/api/src/modules/identity-storage/storage-client.ts': 2,
