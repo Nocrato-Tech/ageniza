@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -543,8 +543,104 @@ describe('the dev workflow', () => {
     expect(workflow.match(/^ {4}environment: dev$/gm)).toHaveLength(2);
   });
 
-  it('publishes and deploys only when the owner turned the repository switch on', () => {
-    expect(workflow.match(/^ {4}if: vars\.DEV_DEPLOY_ENABLED == 'true'$/gm)).toHaveLength(2);
+  it('waits, and publishes and deploys, only when the owner turned the repository switch on', () => {
+    expect(workflow.match(/^ {4}if: vars\.DEV_DEPLOY_ENABLED == 'true'( && .*)?$/gm)).toHaveLength(3);
+  });
+
+  describe('the gate on the CI of the same commit', () => {
+    const job = (name) => workflow.split(/^ {2}(?=[a-z-]+:\n)/m).find((block) => block.startsWith(`${name}:`)) ?? '';
+    const gate = job('ci-gate');
+
+    it('is a job of its own with a read-only token, no environment and no secret, because it runs before CI is green', () => {
+      expect(gate).not.toBe('');
+      expect(gate).toMatch(/permissions:\n {6}actions: read\n {6}contents: read\n/);
+      expect(gate).not.toMatch(/environment:|secrets\.|DEV_SSH|packages: write|dev-ssh/);
+    });
+
+    it('waits for the push run of the CI workflow of this very commit, not for a pull request run', () => {
+      expect(gate).toContain('actions/runs?head_sha=$GITHUB_SHA&event=push');
+      expect(gate).toContain('.name == "CI" and .head_branch == "develop"');
+      expect(gate).toContain('[[ "$conclusion" == success ]]');
+    });
+
+    it('fails when CI did not succeed and when it did not finish in time', () => {
+      expect(gate).toMatch(/echo "::error::CI ended as '\$conclusion'[^\n]*\n\s+exit 1/);
+      expect(gate).toMatch(/\(\( SECONDS >= deadline \)\)[^\n]*\n[^\n]*\n\s+exit 1/);
+      expect(gate).toContain("WAIT_SECONDS: '2400'");
+    });
+
+    it('lets the newer push win: an older commit stops waiting and releases nothing', () => {
+      expect(gate).toMatch(/while true; do\n[^\n]*\n\s+\[\[ "\$\(develop_tip\)" == "\$GITHUB_SHA" \]\] \|\| skip_release/);
+      expect(gate.match(/\[\[ "\$\(develop_tip\)" == "\$GITHUB_SHA" \]\] \|\| skip_release/g)).toHaveLength(2);
+      expect(gate).toContain('echo "release=false" >> "$GITHUB_OUTPUT"');
+    });
+
+    describe('runs the step as written, against a stand-in for gh', () => {
+      const step = gate.split('        run: |\n')[1].split('\n').filter((line) => line === '' || line.startsWith('          ')).map((line) => line.slice(10)).join('\n');
+      const waitFor = ({ tip = sha, ci, wait = '0' }) => {
+        const directory = temporaryDirectory();
+        const bin = join(directory, 'bin');
+        mkdirSync(bin);
+        writeFileSync(join(bin, 'gh'), '#!/usr/bin/env bash\ncase "$*" in\n  *git/ref/heads/develop*) printf "%s\\n" "$FAKE_TIP" ;;\n  *actions/runs\\?head_sha=*) printf "%s\\n" "$FAKE_CI" ;;\n  *) exit 1 ;;\nesac\n');
+        chmodSync(join(bin, 'gh'), 0o755);
+        const output = join(directory, 'output');
+        writeFileSync(output, '');
+        const result = run(`export PATH="${msys(bin)}:$PATH"\n${step}`, {
+          GH_TOKEN: 'x', GITHUB_REPOSITORY: 'owner/repo', GITHUB_SHA: sha, GITHUB_OUTPUT: posix(output), WAIT_SECONDS: wait, FAKE_TIP: tip, FAKE_CI: ci
+        });
+        return { ...result, output: readFileSync(output, 'utf8').trim() };
+      };
+      const url = 'https://github.com/owner/repo/actions/runs/1';
+
+      it('releases when CI of this commit succeeded', () => {
+        const result = waitFor({ ci: `completed success ${url}` });
+        expect(result.status).toBe(0);
+        expect(result.output).toBe('release=true');
+      });
+
+      it.each(['failure', 'cancelled', 'timed_out', 'skipped'])('fails, releasing nothing, when CI ended as %s', (conclusion) => {
+        const result = waitFor({ ci: `completed ${conclusion} ${url}` });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain(`::error::CI ended as '${conclusion}'`);
+        expect(result.output).toBe('');
+      });
+
+      it('fails when CI is still running, or never appeared, once the wait is over', () => {
+        for (const ci of [`in_progress none ${url}`, `queued none ${url}`, '']) {
+          const result = waitFor({ ci });
+          expect(result.status).toBe(1);
+          expect(result.stdout).toContain('did not finish');
+          expect(result.output).toBe('');
+        }
+      });
+
+      it('steps aside, without failing, when a newer commit is already the tip of develop', () => {
+        for (const ci of [`in_progress none ${url}`, `completed cancelled ${url}`, `completed failure ${url}`]) {
+          const result = waitFor({ tip: 'b'.repeat(40), ci });
+          expect(result.status).toBe(0);
+          expect(result.output).toBe('release=false');
+        }
+      });
+    });
+
+    it('is required by both jobs that build or reach the VPS', () => {
+      expect(job('publish')).toMatch(/needs: ci-gate\n/);
+      expect(job('publish')).toContain("needs.ci-gate.outputs.release == 'true'");
+      expect(job('deploy')).toMatch(/needs: \[ci-gate, publish\]\n/);
+      expect(job('deploy')).toContain("needs.ci-gate.outputs.release == 'true'");
+    });
+
+    it('does not use workflow_run, which only fires from the default branch', () => {
+      expect(workflow).not.toMatch(/^ {2}workflow_run:/m);
+    });
+  });
+
+  it('caches the Docker layers of each image under a scope of its own, without changing what is built', () => {
+    for (const name of ['api', 'worker', 'web', 'migrations']) {
+      expect(workflow).toContain(`cache-from: type=gha,scope=dev-${name}\n`);
+      expect(workflow).toContain(`cache-to: type=gha,mode=max,scope=dev-${name}\n`);
+    }
+    expect(workflow.match(/cache-from:/g)).toHaveLength(4);
   });
 
   it('holds no production secret, variable, host alias or entrypoint', () => {
@@ -577,5 +673,166 @@ describe('the dev workflow', () => {
     expect(action).toContain('Host dev');
     expect(action).toContain('[[ "$SSH_USER" == ageniza-dev-ci ]]');
     expect(action).not.toMatch(/PRODUCTION_|ssh production/);
+  });
+});
+
+describe('the image cleanup of the dev entrypoint', () => {
+  const namespace = 'ghcr.io/nocrato-tech';
+  const keys = { api: 'API_IMAGE', web: 'WEB_IMAGE', worker: 'WORKER_IMAGE', migrations: 'MIGRATIONS_IMAGE' };
+  const image = (name, fill) => `${namespace}/ageniza-${name}@sha256:${fill.repeat(64)}`;
+  const release = (fill) => Object.keys(keys).map((name) => image(name, fill));
+  const manifest = (fill) => `${Object.entries(keys).map(([name, key]) => `${key}=${image(name, fill)}`).join('\n')}\n`;
+  const lines = (text) => text.split('\n').filter(Boolean);
+  const sorted = (list) => [...list].sort();
+
+  // `docker` is a shell function over three files: the images on the host, the ones a container uses, and the calls it got.
+  const fakeDocker = `docker() {
+  printf '%s ' "$@" >> "$CALLS"; printf '\\n' >> "$CALLS"
+  if [[ "$1 $2" == 'image rm' ]]; then
+    grep -Fxq -- "$3" "$IMAGES" || { echo "Error response from daemon: No such image: $3" >&2; return 1; }
+    if grep -Fxq -- "$3" "$USED" || [[ -n "\${RM_FAILS:-}" ]]; then echo "Error response from daemon: conflict: unable to delete (image is being used by a running container)" >&2; return 1; fi
+    grep -Fxv -- "$3" "$IMAGES" > "$IMAGES.new" || true; mv "$IMAGES.new" "$IMAGES"; echo "Untagged: $3"
+  elif [[ "$1 $2" == 'image ls' ]]; then cat "$IMAGES"
+  elif [[ "$1 $2" == 'image inspect' ]]; then echo "$3"
+  fi
+}
+install() { cp -- "\${@: -2:1}" "\${@: -1}"; }`;
+
+  const setup = ({ pulled, hostImages = [], used = [], withPrevious = true }) => {
+    const directory = temporaryDirectory();
+    const releaseDir = join(directory, 'releases');
+    mkdirSync(releaseDir);
+    writeFileSync(join(releaseDir, 'current.env'), manifest('c'));
+    if (withPrevious) writeFileSync(join(releaseDir, 'previous.env'), manifest('b'));
+    const files = { calls: join(directory, 'calls'), images: join(directory, 'images'), used: join(directory, 'used') };
+    writeFileSync(files.calls, '');
+    writeFileSync(files.images, `${[...new Set([...release('c'), ...release('b'), ...(pulled ?? []), ...hostImages])].join('\n')}\n`);
+    writeFileSync(files.used, `${used.join('\n')}\n`);
+    if (pulled) writeFileSync(join(releaseDir, 'pulled-images.list'), `${pulled.join('\n')}\n`);
+    const call = (body, env = {}) =>
+      run(`${preamble}IMAGE_NAMESPACE=${namespace}\nRELEASE_DIR="${posix(releaseDir)}"\nPULLED_IMAGES="${posix(releaseDir)}/pulled-images.list"\nCALLS="${posix(files.calls)}"\nIMAGES="${posix(files.images)}"\nUSED="${posix(files.used)}"\n${fakeDocker}\n${body}`, env);
+    const state = () => ({
+      calls: lines(readFileSync(files.calls, 'utf8')).map((line) => line.trim()),
+      images: lines(readFileSync(files.images, 'utf8')),
+      list: lines(readFileSync(join(releaseDir, 'pulled-images.list'), 'utf8')),
+      previous: existsSync(join(releaseDir, 'previous.env')) ? readFileSync(join(releaseDir, 'previous.env'), 'utf8') : null
+    });
+    return { call, state, releaseDir, files };
+  };
+  const cleanup = functionsOf(deploy, 'die', 'note', 'read_value', 'remove_unreferenced_images');
+  const old = release('a');
+  const everything = [...old, ...release('b'), ...release('c')];
+
+  it('removes the images that neither the live nor the previous release uses, by digest, and nothing else', () => {
+    const { call, state } = setup({ pulled: everything });
+    expect(call(`${cleanup}\nremove_unreferenced_images`).status).toBe(0);
+    const { calls, images, list } = state();
+    expect(sorted(calls)).toEqual(sorted(old.map((ref) => `image rm ${ref}`)));
+    expect(sorted(images)).toEqual(sorted([...release('b'), ...release('c')]));
+    expect(sorted(list)).toEqual(sorted([...release('b'), ...release('c')]));
+  });
+
+  it('keeps the previous release, so the image of the release before the live one stays on the host', () => {
+    const { call, state } = setup({ pulled: everything });
+    call(`${cleanup}\nremove_unreferenced_images`);
+    const { calls, images } = state();
+    for (const ref of release('b')) {
+      expect(images).toContain(ref);
+      expect(calls.join('\n')).not.toContain(ref);
+    }
+  });
+
+  it('keeps everything the live manifest names even when no previous release exists yet', () => {
+    const { call, state } = setup({ pulled: [...old, ...release('c')], withPrevious: false });
+    expect(call(`${cleanup}\nremove_unreferenced_images`).status).toBe(0);
+    expect(sorted(state().images)).toEqual(sorted(release('b').concat(release('c'))));
+    expect(state().calls.map((line) => line.replace('image rm ', ''))).toEqual(expect.arrayContaining(old));
+  });
+
+  it('never touches an image it did not pull: another project, another registry, the database or the mail sink', () => {
+    const foreign = [
+      `ghcr.io/other-org/ageniza-api@sha256:${'e'.repeat(64)}`,
+      `${namespace}/some-other-project@sha256:${'e'.repeat(64)}`,
+      `${namespace}/ageniza-api@sha256:${'f'.repeat(64)}`,
+      `docker.io/library/postgres@sha256:${'e'.repeat(64)}`,
+      `axllent/mailpit@sha256:${'e'.repeat(64)}`
+    ];
+    const { call, state } = setup({ pulled: everything, hostImages: foreign });
+    expect(call(`${cleanup}\nremove_unreferenced_images`).status).toBe(0);
+    expect(state().images).toEqual(expect.arrayContaining(foreign));
+    expect(state().calls.join('\n')).not.toMatch(/other-org|some-other-project|f{64}|postgres|mailpit/);
+  });
+
+  it('never forces the removal and never prunes, here or anywhere else in the script', () => {
+    const { call, state } = setup({ pulled: everything });
+    call(`${cleanup}\nremove_unreferenced_images`);
+    expect(state().calls.length).toBeGreaterThan(0);
+    for (const line of state().calls) expect(line).toMatch(/^image rm \S+$/);
+    const code = deploy.split('\n').filter((line) => !line.trim().startsWith('#')).join('\n');
+    expect(code).not.toMatch(/docker\s+(?:system|image|container|volume|builder)\s+prune|\bprune\s+-a/);
+    expect(code).not.toMatch(/docker\s+(?:image\s+)?rm\s+(?:-\w*f|--force)/);
+  });
+
+  it('keeps an image a container still uses listed for the next release, and still succeeds', () => {
+    const { call, state } = setup({ pulled: everything, used: [old[0]] });
+    const result = call(`${cleanup}\nremove_unreferenced_images`);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`could not remove image ${old[0]}`);
+    expect(state().images).toContain(old[0]);
+    expect(state().list).toContain(old[0]);
+    expect(state().images).not.toContain(old[1]);
+  });
+
+  it('survives every removal failing, and drops from the record an image that is already gone', () => {
+    const { call, state } = setup({ pulled: everything });
+    const result = call(`${cleanup}\nremove_unreferenced_images`, { RM_FAILS: '1' });
+    expect(result.status).toBe(0);
+    expect(sorted(state().list)).toEqual(sorted(everything));
+    const gone = setup({ pulled: [...old, ...release('c')] });
+    writeFileSync(gone.files.images, `${release('c').join('\n')}\n`);
+    expect(gone.call(`${cleanup}\nremove_unreferenced_images`).status).toBe(0);
+    expect(sorted(gone.state().list)).toEqual(sorted(release('c')));
+  });
+
+  it('is run after the release is live and recorded, and a failure there is only logged', () => {
+    expect(deploy).toMatch(/write_current_manifest\n\s+RESTORE_ARMED=false\n\s+prune_runtime_snapshots\n[^\n]*\n\s+remove_unreferenced_images \|\| note '[^']+'\n\s+note "release \$sha is active"/);
+  });
+
+  describe('the record of what this script pulled', () => {
+    it('gains every application image the script pulls, once, and never the database or the sink', () => {
+      const { call, state } = setup({ pulled: [] });
+      const pull = functionsOf(deploy, 'die', 'pull_verified_image');
+      const result = call(`REGISTRY_CONFIG=/nonexistent\n${pull}\npull_verified_image ${image('api', 'c')}\npull_verified_image ${image('api', 'c')}\npull_verified_image axllent/mailpit@sha256:${'e'.repeat(64)}\npull_verified_image ${image('web', 'c')}`);
+      expect(result.status).toBe(0);
+      expect(state().list).toEqual([image('api', 'c'), image('web', 'c')]);
+    });
+
+    it('is seeded once with the application images of this namespace already on the host, and never again', () => {
+      const seed = functionsOf(deploy, 'seed_pulled_images');
+      const foreign = [`ghcr.io/other-org/ageniza-api@sha256:${'e'.repeat(64)}`, `docker.io/library/postgres@sha256:${'e'.repeat(64)}`, `${namespace}/ageniza-api:develop-abc@<none>`];
+      const first = setup({ hostImages: foreign });
+      expect(first.call(`${seed}\nseed_pulled_images`).status).toBe(0);
+      expect(sorted(first.state().list)).toEqual(sorted([...release('b'), ...release('c')]));
+      const again = setup({ pulled: [image('api', 'd')] });
+      expect(again.call(`${seed}\nseed_pulled_images`).status).toBe(0);
+      expect(again.state().list).toEqual([image('api', 'd')]);
+    });
+  });
+
+  it('records the manifest that was live as the previous release, and the pruning of snapshots leaves it alone', () => {
+    const { call, state, releaseDir } = setup({ pulled: [] });
+    const snapshot = (fill) => join(releaseDir, `${fill.repeat(40)}.env`);
+    writeFileSync(snapshot('c'), 'x\n');
+    writeFileSync(snapshot('d'), 'x\n');
+    const script = `${functionsOf(deploy, 'read_value', 'write_current_manifest', 'prune_runtime_snapshots')}
+RELEASE=${'d'.repeat(40)} RUN_ID=2 RUNTIME_SNAPSHOT="${posix(snapshot('d'))}"
+API_IMAGE=${image('api', 'd')} WEB_IMAGE=${image('web', 'd')} WORKER_IMAGE=${image('worker', 'd')} MIGRATIONS_IMAGE=${image('migrations', 'd')}
+write_current_manifest
+prune_runtime_snapshots`;
+    expect(call(script).status).toBe(0);
+    expect(state().previous).toBe(manifest('c'));
+    expect(readFileSync(join(releaseDir, 'current.env'), 'utf8')).toContain(`API_IMAGE=${image('api', 'd')}`);
+    expect(existsSync(snapshot('d'))).toBe(true);
+    expect(existsSync(snapshot('c'))).toBe(false);
   });
 });

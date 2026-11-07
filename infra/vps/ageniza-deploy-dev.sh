@@ -20,6 +20,7 @@ readonly POSTGRES_ENV="$CONFIG_DIR/postgres.env"
 readonly GITHUB_TOKEN_FILE="$CONFIG_DIR/github-token"
 readonly REGISTRY_CONFIG="$CONFIG_DIR/registry"
 readonly RELEASE_DIR=/var/lib/ageniza-dev/releases
+readonly PULLED_IMAGES="$RELEASE_DIR/pulled-images.list"
 readonly LOCK_FILE=/run/lock/ageniza-deploy-dev.lock
 readonly GITHUB_API=https://api.github.com
 readonly RELEASE_WORKFLOW=.github/workflows/dev.yml
@@ -194,6 +195,15 @@ fetch_verified_release() {
 pull_verified_image() {
   docker --config "$REGISTRY_CONFIG" pull --quiet "$1" >/dev/null || die "cannot pull $1"
   docker image inspect "$1" --format '{{join .RepoDigests "\n"}}' | grep -Fx -- "$1" >/dev/null || die "pulled image does not retain the requested digest: $1"
+  if [[ "$1" == "$IMAGE_NAMESPACE"/ageniza-* ]] && ! grep -Fxq -- "$1" "$PULLED_IMAGES" 2>/dev/null; then printf '%s\n' "$1" >> "$PULLED_IMAGES"; fi
+}
+
+# When the record does not exist yet, the application images already on the host are dev's: the first cleanup adopts them.
+seed_pulled_images() {
+  [[ -f "$PULLED_IMAGES" ]] && return 0
+  docker image ls --digests --no-trunc --format '{{.Repository}}@{{.Digest}}' \
+    | grep -E "^$IMAGE_NAMESPACE/ageniza-(api|web|worker|migrations)@sha256:[a-f0-9]{64}\$" > "$PULLED_IMAGES" || true
+  chmod 0600 "$PULLED_IMAGES"
 }
 
 compose_app() {
@@ -246,6 +256,7 @@ write_current_manifest() {
   temporary="$(mktemp "$RELEASE_DIR/.manifest.XXXXXX")"
   printf 'RELEASE=%s\nRUN_ID=%s\nAPI_IMAGE=%s\nWEB_IMAGE=%s\nWORKER_IMAGE=%s\nMIGRATIONS_IMAGE=%s\nRUNTIME_ENV_FILE=%s\nDEPLOYED_AT=%s\n' \
     "$RELEASE" "$RUN_ID" "$API_IMAGE" "$WEB_IMAGE" "$WORKER_IMAGE" "$MIGRATIONS_IMAGE" "$RUNTIME_SNAPSHOT" "$(date -u +%FT%TZ)" > "$temporary"
+  if [[ -f "$RELEASE_DIR/current.env" ]]; then install -o root -g root -m 0600 "$RELEASE_DIR/current.env" "$RELEASE_DIR/previous.env"; fi
   install -o root -g root -m 0600 "$temporary" "$RELEASE_DIR/current.env"
   rm -f -- "$temporary"
 }
@@ -256,9 +267,39 @@ prune_runtime_snapshots() {
   keep="$(read_value "$RELEASE_DIR/current.env" RUNTIME_ENV_FILE || true)"
   for file in "$RELEASE_DIR"/*.env; do
     [[ "$file" == */current.env ]] && continue
+    [[ "$file" == */previous.env ]] && continue
     [[ -f "$file" ]] || continue
     [[ "$file" == "$keep" ]] || rm -f -- "$file"
   done
+}
+
+# Frees the disk the old releases hold. Only references this script pulled itself are candidates (never another project's
+# image, never postgres or mailpit), the live and the previous release are kept, and there is no -f: an image a container
+# still uses survives. No global prune: the host is shared (docs/infra/dev-environment.md).
+remove_unreferenced_images() {
+  local keep='' ref temporary file key output
+  for file in current.env previous.env; do
+    for key in API_IMAGE WEB_IMAGE WORKER_IMAGE MIGRATIONS_IMAGE; do
+      keep+="$(read_value "$RELEASE_DIR/$file" "$key" || true)"$'\n'
+    done
+  done
+  [[ -f "$PULLED_IMAGES" ]] || return 0
+  temporary="$(mktemp "$RELEASE_DIR/.pulled.XXXXXX")"
+  while IFS= read -r ref || [[ -n "$ref" ]]; do
+    [[ -n "$ref" ]] || continue
+    if grep -Fxq -- "$ref" <<< "$keep"; then
+      printf '%s\n' "$ref" >> "$temporary"
+    elif output="$(docker image rm "$ref" 2>&1)"; then
+      note "removed unreferenced image $ref"
+    elif [[ "$output" == *'No such image'* ]]; then
+      :
+    else
+      note "could not remove image $ref (still in use?); it stays listed for the next release"
+      printf '%s\n' "$ref" >> "$temporary"
+    fi
+  done < "$PULLED_IMAGES"
+  install -o root -g root -m 0600 "$temporary" "$PULLED_IMAGES"
+  rm -f -- "$temporary"
 }
 
 restore_live_release() {
@@ -294,6 +335,7 @@ apply_dev() {
 
   prepare_github_access
   fetch_verified_release "$sha" "$run_id"
+  seed_pulled_images
   # start_release runs with --pull never, so the sink image is pulled here with the application images.
   for image in "$API_IMAGE" "$WEB_IMAGE" "$WORKER_IMAGE" "$MIGRATIONS_IMAGE" "$AGENIZA_MAILPIT_IMAGE"; do pull_verified_image "$image"; done
 
@@ -312,6 +354,8 @@ apply_dev() {
   write_current_manifest
   RESTORE_ARMED=false
   prune_runtime_snapshots
+  # A failed cleanup never fails a release that is already live.
+  remove_unreferenced_images || note 'image cleanup failed; the release is active and the images stay for the next release'
   note "release $sha is active"
 }
 
