@@ -41,7 +41,10 @@ export function Calendar({ from, to, label, posts, onMonth, children, selectedDa
     <View style={[ui.row, { justifyContent: 'space-between', flexWrap: 'wrap' }]}><MonthMotion identity={from} variant="title"><Txt kind="section">{label.charAt(0).toUpperCase() + label.slice(1)}</Txt></MonthMotion><View style={{ flexDirection: 'row' }}><IconButton label="Mês anterior" icon={ChevronLeft} onPress={() => onMonth(-1)} /><IconButton label="Próximo mês" icon={ChevronRight} onPress={() => onMonth(1)} /></View></View>
     <Card style={{ padding: 4 }}>
       <View style={{ flexDirection: 'row', paddingVertical: 8 }}>{['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'].map((text) => <View key={text} style={{ width: `${100 / 7}%`, alignItems: 'center' }}><Txt kind="label" color={colors.muted}>{text}</Txt></View>)}</View>
-      <MonthMotion identity={from}><View style={gridStyle}>
+      <MonthMotion identity={from} onExitComplete={() => setMeasurements((current) => {
+        const month = visibleMonth.current;
+        return current[month] ? { [month]: current[month] } : {};
+      })}><View style={gridStyle}>
         {liquid && <LiquidIndicator target={target} color={colors.indigo} revision={from}>
           <View style={gridStyle}>{days.map((date, index) => <View key={date ?? index} style={{ width: `${100 / 7}%`, alignItems: 'center' }}>{date && <View style={cellStyle}>{dayLabel(date, posts.filter((post) => post.date === date).length, false, true)}</View>}</View>)}</View>
         </LiquidIndicator>}
@@ -52,7 +55,7 @@ export function Calendar({ from, to, label, posts, onMonth, children, selectedDa
           if (visibleMonth.current !== from) return;
           const rect = event.nativeEvent.layout;
           setMeasurements((current) => sameRect(current[from]?.[date], rect) ? current : {
-            ...Object.fromEntries(Object.entries(current).filter(([month]) => month !== from).slice(-2)),
+            ...current,
             [from]: { ...current[from], [date]: rect },
           });
         } : undefined} style={{ width: `${100 / 7}%`, alignItems: 'center' }}>{date && <Pressable accessibilityRole="button" accessibilityLabel={`${describeDay(date)}${date === today ? ' · Hoje' : ''} · ${describePosts(dayPosts)}`} accessibilityState={{ selected: active }} aria-pressed={active} onPress={() => { if (selectedDay === undefined) setSelected(date); onSelectDay?.(date); }} style={[cellStyle, { borderColor: date === today ? colors.indigo : 'transparent', backgroundColor: active && !liquid ? colors.indigo : 'transparent' }]}>{dayLabel(date, dayPosts.length, active)}</Pressable>}</View>;

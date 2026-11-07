@@ -45,3 +45,20 @@ it('keeps measured liquid selection after reversing before the old month unmount
   act(() => notify('dezembro', { ...december, x: 100 }));
   expect(selection()).toBe(JSON.stringify(november));
 });
+
+it('retains the first month geometry through more than three rapid month changes until its panel exits', () => {
+  const months = ['junho', 'julho', 'agosto', 'setembro', 'outubro'];
+  const calendar = (index: number) => <Calendar from={`2026-${String(index + 6).padStart(2, '0')}-01`} to={`2026-${String(index + 6).padStart(2, '0')}-30`} label={months[index]!} posts={[]} onMonth={() => {}}>{() => null}</Calendar>;
+  const { container, rerender } = render(calendar(0));
+  const june = { x: 0, y: 0, width: 50, height: 56 };
+  for (let index = 0; index < months.length; index++) {
+    rerender(calendar(index));
+    const callback = layout.get([...layout.keys()].find((name) => name.includes(`1 de ${months[index]} de 2026`))!)!;
+    act(() => callback({ nativeEvent: { layout: { ...june, x: index * 50 } } }));
+  }
+  const retained = container.querySelector('[data-month-viewport="grid"] [data-month-panel="2026-06-01"]');
+  expect(retained).not.toBeNull();
+  rerender(calendar(0));
+  expect(container.querySelector('[data-month-viewport="grid"] [data-month-present="true"]')).toBe(retained);
+  expect(retained?.querySelector('[data-selection-target]')?.getAttribute('data-selection-target')).toBe(JSON.stringify(june));
+});

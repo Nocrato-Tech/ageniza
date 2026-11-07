@@ -7,12 +7,12 @@ import type { MonthMotionProps } from './MonthMotion';
 type MonthChange = { direction: number; reduced: boolean };
 const MonthTransition = createContext<MonthChange>({ direction: 1, reduced: true });
 
-export function MonthMotion({ identity, children, variant = 'grid' }: MonthMotionProps) {
+export function MonthMotion({ identity, children, variant = 'grid', onExitComplete }: MonthMotionProps) {
   const reduced = useReducedMotion();
   const [change, setChange] = useState({ identity, direction: 1, changed: false });
   if (change.identity !== identity) setChange({ identity, direction: identity > change.identity ? 1 : -1, changed: true });
   return <div data-month-viewport={variant} style={{ position: 'relative', overflow: 'clip', minWidth: 0 }}>
-    <MonthTransition.Provider value={{ direction: change.direction, reduced }}><AnimatePresence initial={false}>
+    <MonthTransition.Provider value={{ direction: change.direction, reduced }}><AnimatePresence initial={false} onExitComplete={onExitComplete}>
       <MonthPanel key={identity} identity={identity} variant={variant} entering={change.changed}>{children}</MonthPanel>
     </AnimatePresence></MonthTransition.Provider>
   </div>;
