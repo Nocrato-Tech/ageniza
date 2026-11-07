@@ -42,10 +42,11 @@ jobs:
         run: |
           deadline=$((SECONDS + WAIT_SECONDS))
           # A transient API error must not read as "develop moved" or "no CI yet": retry, and fail the job if it persists.
+          # gh writes the error body to stdout on an HTTP error, so each attempt's output is kept and printed only on success.
           api() {
-            local attempt
+            local attempt out
             for attempt in 1 2 3; do
-              gh api "$@" && return 0
+              if out="$(gh api "$@")"; then printf '%s\n' "$out"; return 0; fi
               if (( attempt < 3 )); then sleep "${RETRY_SECONDS:-5}"; fi
             done
             return 1

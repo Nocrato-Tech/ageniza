@@ -603,17 +603,20 @@ describe('the dev workflow', () => {
 
     describe('runs the step as written, against a stand-in for gh', () => {
       const step = gate.split('        run: |\n')[1].split('\n').filter((line) => line === '' || line.startsWith('          ')).map((line) => line.slice(10)).join('\n');
-      // FAKE_TIP_FAILS breaks the ref read for good, FAKE_TIP_FAILS_ONCE only for its first call; FAKE_RUNS_FAILS breaks the run list.
+      // FAKE_TIP_FAILS breaks the ref read for good, FAKE_TIP_FAILS_ONCE only for its first call; FAKE_RUNS_FAILS breaks the run
+      // list for good, FAKE_RUNS_FAILS_ONCE for its first call. Like the real gh, a failure writes the error body to stdout.
       const fakeGh = [
         '#!/usr/bin/env bash',
+        'fail() { printf \'{"message":"Server Error","status":"502"}\\n\'; exit 1; }',
         'case "$*" in',
         '  *git/ref/heads/develop*)',
-        '    [[ -z "${FAKE_TIP_FAILS:-}" ]] || exit 1',
-        '    if [[ -n "${FAKE_TIP_FAILS_ONCE:-}" && ! -e "$FAKE_STATE/tip-failed" ]]; then : > "$FAKE_STATE/tip-failed"; exit 1; fi',
-        '    if [[ -n "${FAKE_TIP_FAILS_AFTER_FIRST:-}" ]]; then [[ ! -e "$FAKE_STATE/tip-read" ]] || exit 1; : > "$FAKE_STATE/tip-read"; fi',
+        '    [[ -z "${FAKE_TIP_FAILS:-}" ]] || fail',
+        '    if [[ -n "${FAKE_TIP_FAILS_ONCE:-}" && ! -e "$FAKE_STATE/tip-failed" ]]; then : > "$FAKE_STATE/tip-failed"; fail; fi',
+        '    if [[ -n "${FAKE_TIP_FAILS_AFTER_FIRST:-}" ]]; then [[ ! -e "$FAKE_STATE/tip-read" ]] || fail; : > "$FAKE_STATE/tip-read"; fi',
         '    printf "%s\\n" "$FAKE_TIP" ;;',
         '  *actions/runs\\?head_sha=*)',
-        '    [[ -z "${FAKE_RUNS_FAILS:-}" ]] || exit 1',
+        '    [[ -z "${FAKE_RUNS_FAILS:-}" ]] || fail',
+        '    if [[ -n "${FAKE_RUNS_FAILS_ONCE:-}" && ! -e "$FAKE_STATE/runs-failed" ]]; then : > "$FAKE_STATE/runs-failed"; fail; fi',
         '    printf "%s\\n" "$FAKE_CI" ;;',
         '  *) exit 1 ;;',
         'esac',
@@ -683,6 +686,28 @@ describe('the dev workflow', () => {
 
       it('retries a failed API call instead of giving up on the first', () => {
         const result = waitFor({ ci: `completed success ${url}`, FAKE_TIP_FAILS_ONCE: '1' });
+        expect(result.status).toBe(0);
+        expect(result.output).toBe('release=true');
+      });
+
+      // gh prints the error body on stdout; a retry that works must not inherit it.
+      it('reads the real tip after a failed attempt whose error body went to stdout, and releases on green CI', () => {
+        const result = waitFor({ ci: `completed success ${url}`, FAKE_TIP_FAILS_ONCE: '1' });
+        expect(result.stdout).not.toContain('develop moved');
+        expect(result.status).toBe(0);
+        expect(result.output).toBe('release=true');
+      });
+
+      it('reads the real tip after a failed attempt whose error body went to stdout, and still fails on red CI', () => {
+        const result = waitFor({ ci: `completed failure ${url}`, FAKE_TIP_FAILS_ONCE: '1' });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain("::error::CI ended as 'failure'");
+        expect(result.stdout).not.toContain('develop moved');
+        expect(result.output).toBe('');
+      });
+
+      it('reads the CI run after a failed attempt whose error body went to stdout', () => {
+        const result = waitFor({ ci: `completed success ${url}`, FAKE_RUNS_FAILS_ONCE: '1' });
         expect(result.status).toBe(0);
         expect(result.output).toBe('release=true');
       });
