@@ -22,7 +22,7 @@ No database password, auth secret, or registry credential exists in GitHub. On G
 - the SHA is on `main`;
 - the image digests come from that run's `release-manifest` artifact and live under `ghcr.io/nocrato-tech/ageniza-*`.
 
-**Residual risk on GitHub Free:** anyone with write access can merge a pull request into `main` (which deploys it), dispatch **Production rollback**, or push directly and edit workflows. These actions leave a record, and the [Branch guard](../ci/README.md#branch-protections-and-promotion) alerts on non-PR commits, but nothing prevents them. Grant write access only to people trusted with production.
+**Residual risk on GitHub Free:** anyone with write access can merge a pull request into `main` (which deploys it) or dispatch **Production rollback**. These actions leave a record and nothing prevents them; the [ruleset](../ci/README.md#branch-protections-and-promotion) prevents direct push and force push. Grant write access only to people trusted with production.
 
 | File | Role |
 | --- | --- |

@@ -1,6 +1,6 @@
 #!/bin/sh
-# Blocks accidental direct pushes to protected branches. GitHub Free cannot enforce this
-# server-side for this private repository; the Branch guard workflow detects bypasses.
+# Blocks accidental direct pushes to protected branches. The server enforces the ruleset;
+# this hook is only the first local barrier.
 while read -r local_ref local_sha remote_ref remote_sha; do
   case "$remote_ref" in
     refs/heads/main|refs/heads/develop)
