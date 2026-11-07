@@ -104,6 +104,24 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 
 75. **Teste de deadlock fecha o ciclo dentro do banco.** O detector aborta quem espera há mais de `deadlock_timeout` (1 s) com o ciclo já fechado; se o holder só pede o segundo lock depois de um poll no Node, qualquer parada do processo de teste de mais de 1 s faz do holder a vítima e o teste falha com o 40P01 dele. O holder pede o lock por `requestLockOnceBlocked` (`@ageniza/database`), armado ANTES de iniciar a transação testada, e o teste espera os dois juntos (`Promise.all`). Poll em Node serve para soltar o holder (commit, rollback), nunca para fechar um ciclo. A prova é o atraso artificial de 1,5 s depois de a rota começar, que com o poll deixa o teste vermelho e com a barreira o deixa verde, e a mutação sem o mapeamento do `40P01` (#745, #762).
 
-76. **Espera de bloqueio tem escopo, e ordem não vem de sleep.** Um poll de `pg_locks` ou de `wait_event_type = 'Lock'` sem escopo é satisfeito pela espera de outro banco do mesmo servidor ou de outro holder, e o teste segue antes de a transação testada bloquear. Quem ordena duas transações espera `waitForBackendsBlockedBy(observador, pidDoHolder)` (`@ageniza/database`), que só vê backends deste banco bloqueados por aquele pid e levanta quando ninguém espera; o pid vem de `backendPid`. Nunca `setTimeout` ou `pg_sleep` para "dar tempo": quando o que falta é o relógio do banco passar de um instante, o teste espera essa condição (`clock_timestamp() >= ...`). A prova é o atraso artificial antes do passo que dependia de sorte e a mutação que tira o filtro de pid ou troca a barreira por um sleep curto (#767).
+76. **Espera de bloqueio tem escopo, e ordem não vem de sleep.** Um poll de `pg_locks` ou de `wait_event_type = 'Lock'` sem escopo é satisfeito pela espera de outro banco do mesmo servidor ou de outro holder, e o teste segue antes de a transação testada bloquear. Quem ordena duas transações espera `waitForBackendsBlockedBy(observador, pidDoHolder)` (`@ageniza/database`), que só vê backends deste banco bloqueados por aquele pid e levanta quando ninguém espera; o pid vem de `backendPid`. Para a fila de lock atrás de um holder, `waitForQueueBehind` (`apps/api/src/modules/auth/test-support/lock-queue.ts`) espera a contagem deduplicada de backends na fila. Nunca `setTimeout` ou `pg_sleep` para "dar tempo": quando o que falta é o relógio do banco passar de um instante, o teste espera essa condição (`clock_timestamp() >= ...`). A prova é o atraso artificial antes do passo que dependia de sorte e a mutação que tira o filtro de pid ou troca a barreira por um sleep curto (#767).
+
+77. **Teste de texto de workflow recorta o job inteiro.** O recorte de um job termina em qualquer chave de job válida, e o passo protegido é contado no workflow inteiro: ele aparece exatamente uma vez. Mover a suíte para um job novo tem de dar vermelho.
+
+78. **Cache do turbo.** Só o push em `develop` salva o cache; PR só restaura, para um PR não envenenar o cache. `test` fica sem cache. O turbo rodado dentro de um worktree escreve no cache do checkout principal: o agente usa um `TURBO_CACHE_DIR` próprio.
+
+79. **Gate que espera outro workflow.** Filtra o run pelo `.path` do arquivo, não pelo nome, e falha fechado em erro de leitura. O contrato tem teste.
+
+80. **`gh api` escreve o erro no stdout.** Mesmo com `--jq`, o corpo do erro vai para o stdout: o retry guarda a saída de cada tentativa separada, e o fake da CLI no teste reproduz a saída real.
+
+81. **Contagem de fila de lock.** Deduplica (`union`, não `union all`), e a prova inclui um controle negativo.
+
+82. **Guard de configuração.** Importa a config e confere o valor; nunca faz grep no texto.
+
+83. **Mutação por `git archive`.** O `git archive` aplica o autocrlf. Uma mutação cujo arquivo de teste não carrega mostra todo mutante como morto: confira que o teste rodou.
+
+84. **Teste que depende do dia de São Paulo.** Quando a função lê `now()` por dentro e não dá para injetar o instante sem abrir a função `security definer`, o teste espera sair da borda da meia-noite (`waitForQuietClock`).
+
+85. **Scratchpad e `%TEMP%` são compartilhados entre agentes.** Prefixo da subtarefa em tudo que criar, e apague só o que criou.
 
 As lições completas de segurança estão em `docs/security-review.md` e nas notas do projeto; este checklist só lista o que mais se repete.

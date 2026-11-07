@@ -152,7 +152,7 @@ Ele exige o `gh` autenticado com o escopo `project` (`gh auth refresh -s project
 
 Toda entrega passa por revisão independente antes do merge, **inclusive entrega de agente** — principalmente entrega de agente. Quem escreve o código escreve o teste com os mesmos pontos cegos, e revisões aqui já acharam falhas reais que os testes do próprio autor não pegavam.
 
-O merge exige aprovação e CI verde. A ferramenta não impede o contrário hoje (a organização está no plano Free), então é acordo de time — e um `Branch guard` que abre issue quando alguém contorna.
+O merge exige aprovação e CI verde. O ruleset do GitHub exige os checks e impede push direto e force push em `develop` e `main`; a aprovação segue sendo acordo de time.
 
 ## Quando o CI reprova
 
@@ -162,7 +162,7 @@ Leia o job que falhou antes de repetir a execução. Um reexecutar cego esconde 
 - **`Migration policy`** — você editou, renomeou ou apagou uma migration já aplicada. Corrige-se com uma migration nova; o histórico é sempre para frente.
 - **`PostgreSQL local database`** — integração contra o banco real. Se falhar só no CI, desconfie de ordem de execução e de estado deixado por outro teste antes de culpar o ambiente.
 - **`Docker images`** — o modelo do Compose não renderiza, ou um serviço local vazou para o modelo de produção.
-- **`Branch route`** e **`Branch guard`** — o PR está indo para o lugar errado, ou alguém empurrou direto.
+- **`Branch route`** — o PR está indo para o lugar errado.
 
 Se a falha não tem relação com a sua mudança, diga isso no PR com a evidência. Não a mergeie em silêncio.
 

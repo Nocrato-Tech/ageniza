@@ -1,6 +1,35 @@
 # Continuous integration
 
-The `CI` workflow runs on pull requests whose target is `develop` or `main`. It has read-only repository token access, cancels superseded runs for the same pull request, uses the Node version in `.nvmrc`, enables the pnpm version declared by the root `packageManager` field through Corepack, caches pnpm's store, and installs only from `pnpm-lock.yaml` with `--frozen-lockfile`.
+The `CI` workflow runs on pull requests whose target is `develop` or `main`, and on every push to `develop`. It has read-only repository token access, cancels superseded runs for the same pull request, uses the Node version in `.nvmrc`, enables the pnpm version declared by the root `packageManager` field through Corepack, caches pnpm's store, and installs only from `pnpm-lock.yaml` with `--frozen-lockfile`.
+
+## Jobs and workflows
+
+Job names are fixed: the rulesets require them by name (see [Branch protections and promotion](#branch-protections-and-promotion)).
+
+| Job (`CI / ...`) | Runs on | What it does |
+| --- | --- | --- |
+| `Branch route` | Pull requests | Checks the source and target branch pair (a pull request to `main` comes from `develop`; `hotfix/*` is the documented exception). |
+| `Migration policy` | Pull requests | Append-only history of `packages/database/migrations` (see below). |
+| `Quality gates` | Pull requests and pushes to `develop` | Lint, typecheck, build and the tests of every workspace except the web, plus the API production closure and the generated-docs checks. |
+| `Web tests` | Pull requests and pushes to `develop` | The tests of `@ageniza/web`, split from `Quality gates` so they run in parallel with it. |
+| `Docker images` | Pull requests | Renders the Compose models and builds the images, with the nginx and mobile guards. |
+| `PostgreSQL local database` | Pull requests and pushes to `develop`, unless skipped (below) | The database suite and the worker suite against the local PostgreSQL. |
+| `API integration` | Same, with the same skip decision | The API integration suite against the local PostgreSQL and LocalStack. |
+
+| Workflow | Runs on | Notes |
+| --- | --- | --- |
+| `CI` | Pull requests to `develop` or `main`; pushes to `develop` | The jobs above. |
+| `Dev release` | Push to `develop` | Its `ci-gate` job waits for the `CI` run of the same SHA to be green before anything is built or deployed; see the [dev environment runbook](../infra/dev-environment.md). |
+| `Production release` | Push to `main` | See the [production deploy runbook](../infra/production-deploy.md). |
+| `Production rollback` | Manual | See the production deploy runbook. |
+| `Mobile review` | Pull requests to `develop` and `codex/mobile-*` pushes that touch `apps/mobile` | The export of the app against the dev API and the presentation build. |
+| `Mobile Android` | Manual only (`workflow_dispatch`) | Never runs on its own. |
+
+`ci-gate` finds the `CI` run by the file path of the workflow (`.path`), not by its display name, and fails closed when the runs cannot be read. A test pins this contract.
+
+### Turborepo cache
+
+`build`, `typecheck` and `lint` are cached (`turbo.json` declares their inputs); `test` is never cached. Only the push to `develop` saves the cache, in `Quality gates` and after every gate passed. Pull requests only restore it, so a pull request cannot poison the cache that other runs trust.
 
 ## Local equivalent
 
@@ -52,7 +81,7 @@ To add a path to the list, first check that nothing the job runs reads it (the m
 
 The local equivalents are `pnpm db:start`, `pnpm db:migrate`, and `pnpm db:test:local`; Docker must be running, and the two variables must point at a database of your own (see [Ambiente local](../local-environment.md#banco-dos-testes-de-integração)). `pnpm db:reset` removes the whole compose database volume (the owner's `ageniza` and every agent database), then starts the database again and recreates `ageniza` from migrations, so it belongs to the owner only; an agent starts over with `drop database` on its own database, as in [ambiente local](../local-environment.md#banco-dos-testes-de-integração).
 
-The API integration suite (`Run the authentication suite as the application role`) runs its files in parallel, 4 at a time (issue #792): a globalSetup migrates a model database once, and every file gets its own clone of it and drops it when it ends, so no file reads, writes or locks another's rows. The step, the job and the database `ageniza_ci` are unchanged; `ageniza_ci` only tells the suite which server to use. See [Ambiente local](../local-environment.md#um-banco-por-arquivo-na-suíte-da-api) for `--maxWorkers` and for what a killed run leaves behind.
+The API integration suite (job `API integration`, step `Run the authentication suite as the application role`) runs its files in parallel, 4 at a time (issue #792): a globalSetup migrates a model database once, and every file gets its own clone of it and drops it when it ends, so no file reads, writes or locks another's rows. The step and the database `ageniza_ci` are unchanged; `ageniza_ci` only tells the suite which server to use. See [Ambiente local](../local-environment.md#um-banco-por-arquivo-na-suíte-da-api) for `--maxWorkers` and for what a killed run leaves behind.
 
 ## API production closure
 
@@ -75,22 +104,21 @@ To change what the image carries, edit `files` and compare the deploy by hand on
 This repository is **public, on purpose** (owner decision, 2026-10-29), and the organization is on GitHub Free. Two consequences follow:
 
 - Nothing sensitive may ever be committed: no credential, token, private key, real customer or agency data, or personal data, not even in a test fixture or a deleted commit. Production and dev secrets live on the VPS, not in GitHub (see the [production deploy runbook](../infra/production-deploy.md)). The security lessons, the review checklists and the infrastructure design (VPS baseline, deploy, tunnel) are readable by anyone, so the design must stay safe when known: the controls cannot depend on the layout being secret.
-- On a public repository GitHub Free *does* allow rulesets, branch protection and Environment required reviewers (CODEOWNERS enforcement comes with branch protection). None of them is turned on yet; turning them on is proposed in issue #778. If the repository ever turns private on the Free plan, those features stop being available and the guards below are the only protection.
+- On a public repository GitHub Free *does* allow rulesets, branch protection and Environment required reviewers (CODEOWNERS enforcement comes with branch protection). The rulesets on `develop` and `main` are active since 2026-10-29 (issue #778). If the repository ever turns private on the Free plan, those features stop being available and the guards below are the only protection.
 
-Until they are on, `main` and `develop` are guarded by:
+`main` and `develop` are guarded by:
 
 | Guard | Enforced where | What it does |
 | --- | --- | --- |
-| `.githooks/pre-push` | Each clone (installed by `pnpm install`) | Refuses `git push` to `main` or `develop`. Bypassable with `--no-verify`; it prevents accidents. |
+| Rulesets on `main` and `develop` | GitHub | No bypass actor. They block direct pushes, force pushes and deletion, and require the status checks below. |
+| `.githooks/pre-push` | Each clone (installed by `pnpm install`) | Refuses `git push` to `main` or `develop`. Bypassable with `--no-verify`; it is only the first local barrier, since the ruleset is what the server enforces. |
 | `Production release / Release origin guard` | GitHub Actions | A push to `main` publishes, migrates, or deploys only if it is not a force push and is the merge commit of a pull request from this repository's `develop` or `hotfix/*`. |
 | `ageniza-deploy` release verification | Production VPS | The host deploys only the manifest of a push-to-`main` run of `production.yml` for a commit on `main`; production secrets never live in GitHub. See the [production deploy runbook](../infra/production-deploy.md). |
 | `ageniza-deploy-dev` release verification | Production VPS (dev environment) | The host deploys only the manifest of a push-to-`develop` run of `dev.yml` for a commit on `develop`, with the dev account, key and entrypoint that production does not share. See the [dev environment runbook](../infra/dev-environment.md). |
-| `Branch guard` | GitHub Actions | Any force push, or any commit on `main` or `develop` that is not a merged pull request, fails the run and opens an issue assigned to @PedroV1dal. |
-| `Pull request reviewer` | GitHub Actions | Requests review from @PedroV1dal on pull requests to `develop` and `main`. |
 
-Team agreement, not technically enforced: merge only pull requests with an approval and green CI. GitHub itself never merges a pull request with conflicts. A direct push can edit these workflows too, so treat every `Branch guard` issue as an incident.
+Team agreement, not technically enforced: merge only pull requests with an approval and green CI. GitHub itself never merges a pull request with conflicts.
 
-When the protections are turned on (or the organization moves to a paid plan), replace this with rulesets on `develop` and `main`: require pull requests with one approval (code owner on `main`), dismiss stale approvals, require conversation resolution and up-to-date branches, block force pushes and deletion, allow only repository admins to bypass for pull requests, and require these checks (plus `Release path validation` on `main`):
+The rulesets require these checks (the ruleset on `main` also requires `Release path validation`):
 
 - `CI / Branch route`
 - `CI / Migration policy`
@@ -98,6 +126,8 @@ When the protections are turned on (or the organization moves to a paid plan), r
 - `CI / Docker images`
 - `CI / PostgreSQL local database`
 
-Feature, fix, and refactor branches merge into `develop`. `develop` is the integration branch: every commit that lands on it is published to the dev environment on the VPS by the `Dev release` workflow ([dev environment runbook](../infra/dev-environment.md), [ADR 0013](../adr/0013-dev-environment-on-the-vps.md)), and nothing else is deployed from it. A pull request to `main` is a production-promotion gate and must originate from `develop`; the workflow permits `hotfix/*` only as the documented production exception. Production deployment belongs to a separate main-only workflow, never this CI workflow or the `Dev release` workflow; see the [production deploy runbook](../infra/production-deploy.md). The `Dev release` workflow runs only for pushes to `develop`, holds only the dev SSH key (GitHub environment `dev`, restricted to `develop`) and calls the dev forced command, which cannot apply a production release.
+`CI / Web tests` and `CI / API integration` enter the ruleset with the merge of the pull request that created them (the lean CI and dev change), not before: a required check that no run has produced yet would block every pull request.
+
+Feature, fix, and refactor branches merge into `develop`. `develop` is the integration branch: every commit that lands on it is published to the dev environment on the VPS by the `Dev release` workflow ([dev environment runbook](../infra/dev-environment.md), [ADR 0013](../adr/0013-dev-environment-on-the-vps.md)), and nothing else is deployed from it. A pull request to `main` is a production-promotion gate and must originate from `develop`; the workflow permits `hotfix/*` only as the documented production exception. Production deployment belongs to a separate main-only workflow, never this CI workflow or the `Dev release` workflow; see the [production deploy runbook](../infra/production-deploy.md). The `Dev release` workflow runs only for pushes to `develop`, and only after the `CI` run of the same SHA is green (`ci-gate`); it holds only the dev SSH key (GitHub environment `dev`, restricted to `develop`) and calls the dev forced command, which cannot apply a production release.
 
 After a `hotfix/*` branch is merged to `main`, immediately open and merge its reconciliation pull request into `develop` (or merge the resulting `main` delta into `develop` if branch policy requires it). This prevents the next release promotion from losing the production correction.

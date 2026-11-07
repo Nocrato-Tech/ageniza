@@ -295,8 +295,8 @@ certificates, secrets in the GitHub Environment), this amendment wins:
 Residual risk accepted until the plan changes: anyone with write access can
 still merge a pull request into `main` (which deploys it), dispatch the
 rollback workflow, or push directly and edit workflows. These actions are
-recorded and the Branch guard workflow alerts on non-PR commits, but they are
-not prevented. After upgrading to GitHub Team, add rulesets and an Environment
+recorded and the ruleset prevents direct pushes and force pushes, but the
+merge and the rollback dispatch are not prevented. After upgrading to GitHub Team, add rulesets and an Environment
 with required reviewers on the deploy job; the host-held secrets model can stay.
 
 ## Amendment (2026-09-16): durable job queue
