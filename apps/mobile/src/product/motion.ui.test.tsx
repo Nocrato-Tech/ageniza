@@ -41,3 +41,16 @@ it('applies reduced motion immediately and cancels an active arrival when the pr
   rerender(<ScreenMotion identity="third"><span>Next view</span></ScreenMotion>);
   expect(animate).toHaveBeenCalledOnce();
 });
+
+it('continues an interrupted navigation from its displayed position instead of restarting the entrance', () => {
+  Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
+  const animate = vi.fn<(frames: Keyframe[]) => { cancel: ReturnType<typeof vi.fn>; playState: string }>(() => ({ cancel: vi.fn(), playState: 'running' }));
+  Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+  vi.spyOn(window, 'getComputedStyle').mockReturnValue({ transform: 'matrix(1, 0, 0, 1, 7, 0)', opacity: '0.8' } as CSSStyleDeclaration);
+  const { rerender } = render(<ScreenMotion identity="one"><span>First</span></ScreenMotion>);
+  rerender(<ScreenMotion identity="two"><span>Latest</span></ScreenMotion>);
+  expect(animate.mock.calls[1]?.[0]).toEqual([
+    { opacity: 0.8, transform: 'matrix(1, 0, 0, 1, 7, 0)' },
+    { opacity: 1, transform: 'translate3d(0, 0, 0)' }
+  ]);
+});

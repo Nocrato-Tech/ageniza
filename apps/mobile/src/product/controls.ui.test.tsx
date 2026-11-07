@@ -17,7 +17,7 @@ vi.mock('react-native-svg', async () => {
   const part = ({ children }: { children?: ReactNode }) => createElement('svg', {}, children);
   return { default: part, ...Object.fromEntries(['Svg', 'Defs', 'LinearGradient', 'Stop', 'Rect', 'Path', 'Circle', 'Line', 'Polyline', 'Polygon', 'Ellipse', 'G', 'ClipPath'].map((key) => [key, part])) };
 });
-import { Header, Selector, Tabs, MediaDisplay } from './ui';
+import { Field, Header, Selector, Tabs, MediaDisplay } from './ui';
 import type { Asset, Post } from './types';
 
 afterEach(cleanup);
@@ -77,4 +77,36 @@ it('explains when a selector has no available options without inventing a select
   fireEvent.click(screen.getByRole('button', { name: 'Pasta' }));
   expect(await screen.findByText('Nenhuma opção disponível.')).toBeTruthy();
   expect(change).not.toHaveBeenCalled();
+});
+
+it('moves tab focus and selection with arrows, Home, and End without duplicating tab stops', () => {
+  const change = vi.fn();
+  render(<Tabs value="a" onChange={change} options={[{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }]} />);
+  const first = screen.getByRole('tab', { name: 'A' });
+  const last = screen.getByRole('tab', { name: 'C' });
+  fireEvent.keyDown(first, { key: 'ArrowLeft' });
+  expect(change).toHaveBeenLastCalledWith('c');
+  expect(document.activeElement).toBe(last);
+  fireEvent.keyDown(last, { key: 'Home' });
+  expect(change).toHaveBeenLastCalledWith('a');
+  expect(document.activeElement).toBe(first);
+  fireEvent.keyDown(first, { key: 'End' });
+  expect(change).toHaveBeenLastCalledWith('c');
+  expect(document.activeElement).toBe(last);
+  expect(screen.getAllByRole('tab').filter((tab) => tab.tabIndex === 0)).toHaveLength(1);
+});
+
+it('shows field focus while preserving caller callbacks and the error border', () => {
+  const focus = vi.fn(); const blur = vi.fn();
+  const { rerender } = render(<Field label="Nome" onFocus={focus} onBlur={blur} />);
+  const field = screen.getByRole('textbox', { name: 'Nome' });
+  const resting = getComputedStyle(field).borderTopColor;
+  fireEvent.focus(field);
+  expect(focus).toHaveBeenCalledOnce();
+  expect(getComputedStyle(field).borderTopColor).not.toBe(resting);
+  rerender(<Field label="Nome" error="Preencha o nome" onFocus={focus} onBlur={blur} />);
+  const error = getComputedStyle(field).borderTopColor;
+  fireEvent.blur(field);
+  expect(blur).toHaveBeenCalledOnce();
+  expect(getComputedStyle(field).borderTopColor).toBe(error);
 });
