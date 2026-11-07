@@ -5,6 +5,8 @@
 // other agents passes `--maxWorkers=2`.
 export default {
   test: {
+    // A pattern, not a list: a new `*.integration.test.ts` runs in CI without anyone registering it.
+    include: ['**/*.integration.test.ts'],
     globalSetup: ['./integration-setup/global-setup.ts'],
     setupFiles: ['./integration-setup/per-file-database.ts'],
     fileParallelism: true,

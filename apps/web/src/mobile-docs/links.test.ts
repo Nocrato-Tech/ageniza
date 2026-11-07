@@ -1,9 +1,13 @@
+import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { buildGuide, guide, guideFiles } from './content.js';
 import { headingSlug, remarkHeadingIds, type MarkdownNode } from './headings.js';
 import { REPO_BLOB_URL, pageKey, pagePath, resolveDocLink } from './links.js';
 
+const DOCS_MOBILE = fileURLToPath(new URL('../../../../docs/mobile', import.meta.url));
 const FILES = new Set(['README.md', 'comecar.md', 'fluxos/entrada.md', 'fluxos/agencia.md']);
 const resolve = (href: string, from: string) => resolveDocLink(href, from, FILES);
 
@@ -72,9 +76,13 @@ describe('headingSlug', () => {
 
 describe('the guide', () => {
   it('lists every file of docs/mobile, README first', () => {
+    const onDisk = readdirSync(DOCS_MOBILE, { recursive: true, encoding: 'utf8' })
+      .map((path) => path.replaceAll('\\', '/'))
+      .filter((path) => path.endsWith('.md'));
+    expect(onDisk).toContain('README.md');
     expect(guide[0]!.file).toBe('README.md');
-    expect(guide.map((page) => page.file)).toEqual(['README.md', 'comecar.md', 'fluxos/entrada.md', 'fluxos/agencia.md', 'fluxos/portal.md', 'fluxos/link-de-aprovacao.md', 'interface-mobile.md', 'prontidao-lancamento.md']);
-    expect(guideFiles.has('fluxos/agencia.md')).toBe(true);
+    expect(guide.map((page) => page.file).sort()).toEqual(onDisk.sort());
+    expect(guideFiles).toEqual(new Set(onDisk));
   });
 
   it('puts a file nobody ordered after the known ones and takes its title from the first heading', () => {

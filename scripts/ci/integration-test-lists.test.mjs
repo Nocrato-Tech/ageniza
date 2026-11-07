@@ -1,79 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-// An integration file that is not in the test:integration script of its package never runs in CI: PR #596 found two in
-// apps/api that were missing (issue #597). The packages below spell out the files in their script, so every
-// *.integration.test.ts on disk must be listed there, and every listed file must exist. apps/worker filters by a
-// pattern instead of a list, so the check there is that the pattern matches every integration file.
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const git = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
-const INTEGRATION = /\.integration\.test\.ts$/;
-
-const trackedIntegrationFiles = (pkgDir) =>
-  git(['ls-files', '--', pkgDir])
-    .split('\n')
-    .filter((path) => INTEGRATION.test(path))
-    .map((path) => path.slice(pkgDir.length + 1));
-
-const integrationScript = (pkgDir) =>
-  JSON.parse(readFileSync(join(root, pkgDir, 'package.json'), 'utf8')).scripts['test:integration'];
-
-const scriptTokens = (script) => script.split(/\s+/).filter((token) => token !== '');
-
-const listedFiles = (script) => scriptTokens(script).filter((token) => INTEGRATION.test(token));
-
-const listedPackages = ['apps/api', 'packages/database'];
-
-describe('test:integration lists the integration files of each package', () => {
-  it('finds integration files in apps/api, so the checks below are not empty', () => {
-    expect(trackedIntegrationFiles('apps/api')).toContain('src/modules/media/media-download-url.integration.test.ts');
-  });
-
-  for (const pkgDir of listedPackages) {
-    it(`${pkgDir}: every integration file is in the test:integration script (issue #597)`, () => {
-      const listed = listedFiles(integrationScript(pkgDir));
-      const missing = trackedIntegrationFiles(pkgDir).filter((file) => !listed.includes(file));
-
-      expect(
-        missing,
-        `fora da lista do test:integration de ${pkgDir}/package.json: ${missing.join(', ')}. Acrescente cada um ao script, senão o CI nunca roda.`,
-      ).toEqual([]);
-    });
-
-    it(`${pkgDir}: every file named in the test:integration script exists`, () => {
-      const listed = listedFiles(integrationScript(pkgDir));
-      const absent = listed.filter((file) => !existsSync(join(root, pkgDir, file)));
-
-      expect(
-        absent,
-        `citados no test:integration de ${pkgDir}/package.json e inexistentes: ${absent.join(', ')}. Remova ou corrija o caminho.`,
-      ).toEqual([]);
-    });
-  }
-
-  it('apps/worker: the test:integration pattern matches every integration file (it takes a pattern, not a list)', () => {
-    const script = integrationScript('apps/worker');
-    const patterns = scriptTokens(script).slice(scriptTokens(script).indexOf('run') + 1).filter((token) => !token.startsWith('-'));
-    const unmatched = trackedIntegrationFiles('apps/worker').filter((file) => !patterns.some((pattern) => file.includes(pattern)));
-
-    expect(patterns.length, 'o script do worker precisa de um padrão de arquivo').toBeGreaterThan(0);
-    expect(
-      unmatched,
-      `o padrão "${patterns.join(' ')}" do test:integration do worker não pega: ${unmatched.join(', ')}`,
-    ).toEqual([]);
-  });
-});
-
-// The API and the worker import @ageniza/contracts through its dist, and `pnpm --filter <pkg> test:integration` does not
-// rebuild it. A dist from another commit then fails the suite with undefined values (issue #609). A package that depends
-// on the workspace must run the turbo build of its dependencies in a `pre` hook, with that exact command; a package
-// without workspace dependencies (packages/database) builds itself inside its script with `pnpm build &&`. The packages
-// are found by git, so a new package with test:integration is checked too.
 const readPackage = (dir) => JSON.parse(readFileSync(join(root, dir, 'package.json'), 'utf8'));
+const INTEGRATION = /\.integration\.test\.ts$/;
 
 const testIntegrationPackages = () =>
   git(['ls-files', '*/package.json'])
@@ -82,18 +17,59 @@ const testIntegrationPackages = () =>
     .map((path) => path.slice(0, -'/package.json'.length))
     .filter((dir) => readPackage(dir).scripts?.['test:integration'] !== undefined);
 
+const discovered = testIntegrationPackages();
+
+// apps/api and packages/database select their integration files with the `include` of their vitest.integration.config.ts,
+// and apps/worker with a file pattern: none lists files by hand, so a new `*.integration.test.ts` reaches CI by itself.
+describe('test:integration selects the integration files by pattern, not by list', () => {
+  it('finds the packages with test:integration, so the checks below are not empty', () => {
+    expect(discovered).toEqual(expect.arrayContaining(['apps/api', 'apps/worker', 'packages/database']));
+  });
+
+  for (const dir of discovered) {
+    it(`${dir}: test:integration names no integration file`, () => {
+      const listed = readPackage(dir).scripts['test:integration'].split(/\s+/).filter((token) => INTEGRATION.test(token));
+
+      expect(listed, `${dir}/package.json lista arquivos à mão; use o include do vitest.integration.config.ts`).toEqual([]);
+    });
+  }
+
+  for (const dir of ['apps/api', 'packages/database']) {
+    it(`${dir}: test:integration uses the integration config, whose include takes every *.integration.test.ts`, async () => {
+      expect(readPackage(dir).scripts['test:integration']).toMatch(/vitest run --config vitest\.integration\.config\.ts$/);
+
+      const { default: config } = await import(pathToFileURL(join(root, dir, 'vitest.integration.config.ts')).href);
+
+      expect(config.test.include).toEqual(['**/*.integration.test.ts']);
+      expect(config.test.exclude, 'um exclude tira arquivos do CI sem aparecer na lista').toBeUndefined();
+    });
+  }
+
+  it('apps/worker: the test:integration pattern matches every integration file', () => {
+    const tokens = readPackage('apps/worker').scripts['test:integration'].split(/\s+/).filter((token) => token !== '');
+    const patterns = tokens.slice(tokens.indexOf('run') + 1).filter((token) => !token.startsWith('-'));
+    const files = git(['ls-files', '--', 'apps/worker'])
+      .split('\n')
+      .filter((path) => INTEGRATION.test(path))
+      .map((path) => path.slice('apps/worker/'.length));
+    const unmatched = files.filter((file) => !patterns.some((pattern) => file.includes(pattern)));
+
+    expect(patterns.length, 'o script do worker precisa de um padrão de arquivo').toBeGreaterThan(0);
+    expect(unmatched, `o padrão "${patterns.join(' ')}" não pega: ${unmatched.join(', ')}`).toEqual([]);
+  });
+});
+
+// The API and the worker import @ageniza/contracts through its dist, and `pnpm --filter <pkg> test:integration` does not
+// rebuild it. A dist from another commit then fails the suite with undefined values (issue #609). A package that depends
+// on the workspace must run the turbo build of its dependencies in a `pre` hook, with that exact command; a package
+// without workspace dependencies (packages/database) builds itself inside its script with `pnpm build &&`. The packages
+// are found by git, so a new package with test:integration is checked too.
 const workspaceDependencies = (pkg) =>
   Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })
     .filter(([, version]) => String(version).startsWith('workspace:'))
     .map(([name]) => name);
 
 describe('test:integration rebuilds the workspace dependencies before it runs (issue #609)', () => {
-  const discovered = testIntegrationPackages();
-
-  it('finds the packages with test:integration, so the checks below are not empty', () => {
-    expect(discovered).toEqual(expect.arrayContaining(['apps/api', 'apps/worker', 'packages/database']));
-  });
-
   for (const dir of discovered) {
     const pkg = readPackage(dir);
     const script = pkg.scripts['test:integration'];
