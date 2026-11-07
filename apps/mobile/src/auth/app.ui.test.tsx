@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import type { Context } from '@ageniza/contracts';
 const state = vi.hoisted(() => ({ request: vi.fn(), clearSession: vi.fn(), access: () => {}, expired: () => {}, initialUrl: null as string | null }));
 vi.mock('../api/runtime', () => ({ api: { request: state.request, clearSession: state.clearSession, onExpired: (fn: () => void) => { state.expired = fn; }, onAccessRequired: (fn: () => void) => { state.access = fn; } }, browserPreview: false, webUrl: 'https://dev.ageniza.com.br' }));
 vi.mock('react-native', async () => ({ ...Object.fromEntries(await Promise.all(['View', 'Text', 'TextInput', 'Pressable', 'ScrollView', 'StyleSheet', 'Image', 'Modal', 'Platform', 'Animated', 'Easing', 'AccessibilityInfo', 'ActivityIndicator'].map(async (name) => [name, (await vi.importActual<{ default: unknown }>(`react-native-web/dist/exports/${name}/index.js`)).default]))), AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) }, Linking: { getInitialURL: async () => state.initialUrl, addEventListener: () => ({ remove() {} }) } }));
@@ -12,7 +13,15 @@ vi.mock('../../assets/fonts/Sora-SemiBold.ttf', () => ({ default: '' }));
 vi.mock('../../assets/fonts/Inter-Regular.ttf', () => ({ default: '' }));
 vi.mock('../../assets/fonts/Inter-SemiBold.ttf', () => ({ default: '' }));
 vi.mock('../auth/EntryScreen', () => ({ Login: ({ onLogin }: { onLogin(): void }) => <button onClick={onLogin}>Login form</button>, EntryScreen: ({ entry }: { entry: { kind: string } }) => <p>Entry {entry.kind}</p> }));
-vi.mock('../product/MobileApp', () => ({ MobileApp: ({ onExit }: { onExit(): void }) => <button onClick={onExit}>Sair workspace</button> }));
+vi.mock('../product/MobileApp', async () => {
+  const { useState } = await import('react');
+  return { MobileApp: ({ onExit, onSelectContext }: { onExit(): void; onSelectContext(context: Context): void | Promise<void> }) => {
+    const [error, setError] = useState('');
+    return <><button onClick={onExit}>Sair workspace</button><button onClick={() => {
+      void Promise.resolve().then(() => onSelectContext({ type: 'client', agencyId: 'one', agencyName: 'Agência', clientId: 'example', clientName: 'Exemplo', onboardingPending: false })).catch((cause: Error) => setError(cause.message));
+    }}>Entrar no portal</button>{error && <p role="alert">{error}</p>}</>;
+  } };
+});
 vi.mock('../auth/ApprovalScreen', () => ({ ApprovalScreen: () => <p>Approval screen</p> }));
 vi.mock('../auth/AccountAction', () => ({ AccountAction: () => <p>Account action</p> }));
 vi.mock('react-native-svg', async () => {
@@ -29,6 +38,15 @@ function activeResponses() {
 beforeEach(() => { state.initialUrl = null; window.history.replaceState(null, '', '/'); state.request.mockReset(); state.clearSession.mockReset().mockResolvedValue(undefined); Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) }); });
 afterEach(cleanup);
 describe('App session wiring', () => {
+  it('returns a refused portal selection to the workspace caller for visible feedback', async () => {
+    activeResponses(); render(<App />);
+    const enter = await screen.findByRole('button', { name: 'Entrar no portal' });
+    state.request.mockRejectedValue(new Error('Acesso removido'));
+    fireEvent.click(enter);
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Acesso removido');
+    expect(state.request).toHaveBeenLastCalledWith('/me/last-context', { method: 'PUT', body: { type: 'client', clientId: 'example' } });
+    expect(screen.getByRole('button', { name: 'Sair workspace' })).toBeTruthy();
+  });
   it('clears local access when logout fails on the network', async () => {
     activeResponses(); render(<App />);
     const exit = await screen.findByRole('button', { name: 'Sair workspace' });
