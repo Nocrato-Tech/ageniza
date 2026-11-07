@@ -2,6 +2,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { ciJob } from './ci-workflow.mjs';
+
 // Issue #391: an integration harness that reads DATABASE_URL / MIGRATION_DATABASE_URL on its own, or
 // carries a URL for `ageniza`, lets a missing variable send a superuser connection to the owner's
 // development database. The only way to get the URLs is `resolveIntegrationDatabaseUrls`.
@@ -77,10 +79,10 @@ describe('the forbidden pattern', () => {
   });
 });
 
-describe('the CI database job runs against a database of its own (issue #391)', () => {
-  const workflow = readFileSync(join(root, '.github', 'workflows', 'ci.yml'), 'utf8').replace(/\r\n/g, '\n');
-  const job = workflow.slice(workflow.indexOf('\n  database-local:'));
-  const jobEnvironment = job.slice(0, job.indexOf('\n    steps:'));
+// Both jobs that run integration suites: the database one and the API one (split out of it). The API suite is the
+// one that would run as a superuser if its URL named the wrong role, so both are held to the same rules.
+describe.each(['database-local', 'api-integration'])('the CI job %s runs against a database of its own (issue #391)', (id) => {
+  const { text: job, header: jobEnvironment } = ciJob(id);
 
   it('exports both variables at the job level, naming a database other than ageniza', () => {
     const application = /^\s+DATABASE_URL: postgresql:\/\/\S+\/(\w+)$/m.exec(jobEnvironment);
@@ -88,6 +90,11 @@ describe('the CI database job runs against a database of its own (issue #391)', 
     expect(application?.[1]).toBeDefined();
     expect(application?.[1]).not.toBe('ageniza');
     expect(owner?.[1]).toBe(application?.[1]);
+  });
+
+  it('runs the suites as the application role, which has no BYPASSRLS, and migrates as the owner', () => {
+    expect(/^\s+DATABASE_URL: postgresql:\/\/([^:]+):/m.exec(jobEnvironment)?.[1]).toBe('ageniza_app');
+    expect(/^\s+MIGRATION_DATABASE_URL: postgresql:\/\/([^:]+):/m.exec(jobEnvironment)?.[1]).toBe('postgres');
   });
 
   it('creates that database before it migrates', () => {
