@@ -18,6 +18,7 @@ vi.mock('react-native-svg', async () => {
   const part = ({ children }: { children?: ReactNode }) => createElement('svg', {}, children);
   return { default: part, ...Object.fromEntries(['Svg', 'Defs', 'LinearGradient', 'Stop', 'Rect', 'Path', 'Circle', 'Line', 'Polyline', 'Polygon', 'Ellipse', 'G', 'ClipPath'].map((key) => [key, part])) };
 });
+vi.mock('../product/StateSwap', () => import('../product/StateSwap.web'));
 vi.mock('../product/Disclosure', () => import('../product/Disclosure.web'));
 import { BrandStudy } from './BrandStudy';
 import { TeamScreen } from './TeamScreen';
@@ -86,4 +87,16 @@ it('animates opening and returning from a collaborator while preserving the focu
   expect(screen.getByRole('button', { name: 'Abrir Bruno' })).toBeTruthy();
   expect(animations.mock.calls.length).toBeGreaterThan(beforeTyping);
   expect(request.mock.calls.every(([, options]) => !options.method)).toBe(true);
+});
+
+
+it('keeps team tabs mounted while changing mode with a pending server response', async () => {
+  let finish!: (value: unknown) => void;
+  request.mockImplementation(async (path: string) => path.includes('/roles') ? { data: [] } : path.includes('/invitations') ? {data:[],meta:{totalPages:1}} : path.includes('status=removed') ? new Promise((resolve)=>{finish=resolve;}) : { data: [], meta: { totalPages: 1 } });
+  render(<TeamScreen context={agency} permissions={['colaborador.visualizar','colaborador.convidar','colaborador.remover']} readOnly={false} />);
+  const active = screen.getByRole('tab',{name:'Equipe'});
+  fireEvent.click(screen.getByRole('tab',{name:'Removidos'}));
+  expect(screen.getByRole('tab',{name:'Equipe'})).toBe(active);
+  expect(screen.getByRole('tab',{name:'Removidos'}).getAttribute('aria-selected')).toBe('true');
+  await waitFor(()=>expect(finish).toBeTypeOf('function'));
 });

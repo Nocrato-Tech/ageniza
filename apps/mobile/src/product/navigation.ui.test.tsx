@@ -113,3 +113,21 @@ it('does not reopen a pending editor after the user navigates elsewhere', async 
   expect(screen.queryByRole('textbox', { name: 'Título interno *' })).toBeNull();
   expect(screen.getByText('Calendário editorial')).toBeTruthy();
 });
+
+
+it('filters clients without reloading the repository or replaying the whole page arrival', async () => {
+ Object.defineProperty(window,'matchMedia',{configurable:true,value:()=>({matches:false,addEventListener(){},removeEventListener(){}})});
+ const calls: HTMLElement[]=[];
+ Object.defineProperty(HTMLElement.prototype,'animate',{configurable:true,value:function(this:HTMLElement){calls.push(this);return {cancel:()=>{},playState:'finished'};}});
+ const {container}=render(<MobileApp context={context} onExit={()=>{}} />);
+ fireEvent.click(await screen.findByRole('tab',{name:'Conteúdos'}));
+ const client=await screen.findByRole('button',{name:'Filtrar Marca'});
+ const page=container.querySelector('[data-motion="peer"]');
+ expect(page).toBeTruthy();
+ const before=calls.filter((element)=>element===page).length;
+ const loads=repository.load.mock.calls.length;
+ fireEvent.click(client);
+ expect(container.querySelector('[data-motion="peer"]')).toBe(page);
+ expect(calls.filter((element)=>element===page)).toHaveLength(before);
+ expect(repository.load).toHaveBeenCalledTimes(loads);
+});
