@@ -15,6 +15,7 @@ vi.mock('react-native-svg', async () => {
   return { default: part, ...Object.fromEntries(['Svg', 'Defs', 'LinearGradient', 'Stop', 'Rect', 'Path', 'Circle', 'Line', 'Polyline', 'Polygon', 'Ellipse', 'G', 'ClipPath'].map((key) => [key, part])) };
 });
 import { Field, Action } from './ui';
+import { Button as ShellButton } from '../ui/components';
 afterEach(cleanup);
 it('associates field guidance and errors with a readable input', () => {
   render(<Field label="Nome" value="" hint="Nome exibido no portal" error="Informe seu nome." />);
@@ -31,4 +32,25 @@ it('keeps the action name visible while busy and refuses repeated presses', () =
   expect(action.getAttribute('aria-busy')).toBe('true');
   fireEvent.click(action);
   expect(onPress).not.toHaveBeenCalled();
+});
+
+it.each([['product', Action], ['shell', ShellButton]] as const)('preserves the %s button label and reserved spinner space while busy', (_name, Button) => {
+  const onPress = vi.fn();
+  const { rerender } = render(<Button label="Salvar alterações" onPress={onPress} />);
+  const label = screen.getByText('Salvar alterações');
+  const button = screen.getByRole('button', { name: 'Salvar alterações' });
+  const spinnerSlot = button.querySelector('[aria-hidden="true"]') as HTMLElement;
+  const slotWidth = getComputedStyle(spinnerSlot).width;
+  expect(slotWidth).toBe('20px');
+  fireEvent.click(button);
+  expect(onPress).toHaveBeenCalledOnce();
+  rerender(<Button label="Salvar alterações" onPress={onPress} busy />);
+  expect(screen.getByText('Salvar alterações')).toBe(label);
+  expect(button.getAttribute('aria-busy')).toBe('true');
+  expect(getComputedStyle(spinnerSlot).width).toBe(slotWidth);
+  fireEvent.click(button);
+  expect(onPress).toHaveBeenCalledOnce();
+  rerender(<Button label="Salvar alterações" onPress={onPress} disabled />);
+  fireEvent.click(button);
+  expect(onPress).toHaveBeenCalledOnce();
 });
