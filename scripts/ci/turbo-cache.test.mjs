@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { readCiWorkflow } from './ci-workflow.mjs';
+import { ciJob, readCiWorkflow } from './ci-workflow.mjs';
 
 const root = join(import.meta.dirname, '..', '..');
 const turbo = JSON.parse(readFileSync(join(root, 'turbo.json'), 'utf8'));
@@ -27,6 +27,35 @@ describe('turbo caches only tasks whose output is fixed by their inputs', () => 
     expect(inputs).toContain('$TURBO_DEFAULT$');
     expect(inputs).toContain('$TURBO_ROOT$/docs/api/openapi.json');
     expect(inputs).toContain('$TURBO_ROOT$/docs/mobile/**');
+  });
+});
+
+// The web suite lives in its own job and the Quality gates run everything else. If either side drifts, the suite stops
+// running while every check stays green, so each side is pinned, and the suite is counted over the whole file.
+describe('the web test suite runs once, in the "Web tests" job, and the Quality gates leave it out', () => {
+  const webTest = 'pnpm exec turbo run test --filter=@ageniza/web';
+  const allButWeb = "pnpm exec turbo run test --filter='!@ageniza/web'";
+
+  it('runs the exact turbo test command for @ageniza/web in the "Web tests" job', () => {
+    const { text } = ciJob('web-tests');
+    expect(text).toMatch(/^ {4}name: Web tests$/m);
+    expect(text).toMatch(new RegExp(`^ {8}run: ${webTest}$`, 'm'));
+  });
+
+  it('excludes the web from the test gate of the Quality gates and does not run its suite there', () => {
+    const { text } = ciJob('quality');
+    expect(text).toMatch(new RegExp(`^ {8}run: ${allButWeb}$`, 'm'));
+    expect(text).not.toMatch(/--filter=@ageniza\/web/);
+    const turboTests = text.match(/turbo run test[^\n]*/g) ?? [];
+    expect(turboTests).toEqual([allButWeb.replace('pnpm exec ', '')]);
+    expect(text).not.toMatch(/^ {8}run: pnpm (run )?test$/m);
+  });
+
+  it('has the web test command exactly once in the whole workflow, and no other turbo test', () => {
+    const workflow = readCiWorkflow();
+    expect(workflow.match(/turbo run test[^\n]*--filter=@ageniza\/web(?!\S)/g)).toHaveLength(1);
+    expect(workflow.match(/turbo run test[^\n]*/g)).toHaveLength(2);
+    expect(workflow.match(/@ageniza\/web (run )?test\b/g)).toBeNull();
   });
 });
 
