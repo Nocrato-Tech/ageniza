@@ -1,3 +1,5 @@
+import { Disclosure } from './Disclosure';
+import { ScreenMotion } from './motion';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { ContentDaySchema, ContentReasonSchema } from '@ageniza/contracts';
@@ -29,11 +31,11 @@ export function ContentActions({ post, data, busy, onMove }: { post: Post; data:
     {post.status === 'published' && can('conteudo.publicar') && <><Info title="Desfazer publicação" text={`O servidor permite desfazer a publicação de “${post.title}” apenas no mesmo dia da publicação.`} /><Action soft busy={busy} label="Desfazer publicação de hoje" onPress={() => void onMove('unpublish')} /></>}
     {post.status === 'cancelled' && can('conteudo.operar') && <><EditorDateTime kind="date" label="Nova data proposta" error={attempted ? dateError : undefined} value={date} onChange={setDate} /><Action label="Reagendar e voltar à produção" busy={busy} onPress={() => confirm('reschedule')} /></>}
     {!['published', 'cancelled'].includes(post.status) && can('conteudo.cancelar') && <Action plain disabled={busy} label="Cancelar conteúdo" onPress={() => open('cancel')} />}
-    {!!mode && allowedMode && <>
+    <Disclosure open={!!mode && !!allowedMode}><ScreenMotion identity={mode} variant="step"><View style={{ gap: 12 }}>
       <Info warning={mode === 'cancel'} title={mode === 'cancel' ? `Cancelar “${post.title}”?` : mode === 'publish' ? 'Quando a publicação aconteceu?' : 'Aprovação recebida por outro canal'} text={mode === 'cancel' ? 'O conteúdo e o histórico serão preservados. Ele poderá ser reagendado depois.' : mode === 'publish' ? 'Informe a data real. Datas futuras não são permitidas.' : 'Registre quem aprovou e por qual canal. A aprovação fica vinculada à versão que você está lendo.'} />
       {mode === 'approveByAgency' && <Field label="Motivo e origem da aprovação" error={attempted ? reasonError : undefined} value={reason} multiline onChangeText={setReason} />}
       {mode === 'publish' && <EditorDateTime kind="date" label="Data real da publicação" error={attempted ? dateError : undefined} value={date} onChange={setDate} />}
       <Action label={mode === 'cancel' ? 'Confirmar cancelamento' : mode === 'publish' ? 'Registrar publicação' : 'Confirmar aprovação registrada'} busy={busy} onPress={() => confirm(mode as Move)} /><Action plain disabled={busy} label="Voltar sem alterar" onPress={() => { setMode(''); setAttempted(false); }} />
-    </>}
+    </View></ScreenMotion></Disclosure>
   </View>;
 }

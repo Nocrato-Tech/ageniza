@@ -1,3 +1,5 @@
+import { FlowList } from './FlowList';
+import { MotionProgress } from './MotionProgress';
 import { ScreenMotion } from './motion';
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
@@ -5,7 +7,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import type { ContentFormat } from '@ageniza/contracts';
 import { Action, Card, Field, Heading, Info, InstagramPreview, ErrorText, Selector, Txt, ui, colors } from './ui';
 import { editorErrors, type EditorDraft } from './editor-state';
-import { EditorMedia } from './EditorMedia';
+import { AssetThumbnail, EditorMedia } from './EditorMedia';
 import { EditorDateTime } from './EditorDateTime';
 import { useUploadTransfer } from './useUploadTransfer';
 import { UploadStatus } from './UploadStatus';
@@ -70,7 +72,7 @@ export function ContentEditor({ data, repository, clientId, existing, busy, onSa
   return <>
     <ScreenMotion identity={String(step)} variant="step" fill><ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={ui.body}>
       {restored.current && <Info title="Rascunho recuperado" text="Confira as informações antes de salvar. Estas alterações ainda não foram enviadas ao servidor." />}
-      <View style={{ flexDirection: 'row', gap: 8 }}>{['Formato', 'Conteúdo', 'Revisão'].map((label, index) => <View key={label} style={{ flex: 1, gap: 6 }}><View style={{ height: 4, borderRadius: 4, backgroundColor: index <= step ? colors.indigo : colors.border }} /><Txt kind="micro" color={index <= step ? colors.indigo : colors.muted}>{index + 1}. {label}</Txt></View>)}</View>
+      <View style={{ flexDirection: 'row', gap: 8 }}>{['Formato', 'Conteúdo', 'Revisão'].map((label, index) => <View key={label} style={{ flex: 1, gap: 6 }}><View style={{ height: 4, borderRadius: 4, overflow: 'hidden', backgroundColor: colors.border }}><MotionProgress value={index <= step ? 1 : 0} color={colors.indigo} /></View><Txt kind="micro" color={index <= step ? colors.indigo : colors.muted}>{index + 1}. {label}</Txt></View>)}</View>
       {libraryLoading && <Info title="Carregando biblioteca…" />}
       {!!uploadNotice && <Info title="Arquivo recebido" text={uploadNotice} />}
       {!libraryLoading && !library.folders.some((folder) => folder.clientId === input.clientId) && <Action plain label="Recarregar biblioteca" onPress={() => setLibraryRetry((value) => value + 1)} />}
@@ -89,10 +91,11 @@ export function ContentEditor({ data, repository, clientId, existing, busy, onSa
       </>}
       {step === 1 && <>
         <Heading title="O que vamos publicar?" subtitle={`${client?.name ?? ''} · ${input.format === 'reels' ? 'Reel' : input.format === 'carousel' ? 'Carrossel' : 'Post'}`} />
-        {input.mediaIds.map((id, index) => {
+        <FlowList items={input.mediaIds.map((id) => ({ id }))} renderItem={({ id }) => {
+          const index = input.mediaIds.indexOf(id);
           const asset = library.assets.find((item) => item.id === id);
           return asset ? <EditorMedia key={id} asset={asset} post={preview} repository={repository} index={index} count={input.mediaIds.length} isCover={input.coverId === id} onMove={(offset) => moveMedia(id, offset)} onRemove={() => removeMedia(id)} /> : <Card key={id}><ErrorText text="Esta mídia não está disponível na pasta atual." /><Action plain label="Remover mídia indisponível" onPress={() => removeMedia(id)} /></Card>;
-        })}
+        }} />
         <Card>
           <Txt kind="section">Mídias da publicação</Txt>
           <Txt kind="small" color={colors.muted}>{formatMediaHint(input.format)}</Txt>
@@ -102,7 +105,7 @@ export function ContentEditor({ data, repository, clientId, existing, busy, onSa
             const selected = input.mediaIds.includes(asset.id);
             const fits = mediaFitsFormat(asset, input.format);
             const full = input.mediaIds.length >= (input.format === 'carousel' ? 20 : 1);
-            return <View key={asset.id} style={{ gap: 4 }}><Action disabled={picking || !selected && (!fits || full)} soft={!selected} label={`${selected ? `${input.mediaIds.indexOf(asset.id) + 1}. ` : ''}${asset.name}`} onPress={() => selected ? removeMedia(asset.id) : update('mediaIds', [...input.mediaIds, asset.id])} />{!fits && <Txt kind="small" color={colors.muted}>{asset.kind === 'image' ? 'Para este formato, escolha esta imagem como capa abaixo.' : 'Este formato usa uma imagem. Para publicar este vídeo, escolha um formato de vídeo ou carrossel.'}</Txt>}{fits && !selected && full && <Txt kind="small" color={colors.muted}>Remova uma mídia selecionada para adicionar este arquivo.</Txt>}</View>;
+            return <View key={asset.id} style={{ gap: 4 }}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><AssetThumbnail asset={asset} repository={repository} postId={existing?.id} /><View style={{ flex: 1 }}><Action disabled={picking || !selected && (!fits || full)} soft={!selected} label={`${selected ? `${input.mediaIds.indexOf(asset.id) + 1}. ` : ''}${asset.name}`} onPress={() => selected ? removeMedia(asset.id) : update('mediaIds', [...input.mediaIds, asset.id])} /></View></View>{!fits && <Txt kind="small" color={colors.muted}>{asset.kind === 'image' ? 'Para este formato, escolha esta imagem como capa abaixo.' : 'Este formato usa uma imagem. Para publicar este vídeo, escolha um formato de vídeo ou carrossel.'}</Txt>}{fits && !selected && full && <Txt kind="small" color={colors.muted}>Remova uma mídia selecionada para adicionar este arquivo.</Txt>}</View>;
           })}</View>
           {!folderAssets.length && <Txt kind="small" color={colors.muted}>A pasta está vazia. Envie o primeiro arquivo abaixo.</Txt>}
           <Action label="Enviar imagem ou vídeo" soft busy={picking} onPress={() => void upload()} />

@@ -58,7 +58,7 @@ export function ScreenMotion(props: ScreenMotionProps) {
 
 function arrival(variant: NonNullable<ScreenMotionProps['variant']>, direction: MotionDirection) {
   const sign = direction === 'back' ? -1 : 1;
-  return { x: variant === 'page' ? sign * 16 : variant === 'step' ? sign * 8 : 0, y: variant === 'feedback' ? -8 : 0, opacity: variant === 'peer' ? 0.5 : 0.35, duration: variant === 'peer' ? motion.fast : variant === 'page' ? motion.slow : motion.base };
+  return { x: variant === 'page' ? sign * 16 : variant === 'step' ? sign * 20 : variant === 'peer' ? sign * 28 : 0, y: variant === 'feedback' ? -8 : 0, opacity: variant === 'peer' ? 0.88 : 0.65, duration: variant === 'peer' ? motion.slow : variant === 'page' ? motion.slow : motion.base };
 }
 
 function WebScreenMotion({ children, identity, fill = false, quiet = false, variant = 'page', direction = 'forward' }: ScreenMotionProps) {
