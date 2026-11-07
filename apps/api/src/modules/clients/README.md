@@ -209,8 +209,8 @@ As mesmas rotas aceitam `contentId` como assunto (`{ subject: { contentId }, bod
   quem tem uma das duas famílias e `conversation-service.ts` (`agencyPermissions`) exige a do assunto:
   o estudo de marca continua com `cliente.*`. Sem a leitura do conteúdo, agir pelo id de uma conversa
   é `404` (a policy a esconde) e listar ou abrir pelo `contentId` é `403`.
-- **Estados**: a agência com o conteúdo em produção ou cancelado recebe `409 CONTENT_NOT_OPEN` ao abrir
-  ou comentar, e continua lendo e resolvendo. O portal recebe `404` em toda rota fora de "aguardando
+- **Estados**: a agência pode abrir e comentar em produção; com o conteúdo cancelado recebe `409 CONTENT_NOT_OPEN` ao abrir
+  ou comentar, e continua lendo e resolvendo. Comentários em produção ficam visíveis ao portal quando o conteúdo é disponibilizado. O portal recebe `404` em toda rota fora de "aguardando
   aprovação", "em ajuste", "aprovado" e "publicado", por `app_private.content_open_to_client` no SQL do
   lado cliente (a pessoa que também é colaboradora leria, pelo ramo da agência, o conteúdo em produção).
 - **404 indistinto**: conteúdo de outro cliente (mesmo de um cliente que a mesma pessoa tem vínculo),

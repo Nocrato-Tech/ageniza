@@ -84,7 +84,7 @@ const refusalError = (refusal: ConversationRefusal): HttpError => {
     case 'section-not-filled':
       return new HttpError({ statusCode: 409, code: 'SECTION_NOT_FILLED', message: 'Esta seção ainda não foi preenchida pela agência.' });
     case 'content-not-open':
-      return new HttpError({ statusCode: 409, code: 'CONTENT_NOT_OPEN', message: 'A conversa do conteúdo só existe a partir de "aguardando aprovação".' });
+      return new HttpError({ statusCode: 409, code: 'CONTENT_NOT_OPEN', message: 'A conversa não aceita comentários enquanto o conteúdo está cancelado.' });
     case 'forbidden': return forbidden();
   }
 };

@@ -106,7 +106,7 @@ stateDiagram-v2
 | `POST` | `…/clients/:clientId/threads/:threadId/comments` | `cliente.operar` ou `conteudo.operar` | comenta |
 | `POST` | `…/clients/:clientId/threads/:threadId/resolve` | `cliente.operar` ou `conteudo.operar` | resolve |
 
-- **Não existe conversa interna.** Toda conversa é visível ao cliente dela.
+- **Não existe conversa interna.** A agência pode comentar em produção; o cliente vê a conversa quando o conteúdo é disponibilizado no portal. Conteúdo cancelado não aceita comentários.
 - O estado da conversa é calculado, não gravado:
   - ela está **resolvida** se foi resolvida depois do último comentário;
   - qualquer comentário novo a **reabre**, então não existe ação de "reabrir";

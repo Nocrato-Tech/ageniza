@@ -4,6 +4,7 @@ const messages: Record<string, string> = {
   CONTENT_MEDIA_INCOMPLETE: 'Ainda falta preparar a publicação. Confira a quantidade e o tipo das mídias exigidas pelo formato antes de enviar para aprovação.',
   CONTENT_FOLDER_INVALID: 'A pasta escolhida não está disponível para este cliente. Volte à etapa Formato e selecione uma pasta da marca.',
   CONTENT_OWNER_INVALID: 'O responsável não está mais disponível nesta agência. Escolha uma pessoa ativa da equipe.',
+  CONTENT_NOT_OPEN: 'A conversa não aceita comentários enquanto o conteúdo está cancelado.',
   CONTENT_NOT_EDITABLE: 'O estado deste conteúdo mudou e não permite esta edição. Atualize o detalhe antes de tentar novamente.',
   CLIENT_ARCHIVED: 'Este cliente foi arquivado. O cadastro e o histórico estão preservados, mas novas alterações estão bloqueadas.',
 };

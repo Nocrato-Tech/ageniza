@@ -2802,7 +2802,7 @@ path: '/agencies/:agencyId/roles',
       'do corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000',
       'bytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`',
       'e persona de outro cliente 404.',
-      'Com `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, e só escreve com o conteúdo em "aguardando aprovação" ou depois (senão 409 `CONTENT_NOT_OPEN`).'
+      'Com `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: CONVERSATION_WRITE_PERMISSIONS,
@@ -2871,7 +2871,7 @@ path: '/agencies/:agencyId/roles',
       'Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na',
       'conversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.',
       'Cliente arquivado e persona arquivada respondem 409.',
-      'Numa conversa de conteúdo, `conteudo.operar` e `conteudo.visualizar`; com o conteúdo em produção ou cancelado, 409 `CONTENT_NOT_OPEN`.'
+      'Numa conversa de conteúdo, `conteudo.operar` e `conteudo.visualizar`; em produção também pode comentar; com o conteúdo cancelado, 409 `CONTENT_NOT_OPEN`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: CONVERSATION_WRITE_PERMISSIONS,
