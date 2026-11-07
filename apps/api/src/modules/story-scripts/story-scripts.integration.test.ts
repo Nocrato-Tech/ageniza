@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { DatabaseClient } from '@ageniza/database';
+import { backendPid, type DatabaseClient } from '@ageniza/database';
 
 import {
   buildTestApp,
@@ -12,6 +12,7 @@ import {
   type TestApp,
   type TestUserFixture
 } from '../auth/test-support/harness.js';
+import { waitForQueueBehind } from '../auth/test-support/lock-queue.js';
 
 // Issue #258: the story scripts of a client, on the agency and on the portal. Every permission is held alone by a
 // custom role, because the Owner and the Admin pass every guard and hide one written with the wrong key; the portal
@@ -116,17 +117,9 @@ const scriptCount = async (clientId: string): Promise<number> =>
 const sceneCount = async (clientId: string): Promise<number> =>
   Number((await owner.knex('story_script_scenes').where({ client_id: clientId }).count<{ count: string }[]>('id as count'))[0]?.count);
 
-const waitUntilSomeoneWaitsOnALock = async (waiters = 1): Promise<void> => {
-  const deadline = Date.now() + 10_000;
-  for (;;) {
-    const waiting = await owner.knex.raw<{ rows: Array<{ count: string }> }>(
-      "select count(*) as count from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'"
-    );
-    if (Number(waiting.rows[0]?.count) >= waiters) return;
-    if (Date.now() > deadline) throw new Error(`Fewer than ${waiters} requests ever queued behind the lock.`);
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-};
+/** Waits until `waiters` requests are queued behind the transaction of `holder`, the first on it and each next one on the one ahead. */
+const waitUntilQueuedBehind = async (holder: Parameters<typeof backendPid>[0], waiters = 1): Promise<void> =>
+  waitForQueueBehind(owner.knex, await backendPid(holder), waiters);
 
 /**
  * The two windows of the race with the archive of a client. `in-progress`: the archive has changed the client and
@@ -153,7 +146,7 @@ const duringArchiveOfAFreshClient = async <TPrepared>(
     if (window !== 'in-progress') await archiving.raw(`lock table public.${window.committedBeforeStatement} in access exclusive mode`);
     await archiving('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
     pending = request(clientId, prepared);
-    await waitUntilSomeoneWaitsOnALock();
+    await waitUntilQueuedBehind(archiving);
   } finally {
     await archiving.commit();
   }
@@ -604,9 +597,9 @@ describe('editing a story script (issue #258)', () => {
     try {
       expect(await holder('story_scripts').where({ id: script.id }).forUpdate().select('id')).toHaveLength(1);
       const send = call('POST', `${agencyScript(agencyA, cMain, script.id)}/send`, 'opVis');
-      await waitUntilSomeoneWaitsOnALock(1);
+      await waitUntilQueuedBehind(holder, 1);
       const edit = call('PATCH', agencyScript(agencyA, cMain, script.id), 'opVis', { scenes: [{ id: script.sceneIds[0], text: 'Antes do envio' }, { text: 'Depois do envio' }] });
-      await waitUntilSomeoneWaitsOnALock(2);
+      await waitUntilQueuedBehind(holder, 2);
       await holder.commit();
       released = true;
 
@@ -628,9 +621,9 @@ describe('editing a story script (issue #258)', () => {
     try {
       expect(await holder('story_scripts').where({ id: script.id }).forUpdate().select('id')).toHaveLength(1);
       const send = call('POST', `${agencyScript(agencyA, cMain, script.id)}/send`, 'opVis');
-      await waitUntilSomeoneWaitsOnALock(1);
+      await waitUntilQueuedBehind(holder, 1);
       const edit = call('PATCH', agencyScript(agencyA, cMain, script.id), 'opVis', { scriptOn: '2026-11-30' });
-      await waitUntilSomeoneWaitsOnALock(2);
+      await waitUntilQueuedBehind(holder, 2);
       await holder.commit();
       released = true;
 
@@ -995,9 +988,9 @@ describe('the portal marks a script as recorded (issue #258)', () => {
     try {
       expect(await holder('story_scripts').where({ id: script.id }).forUpdate().select('id')).toHaveLength(1);
       const first = call('POST', recordedUrl(cMain, script.id), 'portalTwo');
-      await waitUntilSomeoneWaitsOnALock(1);
+      await waitUntilQueuedBehind(holder, 1);
       const second = call('POST', recordedUrl(cMain, script.id), 'portalOne');
-      await waitUntilSomeoneWaitsOnALock(2);
+      await waitUntilQueuedBehind(holder, 2);
       await holder.commit();
       released = true;
 

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import type { DatabaseClient } from '@ageniza/database';
+import { backendPid, type DatabaseClient } from '@ageniza/database';
 
 import {
   buildTestApp,
@@ -12,6 +12,7 @@ import {
   type TestApp,
   type TestUserFixture
 } from '../auth/test-support/harness.js';
+import { waitForQueueBehind } from '../auth/test-support/lock-queue.js';
 
 // Issue #253: the client's media library. Every permission is held alone by a custom role, because the Owner
 // passes every guard and hides one written with the wrong key; every refusal is checked by the state left in the
@@ -127,17 +128,9 @@ const mediaCount = async (agencyId: string): Promise<number> =>
 const auditCount = async (assetId: string): Promise<number> =>
   Number((await owner.knex('audit.events').where({ action: 'media.removed', target_id: assetId }).count<{ count: string }[]>('id as count'))[0]?.count);
 
-const waitUntilSomeoneWaitsOnALock = async (waiters = 1): Promise<void> => {
-  const deadline = Date.now() + 10_000;
-  for (;;) {
-    const waiting = await owner.knex.raw<{ rows: Array<{ count: string }> }>(
-      "select count(*) as count from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'"
-    );
-    if (Number(waiting.rows[0]?.count) >= waiters) return;
-    if (Date.now() > deadline) throw new Error(`Fewer than ${waiters} requests ever queued behind the lock.`);
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-};
+/** Waits until `waiters` requests are queued behind the transaction of `holder`, the first on it and each next one on the one ahead. */
+const waitUntilQueuedBehind = async (holder: Parameters<typeof backendPid>[0], waiters = 1): Promise<void> =>
+  waitForQueueBehind(owner.knex, await backendPid(holder), waiters);
 
 /**
  * The two windows of the race with the archive of a client. `in-progress`: the archive has changed the client and
@@ -164,7 +157,7 @@ const duringArchiveOfAFreshClient = async <TPrepared = void>(
     if (window !== 'in-progress') await archiving.raw(`lock table public.${window.committedBeforeInsert} in access exclusive mode`);
     await archiving('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
     pending = request(clientId, prepared);
-    await waitUntilSomeoneWaitsOnALock();
+    await waitUntilQueuedBehind(archiving);
   } finally {
     await archiving.commit();
   }
@@ -654,7 +647,7 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
       try {
         await quota.raw("select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('media-quota:' || (?::uuid)::text, 0))", [agencyA]);
         pending = call('POST', `${uploadUrl(agencyA)}/${assetId}/complete`, 'opVis', {});
-        await waitUntilSomeoneWaitsOnALock();
+        await waitUntilQueuedBehind(quota);
         await owner.knex('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
       } finally {
         await quota.commit();
@@ -715,7 +708,7 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
           await copying.promise;
           await archiving('clients').where({ id: clientId }).update({ status: 'archived', archived_at: new Date() });
           releaseCopy.open();
-          await waitUntilSomeoneWaitsOnALock();
+          await waitUntilQueuedBehind(archiving);
         } finally {
           await archiving.commit();
           copy.mockRestore();
@@ -911,7 +904,7 @@ describe('two removals of the same media at the same instant (issue #253, rule 1
         call('POST', removeUrl(agencyA, clientA1, folder, asset), 'opVis'),
         call('POST', removeUrl(agencyA, clientA1, folder, asset), 'owner')
       ]);
-      await waitUntilSomeoneWaitsOnALock(2);
+      await waitUntilQueuedBehind(holder, 2);
       await holder.commit();
       released = true;
 
