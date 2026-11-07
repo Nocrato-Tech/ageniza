@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -35,9 +35,13 @@ describe('test:integration selects the integration files by pattern, not by list
   }
 
   for (const dir of ['apps/api', 'packages/database']) {
-    it(`${dir}: test:integration uses the integration config, whose include takes every *.integration.test.ts`, () => {
+    it(`${dir}: test:integration uses the integration config, whose include takes every *.integration.test.ts`, async () => {
       expect(readPackage(dir).scripts['test:integration']).toMatch(/vitest run --config vitest\.integration\.config\.ts$/);
-      expect(readFileSync(join(root, dir, 'vitest.integration.config.ts'), 'utf8')).toContain("include: ['**/*.integration.test.ts']");
+
+      const { default: config } = await import(pathToFileURL(join(root, dir, 'vitest.integration.config.ts')).href);
+
+      expect(config.test.include).toEqual(['**/*.integration.test.ts']);
+      expect(config.test.exclude, 'um exclude tira arquivos do CI sem aparecer na lista').toBeUndefined();
     });
   }
 
