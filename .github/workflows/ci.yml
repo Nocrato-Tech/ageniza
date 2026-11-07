@@ -24,6 +24,10 @@ defaults:
   run:
     shell: bash
 
+env:
+  # Absolute on purpose: the integration suites start turbo from a package directory (`pretest:integration`).
+  TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo/cache
+
 jobs:
   branch-route:
     name: Branch route
@@ -107,12 +111,22 @@ jobs:
             ${{ runner.os }}-pnpm-
       - name: Install from the committed lockfile
         run: pnpm install --frozen-lockfile
+      # build, typecheck and lint are cached across runs (turbo.json declares every input of each), so a task whose
+      # inputs did not change is replayed instead of run. `test` is never cached: it always runs.
+      - name: Restore the Turborepo cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
       - name: Run root lint gate
         run: pnpm lint
       - name: Run root typecheck gate
         run: pnpm typecheck
-      - name: Run root test gate
-        run: pnpm test
+      # The web suite is the longest one and runs in parallel in the "Web tests" job; everything else stays here.
+      - name: Run root test gate (all but the web suite)
+        run: pnpm exec turbo run test --filter='!@ageniza/web'
       - name: Run repository script tests
         run: pnpm test:scripts
       - name: Run root build gate
@@ -138,12 +152,141 @@ jobs:
             git --no-pager diff -- docs/api
             exit 1
           fi
+      # Only this job saves the cache (the others restore it), and only when every gate passed, so a run that died early
+      # cannot become the "latest" entry the next run restores. Entries nobody wrote for a week are dropped first: turbo
+      # never evicts, and a restored cache is saved back whole.
+      - name: Drop Turborepo cache entries older than a week
+        run: |
+          if [ -d .turbo/cache ]; then find .turbo/cache -type f -mtime +7 -delete; fi
+      - name: Save the Turborepo cache
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+
+  # Split out of "Quality gates": it is the longest test suite, so in the same job it set the length of the whole run.
+  # It needs the build of config, contracts and ui only (turbo's `dependsOn: ^build`), which the Turborepo cache replays.
+  web-tests:
+    name: Web tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+      - name: Enable the repository-pinned pnpm with Corepack
+        run: corepack enable
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      # Restore only: "Quality gates" saves the store for the same lockfile.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Install from the committed lockfile
+        run: pnpm install --frozen-lockfile
+      - name: Restore the Turborepo cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+      - name: Run the web test suite
+        run: pnpm exec turbo run test --filter=@ageniza/web
+
+  # Split out of "PostgreSQL local database": the API suite is the other long step of the old job and does not need
+  # its RLS suite, storage-with-ffmpeg or worker steps. Same gate (scripts/ci/decide-database-job.mjs), same database
+  # name and roles, same compose Postgres (initdb creates the non-BYPASSRLS `ageniza_app`), and its own LocalStack
+  # because the media and identity-storage tests talk to a real S3 API.
+  api-integration:
+    name: API integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://ageniza_app:ageniza_app@127.0.0.1:54322/ageniza_ci
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/ageniza_ci
+    steps:
+      - name: Check out the repository with its history
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+      # The same decision as the "PostgreSQL local database" job, from the same script and the same inputs: the two
+      # jobs run or skip together. The job itself stays unconditional so the check always ends "completed".
+      - name: Decide whether the database job is needed
+        id: area
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci/decide-database-job.mjs --event "$EVENT_NAME" --base "$BASE_SHA" --head "$HEAD_SHA"
+      - name: Say why the API suite was skipped
+        if: steps.area.outputs.run == 'false'
+        env:
+          REASON: ${{ steps.area.outputs.reason }}
+        run: |
+          echo "Skipped: $REASON."
+          echo "Skipped: $REASON." >> "$GITHUB_STEP_SUMMARY"
+      - name: Enable the repository-pinned pnpm with Corepack
+        if: steps.area.outputs.run != 'false'
+        run: corepack enable
+      - name: Resolve pnpm store path
+        if: steps.area.outputs.run != 'false'
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: steps.area.outputs.run != 'false'
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Install from the committed lockfile
+        if: steps.area.outputs.run != 'false'
+        run: pnpm install --frozen-lockfile
+      - name: Restore the Turborepo cache
+        if: steps.area.outputs.run != 'false'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+      - name: Start the isolated local PostgreSQL
+        if: steps.area.outputs.run != 'false'
+        run: pnpm db:start
+      - name: Create the database the suites run against
+        if: steps.area.outputs.run != 'false'
+        run: docker compose exec -T postgres psql -U postgres -v ON_ERROR_STOP=1 -c 'create database ageniza_ci'
+      # The suite migrates its own model database; this keeps the database it names migrated the way it always was.
+      - name: Apply every migration to an empty database
+        if: steps.area.outputs.run != 'false'
+        run: pnpm db:migrate
+      - name: Start the local object storage
+        if: steps.area.outputs.run != 'false'
+        run: pnpm storage:start
+      - name: Build the API's workspace dependencies
+        if: steps.area.outputs.run != 'false'
+        run: pnpm exec turbo run build --filter=@ageniza/api^...
+      - name: Run the authentication suite as the application role
+        if: steps.area.outputs.run != 'false'
+        run: pnpm --filter @ageniza/api test:integration
+      - name: Remove the local database
+        if: always() && steps.area.outputs.run != 'false'
+        run: docker compose down --volumes --remove-orphans
 
   docker-images:
     name: Docker images
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Validate the local Compose model
@@ -190,6 +333,41 @@ jobs:
           docker run --rm -v "$PWD/apps/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
             -v "$PWD/apps/web/nginx-api-proxy.inc:/etc/nginx/ageniza-api-proxy.inc:ro" \
             nginxinc/nginx-unprivileged:1.27-alpine nginx -t
+      # The edge guards below came from the "Mobile review" workflow, which no ruleset requires and which only ran for
+      # mobile paths. They run on every pull request now, because the nginx proxy limits, the mutation guards and the
+      # "dev-only interface is not in the production image" rule can be broken from apps/web too.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+      - name: Build the dev image with the mobile interface
+        run: docker build -f apps/web/Dockerfile --build-arg VITE_DEV_DOCS=true --build-arg VITE_API_BASE_URL=/api -t ageniza-mobile-web-review:dev .
+      - name: Verify static routes without an API or customer data
+        run: |
+          set -euo pipefail
+          docker run -d --name ageniza-mobile-web-review -p 127.0.0.1:18080:8080 ageniza-mobile-web-review:dev
+          trap 'docker logs ageniza-mobile-web-review; docker rm -f ageniza-mobile-web-review' EXIT
+          curl --fail --retry 10 --retry-all-errors --retry-delay 1 --max-time 5 http://127.0.0.1:18080/health
+          test "$(curl -s -D - -o /dev/null http://127.0.0.1:18080/app-mobile | tr -d '\r' | sed -n 's/^[Ll]ocation: //p')" = '/app-mobile/'
+          curl --fail http://127.0.0.1:18080/app-mobile/ -o /tmp/ageniza-mobile-review.html
+          grep -q '/app-mobile/_expo/' /tmp/ageniza-mobile-review.html
+          asset=$(sed -n 's/.*src="\([^" ]*index-[^" ]*\.js\)".*/\1/p' /tmp/ageniza-mobile-review.html)
+          test -n "$asset"
+          curl --fail "http://127.0.0.1:18080$asset" -o /tmp/ageniza-mobile-review.js
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/app-mobile/_expo/missing.js)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/app-mobile/assets/missing.ttf)" = 404
+      - name: Build production without the mobile export
+        run: docker build -f apps/web/Dockerfile --build-arg VITE_API_BASE_URL=/api -t ageniza-mobile-web-review:production .
+      - name: Verify production does not publish the dev-only interface
+        run: |
+          set -euo pipefail
+          docker run -d --name ageniza-mobile-web-production -p 127.0.0.1:18081:8080 ageniza-mobile-web-review:production
+          trap 'docker logs ageniza-mobile-web-production; docker rm -f ageniza-mobile-web-production' EXIT
+          curl --fail --retry 10 --retry-all-errors --retry-delay 1 --max-time 5 http://127.0.0.1:18081/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/app-mobile/)" = 404
+      - name: Verify API proxy limits and mutation guards with a test upstream
+        run: |
+          node scripts/ci/verify-nginx-api.mjs ageniza-mobile-web-review:dev --mutate
+          node scripts/ci/verify-nginx-api.mjs ageniza-mobile-web-review:production
 
   database-local:
     name: PostgreSQL local database
@@ -214,7 +392,8 @@ jobs:
       # cannot reach the database, the API or the worker, so the ~14 minute steps below are skipped. The job itself stays
       # unconditional: a skipped job reads as "skipped", this one stays "completed" and says why. Every step below is
       # gated on `!= 'false'`, so a decision that failed to produce its output runs the job instead of skipping it.
-      # The rule and the list live in scripts/ci/decide-database-job.mjs and docs/ci/README.md.
+      # The rule and the list live in scripts/ci/decide-database-job.mjs and docs/ci/README.md. The "API integration"
+      # job runs the same script with the same inputs, so both jobs run or skip together.
       - name: Decide whether the database job is needed
         id: area
         env:
@@ -246,6 +425,14 @@ jobs:
       - name: Install from the committed lockfile
         if: steps.area.outputs.run != 'false'
         run: pnpm install --frozen-lockfile
+      - name: Restore the Turborepo cache
+        if: steps.area.outputs.run != 'false'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
       - name: Start the isolated local PostgreSQL
         if: steps.area.outputs.run != 'false'
         run: pnpm db:start
@@ -293,12 +480,7 @@ jobs:
       - name: Run the durable job queue suite as the application role
         if: steps.area.outputs.run != 'false'
         run: pnpm --filter @ageniza/worker test:integration
-      - name: Build the API's workspace dependencies
-        if: steps.area.outputs.run != 'false'
-        run: pnpm exec turbo run build --filter=@ageniza/api^...
-      - name: Run the authentication suite as the application role
-        if: steps.area.outputs.run != 'false'
-        run: pnpm --filter @ageniza/api test:integration
+      # The API integration suite runs in the parallel "API integration" job, behind the same decision.
       - name: Remove the local database
         if: always() && steps.area.outputs.run != 'false'
         run: docker compose down --volumes --remove-orphans
