@@ -36,7 +36,9 @@ it('offers the real example portal from an existing demo workspace', async () =>
  render(<DemoWorkspace existing={context} onEnter={() => {}} onEnterPortal={enterPortal} />);
  expect(request).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole('button', { name: 'Preparar meu acesso ao portal de exemplo' }));
- fireEvent.click(await screen.findByRole('button', { name: 'Entrar no portal de exemplo' }));
+ const portalButton = await screen.findByRole('button', { name: 'Entrar no portal de exemplo' });
+ await waitFor(() => expect(portalButton.getAttribute('aria-busy')).toBe('false'));
+ fireEvent.click(portalButton);
  await waitFor(() => expect(enterPortal).toHaveBeenCalledExactlyOnceWith(portal));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
