@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-// A workflow that runs rarely (production release, branch guard) can carry an action pinned to a
+// A workflow that runs rarely (production release, mobile android) can carry an action pinned to a
 // SHA that does not exist, and nothing notices until the day it runs. This resolves every pin.
 // `owner/repo[/path]@ref`: a sub-action such as `actions/cache/restore@<sha>` lives in `owner/repo`, so the pin resolves there.
 const pinnedUse = /uses:\s*(?!\.{1,2}\/)([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)(?:\/[A-Za-z0-9._/-]+)?@([0-9a-f]{40})\b/g;

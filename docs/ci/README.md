@@ -9,7 +9,7 @@ Job names are fixed: the rulesets require them by name (see [Branch protections 
 | Job (`CI / ...`) | Runs on | What it does |
 | --- | --- | --- |
 | `Branch route` | Pull requests | Checks the source and target branch pair (a pull request to `main` comes from `develop`; `hotfix/*` is the documented exception). |
-| `Migration policy` | Pull requests | Append-only history of `packages/database/migrations` (see below). |
+| `Migration policy` | Pull requests and pushes to `develop` | Append-only history of `packages/database/migrations` (see below). |
 | `Quality gates` | Pull requests and pushes to `develop` | Lint, typecheck, build and the tests of every workspace except the web, plus the API production closure and the generated-docs checks. |
 | `Web tests` | Pull requests and pushes to `develop` | The tests of `@ageniza/web`, split from `Quality gates` so they run in parallel with it. |
 | `Docker images` | Pull requests | Renders the Compose models and builds the images, with the nginx and mobile guards. |
