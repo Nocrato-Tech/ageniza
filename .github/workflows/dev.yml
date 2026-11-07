@@ -41,13 +41,21 @@ jobs:
           WAIT_SECONDS: '2400'
         run: |
           deadline=$((SECONDS + WAIT_SECONDS))
-          # A transient API error must not read as "develop moved" or "no CI yet"; retry, and fail the job if it persists.
+          # A transient API error must not read as "develop moved" or "no CI yet": retry, and fail the job if it persists.
           api() {
             local attempt
-            for attempt in 1 2 3; do gh api "$@" && return 0; sleep 5; done
+            for attempt in 1 2 3; do
+              gh api "$@" && return 0
+              if (( attempt < 3 )); then sleep "${RETRY_SECONDS:-5}"; fi
+            done
             return 1
           }
-          develop_tip() { api "repos/$GITHUB_REPOSITORY/git/ref/heads/develop" --jq .object.sha; }
+          # Succeeds only when the tip of develop is another commit; a failed read fails the whole job.
+          develop_moved() {
+            local tip
+            tip="$(api "repos/$GITHUB_REPOSITORY/git/ref/heads/develop" --jq .object.sha)" || { echo "::error::Cannot read the develop ref from the GitHub API."; exit 1; }
+            [[ "$tip" != "$GITHUB_SHA" ]]
+          }
           skip_release() {
             echo "::notice::$1"
             echo "release=false" >> "$GITHUB_OUTPUT"
@@ -55,9 +63,10 @@ jobs:
           }
           while true; do
             # A newer push replaces this one: stop waiting so its run, queued behind this one, can start.
-            [[ "$(develop_tip)" == "$GITHUB_SHA" ]] || skip_release "develop moved past $GITHUB_SHA; the newer run publishes it, not this one."
+            if develop_moved; then skip_release "develop moved past $GITHUB_SHA; the newer run publishes it, not this one."; fi
+            # The run is picked by its workflow file, not by its display name, which any other workflow could also use.
             run="$(api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&event=push&per_page=50" --jq \
-              '[.workflow_runs[] | select(.name == "CI" and .head_branch == "develop")] | sort_by(.created_at) | last // empty | [.status, (.conclusion // "none"), .html_url] | join(" ")')"
+              '[.workflow_runs[] | select(((.path // "") | split("@")[0]) == ".github/workflows/ci.yml" and .head_branch == "develop")] | sort_by(.created_at) | last // empty | [.status, (.conclusion // "none"), .html_url] | join(" ")')"
             read -r status conclusion url <<< "${run:-missing none -}"
             case "$status" in
               completed)
@@ -66,7 +75,7 @@ jobs:
                   echo "release=true" >> "$GITHUB_OUTPUT"
                   exit 0
                 fi
-                [[ "$(develop_tip)" == "$GITHUB_SHA" ]] || skip_release "develop moved past $GITHUB_SHA while its CI ended as $conclusion."
+                if develop_moved; then skip_release "develop moved past $GITHUB_SHA while its CI ended as $conclusion."; fi
                 echo "::error::CI ended as '$conclusion' for $GITHUB_SHA, so nothing is published to dev: $url"
                 exit 1
                 ;;

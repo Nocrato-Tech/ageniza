@@ -198,14 +198,6 @@ pull_verified_image() {
   if [[ "$1" == "$IMAGE_NAMESPACE"/ageniza-* ]] && ! grep -Fxq -- "$1" "$PULLED_IMAGES" 2>/dev/null; then printf '%s\n' "$1" >> "$PULLED_IMAGES"; fi
 }
 
-# When the record does not exist yet, the application images already on the host are dev's: the first cleanup adopts them.
-seed_pulled_images() {
-  [[ -f "$PULLED_IMAGES" ]] && return 0
-  docker image ls --digests --no-trunc --format '{{.Repository}}@{{.Digest}}' \
-    | grep -E "^$IMAGE_NAMESPACE/ageniza-(api|web|worker|migrations)@sha256:[a-f0-9]{64}\$" > "$PULLED_IMAGES" || true
-  chmod 0600 "$PULLED_IMAGES"
-}
-
 compose_app() {
   # The optional real-mail opt-in (issue #835) reaches compose.dev.yml by interpolation; validate_runtime_env already vetted it. Empty means the Mailpit sink.
   local dev_real_email='' dev_smtp_url='' dev_email_from=''
@@ -275,7 +267,8 @@ prune_runtime_snapshots() {
 
 # Frees the disk the old releases hold. Only references this script pulled itself are candidates (never another project's
 # image, never postgres or mailpit), the live and the previous release are kept, and there is no -f: an image a container
-# still uses survives. No global prune: the host is shared (docs/infra/dev-environment.md).
+# still uses survives. No global prune: the host is shared (docs/infra/dev-environment.md). The record starts empty and
+# is never filled from what is on the host: production uses the same image names in the same daemon.
 remove_unreferenced_images() {
   local keep='' ref temporary file key output
   for file in current.env previous.env; do
@@ -335,7 +328,6 @@ apply_dev() {
 
   prepare_github_access
   fetch_verified_release "$sha" "$run_id"
-  seed_pulled_images
   # start_release runs with --pull never, so the sink image is pulled here with the application images.
   for image in "$API_IMAGE" "$WEB_IMAGE" "$WORKER_IMAGE" "$MIGRATIONS_IMAGE" "$AGENIZA_MAILPIT_IMAGE"; do pull_verified_image "$image"; done
 

@@ -559,8 +559,30 @@ describe('the dev workflow', () => {
 
     it('waits for the push run of the CI workflow of this very commit, not for a pull request run', () => {
       expect(gate).toContain('actions/runs?head_sha=$GITHUB_SHA&event=push');
-      expect(gate).toContain('.name == "CI" and .head_branch == "develop"');
+      expect(gate).toContain('select(((.path // "") | split("@")[0]) == ".github/workflows/ci.yml" and .head_branch == "develop")');
+      expect(gate).not.toContain('.name ==');
       expect(gate).toContain('[[ "$conclusion" == success ]]');
+    });
+
+    // The gate and the CI workflow agree on a file, a name and a trigger; nothing else would notice if one of them moved.
+    it('names a CI workflow file that exists, is called CI and runs on push to develop', () => {
+      const file = gate.match(/== "(\.github\/workflows\/[\w.-]+\.yml)"/)?.[1];
+      expect(file).toBe('.github/workflows/ci.yml');
+      const ci = read(file).replaceAll('\r\n', '\n');
+      expect(ci).toMatch(/^name: CI$/m);
+      expect(ci).toMatch(/^on:\n(?:[^\n]*\n)*? {2}push:\n {4}branches:\n(?: {6}- [^\n]+\n)*? {6}- develop\n/m);
+    });
+
+    it.skipIf(!hasJq)('picks the newest run of the CI file and nothing else, whatever other workflow shares its name', () => {
+      const filter = gate.match(/'(\[\.workflow_runs\[\][^']*)'/)[1];
+      const runs = [
+        { name: 'CI', path: '.github/workflows/ci.yml', head_branch: 'develop', created_at: '2026-11-06T10:00:00Z', status: 'completed', conclusion: 'failure', html_url: 'old' },
+        { name: 'CI', path: '.github/workflows/ci.yml@refs/heads/develop', head_branch: 'develop', created_at: '2026-11-06T11:00:00Z', status: 'in_progress', conclusion: null, html_url: 'new' },
+        { name: 'CI', path: '.github/workflows/other.yml', head_branch: 'develop', created_at: '2026-11-06T12:00:00Z', status: 'completed', conclusion: 'success', html_url: 'impostor' }
+      ];
+      const pick = (workflow_runs) => spawnSync('jq', ['-r', filter], { input: JSON.stringify({ workflow_runs }), encoding: 'utf8' }).stdout.trim();
+      expect(pick(runs)).toBe('in_progress none new');
+      expect(pick(runs.slice(2))).toBe('');
     });
 
     it('fails when CI did not succeed and when it did not finish in time', () => {
@@ -570,23 +592,44 @@ describe('the dev workflow', () => {
     });
 
     it('lets the newer push win: an older commit stops waiting and releases nothing', () => {
-      expect(gate).toMatch(/while true; do\n[^\n]*\n\s+\[\[ "\$\(develop_tip\)" == "\$GITHUB_SHA" \]\] \|\| skip_release/);
-      expect(gate.match(/\[\[ "\$\(develop_tip\)" == "\$GITHUB_SHA" \]\] \|\| skip_release/g)).toHaveLength(2);
+      expect(gate).toMatch(/while true; do\n[^\n]*\n\s+if develop_moved; then skip_release/);
+      expect(gate.match(/if develop_moved; then skip_release/g)).toHaveLength(2);
       expect(gate).toContain('echo "release=false" >> "$GITHUB_OUTPUT"');
+    });
+
+    it('hands the job output to the jobs that need it from the step, never a constant', () => {
+      expect(gate).toContain('release: ${{ steps.wait.outputs.release }}');
     });
 
     describe('runs the step as written, against a stand-in for gh', () => {
       const step = gate.split('        run: |\n')[1].split('\n').filter((line) => line === '' || line.startsWith('          ')).map((line) => line.slice(10)).join('\n');
-      const waitFor = ({ tip = sha, ci, wait = '0' }) => {
+      // FAKE_TIP_FAILS breaks the ref read for good, FAKE_TIP_FAILS_ONCE only for its first call; FAKE_RUNS_FAILS breaks the run list.
+      const fakeGh = [
+        '#!/usr/bin/env bash',
+        'case "$*" in',
+        '  *git/ref/heads/develop*)',
+        '    [[ -z "${FAKE_TIP_FAILS:-}" ]] || exit 1',
+        '    if [[ -n "${FAKE_TIP_FAILS_ONCE:-}" && ! -e "$FAKE_STATE/tip-failed" ]]; then : > "$FAKE_STATE/tip-failed"; exit 1; fi',
+        '    if [[ -n "${FAKE_TIP_FAILS_AFTER_FIRST:-}" ]]; then [[ ! -e "$FAKE_STATE/tip-read" ]] || exit 1; : > "$FAKE_STATE/tip-read"; fi',
+        '    printf "%s\\n" "$FAKE_TIP" ;;',
+        '  *actions/runs\\?head_sha=*)',
+        '    [[ -z "${FAKE_RUNS_FAILS:-}" ]] || exit 1',
+        '    printf "%s\\n" "$FAKE_CI" ;;',
+        '  *) exit 1 ;;',
+        'esac',
+        ''
+      ].join('\n');
+      const waitFor = ({ tip = sha, ci, wait = '0', ...failures }) => {
         const directory = temporaryDirectory();
         const bin = join(directory, 'bin');
         mkdirSync(bin);
-        writeFileSync(join(bin, 'gh'), '#!/usr/bin/env bash\ncase "$*" in\n  *git/ref/heads/develop*) printf "%s\\n" "$FAKE_TIP" ;;\n  *actions/runs\\?head_sha=*) printf "%s\\n" "$FAKE_CI" ;;\n  *) exit 1 ;;\nesac\n');
+        writeFileSync(join(bin, 'gh'), fakeGh);
         chmodSync(join(bin, 'gh'), 0o755);
         const output = join(directory, 'output');
         writeFileSync(output, '');
         const result = run(`export PATH="${msys(bin)}:$PATH"\n${step}`, {
-          GH_TOKEN: 'x', GITHUB_REPOSITORY: 'owner/repo', GITHUB_SHA: sha, GITHUB_OUTPUT: posix(output), WAIT_SECONDS: wait, FAKE_TIP: tip, FAKE_CI: ci
+          GH_TOKEN: 'x', GITHUB_REPOSITORY: 'owner/repo', GITHUB_SHA: sha, GITHUB_OUTPUT: posix(output), WAIT_SECONDS: wait, RETRY_SECONDS: '0',
+          FAKE_TIP: tip, FAKE_CI: ci, FAKE_STATE: posix(directory), ...failures
         });
         return { ...result, output: readFileSync(output, 'utf8').trim() };
       };
@@ -620,6 +663,41 @@ describe('the dev workflow', () => {
           expect(result.status).toBe(0);
           expect(result.output).toBe('release=false');
         }
+      });
+
+      it.each([`completed failure ${url}`, `in_progress none ${url}`, `completed success ${url}`])('fails, instead of passing for "develop moved", when the develop ref cannot be read (CI: %s)', (ci) => {
+        const result = waitFor({ ci, FAKE_TIP_FAILS: '1' });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain('::error::Cannot read the develop ref');
+        expect(result.stdout).not.toContain('develop moved');
+        expect(result.output).toBe('');
+      });
+
+      it('fails when the develop ref can no longer be read once CI has ended red, instead of calling it "moved"', () => {
+        const result = waitFor({ ci: `completed failure ${url}`, FAKE_TIP_FAILS_AFTER_FIRST: '1' });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain('::error::Cannot read the develop ref');
+        expect(result.stdout).not.toContain('develop moved');
+        expect(result.output).toBe('');
+      });
+
+      it('retries a failed API call instead of giving up on the first', () => {
+        const result = waitFor({ ci: `completed success ${url}`, FAKE_TIP_FAILS_ONCE: '1' });
+        expect(result.status).toBe(0);
+        expect(result.output).toBe('release=true');
+      });
+
+      it('fails, releasing nothing, when the run list cannot be read', () => {
+        const result = waitFor({ ci: `completed success ${url}`, FAKE_RUNS_FAILS: '1' });
+        expect(result.status).not.toBe(0);
+        expect(result.output).toBe('');
+      });
+
+      it('fails at once on a status it does not know, instead of waiting for it to change', () => {
+        const result = waitFor({ ci: `surprise none ${url}`, wait: '600' });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain("::error::Unexpected CI status 'surprise'");
+        expect(result.output).toBe('');
       });
     });
 
@@ -692,7 +770,6 @@ describe('the image cleanup of the dev entrypoint', () => {
     grep -Fxq -- "$3" "$IMAGES" || { echo "Error response from daemon: No such image: $3" >&2; return 1; }
     if grep -Fxq -- "$3" "$USED" || [[ -n "\${RM_FAILS:-}" ]]; then echo "Error response from daemon: conflict: unable to delete (image is being used by a running container)" >&2; return 1; fi
     grep -Fxv -- "$3" "$IMAGES" > "$IMAGES.new" || true; mv "$IMAGES.new" "$IMAGES"; echo "Untagged: $3"
-  elif [[ "$1 $2" == 'image ls' ]]; then cat "$IMAGES"
   elif [[ "$1 $2" == 'image inspect' ]]; then echo "$3"
   fi
 }
@@ -714,7 +791,7 @@ install() { cp -- "\${@: -2:1}" "\${@: -1}"; }`;
     const state = () => ({
       calls: lines(readFileSync(files.calls, 'utf8')).map((line) => line.trim()),
       images: lines(readFileSync(files.images, 'utf8')),
-      list: lines(readFileSync(join(releaseDir, 'pulled-images.list'), 'utf8')),
+      list: existsSync(join(releaseDir, 'pulled-images.list')) ? lines(readFileSync(join(releaseDir, 'pulled-images.list'), 'utf8')) : null,
       previous: existsSync(join(releaseDir, 'previous.env')) ? readFileSync(join(releaseDir, 'previous.env'), 'utf8') : null
     });
     return { call, state, releaseDir, files };
@@ -807,15 +884,32 @@ install() { cp -- "\${@: -2:1}" "\${@: -1}"; }`;
       expect(state().list).toEqual([image('api', 'c'), image('web', 'c')]);
     });
 
-    it('is seeded once with the application images of this namespace already on the host, and never again', () => {
-      const seed = functionsOf(deploy, 'seed_pulled_images');
-      const foreign = [`ghcr.io/other-org/ageniza-api@sha256:${'e'.repeat(64)}`, `docker.io/library/postgres@sha256:${'e'.repeat(64)}`, `${namespace}/ageniza-api:develop-abc@<none>`];
-      const first = setup({ hostImages: foreign });
-      expect(first.call(`${seed}\nseed_pulled_images`).status).toBe(0);
-      expect(sorted(first.state().list)).toEqual(sorted([...release('b'), ...release('c')]));
-      const again = setup({ pulled: [image('api', 'd')] });
-      expect(again.call(`${seed}\nseed_pulled_images`).status).toBe(0);
-      expect(again.state().list).toEqual([image('api', 'd')]);
+    // Production shares the daemon and the image names (same namespace), so what is on the host is not dev's to remove.
+    const production = [...release('p'), ...release('q'), `${namespace}/ageniza-migrations@sha256:${'r'.repeat(64)}`];
+
+    it('has no record before the first pull, and without one nothing is removed, whatever application images the host holds', () => {
+      const { call, state } = setup({ hostImages: production });
+      const result = call(`${cleanup}\nremove_unreferenced_images`);
+      expect(result.status).toBe(0);
+      expect(state().calls).toEqual([]);
+      expect(state().list).toBeNull();
+      expect(state().images).toEqual(expect.arrayContaining(production));
+    });
+
+    it('holds only what this script pulled, so the images already on the host stay out of the cleanup', () => {
+      const { call, state } = setup({ hostImages: [...production, ...old] });
+      const pull = functionsOf(deploy, 'die', 'pull_verified_image');
+      const pulls = release('c').map((ref) => `pull_verified_image ${ref}`).join('\n');
+      expect(call(`REGISTRY_CONFIG=/nonexistent\n${pull}\n${pulls}\n${cleanup}\nremove_unreferenced_images`).status).toBe(0);
+      expect(sorted(state().list)).toEqual(sorted(release('c')));
+      expect(state().calls.filter((line) => line.startsWith('image rm'))).toEqual([]);
+      expect(state().images).toEqual(expect.arrayContaining([...production, ...old]));
+    });
+
+    it('never fills the record from the host: the script has no image listing and nothing that adopts', () => {
+      const code = deploy.split('\n').filter((line) => !line.trim().startsWith('#')).join('\n');
+      expect(code).not.toMatch(/docker\s+image\s+(?:ls|list)|docker\s+images|seed_pulled|adopt/);
+      expect(code.match(/PULLED_IMAGES"?\s*>>?|>>?\s*"\$PULLED_IMAGES"/g)).toHaveLength(1);
     });
   });
 
