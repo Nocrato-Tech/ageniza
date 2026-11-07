@@ -16,15 +16,30 @@ vi.mock('react-native-svg', async () => {
 });
 const setup = vi.hoisted(() => ({ create: vi.fn(), populate: vi.fn() }));
 vi.mock('./workspace', () => ({ createDemoWorkspace: setup.create, populateDemoWorkspace: setup.populate }));
-vi.mock('./config', () => ({ demoWorkspaceEnabled: true }));
+vi.mock('./config', () => ({ demoWorkspaceEnabled: true, demoAgencyName: 'Agência Horizonte · Demonstração' }));
 import { DemoWorkspace } from './DemoWorkspace';
 import { ContentLearning, contentSignals } from './ContentLearning';
 import type { Post } from '../product/types';
 const context = { type: 'agency' as const, agencyId: 'demo-one', agencyName: 'Agência Horizonte · Demonstração', isOwner: true, roleKey: 'owner', roleName: 'Owner' };
 beforeEach(() => {
+ request.mockReset();
  setup.create.mockReset().mockResolvedValue(context); setup.populate.mockReset();
  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['png']) }));
  Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) });
+});
+it('offers the real example portal from an existing demo workspace', async () => {
+ const portal = { type: 'client' as const, agencyId: context.agencyId, agencyName: context.agencyName, clientId: 'example-client', clientName: 'Clínica Vida · Exemplo', onboardingPending: true };
+ request.mockResolvedValueOnce({ emailVerified: true, user: { email: 'tester@example.test' } })
+  .mockResolvedValueOnce({ contexts: [context, portal] })
+  .mockResolvedValueOnce({ data: [{ id: portal.clientId, name: portal.clientName }], meta: { totalPages: 1 } });
+ const enterPortal = vi.fn();
+ render(<DemoWorkspace existing={context} onEnter={() => {}} onEnterPortal={enterPortal} />);
+ expect(request).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button', { name: 'Preparar meu acesso ao portal de exemplo' }));
+ const portalButton = await screen.findByRole('button', { name: 'Entrar no portal de exemplo' });
+ await waitFor(() => expect(portalButton.getAttribute('aria-busy')).toBe('false'));
+ fireEvent.click(portalButton);
+ await waitFor(() => expect(enterPortal).toHaveBeenCalledExactlyOnceWith(portal));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('requires confirmation and reuses the server agency after a partial failure', async () => {

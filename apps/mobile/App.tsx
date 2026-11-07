@@ -92,6 +92,11 @@ export default function App() {
     const next = await selectContext(api, context);
     if (current === generation.current) setEntry(next);
   });
+  async function enterPortal(context: Context) {
+    const current = generation.current;
+    const next = await selectContext(api, context);
+    if (current === generation.current) setEntry(next);
+  }
   async function logout() {
     try {
       const result = await logoutLocally(api, expire);
@@ -99,7 +104,7 @@ export default function App() {
     } catch { setError('O acesso foi bloqueado neste app, mas não foi possível apagar o armazenamento seguro. Tente sair novamente antes de compartilhar o aparelho.'); }
   }
   if (!fonts && !fontError) return <SafeAreaProvider><View style={{ flex: 1, justifyContent: 'center', backgroundColor: light.canvas }}><ActivityIndicator accessibilityLabel="Carregando fontes" color={light.action} /></View></SafeAreaProvider>;
-  return <SafeAreaProvider>{accountLink ? <SafeAreaView style={{ flex: 1, backgroundColor: light.canvas }}>{accountLink.kind === 'approval' ? <ApprovalScreen key={accountLink.token} token={accountLink.token} onClose={() => setAccountLink(null)} /> : <AccountAction key={`${accountLink.kind}:${accountLink.token}`} link={accountLink} onDone={async (preferred) => { await resolve(preferred); setAccountLink(null); }} onClose={() => { setAccountLink(null); expire(); if (!browserPreview) void restore(); }} />}</SafeAreaView> : entry?.kind === 'active' ? <MobileApp key={`${entry.context.type}:${entry.context.type === 'agency' ? entry.context.agencyId : entry.context.clientId}`} context={entry.context} onExit={logout} onContext={async () => { setEntry(await listContexts(api)); }} /> : <ThemeContext.Provider value={light}><SafeAreaView style={[styles.page, { backgroundColor: light.canvas }]}>
+  return <SafeAreaProvider>{accountLink ? <SafeAreaView style={{ flex: 1, backgroundColor: light.canvas }}>{accountLink.kind === 'approval' ? <ApprovalScreen key={accountLink.token} token={accountLink.token} onClose={() => setAccountLink(null)} /> : <AccountAction key={`${accountLink.kind}:${accountLink.token}`} link={accountLink} onDone={async (preferred) => { await resolve(preferred); setAccountLink(null); }} onClose={() => { setAccountLink(null); expire(); if (!browserPreview) void restore(); }} />}</SafeAreaView> : entry?.kind === 'active' ? <MobileApp key={`${entry.context.type}:${entry.context.type === 'agency' ? entry.context.agencyId : entry.context.clientId}`} context={entry.context} onExit={logout} onSelectContext={enterPortal} onContext={async () => { setEntry(await listContexts(api)); }} /> : <ThemeContext.Provider value={light}><SafeAreaView style={[styles.page, { backgroundColor: light.canvas }]}>
     <StatusBar style={t === dark ? 'light' : 'dark'} />
     {!fonts && !fontError || restoring ? <View style={[styles.body, { justifyContent: 'center' }]}><ActivityIndicator accessibilityLabel="Abrindo Ageniza" color={t.action} /></View> : <>
       {entry && <View style={{ paddingHorizontal: space.xl, paddingVertical: space.md, gap: space.md, borderBottomWidth: 1, borderColor: t.border }}>
