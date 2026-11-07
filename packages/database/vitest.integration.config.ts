@@ -6,6 +6,8 @@
 // reason the API integration suite sets `fileParallelism: false` (issue #167).
 export default {
   test: {
+    // A pattern, not a list: a new `*.integration.test.ts` runs in CI without anyone registering it.
+    include: ['**/*.integration.test.ts'],
     fileParallelism: false
   }
 };
