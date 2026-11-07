@@ -5,11 +5,13 @@ O mobile web usa o Motion já instalado para manter continuidade na seleção. O
 ## Implementado
 
 - Calendário: uma superfície contínua usa molas independentes para frente e cauda. O atraso entre elas deforma a seleção com limites de 65% na horizontal e 35% na vertical. Uma cópia decorativa recortada dos números mantém o contraste durante o trajeto; não recebe foco nem aparece na árvore acessível.
+- Meses: grade e título atravessam a janela na direção de avanço ou retorno. Os botões permanecem montados. A grade anterior fica inerte e oculta da árvore acessível durante a saída; inverter a direção retoma o painel ainda presente.
 - Abas e navegação inferior: o mesmo indicador usa medidas reais dos controles. Seleção e foco não dependem do término da mola. Setas, Home e End navegam pelas abas.
 - Seletores e confirmação de saída do editor: o Modal original mantém contenção e retorno de foco. Superfície e fundo animam separadamente; o fechamento conserva a montagem até a saída e torna o conteúdo inerte. Reabrir cancela o fechamento anterior.
 - Listagem de conteúdos: chaves estáveis mantêm identidade durante reposicionamento. Linhas em saída ficam inertes. A lista permanece montada quando o último item sai.
 - Filtros: expansão e contração do agrupamento; altura animada é uma exceção local de disclosure, não um padrão para outros componentes.
 - Formulários: foco destaca a borda sem mover campos; callbacks, valores e referências são preservados. Transições interrompidas de tela retomam a transformação exibida, sem remontar os campos.
+- Pressão: botões de ação e da casca, seleção de cliente, troca de contexto, conta e visibilidade de senha compartilham `Touch`. Botões ocupados mantêm rótulo e espaço do indicador, sem saltos de alinhamento. Abas usam o indicador próprio.
 
 ## Tokens e limites
 
