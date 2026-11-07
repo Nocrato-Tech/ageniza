@@ -8,6 +8,23 @@ const agencyId = '33333333-3333-4333-8333-333333333333';
 const post: Post = { id: contentId, clientId, title: 'Post', caption: 'Legenda', date: '2026-11-12', time: '', format: 'image', status: 'awaiting_approval', revision: 7, ownerId: '', folderId: '', coverId: null, mediaIds: [], comments: [], tasks: [] };
 function client(request: ReturnType<typeof vi.fn>): ApiClient { return { request, clearSession: async () => {}, onExpired: () => {}, onAccessRequired: () => {} } as ApiClient; }
 describe('real API adapter boundaries', () => {
+  it('returns the confirmed comment without making its success depend on a content refresh', async () => {
+    const savedComment = { id: 'comment', body: 'Comentário independente', side: 'agency', author: { name: 'Pessoa' }, createdAt: '2026-11-07T12:00:00Z' };
+    const request = vi.fn(async (_path: string, options?: { method?: string }) => {
+      if (options?.method === 'POST') return { thread: { id: 'thread' }, comment: savedComment };
+      throw new TypeError('Refresh unavailable');
+    });
+    const repo = remoteRepository(client(request), { type: 'agency', agencyId, agencyName: 'Agência', roleKey: 'admin', roleName: 'Admin', isOwner: false });
+    const updated = await repo.comment(post, '  Comentário independente  ');
+    expect(updated).toEqual({ ...post, comments: [{ ...savedComment, name: 'Pessoa' }] });
+    expect(request).toHaveBeenCalledExactlyOnceWith(`/agencies/${agencyId}/clients/${clientId}/threads`, { method: 'POST', body: { subject: { contentId }, body: 'Comentário independente' } });
+    expect(post.comments).toEqual([]);
+  });
+  it('labels a client comment without an author as Cliente', async () => {
+    const request = vi.fn().mockResolvedValue({ comment: { id: 'comment', body: 'Dúvida', side: 'client', author: null, createdAt: '2026-11-07T12:00:00Z' } });
+    const repo = remoteRepository(client(request), { type: 'client', clientId, clientName: 'Marca', agencyId, agencyName: 'Agência', onboardingPending: false });
+    expect((await repo.comment(post, 'Dúvida')).comments[0].name).toBe('Cliente');
+  });
   it('creates with exactly the selected media in one write, keeping a cover out of the reel list', async () => {
     const videoId = '44444444-4444-4444-8444-444444444444';
     const coverId = '55555555-5555-4555-8555-555555555555';

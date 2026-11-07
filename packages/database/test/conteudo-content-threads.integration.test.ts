@@ -141,7 +141,7 @@ describe('who opens and writes in the conversation of a content, and when (issue
     expect(await w.getOwner().knex('client_thread_comments').where({ thread_id: existing }).select('id')).toHaveLength(0);
   });
 
-  it.each(OPEN)('lets the agency open and write on a content that is %s, with conteudo.operar and conteudo.visualizar', async (status) => {
+  it.each([...OPEN, 'in_production' as const])('lets the agency open and write on a content that is %s, with conteudo.operar and conteudo.visualizar', async (status) => {
     const id = await w.seedContent(ids.clientA1, { status });
     const thread = await openThread(operarAndVisualizar, id, 'agency');
 
@@ -151,7 +151,7 @@ describe('who opens and writes in the conversation of a content, and when (issue
     expect(await w.getOwner().knex('client_thread_comments').where({ thread_id: thread }).select('id')).toHaveLength(2);
   });
 
-  it.each(CLOSED)('refuses the agency a conversation and a comment on a content that is %s, because what is written there would reach the client when the content is sent', async (status) => {
+  it.each(['cancelled'] as const)('refuses the agency a conversation and a comment on a content that is %s', async (status) => {
     const id = await w.seedContent(ids.clientA1, { status });
     const existing = await seedThread(id);
 

@@ -213,7 +213,7 @@ Todas sob `requireAgencyAccess`; o cliente de `:clientId` precisa pertencer a `:
 | `PATCH` | `…/story-scripts/:scriptId` | `conteudo.operar` | o roteiro |
 | `POST` | `…/story-scripts/:scriptId/send` | `conteudo.operar` | enviado |
 
-O upload de mídia reaproveita o fluxo existente (`/agencies/:agencyId/media/uploads`), acrescido de cliente e pasta. Comentários do conteúdo reaproveitam as rotas de conversa do cliente, com `content_id`.
+O upload de mídia reaproveita o fluxo existente (`/agencies/:agencyId/media/uploads`), acrescido de cliente e pasta. Comentários do conteúdo reaproveitam as rotas de conversa do cliente, com `content_id`. A agência pode comentar durante a produção; o portal vê a conversa quando o conteúdo é disponibilizado. Conteúdo cancelado não aceita comentários (decisão de 2026-11-07, issue #876).
 
 ### Rotas do portal
 

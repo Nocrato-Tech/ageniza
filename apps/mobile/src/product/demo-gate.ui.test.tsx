@@ -98,3 +98,23 @@ it('shows the content learning panel on a content only when the gate is on', () 
   render(<PostDetail {...props} />);
   expect(screen.getByText('Demo content learning')).toBeTruthy();
 });
+it('preserves the comment draft when an adjustment is opened and cancelled', () => {
+  render(<PostDetail post={{ ...post, status: 'awaiting_approval' }} data={data} side="client" repository={repository as unknown as Repository} busy={false} onMove={async () => {}} onUpdate={async () => true} onEdit={() => {}} onError={() => {}} />);
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Minha dúvida' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Solicitar ajustes' }));
+  expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('');
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Mudar a imagem' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar solicitação' }));
+  expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('Minha dúvida');
+});
+it('sends an agency comment in production without moving the content', async () => {
+  const comment = vi.fn(async () => post);
+  const onMove = vi.fn(async () => {});
+  const onUpdate = async (action: () => Promise<Post>) => { await action(); return true; };
+  render(<PostDetail post={post} data={data} side="agency" repository={{ ...repository, comment } as unknown as Repository} busy={false} onMove={onMove} onUpdate={onUpdate} onEdit={() => {}} onError={() => {}} />);
+  fireEvent.click(screen.getByRole('tab', { name: 'Conversa' }));
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Comentário de produção' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Enviar comentário' }));
+  await waitFor(() => expect(comment).toHaveBeenCalledExactlyOnceWith(post, 'Comentário de produção'));
+  expect(onMove).not.toHaveBeenCalled();
+});

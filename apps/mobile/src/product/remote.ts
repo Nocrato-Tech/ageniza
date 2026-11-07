@@ -1,6 +1,7 @@
 import type { AgencyMeResponse, ClientListResponse, CollaboratorListResponse, ContentDetail, ContentPeriodResponse, Context, CreateMediaUploadResponse, MediaFolder, MediaFolderAsset, PortalClientResponse, PortalContentDetail, PortalContentPeriodResponse, PortalContentAwaitingResponse, RequestMediaUploadPartsResponse } from '@ageniza/contracts';
 import { CreateContentRequestSchema, UpdateContentRequestSchema, CreateContentTaskRequestSchema, PortalApproveContentRequestSchema, PortalRequestContentChangesRequestSchema, CreateClientRequestSchema, UpdateMyProfileRequestSchema, CreateMediaFolderRequestSchema, CommentBodySchema, UpdateContentTaskRequestSchema, ApproveContentByAgencyRequestSchema, PublishContentRequestSchema, RescheduleContentRequestSchema } from '@ageniza/contracts';
 import type { ApiClient } from '../api/client';
+import type { CreateThreadResponse } from '@ageniza/contracts';
 import type { Asset, Client, Comment, Data, Folder, Post, PostInput, Repository } from './types';
 
 type Page<T> = { data: T[]; meta: { totalPages: number } };
@@ -53,7 +54,7 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
       const value = await api.request<ContentDetail | PortalContentDetail>(`${base(clientId)}/contents/${id}`);
       const post = fromDetail(clientId, value);
       if (agency && post.folderId && post.mediaIds.length) { const assets = await all<MediaFolderAsset>(`${base(clientId)}/media-folders/${post.folderId}/assets`); post.mediaKinds = Object.fromEntries(assets.filter((asset) => post.mediaIds.includes(asset.id)).map((asset) => [asset.id, asset.category])); }
-      if (agency || post.status !== 'in_production') { const threads = await all<{ id: string }>(`${base(clientId)}/threads?contentId=${id}`); for (const thread of threads) { const comments = await all<{ id: string; body: string; side: 'agency' | 'client'; author: { name: string } | null; createdAt: string }>(`${base(clientId)}/threads/${thread.id}/comments`); post.comments.push(...comments.map((comment): Comment => ({ ...comment, name: comment.author?.name ?? 'Agência' }))); } }
+      if (agency || post.status !== 'in_production') { const threads = await all<{ id: string }>(`${base(clientId)}/threads?contentId=${id}`); for (const thread of threads) { const comments = await all<{ id: string; body: string; side: 'agency' | 'client'; author: { name: string } | null; createdAt: string }>(`${base(clientId)}/threads/${thread.id}/comments`); post.comments.push(...comments.map((comment): Comment => ({ ...comment, name: comment.author?.name ?? (comment.side === 'client' ? 'Cliente' : 'Agência') }))); } }
       return post;
     },
     save: async (input: PostInput, id, onCreated) => {
@@ -74,7 +75,7 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
     task: async (post, task, action, comment) => { agencyOnly(); await api.request(`${base(post.clientId)}/contents/${post.id}/tasks/${task.id}/${action}`, { method: 'POST', body: action === 'return' ? { comment: CommentBodySchema.parse(comment) } : {} }); return repo.detail(post.clientId, post.id); },
     updateTask: async (post, task) => { agencyOnly(); await api.request(`${base(post.clientId)}/contents/${post.id}/tasks/${task.id}`, { method: 'PATCH', body: UpdateContentTaskRequestSchema.parse({ title: task.title, description: task.description, assigneeMembershipId: task.assigneeId, dueOn: task.dueOn }) }); return repo.detail(post.clientId, post.id); },
     addTask: async (post, input) => { agencyOnly(); await api.request(`${base(post.clientId)}/contents/${post.id}/tasks`, { method: 'POST', body: CreateContentTaskRequestSchema.parse({ title: input.title, description: input.description, assigneeMembershipId: input.assigneeId, dueOn: input.dueOn }) }); return repo.detail(post.clientId, post.id); },
-    comment: async (post, body) => { await api.request(`${base(post.clientId)}/threads`, { method: 'POST', body: { subject: { contentId: post.id }, body: CommentBodySchema.parse(body) } }); return repo.detail(post.clientId, post.id); },
+    comment: async (post, body) => { const result = await api.request<CreateThreadResponse>(`${base(post.clientId)}/threads`, { method: 'POST', body: { subject: { contentId: post.id }, body: CommentBodySchema.parse(body) } }); return { ...post, comments: [...post.comments, { ...result.comment, name: result.comment.author?.name ?? (result.comment.side === 'client' ? 'Cliente' : 'Agência') }] }; },
     addClient: async (name) => { agencyOnly(); const client = await api.request<{ id: string; name: string }>(`${root}/clients`, { method: 'POST', body: CreateClientRequestSchema.parse({ name }) }); return { id: client.id, name: client.name, handle: '' }; },
     addFolder: async (clientId, name, parentId) => { agencyOnly(); const folder = await api.request<MediaFolder>(`${base(clientId)}/media-folders`, { method: 'POST', body: CreateMediaFolderRequestSchema.parse({ name, ...(parentId ? { parentId } : {}) }) }); return { id: folder.id, clientId, name: folder.name, parentId: folder.parentId }; },
     library: async (clientId) => {
