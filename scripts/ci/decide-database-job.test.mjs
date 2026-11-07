@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ciJob, readCiWorkflow, stepName } from './ci-workflow.mjs';
 import { decide, isAllowed } from './decide-database-job.mjs';
 
-const root = join(import.meta.dirname, '..', '..');
 const script = join(import.meta.dirname, 'decide-database-job.mjs');
 const repos = [];
 
