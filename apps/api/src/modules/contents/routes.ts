@@ -53,6 +53,7 @@ import {
   type ContentTransaction
 } from './service.js';
 import { idFromRoute } from './route-support.js';
+import { registerContentActivationRoute } from './activation-routes.js';
 import { registerContentTaskRoutes } from './task-routes.js';
 import { registerContentTransitionRoutes } from './transition-routes.js';
 
@@ -314,5 +315,6 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
 
   registerContentTransitionRoutes(app, dependencies);
   registerContentTaskRoutes(app, dependencies);
+  registerContentActivationRoute(app, dependencies);
 };
 
