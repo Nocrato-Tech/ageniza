@@ -658,14 +658,28 @@ describe('CLIENTES conversation of a content (#259)', () => {
       }
     });
 
-    it('refuses to open or comment while the content is in production or cancelled, with 409, and writes nothing', async () => {
-      for (const status of CLOSED_STATUSES) {
+    it('allows agency comments in production while hiding them from the portal', async () => {
+      const contentId = await seedContent(clientA1, 'in_production');
+      const opened = await openAs(cookies.manager!, base(), contentId, 'Primeiro');
+      expect(opened.statusCode).toBe(201);
+      const threadId = opened.json().thread.id;
+      expect((await commentAs(cookies.manager!, base(), threadId, 'Segundo')).statusCode).toBe(201);
+      for (const key of ['portalOne', 'dual', 'dualBare'] as const) {
+        expect((await listAs(cookies[key]!, portalThreads(clientA1), contentId)).statusCode).toBe(404);
+        expect((await commentAs(cookies[key]!, portalThreads(clientA1), threadId)).statusCode).toBe(404);
+      }
+      await moveContent(contentId, 'awaiting_approval');
+      expect((await commentsAs(cookies.portalOne!, portalThreads(clientA1), threadId)).json().data.map((item: { body: string }) => item.body)).toEqual(['Primeiro', 'Segundo']);
+    });
+
+    it('refuses to open cancelled content with 409 and writes nothing', async () => {
+      for (const status of ['cancelled'] as const) {
         const contentId = await seedContent(clientA1, status);
         const before = await snapshotOf(clientA1);
         const sent = await writesSentBy(async (proxied) => {
           const refused = await openAs(cookies.manager!, base(), contentId, 'Cedo demais', proxied);
           expectContentNotOpen(refused);
-          expect(errorOf(refused).message).toBe('A conversa do conteúdo só existe a partir de "aguardando aprovação".');
+          expect(errorOf(refused).message).toBe('A conversa não aceita comentários enquanto o conteúdo está cancelado.');
         });
         expect(sent, status).toEqual([]);
         expect(await snapshotOf(clientA1), status).toEqual(before);
@@ -673,8 +687,8 @@ describe('CLIENTES conversation of a content (#259)', () => {
       }
     });
 
-    it('refuses to comment on a conversation whose content went back to production or was cancelled, and still reads and resolves it', async () => {
-      for (const status of ['in_production', 'cancelled'] as const) {
+    it('refuses to comment on a cancelled content and still reads and resolves it', async () => {
+      for (const status of ['cancelled'] as const) {
         const contentId = await seedContent(clientA1, status);
         const threadId = await seedContentThread(clientA1, contentId, [{ author: 'portalOne', side: 'client', at: '2026-10-01T10:00:00Z' }]);
         const commentsBefore = (await commentRows(threadId)).length;

@@ -8,7 +8,7 @@ import { ciJob } from './ci-workflow.mjs';
 // carries a URL for `ageniza`, lets a missing variable send a superuser connection to the owner's
 // development database. The only way to get the URLs is `resolveIntegrationDatabaseUrls`.
 const root = join(import.meta.dirname, '..', '..');
-const skipped = new Set(['node_modules', 'dist', '.git', '.turbo', '.local', '.maestri']);
+const skipped = new Set(['node_modules', 'dist', '.git', '.turbo', '.local', '.claude']);
 
 const walk = (directory) =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

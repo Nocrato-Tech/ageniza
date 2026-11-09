@@ -55,9 +55,9 @@ Todo PR vai para `develop`, exceto promoção de release e hotfix.
 
 O corpo responde três coisas: **por que** existe, **o que muda**, e **como foi verificado**. O template preenche isso. O que ele cobra, e o revisor também:
 
-- **Um PR, um assunto — que pode juntar issues do mesmo tema e da mesma camada.** Mesmo tema é o mesmo módulo ou épico; mesma camada é o mesmo `escopo:` (`db`, `api`, `web`, `infra`). Um PR pode agrupar issues assim, cada uma com o seu `Closes #N` e o aceite item a item no corpo, até **~800 linhas de diff de código** — produção e testes; não contam gerados, lockfile nem o `openapi.json` gerado. Acima disso, dividir. Se o título precisa de "e" para juntar temas ou camadas diferentes, são dois PRs.
-- **API e interface não vêm juntas.** São tasks separadas de propósito; PR que mistura as duas não tem revisão possível.
-- **Migration não vem com código de API nem de tela.** É o único tipo de mudança que não dá para desfazer. Duas issues de banco do mesmo tema podem dividir a mesma migration; a rota e a tela que a consomem ficam nos PRs delas.
+- **Um PR por escopo.** O escopo é um módulo, um épico ou um pedido do dono, e sobe num único PR, mesmo grande (decisão `2026-11-06-um-pr-por-escopo-com-revisao-por-subtarefa`). Cada issue do escopo tem a sua linha `Closes #N` e o aceite item a item no corpo, na tabela aceite → teste → mutação, junto das revisões das subtarefas.
+- **API, tela e migration são subtarefas separadas, revisadas separadamente, no mesmo PR.** Cada uma tem a revisão do seu nível antes de entrar na branch de integração do escopo; o PR não é o lugar de dividir o trabalho, o plano é.
+- **A migration entra na integração antes da API que a usa.** É o único tipo de mudança que não dá para desfazer, por isso a subtarefa dela é sempre revisada no nível Alto.
 - **Verificação real.** "Testado" não é verificação; qual comando rodou e o que ele disse, é.
 
 Antes de abrir, com `DATABASE_URL` e `MIGRATION_DATABASE_URL` apontando para um banco seu (as suítes de integração recusam sem elas e recusam o banco `ageniza`; veja [ambiente local](docs/local-environment.md#banco-dos-testes-de-integração)):

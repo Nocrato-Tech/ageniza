@@ -2,7 +2,7 @@
 
 > **Nível de risco:** aplica-se só ao nível Alto (ver a seção Níveis de risco do [AGENTS.md](../AGENTS.md)).
 
-Todo pull request que toque **banco, autenticação, sessão, autorização, convite, armazenamento, upload, infraestrutura ou dado pessoal** passa por esta revisão antes do merge, feita por quem **não escreveu o código**. Este documento é o padrão da revisão. Ele vale para qualquer revisor: pessoa, agente no Claude Code (`.claude/agents/security-reviewer.md`), no Maestri ou em outra ferramenta.
+Todo pull request que toque **banco, autenticação, sessão, autorização, convite, armazenamento, upload, infraestrutura ou dado pessoal** passa por esta revisão antes do merge, feita por quem **não escreveu o código**. Este documento é o padrão da revisão. Ele vale para qualquer revisor: pessoa, agente no Claude Code (`.claude/agents/security-reviewer.md`) ou em outra ferramenta.
 
 Não é uma lista para marcar. O revisor **tenta quebrar** o que o PR entrega e só afirma o que provou. A regra que sustenta tudo o resto é esta: **um achado sem cenário concreto não é achado, e uma aprovação sem ataque executado não é aprovação**.
 
@@ -109,7 +109,9 @@ Sinais de teste fraco:
 - afirma "Page not found" em vez da rota de destino.
 
 ### 5. Publicar
-Uma revisão por PR, com `gh pr review <N> --comment` e **nunca** `--approve` ou `--request-changes`, porque o merge é decisão do orquestrador. Em português:
+No fluxo de escopo, a revisão é da subtarefa de nível Alto (branch e commit dados pela tarefa, diff contra a integração `feat/<escopo>`): é gravada em arquivo, nunca no worktree do implementador, e o maestro a publica como comentário no PR único do escopo, que é o registro desta revisão. Ver [decisão de 2026-11-06](business/decisions/2026-11-06-um-pr-por-escopo-com-revisao-por-subtarefa.md).
+
+Fora desse fluxo, uma revisão por PR, com `gh pr review <N> --comment` e **nunca** `--approve` ou `--request-changes`, porque o merge é decisão do orquestrador. Em português:
 
 ```
 Veredito: APROVADO | APROVADO COM RESSALVAS | MUDANÇAS NECESSÁRIAS
@@ -137,7 +139,7 @@ O que está correto (o que foi tentado e resistiu)
 Crítica ou Alta impede o merge. Uma Média de segurança também impede, salvo decisão registrada em `docs/business/decisions/` com follow-up aberto, como o #166.
 
 ### 6. Re-revisão
-Depois da correção, a re-revisão refaz **os mesmos ataques** e procura regressão introduzida pela correção. Nas rodadas reais, a correção de uma falha trouxe outra mais de uma vez: o trigger que resolveu a corrida quebrou o reaceite de convite, e a correção do logout em `/contextos` mandou quem perdeu o acesso para `/entrar`.
+Depois da correção, a re-revisão refaz **os mesmos ataques** e procura regressão introduzida pela correção. Nas rodadas reais, a correção de uma falha trouxe outra mais de uma vez: o trigger que resolveu a corrida quebrou o reaceite de convite, e a correção do logout em `/contextos` mandou quem perdeu o acesso para `/entrar`. Na subtarefa, o laço de correção e re-revisão segue até zerar os achados.
 
 ## Lições que já custaram caro
 

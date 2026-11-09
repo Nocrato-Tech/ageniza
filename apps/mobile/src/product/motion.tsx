@@ -1,10 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { motionTokens as motion } from './motion/tokens';
 import { AccessibilityInfo, Animated, Easing, Platform, Pressable, View } from 'react-native';
 import type { PressableProps, StyleProp, ViewStyle } from 'react-native';
 
-// Mirrors docs/design-system.md §12 across the web and native renderers.
-const motion = { fast: 120, base: 180, slow: 240, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' };
 const nativeEasing = Easing.bezier(0.16, 1, 0.3, 1);
 
 export function useReducedMotion() {
@@ -45,9 +44,9 @@ function NativeTouch({ children, style, onPressIn, onPressOut, ...props }: Touch
     progress.stopAnimation();
     Animated.timing(progress, { toValue: pressed ? 1 : 0, duration: reduced ? 0 : motion.fast, easing: nativeEasing, useNativeDriver: true }).start();
   };
-  useEffect(() => { if (reduced) { progress.stopAnimation(); progress.setValue(0); } }, [reduced, progress]);
+  useEffect(() => { if (reduced || props.disabled) { progress.stopAnimation(); progress.setValue(0); } }, [reduced, props.disabled, progress]);
   useEffect(() => () => progress.stopAnimation(), [progress]);
-  return <AnimatedPressable {...props} onPressIn={(event) => { animate(true); onPressIn?.(event); }} onPressOut={(event) => { animate(false); onPressOut?.(event); }} style={[style, { opacity: progress.interpolate({ inputRange: [0, 1], outputRange: props.disabled ? [0.45, 0.45] : [1, 0.78] }), transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.98] }) }] }]}>{children}</AnimatedPressable>;
+  return <AnimatedPressable {...props} onPressIn={(event) => { if (!props.disabled) animate(true); onPressIn?.(event); }} onPressOut={(event) => { animate(false); onPressOut?.(event); }} style={[style, { opacity: progress.interpolate({ inputRange: [0, 1], outputRange: props.disabled ? [0.45, 0.45] : [1, 0.78] }), transform: reduced ? undefined : [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.98] }) }] }]}>{children}</AnimatedPressable>;
 }
 
 export type MotionDirection = 'forward' | 'back';
@@ -59,22 +58,31 @@ export function ScreenMotion(props: ScreenMotionProps) {
 
 function arrival(variant: NonNullable<ScreenMotionProps['variant']>, direction: MotionDirection) {
   const sign = direction === 'back' ? -1 : 1;
-  return { x: variant === 'page' ? sign * 16 : variant === 'step' ? sign * 8 : 0, y: variant === 'feedback' ? -8 : 0, opacity: variant === 'peer' ? 0.5 : 0.35, duration: variant === 'peer' ? motion.fast : variant === 'page' ? motion.slow : motion.base };
+  return { x: variant === 'page' ? sign * 16 : variant === 'step' ? sign * 20 : variant === 'peer' ? sign * 28 : 0, y: variant === 'feedback' ? -8 : 0, opacity: variant === 'peer' ? 0.88 : 0.65, duration: variant === 'peer' ? motion.slow : variant === 'page' ? motion.slow : motion.base };
 }
 
 function WebScreenMotion({ children, identity, fill = false, quiet = false, variant = 'page', direction = 'forward' }: ScreenMotionProps) {
   const reduced = useReducedMotion();
   const element = useRef<View>(null);
   const previous = useRef<string | undefined>(undefined);
+  const interrupted = useRef<{ opacity: number; transform: string } | undefined>(undefined);
   useLayoutEffect(() => {
     const changed = previous.current !== identity;
     previous.current = identity;
-    if (reduced || quiet || !changed) return;
+    if (reduced || quiet || !changed) { interrupted.current = undefined; return; }
     const node = element.current as unknown as HTMLElement | null;
     if (!node || typeof node.animate !== 'function') return;
     const from = arrival(variant, direction);
-    const animation = node.animate([{ opacity: from.opacity, transform: `translate3d(${from.x}px, ${from.y}px, 0)` }, { opacity: 1, transform: 'translate3d(0, 0, 0)' }], { duration: from.duration, easing: motion.easing });
-    return () => animation.cancel();
+    const start = interrupted.current ?? { opacity: from.opacity, transform: `translate3d(${from.x}px, ${from.y}px, 0)` };
+    interrupted.current = undefined;
+    const animation = node.animate([start, { opacity: 1, transform: 'translate3d(0, 0, 0)' }], { duration: from.duration, easing: motion.easing });
+    return () => {
+      if (animation.playState === 'running') {
+        const displayed = window.getComputedStyle(node);
+        interrupted.current = { opacity: Number(displayed.opacity), transform: displayed.transform };
+      }
+      animation.cancel();
+    };
   }, [identity, reduced, quiet, variant, direction]);
   return <View ref={element} {...({ dataSet: { motion: variant, motionDirection: direction } } as object)} style={{ flex: fill ? 1 : undefined, minHeight: fill ? 0 : undefined }}>{children}</View>;
 }

@@ -8,3 +8,6 @@ it('explains that invalid media can be a list or cover issue and gives a recover
   expect(message).toContain('limite');
   expect(message).not.toContain('secret');
 });
+it('explains the comment restriction for cancelled content', () => {
+  expect(describeProductError(new ApiError(409, 'CONTENT_NOT_OPEN', 'internal'))).toContain('cancelado');
+});

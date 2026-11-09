@@ -601,7 +601,7 @@ Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os ite
 **É estrutural em três pontos, e os três estão registrados antes desta implementação**, em `decisions.md`:
 
 1. **"ESTRUTURAL: os campos do cliente entram como colunas em `clients`".** A migration faz `alter table` numa tabela implantada e dispara o gate de CI. Não há backfill: toda coluna é anulável, e não existe dado real — tudo é local até o deploy.
-2. **"ESTRUTURAL: a conversa com o cliente é uma tabela de threads por cliente, com assunto tipado".** É o formato que Conteúdo copia: ele acrescenta `content_id` em `client_threads`, não cria uma segunda tabela de conversa.
+2. **"ESTRUTURAL: a conversa com o cliente é uma tabela de threads por cliente, com assunto tipado".** É o formato que Conteúdo copia: ele acrescenta `content_id` em `client_threads`, não cria uma segunda tabela de conversa. A agência pode comentar durante a produção; o portal só vê a conversa quando o conteúdo é disponibilizado, e conteúdo cancelado não aceita comentários (decisão de 2026-11-07, issue #876).
 3. **"ESTRUTURAL: arquivar cliente é uma função `security definer` de escopo único, usada pelo job e pela rota".** Exceção à regra de que o worker age como um usuário. A forma — escopo único, auditada, sem outro efeito possível — é o modelo que a publicação agendada de Conteúdo deve seguir.
 
 **RLS de outro módulo não é tocada.** Separar as permissões de convite por tipo reescreveria `invitations` e foi adiado com gatilho (seção 10). A estrutural conhecida **cliente na mídia** não é acionada: Clientes não usa `media_assets`.

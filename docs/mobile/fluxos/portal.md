@@ -80,7 +80,7 @@ Com o teste vencido ou o plano encerrado, o portal continua visível. Aprovar, p
 
 ## Interface Expo
 
-O portal mobile apresenta feed em Geral, calendário e fila de aprovações. Revisar abre legenda, mídias e comentários apenas nos estados permitidos acima. Aprovar e pedir ajuste enviam a revisão lida. Não há seletor de clientes da agência nem kanban no portal. A demonstração é local e explicitamente separada da API; veja [interface mobile](../interface-mobile.md).
+O portal mobile apresenta feed em Geral, calendário e fila de aprovações. Revisar abre legenda, mídias e comentários apenas nos estados permitidos acima. Aprovar e pedir ajuste enviam a revisão lida. Não há seletor de clientes da agência nem kanban no portal. A agência de demonstração usa a API real com dados de exemplo; veja [interface mobile](../interface-mobile.md).
 
 
 ## Ampliação da integração nativa
@@ -93,3 +93,11 @@ A aba Aprovações do aplicativo usa a rota própria `contents/awaiting-approval
 ## Contexto e comunicação no mobile
 
 O cabeçalho identifica o portal do cliente, separado da área da agência. Trocar contexto usa somente vínculos existentes. Aprovar, retirar aprovação e solicitar ajuste mantêm os contratos e a revisão da API; cada resultado comunica a ação confirmada. O calendário preserva o dia selecionado ao voltar da publicação e anuncia quantidade e estados além da cor.
+
+## Acesso ao cliente de exemplo
+
+Na web de desenvolvimento com demonstração habilitada, cada proprietário da própria “Agência Horizonte · Demonstração” pode preparar explicitamente seu acesso ao portal da “Clínica Vida · Exemplo”. A ação usa somente o e-mail verificado da sessão e o cliente encontrado pela API dentro dessa agência; não aceita outro destinatário nem escolhe um identificador arbitrário.
+
+O app reaproveita vínculo ativo, não reativa acesso removido automaticamente e só oferece a entrada após a API devolver o contexto de cliente correspondente. A troca usa o mesmo seletor de contexto autenticado das demais entradas. Qualquer conta verificada pode repetir o fluxo no próprio espaço de demonstração; isso não abre uma agência compartilhada nem altera as permissões do portal.
+
+Para testar: entre na agência de demonstração, abra **Mais → Preparar dados de demonstração → Preparar meu acesso ao portal de exemplo**. Depois da confirmação do servidor, **Entrar no portal de exemplo** usa a seleção autenticada normal. Uma recusa do servidor aparece nesse mesmo cartão, permitindo tentar novamente sem refazer o cadastro.

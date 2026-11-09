@@ -19213,7 +19213,7 @@
       "post": {
         "operationId": "openAgencyThread",
         "summary": "Abre uma conversa pela agência, com o primeiro comentário",
-        "description": "Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem\ndo corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000\nbytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`\ne persona de outro cliente 404.\nCom `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, e só escreve com o conteúdo em \"aguardando aprovação\" ou depois (senão 409 `CONTENT_NOT_OPEN`).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
+        "description": "Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem\ndo corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000\nbytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`\ne persona de outro cliente 404.\nCom `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
         "tags": [
           "clients"
         ],
@@ -19610,7 +19610,7 @@
       "post": {
         "operationId": "addAgencyThreadComment",
         "summary": "Comenta uma conversa pela agência",
-        "description": "Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na\nconversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.\nCliente arquivado e persona arquivada respondem 409.\nNuma conversa de conteúdo, `conteudo.operar` e `conteudo.visualizar`; com o conteúdo em produção ou cancelado, 409 `CONTENT_NOT_OPEN`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
+        "description": "Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na\nconversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.\nCliente arquivado e persona arquivada respondem 409.\nNuma conversa de conteúdo, `conteudo.operar` e `conteudo.visualizar`; em produção também pode comentar; com o conteúdo cancelado, 409 `CONTENT_NOT_OPEN`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
         "tags": [
           "clients"
         ],

@@ -45,6 +45,7 @@ export type ConversationRefusal =
  */
 const CONTENT_OPEN_STATUSES: readonly string[] = ['awaiting_approval', 'adjusting', 'approved', 'published'];
 const isContentOpen = (status: string | null | undefined): boolean => status !== null && status !== undefined && CONTENT_OPEN_STATUSES.includes(status);
+const isContentOpenToAgencyWriter = (status: string | null | undefined): boolean => status === 'in_production' || isContentOpen(status);
 
 type ConversationAccess = 'read' | 'write';
 
@@ -303,8 +304,7 @@ const checkSubject = async (
   if ('contentId' in subject) {
     const content = await loadSubjectContent(transaction, scope, subject.contentId);
     if (content === undefined) return 'subject-not-found';
-    // The agency reads a content that is not open yet (and an old conversation of it), and writes nothing there.
-    return options.forWrite && !isContentOpen(content.status) ? 'content-not-open' : undefined;
+    return options.forWrite && !isContentOpenToAgencyWriter(content.status) ? 'content-not-open' : undefined;
   }
   if ('personaId' in subject) {
     const persona = await loadSubjectPersona(transaction, scope, subject.personaId);
@@ -478,8 +478,7 @@ export const addComment = async (
   const context = await loadThreadContext(transaction, scope, input.threadId);
   const refusal = refusalOfContext(scope, context, 'write');
   if (refusal !== undefined) return { kind: refusal };
-  // The agency writes in the conversation of a content only while the content is open to the client.
-  if (context !== undefined && scope.side === 'agency' && context.content_id !== null && !isContentOpen(context.content_status)) {
+  if (context !== undefined && scope.side === 'agency' && context.content_id !== null && !isContentOpenToAgencyWriter(context.content_status)) {
     return { kind: 'content-not-open' };
   }
   const commentId = await insertComment(transaction, {
@@ -655,12 +654,12 @@ export const diagnoseConversationRefusal = async (
     const context = await loadThreadContext(transaction, scope, target.threadId);
     if (context === undefined) return undefined;
     if (context.persona_status === 'archived') return 'persona-archived';
-    return context.content_id !== null && !isContentOpen(context.content_status) ? 'content-not-open' : undefined;
+    return context.content_id !== null && !isContentOpenToAgencyWriter(context.content_status) ? 'content-not-open' : undefined;
   }
   if (target.contentId !== undefined) {
     const content = await loadSubjectContent(transaction, scope, target.contentId);
     if (content === undefined) return 'subject-not-found';
-    return isContentOpen(content.status) ? undefined : 'content-not-open';
+    return isContentOpenToAgencyWriter(content.status) ? undefined : 'content-not-open';
   }
   if (target.personaId !== undefined) {
     const persona = await loadSubjectPersona(transaction, scope, target.personaId);
