@@ -26,7 +26,8 @@
 - Before handoff, run relevant lint, typecheck, tests, and build checks.
 - Review a pull request following [docs/code-review.md](docs/code-review.md): a finding needs a concrete failure scenario, and a new round needs new evidence.
 - Before opening or updating a pull request, go through [docs/implementation-checklist.md](docs/implementation-checklist.md) and list in the PR the mutation that proves each acceptance item.
-- A pull request that touches the database, RLS, authentication, session, authorization, invitations, storage, uploads, infrastructure or personal data is merged only after an independent security review by someone other than its author, following [docs/security-review.md](docs/security-review.md) — any model or person can run it; `.claude/agents/security-reviewer.md` is the Claude Code wrapper for the same standard.
+- A pull request that touches the database, RLS, authentication, session, authorization, invitations, storage, uploads, infrastructure or personal data is merged only after an independent security review by someone other than its author, following [docs/security-review.md](docs/security-review.md) — any model or person can run it; `.claude/agents/security-reviewer.md` is the Claude Code wrapper for the same standard. In the scope flow below, the review of each High-level subtask, published on the single PR, is this review.
+- Work flows by scope: plan approved by the owner → waves of implementers in worktrees → per-subtask review loop until no finding is left → one PR per scope, even a large one (see `docs/business/decisions/2026-11-06-um-pr-por-escopo-com-revisao-por-subtarefa.md`).
 - Until the MVP launch, an issue is done once its pull request passes CI, code review and, when required, the security review above: no separate QA, integrity or penetration testing rounds (see `docs/business/decisions/2026-10-06-ate-o-lancamento-do-mvp-sem-rodada-de-qa-nem-teste-de.md`).
 - Never push to `main` or `develop` (not even with `--no-verify`); work on a branch and open a pull request.
 
@@ -38,7 +39,7 @@ Every task has a risk level, stated in the task or chosen by the implementer. Wh
 - **Médio (medium):** API or worker rules without sensitive data or money. Code review; mutation testing only for the new rule.
 - **Alto (high):** database and RLS, authentication and session, invitations, portal and authorization, storage, personal data, payments, infrastructure involving keys, SSH, sudo, network or secrets, `ci.yml` and `scripts/ci/decide-database-job.*`. Security review ([docs/security-review.md](docs/security-review.md)) and the full mutation rigor ([docs/implementation-checklist.md](docs/implementation-checklist.md)).
 
-Re-review is required only when the finding is High.
+Within a subtask's review loop, the same reviewer checks every fix until no finding is left.
 
 <!-- ai-memory:start -->
 ## Long-term memory (ai-memory)

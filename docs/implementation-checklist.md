@@ -28,7 +28,7 @@ regra é o erro mais repetido.
 18. **Efeito colateral numa transação.** Decida o efeito (ex.: revogar sessão) pelo que a transação escreveu, nunca por uma leitura sem trava anterior. O teste de atomicidade injeta uma falha DEPOIS da escrita (trigger que faz o passo seguinte falhar) e confere que nada ficou (#417).
 19. **Guard reaproveitado.** Rota nova que reusa um guard com uma opção tem teste de cada regra do guard naquela rota (#417, #423).
 20. **A decisão descreve o código de verdade.** Afirmação como "a tela já faz X" ou "a decisão Y diz Z" é conferida no código e no texto citado antes de registrar; depois do merge o arquivo não se edita (#414, #420).
-21. **API e tela em PRs separados.** Mesmo quando a issue pede as duas (#417, #419).
+21. **API e tela são subtarefas separadas.** Mesmo quando a issue pede as duas, cada uma tem a sua revisão antes de entrar na integração; vão no mesmo PR do escopo (#417, #419).
 22. **Harness no banco certo.** Antes de rodar a integração, exporte `DATABASE_URL` e `MIGRATION_DATABASE_URL` apontando para o seu banco: sem elas, ou com um banco chamado `ageniza`, o harness recusa e diz o motivo (#391). Harness novo obtém as URLs só por `resolveIntegrationDatabaseUrls`, nunca com `?? 'postgresql://...'`.
 23. **Caractere invisível.** A regra de invisível não fica só em `\p{Cf}`: inclua `Default_Ignorable_Code_Point` (CGJ, seletores de variação, FVS) e brancos que são símbolo (U+2800) (#426).
 24. **Mutação por ponto de chamada.** Quando um helper protege várias rotas, mute cada chamada, não só o helper; mutar o helper esconde a rota que ficou sem teste (#426).
@@ -47,7 +47,7 @@ _Ver também os itens 7 a 9 e 25, que estão na faixa Geral._
 32. **`CHECK` que chama função não é reavaliado.** Quando a função muda, apertar a regra exige `DROP` e `ADD` da constraint depois do backfill (#482).
 33. **Grant de tabela inteira.** Complementa o item 25: use `has_table_privilege` (enxerga `PUBLIC` e herança, e ignora grant por coluna) e compare um snapshot do catálogo antes e depois da migration (#502).
 59. **Bind de ator primeiro.** Lição registrada pela Coruja na revisão de segurança do #407, não achado do PR. Função do worker que recusa ator ligado só confere no momento da chamada; o que fecha a porta para a requisição é o `bind` do ator como primeira instrução da transação de topo. (#407).
-60. **Migration antes da API.** Quando a migration sai do PR da API, a decisão estrutural vai junto quando a migration é estrutural (o gate exige), e a ordem de merge é migration antes da API: código que lê o retorno novo de uma função falha se vier o tipo antigo (#406, #530).
+60. **Migration antes da API.** A decisão estrutural vai junto quando a migration é estrutural (o gate exige), e a subtarefa da migration entra na integração antes da subtarefa da API que a usa: código que lê o retorno novo de uma função falha se vier o tipo antigo (#406, #530).
 61. **Releitura depois da última espera.** Ler o estado do pai "depois das travas" só fecha a janela se a leitura vier depois da última espera antes da escrita. Num `UPDATE` sem policy de cliente ativo, quem fecha o resto é o gatilho do banco. Complementa o item 30 (#541).
 62. **Gatilho com erro em UPDATE de rota existente.** Gatilho novo que levanta erro num `UPDATE` já usado por rota existente exige achar e testar cada rota que faz esse `UPDATE` antes do merge: a revisão do #545 achou, antes do merge, que o gatilho novo faria o `PATCH` de persona dar 500 (#545).
 63. **Lista de colunas do gatilho contra o grant.** Lista de colunas escrita à mão num gatilho precisa de teste de catálogo contra o grant (`tgattr` x `has_column_privilege`); senão coluna gravável nova escapa sem vermelho. Complementa o item 33 (#538).
@@ -74,7 +74,7 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 44. **Modal fecha no sucesso e não apaga o digitado.** O teste confirma que o sucesso fecha o modal e que o erro mantém o texto já digitado.
 45. **Ação age no item certo.** Teste com duas linhas: a ação na segunda não pode alterar a primeira.
 46. **Aviso de uso único e barra sticky.** O aviso de uso único é conferido depois dos redirects e da casca assentarem. A barra inferior sticky é conferida a 360 px com conteúdo curto (#401).
-47. **Tela acima do teto de diff.** Acima de ~800 linhas de diff de código, o PR se divide (decisão `2026-10-07-pr-agrupado-por-tema`); numa tela com abas, a divisão natural é por aba.
+47. **Tela grande se divide no plano.** Não há teto de diff no PR (decisão `2026-11-06-um-pr-por-escopo-com-revisao-por-subtarefa`); a subtarefa grande é que se divide, e numa tela com abas a divisão natural é por aba.
 
 72. **Campo de credencial.** Em redesign de tela de autenticação (login, recuperação, redefinição, convite, troca de e-mail), um teste em tabela fixa `type`, `autocomplete` e `name` de cada campo de credencial, e `target` e `rel="noreferrer"` dos links externos. A refatoração visual troca a marcação inteira e nada na tela mostra a regressão: senha como `text`, `autocomplete` desligado ou trocado entre `current-password` e `new-password`, `name` renomeado. Mute cada atributo de cada campo, não só um por tela (#656).
 

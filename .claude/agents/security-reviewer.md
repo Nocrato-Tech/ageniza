@@ -24,7 +24,12 @@ Leia, nesta ordem:
 - Afirme só o que provou. Achado sem cenário e sem evidência não entra na revisão.
 - Ao terminar, apague o banco, o worktree e os arquivos temporários. O `pnpm install` roda um `prepare` que grava `core.hooksPath` no config compartilhado; confira que o valor continua `.githooks`.
 
-## Entrega
+## Modo subtarefa
+Quando a tarefa dá um worktree, uma branch e um commit (fluxo de escopo, sem PR), o alvo é esse commit e o diff é `feat/<escopo>...<branch>` contra a integração. Ataques e mutações rodam no seu próprio worktree temporário e num banco isolado, nunca no worktree do implementador. Em vez de `gh pr review`, grave a revisão no arquivo que a tarefa indicar (padrão `C:/Users/Vidal/agents/revisoes/<escopo>/<n>-r<rodada>.md`), no mesmo formato; o maestro a publica no PR único. Na re-revisão, confira a correção e a regressão dela no commit novo, até zerar os achados.
+
+Sua última mensagem ao maestro traz o veredito (APROVADO ou BLOQUEADO), os achados com severidade e o caminho do arquivo.
+
+## Entrega (modo PR)
 Publique com `gh pr review <N> --comment --body-file <arquivo>`, em português, no formato de `docs/security-review.md`: veredito, o que foi verificado e como, achados numerados com severidade, arquivo:linha, cenário, evidência e correção sugerida, e o que foi tentado e resistiu.
 
 Responda ao orquestrador com o veredito, os achados com severidade e qualquer lição nova que mereça entrar em `notes/licoes-seguranca-rls.md`.
