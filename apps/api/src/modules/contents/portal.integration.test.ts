@@ -4,6 +4,7 @@ import { raw } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { TEST_APP_PUBLIC_URL } from '../auth/test-support/harness.js';
+import { waitForQueueBehind } from '../auth/test-support/lock-queue.js';
 import { backendPid, archiveBeforeStatement, archiveWhileRouteWaits, waitForBackendBlockedBy } from './test-support/race.js';
 import { createPortalFixtures, DUAL_PEOPLE, type PortalPerson } from './test-support/portal-fixtures.js';
 import { createContentsWorld, type Reply } from './test-support/world.js';
@@ -317,21 +318,8 @@ const holdContent = async (contentId: string): Promise<{ readonly pid: number; r
   };
 };
 
-/**
- * Waits until `count` backends of this database wait for a lock. Counted by the wait itself, not by who blocks them: a row lock
- * held by one transaction makes only the first waiter wait for it, and the next ones queue behind that waiter.
- */
-const waitForBlocked = async (_holderPid: number, count: number): Promise<void> => {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    const result = await raw<{ rows: Array<{ pid: number }> }>(w.getOwner().knex, `
-      select activity.pid from pg_catalog.pg_stat_activity activity
-      where activity.datname = pg_catalog.current_database() and activity.wait_event_type = 'Lock'
-    `, []);
-    if (result.rows.length >= count) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`Fewer than ${count} backends ever waited for a lock.`);
-};
+/** Waits until `count` requests are queued behind the held content row, the first on the holder and each next one on the one ahead. */
+const waitForBlocked = (holderPid: number, count: number): Promise<void> => waitForQueueBehind(w.getOwner().knex, holderPid, count);
 
 beforeAll(async () => {
   await w.setup();

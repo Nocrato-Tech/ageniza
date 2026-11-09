@@ -14,6 +14,9 @@ import {
   type IntegrationModel
 } from '../src/index.js';
 
+// A clone copies the model database on the server; on a loaded CI runner that takes far longer than the 5 s default of a test.
+const CLONE_TIMEOUT = 60_000;
+
 const urls = resolveIntegrationDatabaseUrls();
 let model: IntegrationModel;
 let modelDropped = false;
@@ -40,7 +43,7 @@ const newClone = async (): Promise<IntegrationClone> => {
 
 beforeAll(async () => {
   model = await createIntegrationModel(urls);
-}, 60_000);
+}, CLONE_TIMEOUT);
 
 afterAll(async () => {
   if (!modelDropped) await dropIntegrationDatabases(model);
@@ -57,7 +60,7 @@ describe('the model and clone databases of the integration suites (issue #792)',
     expect(await query(clone.ownerUrl, 'select name from public.knex_migrations order by id')).toEqual(
       await query(urls.ownerUrl, 'select name from public.knex_migrations order by id')
     );
-  });
+  }, CLONE_TIMEOUT);
 
   it('gives each clone rows of its own: a row written in one is invisible in the other and in the model', async () => {
     const first = await newClone();
@@ -68,7 +71,7 @@ describe('the model and clone databases of the integration suites (issue #792)',
     expect(await query(first.ownerUrl, 'select id from public.agencies where id = $1', [agencyId])).toHaveLength(1);
     expect(await query(second.ownerUrl, 'select id from public.agencies where id = $1', [agencyId])).toHaveLength(0);
     expect(await query(withDatabaseName(urls.ownerUrl, model.modelDatabase), 'select id from public.agencies where id = $1', [agencyId])).toHaveLength(0);
-  });
+  }, CLONE_TIMEOUT);
 
   it('carries the grants and the search_path the application role needs: the same as the migrated database', async () => {
     const clone = await newClone();
@@ -85,7 +88,7 @@ describe('the model and clone databases of the integration suites (issue #792)',
     expect(cloneGrants).toEqual(await query(urls.ownerUrl, grants));
     // RLS answers as the application role does anywhere else: no actor, no tenant rows.
     expect(await query(clone.applicationUrl, 'select id from public.agencies')).toEqual([]);
-  });
+  }, CLONE_TIMEOUT);
 
   it('reports the most connections its clone held, and not those of another database', async () => {
     const held = await newClone();
@@ -105,7 +108,7 @@ describe('the model and clone databases of the integration suites (issue #792)',
     await Promise.all([...clients, ...strangers].map((client) => client.end()));
 
     expect((await watch.stop()).peak).toBe(5);
-  });
+  }, CLONE_TIMEOUT);
 
   it('drops a clone the test file left connected, and drops it twice without complaint', async () => {
     const clone = await newClone();
@@ -118,7 +121,7 @@ describe('the model and clone databases of the integration suites (issue #792)',
 
     expect(await databaseExists(clone.database)).toBe(false);
     await stuck.end().catch(() => undefined);
-  });
+  }, CLONE_TIMEOUT);
 
   it('drops the clones a crashed worker left behind, then the model, and nothing of another run', async () => {
     const left = await newClone();
@@ -136,5 +139,5 @@ describe('the model and clone databases of the integration suites (issue #792)',
       await dropIntegrationDatabases(otherRun);
     }
     expect(await databaseExists(strayOfOtherRun.database)).toBe(false);
-  }, 60_000);
+  }, CLONE_TIMEOUT);
 });

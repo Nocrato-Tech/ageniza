@@ -34,13 +34,51 @@ merge to develop
   -> Dev release / deploy:  skip if develop moved on; ssh dev "apply-dev <sha> <run-id>"
        VPS: verify the run (push to develop of dev.yml for that SHA), that the SHA is on develop, and the manifest
             -> pull the digests -> check runtime.env -> snapshot it -> postgres healthy -> run the migrations image
-            -> replace mailpit/api/web/worker -> private health -> write the release
+            -> replace mailpit/api/web/worker -> private health -> write the release (the old current.env becomes previous.env)
+            -> remove the images no release keeps (see Image cleanup)
   -> smoke: https://dev.ageniza.com.br/version.txt equals the commit; /api/health answers
 ```
 
 If the new containers do not become healthy, the VPS restarts the release that was live. Dev has no manual rollback: fix forward, or re-run the workflow of an older commit. Tags are for people; the VPS only ever deploys the digests from the manifest it downloads from GitHub itself.
 
-`dev.yml` does not repeat lint and tests: the pull request passed them on the merge result and CI runs again on the push to `develop`. A broken `develop` reaches dev, and the smoke test says so.
+`dev.yml` does not repeat lint and tests: the pull request passed them on the merge result and CI runs again on the push to `develop`. The `ci-gate` job of `dev.yml` waits for the `CI` run of the same SHA to be green before it publishes anything, so a `develop` whose CI is red does not reach dev. The smoke test still checks what was deployed.
+
+### Releases on the server
+
+`/var/lib/ageniza-dev/releases/current.env` records the live release (commit, run ID, the four image digests, the runtime snapshot, UTC time). When a new release is written, the former `current.env` is copied to `previous.env`, so the VPS always holds the live release and the one before it. Only the live release keeps its `runtime.env` snapshot.
+
+### Image cleanup
+
+After the release is applied, `ageniza-deploy-dev` frees the disk the old releases hold:
+
+- Every image reference the script pulls is appended to `/var/lib/ageniza-dev/releases/pulled-images.list`, but only references under `ghcr.io/nocrato-tech/ageniza-*`. PostgreSQL, Mailpit and cloudflared are never listed.
+- Each listed reference that is in `current.env` or `previous.env` stays (and stays listed). Each other one goes through `docker image rm <ref>`, never with `-f`: an image a container still uses survives.
+- An image that is already gone drops off the list silently. Any other failure is only logged, the reference stays listed for the next release, and a failed cleanup never fails a release that is already live.
+- The list starts empty and is never filled from what the host already has. The VPS shares the Docker daemon with production, which uses the same `ghcr.io/nocrato-tech/ageniza-*` names, so the cleanup removes only what it registered itself and never adopts an image that was already there. There is no `docker image prune -a` and no `docker system prune`.
+
+#### One-time manual cleanup (owner, on the VPS console)
+
+The images pulled before the list existed are not in it, so the script never removes them. Run this once, by hand, and read each step before the next. Dev and production share the daemon: an image production still needs must not go.
+
+```bash
+# 1. Images used by any container, running or stopped (dev, production and anything else)
+sudo docker ps -a --format '{{.Image}}' | sort -u
+
+# 2. Images the dev and production releases point at (current and previous)
+sudo cat /var/lib/ageniza-dev/releases/current.env /var/lib/ageniza-dev/releases/previous.env
+sudo cat /var/lib/ageniza/releases/current.env /var/lib/ageniza/releases/previous.env
+
+# 3. Every ageniza image on the host, with its ID
+sudo docker images --digests --format '{{.ID}}  {{.Repository}}:{{.Tag}}  {{.Digest}}' | grep 'ghcr.io/nocrato-tech/ageniza-'
+```
+
+Remove only the images that appear in neither step 1 nor step 2, one by one and by ID, without `-f`:
+
+```bash
+sudo docker image rm <image-id>
+```
+
+If Docker refuses because a container uses the image, leave it. Never run `docker image prune -a` or `docker system prune` here: they remove the production images too.
 
 ## What the owner needs to do
 
@@ -188,7 +226,7 @@ The API and the worker validate it again at start (`DEPLOY_TARGET=dev` plus `DEV
 
 ```bash
 sudo ageniza-deploy-dev status-dev
-sudo cat /var/lib/ageniza-dev/releases/current.env
+sudo cat /var/lib/ageniza-dev/releases/current.env /var/lib/ageniza-dev/releases/previous.env
 sudo docker ps --filter label=com.docker.compose.project=ageniza-dev
 sudo docker stats --no-stream $(sudo docker ps -q --filter label=com.docker.compose.project=ageniza-dev)
 sudo docker logs --tail=200 ageniza-dev-worker-1
@@ -197,6 +235,10 @@ sudo docker logs --tail=200 ageniza-dev-worker-1
 Do not run `docker compose up` against `ageniza-dev` by hand; the host lock (`/run/lock/ageniza-deploy-dev.lock`) serializes releases. The dev data is disposable and not backed up (decision `2026-10-29-dev-na-vps-sem-backup-e-sem-dado-real`): to start from an empty database, remove the containers of the project and its volume (`sudo docker rm -f $(sudo docker ps -aq --filter label=com.docker.compose.project=ageniza-dev)`, then `sudo docker volume rm ageniza-dev_postgres-data`; the project label and the volume name keep this away from production) and re-run the latest **Dev release** deploy. Never run `docker system prune --volumes` on this host.
 
 Rotate independently of production: the dev SSH key (the GitHub secret and the `authorized_keys` line), the GitHub read token, the GHCR token, and the dev tunnel credentials.
+
+## Security headers of the web container
+
+`apps/web/nginx.conf` sends `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin` on the SPA, `/version.txt` and `/app-mobile/` (the entry and version files also send `Cache-Control: no-store`). Nothing embeds the app, so framing is refused outright. The set is repeated in each location on purpose: an `add_header` inside a location replaces every inherited one. The proxied `/api/` keeps the headers its own server sends.
 
 ## Checks before trusting it
 

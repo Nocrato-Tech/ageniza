@@ -26,6 +26,15 @@ const clientPhoto = '/api/agencies/11111111-1111-4111-8111-111111111111/clients/
 const config = readFileSync(resolve(root, 'apps/web/nginx.conf'), 'utf8');
 const include = readFileSync(resolve(root, 'apps/web/nginx-api-proxy.inc'), 'utf8');
 const containers = new Set();
+// Every SPA location repeats the set, because an add_header inside a location cancels the inherited ones; a 404 carries it too.
+const securityHeaders = { 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'", 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin' };
+const spaPaths = ['/', '/clientes/abc', '/version.txt', '/app-mobile/', '/app-mobile/missing.js'];
+const withoutHeaders = (source, marker) => {
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `location not found: ${marker}`);
+  const end = source.indexOf('}', start);
+  return source.slice(0, start) + source.slice(start, end).replace(/^\s*add_header (?:X-Frame-Options|Content-Security-Policy|X-Content-Type-Options|Referrer-Policy) .*\r?\n/gm, '') + source.slice(end);
+};
 let control;
 async function release() { if (control) await fetch(`${control}/__test/release`, { signal: AbortSignal.timeout(5000) }); }
 async function scenario(label, changedConfig, changedInclude) {
@@ -45,6 +54,11 @@ async function scenario(label, changedConfig, changedInclude) {
   const send = (path, init = {}) => fetch(`${base}${path}`, { ...init, signal: AbortSignal.timeout(20_000) });
   try {
     await until(async () => { try { return (await send('/health')).ok; } catch { return false; } }, 'Nginx did not start');
+    for (const path of spaPaths) {
+      const response = await send(path);
+      await response.arrayBuffer();
+      for (const [header, value] of Object.entries(securityHeaders)) assert.equal(response.headers.get(header), value, `Missing ${header} at ${path}`);
+    }
     const probe = await send('/api/probe', { headers: { 'CF-Connecting-IP': '198.51.100.7', 'X-Request-Id': 'edge-review' } });
     assert.equal(probe.status, 200);
     assert.deepEqual(await probe.json(), { path: '/probe', bytes: 0, connection: null, forwardedProto: 'https', forwardedFor: '198.51.100.7', requestId: 'edge-review', host: new URL(base).hostname });
@@ -79,7 +93,7 @@ try {
   control = endpoint(api, 3001);
   await until(async () => { try { return (await fetch(`${control}/__test/pending`)).ok; } catch { return false; } }, 'Test upstream did not start');
   await scenario('baseline');
-  console.log('Nginx identity upload, API limits, forwarding and per-client concurrency: passed');
+  console.log('Nginx identity upload, API limits, forwarding, per-client concurrency and security headers: passed');
   if (process.argv.includes('--mutate')) {
     const mutations = [
       ['photo-body', config.replace('client_max_body_size 14m;', 'client_max_body_size 1m;'), undefined],
@@ -90,7 +104,11 @@ try {
       ['shared-key-photo', config.replace('limit_conn_zone $ageniza_client_ip zone=ageniza_photo_connections', 'limit_conn_zone $server_name zone=ageniza_photo_connections'), undefined],
       ['connection', undefined, include.replace('proxy_set_header Connection "";', '')],
       ['prefix', undefined, include.replace('rewrite ^/api/(.*)$ /$1 break;', '')],
-      ['host', undefined, include.replace('proxy_set_header Host $host;', '')]
+      ['host', undefined, include.replace('proxy_set_header Host $host;', '')],
+      ['headers-spa', withoutHeaders(config, 'location / {'), undefined],
+      ['headers-version', withoutHeaders(config, 'location = /version.txt {'), undefined],
+      ['headers-app-mobile', withoutHeaders(config, 'location ^~ /app-mobile/ {'), undefined],
+      ['header-referrer', config.replace(/^\s*add_header Referrer-Policy .*\r?\n/m, ''), undefined]
     ];
     for (const [label, changedConfig, changedInclude] of mutations) {
       let detected = false;

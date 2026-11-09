@@ -20,11 +20,82 @@ defaults:
     shell: bash
 
 jobs:
+  ci-gate:
+    name: Wait for green CI on this commit
+    # The CI workflow cannot be a trigger for this one: that event only fires for workflows on the default branch (main),
+    # which carries none. So the gate polls for the CI push run of this exact commit. It holds no secret and no
+    # environment, only a read-only token, so nothing that can reach the VPS runs before CI is green.
+    if: vars.DEV_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      release: ${{ steps.wait.outputs.release }}
+    steps:
+      - name: Wait for the CI run of this commit
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WAIT_SECONDS: '2400'
+        run: |
+          deadline=$((SECONDS + WAIT_SECONDS))
+          # A transient API error must not read as "develop moved" or "no CI yet": retry, and fail the job if it persists.
+          # gh writes the error body to stdout on an HTTP error, so each attempt's output is kept and printed only on success.
+          api() {
+            local attempt out
+            for attempt in 1 2 3; do
+              if out="$(gh api "$@")"; then printf '%s\n' "$out"; return 0; fi
+              if (( attempt < 3 )); then sleep "${RETRY_SECONDS:-5}"; fi
+            done
+            return 1
+          }
+          # Succeeds only when the tip of develop is another commit; a failed read fails the whole job.
+          develop_moved() {
+            local tip
+            tip="$(api "repos/$GITHUB_REPOSITORY/git/ref/heads/develop" --jq .object.sha)" || { echo "::error::Cannot read the develop ref from the GitHub API."; exit 1; }
+            [[ "$tip" != "$GITHUB_SHA" ]]
+          }
+          skip_release() {
+            echo "::notice::$1"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          while true; do
+            # A newer push replaces this one: stop waiting so its run, queued behind this one, can start.
+            if develop_moved; then skip_release "develop moved past $GITHUB_SHA; the newer run publishes it, not this one."; fi
+            # The run is picked by its workflow file, not by its display name, which any other workflow could also use.
+            run="$(api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&event=push&per_page=50" --jq \
+              '[.workflow_runs[] | select(((.path // "") | split("@")[0]) == ".github/workflows/ci.yml" and .head_branch == "develop")] | sort_by(.created_at) | last // empty | [.status, (.conclusion // "none"), .html_url] | join(" ")')"
+            read -r status conclusion url <<< "${run:-missing none -}"
+            case "$status" in
+              completed)
+                if [[ "$conclusion" == success ]]; then
+                  echo "CI is green for $GITHUB_SHA: $url"
+                  echo "release=true" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                if develop_moved; then skip_release "develop moved past $GITHUB_SHA while its CI ended as $conclusion."; fi
+                echo "::error::CI ended as '$conclusion' for $GITHUB_SHA, so nothing is published to dev: $url"
+                exit 1
+                ;;
+              missing|queued|in_progress|waiting|pending|requested) ;;
+              *) echo "::error::Unexpected CI status '$status' for $GITHUB_SHA."; exit 1 ;;
+            esac
+            if (( SECONDS >= deadline )); then
+              echo "::error::CI did not finish for $GITHUB_SHA within $((WAIT_SECONDS / 60)) minutes (last status: $status)."
+              exit 1
+            fi
+            sleep 30
+          done
+
   publish:
     name: Build and publish develop images
+    needs: ci-gate
     # The switch is a repository variable, set to true by the owner once the domain, the tunnel and the VPS exist
     # (docs/infra/dev-environment.md); until then a merge to develop builds and publishes nothing.
-    if: vars.DEV_DEPLOY_ENABLED == 'true'
+    if: vars.DEV_DEPLOY_ENABLED == 'true' && needs.ci-gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     environment: dev
@@ -58,6 +129,8 @@ jobs:
           tags: ${{ steps.registry.outputs.namespace }}/ageniza-api:develop-${{ github.sha }}
           build-args: APP_VERSION=${{ github.sha }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=dev-api
+          cache-to: type=gha,mode=max,scope=dev-api
       - id: worker
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
@@ -67,6 +140,8 @@ jobs:
           tags: ${{ steps.registry.outputs.namespace }}/ageniza-worker:develop-${{ github.sha }}
           build-args: APP_VERSION=${{ github.sha }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=dev-worker
+          cache-to: type=gha,mode=max,scope=dev-worker
       - id: web
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
@@ -81,6 +156,8 @@ jobs:
             VITE_DEV_DOCS=true
             APP_VERSION=${{ github.sha }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=dev-web
+          cache-to: type=gha,mode=max,scope=dev-web
       - id: migrations
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
@@ -90,6 +167,8 @@ jobs:
           tags: ${{ steps.registry.outputs.namespace }}/ageniza-migrations:develop-${{ github.sha }}
           build-args: APP_VERSION=${{ github.sha }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=dev-migrations
+          cache-to: type=gha,mode=max,scope=dev-migrations
       - name: Record the immutable dev release manifest
         env:
           NAMESPACE: ${{ steps.registry.outputs.namespace }}
@@ -123,8 +202,8 @@ jobs:
 
   deploy:
     name: Migrate and deploy dev
-    needs: publish
-    if: vars.DEV_DEPLOY_ENABLED == 'true'
+    needs: [ci-gate, publish]
+    if: vars.DEV_DEPLOY_ENABLED == 'true' && needs.ci-gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: dev

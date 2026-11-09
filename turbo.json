@@ -1,5 +1,14 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    "package.json",
+    "pnpm-lock.yaml",
+    "tsconfig.base.json",
+    "eslint.config.mjs",
+    ".nvmrc",
+    ".env",
+    ".env.*"
+  ],
   "tasks": {
     "dev": {
       "dependsOn": ["^build"],
@@ -10,6 +19,11 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "@ageniza/web#build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/api/openapi.json", "$TURBO_ROOT$/docs/mobile/**"],
+      "outputs": ["dist/**"]
+    },
     "lint": {
       "dependsOn": ["^lint"]
     },
@@ -18,7 +32,7 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": ["coverage/**"]
+      "cache": false
     }
   }
 }
