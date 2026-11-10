@@ -9,6 +9,7 @@ ao cliente, senão o mesmo `404`.
 |---|---|---|
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents?from=&to=` | `conteudo.visualizar` |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/feed?cursor=` | `conteudo.visualizar` |
+| `GET` | `/agencies/:agencyId/contents/activation` | `conteudo.visualizar` |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents` | `conteudo.operar` e `conteudo.visualizar` |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | `conteudo.visualizar` |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | `conteudo.operar` e `conteudo.visualizar` |

@@ -2097,6 +2097,7 @@ Lê o estudo de marca, no portal.
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents` | Sessão + vínculo com a agência | `conteudo.visualizar` | Consulta os conteúdos e os roteiros de stories de um período |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/feed` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9 |
+| `GET` | `/agencies/:agencyId/contents/activation` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê os fatos do caminho de ativação da agência |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents` | Sessão + vínculo com a agência | `conteudo.operar` | Cria um conteúdo em produção |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.operar` | Edita um conteúdo; mover de data é editar `publishOn` |
@@ -2226,6 +2227,28 @@ Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/contents/activation`
+
+Lê os fatos do caminho de ativação da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — Os fatos.
+
+```json
+{
+  "data": {
+    "hasContent": true,
+    "sentForApproval": true,
+    "approvedByClient": false,
+    "published": false
+  }
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents`
 
