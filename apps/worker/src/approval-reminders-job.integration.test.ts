@@ -3,7 +3,7 @@ import { PassThrough } from 'node:stream';
 
 import { createLogger } from '@ageniza/core';
 import { createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, type DatabaseClient } from '@ageniza/database';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { APPROVAL_REMINDERS_JOB_NAME, approvalRemindersJob } from './approval-reminders-job.js';
 
@@ -157,21 +157,34 @@ beforeEach(async () => {
   await plantStrangerRound();
 });
 
+// What the cases leave in the queue is dropped as soon as the case ends: the queue is global, and an item of a client of this file must not wait
+// for the end of the file for anyone who claims the queue.
+afterEach(async () => {
+  await knex()('notification_queue').whereIn('client_id', [...clients, ...strangers]).delete();
+});
+
+// Children before parents, and every step is tried even when one fails, so a failed case never leaves a client, a round or the agency behind.
 afterAll(async () => {
-  try {
-    const everyClient = [...clients, ...strangers];
-    await knex()('notification_queue').whereIn('client_id', everyClient).delete();
-    await knex()('contents').whereIn('id', contents).delete();
-    await knex()('media_folders').whereIn('client_id', everyClient).delete();
-    await knex()('client_memberships').whereIn('client_id', everyClient).delete();
-    await knex()('clients').whereIn('id', everyClient).delete();
-    await knex()('agency_memberships').where({ agency_id: ids.agency }).delete();
-    await knex()('agencies').where({ id: ids.agency }).delete();
-    await knex()('auth.user').whereIn('id', users).delete();
-  } finally {
-    await application.close();
-    await owner.close();
+  const everyClient = [...clients, ...strangers];
+  const steps: Array<() => Promise<unknown>> = [
+    () => knex()('client_portal_approval_links').whereIn('client_id', everyClient).delete(),
+    () => knex()('notification_queue').whereIn('client_id', everyClient).delete(),
+    () => knex()('content_approval_rounds').whereIn('client_id', everyClient).delete(),
+    () => knex()('contents').whereIn('id', contents).delete(),
+    () => knex()('media_folders').whereIn('client_id', everyClient).delete(),
+    () => knex()('client_memberships').whereIn('client_id', everyClient).delete(),
+    () => knex()('clients').whereIn('id', everyClient).delete(),
+    () => knex()('agency_memberships').where({ agency_id: ids.agency }).delete(),
+    () => knex()('agencies').where({ id: ids.agency }).delete(),
+    () => knex()('auth.user').whereIn('id', users).delete()
+  ];
+  const failures: unknown[] = [];
+  for (const step of steps) {
+    try { await step(); } catch (error) { failures.push(error); }
   }
+  await application.close();
+  await owner.close();
+  if (failures.length > 0) throw failures[0];
 });
 
 describe('approvals.enqueue-reminders against the database', () => {
