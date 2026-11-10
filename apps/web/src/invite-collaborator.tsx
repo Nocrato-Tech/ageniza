@@ -162,6 +162,7 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
     size="sm"
     description="Informe o e-mail e o papel. A pessoa recebe um link para entrar na equipe."
     onClose={onClose}
+    confirmDiscard={{ dirty: (email !== '' || roleId !== '') && !send.isPending }}
     actions={<Button type="submit" form={formId} disabled={!canSubmit} loading={send.isPending}>Enviar convite</Button>}
   >
     <form ref={formRef} id={formId} className="form-stack" onSubmit={onSubmit} noValidate>

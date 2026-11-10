@@ -8,7 +8,7 @@ import { useContentsAddress } from './content-address.js';
 import { ContentHoverCard } from './content-card-extras.js';
 import { FORMAT_ICONS } from './content-cover.js';
 import { fullDayLabel, WEEKDAY_LABELS, weekdayShortLabel, type CalendarView } from './content-dates.js';
-import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, FORMAT_TONES, isClosed, STATUS_LABELS, STATUS_TAGS, subtaskPercent } from './content-labels.js';
+import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, FORMAT_TONES, isClosed, STATUS_LABELS, STATUS_TAGS } from './content-labels.js';
 
 /**
  * Where the hover card opens, so it faces the inside of the grid: the last two columns (sábado and domingo) open to the
@@ -39,7 +39,6 @@ export function ContentCard({ content, clientId, today, placement = 'bottom-star
   onDragEnd?: () => void;
 }) {
   const alert = deadlineAlert(content, today);
-  const percent = subtaskPercent(content);
   const address = useContentsAddress(clientId);
   const location = useLocation();
   const FormatIcon = FORMAT_ICONS[content.format];
@@ -83,19 +82,16 @@ export function ContentCard({ content, clientId, today, placement = 'bottom-star
         aria-haspopup={hover['aria-haspopup']}
         aria-describedby={hover['aria-expanded'] ? hover['aria-controls'] : undefined}
       >
-        <span className="content-card__format"><FormatIcon aria-hidden="true" />{FORMAT_LABELS[content.format]}</span>
         <span className="content-card__title">{content.title}</span>
+        <span className="content-card__support"><FormatIcon aria-hidden="true" />{content.publishAtTime === null ? FORMAT_LABELS[content.format] : `${FORMAT_LABELS[content.format]} · ${content.publishAtTime}`}</span>
         <span className="content-card__foot">
           {alert === 'overdue' && <LateBadge>{DEADLINE_LABELS.overdue}</LateBadge>}
           <StatusTag status={STATUS_TAGS[content.status]}>{STATUS_LABELS[content.status]}</StatusTag>
-          {content.publishAtTime !== null && <span className="content-card__meta">{content.publishAtTime}</span>}
-          {alert === 'due-soon' && <span className="content-card__meta">{DEADLINE_LABELS['due-soon']}</span>}
-          {percent !== null && <span className="content-card__meta">{percent}% das subtarefas</span>}
         </span>
       </Link>
     </article>}
   >
-    <ContentHoverCard content={content} clientId={clientId} movable={draggable} />
+    <ContentHoverCard content={content} clientId={clientId} today={today} movable={draggable} />
   </Popover>;
 }
 
