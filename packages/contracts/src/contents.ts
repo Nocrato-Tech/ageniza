@@ -210,7 +210,7 @@ export const SubmitContentsBatchRequestSchema = z.object({
  * production, or sent before the rounds existed, which have neither date nor note); inside an object, `dueOn` and `note` are `null` when none was given.
  */
 export const ContentApprovalSchema = z.object({
-  sentAt: z.string().datetime().nullable(),
+  sentAt: z.string().datetime(),
   dueOn: z.string().nullable(),
   note: z.string().nullable()
 }).strict();

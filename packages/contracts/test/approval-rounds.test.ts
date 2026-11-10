@@ -189,14 +189,16 @@ describe('the round a content was sent in, as the agency reads it', () => {
     expect(ContentListItemSchema.safeParse({ ...listItem, approval: null }).success).toBe(true);
     expect(ContentListItemSchema.safeParse({ ...listItem, approval: undefined }).success).toBe(false);
     expect(ContentListItemSchema.safeParse(without(listItem, 'approval')).success).toBe(false);
-    expect(ContentSchema.shape.approval.safeParse({ sentAt: null, dueOn: null, note: null }).success).toBe(true);
+    expect(ContentSchema.shape.approval.safeParse({ sentAt: SENT_AT, dueOn: null, note: null }).success).toBe(true);
     expect(ContentSchema.shape.approval.safeParse(null).success).toBe(true);
     expect(ContentSchema.shape.approval.safeParse(undefined).success).toBe(false);
   });
 
-  it('carries the three fields, each possibly null, and no more', () => {
-    expect(ContentApprovalSchema.safeParse({ sentAt: null, dueOn: null, note: null }).success).toBe(true);
+  it('carries the moment it was sent, always, and the deadline and the note, each possibly null, and no more', () => {
+    expect(ContentApprovalSchema.safeParse({ sentAt: SENT_AT, dueOn: null, note: null }).success).toBe(true);
     for (const approval of [
+      { sentAt: null, dueOn: null, note: null },
+      { dueOn: null, note: null },
       { sentAt: 'yesterday', dueOn: null, note: null },
       { sentAt: SENT_AT, dueOn: null },
       { sentAt: SENT_AT, dueOn: null, note: null, batchId: uuid(1) },
