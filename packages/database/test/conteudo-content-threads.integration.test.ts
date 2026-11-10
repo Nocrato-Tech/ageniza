@@ -112,7 +112,9 @@ describe('one conversation per content (issue #250, acceptance 1)', () => {
   });
 
   it('lets the application insert content_id and still change nothing but the resolution afterwards', async () => {
-    expect(await w.columnsWithPrivilege('client_threads', 'insert')).toEqual(['client_id', 'content_id', 'id', 'opened_by', 'opened_side', 'persona_id', 'section_key']);
+    expect(await w.columnsWithPrivilege('client_threads', 'insert')).toEqual([
+      'client_id', 'content_id', 'due_on', 'id', 'is_material_request', 'opened_by', 'opened_side', 'persona_id', 'section_key'
+    ]);
     expect(await w.columnsWithPrivilege('client_threads', 'update')).toEqual(['resolved_at', 'resolved_by']);
   });
 });
