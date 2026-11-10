@@ -402,6 +402,40 @@ describe('the person opens the approval link (exchange_portal_approval_token)', 
       .count<Array<{ count: string }>>('* as count');
     expect(sessions[0]!.count).toBe('2');
   });
+
+  const sessionsOf = async (tokenHash: string): Promise<number> =>
+    Number((await owner()('client_portal_approval_sessions as session')
+      .join('client_portal_approval_links as link', 'link.id', 'session.link_id')
+      .where('link.token_hash', tokenHash)
+      .count<Array<{ count: string }>>('* as count'))[0]!.count);
+
+  it('waits for the removal of the access that is in flight and then refuses, opening no session and recording no entry', async () => {
+    const clientId = await freshClient();
+    const { accessId, tokenHash } = await linkOfAccess(clientId);
+
+    const outcome = await exchangeWhileHeld(tokenHash, async (holder) => {
+      const removed = await holder.raw<{ rows: Array<{ changed: boolean }> }>('select * from app_private.remove_client_portal_access(?::uuid)', [accessId]);
+      expect(removed.rows).toEqual([{ account_user_id: null, changed: true }]);
+    });
+
+    expect(outcome).toMatchObject({ code: 'A0100' });
+    expect(await sessionsOf(tokenHash)).toBe(0);
+    expect(await entryOf(accessId)).toEqual({ first: null, last: null, user_id: null });
+    expect(await owner()('client_portal_accesses').where({ id: accessId }).first('status')).toEqual({ status: 'removed' });
+  });
+
+  it('waits for the archiving of the client that is in flight and then refuses, opening no session and recording no entry', async () => {
+    const clientId = await freshClient();
+    const { accessId, tokenHash } = await linkOfAccess(clientId);
+
+    const outcome = await exchangeWhileHeld(tokenHash, async (holder) => {
+      await holder.raw('select app_private.archive_client(?::uuid)', [clientId]);
+    });
+
+    expect(outcome).toMatchObject({ code: 'A0100' });
+    expect(await sessionsOf(tokenHash)).toBe(0);
+    expect((await entryOf(accessId)).last).toBeNull();
+  });
 });
 
 const waitUntilBlocked = async (pids: readonly number[]): Promise<void> => {
@@ -414,6 +448,28 @@ const waitUntilBlocked = async (pids: readonly number[]): Promise<void> => {
     if (rows[0]!.blocked === pids.length) return;
     if (Date.now() > deadline) throw new Error('The backends never blocked.');
     await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};
+
+/**
+ * Two real transactions. The Admin's `hold` writes and stays open; the exchange of the token starts behind it and must wait; the Admin
+ * then commits and the exchange is judged on what committed. Returns what the exchange ended with: `'opened'` or its error.
+ */
+const exchangeWhileHeld = async (tokenHash: string, hold: (holder: Knex.Transaction) => Promise<void>): Promise<unknown> => {
+  const holder = await w.openTransactionAs(ids.adminA);
+  const exchanging = await worker.knex.transaction();
+  try {
+    await hold(holder);
+    const pid = await backendPid(exchanging);
+    const run = exchanging.raw('select * from app_private.exchange_portal_approval_token(?, ?)', [tokenHash, newToken().hash]).then(() => 'opened', (error: unknown) => error);
+    const first = await Promise.race([waitUntilBlocked([pid]).then(() => 'waiting', () => 'never waited'), run.then(() => 'ended before the holder let go')]);
+    expect(first).toBe('waiting');
+    await holder.commit();
+    const outcome = await run;
+    if (outcome === 'opened') await exchanging.commit(); else await exchanging.rollback();
+    return outcome;
+  } finally {
+    for (const open of [holder, exchanging]) if (!open.isCompleted()) await open.rollback();
   }
 };
 
