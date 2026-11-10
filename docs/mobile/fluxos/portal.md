@@ -85,7 +85,7 @@ O portal mobile apresenta feed em Geral, calendário e fila de aprovações. Rev
 
 ## Ampliação da integração nativa
 
-O portal exige contexto de cliente autenticado. Boas-vindas usam o campo de primeiro acesso e gravam a ciência pela rota `onboarding/seen`. O estudo de marca é somente leitura; conversas não permitem escrita quando a agência está em modo leitura. Roteiros enviados podem ser lidos e marcados como gravados. Tipos de mídia são preservados na prévia de carrosséis mistos. Nenhuma sessão de agência é convertida em sessão de portal pelo aplicativo.
+O portal exige contexto de cliente autenticado. Boas-vindas usam o campo de primeiro acesso e gravam a ciência pela rota `onboarding/seen`. O estudo de marca é somente leitura; conversas não permitem escrita quando a agência está em modo leitura. Nesse caso, com `agencyReadOnly`, o aviso é neutro: "A aprovação está pausada no momento. A equipe de {agência} já foi avisada." Nunca diga ao cliente que o plano da agência precisa ser renovado (decisão 2026-11-06). Roteiros enviados podem ser lidos e marcados como gravados. Tipos de mídia são preservados na prévia de carrosséis mistos. Nenhuma sessão de agência é convertida em sessão de portal pelo aplicativo.
 
 
 A aba Aprovações do aplicativo usa a rota própria `contents/awaiting-approval`, percorre todas as páginas e não restringe as pendências ao mês do calendário. O feed e o calendário continuam no período escolhido. A lista não inventa legenda, mídias ou revisão; ao abrir, o detalhe atual da API fornece o conteúdo e a revisão que serão usados na decisão.

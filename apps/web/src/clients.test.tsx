@@ -881,6 +881,44 @@ describe('create client modal (#135)', () => {
     expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`);
   });
 
+  it.each([
+    ['TRIAL_CLIENT_LIMIT', 'O período de teste permite até 3 clientes ativos.'],
+    ['PLAN_CLIENT_LIMIT', 'Você chegou ao limite de clientes do seu plano.']
+  ])('on %s the Owner gets the limit with the way to plans and extras, not a name-in-use error', async (code, message) => {
+    const { impl } = makeFetch({
+      permissions: [...CLIENT_PERMISSIONS, 'assinatura.gerenciar'],
+      createClient: () => json({ error: { code, message } }, 409)
+    });
+    const { container } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+    const dialog = await openCreate(container);
+    const name = within(dialog).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: 'Padaria Nova' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cadastrar' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toContain('A agência chegou ao limite de clientes ativos do plano. Suba de plano ou compre extras para continuar.');
+    expect(within(dialog).getByRole('link', { name: 'Ver planos e extras' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/assinatura`);
+    expect(within(dialog).queryByText('Já existe um cliente ativo com este nome.')).toBeNull();
+    expect(name.getAttribute('aria-invalid')).toBeNull();
+    expect(name.value).toBe('Padaria Nova');
+    fireEvent.change(name, { target: { value: 'Padaria Nova 2' } });
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+  });
+
+  it('on the client limit an Admin is told whom to ask and gets no link', async () => {
+    const { impl } = makeFetch({ createClient: () => json({ error: { code: 'PLAN_CLIENT_LIMIT', message: 'x' } }, 409) });
+    const { container } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+    const dialog = await openCreate(container);
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nome' }), { target: { value: 'Padaria Nova' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cadastrar' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toContain('Peça a quem criou a agência para subir o plano ou comprar extras.');
+    expect(within(dialog).queryByRole('link')).toBeNull();
+  });
+
   it('says the error with its icon, puts the focus back on the name, and sends from the foot of the dialog', async () => {
     const { impl } = makeFetch({
       createClient: () => json({ error: { code: 'CLIENT_NAME_IN_USE', message: 'private diagnostic' } }, 409)

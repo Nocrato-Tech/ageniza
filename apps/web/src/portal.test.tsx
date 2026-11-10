@@ -10,7 +10,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { PortalClientResponse } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
-import { ApiClientProvider, HttpClient } from './http.js';
+import { ApiClientProvider, HttpClient, HttpClientError } from './http.js';
+import { recordRefusal } from './portal-story-scripts.js';
 import { createQueryClient } from './query.js';
 import { portalClientQueryKey } from './portal.js';
 import { ApplicationRoutes } from './routes.js';
@@ -249,7 +250,9 @@ describe('client portal shell (#141)', () => {
   it('says the portal is read-only when the trial of the agency ended, and nothing otherwise (issue #714)', async () => {
     renderPortal(makeFetch({ portal: () => json(portalClient({ agencyReadOnly: true })) }).impl);
     const notice = await screen.findByRole('region', { name: 'Portal somente leitura' });
-    expect(notice.textContent).toContain('O plano de Agência Um precisa ser renovado para aprovar, pedir ajustes e comentar.');
+    expect(notice.textContent).toBe('A aprovação está pausada no momento. A equipe de Agência Um já foi avisada. Tudo continua visível.');
+    // The client is never told about the agency's billing (decision 2026-11-06).
+    expect(notice.textContent).not.toMatch(/plano|renov|assin|cobran|pag/i);
     cleanup();
 
     renderPortal(makeFetch({ portal: () => json(portalClient()) }).impl);
@@ -826,6 +829,23 @@ describe('the Início: approvals and the script of today (#271)', () => {
       expect(button.className).toContain('ui-button--secondary');
       expect(button.className).not.toContain('ui-button--primary');
       expect(document.querySelectorAll('.ui-button--primary')).toHaveLength(1);
+    });
+
+    it('while the agency is read-only, "Já gravei" is blocked with the neutral reason and nothing on screen speaks of the plan (decision 2026-11-06)', async () => {
+      const api = scriptsApi();
+      api.seed({ scriptOn: TODAY });
+      renderPortal(makeFetch({ scripts: api, portal: () => json(portalClient({ agencyReadOnly: true, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0 } })) }).impl);
+      const button = await screen.findByRole('button', { name: 'Já gravei' });
+
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      const reason = (button.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent).join(' ');
+      expect(reason).toBe('A aprovação está pausada no momento. A agência já foi avisada.');
+      expect(document.body.textContent).not.toMatch(/plano|renov/i);
+    });
+
+    it('a refusal of Já gravei because the agency turned read-only says the neutral reason, never the server text', () => {
+      const error = new HttpClientError('O plano desta agência precisa ser renovado para usar esta opção.', { code: 'AGENCY_READ_ONLY', status: 409 });
+      expect(recordRefusal(error)).toBe('A aprovação está pausada no momento. A agência já foi avisada.');
     });
 
     it('marks it recorded with one click on that script, shows who and the day in São Paulo, and no button after', async () => {

@@ -8480,3 +8480,443 @@ html:has(.portal-post__bar) {
   font: var(--body-md);
   overflow-wrap: anywhere;
 }
+/* Assinatura (issue #773): plans, extras and the simulated card, in the Pauta look (one primary action per view). */
+.subscription {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 48rem;
+}
+
+.subscription h1 {
+  margin: 0;
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.subscription h2,
+.subscription-card__title {
+  margin: 0;
+  font: var(--heading-md);
+}
+
+.subscription__block {
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-default);
+}
+
+.subscription p,
+.subscription ul {
+  margin: 0;
+  font: var(--body-md);
+}
+
+.subscription__facts {
+  display: grid;
+  gap: var(--space-1);
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+}
+
+.subscription__notice {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.subscription__notice--alert {
+  color: var(--text-danger);
+}
+
+.subscription--pricing {
+  max-width: 64rem;
+}
+
+.subscription__state {
+  color: var(--text-secondary);
+}
+
+.plan-cards {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.plan-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+/* Recommended first when the cards stack, in the middle when they sit side by side. */
+.plan-card--recommended {
+  order: -1;
+  border-color: var(--action-primary-bg);
+  box-shadow: 0 0 0 1px var(--action-primary-bg);
+}
+
+.plan-card__tags {
+  display: flex;
+  gap: var(--space-2);
+  min-height: 1.5rem;
+}
+
+.plan-card__name {
+  margin: 0;
+  font: var(--heading-md);
+}
+
+.plan-card__price {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.plan-card__amount {
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+}
+
+.plan-card__period,
+.plan-card__audience {
+  color: var(--text-secondary);
+}
+
+.plan-card__limits,
+.plan-includes ul {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.plan-card__limits li,
+.plan-includes li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.plan-card__limits svg,
+.plan-includes svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  color: var(--action-primary-bg);
+}
+
+.plan-card .ui-button {
+  align-self: end;
+  justify-content: center;
+}
+
+.plan-includes {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--bg-hover);
+}
+
+.plan-includes ul {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.subscription__target {
+  margin: 0;
+  font: var(--label-md);
+}
+
+.subscription__tools {
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-default);
+  color: var(--text-secondary);
+}
+
+.subscription__tools summary {
+  cursor: pointer;
+  font: var(--label-md);
+}
+
+.subscription__tools[open] {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.subscription-card__plan {
+  color: var(--text-secondary);
+}
+
+@media (min-width: 48rem) {
+  .plan-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .plan-card--recommended {
+    order: 0;
+  }
+}
+
+.subscription__extras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-4);
+}
+
+.subscription__summary {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+}
+
+.subscription__total {
+  color: var(--text-primary);
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.subscription__actions,
+.subscription-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.subscription-card {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.subscription-card__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.subscription-card__title svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+}
+
+.subscription-card__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-4);
+}
+
+.subscription-cancel {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.subscription-cancel h3 {
+  margin: 0 0 var(--space-2);
+  font: var(--label-md);
+}
+
+.subscription-cancel ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+/* The last days before the read-only mode: the same strip, with a heavier border and the icon in the danger tone (no fill, no side border). */
+.trial-notice--urgent {
+  border-color: var(--border-control);
+}
+
+.trial-notice--urgent .shell-notice__icon {
+  color: var(--status-late-fg);
+}
+
+/* A plan ceiling reached inside a form or a dialog: what blocked, and the way out. */
+.plan-limit {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.plan-limit__text {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.plan-limit__text svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: var(--space-1);
+}
+
+/* Activation path of a new agency's Início (decision 2026-11-06): four steps, each done or pending. */
+.activation {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.activation__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.activation__header h2,
+.activation__header p {
+  margin: 0;
+}
+
+.activation__header h2 {
+  font: var(--title-md);
+}
+
+.activation__header p,
+.activation__description,
+.activation__state {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.activation__steps {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activation__step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.activation__mark {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--text-secondary);
+}
+
+.activation__step[data-done='true'] .activation__mark {
+  color: var(--status-ready-fg);
+}
+
+.activation__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.activation__title {
+  font: var(--title-md);
+}
+
+@media (max-width: 40rem) {
+  .activation__step {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .activation__step > .ui-button {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+/* Milestones: a message that never blocks, and confetti that catches no click and goes away by itself. */
+.milestone {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.milestone--toast {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  z-index: 20;
+  max-width: min(26rem, calc(100vw - 2 * var(--space-4)));
+  box-shadow: var(--shadow-floating);
+}
+
+.milestone__icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--status-ready-fg);
+}
+
+.milestone__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.milestone__text span {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.confetti {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.confetti__piece {
+  position: absolute;
+  top: -1rem;
+  left: var(--confetti-x);
+  width: 0.5rem;
+  height: 0.875rem;
+  border-radius: var(--radius-sm);
+  background: var(--confetti-color);
+  animation: confetti-fall 2400ms var(--motion-easing-standard) var(--confetti-delay) both;
+}
+
+@keyframes confetti-fall {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(var(--confetti-drift), 105vh) rotate(540deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    display: none;
+  }
+}

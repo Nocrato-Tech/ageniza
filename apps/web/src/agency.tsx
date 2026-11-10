@@ -12,7 +12,9 @@ import { Button, ButtonLink, EmptyState, Logo, Skeleton } from '@ageniza/ui';
 import { apiPath } from './api-path.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { ActivationPath, useActivationFacts } from './activation-path.js';
 import { InvitationNotice } from './invitation-notice.js';
+import { MilestoneCelebration } from './milestone-celebration.js';
 import { LegalNotice } from './legal-notice.js';
 import { PLAN_RENEWAL_REASON, TrialNotice } from './plan-notice.js';
 import { StatusPanel } from './status-panel.js';
@@ -121,7 +123,7 @@ export function AgencyAreaLayout() {
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
       <AgencySidebar agenciaId={agenciaId} agencyName={data.agencyName} permissions={data.permissions} />
       <div className="agency-body">
-        <TrialNotice plan={data.plan} />
+        <TrialNotice plan={data.plan} agencyId={data.agencyId} canSubscribe={data.permissions.includes('assinatura.gerenciar')} />
         <LegalNotice />
         <main className="agency-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/agencia/${data.agencyId}`}><Outlet /></NotFoundHomeContext.Provider></main>
       </div>
@@ -153,6 +155,7 @@ export function AgencyHomePage() {
   const canSeeClients = useCan('cliente.visualizar');
   // The same condition as the menu: Conteúdos needs the roster behind its picker.
   const canSeeContents = useCan('conteudo.visualizar') && canSeeClients;
+  const activation = useActivationFacts(agency.agencyId, canSeeContents);
   useDocumentTitle(`${agency.agencyName} — Ageniza`);
 
   const shortcuts: Shortcut[] = [
@@ -163,6 +166,8 @@ export function AgencyHomePage() {
 
   return <section aria-labelledby="agency-home-title" className="agency-home">
     <h1 id="agency-home-title">{agency.agencyName}</h1>
+    <MilestoneCelebration agencyId={agency.agencyId} facts={activation.facts} />
+    <ActivationPath facts={activation.pathFacts} firstClientId={activation.firstClientId} />
     {shortcuts.length === 0
       ? <EmptyState
           className="agency-home__empty"
