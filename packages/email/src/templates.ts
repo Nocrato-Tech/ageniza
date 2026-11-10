@@ -214,14 +214,27 @@ export interface ClientContentEmailInput {
 }
 
 /**
- * The e-mail "contents to approve" carries the approval link of the person (issue #712) instead of the portal: it opens the contents of
- * this batch and nothing else, without a login. The token is in the fragment (`#`), which the browser never sends to a server.
+ * What the agency sent in ONE send (a batch): its deadline, its note and its contents. The contents that were already waiting before
+ * the rounds existed have no batch, no deadline and no note, and come as a batch with none of the three.
+ */
+export interface ApprovalBatch {
+  /** The deadline, `YYYY-MM-DD` (the day in São Paulo), or null. */
+  readonly dueOn: string | null;
+  /** Free text of the agency, up to 500 characters, with line breaks: escaped in the HTML and never in the subject. */
+  readonly note: string | null;
+  readonly items: readonly ContentNotificationItem[];
+}
+
+/**
+ * The e-mails of approval ("contents to approve" and its two reminders) carry the approval link of the person (issue #712) instead of the
+ * portal: it opens the contents of this e-mail and nothing else, without a login. The token is in the fragment (`#`), which the browser
+ * never sends to a server.
  */
 export interface ClientApprovalEmailInput {
   readonly agencyName: string;
   readonly clientName: string;
   readonly approvalUrl: string;
-  readonly items: readonly ContentNotificationItem[];
+  readonly batches: readonly ApprovalBatch[];
 }
 
 const formatPlannedDate = (publishOn: string | null): string | undefined => {
@@ -229,28 +242,76 @@ const formatPlannedDate = (publishOn: string | null): string | undefined => {
   return match === null ? undefined : `${match[3]}/${match[2]}/${match[1]}`;
 };
 
+const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'] as const;
+
+/** "sexta, 14/11": a calendar day read as text, so no time zone moves it, and undefined for what is not a real day. */
+const formatDeadline = (dueOn: string | null): string | undefined => {
+  const match = dueOn === null ? null : /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueOn);
+  if (match === null) return undefined;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  // A day that does not exist (31 February, month 13) rolls over into another one, which no longer reads as the text it came from.
+  if (date.toISOString().slice(0, 10) !== match[0]) return undefined;
+  return `${WEEKDAYS[date.getUTCDay()]!}, ${match[3]}/${match[2]}`;
+};
+
 const countOf = (count: number): string => count === 1 ? 'um conteúdo' : `${count} conteúdos`;
+
+interface Block {
+  readonly text: string;
+  readonly html: string;
+}
+
+const listBlock = (items: readonly ContentNotificationItem[]): Block => {
+  const lines = items.map((item) => {
+    const date = formatPlannedDate(item.publishOn);
+    return date === undefined ? oneLine(item.title) : `${oneLine(item.title)} (${date})`;
+  });
+  return { text: lines.map((line) => `- ${line}`).join('\n'), html: `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>` };
+};
+
+const LINE_BREAK = /\r\n|[\n\r\u0085\u2028\u2029]/;
+// Characters that draw nothing and are not in the Cf category (combining grapheme joiner, Hangul fillers, the blank braille pattern).
+const INVISIBLE_FILLERS = /[\u034F\u115F\u1160\u2800\u3164\uFFA0]/g;
+
+// The note is the one text of the e-mail that keeps its line breaks, as lines: every line is cleaned like a name (no control or format
+// mark), a blank line stays one, and the ends are trimmed. The HTML gets `<br>` between the escaped lines, never the text as typed.
+const noteLines = (note: string | null): string[] => {
+  const lines: string[] = [];
+  for (const typed of note === null ? [] : note.split(LINE_BREAK)) {
+    const line = oneLine(typed.replace(INVISIBLE_FILLERS, ' '));
+    if (line === '' && (lines.length === 0 || lines.at(-1) === '')) continue;
+    lines.push(line);
+  }
+  while (lines.at(-1) === '') lines.pop();
+  return lines;
+};
+
+const noteBlock = (note: string | null, agencyName: string): Block | undefined => {
+  const lines = noteLines(note);
+  if (lines.length === 0) return undefined;
+  const signed = [...lines, `— ${agencyName}`];
+  return {
+    text: ['Recado:', ...signed].join('\n'),
+    html: `<p><strong>Recado:</strong></p>\n<blockquote>${signed.map(escapeHtml).join('<br>')}</blockquote>`
+  };
+};
 
 const clientContentEmail = (
   subject: string,
   introduction: string,
   invitation: string,
-  input: Pick<ClientContentEmailInput, 'agencyName' | 'clientName' | 'items'> & { readonly actionUrl: string; readonly closing?: string }
+  input: Pick<ClientContentEmailInput, 'agencyName' | 'clientName'> & { readonly actionUrl: string; readonly closing?: string },
+  blocks: readonly Block[]
 ): EmailMessage => {
   assertDisplayName('O nome da agência', input.agencyName);
   assertDisplayName('O nome do cliente', input.clientName);
   assertHttpsUrl(input.actionUrl);
-  if (input.items.length === 0) throw new Error('O e-mail precisa de ao menos um conteúdo.');
-  const lines = input.items.map((item) => {
-    const date = formatPlannedDate(item.publishOn);
-    return date === undefined ? oneLine(item.title) : `${oneLine(item.title)} (${date})`;
-  });
   return {
     subject,
-    text: [introduction, lines.map((line) => `- ${line}`).join('\n'), `${invitation}\n${input.actionUrl}`, ...(input.closing === undefined ? [] : [input.closing])].join('\n\n'),
+    text: [introduction, ...blocks.map((block) => block.text), `${invitation}\n${input.actionUrl}`, ...(input.closing === undefined ? [] : [input.closing])].join('\n\n'),
     html: [
       `<p>${escapeHtml(introduction)}</p>`,
-      `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`,
+      ...blocks.map((block) => block.html),
       `<p>${escapeHtml(invitation)}</p>`,
       `<p><a href="${escapeHtml(input.actionUrl)}">${escapeHtml(input.actionUrl)}</a></p>`,
       ...(input.closing === undefined ? [] : [`<p>${escapeHtml(input.closing)}</p>`])
@@ -266,31 +327,80 @@ const assertApprovalUrl = (approvalUrl: string): void => {
   if (parsed.search !== '' || parsed.hash.length < 2) throw new Error('O link de aprovação leva o token no fragmento (#), sem consulta (?).');
 };
 
-/** "Contents to approve": one e-mail per person and client, with everything the agency sent in the burst, and the link that approves them. */
-export const contentsAwaitingApprovalEmail = (input: ClientApprovalEmailInput): EmailMessage => {
+// The link is a bearer: whoever opens it decides for the person, so the e-mail says what it opens, how long it lasts and not to pass it on.
+const APPROVAL_CLOSING = 'O link vale por 7 dias, abre só os conteúdos deste e-mail e não pede que você crie uma conta. Ele é só seu: quem o abrir pode aprovar ou pedir ajuste em seu nome, então não o encaminhe.';
+
+interface ApprovalWording {
+  readonly subject: (count: string, clientName: string, deadline: string | undefined) => string;
+  readonly introduction: (count: string, agencyName: string, clientName: string) => string;
+  readonly deadlineLine: (deadline: string) => string;
+}
+
+// The subject names the deadline only when every batch of the e-mail has one, and then the earliest, the one that binds first. The
+// text of the note is never in it: the subject is a header, and what the agency typed does not belong there.
+const earliestDeadline = (batches: readonly ApprovalBatch[]): string | undefined => {
+  const days = batches.map((batch) => batch.dueOn).filter((dueOn): dueOn is string => formatDeadline(dueOn) !== undefined);
+  return days.length === 0 || days.length !== batches.length ? undefined : formatDeadline([...days].sort()[0]!);
+};
+
+const approvalEmail = (wording: ApprovalWording, input: ClientApprovalEmailInput): EmailMessage => {
   assertApprovalUrl(input.approvalUrl);
+  if (input.batches.length === 0 || input.batches.some((batch) => batch.items.length === 0)) throw new Error('O e-mail precisa de ao menos um conteúdo.');
   const agencyName = oneLine(input.agencyName);
   const clientName = oneLine(input.clientName);
+  const total = countOf(input.batches.reduce((sum, batch) => sum + batch.items.length, 0));
+  const blocks = input.batches.flatMap((batch): Block[] => {
+    const deadline = formatDeadline(batch.dueOn);
+    const note = noteBlock(batch.note, agencyName);
+    return [
+      ...(deadline === undefined ? [] : [{ text: wording.deadlineLine(deadline), html: `<p><strong>${escapeHtml(wording.deadlineLine(deadline))}</strong></p>` }]),
+      ...(note === undefined ? [] : [note]),
+      listBlock(batch.items)
+    ];
+  });
   return clientContentEmail(
-    `${countOf(input.items.length)} para você aprovar: ${clientName}`,
-    `${agencyName} enviou ${countOf(input.items.length)} de ${clientName} para a sua aprovação.`,
+    wording.subject(total, clientName, earliestDeadline(input.batches)),
+    wording.introduction(total, agencyName, clientName),
     'Abra o link para ver os conteúdos e aprovar ou pedir ajuste:',
-    {
-      ...input,
-      actionUrl: input.approvalUrl,
-      closing: 'O link vale por 7 dias e é só seu: quem o abrir pode aprovar ou pedir ajuste em seu nome. Não o encaminhe.'
-    }
+    { ...input, actionUrl: input.approvalUrl, closing: APPROVAL_CLOSING },
+    blocks
   );
 };
 
+/**
+ * "Contents to approve": one e-mail per person and client, with everything the agency sent in the burst, grouped by send, each with its
+ * deadline and its note, and the link that approves them. A content from before the rounds comes as a send with neither.
+ */
+export const contentsAwaitingApprovalEmail = (input: ClientApprovalEmailInput): EmailMessage => approvalEmail({
+  subject: (count, clientName, deadline) => deadline === undefined ? `${count} para você aprovar: ${clientName}` : `${count} para você aprovar até ${deadline}: ${clientName}`,
+  introduction: (count, agencyName, clientName) => `${agencyName} enviou ${count} de ${clientName} para a sua aprovação.`,
+  deadlineLine: (deadline) => `Aprovar até ${deadline}`
+}, input);
+
+/** The eve of the deadline: only what still waits for a decision, with the link that decides it. */
+export const approvalDueSoonEmail = (input: ClientApprovalEmailInput): EmailMessage => approvalEmail({
+  subject: (count, clientName) => `Vence amanhã: aprovar ${count} de ${clientName}`,
+  introduction: (count, agencyName, clientName) => `${agencyName} aguarda a sua aprovação de ${count} de ${clientName}, e o prazo termina amanhã.`,
+  deadlineLine: (deadline) => `Prazo: ${deadline}`
+}, input);
+
+/** The day after the deadline: what still waits, with the link that decides it. It does not scold: the contents are still open. */
+export const approvalOverdueEmail = (input: ClientApprovalEmailInput): EmailMessage => approvalEmail({
+  subject: (count, clientName) => `Prazo vencido: aprovar ${count} de ${clientName}`,
+  introduction: (count, agencyName, clientName) => `${agencyName} ainda aguarda a sua aprovação de ${count} de ${clientName}, e o prazo já passou.`,
+  deadlineLine: (deadline) => `Prazo: ${deadline}`
+}, input);
+
 /** The daily summary of what the agency published. */
 export const contentsPublishedEmail = (input: ClientContentEmailInput): EmailMessage => {
+  if (input.items.length === 0) throw new Error('O e-mail precisa de ao menos um conteúdo.');
   const agencyName = oneLine(input.agencyName);
   const clientName = oneLine(input.clientName);
   return clientContentEmail(
     `${countOf(input.items.length)} publicado${input.items.length === 1 ? '' : 's'}: ${clientName}`,
     `${agencyName} publicou ${countOf(input.items.length)} de ${clientName}.`,
     'Veja no portal:',
-    { ...input, actionUrl: input.portalUrl }
+    { ...input, actionUrl: input.portalUrl },
+    [listBlock(input.items)]
   );
 };
