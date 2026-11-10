@@ -320,7 +320,7 @@ describe('worker runtime', () => {
     expect(archive?.runOnStart).toBe(true);
     expect(registered.filter((definition) => definition.name === 'clients.archive-due')).toHaveLength(1);
     // Video processing needs storage and is absent from this config; the archive does not need it.
-    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed']);
+    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed', 'approvals.enqueue-reminders']);
   });
 
   it('registers the purge of the unconfirmed accounts, daily at 04:10, whether or not object storage is configured', () => {
@@ -333,6 +333,20 @@ describe('worker runtime', () => {
     expect(registered.filter((definition) => definition.name === 'accounts.purge-unconfirmed')).toHaveLength(1);
   });
 
+  it('registers the reminders of approval, daily at 09:00 in São Paulo, with only the database, whether or not the e-mail or object storage is configured', () => {
+    const queue = createTestQueue();
+    createTestRuntime({ queue });
+    const registered = vi.mocked(queue.register).mock.calls.map(([definition]) => definition);
+    const reminders = registered.find((definition) => definition.name === 'approvals.enqueue-reminders');
+    expect(reminders?.schedule).toEqual({ cron: '0 9 * * *', timeZone: 'America/Sao_Paulo' });
+    expect(reminders?.runOnStart).toBe(true);
+    expect(registered.filter((definition) => definition.name === 'approvals.enqueue-reminders')).toHaveLength(1);
+
+    const withEmail = createTestQueue();
+    createTestRuntime({ queue: withEmail, emailSender: { send: vi.fn(async () => undefined), close: vi.fn(async () => undefined) }, config: { ...config, appPublicUrl: 'http://127.0.0.1:5173' } });
+    expect(vi.mocked(withEmail.register).mock.calls.filter(([definition]) => definition.name === 'approvals.enqueue-reminders')).toHaveLength(1);
+  });
+
   it('registers the purge of the removed media, daily, together with the video processing, only when object storage is configured', () => {
     const withStorage = createTestQueue();
     createTestRuntime({
@@ -340,7 +354,7 @@ describe('worker runtime', () => {
       config: { ...config, storage: { endpoint: 'http://127.0.0.1:9000', region: 'auto', accessKeyId: 'key', secretAccessKey: 'secret', bucket: 'bucket', forcePathStyle: true } }
     });
     const registered = vi.mocked(withStorage.register).mock.calls.map(([definition]) => definition);
-    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed', 'media.process-video', 'media.purge-removed']);
+    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed', 'approvals.enqueue-reminders', 'media.process-video', 'media.purge-removed']);
     const purge = registered.find((definition) => definition.name === 'media.purge-removed');
     expect(purge?.schedule).toEqual({ cron: '40 3 * * *', timeZone: 'America/Sao_Paulo' });
     expect(purge?.runOnStart).toBe(true);
@@ -359,7 +373,7 @@ describe('worker runtime', () => {
     const email = registered.find((definition) => definition.name === 'notifications.send-client-content-emails');
     expect(email?.schedule).toEqual({ cron: '* * * * *', timeZone: 'America/Sao_Paulo' });
     expect(email?.runOnStart).toBe(true);
-    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed', 'notifications.send-client-content-emails']);
+    expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed', 'approvals.enqueue-reminders', 'notifications.send-client-content-emails']);
   });
 
   it.each([
@@ -372,7 +386,7 @@ describe('worker runtime', () => {
     destination.on('data', (chunk: Buffer) => output.push(chunk.toString()));
     createTestRuntime({ queue, logger: createLogger({}, destination), ...(emailSender === undefined ? {} : { emailSender }), config: { ...config, ...extraConfig } });
 
-    expect(vi.mocked(queue.register).mock.calls.map(([definition]) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed']);
+    expect(vi.mocked(queue.register).mock.calls.map(([definition]) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed', 'approvals.enqueue-reminders']);
     expect(output.join('')).toContain('the e-mails to the clients will not be sent');
   });
 
@@ -399,7 +413,7 @@ describe('worker runtime', () => {
       const withProvider = createTestQueue();
       createTestRuntime({ queue: withProvider, paymentProvider: providerOf().provider });
       const registered = vi.mocked(withProvider.register).mock.calls.map(([definition]) => definition);
-      expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed', 'subscriptions.renew-due']);
+      expect(registered.map((definition) => definition.name)).toEqual(['clients.archive-due', 'accounts.purge-unconfirmed', 'approvals.enqueue-reminders', 'subscriptions.renew-due']);
       const renewal = registered.find((definition) => definition.name === 'subscriptions.renew-due');
       expect(renewal?.schedule).toEqual({ cron: '*/5 * * * *', timeZone: 'America/Sao_Paulo' });
       expect(renewal?.runOnStart).toBe(true);

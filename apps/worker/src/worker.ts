@@ -18,6 +18,7 @@ import { createDatabaseClient, type DatabaseClient } from '@ageniza/database';
 import { createEmailSender, type EmailSender } from '@ageniza/email';
 import type { PaymentProvider } from '@ageniza/payments';
 
+import { approvalRemindersJob } from './approval-reminders-job.js';
 import { archiveDueClientsJob } from './archive-due-clients-job.js';
 import { clientContentEmailJob } from './client-content-email-job.js';
 import { createJobProcessor, type JobProcessor } from './jobs.js';
@@ -107,6 +108,8 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
   if (queue !== undefined) queue.register(archiveDueClientsJob({ database }));
   // The retention of the accounts never confirmed (issue #724) needs only the database too.
   if (queue !== undefined) queue.register(unconfirmedAccountPurgeJob({ database }));
+  // The reminders of approval (decision 2026-11-10) only enqueue, from the database: the e-mail job below sends them.
+  if (queue !== undefined) queue.register(approvalRemindersJob({ database }));
   // Video processing (issue #24): registered whenever object storage is configured, exactly like
   // the API only mounts its media routes when `config.storage` is present. Registration must
   // happen before `queue.start()` (enforced by `queue.register` itself).
