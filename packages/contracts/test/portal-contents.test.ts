@@ -15,7 +15,7 @@ describe('PortalContentMediaItemSchema', () => {
 });
 
 describe('the file that serves as the cover of the card (issue #606)', () => {
-  const open = { id, title: 'Post', platform: 'instagram', format: 'image', publishOn: '2026-10-20', publishAtTime: null, status: 'approved', coverAssetId: null, publishedOn: null };
+  const open = { id, title: 'Post', platform: 'instagram', format: 'image', publishOn: '2026-10-20', publishAtTime: null, status: 'approved', coverAssetId: null, publishedOn: null, approval: null };
 
   it('is an id or null in the open item of the list, and is required', () => {
     expect(PortalContentOpenListItemSchema.safeParse({ ...open, thumbnailAssetId: id }).success).toBe(true);

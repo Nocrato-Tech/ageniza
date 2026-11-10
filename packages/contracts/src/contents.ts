@@ -39,7 +39,7 @@ export const CONTENT_DAY_FLOOR = '2000-01-01';
 /** A day of the calendar a content is planned or published on: real, and not before `CONTENT_DAY_FLOOR`. */
 export const ContentDaySchema = CalendarDaySchema.refine((day) => day >= CONTENT_DAY_FLOOR, `must not be before ${CONTENT_DAY_FLOOR}`);
 
-/** Body of the moves that take none (submit, unpublish, cancel): a body that carries anything is a 400, not ignored. */
+/** Body of the moves that take none (unpublish, cancel): a body that carries anything is a 400, not ignored. Submit has its own, `SubmitContentRequestSchema`. */
 export const ContentMoveRequestSchema = z.object({}).strict();
 
 /** Hour and minute, 24-hour clock: the optional time of a publication. */
@@ -170,6 +170,51 @@ export const ContentPeriodQuerySchema = StoryScriptPeriodQuerySchema;
 export const contentPeriodIssue = (query: z.infer<typeof ContentPeriodQuerySchema>): { readonly path: string; readonly message: string } | undefined =>
   storyScriptPeriodIssues(query)[0];
 
+/** The note to the client is counted in characters, as the column's check counts them. */
+export const APPROVAL_NOTE_MAX_CHARACTERS = 500;
+/** One batch sends up to 30 contents of one client. */
+export const APPROVAL_BATCH_MAX_CONTENTS = 30;
+
+/**
+ * The note that goes with a content sent for approval: the one rule of free text (no control, bidi or invisible character, no lone
+ * surrogate), trimmed, never blank, at most 500 characters. A blank one is a 400 here as it is A0068 in the database; leave it out to send none.
+ */
+export const ApprovalNoteSchema = visibleText()
+  .transform((value) => value.trim())
+  .pipe(z.string()
+    .min(1, 'must not be empty')
+    .refine((value) => characterCount(value) <= APPROVAL_NOTE_MAX_CHARACTERS, `must be at most ${APPROVAL_NOTE_MAX_CHARACTERS} characters`));
+
+/**
+ * Body of `POST .../contents/:contentId/submit`: the deadline and the note of the round are optional, and `{}` stays valid. Only the
+ * format of the day is checked here; that it lies between today and 90 days ahead (São Paulo) is the database's rule (A0120).
+ * `ContentMoveRequestSchema` is not this one: cancel and unpublish still take no field.
+ */
+export const SubmitContentRequestSchema = z.object({
+  dueOn: CalendarDaySchema.optional(),
+  note: ApprovalNoteSchema.optional()
+}).strict();
+
+/** Body of `POST .../clients/:clientId/contents/submit`: 1 to 30 distinct contents of one client, sent together as one batch, all or none. */
+export const SubmitContentsBatchRequestSchema = z.object({
+  contentIds: z.array(z.string().uuid())
+    .min(1, 'at least one content must be provided')
+    .max(APPROVAL_BATCH_MAX_CONTENTS, `at most ${APPROVAL_BATCH_MAX_CONTENTS} contents`)
+    .refine((ids) => new Set(ids.map((id) => id.toLowerCase())).size === ids.length, 'must not repeat a content'),
+  dueOn: CalendarDaySchema.optional(),
+  note: ApprovalNoteSchema.optional()
+}).strict();
+
+/**
+ * The round a content was sent in, as the agency reads it: when, until when and the note. `null` for a content with no round (still in
+ * production, or sent before the rounds existed, which have neither date nor note); inside an object, `dueOn` and `note` are `null` when none was given.
+ */
+export const ContentApprovalSchema = z.object({
+  sentAt: z.string().datetime().nullable(),
+  dueOn: z.string().nullable(),
+  note: z.string().nullable()
+}).strict();
+
 /** One content as the calendar and the feed need it: no caption and no media. `thumbnailAssetId` is the file that serves as its cover: the chosen cover, else the first media, else null. */
 export const ContentListItemSchema = z.object({
   id: z.string().uuid(),
@@ -185,7 +230,8 @@ export const ContentListItemSchema = z.object({
   revision: z.number().int().positive(),
   publishedOn: z.string().nullable(),
   tasksTotal: z.number().int().nonnegative(),
-  tasksApproved: z.number().int().nonnegative()
+  tasksApproved: z.number().int().nonnegative(),
+  approval: ContentApprovalSchema.nullable()
 }).strict();
 
 /** The phone beside the calendar reads the client's feed nine posts a page, three rows of its grid. */
@@ -253,6 +299,43 @@ export const ContentActivationResponseSchema = z.object({
   }).strict()
 }).strict();
 
+/** The summary of "Parado no cliente" holds at most 50 contents in all, and says it was cut (`meta.truncated`) when there were more. */
+export const AWAITING_CLIENT_MAX_CONTENTS = 50;
+
+/**
+ * A content that waits for the client, as the Início of the agency lists it. `daysWaiting` (since `sentAt`) and `daysToDue` (until `dueOn`,
+ * negative once it passed) are days in São Paulo, counted by the server; each is `null` when its date is (a content sent before the rounds
+ * has neither). `dueOn` is the deadline of the approval, not the day of the publication.
+ */
+export const AwaitingClientContentSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  format: ContentFormatSchema,
+  publishOn: z.string(),
+  sentAt: z.string().datetime().nullable(),
+  dueOn: z.string().nullable(),
+  daysWaiting: z.number().int().nonnegative().nullable(),
+  daysToDue: z.number().int().nullable()
+}).strict();
+
+/** `GET /agencies/:agencyId/contents/awaiting-client`: a summary block grouped by client, no pagination, no query. */
+export const AwaitingClientResponseSchema = z.object({
+  data: z.array(z.object({
+    clientId: z.string().uuid(),
+    clientName: z.string(),
+    contents: z.array(AwaitingClientContentSchema).min(1).max(AWAITING_CLIENT_MAX_CONTENTS)
+  }).strict()),
+  meta: z.object({ truncated: z.boolean() }).strict()
+}).strict();
+
+/** Answer of the batch send: the batch and each content as the list reads it, now awaiting approval, all of one client. */
+export const SubmitContentsBatchResponseSchema = z.object({
+  data: z.object({
+    batchId: z.string().uuid(),
+    contents: z.array(ContentListItemSchema).min(1).max(APPROVAL_BATCH_MAX_CONTENTS)
+  }).strict()
+}).strict();
+
 export const StoryScriptListItemSchema = z.object({
   id: z.string().uuid(),
   scriptOn: z.string(),
@@ -291,7 +374,8 @@ export const ContentSchema = z.object({
   approvedByAgencyReason: z.string().nullable(),
   publishedOn: z.string().nullable(),
   cancelledAt: z.string().nullable(),
-  createdAt: z.string()
+  createdAt: z.string(),
+  approval: ContentApprovalSchema.nullable()
 }).strict();
 
 export const ContentMediaItemSchema = z.object({
@@ -374,6 +458,12 @@ export type ContentFormat = z.infer<typeof ContentFormatSchema>;
 export type ContentStatus = z.infer<typeof ContentStatusSchema>;
 export type CreateContentRequest = z.infer<typeof CreateContentRequestSchema>;
 export type UpdateContentRequest = z.infer<typeof UpdateContentRequestSchema>;
+export type SubmitContentRequest = z.infer<typeof SubmitContentRequestSchema>;
+export type SubmitContentsBatchRequest = z.infer<typeof SubmitContentsBatchRequestSchema>;
+export type SubmitContentsBatchResponse = z.infer<typeof SubmitContentsBatchResponseSchema>;
+export type ContentApproval = z.infer<typeof ContentApprovalSchema>;
+export type AwaitingClientContent = z.infer<typeof AwaitingClientContentSchema>;
+export type AwaitingClientResponse = z.infer<typeof AwaitingClientResponseSchema>;
 export type ApproveContentByAgencyRequest = z.infer<typeof ApproveContentByAgencyRequestSchema>;
 export type PublishContentRequest = z.infer<typeof PublishContentRequestSchema>;
 export type RescheduleContentRequest = z.infer<typeof RescheduleContentRequestSchema>;
