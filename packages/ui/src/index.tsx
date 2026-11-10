@@ -6,10 +6,10 @@ export { Button, IconButton, type ButtonProps, type ButtonSize, type ButtonVaria
 export { Logo, BrandSymbol, type LogoProps, type LogoVariant, type BrandSymbolProps, type BrandSymbolVariant } from './brand.js';
 export { Mascot, type MascotProps, type MascotVariant } from './mascot.js';
 export { ConfirmDialog, Menu, MenuItem, MenuSeparator } from './menu.js';
-export { EmptyState, type EmptyStateProps } from './empty-state.js';
+export { EmptyState, type EmptyStateKind, type EmptyStateProps } from './empty-state.js';
 export { ClientStrip, type ClientStripItem, type ClientStripLinkProps, type ClientStripProps } from './client-strip.js';
 export { DatePicker, type DatePickerProps } from './date-picker.js';
-export { Dialog, Dialog as Modal, type DialogProps, type DialogProps as ModalProps, type DialogSize } from './dialog.js';
+export { Dialog, Dialog as Modal, type DialogProps, type DialogProps as ModalProps, type DialogSize, type DiscardGuard } from './dialog.js';
 export { ErrorSummary, focusFirstInvalid, invalidControls, useFormErrors } from './error-summary.js';
 export { Field, type FieldControlProps, type FieldProps } from './field.js';
 export { FilterBar, FilterBarItem, FilterBarSelect, type FilterBarControlProps, type FilterBarItemProps, type FilterBarProps, type FilterBarSelectProps } from './filter-bar.js';

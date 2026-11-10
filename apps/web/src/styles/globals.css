@@ -6241,15 +6241,16 @@ html:has(.portal-post__bar) {
   outline-offset: 1px;
 }
 
-.content-card__format {
+.content-card__support {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: var(--space-1);
   color: var(--text-secondary);
   font: var(--caption);
 }
 
-.content-card__format svg {
+.content-card__support svg {
   flex: none;
   width: 0.875rem;
   height: 0.875rem;
@@ -6289,7 +6290,7 @@ html:has(.portal-post__bar) {
   white-space: normal;
 }
 
-.content-card__meta {
+.content-hover__meta {
   color: var(--text-secondary);
   font: var(--caption);
   font-variant-numeric: tabular-nums;
@@ -7971,6 +7972,26 @@ html:has(.portal-post__bar) {
   color: var(--text-primary);
   font: var(--heading-lg);
   overflow-wrap: anywhere;
+}
+
+.ui-empty-state__icon {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.ui-empty-state__icon .ui-icon,
+.ui-empty-state__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ui-empty-state--good-news .ui-empty-state__icon {
+  color: var(--status-ready-fg);
+}
+
+.ui-empty-state--failure .ui-empty-state__icon {
+  color: var(--status-late-fg);
 }
 
 .ui-empty-state--mascot .ui-empty-state__title {

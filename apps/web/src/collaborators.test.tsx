@@ -1798,6 +1798,28 @@ describe('invite collaborator modal (#107)', () => {
     expect(within(region).queryByRole('button', { name: 'Copiar link' })).toBeNull();
   });
 
+  it.each([
+    ['Esc', (dialog: HTMLElement) => { fireEvent(dialog, new Event('cancel', { bubbles: true, cancelable: true })); }],
+    ['the X', (dialog: HTMLElement) => { fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar convite de colaborador' })); }]
+  ])('closes at once on %s while the form is empty, and asks before discarding a typed e-mail', async (_name, close) => {
+    const { impl } = makeFetch();
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+
+    close(await openInvite(container));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    const dialog = await openInvite(container);
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: 'nova@exemplo.com' } });
+    close(dialog);
+    const confirmation = await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' });
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Continuar editando' }));
+    expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).value).toBe('nova@exemplo.com');
+
+    close(dialog);
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).getByRole('button', { name: 'Descartar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
   it('opens with the e-mail and role fields, the role hint and no cargo or remuneration', async () => {
     const { impl } = makeFetch();
     const { container } = renderCollaborators(impl);

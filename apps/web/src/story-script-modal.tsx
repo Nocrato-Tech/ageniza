@@ -113,12 +113,14 @@ const dayText = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}
 /** The one a scene's move left focus on: its own button for that direction, or the other when it hit the edge. */
 interface PendingFocus { readonly key: string; readonly direction: 'up' | 'down' }
 
-function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange, onDone }: {
+function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange, onEditedChange, onDone }: {
   clientId: string;
   initial: StoryScript | null;
   initialDay: string;
   canOperate: boolean;
   onBusyChange: (busy: boolean) => void;
+  /** Whether the form holds something typed that no save has kept, for the close confirmation. */
+  onEditedChange: (edited: boolean) => void;
   onDone: () => void;
 }) {
   const httpClient = useApiClient();
@@ -222,6 +224,9 @@ function ScriptEditor({ clientId, initial, initialDay, canOperate, onBusyChange,
 
   const busy = submit.isPending;
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
+  const blank = useRef(signature({ scriptOn: initialDay, scenes: [{ key: '', text: '', guidance: '' }] }));
+  const edited = canWrite && signature(form) !== (saved === null ? blank.current : signature(toForm(saved, () => '')));
+  useEffect(() => { onEditedChange(edited); }, [edited, onEditedChange]);
 
   const run = (intent: 'save' | 'send'): void => {
     attempted();
@@ -375,6 +380,7 @@ export function StoryScriptModal({ clientId, target, canOperate, onClose }: {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   const [busy, setBusy] = useState(false);
+  const [edited, setEdited] = useState(false);
   const scriptId = target.kind === 'open' ? target.scriptId : '';
   const script = useQuery({
     queryKey: ['agency', agency.agencyId, 'story-script', clientId, scriptId],
@@ -398,9 +404,10 @@ export function StoryScriptModal({ clientId, target, canOperate, onClose }: {
     description="Cada cena leva o texto e, se quiser, a orientação para gravar."
     closeLabel="Fechar roteiro de stories"
     onClose={close}
+    confirmDiscard={{ dirty: edited && !busy }}
   >
     {target.kind === 'new'
-      ? <ScriptEditor clientId={clientId} initial={null} initialDay={target.day} canOperate={canOperate} onBusyChange={setBusy} onDone={onClose} />
+      ? <ScriptEditor clientId={clientId} initial={null} initialDay={target.day} canOperate={canOperate} onBusyChange={setBusy} onEditedChange={setEdited} onDone={onClose} />
       : script.isPending
         ? <div className="story-script__loading" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
         : script.isError
@@ -411,6 +418,6 @@ export function StoryScriptModal({ clientId, target, canOperate, onClose }: {
               <Button variant="secondary" onClick={onClose}>Fechar</Button>
             </div>
           </div>
-          : <ScriptEditor clientId={clientId} initial={script.data} initialDay={script.data.scriptOn} canOperate={canOperate} onBusyChange={setBusy} onDone={onClose} />}
+          : <ScriptEditor clientId={clientId} initial={script.data} initialDay={script.data.scriptOn} canOperate={canOperate} onBusyChange={setBusy} onEditedChange={setEdited} onDone={onClose} />}
   </Dialog>;
 }

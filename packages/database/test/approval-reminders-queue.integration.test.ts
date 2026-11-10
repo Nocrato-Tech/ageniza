@@ -71,12 +71,36 @@ const asWorker = <T>(work: (transaction: Knex.Transaction) => Promise<T>, isolat
   worker.knex.transaction(work, isolationLevel === undefined ? {} : { isolationLevel });
 const enqueueIn = async (transaction: Knex.Transaction): Promise<number> =>
   Number((await transaction.raw<{ rows: Array<{ enqueued: number }> }>('select app_private.enqueue_approval_reminders() as enqueued')).rows[0]!.enqueued);
-const enqueue = (): Promise<number> => asWorker(enqueueIn);
+
+// The function works on the rounds of the whole database, so a round some other file left behind adds to what it returns. A case reads
+// what the run did to the clients of ITS OWN world instead: the reminder rows inserted or moved, compared before and after. What the
+// function says is still held to everything that changed, foreign rows included.
+const reminderRows = async (): Promise<Map<string, { client: string; row: string }>> => {
+  const { rows } = await owner().raw<{ rows: Array<{ id: string; client_id: string; row: string }> }>(
+    'select id, client_id, to_jsonb(item)::text as row from public.notification_queue item where type = any(?::text[])', [REMINDER_TYPES]
+  );
+  return new Map(rows.map((item) => [item.id, { client: item.client_id, row: item.row }]));
+};
+const changedForTheWorld = async (run: () => Promise<number>): Promise<number> => {
+  const before = await reminderRows();
+  const said = await run();
+  const own = new Set(worldClients());
+  let everyone = 0;
+  let world = 0;
+  for (const [id, item] of await reminderRows()) {
+    if (before.get(id)?.row === item.row) continue;
+    everyone += 1;
+    if (own.has(item.client)) world += 1;
+  }
+  expect(said, 'what the function says it enqueued, against what changed in the queue').toBe(everyone);
+  return world;
+};
+const enqueue = (): Promise<number> => changedForTheWorld(() => asWorker(enqueueIn));
 // The function of the owner, which reads the day at an instant a test fixes: the worker has no way to say one.
 const enqueueAt = (instant: string): Promise<number> =>
-  owner().transaction(async (transaction) =>
+  changedForTheWorld(() => owner().transaction(async (transaction) =>
     Number((await transaction.raw<{ rows: Array<{ enqueued: number }> }>('select app_private.enqueue_approval_reminders_at(?::timestamptz) as enqueued', [instant])).rows[0]!.enqueued)
-  );
+  ));
 
 /**
  * The round the reminders look at: due `dueOffset` days from today (null: no deadline) and sent `sentDaysAgo` days ago, long before the
@@ -763,15 +787,23 @@ describe('the enqueue against others at the same time', () => {
     const first = await worker.knex.transaction();
     const firstPid = await backendPid(first);
     let second: Promise<unknown> | undefined;
-    try {
-      expect(await enqueueIn(first)).toBe(2 * PEOPLE);
-      second = asWorker(enqueueIn).then((enqueued) => enqueued, (error: unknown) => error);
-      await waitForBackendsBlockedBy(owner(), firstPid);
-    } finally {
-      await first.commit();
-    }
+    let enqueuedBySecond: unknown;
+    const enqueuedForTheWorld = await changedForTheWorld(async () => {
+      let enqueuedByFirst: number;
+      try {
+        enqueuedByFirst = await enqueueIn(first);
+        second = asWorker(enqueueIn).then((enqueued) => enqueued, (error: unknown) => error);
+        await waitForBackendsBlockedBy(owner(), firstPid);
+      } finally {
+        await first.commit();
+      }
+      enqueuedBySecond = await second;
+      return enqueuedByFirst + (enqueuedBySecond as number);
+    });
 
-    expect(await second).toBe(0);
+    // The first took every round that was due, the foreign ones too, and committed: what the second finds is stamped.
+    expect(enqueuedBySecond).toBe(0);
+    expect(enqueuedForTheWorld).toBe(2 * PEOPLE);
     expect(await remindersOf(eve.content)).toHaveLength(PEOPLE);
     expect(await remindersOf(day.content)).toHaveLength(PEOPLE);
   });
@@ -793,19 +825,22 @@ describe('the enqueue against others at the same time', () => {
     await waiting(1, { client: low });
 
     const holder = await owner().transaction();
-    let outcome: Promise<unknown> | undefined;
-    try {
-      await holder.raw('select id from public.clients where id = ?::uuid for update', [high]);
-      const holderPid = await backendPid(holder);
-      outcome = asWorker(enqueueIn).then((enqueued) => enqueued, (error: unknown) => error);
-      await waitForBackendsBlockedBy(owner(), holderPid);
+    const enqueuedForTheWorld = await changedForTheWorld(async () => {
+      let outcome: Promise<unknown> | undefined;
+      try {
+        await holder.raw('select id from public.clients where id = ?::uuid for update', [high]);
+        const holderPid = await backendPid(holder);
+        outcome = asWorker(enqueueIn).then((enqueued) => enqueued, (error: unknown) => error);
+        await waitForBackendsBlockedBy(owner(), holderPid);
 
-      await expect(owner().transaction((probe) => probe.raw('select id from public.clients where id = ?::uuid for update nowait', [low]))).rejects.toMatchObject({ code: '55P03' });
-    } finally {
-      await holder.rollback();
-    }
+        await expect(owner().transaction((probe) => probe.raw('select id from public.clients where id = ?::uuid for update nowait', [low]))).rejects.toMatchObject({ code: '55P03' });
+      } finally {
+        await holder.rollback();
+      }
+      return (await outcome) as number;
+    });
 
-    expect(await outcome).toBe(2 * PEOPLE);
+    expect(enqueuedForTheWorld).toBe(2 * PEOPLE);
   });
 
   // The archive of a client is a plain UPDATE of its row (the daily job) or the function the agency calls: the worker waits for either, and a
@@ -818,17 +853,20 @@ describe('the enqueue against others at the same time', () => {
 
     const archiving = how === 'the function archive_client' ? await w.openTransactionAs(ids.adminA) : await owner().transaction();
     const archivingPid = await backendPid(archiving);
-    let outcome: Promise<unknown> | undefined;
-    try {
-      if (how === 'the function archive_client') await archiving.raw('select app_private.archive_client(?::uuid)', [archived.client]);
-      else await archiving.raw("update public.clients set status = 'archived', archived_at = now() where id = ?::uuid", [archived.client]);
-      outcome = asWorker(enqueueIn).then((enqueued) => enqueued, (error: unknown) => error);
-      await waitForBackendsBlockedBy(owner(), archivingPid);
-    } finally {
-      await archiving.commit();
-    }
+    const enqueuedForTheWorld = await changedForTheWorld(async () => {
+      let outcome: Promise<unknown> | undefined;
+      try {
+        if (how === 'the function archive_client') await archiving.raw('select app_private.archive_client(?::uuid)', [archived.client]);
+        else await archiving.raw("update public.clients set status = 'archived', archived_at = now() where id = ?::uuid", [archived.client]);
+        outcome = asWorker(enqueueIn).then((enqueued) => enqueued, (error: unknown) => error);
+        await waitForBackendsBlockedBy(owner(), archivingPid);
+      } finally {
+        await archiving.commit();
+      }
+      return (await outcome) as number;
+    });
 
-    expect(await outcome).toBe(PEOPLE);
+    expect(enqueuedForTheWorld).toBe(PEOPLE);
     expect(await remindersOf(archived.content)).toEqual([]);
     expect(await remindersOf(control.content)).toHaveLength(PEOPLE);
   });
