@@ -1102,7 +1102,8 @@ describe('the functions that write the access', () => {
       { name: '00_client_portal_accesses_agency_accepts_writes', definer: true },
       { name: 'client_memberships_follow_access', definer: false },
       { name: 'client_portal_accesses_guard', definer: false },
-      { name: 'client_portal_accesses_have_their_membership', definer: true }
+      { name: 'client_portal_accesses_have_their_membership', definer: true },
+      { name: 'client_portal_accesses_last_entry_follows_account', definer: false }
     ]);
   });
 });
