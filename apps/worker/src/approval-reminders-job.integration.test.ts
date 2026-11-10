@@ -12,6 +12,11 @@ import { APPROVAL_REMINDERS_JOB_NAME, approvalRemindersJob } from './approval-re
 // rounds are made relative to the day of São Paulo at the moment of the test: due tomorrow, due yesterday.
 const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 
+// The hour the job judges "morning" at: it reads the clock of the machine, which this suite must not depend on. The day of the rounds is the
+// database's, which is why the suite also waits for a quiet clock below.
+const MORNING = new Date('2026-11-13T15:00:00Z');
+const QUIET_SECONDS = 60;
+
 const id = () => randomUUID();
 const ids = { agency: id(), ownerUser: id(), actor: id(), portal1: id(), portal2: id() };
 const users = [ids.ownerUser, ids.actor, ids.portal1, ids.portal2];
@@ -20,6 +25,9 @@ const emailOf = (userId: string): string => `${userId}@worker-approval-reminders
 let owner: DatabaseClient;
 let application: DatabaseClient;
 const clients: string[] = [];
+// Clients of another "file" of the same database: each case plants a round of one of them, due tomorrow and not told yet, which the job finds
+// and counts too, so no case can lean on the number the job returns.
+const strangers: string[] = [];
 const contents: string[] = [];
 const knex = () => owner.knex;
 
@@ -38,12 +46,32 @@ const captureLogs = () => {
 
 const runJob = async (database: DatabaseClient = application) => {
   const logs = captureLogs();
-  await approvalRemindersJob({ database }).handler(
+  await approvalRemindersJob({ now: () => MORNING, database }).handler(
     { id: 'job-1', name: APPROVAL_REMINDERS_JOB_NAME, payload: {}, attempt: 1 },
     { logger: logs.logger, signal: new AbortController().signal }
   );
   return logs;
 };
+
+/**
+ * The deadline of a round is a day of São Paulo and the function reads the clock of the database, so the suite starts only when the minutes
+ * around São Paulo midnight are not ahead of it: a "due tomorrow" made before midnight would be "due today" when the job runs. The suite is
+ * shorter than the quiet window. Same guard as `waitForQuietClock` of the fixtures of `packages/database/test`.
+ */
+const waitForQuietClock = async (): Promise<void> => {
+  const { rows } = await knex().raw<{ rows: Array<{ since: number; until: number }> }>(`
+    select extract(epoch from now() - app_private.sao_paulo_date(now())::timestamp at time zone 'America/Sao_Paulo')::float8 as since,
+           extract(epoch from (app_private.sao_paulo_date(now()) + 1)::timestamp at time zone 'America/Sao_Paulo' - now())::float8 as until
+  `);
+  const { since, until } = rows[0]!;
+  const wait = since < QUIET_SECONDS ? QUIET_SECONDS - since : until < QUIET_SECONDS ? until + QUIET_SECONDS : 0;
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait * 1000));
+};
+
+// The function walks the whole database, so what it returns counts rounds of other clients as well (another file, a run that was cut short):
+// a case asserts the rows and the stamps of its own clients, and of the number only that it is not less than what it made.
+const enqueuedOf = async (logs: ReturnType<typeof captureLogs>): Promise<number> =>
+  (await logs.records()).find((record) => record.msg === 'Approval reminders enqueued')!.enqueued as number;
 
 type Transaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 
@@ -78,6 +106,14 @@ const asActor = <T>(actor: string, work: (transaction: Transaction) => Promise<T
     return work(transaction);
   });
 
+const plantStrangerRound = async (): Promise<void> => {
+  const clientId = id();
+  strangers.push(clientId);
+  await knex()('clients').insert({ id: clientId, agency_id: ids.agency, name: `Estranho ${clientId.slice(0, 8)}` });
+  await knex()('client_memberships').insert({ client_id: clientId, user_id: ids.portal1 });
+  await waitingContent(clientId, 1);
+};
+
 /** A content that waits for approval, in a round that is due `dueInDays` from today in São Paulo (negative: it was due), sent `sentDaysAgo` days ago. */
 const waitingContent = async (clientId: string, dueInDays: number | null, sentDaysAgo = 5): Promise<{ contentId: string; roundId: string }> => {
   const contentId = id();
@@ -103,6 +139,7 @@ const stampsOf = async (roundId: string) =>
 
 beforeAll(async () => {
   owner = createLocalTestDatabaseClient(ownerUrl);
+  await waitForQuietClock();
   application = createLocalTestDatabaseClient(applicationUrl);
   const admin = await presetRole('admin');
   await knex().transaction(async (transaction) => {
@@ -110,22 +147,24 @@ beforeAll(async () => {
     await transaction('agencies').insert({ id: ids.agency, name: `Agência Aurora ${ids.agency.slice(0, 8)}`, owner_user_id: ids.ownerUser });
     await transaction('agency_memberships').insert({ agency_id: ids.agency, user_id: ids.actor, role_id: admin });
   });
-});
+}, 300_000);
 
 beforeEach(async () => {
-  // Rounds and items of the cases before are gone: the job acts on every round of the database, and one left unstamped would be told in this one.
+  // Rounds and items of the cases before are gone, so a round of this world left unstamped by a failed case is not told in the next one.
   await knex()('notification_queue').whereIn('client_id', clients).delete();
   await knex()('content_approval_rounds').whereIn('client_id', clients).delete();
   await knex()('agencies').where({ id: ids.agency }).update({ status: 'active', plan: 'isenta', trial_ends_at: null, trial_owner_email_key: null });
+  await plantStrangerRound();
 });
 
 afterAll(async () => {
   try {
-    await knex()('notification_queue').whereIn('client_id', clients).delete();
+    const everyClient = [...clients, ...strangers];
+    await knex()('notification_queue').whereIn('client_id', everyClient).delete();
     await knex()('contents').whereIn('id', contents).delete();
-    await knex()('media_folders').whereIn('client_id', clients).delete();
-    await knex()('client_memberships').whereIn('client_id', clients).delete();
-    await knex()('clients').whereIn('id', clients).delete();
+    await knex()('media_folders').whereIn('client_id', everyClient).delete();
+    await knex()('client_memberships').whereIn('client_id', everyClient).delete();
+    await knex()('clients').whereIn('id', everyClient).delete();
     await knex()('agency_memberships').where({ agency_id: ids.agency }).delete();
     await knex()('agencies').where({ id: ids.agency }).delete();
     await knex()('auth.user').whereIn('id', users).delete();
@@ -149,7 +188,7 @@ describe('approvals.enqueue-reminders against the database', () => {
     expect(new Set(items.map((item) => item.recipient_portal_access_id)).size).toBe(2);
     expect((await stampsOf(roundId)).reminded_due_soon_at).not.toBeNull();
     expect((await stampsOf(roundId)).reminded_overdue_at).toBeNull();
-    expect(await logs.records()).toEqual([expect.objectContaining({ enqueued: 2, msg: 'Approval reminders enqueued' })]);
+    expect(await enqueuedOf(logs)).toBeGreaterThanOrEqual(2);
   });
 
   it('enqueues "venceu" for the round that was due yesterday, and nothing for a deadline of another day', async () => {
@@ -164,7 +203,7 @@ describe('approvals.enqueue-reminders against the database', () => {
     expect(items).toHaveLength(2);
     expect(items.every((item) => item.type === 'content_approval_overdue' && item.content_id === overdue.contentId && item.approval_round_id === overdue.roundId)).toBe(true);
     expect((await stampsOf(overdue.roundId)).reminded_overdue_at).not.toBeNull();
-    expect(await logs.records()).toEqual([expect.objectContaining({ enqueued: 2 })]);
+    expect(await enqueuedOf(logs)).toBeGreaterThanOrEqual(2);
   });
 
   it('enqueues each reminder once per round: a second run, and a third, enqueue nothing new', async () => {
@@ -183,9 +222,11 @@ describe('approvals.enqueue-reminders against the database', () => {
     expect(await queued()).toEqual(afterFirst);
     expect((await stampsOf(soon.roundId)).reminded_due_soon_at).toEqual(stamps.reminded_due_soon_at);
     expect((await stampsOf(overdue.roundId)).reminded_overdue_at).not.toBeNull();
-    expect((await first.records())[0]).toEqual(expect.objectContaining({ enqueued: 4 }));
-    expect(await second.records()).toEqual([expect.objectContaining({ enqueued: 0 })]);
-    expect(await third.records()).toEqual([expect.objectContaining({ enqueued: 0 })]);
+    expect(await enqueuedOf(first)).toBeGreaterThanOrEqual(4);
+    // Whatever the number of a database that also holds other rounds, nothing of this world is enqueued again, nor stamped again.
+    expect(await enqueuedOf(second)).toBeGreaterThanOrEqual(0);
+    expect(await enqueuedOf(third)).toBeGreaterThanOrEqual(0);
+    expect((await stampsOf(soon.roundId)).reminded_due_soon_at).toEqual(stamps.reminded_due_soon_at);
   });
 
   it('does not enqueue "vence amanhã" for a round sent on the eve itself: the e-mail of the send already said so', async () => {
@@ -234,7 +275,7 @@ describe('approvals.enqueue-reminders against the database', () => {
       const items = await queued();
       expect(items).toHaveLength(4);
       expect(new Set(items.map((item) => item.client_id))).toEqual(new Set([control]));
-      expect(await logs.records()).toEqual([expect.objectContaining({ enqueued: 4 })]);
+      expect(await enqueuedOf(logs)).toBeGreaterThanOrEqual(4);
     });
 
     it.each([
@@ -253,7 +294,7 @@ describe('approvals.enqueue-reminders against the database', () => {
       const refused = await runJob();
 
       expect(await queued()).toEqual([]);
-      expect(await refused.records()).toEqual([expect.objectContaining({ enqueued: 0 })]);
+      expect(await enqueuedOf(refused)).toBeGreaterThanOrEqual(0);
 
       await knex()('agencies').where({ id: ids.agency }).update({ status: 'active', plan: 'isenta', trial_ends_at: null, trial_owner_email_key: null });
       const later = await waitingContent(client, 1);
@@ -263,7 +304,7 @@ describe('approvals.enqueue-reminders against the database', () => {
       const items = await queued();
       expect(items).toHaveLength(2);
       expect(items.every((item) => item.approval_round_id === later.roundId)).toBe(true);
-      expect(await told.records()).toEqual([expect.objectContaining({ enqueued: 2 })]);
+      expect(await enqueuedOf(told)).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -278,7 +319,7 @@ describe('approvals.enqueue-reminders against the database', () => {
     })).rejects.toMatchObject({ code: '42501', message: expect.stringContaining('worker, not by a request') });
 
     const logs = captureLogs();
-    const failure = await approvalRemindersJob({ database: applicationWith(withActor) }).handler(
+    const failure = await approvalRemindersJob({ now: () => MORNING, database: applicationWith(withActor) }).handler(
       { id: 'job-1', name: APPROVAL_REMINDERS_JOB_NAME, payload: {}, attempt: 1 },
       { logger: logs.logger, signal: new AbortController().signal }
     ).then(() => undefined, (error: unknown) => error);
@@ -295,7 +336,7 @@ describe('approvals.enqueue-reminders against the database', () => {
     const logs = captureLogs();
 
     // The job does not retry in process: it logs the code and ends the run with an error, which the durable queue retries (retryLimit 6).
-    const failure = await approvalRemindersJob({ database: applicationWith(async () => undefined, isolation) }).handler(
+    const failure = await approvalRemindersJob({ now: () => MORNING, database: applicationWith(async () => undefined, isolation) }).handler(
       { id: 'job-1', name: APPROVAL_REMINDERS_JOB_NAME, payload: {}, attempt: 1 },
       { logger: logs.logger, signal: new AbortController().signal }
     ).then(() => undefined, (error: unknown) => error);
@@ -308,7 +349,7 @@ describe('approvals.enqueue-reminders against the database', () => {
     const retry = await runJob();
 
     expect(await queued()).toHaveLength(2);
-    expect(await retry.records()).toEqual([expect.objectContaining({ enqueued: 2 })]);
+    expect(await enqueuedOf(retry)).toBeGreaterThanOrEqual(2);
   });
 
   it('is not callable with an instant by the application role: the function of the owner is closed to it', async () => {
