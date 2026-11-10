@@ -92,6 +92,7 @@ export function CreateClientDialog({ onClose }: { onClose: () => void }) {
     size="sm"
     description="O cadastro começa só pelo nome do cliente."
     onClose={onClose}
+    confirmDiscard={{ dirty: name !== '' && !create.isPending }}
     actions={<Button type="submit" form={formId} disabled={!canSubmit} loading={create.isPending}>Cadastrar</Button>}
   >
     <form ref={formRef} id={formId} className="form-stack" onSubmit={onSubmit} noValidate>

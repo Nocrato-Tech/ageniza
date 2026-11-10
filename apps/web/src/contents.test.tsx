@@ -108,6 +108,7 @@ const contentFixture = (overrides: Record<string, unknown> = {}) => {
     publishedOn: null,
     tasksTotal: 0,
     tasksApproved: 0,
+    approval: null,
     ...overrides,
     // As the API answers: the chosen cover is the file that serves as the cover, unless the test says another.
     thumbnailAssetId: 'thumbnailAssetId' in overrides ? overrides.thumbnailAssetId : (overrides.coverAssetId ?? null)
@@ -138,6 +139,7 @@ const detailOfContent = (clientId: string, row: ReturnType<typeof contentFixture
   publishedOn: row.publishedOn,
   cancelledAt: null,
   createdAt: '2026-10-01T12:00:00.000Z',
+  approval: null,
   media: [],
   tasks: [],
   conversation: { threadId: null, commentCount: 0, lastCommentAt: null }
@@ -251,7 +253,7 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (answer instanceof Response || answer instanceof Promise) return answer;
       const data = answer === undefined ? [] : [{
         id: 'c1c1c1c1-0000-4000-8000-000000000001', subject: { contentId }, state: 'open',
-        openedBy: { name: 'Pessoa', side: 'agency' }, lastComment: answer, commentCount: 3, resolvedBy: null, resolvedAt: null
+        openedBy: { name: 'Pessoa', side: 'agency' }, lastComment: answer, commentCount: 3, resolvedBy: null, resolvedAt: null, dueOn: null
       }];
       return json({ data, meta: { page: 1, pageSize: 20, totalItems: data.length, totalPages: 1 } });
     }
@@ -687,12 +689,13 @@ describe('the month calendar', () => {
     const day = dayCell('2026-10-14');
     expect(within(day).getAllByRole('article').map((card) => card.querySelector('.content-card__title')?.textContent)).toEqual(['Lançamento do pão', 'Bastidores']);
     const launch = within(day).getByText('Lançamento do pão').closest('article')!;
-    expect(within(launch).getByText('Carrossel')).toBeTruthy();
-    expect(within(launch).getByText('18:00')).toBeTruthy();
+    // Title, one support line (format and time) and the state: the subtask percentage lives in the floating card.
+    expect(within(launch).getByText('Carrossel · 18:00')).toBeTruthy();
     expect(within(launch).getByText('Aguardando aprovação')).toBeTruthy();
-    expect(within(launch).getByText('50% das subtarefas')).toBeTruthy();
+    expect(within(launch).queryByText(/subtarefas/)).toBeNull();
     const behind = within(day).getByText('Bastidores').closest('article')!;
     expect(within(behind).getByText('Imagem')).toBeTruthy();
+    expect(within(behind).queryByText(/·/)).toBeNull();
     expect(within(behind).getByText('Em ajuste')).toBeTruthy();
     // No subtasks: no percentage at all, not "0%".
     expect(within(behind).queryByText(/subtarefas/)).toBeNull();
@@ -736,10 +739,12 @@ describe('the month calendar', () => {
     render_(impl, contentsUrl(padaria.id));
     await screen.findByText('Passou');
 
-    const alertsOf = (title: string): (string | null)[] => Array.from(screen.getByText(title).closest('article')!.querySelectorAll('.ui-late-badge, .content-card__meta')).map((badge) => badge.textContent).filter((text) => text === 'Atrasado' || text === 'Prazo em dois dias');
+    const alertsOf = (title: string): (string | null)[] => Array.from(screen.getByText(title).closest('article')!.querySelectorAll('.ui-late-badge')).map((badge) => badge.textContent);
+    // Only lateness is the state of the card; the near deadline moved to the floating card.
     expect(alertsOf('Passou')).toEqual(['Atrasado']);
-    expect(alertsOf('Para hoje')).toEqual(['Prazo em dois dias']);
-    expect(alertsOf('Em dois dias')).toEqual(['Prazo em dois dias']);
+    expect(alertsOf('Para hoje')).toEqual([]);
+    expect(screen.queryByText('Prazo em dois dias')).toBeNull();
+    expect(alertsOf('Em dois dias')).toEqual([]);
     expect(alertsOf('Em três dias')).toEqual([]);
     expect(alertsOf('Já publicado')).toEqual([]);
     expect(alertsOf('Cancelado antigo')).toEqual([]);
@@ -1491,6 +1496,7 @@ describe('the detail on a card (hover and focus)', () => {
     expect(await within(tooltip).findByText('Hoje tem pão quente na padaria!')).toBeTruthy();
     expect(within(tooltip).getByText('Legenda')).toBeTruthy();
     expect(within(tooltip).getByText('2 de 4 aprovadas · 1 entregue · 1 pendente')).toBeTruthy();
+    expect(within(tooltip).getByText('50% das subtarefas')).toBeTruthy();
     // 01:30Z of the 12th is still the 11th in São Paulo.
     expect(within(tooltip).getByText('3 comentários · último em 11/10')).toBeTruthy();
     expect(await within(tooltip).findByText('Cliente: “Podemos trocar a foto da capa?” · 11/10')).toBeTruthy();
@@ -1674,6 +1680,20 @@ describe('the detail on a card (hover and focus)', () => {
     // Moving from the card into its own floating card keeps it open; leaving both closes it.
     act(() => { (document.activeElement as HTMLElement).blur(); });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('keeps the near deadline and the late mark in the floating card, since the card itself shows only the state', async () => {
+    const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Em dois dias', publishOn: '2026-10-13', status: 'adjusting' }), contentFixture({ title: 'Passou', publishOn: '2026-10-10', status: 'approved' })] } });
+    render_(impl, contentsUrl(padaria.id));
+    await screen.findByText('Em dois dias');
+
+    point(cardOf('Em dois dias'));
+    expect(await within(await screen.findByRole('dialog')).findByText('Prazo em dois dias')).toBeTruthy();
+    unpoint(cardOf('Em dois dias'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    point(cardOf('Passou'));
+    expect(within(await screen.findByRole('dialog')).getByText('Atrasado')).toBeTruthy();
   });
 
   it('stays open when the mouse crosses from the card onto the floating card, and closes when it leaves both (WCAG 1.4.13)', async () => {
@@ -2005,8 +2025,8 @@ describe('the header and the grid of the calendar', () => {
       const card = cardTitled('Um post');
       expect(card.getAttribute('data-format')).toBe(tone);
       expect(card.querySelector('.content-card__title')?.textContent).toBe('Um post');
-      expect(card.querySelector('.content-card__format')?.textContent).toBe(label);
-      expect(card.querySelector('.content-card__format svg')).not.toBeNull();
+      expect(card.querySelector('.content-card__support')?.textContent).toBe(label);
+      expect(card.querySelector('.content-card__support svg')).not.toBeNull();
     });
 
     it.each([
@@ -2059,15 +2079,15 @@ describe('the header and the grid of the calendar', () => {
       expect(cardTitled('Com mídia').querySelector('img')).toBeNull();
     });
 
-    it('shows the time of a post on its own line, and nothing when it has none', async () => {
+    it('shows the time of a post on the support line after the format, and nothing when it has none', async () => {
       const { impl } = makeFetch({
         contents: { [padaria.id]: [contentFixture({ title: 'Com hora', publishOn: '2026-10-20', publishAtTime: '09:30' }), contentFixture({ title: 'Sem hora', publishOn: '2026-10-21' })] }
       });
       render_(impl, contentsUrl(padaria.id));
       await screen.findByText('Com hora');
 
-      expect(cardTitled('Com hora').querySelector('.content-card__meta')?.textContent).toBe('09:30');
-      expect(cardTitled('Sem hora').querySelector('.content-card__meta')).toBeNull();
+      expect(cardTitled('Com hora').querySelector('.content-card__support')?.textContent).toBe('Reels · 09:30');
+      expect(cardTitled('Sem hora').querySelector('.content-card__support')?.textContent).toBe('Reels');
     });
   });
 
@@ -2226,7 +2246,7 @@ describe('the Calendário Editorial: the title, the three views, the whole card 
       await screen.findByText('Segundo post');
 
       const card = screen.getByText('Segundo post').closest('article')!;
-      fireEvent.click(card.querySelector('.content-card__format')!);
+      fireEvent.click(card.querySelector('.content-card__support')!);
       await waitFor(() => expect(probe.pathname).toBe(`${contentsUrl(padaria.id)}/${second.id}`));
     });
 
@@ -2248,7 +2268,7 @@ describe('the Calendário Editorial: the title, the three views, the whole card 
       const card = screen.getByText('Receita').closest('article')!;
       expect(card.getAttribute('tabindex')).toBeNull();
       expect(card.querySelectorAll('a, button')).toHaveLength(1);
-      expect(within(card).getByRole('link').textContent).toBe('ReelsReceitaEm ajuste');
+      expect(within(card).getByRole('link').textContent).toBe('ReceitaReelsEm ajuste');
     });
 
     it('does not open the content when the card is dragged, even if the browser then fires a click', async () => {

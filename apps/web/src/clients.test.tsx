@@ -736,6 +736,29 @@ describe('create client modal (#135)', () => {
     return await screen.findByRole('dialog', { name: 'Cadastrar cliente' });
   };
 
+  it.each([
+    ['Esc', (dialog: HTMLElement) => { fireEvent(dialog, new Event('cancel', { bubbles: true, cancelable: true })); }],
+    ['the X', (dialog: HTMLElement) => { fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar cadastro de cliente' })); }]
+  ])('closes at once on %s while the name is empty, and asks before discarding a typed name', async (_name, close) => {
+    const { impl } = makeFetch();
+    const { container } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+
+    close(await openCreate(container));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    const dialog = await openCreate(container);
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nome' }), { target: { value: 'Padaria Nova' } });
+    close(dialog);
+    const confirmation = await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' });
+    expect(within(confirmation).getByRole('button', { name: 'Descartar' })).toBeTruthy();
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Continuar editando' }));
+    expect((within(dialog).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement).value).toBe('Padaria Nova');
+
+    close(dialog);
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).getByRole('button', { name: 'Descartar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
   it('opens with only the name field and the complete-later hint', async () => {
     const { impl } = makeFetch();
     const { container } = renderClients(impl);

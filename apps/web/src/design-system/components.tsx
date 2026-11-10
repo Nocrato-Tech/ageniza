@@ -91,7 +91,15 @@ function TabsDemo({ disabled, loading }: { disabled: boolean; loading: boolean }
     ]} />;
 }
 
-const stateOnly = (state: RenderedState, only: readonly RenderedState[], node: ReactNode): ReactNode => only.includes(state) ? node : null;
+function DiscardDialogExample({ close }: { close: () => void }) {
+  const [note, setNote] = useState('');
+  return <Dialog title="Novo lembrete" closeLabel="Fechar" onClose={close} size="sm" confirmDiscard={{ dirty: note !== '' }}
+    description="Digite algo e feche com Esc, clicando fora ou no X: o diálogo pergunta antes de descartar."
+    actions={<Button onClick={close}>Salvar</Button>}>
+    <Field label="Lembrete">{(control) => <TextInput {...control} value={note} onChange={(event) => setNote(event.target.value)} />}</Field>
+  </Dialog>;
+}
+const stateOnly =(state: RenderedState, only: readonly RenderedState[], node: ReactNode): ReactNode => only.includes(state) ? node : null;
 
 /**
  * Add a component by appending an entry: the page renders its states and tells the person when one does not apply.
@@ -338,7 +346,9 @@ export const componentEntries: readonly ComponentEntry[] = [
     wide: true,
     examples: [
       { label: 'com mascote e ação', render: (state) => stateOnly(state, ['default'], <EmptyState mascot headingLevel={4} title="Cadastre o primeiro cliente" description="Com o cliente cadastrado você monta o calendário do mês." action={<Button leadingIcon={<Plus />}>Cadastrar cliente</Button>} />) },
-      { label: 'sem mascote (busca sem resultado)', render: (state) => stateOnly(state, ['default'], <EmptyState headingLevel={4} title="Nenhum cliente encontrado" description="Tente outro nome ou tire um filtro." action={<Button variant="secondary">Limpar filtros</Button>} />) }
+      { label: 'sem mascote (busca sem resultado)', render: (state) => stateOnly(state, ['default'], <EmptyState headingLevel={4} title="Nenhum cliente encontrado" description="Tente outro nome ou tire um filtro." action={<Button variant="secondary">Limpar filtros</Button>} />) },
+      { label: 'boa notícia (a consulta respondeu e não há pendência)', render: (state) => stateOnly(state, ['default'], <EmptyState kind="good-news" headingLevel={4} title="Nada esperando por você" description="Nenhum conteúdo aguarda aprovação ou ajuste." />) },
+      { label: 'falha (a consulta não respondeu)', render: (state) => stateOnly(state, ['default'], <EmptyState kind="failure" headingLevel={4} title="Não foi possível carregar os conteúdos" description="Não dá para afirmar que não há nada pendente. Tente de novo." onRetry={() => undefined} />) }
     ]
   },
   {
@@ -366,7 +376,7 @@ export const componentEntries: readonly ComponentEntry[] = [
     id: 'dialog',
     name: 'Dialog',
     covers: ['Dialog'],
-    examples: (['sm', 'md', 'lg'] as const).map((size) => ({
+    examples: [...(['sm', 'md', 'lg'] as const).map((size) => ({
       label: size,
       render: (state: RenderedState) => stateOnly(state, ['default', 'loading'], <Opener label={`Abrir ${size}`}>
         {(close) => <Dialog title="Arquivar cliente" closeLabel="Fechar" onClose={close} size={size} loading={state === 'loading'}
@@ -375,7 +385,12 @@ export const componentEntries: readonly ComponentEntry[] = [
           <p>Conteúdo de exemplo.</p>
         </Dialog>}
       </Opener>)
-    }))
+    })), {
+      label: 'com descarte (pede confirmação ao fechar com dado digitado)',
+      render: (state: RenderedState) => stateOnly(state, ['default'], <Opener label="Abrir formulário">
+        {(close) => <DiscardDialogExample close={close} />}
+      </Opener>)
+    }]
   },
   {
     id: 'popover',

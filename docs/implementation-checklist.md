@@ -82,6 +82,18 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 
 74. **Clique duplo na mesma tarefa.** Guarda de clique duplo que lê o estado do TanStack Query (`isPending`) não cobre dois cliques na mesma tarefa: o estado só muda no render seguinte, e os dois cliques o veem falso. Para a garantia, a guarda é um `useRef` síncrono, posto antes do `mutate` e solto no `onSettled`. O teste dispara os dois cliques dentro de um só `act` (sem render entre eles) e afirma uma só chamada; o que o `isPending` sozinho deixa passar fica vermelho (#639, achado da Coruja no #675).
 
+86. **Fechar formulário com dado digitado pede confirmação.** Prova: teste de Esc, clique fora e X, cada um com e sem dado. Com dado abre a confirmação e nada fecha; sem dado fecha direto; o sucesso fecha sem perguntar (decisão `2026-11-10-cartao-de-conteudo-enxuto-e-fechamento-seguro-de-formulario`).
+
+87. **Vazio só afirma "nada pendente" com a consulta ok e completa.** Prova: teste com a consulta falhando mostra a falha com "Tentar de novo", nunca o vazio de boa notícia; a tela cobre todos os estados pendentes (decisão `2026-11-10-tres-tipos-de-estado-vazio`).
+
+88. **Cartão de conteúdo enxuto.** Mostra título, uma linha de apoio e o estado; o resto fica no cartão de passar o mouse. Prova: asserção do que fica e do que saiu, e captura em 1440 e 390 sem nada fora da tela.
+
+89. **Estado nunca só por cor.** Todo estado leva ícone e texto. Prova: asserção do ícone e do texto de cada estado.
+
+90. **Texto ao cliente fala em nome da agência.** Nunca vende o produto. Prova: asserção do texto positivo e leitura dele como a agência falando.
+
+91. **O que não se usa toda semana não fica no primeiro nível do menu.** Prova: teste da navegação com os itens do primeiro nível e onde cada um dos demais mora.
+
 ## Testes e mutação
 
 48. **Mutação que aplica migration.** Mutação com knex no mesmo processo usa um diretório por mutante e um controle sem mudança, por causa do cache de import do `.mjs` (#389).

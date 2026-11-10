@@ -398,6 +398,25 @@ describe('creating a script', () => {
     expect(within(dialog()).getByLabelText('Orientação da cena 1').getAttribute('maxlength')).toBe('1000');
   });
 
+  it('asks before discarding typed scenes on Esc and on the X, and closes at once when nothing was typed', async () => {
+    const { impl } = makeFetch();
+    render_(impl);
+    const escape = (): void => { fireEvent(dialog(), new Event('cancel', { bubbles: true, cancelable: true })); };
+
+    await openNewScriptOn('2026-10-20');
+    escape();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await openNewScriptOn('2026-10-20');
+    typeInto('Texto da cena 1', 'Cena que não pode se perder');
+    escape();
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).getByRole('button', { name: 'Continuar editando' }));
+    expect((within(dialog()).getByLabelText('Texto da cena 1') as HTMLTextAreaElement).value).toBe('Cena que não pode se perder');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar roteiro de stories' }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).getByRole('button', { name: 'Descartar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
   it('does not close while the write is on its way, and closes by itself when it succeeds', async () => {
     const answer = deferred<Response>();
     const { impl } = makeFetch({ override: (call) => (call.method === 'POST' ? answer.promise : undefined) });

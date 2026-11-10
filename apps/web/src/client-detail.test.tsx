@@ -765,6 +765,25 @@ describe('edit client modal (#137)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar cliente' })).toBeNull());
   });
 
+  it('asks before discarding a typed change on Esc and on the X, and closes at once when nothing changed', async () => {
+    const { impl } = makeFetch();
+    renderClientDetail(impl);
+    await screen.findByRole('heading', { name: 'Padaria Central' });
+    const escape = (target: HTMLElement): void => { fireEvent(target, new Event('cancel', { bubbles: true, cancelable: true })); };
+
+    escape(await openEditDialog());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    const dialog = await openEditDialog();
+    fireEvent.change(editNameInput(dialog), { target: { value: 'Padaria Renovada' } });
+    escape(dialog);
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).getByRole('button', { name: 'Continuar editando' }));
+    expect(editNameInput(dialog).value).toBe('Padaria Renovada');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar edição do cliente' }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).getByRole('button', { name: 'Descartar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
   it('sends null when a field is cleared, and the CNPJ/CPF mask is stripped', async () => {
     const bodies: unknown[] = [];
     const { impl } = makeFetch({ patch: (body) => { bodies.push(body); return json(registrationOf(padaria)); } });
