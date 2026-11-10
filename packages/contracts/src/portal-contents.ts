@@ -27,7 +27,19 @@ export const PortalContentInProductionSchema = z.object({
   status: z.literal('in_production')
 }).strict();
 
-/** From "awaiting approval" on, as the calendar and the feed need it: no caption and no media. */
+/**
+ * What the agency asked of the client when it sent the content: the deadline of the decision and the note, in the day and the words the
+ * agency gave. The date it was sent, who sent it and the batch stay with the agency.
+ */
+export const PortalContentApprovalSchema = z.object({
+  dueOn: z.string().nullable(),
+  note: z.string().nullable()
+}).strict();
+
+/**
+ * From "awaiting approval" on, as the calendar and the feed need it: no caption and no media. `approval` is `null` when the content was
+ * never sent in a round (sent before the rounds existed).
+ */
 export const PortalContentOpenListItemSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
@@ -38,7 +50,8 @@ export const PortalContentOpenListItemSchema = z.object({
   status: z.enum(['awaiting_approval', 'adjusting', 'approved', 'published']),
   coverAssetId: z.string().uuid().nullable(),
   thumbnailAssetId: z.string().uuid().nullable(),
-  publishedOn: z.string().nullable()
+  publishedOn: z.string().nullable(),
+  approval: PortalContentApprovalSchema.nullable()
 }).strict();
 
 export const PortalContentListItemSchema = z.union([PortalContentInProductionSchema, PortalContentOpenListItemSchema]);
@@ -117,6 +130,7 @@ export const PortalRequestContentChangesRequestSchema = z.object({
 
 export type PortalContentInProduction = z.infer<typeof PortalContentInProductionSchema>;
 export type PortalContentListItem = z.infer<typeof PortalContentListItemSchema>;
+export type PortalContentApproval = z.infer<typeof PortalContentApprovalSchema>;
 export type PortalContentOpenListItem = z.infer<typeof PortalContentOpenListItemSchema>;
 export type PortalContentDetail = z.infer<typeof PortalContentDetailSchema>;
 export type PortalContentPeriodResponse = z.infer<typeof PortalContentPeriodResponseSchema>;

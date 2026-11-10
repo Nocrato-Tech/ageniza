@@ -30,6 +30,8 @@ export const ClientMemberSchema = z.object({
   status: ClientMemberStatusSchema,
   /** `false` is "ainda não entrou": no account has linked the access yet. */
   entered: z.boolean(),
+  /** The last time the person entered this client's portal or used its approval link; `null` when none was recorded, always so while `entered` is `false` ("nunca entrou"). */
+  lastEnteredAt: z.string().datetime().nullable(),
   /** When the access was created (`created_at`). */
   since: z.string()
 }).strict();
