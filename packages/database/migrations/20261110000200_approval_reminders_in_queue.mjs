@@ -5,14 +5,15 @@
 //
 //  - Two new types, `content_approval_due_soon` (the eve of the deadline) and `content_approval_overdue` (the day after it). An item of
 //    these types carries `approval_round_id`: the round it reminds of, which is also what "still true" is judged against.
-//  - `enqueue_approval_reminders(p_at)` is the second writer of the queue (the first is the trigger of `contents`). It is for the worker
+//  - `enqueue_approval_reminders()` is the second writer of the queue (the first is the trigger of `contents`). It is for the worker
 //    alone (an actor bound to the transaction is refused, 42501) and returns how many items it enqueued. Each reminder is owed once per
 //    round: the UPDATE that stamps `reminded_due_soon_at` / `reminded_overdue_at` is the statement that feeds the INSERT, and its WHERE asks
 //    for the stamp to be null, so a second run on the same day (or a second worker waiting on the same rows) enqueues nothing. The day is
-//    the one of America/Sao_Paulo at `p_at`, and a reminder is for that exact day: a day the worker never ran is not made up for the next
-//    one. The worker passes now(); the instant is a parameter for the tests to fix the day, as in `purge_unconfirmed_accounts`, and one
-//    past now() plus a minute is refused (22023): it would look ahead and enqueue the reminder of a day that has not come.
-//    "Due soon" is not enqueued for a round that was sent on the eve itself: the e-mail of the send already said so.
+//    the one of America/Sao_Paulo at now(), and a reminder is for that exact day: a day the worker never ran is not made up for the next
+//    one. "Due soon" is not enqueued for a round that was sent on the eve itself: the e-mail of the send already said so.
+//  - The work is in `enqueue_approval_reminders_at(p_at)`, which only the owner executes (no grant to the application role, as for
+//    `check_approval_round_input`): a test fixes the day with its instant. The worker's function takes none and passes now(), since an
+//    instant the application role chose could look back and re-run a day the job never ran, and the claim would deliver it today.
 //  - Who is told and what stopped being true is the rule the queue already has, kept in ONE place: `notification_item_still_holds` (the
 //    active accesses of the client, the client active, the agency active and not read-only, the content in the state of the type) now also
 //    asks, for a reminder, that the round is the LATEST round of the content. The enqueue, the discard of the claim and the recheck all call
@@ -24,8 +25,8 @@
 //  - `issue_portal_approval_link` accepts the reminder types, since their e-mail carries the link of approval too. `mark_notifications_sent`
 //    and `fail_notifications` never looked at the type.
 //
-// Error codes: none new (42501 for a caller with an actor, 40001 for an isolation other than READ COMMITTED, 22023 for a missing instant or
-// one in the future).
+// Error codes: none new (42501 for a caller with an actor, 40001 for an isolation other than READ COMMITTED, 22023 for a missing instant
+// given to the function of the owner).
 
 const DUE_SOON = 'content_approval_due_soon';
 const OVERDUE = 'content_approval_overdue';
@@ -339,7 +340,8 @@ export async function up(knex) {
   `);
 
   await knex.raw(`
-    create function app_private.enqueue_approval_reminders(p_at timestamptz)
+    -- The work of the reminders at the day of an instant. Only the owner runs it: the instant is for a test to fix the day.
+    create function app_private.enqueue_approval_reminders_at(p_at timestamptz)
     returns integer
     language plpgsql
     security definer
@@ -351,15 +353,9 @@ export async function up(knex) {
       v_enqueued integer := 0;
     begin
       perform app_private.require_read_committed();
-      if app_private.current_user_id() is not null then
-        raise exception using errcode = '42501', message = 'The approval reminders are enqueued by the worker, not by a request.';
-      end if;
+      -- A null instant would make "today" null, and a comparison with null matches no round: the job would enqueue nothing without a word.
       if p_at is null then
         raise exception using errcode = '22023', message = 'The reminders need the instant they are enqueued at.';
-      end if;
-      -- The instant is a parameter for the tests, never to look ahead: a minute is the skew tolerated between the caller and the database.
-      if p_at > pg_catalog.now() + interval '1 minute' then
-        raise exception using errcode = '22023', message = 'The reminders cannot be enqueued at an instant in the future.';
       end if;
       v_today := app_private.sao_paulo_date(p_at);
 
@@ -417,8 +413,23 @@ export async function up(knex) {
       return v_enqueued;
     end;
     $function$;
-    revoke all on function app_private.enqueue_approval_reminders(timestamptz) from public;
-    grant execute on function app_private.enqueue_approval_reminders(timestamptz) to ageniza_app;
+    revoke all on function app_private.enqueue_approval_reminders_at(timestamptz) from public;
+
+    create function app_private.enqueue_approval_reminders()
+    returns integer
+    language plpgsql
+    security definer
+    set search_path = ''
+    as $function$
+    begin
+      if app_private.current_user_id() is not null then
+        raise exception using errcode = '42501', message = 'The approval reminders are enqueued by the worker, not by a request.';
+      end if;
+      return app_private.enqueue_approval_reminders_at(pg_catalog.now());
+    end;
+    $function$;
+    revoke all on function app_private.enqueue_approval_reminders() from public;
+    grant execute on function app_private.enqueue_approval_reminders() to ageniza_app;
   `);
 
   await knex.raw(`
