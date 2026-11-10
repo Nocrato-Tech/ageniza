@@ -5,11 +5,13 @@
 //
 //  - Two new types, `content_approval_due_soon` (the eve of the deadline) and `content_approval_overdue` (the day after it). An item of
 //    these types carries `approval_round_id`: the round it reminds of, which is also what "still true" is judged against.
-//  - `enqueue_approval_reminders()` is the second writer of the queue (the first is the trigger of `contents`). It is for the worker alone
-//    (an actor bound to the transaction is refused, 42501) and returns how many items it enqueued. Each reminder is owed once per round:
-//    the UPDATE that stamps `reminded_due_soon_at` / `reminded_overdue_at` is the statement that feeds the INSERT, and its WHERE asks for the
-//    stamp to be null, so a second run on the same day (or a second worker waiting on the same rows) enqueues nothing. The day is the one of
-//    America/Sao_Paulo, and a reminder is for that exact day: a day the worker never ran is not made up for the next one.
+//  - `enqueue_approval_reminders(p_at)` is the second writer of the queue (the first is the trigger of `contents`). It is for the worker
+//    alone (an actor bound to the transaction is refused, 42501) and returns how many items it enqueued. Each reminder is owed once per
+//    round: the UPDATE that stamps `reminded_due_soon_at` / `reminded_overdue_at` is the statement that feeds the INSERT, and its WHERE asks
+//    for the stamp to be null, so a second run on the same day (or a second worker waiting on the same rows) enqueues nothing. The day is
+//    the one of America/Sao_Paulo at `p_at`, and a reminder is for that exact day: a day the worker never ran is not made up for the next
+//    one. The worker passes now(); the instant is a parameter for the tests to fix the day, as in `purge_unconfirmed_accounts`, and one
+//    past now() plus a minute is refused (22023): it would look ahead and enqueue the reminder of a day that has not come.
 //    "Due soon" is not enqueued for a round that was sent on the eve itself: the e-mail of the send already said so.
 //  - Who is told and what stopped being true is the rule the queue already has, kept in ONE place: `notification_item_still_holds` (the
 //    active accesses of the client, the client active, the agency active and not read-only, the content in the state of the type) now also
@@ -22,7 +24,8 @@
 //  - `issue_portal_approval_link` accepts the reminder types, since their e-mail carries the link of approval too. `mark_notifications_sent`
 //    and `fail_notifications` never looked at the type.
 //
-// Error codes: none new (42501 for a caller with an actor, 40001 for an isolation other than READ COMMITTED).
+// Error codes: none new (42501 for a caller with an actor, 40001 for an isolation other than READ COMMITTED, 22023 for a missing instant or
+// one in the future).
 
 const DUE_SOON = 'content_approval_due_soon';
 const OVERDUE = 'content_approval_overdue';
@@ -51,7 +54,9 @@ export async function up(knex) {
   `);
 
   await knex.raw(`
-    -- The reminders are due at once; the opening of the day is the clock of the job, not of the queue.
+    -- When an item opened at p_instant is due. "Contents to approve" are due 15 minutes later, and the claim waits for the group to be
+    -- quiet for that long (debounce); the summary of "published" is due when the day of p_instant ends in Brasília, through the one
+    -- function that reads that day. The reminders are due at once: the day they are for is the job's, not the queue's.
     create or replace function app_private.notification_send_after(p_type text, p_instant timestamptz)
     returns timestamptz
     language sql
@@ -59,6 +64,8 @@ export async function up(knex) {
     set search_path = ''
     as $function$
       select case p_type
+        -- The first whole UTC hour at which Brasília is on another day: its midnight is always one, and the day is asked of
+        -- sao_paulo_date alone, as the catalog test of the client dates demands (no time zone of its own here).
         when 'content_published' then (
           select pg_catalog.min(hour)
           from pg_catalog.generate_series(
@@ -175,6 +182,8 @@ export async function up(knex) {
         raise exception using errcode = '22023', message = 'The limit is a number of groups, from 1 to 100.';
       end if;
 
+      -- What stopped being true is discarded, not held. A lease still running is not touched: someone is sending it. A row another
+      -- worker holds is skipped, not waited for: that worker is discarding or claiming it.
       update public.notification_queue item
       set discarded_at = pg_catalog.now()
       where item.id in (
@@ -189,6 +198,9 @@ export async function up(knex) {
         for update skip locked
       );
 
+      -- One group at a time, and only the groups nobody else is claiming: the lock of the group is held to the end of the transaction,
+      -- so a second worker cannot claim part of a group whose first claim it cannot see yet. Whether the group is ready is asked in the
+      -- statement that claims, after the lock, so it sees what the previous holder of the lock committed.
       for v_group in
         select app_private.notification_address(item.recipient_portal_access_id) as address, item.client_id, item.type
         from public.notification_queue item
@@ -225,6 +237,9 @@ export async function up(knex) {
         end if;
       end loop;
 
+      -- The statuses were checked by the discard above, in this same call: a removal that commits between the two statements is
+      -- seen by the next claim, and by no one sooner than the e-mail itself could be stopped. The address is the account's when
+      -- the access has one, and the access's own when it has none.
       return query
       select item.id, item.claim_token, item.type, item.client_id, client.name, agency.name, item.recipient_portal_access_id,
              coalesce(person.email, access.email), item.content_id, content.title, content.publish_on,
@@ -259,6 +274,8 @@ export async function up(knex) {
         raise exception using errcode = '42501', message = 'The notification queue is read by the worker, not by a request.';
       end if;
 
+      -- The clients of the items this claim still holds, taken FOR SHARE in key order: an archive in flight holds its client, so this
+      -- waits for it, and the statements below (each with a snapshot of its own, READ COMMITTED) then see what it committed.
       perform 1
       from public.clients client
       where client.id in (
@@ -272,6 +289,8 @@ export async function up(knex) {
       order by client.id
       for share of client;
 
+      -- The lease is measured here, after the wait above: now() is the start of the transaction, and an archive in flight can hold this
+      -- call for longer than what is left of a lease, which would then be judged as if it still ran.
       v_now := pg_catalog.clock_timestamp();
 
       update public.notification_queue item
@@ -306,6 +325,8 @@ export async function up(knex) {
         and item.sent_at is null
         and item.discarded_at is null
         and item.claimed_at >= v_now - interval '${LEASE}'
+        -- Not redundant with the discard above: each statement has a snapshot of its own, and the lock holds only the clients, so a suspension of
+        -- the agency, a removal from the portal or a change of the content that commits between the two statements is seen only here.
         and app_private.notification_item_still_holds(item.type, item.client_id, item.recipient_portal_access_id, item.content_id, item.approval_round_id)
       order by coalesce(person.email, access.email), item.client_id, item.type, item.send_after, item.id;
     end;
@@ -318,7 +339,7 @@ export async function up(knex) {
   `);
 
   await knex.raw(`
-    create function app_private.enqueue_approval_reminders()
+    create function app_private.enqueue_approval_reminders(p_at timestamptz)
     returns integer
     language plpgsql
     security definer
@@ -333,8 +354,17 @@ export async function up(knex) {
       if app_private.current_user_id() is not null then
         raise exception using errcode = '42501', message = 'The approval reminders are enqueued by the worker, not by a request.';
       end if;
-      v_today := app_private.sao_paulo_date(pg_catalog.now());
+      if p_at is null then
+        raise exception using errcode = '22023', message = 'The reminders need the instant they are enqueued at.';
+      end if;
+      -- The instant is a parameter for the tests, never to look ahead: a minute is the skew tolerated between the caller and the database.
+      if p_at > pg_catalog.now() + interval '1 minute' then
+        raise exception using errcode = '22023', message = 'The reminders cannot be enqueued at an instant in the future.';
+      end if;
+      v_today := app_private.sao_paulo_date(p_at);
 
+      -- The clients of the rounds that are due, taken FOR SHARE in key order before the statements: an archive in flight holds its client,
+      -- so this waits for it, and the statements then see what it committed.
       perform 1
       from public.clients client
       where client.status = 'active'
@@ -387,11 +417,15 @@ export async function up(knex) {
       return v_enqueued;
     end;
     $function$;
-    revoke all on function app_private.enqueue_approval_reminders() from public;
-    grant execute on function app_private.enqueue_approval_reminders() to ageniza_app;
+    revoke all on function app_private.enqueue_approval_reminders(timestamptz) from public;
+    grant execute on function app_private.enqueue_approval_reminders(timestamptz) to ageniza_app;
   `);
 
   await knex.raw(`
+    -- The worker issues the link of an e-mail from the items it claimed: the items prove the e-mail exists (a claim token is a secret
+    -- of the claim), and the link is tied to the contents of those items. A request has an actor and is refused; so is any call that
+    -- cannot name a live claim. One e-mail, one mailbox: when two accesses of the client resolve to the same address, the e-mail
+    -- carries one link, issued to the first of them by id.
     create or replace function app_private.issue_portal_approval_link(p_item_ids uuid[], p_claim_token uuid, p_token_hash text)
     returns timestamptz
     language plpgsql
@@ -435,6 +469,7 @@ export async function up(knex) {
         raise exception using errcode = 'A0101', message = 'The items and the claim do not describe one e-mail.';
       end if;
 
+      -- The locks of the removal and the archive, in their order, and the judgment after them.
       perform 1 from public.client_portal_accesses access where access.id = v_access_id for share;
       perform 1 from public.clients client where client.id = v_client_id for share;
       select client.agency_id, access.generation into v_agency_id, v_generation

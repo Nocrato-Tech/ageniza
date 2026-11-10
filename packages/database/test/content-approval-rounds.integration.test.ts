@@ -205,7 +205,7 @@ describe('the table of rounds is closed to the application role', () => {
     }
     // The rule of sending runs as its owner (it writes a table the application role cannot write); the two checks are read-only helpers.
     expect(await privileges('app_private.send_content_for_approval(public.contents, uuid, date, text)')).toEqual({ app: false, public_acl: false, config: ['search_path=""'], definer: true });
-    for (const signature of ['app_private.check_approval_round_input(date, text)', 'app_private.approval_note_is_valid(text)']) {
+    for (const signature of ['app_private.check_approval_round_input(date, text, timestamptz)', 'app_private.approval_note_is_valid(text)']) {
       expect(await privileges(signature), signature).toEqual({ app: false, public_acl: false, config: ['search_path=""'], definer: false });
     }
     // The old signature is gone: one function by that name, so the API calls the same one with or without a deadline.
@@ -276,14 +276,73 @@ describe('submit_content opens a round', () => {
     expect(round).toMatchObject({ due_on: dueOn });
   });
 
-  it('does nothing for a content that already waits, and a new deadline or note is not applied to it', async () => {
-    const content = await f.readyContent();
-    await submitAs(ids.productionA, content, await f.day(2), 'Primeiro');
-    const [first] = await f.roundsOf(content);
+  describe('for a content that already waits', () => {
+    const dayOrNull = (offset: number | null): Promise<string | null> => (offset === null ? Promise.resolve(null) : f.day(offset));
+    const waitingWith = async (dueOffset: number | null, note: string | null): Promise<{ content: string; first: Record<string, unknown> }> => {
+      const content = await f.readyContent();
+      await submitAs(ids.productionA, content, await dayOrNull(dueOffset), note);
+      return { content, first: (await f.roundsOf(content))[0]! };
+    };
+    const expectSameRound = async (content: string, ...rounds: Array<Record<string, unknown>>): Promise<void> => {
+      expect(await f.roundsOf(content)).toEqual(rounds);
+      expect(await contentStatus(content)).toBe('awaiting_approval');
+      expect(await queueItems([content])).toBe(PEOPLE_OF_A1);
+    };
 
-    await expect(submitAs(ids.productionA, content, await f.day(9), 'Segundo')).resolves.toBeDefined();
-    expect(await f.roundsOf(content)).toEqual([first]);
-    expect(await queueItems([content])).toBe(PEOPLE_OF_A1);
+    it.each([
+      ['the same deadline and the same note', 2, 'Primeiro'],
+      ['neither a deadline nor a note (the `{}` body of today)', null, null],
+      ['a deadline and no note', 2, null],
+      ['a note and no deadline', null, 'Primeiro']
+    ])('does nothing when the call repeats the deadline and the note of its round: %s', async (_label, dueOffset, note) => {
+      const { content, first } = await waitingWith(dueOffset, note);
+
+      await expect(submitAs(ids.productionA, content, await dayOrNull(dueOffset), note)).resolves.toBeDefined();
+      await expect(submitAs(ids.managerA, content, await dayOrNull(dueOffset), note)).resolves.toBeDefined();
+
+      await expectSameRound(content, first);
+    });
+
+    it.each([
+      ['another deadline', 2, 'Primeiro', 9, 'Primeiro'],
+      ['another note', 2, 'Primeiro', 2, 'Segundo'],
+      ['a deadline where the round has none', null, 'Primeiro', 2, 'Primeiro'],
+      ['a note where the round has none', 2, null, 2, 'Segundo'],
+      ['no deadline where the round has one', 2, 'Primeiro', null, 'Primeiro'],
+      ['no note where the round has one', 2, 'Primeiro', 2, null],
+      ['a deadline and a note where the round has neither', null, null, 3, 'Urgente']
+    ])('refuses with A0062 a call that asks for %s, which the batch refuses too, and leaves the round as it was', async (_label, dueOffset, note, askedOffset, askedNote) => {
+      const { content, first } = await waitingWith(dueOffset, note);
+
+      await expect(submitAs(ids.productionA, content, await dayOrNull(askedOffset), askedNote)).rejects.toMatchObject({ code: 'A0062', message: expect.stringContaining('already waits') });
+      await expect(batchAs(ids.productionA, [content], await dayOrNull(askedOffset), askedNote)).rejects.toMatchObject({ code: 'A0062' });
+
+      await expectSameRound(content, first);
+    });
+
+    it('compares the call with the LATEST round: the repeat of the second round is nothing, and the repeat of the first is refused', async () => {
+      const { content, first } = await waitingWith(2, 'Primeira');
+      await f.requestChanges(ids.portalA1, content);
+      await submitAs(ids.productionA, content, await f.day(8), 'Segunda');
+      const [, second] = await f.roundsOf(content);
+
+      await expect(submitAs(ids.productionA, content, await f.day(8), 'Segunda')).resolves.toBeDefined();
+      await expect(submitAs(ids.productionA, content, await f.day(2), 'Primeira')).rejects.toMatchObject({ code: 'A0062' });
+
+      await expectSameRound(content, first, second!);
+    });
+
+    it('treats one that waited before the rounds existed as sent with neither: the call with neither is nothing, any other is refused, and no round is opened', async () => {
+      const content = await f.readyContent(ids.clientA1, 'awaiting_approval');
+      const queued = await queueItems([content]);
+
+      await expect(submitAs(ids.productionA, content)).resolves.toBeDefined();
+      await expect(submitAs(ids.productionA, content, await f.day(2))).rejects.toMatchObject({ code: 'A0062' });
+      await expect(submitAs(ids.productionA, content, null, 'Recado')).rejects.toMatchObject({ code: 'A0062' });
+
+      expect(await roundCount([content])).toBe(0);
+      expect(await queueItems([content])).toBe(queued);
+    });
   });
 
   it('opens a NEW round when the content is sent again after the adjustment, and keeps the old one as it was', async () => {
@@ -409,6 +468,40 @@ describe.each(ENTRANCES)('the deadline of %s', (_name, send) => {
     const content = await f.readyContent();
     await send(content, null, null);
     await expect(send(content, await f.day(-1), null)).rejects.toMatchObject({ code: 'A0120' });
+  });
+});
+
+// The entrances read "today" at the instant of the transaction, so a test through them lives with the hour it runs at (the suite only keeps
+// away from São Paulo midnight): the check takes the instant, and these tests fix it, at the hours where São Paulo and UTC are on another day.
+describe('the day of the deadline is the one of São Paulo at the instant of the check', () => {
+  const checkAt = (dueOn: string | null, instant: string, note: string | null = null): Promise<unknown> =>
+    owner().raw('select app_private.check_approval_round_input(?::date, ?::text, ?::timestamptz)', [dueOn, note, instant]);
+  const plusDays = (day: string, days: number): Promise<string> => f.sql('select (?::date + ?::integer)::text as value', [day, days]);
+
+  // São Paulo is three hours behind UTC all year: from 21:00 on, the UTC date is already the next day of São Paulo.
+  it.each([
+    ['12:00', '2026-11-10T15:00:00Z', '2026-11-10'],
+    ['20:59:59, the last second the UTC date is still the same', '2026-11-10T23:59:59Z', '2026-11-10'],
+    ['21:00:00, the first second the UTC date is the next day', '2026-11-11T00:00:00Z', '2026-11-10'],
+    ['22:30', '2026-11-11T01:30:00Z', '2026-11-10'],
+    ['23:59:59, the last second of the day', '2026-11-11T02:59:59Z', '2026-11-10'],
+    ['00:00:00, the first second of the next day', '2026-11-11T03:00:00Z', '2026-11-11'],
+    ['00:30', '2026-11-11T03:30:00Z', '2026-11-11']
+  ])('at %s of São Paulo, today is %s: the deadline is accepted from today to 90 days ahead, and refused yesterday and 91 days ahead (A0120)', async (_label, instant, today) => {
+    for (const offset of [0, 90]) await expect(checkAt(await plusDays(today, offset), instant), `today + ${offset}`).resolves.toBeDefined();
+    for (const offset of [-1, 91]) await expect(checkAt(await plusDays(today, offset), instant), `today + ${offset}`).rejects.toMatchObject({ code: 'A0120' });
+    await expect(checkAt(null, instant)).resolves.toBeDefined();
+  });
+
+  it('refuses a missing instant, which would turn the range into a comparison with null that refuses nothing', async () => {
+    await expect(checkAt('2031-01-01', null as never)).rejects.toMatchObject({ code: '22023' });
+  });
+
+  it('is asked by both entrances at the instant of the transaction: the text of each says so', async () => {
+    for (const name of ['submit_content', 'submit_contents']) {
+      const source = await f.sql<string>(`select pg_get_functiondef(p.oid) as value from pg_proc p where p.pronamespace = 'app_private'::regnamespace and p.proname = ?`, [name]);
+      expect(source, name).toContain('check_approval_round_input(p_due_on, p_note, pg_catalog.now())');
+    }
   });
 });
 
@@ -657,6 +750,14 @@ describe('submit_contents', () => {
       await expect(batchAs(ids.adminA, [content, content])).rejects.toMatchObject({ code: 'A0121' });
       await expect(w.asUser(ids.adminA, (t) => t.raw('select app_private.submit_contents(array[?::uuid, null::uuid], null, null)', [content]))).rejects.toMatchObject({ code: 'A0121' });
       await expectUntouched([content]);
+    });
+
+    it('refuses a list of more than one dimension with A0121, and not with the error of the array function that cannot read it', async () => {
+      const [a, b] = [await f.readyContent(), await f.readyContent()];
+      for (const shape of ['array[[?::uuid, ?::uuid]]', 'array[[?::uuid], [?::uuid]]']) {
+        await expect(w.asUser(ids.adminA, (t) => t.raw(`select app_private.submit_contents(${shape}, null, null)`, [a, b])), shape).rejects.toMatchObject({ code: 'A0121' });
+      }
+      await expectUntouched([a, b]);
     });
 
     it('sends 30 contents and refuses 31, with every content of the 31 valid', async () => {

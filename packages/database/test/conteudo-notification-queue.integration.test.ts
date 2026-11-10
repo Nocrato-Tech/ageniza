@@ -339,7 +339,7 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
 describe('the catalog of the queue (issue #252)', () => {
   const WORKER_FUNCTIONS = [
     'app_private.claim_notification_batch(integer)',
-    'app_private.enqueue_approval_reminders()',
+    'app_private.enqueue_approval_reminders(timestamp with time zone)',
     'app_private.mark_notifications_sent(uuid[], uuid)',
     'app_private.fail_notifications(uuid[], uuid, text)',
     'app_private.recheck_notifications(uuid[], uuid)',

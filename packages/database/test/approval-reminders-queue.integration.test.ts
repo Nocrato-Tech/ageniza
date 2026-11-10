@@ -69,9 +69,10 @@ interface Waiting { client: string; content: string; round: string }
 
 const asWorker = <T>(work: (transaction: Knex.Transaction) => Promise<T>, isolationLevel?: 'read committed' | 'repeatable read' | 'serializable'): Promise<T> =>
   worker.knex.transaction(work, isolationLevel === undefined ? {} : { isolationLevel });
-const enqueueIn = async (transaction: Knex.Transaction): Promise<number> =>
-  Number((await transaction.raw<{ rows: Array<{ enqueued: number }> }>('select app_private.enqueue_approval_reminders() as enqueued')).rows[0]!.enqueued);
-const enqueue = (): Promise<number> => asWorker(enqueueIn);
+// The worker passes now(); a test may pass the instant it wants the day to be read at.
+const enqueueIn = async (transaction: Knex.Transaction, instant: string | null = null): Promise<number> =>
+  Number((await transaction.raw<{ rows: Array<{ enqueued: number }> }>('select app_private.enqueue_approval_reminders(coalesce(?::timestamptz, pg_catalog.now())) as enqueued', [instant])).rows[0]!.enqueued);
+const enqueue = (instant: string | null = null): Promise<number> => asWorker((transaction) => enqueueIn(transaction, instant));
 
 /**
  * The round the reminders look at: due `dueOffset` days from today (null: no deadline) and sent `sentDaysAgo` days ago, long before the
@@ -203,7 +204,7 @@ describe('the functions of the worker', () => {
     )).rows[0];
 
   it.each([
-    'app_private.enqueue_approval_reminders()',
+    'app_private.enqueue_approval_reminders(timestamptz)',
     'app_private.claim_notification_batch(integer)',
     'app_private.recheck_notifications(uuid[], uuid)'
   ])('opens %s to the application role alone, as a definer function with an empty search path', async (signature) => {
@@ -229,7 +230,7 @@ describe('the functions of the worker', () => {
   it('refuses a person of the agency and a person of the portal with 42501, and enqueues nothing', async () => {
     const { content } = await waiting(1);
     for (const user of [ids.adminA, ids.portalA1]) {
-      await expect(w.asUser(user, (t) => t.raw('select app_private.enqueue_approval_reminders()'))).rejects.toMatchObject({ code: '42501', message: expect.stringContaining('worker') });
+      await expect(w.asUser(user, (t) => t.raw('select app_private.enqueue_approval_reminders(pg_catalog.now())'))).rejects.toMatchObject({ code: '42501', message: expect.stringContaining('worker') });
     }
     expect(await remindersOf(content)).toEqual([]);
     expect(await enqueue()).toBe(PEOPLE);
@@ -431,6 +432,62 @@ describe('the reminder of the eve and of the day after', () => {
       expect(await enqueue()).toBe(reminded ? PEOPLE : 0);
       expect(await remindersOf(content)).toHaveLength(reminded ? PEOPLE : 0);
     });
+  });
+});
+
+// ---- the day the job reads --------------------------------------------------------------------------------------------------
+
+describe('the day of the reminders is the one of São Paulo at the instant the job is run at', () => {
+  // Yesterday (or today, at midnight) at a clock of São Paulo, as a UTC instant: it is in the past at any hour the suite runs at, so the
+  // function accepts it. São Paulo is three hours behind UTC, so from 21:00 on the UTC date is already the next day of São Paulo.
+  const instantOf = (dayOffset: number, clock: string): Promise<string> =>
+    f.sql(
+      `select to_char((((app_private.sao_paulo_date(pg_catalog.now()) + ?::integer)::timestamp + ?::time) at time zone 'America/Sao_Paulo') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as value`,
+      [dayOffset, clock]
+    );
+
+  it.each([
+    ['00:00:00 of today, the first second of the day', 0, '00:00:00'],
+    ['00:30 of yesterday', -1, '00:30:00'],
+    ['20:59:59 of yesterday, the last second the UTC date is the same', -1, '20:59:59'],
+    ['21:00:00 of yesterday, the first second the UTC date is the next day', -1, '21:00:00'],
+    ['22:30 of yesterday', -1, '22:30:00'],
+    ['23:59:59 of yesterday, the last second of the day', -1, '23:59:59']
+  ])('at %s, the eve and the day after are the ones of São Paulo and no other round is reminded', async (_label, dayOffset, clock) => {
+    const soon = await waiting(dayOffset + 1);
+    const late = await waiting(dayOffset - 1);
+    const others = [await waiting(dayOffset), await waiting(dayOffset + 2), await waiting(dayOffset - 2)];
+
+    expect(await enqueue(await instantOf(dayOffset, clock))).toBe(2 * PEOPLE);
+
+    expect((await remindersOf(soon.content)).map((row) => row.type)).toEqual(Array.from({ length: PEOPLE }, () => DUE_SOON));
+    expect((await remindersOf(late.content)).map((row) => row.type)).toEqual(Array.from({ length: PEOPLE }, () => OVERDUE));
+    for (const other of others) expect(await remindersOf(other.content)).toEqual([]);
+    expect(await stampsOf(soon.round)).toEqual({ reminded_due_soon_at: expect.any(Date), reminded_overdue_at: null });
+    expect(await stampsOf(late.round)).toEqual({ reminded_due_soon_at: null, reminded_overdue_at: expect.any(Date) });
+  });
+
+  it('accepts the instant of now and one a minute ahead, the skew tolerated between the caller and the database, and refuses one a second further, or none, with 22023', async () => {
+    const { content } = await waiting(1);
+    const at = (expression: string): Promise<number> =>
+      asWorker(async (t) => Number((await t.raw<{ rows: Array<{ enqueued: number }> }>(`select app_private.enqueue_approval_reminders(${expression}) as enqueued`)).rows[0]!.enqueued));
+
+    await expect(at('pg_catalog.now()')).resolves.toBe(PEOPLE);
+    await expect(at("pg_catalog.now() + interval '60 seconds'")).resolves.toBe(0);
+    await expect(at("pg_catalog.now() + interval '61 seconds'")).rejects.toMatchObject({ code: '22023', message: expect.stringContaining('future') });
+    await expect(at("pg_catalog.now() + interval '3 days'")).rejects.toMatchObject({ code: '22023' });
+    await expect(at('null::timestamptz')).rejects.toMatchObject({ code: '22023' });
+    expect(await remindersOf(content)).toHaveLength(PEOPLE);
+  });
+
+  it('enqueues nothing and stamps nothing for an instant a day ahead, though a round is due the day after the one it would read', async () => {
+    const { content, round } = await waiting(2);
+    const tomorrow = await f.sql(`select to_char((pg_catalog.now() + interval '1 day') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as value`);
+
+    await expect(enqueue(tomorrow)).rejects.toMatchObject({ code: '22023' });
+
+    expect(await remindersOf(content)).toEqual([]);
+    expect(await stampsOf(round)).toEqual({ reminded_due_soon_at: null, reminded_overdue_at: null });
   });
 });
 

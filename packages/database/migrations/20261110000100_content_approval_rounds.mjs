@@ -19,8 +19,9 @@
 //    other children (20261007001400, 20261027020000).
 //
 // `submit_content(uuid)` becomes `submit_content(uuid, date, text)` (deadline and note default to null, so the call and the `{}` body of the
-// route stay valid); `submit_contents(uuid[], date, text)` sends up to 30 contents of ONE client, all or nothing. In the batch a content that
-// already waits is refused (A0062) instead of ignored: the deadline and the note would otherwise be dropped silently.
+// route stay valid); `submit_contents(uuid[], date, text)` sends up to 30 contents of ONE client, all or nothing. A content that already
+// waits is refused (A0062) at both entrances, since the deadline and the note would otherwise be dropped silently; the only exception is
+// the individual send that repeats the deadline and the note of the latest round (a double click), which changes nothing.
 //
 // Lock order of the batch: the ids are locked in ascending order, each through `lock_content_for_agency` (client FOR SHARE, then the content
 // FOR UPDATE), so two batches over the same contents never wait on each other in a cycle. The functions re-read after a lock, so they refuse
@@ -29,6 +30,9 @@
 // Error codes (new): A0120 the deadline is outside "today to 90 days ahead, in America/Sao_Paulo"; A0121 a batch is 1 to 30 distinct contents;
 // A0122 the contents of a batch belong to more than one client. Reused: A0060 (not found, or not allowed), A0061 (archived client), A0062 (not in
 // production or adjustment), A0065 (media), A0066 (subtask), A0068 (the note is blank or over 500 characters), A0090 (read-only agency).
+//
+// The day of the deadline is the one of America/Sao_Paulo at an instant the check receives (`p_at`), and the functions that send pass
+// now(): a test fixes the instant, as the other date rules do, instead of living with the hour it happens to run at.
 
 const MAX_BATCH = 30;
 const MAX_DAYS_AHEAD = 90;
@@ -96,15 +100,20 @@ export async function up(knex) {
   `);
 
   await knex.raw(`
-    create function app_private.check_approval_round_input(p_due_on date, p_note text)
+    create function app_private.check_approval_round_input(p_due_on date, p_note text, p_at timestamptz)
     returns void
     language plpgsql
     stable
     set search_path = ''
     as $function$
     declare
-      v_today date := app_private.sao_paulo_date(pg_catalog.now());
+      v_today date;
     begin
+      -- A null instant would make "today" null, and a comparison with null refuses nothing: the deadline would be unchecked.
+      if p_at is null then
+        raise exception using errcode = '22023', message = 'The deadline is checked at an instant.';
+      end if;
+      v_today := app_private.sao_paulo_date(p_at);
       if p_due_on is not null and (p_due_on < v_today or p_due_on > v_today + ${MAX_DAYS_AHEAD}) then
         raise exception using errcode = 'A0120', message = 'The deadline is from today to ${MAX_DAYS_AHEAD} days ahead, in America/Sao_Paulo.';
       end if;
@@ -113,7 +122,7 @@ export async function up(knex) {
       end if;
     end;
     $function$;
-    revoke all on function app_private.check_approval_round_input(date, text) from public;
+    revoke all on function app_private.check_approval_round_input(date, text, timestamptz) from public;
 
     -- The one rule of sending a content for approval, for a content the caller already locked with lock_content_for_agency. The round is
     -- written before the state moves, so a refusal of the state leaves no round (and the transaction would undo it anyway).
@@ -160,13 +169,26 @@ export async function up(knex) {
     as $function$
     declare
       v_content public.contents;
+      v_due_on date;
+      v_note text;
     begin
       perform app_private.require_read_committed();
-      perform app_private.check_approval_round_input(p_due_on, p_note);
+      perform app_private.check_approval_round_input(p_due_on, p_note, pg_catalog.now());
       v_content := app_private.lock_content_for_agency(p_content_id, 'conteudo.operar');
 
       if v_content.status = 'awaiting_approval' then
-        return;
+        -- The same call again (a double click, a retry) changes nothing. One that asks for another deadline or note would be dropped
+        -- silently, so it is refused, as the batch refuses a content that already waits. A content that waited before the rounds existed
+        -- has none and counts as sent with neither.
+        select round.due_on, round.note into v_due_on, v_note
+        from public.content_approval_rounds round
+        where round.content_id = v_content.id
+        order by round.sequence desc
+        limit 1;
+        if p_due_on is not distinct from v_due_on and p_note is not distinct from v_note then
+          return;
+        end if;
+        raise exception using errcode = 'A0062', message = 'The content already waits for approval, with another deadline or note.';
       end if;
       perform app_private.send_content_for_approval(v_content, pg_catalog.gen_random_uuid(), p_due_on, p_note);
     end;
@@ -188,14 +210,15 @@ export async function up(knex) {
       v_client_id uuid;
     begin
       perform app_private.require_read_committed();
-      if p_content_ids is null
-        or pg_catalog.cardinality(p_content_ids) not between 1 and ${MAX_BATCH}
-        or pg_catalog.array_position(p_content_ids, null) is not null
+      -- A list of one dimension and not empty: the dimension of a missing or an empty array is null. A null item is not counted by
+      -- count(distinct), so the last line refuses it as well as a repeated one.
+      if pg_catalog.array_ndims(p_content_ids) is distinct from 1
+        or pg_catalog.cardinality(p_content_ids) > ${MAX_BATCH}
         or pg_catalog.cardinality(p_content_ids) <> (select pg_catalog.count(distinct item) from pg_catalog.unnest(p_content_ids) as item)
       then
         raise exception using errcode = 'A0121', message = 'A batch is from 1 to ${MAX_BATCH} contents, each one once.';
       end if;
-      perform app_private.check_approval_round_input(p_due_on, p_note);
+      perform app_private.check_approval_round_input(p_due_on, p_note, pg_catalog.now());
 
       select pg_catalog.array_agg(item order by item) into v_ids from pg_catalog.unnest(p_content_ids) as item;
       foreach v_id in array v_ids loop
@@ -265,6 +288,8 @@ export async function up(knex) {
 
     drop function app_private.portal_approval_contents(text);
 
+    -- The contents of the batch with the cut of the portal (a cancelled one is gone, one in production is its title, day and format),
+    -- in their current state: the one already decided shows up without buttons, the one that came back to awaiting approval stays.
     create function app_private.portal_approval_contents(p_session_hash text)
     returns table(id uuid, title text, platform text, format text, publish_on date, status text,
                   revision integer, publish_at_time time, caption text, cover_asset_id uuid, published_on date,
