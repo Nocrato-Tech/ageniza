@@ -121,7 +121,7 @@ export function AgencyAreaLayout() {
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
       <AgencySidebar agenciaId={agenciaId} agencyName={data.agencyName} permissions={data.permissions} />
       <div className="agency-body">
-        <TrialNotice plan={data.plan} />
+        <TrialNotice plan={data.plan} agencyId={data.agencyId} canSubscribe={data.permissions.includes('assinatura.gerenciar')} />
         <LegalNotice />
         <main className="agency-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/agencia/${data.agencyId}`}><Outlet /></NotFoundHomeContext.Provider></main>
       </div>

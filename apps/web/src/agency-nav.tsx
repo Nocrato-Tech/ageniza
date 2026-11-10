@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, NavLink, matchPath, useLocation } from 'react-router-dom';
-import { Briefcase, CalendarDays, ChevronsLeft, ChevronsRight, House, Users, type LucideIcon } from 'lucide-react';
+import { Briefcase, CalendarDays, ChevronsLeft, ChevronsRight, House, Users, WalletCards, type LucideIcon } from 'lucide-react';
 
 import { BrandSymbol, IconButton, Logo, Skeleton } from '@ageniza/ui';
 
@@ -51,7 +51,10 @@ export function AgencySidebar({ agenciaId, agencyName, permissions }: { agenciaI
     ...(canSeeContents ? [{ to: `${base}/conteudos`, label: 'Calendário Editorial', icon: CalendarDays }] : []),
     ...(canSeeClients ? [{ to: `${base}/clientes`, label: 'Clientes', icon: Briefcase }] : [])
   ];
-  const agency: NavItem[] = canSeeCollaborators ? [{ to: `${base}/colaboradores`, label: 'Equipe', icon: Users }] : [];
+  const agency: NavItem[] = [
+    ...(canSeeCollaborators ? [{ to: `${base}/colaboradores`, label: 'Equipe', icon: Users }] : []),
+    ...(can('assinatura.gerenciar') ? [{ to: `${base}/assinatura`, label: 'Assinatura', icon: WalletCards }] : [])
+  ];
 
   return <aside className="agency-sidebar" data-collapsed={collapsed}>
     <div className="agency-sidebar__top">

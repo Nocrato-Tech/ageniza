@@ -1925,6 +1925,37 @@ describe('invite collaborator modal (#107)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it('on the trial collaborator limit the Owner gets the limit with the way to plans and extras, and the typed e-mail stays', async () => {
+    const { impl } = makeFetch({
+      isOwner: true,
+      permissions: ['colaborador.visualizar', 'colaborador.convidar', 'convite.reenviar', 'convite.cancelar', 'assinatura.gerenciar'],
+      createInvitation: () => json({ error: { code: 'TRIAL_COLLABORATOR_LIMIT', message: 'x' } }, 409)
+    });
+    const { container } = renderCollaborators(impl);
+    await invitesRegion();
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toContain('O período de teste permite até 3 colaboradores, contando quem criou a agência e os convites pendentes. Suba de plano ou compre extras para continuar.');
+    expect(within(dialog).getByRole('link', { name: 'Ver planos e extras' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/assinatura`);
+    expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).value).toBe('nova@exemplo.com');
+  });
+
+  it('on the trial collaborator limit an Admin is told whom to ask and gets no link', async () => {
+    const { impl } = makeFetch({ createInvitation: () => json({ error: { code: 'TRIAL_COLLABORATOR_LIMIT', message: 'x' } }, 409) });
+    const { container } = renderCollaborators(impl);
+    await invitesRegion();
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toContain('Peça a quem criou a agência para subir o plano ou comprar extras.');
+    expect(within(dialog).queryByRole('link')).toBeNull();
+  });
+
   it('warns from the response that the previous pending invitation stopped working, even when it is not on the loaded page', async () => {
     const superseded = { ...inviteAna, id: 'cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd', email: 'ana@exemplo.com' };
     const created = { ...inviteJulia, id: 'abababab-abab-4bab-8bab-abababababab', email: 'ana@exemplo.com', expiresAt: expiryInDays(7) };
@@ -2754,6 +2785,27 @@ describe('removed filter and reactivation (#105)', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'active' } });
     expect(await screen.findByText('Paulo Lima')).toBeTruthy();
     expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`);
+  });
+
+  it('reactivating over the trial collaborator limit shows the limit with the way to plans, not the stale-list message', async () => {
+    const { impl } = makeFetch({
+      isOwner: true,
+      permissions: [...reactivatePermissions, 'assinatura.gerenciar'],
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => rolesFor(false),
+      reactivate: () => json({ error: { code: 'TRIAL_COLLABORATOR_LIMIT', message: 'x' } }, 409)
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: PRODUCTION_ROLE_ID } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reativar' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toContain('O período de teste permite até 3 colaboradores');
+    expect(within(dialog).getByRole('link', { name: 'Ver planos e extras' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/assinatura`);
   });
 
   it('gives the removed filter its own empty state, not the search one', async () => {

@@ -326,7 +326,7 @@ describe('the post of the portal (#270)', () => {
       for (const name of ['Aprovar', 'Pedir ajuste']) {
         const button = await screen.findByRole('button', { name });
         expect(button.getAttribute('aria-disabled')).toBe('true');
-        expect(describedBy(button)).toBe('O plano precisa ser renovado para usar esta opção.');
+        expect(describedBy(button)).toBe('A aprovação está pausada no momento. A agência já foi avisada.');
         fireEvent.click(button);
       }
       expect(screen.queryByRole('dialog')).toBeNull();
@@ -335,7 +335,9 @@ describe('the post of the portal (#270)', () => {
       const conversation = await screen.findByRole('region', { name: /Conversa sobre/ });
       const start = await within(conversation).findByRole('button');
       expect(start.getAttribute('aria-disabled')).toBe('true');
-      expect(describedBy(start)).toBe('O plano precisa ser renovado para usar esta opção.');
+      expect(describedBy(start)).toBe('A aprovação está pausada no momento. A agência já foi avisada.');
+      // Nothing the client sees, tips included, speaks of the agency's plan (decision 2026-11-06).
+      expect(document.body.textContent).not.toMatch(/plano|renov/i);
     });
 
     it('sends the revision that was read, shows Aprovado and takes the decision away', async () => {
@@ -425,6 +427,15 @@ describe('the post of the portal (#270)', () => {
       contents.setState(CONTENT, 'cancelled');
       fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
       expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
+    });
+
+    it('a refusal because the agency turned read-only mid-use says the neutral reason, never the server text about the plan', async () => {
+      const { contents } = await open();
+      await screen.findByRole('button', { name: 'Aprovar' });
+      contents.failNextWrite(() => portalContentError(409, 'AGENCY_READ_ONLY', 'O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados.'));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      expect(await screen.findByText('A aprovação está pausada no momento. A agência já foi avisada.')).toBeTruthy();
+      expect(document.body.textContent).not.toMatch(/plano|renov/i);
     });
 
     it('words a lost race and any other failure without the text of the server', async () => {
