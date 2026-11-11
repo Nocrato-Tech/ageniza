@@ -252,6 +252,28 @@ describe('the journey "Até a primeira aprovação" on the agency Início', () =
     expect(screen.queryByRole('heading', { name: 'Até a primeira aprovação' })).toBeNull();
   });
 
+  it('keeps "Convidar o cliente" for a role that cannot act on the current step: the trail shows no button, the line below does', async () => {
+    const probe = renderHome({ permissions: [...VIEW, 'cliente.convidar_usuario'], clients: 1 });
+    await findCount('1 de 4 passos');
+    // The current step is the first content, which this role cannot operate: no button on the trail.
+    const trail = within(journeyOf()).getByRole('list', { name: 'Passos até a primeira aprovação' });
+    expect(within(trail).queryByRole('link')).toBeNull();
+    const line = within(journeyOf()).getByText('Você pode adiantar:').parentElement as HTMLElement;
+    expect(within(line).getAllByRole('link').map((link) => link.textContent)).toEqual(['Convidar o cliente']);
+    fireEvent.click(within(line).getByRole('link', { name: 'Convidar o cliente' }));
+    await waitFor(() => { expect(probe.pathname).toBe(`/agencia/${AGENCY}/clientes/${CLIENT}/acessos`); });
+  });
+
+  it('adds no line when the current step has its own button, or when nothing later can be done', async () => {
+    renderHome({ permissions: ALL, clients: 1 });
+    await findCount('1 de 4 passos');
+    expect(screen.queryByText('Você pode adiantar:')).toBeNull();
+    cleanup();
+    renderHome({ permissions: VIEW, clients: 1 });
+    await findCount('1 de 4 passos');
+    expect(screen.queryByText('Você pode adiantar:')).toBeNull();
+  });
+
   it('puts the current step on the trail with its way forward, and the rocket and the bar beside it', async () => {
     renderHome({ permissions: ALL, clients: 1, facts: { ...none, hasContent: true } });
     await findCount('2 de 4 passos');
