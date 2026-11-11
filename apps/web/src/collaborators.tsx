@@ -17,7 +17,7 @@ import { PendingInvitationsSection } from './pending-invitations.js';
 import { ReactivateCollaboratorDialog } from './reactivate-collaborator.js';
 import { NotFoundPage } from './status-pages.js';
 
-/** `specs/colaboradores.md` §6: 24 per page. */
+/** `specs/colaboradores.md` §6: 24 per page, a multiple of both 3 and 4 so the grid never breaks. */
 const PAGE_SIZE = 24;
 
 /** The five system presets (specs/colaboradores.md §2). The screen only offers these. */
