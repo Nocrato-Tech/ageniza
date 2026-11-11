@@ -530,8 +530,14 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
 
     const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
     expect(alert.textContent).toContain('Não foi possível carregar a equipe.');
-    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    // The failure kind, never the empty state of a search or of a status that merely has nobody.
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(screen.queryByText(/Nenhuma pessoa encontrada/)).toBeNull();
+    expect(screen.queryByText('Ninguém foi removido desta agência')).toBeNull();
+    const attemptsBeforeRetry = attempts;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
     await screen.findByText('Ana Prado');
+    expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
   });
 
   it('disables the job-title filter when the job-titles route fails, without breaking the grid', async () => {
@@ -1378,9 +1384,15 @@ describe('pending invitations (#106)', () => {
     const alert = await within(region).findByRole('alert', undefined, { timeout: 5000 });
     expect(alert.textContent).toContain('Não foi possível carregar os convites.');
     expect(region.textContent).not.toContain('private diagnostic');
+    // A list that did not answer is a failure, never "nenhum convite" nor its good news.
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(region.querySelector('.ui-empty-state--good-news')).toBeNull();
+    expect(within(region).queryByText('Nenhum convite aguardando aceite')).toBeNull();
+    const attemptsBeforeRetry = attempts;
 
     fireEvent.click(within(region).getByRole('button', { name: 'Tentar de novo' }));
     expect(await within(region).findByText('ana@exemplo.com')).toBeTruthy();
+    expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
   });
 
   it.each([403, 404])('stays out of the screen when the API answers %i', async (status) => {
@@ -3061,6 +3073,8 @@ describe('team screens in the Pauta language (#638)', () => {
       let region = await invitesRegion();
       await within(region).findByText('Nenhum convite aguardando aceite');
       expect(region.querySelector('.ui-empty-state--mascot img')).not.toBeNull();
+      // The team's first visit invites to start: first-use, not the good news of a full team.
+      expect(region.querySelector('.ui-empty-state--good-news')).toBeNull();
       cleanup();
 
       const team = makeFetch({ invitations: empty });
@@ -3071,6 +3085,8 @@ describe('team screens in the Pauta language (#638)', () => {
       expect(region.querySelector('.ui-empty-state')).not.toBeNull();
       expect(region.querySelector('.ui-empty-state--mascot')).toBeNull();
       expect(region.querySelector('img')).toBeNull();
+      // With a full team, no invitation waiting is good news, with its check.
+      expect(region.querySelector('.ui-empty-state--good-news svg')).not.toBeNull();
       cleanup();
 
       // A search that happens to find one person is not a new team.

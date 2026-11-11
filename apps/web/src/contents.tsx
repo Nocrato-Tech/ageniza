@@ -13,7 +13,7 @@ import {
   type ContentListItem,
   type UpdateContentRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, ClientStrip, IconButton, LiveStatus, Segmented, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, ButtonLink, ClientStrip, EmptyState, IconButton, LiveStatus, Segmented, Skeleton } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -111,10 +111,7 @@ function ContentStories({ stories, selectedId }: { stories: StoryClients; select
     </ul>;
   }
   if (stories.isError) {
-    return <div className="content-stories__error" role="alert">
-      <p>Não foi possível carregar os clientes. Tente de novo.</p>
-      <Button onClick={() => { void stories.refetch(); }}>Tentar de novo</Button>
-    </div>;
+    return <EmptyState kind="failure" title="Não foi possível carregar os clientes. Tente de novo." onRetry={() => { void stories.refetch(); }} />;
   }
   if (stories.data.data.length === 0) return <p className="content-stories__empty">Nenhum cliente ativo ainda.</p>;
   const total = stories.data.meta.totalItems;
@@ -150,6 +147,8 @@ const SCREEN_TITLE = 'Calendário Editorial';
 function ClientPicker({ stories }: { stories: StoryClients }) {
   const agency = useAgencyContext();
   const location = useLocation();
+  const canRegister = useCan('cliente.cadastrar');
+  const blocked = useWriteBlocked();
 
   if (stories.isPending) {
     return <ul className="content-clients" aria-hidden="true">
@@ -157,12 +156,15 @@ function ClientPicker({ stories }: { stories: StoryClients }) {
     </ul>;
   }
   if (stories.isError) {
-    return <div className="content-stories__error" role="alert">
-      <p>Não foi possível carregar os clientes. Tente de novo.</p>
-      <Button onClick={() => { void stories.refetch(); }}>Tentar de novo</Button>
-    </div>;
+    return <EmptyState kind="failure" title="Não foi possível carregar os clientes. Tente de novo." onRetry={() => { void stories.refetch(); }} />;
   }
-  if (stories.data.data.length === 0) return <p className="content-stories__empty">Nenhum cliente ativo ainda.</p>;
+  if (stories.data.data.length === 0) {
+    return <EmptyState
+      title="Nenhum cliente ativo ainda."
+      description={canRegister ? 'Cadastre o primeiro para começar o calendário dele.' : undefined}
+      action={canRegister && blocked === undefined ? <ButtonLink as={Link} to={`/agencia/${agency.agencyId}/clientes`} state={location.state} variant="secondary">Cadastrar cliente</ButtonLink> : undefined}
+    />;
+  }
   const total = stories.data.meta.totalItems;
   return <>
     <nav aria-label="Clientes">
@@ -385,10 +387,7 @@ export function ContentsClientPage() {
       </div>
     </header>
     <ClientStories selectedId={normalizedId} />
-    {failed ? <div className="contents__error" role="alert">
-      <p>Não foi possível carregar os conteúdos. Tente de novo.</p>
-      <Button onClick={() => { void client.refetch(); void contents.refetch(); }}>Tentar de novo</Button>
-    </div> : <div className="contents__workspace">
+    {failed ? <EmptyState kind="failure" title="Não foi possível carregar os conteúdos. Tente de novo." onRetry={() => { void client.refetch(); void contents.refetch(); }} /> : <div className="contents__workspace">
       <div className="contents__main">
         <header className="contents__client">
           {clientData === undefined

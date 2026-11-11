@@ -717,8 +717,11 @@ describe('client detail (#136)', () => {
     const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
     expect(alert.textContent).toContain('Não foi possível carregar o cliente.');
     expect(alert.textContent).not.toContain('private diagnostic');
-    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    const attemptsBeforeRetry = attempts;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
     expect(await screen.findByRole('heading', { name: 'Padaria Central' })).toBeTruthy();
+    expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
   });
 
   it('keeps the page and an open modal when a background refetch fails (review of #379)', async () => {

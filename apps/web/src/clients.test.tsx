@@ -638,8 +638,14 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
 
     const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
     expect(alert.textContent).toContain('Não foi possível carregar os clientes.');
-    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    // The failure kind: neither the first-use invitation nor the empty archived list speaks for a roster that did not answer.
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(screen.queryByText('Nenhum cliente ainda')).toBeNull();
+    expect(screen.queryByText('Nenhum cliente arquivado')).toBeNull();
+    const attemptsBeforeRetry = attempts;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
     await screen.findByText('Padaria Central');
+    expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
   });
 
   it('opens the client detail from its card', async () => {

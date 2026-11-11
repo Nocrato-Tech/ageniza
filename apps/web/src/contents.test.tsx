@@ -459,6 +459,22 @@ describe('the stories (/agencia/:agenciaId/conteudos)', () => {
     render_(impl);
     expect(await screen.findByText('Nenhum cliente ativo ainda.')).toBeTruthy();
     expect(screen.queryByText('Escolha um cliente para ver o calendário editorial.')).toBeNull();
+    // Without the permission to register there is nothing to offer: only the words.
+    expect(screen.queryByRole('link', { name: 'Cadastrar cliente' })).toBeNull();
+    expect(screen.queryByText('Cadastre o primeiro para começar o calendário dele.')).toBeNull();
+  });
+
+  it('invites whoever can register to start from the first client, carrying the navigation state', async () => {
+    const { impl } = makeFetch({ roster: [barbearia], permissions: [VISUALIZE, READ_CLIENTS, 'cliente.cadastrar'] });
+    const { probe } = render_(impl, { pathname: `/agencia/${AGENCY_A}/conteudos`, state: { clientListUrl: `/agencia/${AGENCY_A}/clientes?status=archived` } });
+    expect(await screen.findByText('Nenhum cliente ativo ainda.')).toBeTruthy();
+    expect(screen.getByText('Cadastre o primeiro para começar o calendário dele.')).toBeTruthy();
+    const empty = screen.getByText('Nenhum cliente ativo ainda.').closest('.ui-empty-state') as HTMLElement;
+    expect(empty.classList.contains('ui-empty-state--good-news')).toBe(false);
+    expect(empty.classList.contains('ui-empty-state--failure')).toBe(false);
+    fireEvent.click(within(empty).getByRole('link', { name: 'Cadastrar cliente' }));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`));
+    expect(probe.state).toEqual({ clientListUrl: `/agencia/${AGENCY_A}/clientes?status=archived` });
   });
 
   it('shows a skeleton on the first load, then the clients', async () => {
@@ -489,8 +505,13 @@ describe('the stories (/agencia/:agenciaId/conteudos)', () => {
 
     // The query retries a 5xx once before it gives up.
     expect(await screen.findByText('Não foi possível carregar os clientes. Tente de novo.', undefined, { timeout: 5000 })).toBeTruthy();
+    // The failure kind: the roster did not answer, so "nenhum cliente ativo" is not said.
+    expect(screen.getByRole('alert').classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(screen.queryByText('Nenhum cliente ativo ainda.')).toBeNull();
+    const attemptsBeforeRetry = attempts;
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     expect(await screen.findByRole('link', { name: 'Padaria Central' })).toBeTruthy();
+    expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
     expect(screen.queryByText('Não foi possível carregar os clientes. Tente de novo.')).toBeNull();
   });
 
@@ -796,6 +817,9 @@ describe('the month calendar', () => {
 
     expect(await screen.findByText('Não foi possível carregar os conteúdos. Tente de novo.', undefined, { timeout: 5000 })).toBeTruthy();
     expect(screen.queryByText('Nenhum conteúdo planejado neste período.')).toBeNull();
+    expect(screen.getByRole('alert').classList.contains('ui-empty-state--failure')).toBe(true);
+    // The story scripts come with the same answer: no empty list is drawn for them either.
+    expect(screen.queryByText('Nenhum roteiro de stories neste período')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     expect(await screen.findByText('Voltou')).toBeTruthy();
     expect(screen.queryByText('Não foi possível carregar os conteúdos. Tente de novo.')).toBeNull();

@@ -1377,8 +1377,7 @@ p.clients__indicators {
   border-radius: var(--radius-xl);
 }
 
-.clients__empty,
-.clients__error {
+.clients__empty {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
@@ -1387,18 +1386,6 @@ p.clients__indicators {
 .clients__empty:not(.ui-empty-state--mascot) .ui-empty-state__body {
   justify-items: center;
   text-align: center;
-}
-
-.clients__error {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-3);
-  padding: var(--space-6);
-  color: var(--text-danger);
-}
-
-.clients__error p {
-  margin: 0;
 }
 
 /* Client detail: specs/clientes.md section 7. The header answers the roster's badge: the same photo, the same situation pill and the
@@ -1574,17 +1561,6 @@ p.clients__indicators {
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   min-height: var(--space-12);
-}
-
-.client-detail__error {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
-  color: var(--text-danger);
-}
-
-.client-detail__error p {
-  margin: 0;
 }
 
 .client-detail .client-skeleton-tab {
@@ -2216,8 +2192,7 @@ a.client-general__block:focus-visible {
 }
 
 /* No-result and error states of the team list: one quiet surface, like the client roster's. */
-.collaborators__empty,
-.collaborators__error {
+.collaborators__empty {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
@@ -2226,18 +2201,6 @@ a.client-general__block:focus-visible {
 .collaborators__empty:not(.ui-empty-state--mascot) .ui-empty-state__body {
   justify-items: center;
   text-align: center;
-}
-
-.collaborators__error {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-3);
-  padding: var(--space-6);
-  color: var(--text-danger);
-}
-
-.collaborators__error p {
-  margin: 0;
 }
 
 /* Pending invitations: specs/colaboradores.md section 7. One surface with rows split by lines (no card inside a card):
@@ -2331,17 +2294,6 @@ a.client-general__block:focus-visible {
 
 .invites__empty:not(.ui-empty-state--mascot) {
   justify-content: flex-start;
-}
-
-.invites__error {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
-  color: var(--text-danger);
-}
-
-.invites__error p {
-  margin: 0;
 }
 
 /* Portal access tab: specs/clientes.md section 7, issue #140. Rows set apart by a line, no card: a row is a person, and what it holds is the first level. */
@@ -3848,17 +3800,6 @@ main > .shell-notice {
 .brand-study__header h2 {
   margin: 0;
   font: var(--heading-lg);
-}
-
-.brand-study__error {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
-  color: var(--text-danger);
-}
-
-.brand-study__error p {
-  margin: 0;
 }
 
 .brand-section-skeleton {
@@ -5785,14 +5726,6 @@ html:has(.portal-post__bar) {
   color: var(--text-secondary);
 }
 
-.content-stories__error,
-.contents__error {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
-  color: var(--text-danger);
-}
-
 .contents__workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -7294,25 +7227,6 @@ html:has(.portal-post__bar) {
 
 .content-folders__empty .ui-empty-state__description {
   font: var(--body-md);
-}
-
-.content-folders__error {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-3);
-  color: var(--text-danger);
-}
-
-.content-folders__error > p {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  font: var(--body-md);
-}
-
-.content-folders__error .content-folders__glyph {
-  color: inherit;
 }
 
 .content-folders__skeleton > .ui-skeleton {
@@ -9128,7 +9042,7 @@ html:has(.portal-post__bar) {
   margin-top: var(--space-1);
 }
 
-/* Activation path of a new agency's Início (decision 2026-11-06): four steps, each done or pending. */
+/* Journey "Até a primeira aprovação" of a new agency's Início (decisions 2026-11-06 and 2026-11-10): four steps, each done or pending, the last one the client's. */
 .activation {
   display: grid;
   gap: var(--space-4);
@@ -9173,18 +9087,64 @@ html:has(.portal-post__bar) {
 .activation__step {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
+  position: relative;
   gap: var(--space-4);
 }
 
+.activation__progress {
+  width: 100%;
+  height: 0.5rem;
+  accent-color: var(--text-primary);
+}
+
+/* The line that joins a step to the next one, behind the marks. */
+.activation__step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 2rem;
+  bottom: calc(-1 * var(--space-3));
+  left: calc(1rem - 1px);
+  width: 2px;
+  background: var(--border-default);
+}
+
 .activation__mark {
-  width: 1.5rem;
-  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid var(--border-control);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
   color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.activation__mark svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .activation__step[data-done='true'] .activation__mark {
+  border-color: var(--status-ready-fg);
   color: var(--status-ready-fg);
+}
+
+.activation__step[aria-current='step'] .activation__mark {
+  border-color: var(--text-primary);
+  color: var(--text-primary);
+}
+
+.activation__who {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.activation__step[data-owner='client'] .activation__who {
+  color: var(--text-link);
 }
 
 .activation__text {

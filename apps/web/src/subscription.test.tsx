@@ -45,6 +45,37 @@ const fillCard = (): void => {
   fireEvent.change(screen.getByLabelText('Nome impresso no cartão'), { target: { value: CARD_VALUES[3] } });
 };
 
+describe('when the subscription cannot be read (empty-state rule)', () => {
+  it.each(['/subscription/plans', '/subscription'])('shows the failure with "Tentar de novo" when %s does not answer, never the price table or "Seu plano", and the retry reads it again', async (failing) => {
+    const { impl } = makeSubscriptionApi(trialWorld(5));
+    let healthy = false;
+    const reads: string[] = [];
+    const flaky: typeof fetch = async (input, init) => {
+      const path = new URL(String(input)).pathname.replace(/^.*\/agencies\/[^/]+/, '');
+      if (path === failing) {
+        reads.push(path);
+        if (!healthy) return new Response(JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }), { status: 500, headers: { 'content-type': 'application/json' } });
+      }
+      return impl(input, init);
+    };
+    renderSubscription(flaky);
+
+    const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
+    expect(alert.textContent).toContain('Não foi possível abrir a assinatura. Tente de novo.');
+    expect(alert.textContent).toContain('Nada foi alterado.');
+    expect(alert.textContent).not.toContain('private diagnostic');
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(screen.queryByRole('article')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Seu plano' })).toBeNull();
+
+    healthy = true;
+    const readsBeforeRetry = reads.length;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
+    expect(await screen.findByRole('button', { name: 'Assinar Essencial' })).toBeTruthy();
+    expect(reads.length).toBeGreaterThan(readsBeforeRetry);
+  });
+});
+
 describe('without a paid plan: only the price table (#773)', () => {
   it('says the trial state and shows three plan cards, each with its price, audience, limits and own button', async () => {
     const { impl } = makeSubscriptionApi(trialWorld(5));
