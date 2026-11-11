@@ -943,12 +943,15 @@ describe('the post of the portal (#270)', () => {
       await title('Lançamento da primavera');
       expect(within(bar()).getAllByRole('button').map((button) => button.textContent)).toEqual(['Pedir ajuste', 'Aprovar']);
       expect(within(bar()).getByRole('heading', { level: 2, name: 'Sua decisão' })).toBeTruthy();
-      // The end of the conversation is never under the bar: the bar is ordered after everything else in the page
-      // (the stylesheet orders it last on the phone) and lives in the decision column of the wide layout.
+      // The end of the conversation is never under the bar: the bar comes after everything else in the markup, so a phone, the keyboard and a screen reader all meet it last.
       const post = container.querySelector('.portal-post') as HTMLElement;
-      expect(bar().parentElement?.classList.contains('portal-post__decide')).toBe(true);
-      expect(post.contains(bar())).toBe(true);
-      expect(post.contains(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }))).toBe(true);
+      const layout = post.querySelector('.portal-post__layout') as HTMLElement;
+      expect(post.lastElementChild).toBe(layout);
+      expect(layout.lastElementChild).toBe(bar());
+      const follows = (earlier: Element, later: Element): boolean => (earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      expect(follows(post.querySelector('.portal-media') as Element, bar())).toBe(true);
+      expect(follows(post.querySelector('.portal-post__caption') as Element, bar())).toBe(true);
+      expect(follows(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }), bar())).toBe(true);      expect(post.contains(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }))).toBe(true);
       expect(bar().classList.contains('portal-post__bar')).toBe(true);
     });
 
@@ -1018,6 +1021,11 @@ describe('the post of the portal (#270)', () => {
       expect(rule('.portal-shell > .portal-content')).toMatch(/flex:\s*1;/);
       expect(rule('.portal-nav')).toMatch(/position:\s*sticky;/);
       expect(rule('.portal-nav')).toMatch(/bottom:\s*0;/);
+      // The bar is the last piece on a phone only because of these: the sidebar's own box does not take part in the layout, and the bar is ordered after the content.
+      expect(rule('.portal-sidebar')).toMatch(/display:\s*contents;/);
+      expect(rule('.portal-nav')).toMatch(/order:\s*2;/);
+      expect(rule('.portal-shell > .portal-content')).toMatch(/order:\s*1;/);
+      expect(rule('.portal-header')).toMatch(/order:\s*0;/);
     });
 
     it('lets every box shrink and every server text wrap, with no fixed width that could push 390 px sideways', () => {
@@ -1061,9 +1069,20 @@ describe('the post of the portal (#270)', () => {
       throw new Error(`No @media ${query} block holds ${inside} in globals.css.`);
     };
 
-    it('orders the decision bar after the body of the post on the phone, where the bar is the last piece', () => {
-      expect(rule('.portal-post__bar')).toMatch(/order:\s*2;/);
-      expect(rule('.portal-post__body')).toMatch(/order:\s*1;/);
+    it('lays the post out in the order of the markup on a phone, and stacks the answer beside the post only from the wide screen', () => {
+      expect(rule('.portal-post__layout')).toMatch(/display:\s*grid;/);
+      expect(rule('.portal-post__bar')).not.toMatch(/(^|[^-])order:/);
+      expect(rule('.portal-post__body')).not.toMatch(/(^|[^-])order:/);
+      const wide = mediaBlock('(min-width: 48rem)', '.portal-post__layout');
+      expect(wide).toMatch(/\.portal-post__layout \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 24rem\);/);
+      expect(wide).toMatch(/\.portal-post__layout > \.portal-post__bar \{[^}]*grid-column:\s*2;/);
+    });
+
+    it('draws no blur on the header of the portal and takes the hover lift of a cover card away for those who ask for less motion', () => {
+      expect(rule('.portal-header')).not.toMatch(/backdrop-filter/);
+      const reduced = mediaBlock('(prefers-reduced-motion: reduce)', '.portal-postcard');
+      expect(reduced).toMatch(/\.portal-postcard \{\s*transition:\s*none;/);
+      expect(reduced).toMatch(/\.portal-postcard:hover \{\s*transform:\s*none;/);
     });
 
     it('holds the decision bar at the bottom of the screen and keeps a focused control clear of it', () => {

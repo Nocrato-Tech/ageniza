@@ -632,6 +632,8 @@ describe('the portal Conteúdos (#269)', () => {
       expect(good.querySelector('.ui-empty-state__icon')).toBeTruthy();
       expect(within(block).queryByRole('heading', { name: /\(\d+\)/ })).toBeNull();
       expect(within(block).queryByRole('alert')).toBeNull();
+      // The 3D stage of the good news is the Início's: here the line stays small, so an empty month keeps the one stage that is its subject.
+      expect(block.querySelector('.ui-stage')).toBeNull();
     });
 
     it('never says nothing awaits while something does', async () => {
@@ -1094,6 +1096,11 @@ describe('the portal Conteúdos (#269)', () => {
       expect(rule('.portal-shell > .portal-content')).toMatch(/flex:\s*1;/);
       expect(rule('.portal-nav')).toMatch(/position:\s*sticky;/);
       expect(rule('.portal-nav')).toMatch(/bottom:\s*0;/);
+      // The bar is the last piece on a phone only because of these: the sidebar's own box does not take part in the layout, and the bar is ordered after the content.
+      expect(rule('.portal-sidebar')).toMatch(/display:\s*contents;/);
+      expect(rule('.portal-nav')).toMatch(/order:\s*2;/);
+      expect(rule('.portal-shell > .portal-content')).toMatch(/order:\s*1;/);
+      expect(rule('.portal-header')).toMatch(/order:\s*0;/);
     });
 
     it('lets every box shrink and every text wrap, with no fixed width that could push a 390 px screen sideways', () => {

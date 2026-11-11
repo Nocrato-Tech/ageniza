@@ -72,9 +72,7 @@ function Awaiting({ clientId, agencyName }: { clientId: string; agencyName: stri
   if (meta.totalItems === 0) {
     return <section className="portal-awaiting" aria-labelledby="portal-awaiting-title">
       <h2 id="portal-awaiting-title" className="portal-section__title">O que precisa de você</h2>
-      <PortalStageEmpty icon="thumb-up" tone="teal">
-        <EmptyState kind="good-news" className="portal-empty" headingLevel={3} title="Nada para aprovar" description="Quando a agência enviar um post para aprovação, ele aparece aqui." />
-      </PortalStageEmpty>
+      <EmptyState kind="good-news" className="portal-empty" headingLevel={3} title="Nada para aprovar" description="Quando a agência enviar um post para aprovação, ele aparece aqui." />
     </section>;
   }
   return <section className="portal-awaiting" aria-labelledby="portal-awaiting-title">
