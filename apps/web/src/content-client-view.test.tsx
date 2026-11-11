@@ -114,7 +114,7 @@ describe('"Como o cliente vê" in the detail of a content (decision 2026-11-10)'
 
     expect(within(view).getByText('Em produção')).toBeTruthy();
     expect(within(view).getByText('terça-feira, 20 de outubro de 2026')).toBeTruthy();
-    expect(within(view).getByText(/Em produção, o cliente vê só o título, o dia e o formato\./)).toBeTruthy();
+    expect(within(view).getByText('Este conteúdo ainda está em produção. Quando estiver pronto, ele aparece aqui para você aprovar.')).toBeTruthy();
     expect(view.textContent).not.toContain('Texto ainda interno');
     expect(view.textContent).not.toContain('09:30:00');
     expect(view.textContent).not.toContain('mídias');

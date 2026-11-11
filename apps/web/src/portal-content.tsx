@@ -49,6 +49,10 @@ export const STATE_NOTES: Readonly<Partial<Record<PortalContent['status'], strin
   published: 'Este conteúdo já foi publicado.'
 };
 
+/** The two sentences of a post that the agency's "Como o cliente vê" says too: one copy, so the preview cannot drift from the portal. */
+export const NO_CAPTION_NOTE = 'Este post não tem legenda.';
+export const IN_PRODUCTION_NOTE = 'Este conteúdo ainda está em produção. Quando estiver pronto, ele aparece aqui para você aprovar.';
+
 const MESSAGES = {
   loadError: 'Não foi possível carregar o conteúdo.',
   revisionChanged: 'A agência alterou este conteúdo depois que você o abriu. Mostramos a versão atual: leia de novo antes de aprovar.',
@@ -202,7 +206,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
         <section className="portal-post__section portal-post__caption-block" aria-labelledby="portal-post-caption">
           <h2 id="portal-post-caption" className="visually-hidden">Legenda</h2>
           {content.caption === null || content.caption === ''
-            ? <p className="portal-post__hint">Este post não tem legenda.</p>
+            ? <p className="portal-post__hint">{NO_CAPTION_NOTE}</p>
             : <p className="portal-post__caption">{content.caption}</p>}
         </section>
       </div>
@@ -296,7 +300,7 @@ function Post({ contentId }: { contentId: string }) {
       <Button variant="secondary" loading={query.isFetching} onClick={() => { void query.refetch(); }}>Tentar de novo</Button>
     </div>}
     {content.status === 'in_production'
-      ? <p className="portal-block portal-post__hint">Este conteúdo ainda está em produção. Quando estiver pronto, ele aparece aqui para você aprovar.</p>
+      ? <p className="portal-block portal-post__hint">{IN_PRODUCTION_NOTE}</p>
       : <OpenPost content={content} reloading={query.isFetching} />}
   </article>;
 }

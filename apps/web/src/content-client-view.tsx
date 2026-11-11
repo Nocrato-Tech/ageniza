@@ -4,7 +4,7 @@ import { useAgencyContext } from './agency.js';
 import { ApprovalRound } from './approval-deadline.js';
 import { hasCover } from './content-form.js';
 import { ContentCover } from './content-cover.js';
-import { PostMeta, STATE_NOTES, type PostMetaContent } from './portal-content.js';
+import { IN_PRODUCTION_NOTE, NO_CAPTION_NOTE, PostMeta, STATE_NOTES, type PostMetaContent } from './portal-content.js';
 
 /** From "aguardando aprovação" on, the portal also shows the media and the caption. */
 interface OpenView {
@@ -65,7 +65,7 @@ export function ContentClientView({ content }: { content: ContentDetail }) {
       <h3 className="client-view__title">{view.title}</h3>
       <PostMeta content={meta} />
       {open === null
-        ? <p className="portal-post__hint">Em produção, o cliente vê só o título, o dia e o formato. A mídia e a legenda aparecem quando o conteúdo é enviado para aprovação.</p>
+        ? <p className="portal-post__hint">{IN_PRODUCTION_NOTE}</p>
         : <>
           {stateNote !== undefined && <p className="portal-post__hint">{stateNote}</p>}
           {meta.status === 'awaiting_approval' && <ApprovalRound approval={view.approval} agencyName={agency.agencyName} />}
@@ -73,7 +73,7 @@ export function ContentClientView({ content }: { content: ContentDetail }) {
             ? <p className="portal-post__hint">Este conteúdo ainda não tem mídia.</p>
             : <ContentCover assetId={open.shownAssetId} format={view.format} className="content-preview__media" />}
           {open.mediaCount > 1 && <p className="portal-post__hint">{open.mediaCount} mídias, que o cliente passa uma a uma.</p>}
-          {caption === '' ? <p className="portal-post__hint">Este post não tem legenda.</p> : <p className="portal-post__caption">{caption}</p>}
+          {caption === '' ? <p className="portal-post__hint">{NO_CAPTION_NOTE}</p> : <p className="portal-post__caption">{caption}</p>}
           {meta.status === 'awaiting_approval' && <p className="portal-post__hint">O cliente pode aprovar ou pedir ajuste.</p>}
         </>}
     </article>
