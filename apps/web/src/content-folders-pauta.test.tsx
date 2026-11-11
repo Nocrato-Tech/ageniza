@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { cleanup, fireEvent, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { apiError, assetFixture, folderFixture, foldersUrl, idOf, makeFetch, makeWorld, renderFolders, type World } from './content-folders-fixture.js';
@@ -183,13 +183,14 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
     expect(screen.queryByRole('button', { name: /nova pasta/i })).toBeNull();
   });
 
-  it('draws the Padrão mark as a Pill and the folder as an icon, with no character in its place', async () => {
+  it('draws the Padrão mark as a Pill and the folder as a 3D icon on its stage, with no character in its place', async () => {
     open(makeWorld());
     const link = await screen.findByRole('link', { name: 'Imagens Padrão' });
 
     expect(link.querySelector('.ui-pill')?.textContent).toBe('Padrão');
-    expect(link.querySelector('.content-folder__icon svg')).not.toBeNull();
-    expect(link.querySelector('.content-folder__icon')?.textContent).toBe('');
+    expect(link.querySelector('.ui-stage img')?.getAttribute('src')).toBe('/3d/fav-folder.png');
+    expect(link.querySelector('.ui-stage')?.textContent).toBe('');
+    expect(screen.getByRole('link', { name: 'Campanha de Natal' }).querySelector('.ui-stage img')?.getAttribute('src')).toBe('/3d/folder.png');
     expect(screen.getByRole('link', { name: 'Campanha de Natal' }).querySelector('.ui-pill')).toBeNull();
   });
 
@@ -282,11 +283,10 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
     expect(screen.getByText('Imagem').querySelector('svg')).not.toBeNull();
   });
 
-  it('gives the buttons of a media the touch size on a phone, and one column to the folders and the media', () => {
+  it('gives the buttons of a media the touch size on a phone, two columns to the folders and one to the media', () => {
     expect(declarationsFor(css, '.folder-media__actions .ui-button--sm').get('min-height')).toBe('2.75rem');
-    for (const selector of ['.content-folders__list', '.folder-media__grid']) {
-      expect(declarationsFor(css, selector).get('grid-template-columns'), selector).toBe('minmax(0, 1fr)');
-    }
+    expect(declarationsFor(css, '.content-folders__list').get('grid-template-columns')).toBe('repeat(2, minmax(0, 1fr))');
+    expect(declarationsFor(css, '.folder-media__grid').get('grid-template-columns')).toBe('minmax(0, 1fr)');
   });
 
   it('shows the progress as a bar and a number, and never as the indigo of the action', () => {
@@ -304,10 +304,86 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
   });
 
   it('keeps the grids and the card of the view from growing past their column', () => {
-    for (const selector of ['.content-folders,\n.content-folders__section', '.media-uploader', '.folder-media']) {
-      const block = css.slice(css.indexOf(`${selector} {`));
+    for (const selector of ['.content-folders,\n.content-folders__section', '.media-uploader', '.media-layout', '.media-detail']) {
+      const block = css.replace(/\r\n/g, '\n').slice(css.replace(/\r\n/g, '\n').indexOf(`${selector} {`));
       expect(block.slice(0, block.indexOf('}')), selector).toContain('grid-template-columns: minmax(0, 1fr)');
     }
-    expect(css).toContain('repeat(auto-fill, minmax(min(100%, 14rem), 1fr))');
+    // The row of a media has a column that gives way (`minmax(0, 1fr)`), so a long name never pushes the actions out.
+    expect(declarationsFor(css, '.folder-media').get('grid-template-columns')).toContain('minmax(0, 1fr)');
+    expect(css).toContain('repeat(auto-fill, minmax(min(100%, 11.5rem), 1fr))');
+  });
+});
+
+describe('the detail panel of a media', () => {
+  const matchMedia = (wide: boolean) => vi.stubGlobal('matchMedia', () => ({ matches: wide, addEventListener: () => undefined, removeEventListener: () => undefined }));
+  const rows = async () => (await screen.findAllByRole('button', { name: /^Ver detalhes de/ }));
+
+  it('opens from the row with what the API tells, keeps the actions of the row, and closes by the same button or by "Fechar detalhes"', async () => {
+    matchMedia(true);
+    open(makeWorld({ assets: [assetFixture(1, VIDEOS, { category: 'video', contentType: 'video/mp4', sizeBytes: 1536, videoProcessingStatus: 'ready' }), assetFixture(2, VIDEOS, { createdAt: '2026-10-10T15:00:00.000Z' })] }), `&pasta=${VIDEOS}`);
+    expect(screen.queryByRole('complementary', { name: 'Detalhe da mídia' })).toBeNull();
+
+    const [video] = await rows();
+    expect(video!.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(video!);
+
+    const panel = screen.getByRole('complementary', { name: 'Detalhe da mídia' });
+    expect(video!.getAttribute('aria-pressed')).toBe('true');
+    const info = within(panel).getByText('Informações').nextElementSibling as HTMLElement;
+    expect(info.textContent).toBe('PastaVídeosFormatovideo/mp4Tamanho1,5 KBEnviada em11/10/2026, 22:30ProcessamentoPronto');
+    expect(within(panel).getByRole('button', { name: /^Baixar Vídeo/ })).toBeTruthy();
+    expect(within(panel).getByRole('button', { name: /^Remover Vídeo/ })).toBeTruthy();
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Fechar detalhes' }));
+    expect(screen.queryByRole('complementary', { name: 'Detalhe da mídia' })).toBeNull();
+
+    fireEvent.click(video!);
+    expect(screen.getByRole('complementary', { name: 'Detalhe da mídia' })).toBeTruthy();
+    fireEvent.click(video!);
+    expect(screen.queryByRole('complementary', { name: 'Detalhe da mídia' })).toBeNull();
+  });
+
+  it('follows the media that was chosen last, and closes when that media is removed', async () => {
+    matchMedia(true);
+    const world = makeWorld({ assets: [assetFixture(1, VIDEOS, { createdAt: '2026-10-12T01:30:00.000Z' }), assetFixture(2, VIDEOS, { createdAt: '2026-10-11T01:30:00.000Z' })] });
+    open(world, `&pasta=${VIDEOS}`);
+
+    const [first, second] = await rows();
+    fireEvent.click(first!);
+    expect(within(screen.getByRole('complementary', { name: 'Detalhe da mídia' })).getByText('11/10/2026, 22:30')).toBeTruthy();
+    fireEvent.click(second!);
+    const panel = screen.getByRole('complementary', { name: 'Detalhe da mídia' });
+    expect(within(panel).getByText('10/10/2026, 22:30')).toBeTruthy();
+    expect(first!.getAttribute('aria-pressed')).toBe('false');
+
+    fireEvent.click(within(panel).getByRole('button', { name: /^Remover/ }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Remover mídia?' })).getByRole('button', { name: 'Remover' }));
+    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Detalhe da mídia' })).toBeNull());
+    expect(await rows()).toHaveLength(1);
+  });
+
+  it('asks nothing to remove of whoever cannot operate, and still offers the download', async () => {
+    matchMedia(true);
+    open(makeWorld({ assets: [assetFixture(1, VIDEOS)], permissions: READ_ONLY }), `&pasta=${VIDEOS}`);
+
+    fireEvent.click((await rows())[0]!);
+    const panel = screen.getByRole('complementary', { name: 'Detalhe da mídia' });
+    expect(within(panel).getByRole('button', { name: /^Baixar/ })).toBeTruthy();
+    expect(within(panel).queryByRole('button', { name: /^Remover/ })).toBeNull();
+  });
+
+  it('takes the focus when it opens under the list, where it would be out of sight', async () => {
+    matchMedia(false);
+    const scroll = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scroll });
+    try {
+      open(makeWorld({ assets: [assetFixture(1, VIDEOS)] }), `&pasta=${VIDEOS}`);
+      fireEvent.click((await rows())[0]!);
+
+      expect(document.activeElement).toBe(screen.getByRole('complementary', { name: 'Detalhe da mídia' }));
+      expect(scroll).toHaveBeenCalledTimes(1);
+    } finally {
+      Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+    }
   });
 });

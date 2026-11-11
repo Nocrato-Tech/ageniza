@@ -8025,6 +8025,31 @@ html:has(.portal-post__bar) {
   gap: var(--space-3);
 }
 
+/* The folder in use: a tint block with its mark leaving through the top edge, as the summary blocks of the client do. */
+.content-folders__feature {
+  --ui-stage-bg: var(--block-indigo-bg);
+  position: relative;
+  margin-top: var(--space-6);
+  padding: var(--space-6);
+  padding-right: 7rem;
+  border-radius: var(--radius-xl);
+  background: var(--ui-stage-bg);
+  color: var(--block-indigo-fg);
+}
+
+.content-folders__feature-text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.content-folders__eyebrow {
+  margin: 0;
+  font: var(--caption);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .content-folders h3,
 .content-folders h4 {
   margin: 0;
@@ -8070,43 +8095,63 @@ html:has(.portal-post__bar) {
 .folder-media__grid,
 .content-folders__skeleton {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11.5rem), 1fr));
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.folder-media__grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+.content-folders__list > li {
+  display: grid;
+  min-width: 0;
 }
 
+/* A folder card: the folder on its small stage, its name, the Padrão mark; the arrow says it opens. */
 .content-folder {
+  position: relative;
   display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
   align-items: center;
-  gap: var(--space-3);
-  min-height: 3.5rem;
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-3) var(--space-2);
+  min-height: 8.5rem;
+  padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   color: var(--text-primary);
   text-decoration: none;
-  transition: border-color var(--motion-fast);
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
 }
 
 .content-folder:hover {
-  border-color: var(--border-control);
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
 }
 
-.content-folder__icon,
+.content-folder:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The right margin takes the whole row, so the name and the mark always start the next line under the stage. */
+.content-folder > .content-folder__stage {
+  margin: calc(var(--space-1) * -1) 100% 0 calc(var(--space-1) * -1);
+}
+
 .content-folder__chevron {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
   display: inline-flex;
-  flex: none;
   color: var(--text-secondary);
 }
 
-.content-folder__icon > svg,
 .content-folder__chevron > svg {
   width: 1.25rem;
   height: 1.25rem;
@@ -8114,10 +8159,39 @@ html:has(.portal-post__bar) {
 }
 
 .content-folder__name {
-  flex: 1 1 auto;
   min-width: 0;
-  font: var(--label-md);
+  font: var(--title-md);
   overflow-wrap: anywhere;
+}
+
+/* "Nova pasta" is a card too, dashed: a button that takes the card's place in the grid. */
+.content-folders .content-folder--new.ui-button {
+  flex-direction: column;
+  justify-content: center;
+  align-content: center;
+  gap: var(--space-2);
+  min-height: 8.5rem;
+  height: auto;
+  border: 1.5px dashed var(--color-indigo-200);
+  background: transparent;
+  color: var(--text-link);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.content-folders .content-folder--new.ui-button:hover {
+  background: var(--bg-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+.content-folders .content-folder--new .ui-icon {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
 }
 
 .content-folders__note {
@@ -8146,25 +8220,123 @@ html:has(.portal-post__bar) {
 }
 
 .content-folders__skeleton > .ui-skeleton {
-  height: 3.5rem;
+  height: 8.5rem;
+  border-radius: var(--radius-lg);
 }
 
-.folder-media {
+/* An empty state with its folder on the stage: the dashed block is the wrapper's, the sentence inside it is bare. */
+.content-folders__blank {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-4);
+  border: 1.5px dashed var(--color-indigo-200);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, var(--color-indigo-50), var(--bg-surface) 70%);
+}
+
+.content-folders__blank > .ui-empty-state.content-folders__empty {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* The media of a folder as a table: a row is the thumbnail, the kind, when and how big, and the two actions. The whole row opens the detail panel
+   through the stretched select button; the actions sit above it. */
+.media-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-  gap: var(--space-3);
-  padding: var(--space-3);
+  align-items: start;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.media-layout__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.folder-media__table {
+  overflow: hidden;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
 }
 
-.folder-media__body {
+.folder-media__grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.folder-media__table > .folder-media__grid {
+  gap: 0;
+}
+
+.folder-media__head,
+.folder-media {
   display: grid;
-  justify-items: start;
-  gap: var(--space-1);
-  min-width: 0;
+  grid-template-columns: 3rem minmax(0, 1fr) 11rem auto;
+  column-gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+}
+
+.folder-media__head {
+  min-height: 2.5rem;
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.folder-media__head > :first-child {
+  grid-column: 1 / 3;
+}
+
+.folder-media {
+  position: relative;
+  grid-template-rows: auto auto auto;
+  min-height: 4.25rem;
+  border-top: 1px solid var(--border-subtle);
+  transition: background var(--motion-fast);
+}
+
+.folder-media:first-child {
+  border-top: 0;
+}
+
+.folder-media:hover {
+  background: var(--bg-hover);
+}
+
+.folder-media--selected,
+.folder-media--selected:hover {
+  background: var(--bg-tint);
+  box-shadow: inset 3px 0 0 var(--color-indigo-600);
+}
+
+.folder-media:has(.folder-media__select:focus-visible) {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.folder-media > .media-thumbnail {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 3rem;
+  aspect-ratio: 1;
+}
+
+.folder-media > .media-thumbnail svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.folder-media__body {
+  display: contents;
 }
 
 .folder-media__title,
@@ -8178,13 +8350,58 @@ html:has(.portal-post__bar) {
 }
 
 .folder-media__title {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
   font: var(--label-md);
+  font-weight: 600;
+}
+
+/* With a status under it, the title sits above it; alone, it is centred on the row. */
+.folder-media__body:has(> .ui-pill, > .folder-media__failure) .folder-media__title {
+  grid-row: 1;
+  align-self: end;
+}
+
+.folder-media__select {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.folder-media__select:focus-visible {
+  outline: none;
+}
+
+.folder-media__select::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.folder-media--selected .folder-media__title {
+  color: var(--color-indigo-800);
 }
 
 .folder-media__meta {
+  grid-column: 3;
+  grid-row: 1 / span 2;
   color: var(--text-secondary);
   font: var(--caption);
   font-variant-numeric: tabular-nums;
+}
+
+.folder-media__body > .ui-pill,
+.folder-media__failure {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
 }
 
 .folder-media__failure {
@@ -8197,20 +8414,29 @@ html:has(.portal-post__bar) {
 }
 
 .folder-media__actions {
+  position: relative;
+  z-index: 1;
+  grid-column: 4;
+  grid-row: 1 / span 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
 }
 
 .folder-media > .ui-field-message {
-  margin: 0;
+  grid-column: 2 / -1;
+  grid-row: 3;
+  margin: var(--space-2) 0 0;
 }
 
 .folder-media__skeleton {
-  height: 14rem;
+  height: 4.25rem;
+  border-radius: var(--radius-md);
 }
 
+/* The media's thumbnail, wherever it is drawn: the shape and the neutral ground; the row and the panel size it. */
 .media-thumbnail {
   display: flex;
   align-items: center;
@@ -8237,45 +8463,188 @@ html:has(.portal-post__bar) {
   stroke-width: 1.75;
 }
 
+/* The detail panel of the chosen media. */
+.media-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.media-detail:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.media-detail__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.content-folders .media-detail__name {
+  font: var(--title-md);
+}
+
+.media-detail__preview {
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tint);
+}
+
+.media-detail__preview .media-thumbnail {
+  width: min(100%, 12rem);
+  box-shadow: 0 18px 30px -18px rgb(17 24 39 / 0.45);
+}
+
+.media-detail__sub {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  text-align: center;
+}
+
+.media-detail__heading {
+  margin: 0 0 var(--space-2);
+  font: var(--title-md);
+}
+
+.media-detail__info {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font: var(--body-md);
+}
+
+.media-detail__info dt {
+  color: var(--text-secondary);
+}
+
+.media-detail__info dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.media-detail__actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--space-2);
+}
+
+.media-detail > .ui-field-message {
+  margin: 0;
+}
+
+/* Side by side only where the list keeps a table's width; below it the panel is the next block, and it takes the focus when it opens. */
+@media (min-width: 80rem) {
+  .media-layout--detail {
+    grid-template-columns: minmax(0, 1fr) var(--detail-w);
+  }
+
+  .media-layout--detail .media-detail {
+    position: sticky;
+    top: var(--space-4);
+  }
+}
+
 /* On a phone a media is a row: the thumbnail on the side, the touch targets at the full size. */
 @media (max-width: 40rem) {
   .folder-media__grid,
-  .content-folders__list,
   .content-folders__skeleton {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .content-folders__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+
+  .content-folder,
+  .content-folders .content-folder--new.ui-button {
+    min-height: 8rem;
+    padding: var(--space-3);
+  }
+
+  .content-folder__chevron {
+    top: var(--space-3);
+    right: var(--space-3);
+  }
+
+  .content-folders__feature {
+    padding: var(--space-5);
+    padding-right: 6rem;
+  }
+
+  .folder-media__head {
+    display: none;
+  }
+
   .folder-media {
-    grid-template-columns: 5rem minmax(0, 1fr);
-    grid-template-areas:
-      'thumb body'
-      'thumb actions'
-      'notice notice';
+    grid-template-columns: 4rem minmax(0, 1fr);
+    grid-template-rows: auto;
+    row-gap: var(--space-2);
     align-items: start;
+    padding: var(--space-3);
   }
 
   .folder-media > .media-thumbnail {
-    grid-area: thumb;
+    grid-row: 1 / span 2;
+    width: 4rem;
   }
 
   .folder-media__body {
-    grid-area: body;
+    display: grid;
+    grid-column: 2;
+    grid-row: 1;
+    justify-items: start;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .folder-media__title,
+  .folder-media__body:has(> .ui-pill, > .folder-media__failure) .folder-media__title,
+  .folder-media__meta,
+  .folder-media__body > .ui-pill,
+  .folder-media__failure {
+    grid-column: auto;
+    grid-row: auto;
+    align-self: auto;
   }
 
   .folder-media__actions {
-    grid-area: actions;
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-start;
   }
 
   .folder-media > .ui-field-message {
-    grid-area: notice;
+    grid-column: 1 / -1;
+    grid-row: 3;
   }
 
   .folder-media__actions .ui-button--sm {
     min-height: 2.75rem;
   }
 
+  .folder-media__select {
+    min-height: 1.5rem;
+  }
+
   .folder-media__skeleton {
-    height: 7rem;
+    height: 5.5rem;
+  }
+
+  .media-detail {
+    padding: var(--space-4);
   }
 }
 
@@ -8845,15 +9214,20 @@ html:has(.portal-post__bar) {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
 }
 
 .media-uploader__kind {
-  display: inline-flex;
-  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
 }
 
 .media-uploader__kind > svg {
