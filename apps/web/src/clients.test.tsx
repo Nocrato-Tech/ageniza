@@ -1208,6 +1208,45 @@ describe('the client badge (#636)', () => {
     expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Abrir cliente']);
   });
 
+  it.each([
+    ['the roster with its triage line', [lateAndInvited, dueSoon, quiet], 'Cliente Atrasado'],
+    ['the first-use state of an empty roster', [], 'Nenhum cliente ainda']
+  ] as const)('keeps the failure and its busy retry in place while it re-reads, then shows %s and drops the failure', async (_what, rows, shown) => {
+    let attempts = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { impl } = makeFetch({
+      permissions: ALL,
+      clients: async () => {
+        attempts += 1;
+        if (attempts <= 2) return json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500);
+        await held;
+        return listResponse(rows);
+      }
+    });
+    renderClients(impl);
+
+    const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
+    const retry = within(alert).getByRole('button', { name: 'Tentar de novo' });
+    retry.focus();
+    fireEvent.click(retry);
+
+    // The re-read in flight: the same failure, the same button, busy and focused, and no skeleton in its place.
+    await waitFor(() => expect(retry.getAttribute('aria-busy')).toBe('true'));
+    expect(screen.getByRole('alert')).toBe(alert);
+    expect(within(alert).getByRole('button', { name: 'Tentar de novo' })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(document.querySelector('.clients__card-skeleton')).toBeNull();
+
+    release();
+    expect(await screen.findByText(shown)).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
+    if (rows.length > 0) {
+      expect(screen.getByRole('region', { name: 'Triagem e filtros' }).textContent).toContain('Comece por Cliente Atrasado: 1 post atrasado.');
+    }
+  });
+
   it('writes the triage sentence from the first page of the unfiltered active roster, and only there', async () => {
     const { impl } = roster([lateAndInvited, dueSoon, quiet]);
     renderClients(impl);
