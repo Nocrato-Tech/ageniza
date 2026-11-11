@@ -6,8 +6,14 @@ import { api } from '../api/runtime';
 import { Action, Card, ErrorText, Field, Info, Txt, colors } from '../product/ui';
 import { useRemoteResource } from './useRemoteResource';
 
+function subjectQuery(subject: ConversationSubject): string {
+  if ('sectionKey' in subject) return `sectionKey=${subject.sectionKey}`;
+  if ('personaId' in subject) return `personaId=${subject.personaId}`;
+  return 'materialRequest' in subject ? 'materialRequest=true' : `contentId=${subject.contentId}`;
+}
+
 export function Conversations({ root, subject, canWrite, canResolve }: { root: string; subject: ConversationSubject; canWrite: boolean; canResolve: boolean }) {
-  const query = 'sectionKey' in subject ? `sectionKey=${subject.sectionKey}` : 'personaId' in subject ? `personaId=${subject.personaId}` : `contentId=${subject.contentId}`;
+  const query = subjectQuery(subject);
   const [page, setPage] = useState(1);
   const [threadId, setThreadId] = useState('');
   const [body, setBody] = useState('');

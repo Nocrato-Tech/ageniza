@@ -115,6 +115,7 @@ interface Scenario {
   readonly putPhoto?: (body: unknown) => Response | Promise<Response>;
   readonly deletePhoto?: () => Response | Promise<Response>;
   readonly brandStudy?: () => Response | Promise<Response>;
+  readonly threads?: (method: string, url: URL, body: unknown) => Response | Promise<Response>;
   readonly members?: () => Response | Promise<Response>;
   readonly clientInvitations?: () => Response | Promise<Response>;
 }
@@ -149,6 +150,11 @@ const makeFetch = (scenario: Scenario = {}) => {
       const from = url.searchParams.get('from');
       const to = url.searchParams.get('to');
       return json({ data: { contents: [], storyScripts: [] }, meta: { from, to, count: 0 } });
+    }
+    // The Geral tab lists the requests for material of the client; here it answers empty unless the scenario says otherwise.
+    if (/\/agencies\/[^/]+\/clients\/[^/]+\/threads$/.test(path)) {
+      return scenario.threads?.(method, url, init?.body === undefined ? undefined : JSON.parse(String(init.body)))
+        ?? json({ data: [], meta: { page: 1, pageSize: 100, totalItems: 0, totalPages: 0 } });
     }
     const members = /\/agencies\/([^/]+)\/clients\/([^/]+)\/members$/.exec(path);
     if (members !== null) return scenario.members?.() ?? json({ data: [], meta: { page: 1, pageSize: 20, totalItems: 0, totalPages: 0 } });
@@ -461,6 +467,88 @@ describe('client detail (#136)', () => {
     fireEvent.click(within(general()).getByRole('link', { name: /Portal/ }));
     expect(await screen.findByRole('heading', { name: 'Pessoas com acesso ao portal' })).toBeTruthy();
     expect(probe.pathname).toBe(clientUrl(CLIENT_ID, 'acessos'));
+  });
+
+  describe('requests for material on the General tab (decision 2026-11-10)', () => {
+    const THREAD_ID = 'cccccccc-1111-4111-8111-111111111111';
+    const request = (overrides: Record<string, unknown> = {}) => ({
+      id: THREAD_ID,
+      subject: { materialRequest: true },
+      state: 'open',
+      openedBy: { name: 'Ana', side: 'agency' },
+      lastComment: { side: 'agency', at: '2026-10-13T01:30:00.000Z', excerpt: 'Envie 3 fotos da equipe' },
+      commentCount: 1,
+      resolvedBy: null,
+      resolvedAt: null,
+      dueOn: '2099-12-31',
+      ...overrides
+    });
+    const listOf = (...items: Record<string, unknown>[]): Response =>
+      json({ data: items, meta: { page: 1, pageSize: 100, totalItems: items.length, totalPages: 1 } });
+    /** The listing asks twice, open and resolved: the requests are the open ones. */
+    const openOnly = (...items: Record<string, unknown>[]) => (_method: string, url: URL): Response =>
+      url.searchParams.get('state') === 'resolved' ? listOf() : listOf(...items);
+    const sectionOf = async (): Promise<HTMLElement> => await screen.findByRole('region', { name: 'Pedidos de material' });
+
+    it('lists the requests of the client with their own label and deadline, from the materialRequest query', async () => {
+      const urls: string[] = [];
+      const { impl } = makeFetch({ threads: (method, url) => { urls.push(`${method} ${url.search}`); return openOnly(request())(method, url); } });
+      renderClientDetail(impl);
+
+      const section = await sectionOf();
+      expect((await within(section).findByText('Envie 3 fotos da equipe')).closest('button')?.textContent).toContain('Pedido de materialEntregar até 31/12');
+      expect(within(section).getByRole('heading', { name: 'Pedidos de material (1)' })).toBeTruthy();
+      expect(urls).toContain('GET ?materialRequest=true&state=open&pageSize=100');
+      expect(urls).toContain('GET ?materialRequest=true&state=resolved&pageSize=100');
+    });
+
+    it.each([
+      ['an admin', ADMIN_PERMISSIONS, true],
+      ['a manager', MANAGER_PERMISSIONS, true],
+      ['a reader, who only has cliente.visualizar', READER_PERMISSIONS, false]
+    ])('shows "Pedir material" to %s only with cliente.operar', async (_who, permissions, sees) => {
+      const { impl } = makeFetch({ permissions, threads: openOnly(request()) });
+      renderClientDetail(impl);
+      const section = await sectionOf();
+      await within(section).findByText('Envie 3 fotos da equipe');
+      expect(within(section).queryByRole('button', { name: 'Pedir material' }) !== null).toBe(sees);
+    });
+
+    it('does not offer "Pedir material" on an archived client, but still lists its requests', async () => {
+      const { impl } = makeFetch({ client: () => json(archivedClient), threads: openOnly(request()) });
+      renderClientDetail(impl);
+      const section = await sectionOf();
+      await within(section).findByText('Envie 3 fotos da equipe');
+      expect(within(section).queryByRole('button', { name: 'Pedir material' })).toBeNull();
+    });
+
+    it('opens a request from the client page with a deadline, posts it to the threads route and closes', async () => {
+      const posted: unknown[] = [];
+      const { impl } = makeFetch({
+        threads: (method, _url, body) => {
+          if (method !== 'POST') return listOf();          posted.push(body);
+          return json({
+            thread: request({ lastComment: { side: 'agency', at: '2026-10-13T01:30:00.000Z', excerpt: 'Envie o logotipo' } }),
+            comment: { id: 'dddddddd-1111-4111-8111-111111111111', body: 'Envie o logotipo', side: 'agency', author: null, createdAt: '2026-10-13T01:30:00.000Z' }
+          }, 201);
+        }
+      });
+      renderClientDetail(impl);
+      const section = await sectionOf();
+      fireEvent.click(await within(section).findByRole('button', { name: 'Pedir material' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Pedir material' });
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }), { target: { value: 'Envie o logotipo' } });
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }), { target: { value: '31/12/2099' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar pedido' }));
+
+      // The date is past the 90 days from today: the screen refuses it before the request leaves.
+      await within(dialog).findByText('Escolha um prazo de hoje até 90 dias à frente.');
+      expect(posted).toHaveLength(0);
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }), { target: { value: '' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar pedido' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Pedir material' })).toBeNull());
+      expect(posted).toStrictEqual([{ subject: { materialRequest: true }, body: 'Envie o logotipo' }]);
+    });
   });
 
   it('writes "Não informado" for every empty registration field, and never renders a bare "@"', async () => {

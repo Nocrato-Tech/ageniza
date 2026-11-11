@@ -10,6 +10,7 @@ import { Avatar, Button, ButtonLink, EmptyState, Pill, Realce, Skeleton } from '
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { ClientLifecycleActions } from './client-lifecycle.js';
+import { Conversation } from './conversation.js';
 import { useDocumentTitle } from './document-title.js';
 import { EditClientDialog } from './edit-client.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -207,6 +208,9 @@ export function ClientGeneralTab() {
   const agency = useAgencyContext();
   const location = useLocation();
   const canSeeAccess = useCan('cliente.convidar_usuario');
+  const canSeeClient = useCan('cliente.visualizar');
+  const canOperate = useCan('cliente.operar');
+  const blocked = useWriteBlocked();
   const base = `/agencia/${agency.agencyId}/clientes/${client.id}`;
   const summary = client.summary;
   const portalCount = summary.activePortalMembers === 1
@@ -257,6 +261,18 @@ export function ClientGeneralTab() {
         <ArrowRight className="client-general__go" aria-hidden="true" />
       </Link>
       : portalBlock}
+    {canSeeClient && <section className="client-general__requests" aria-label="Pedidos de material ao cliente">
+      <Conversation
+        scope={{ side: 'agency', agencyId: agency.agencyId, clientId: client.id }}
+        subject={{ materialRequest: true }}
+        subjectLabel="Pedido de material"
+        canWrite={canOperate}
+        readOnly={client.status !== 'active'}
+        planBlockedReason={blocked}
+        headingLevel={3}
+        onWritten={() => undefined}
+      />
+    </section>}
   </div>;
 }
 
