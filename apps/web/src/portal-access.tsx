@@ -21,6 +21,8 @@ import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth, useClientDetail } from './client-detail.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { pendingInviteExpiryLabel } from './pending-invitations.js';
+import { PortalAccessShare } from './portal-access-share.js';
+import { lastAccessLabel } from './portal-last-access.js';
 import { NotFoundPage } from './status-pages.js';
 
 /** `specs/clientes.md` §6: 20 per page for the portal people and the pending invitations. */
@@ -394,6 +396,7 @@ export function ClientAccessTab() {
           <span className="portal-access__who">
             <MemberName member={member} />
             <span className="portal-access__email">{member.email}</span>
+            <span className="portal-access__last">{lastAccessLabel(member)}</span>
           </span>
           <span className="portal-access__since">desde {formatAgencyDayMonth(member.since)}</span>
           <span className="portal-access__actions">
@@ -405,6 +408,7 @@ export function ClientAccessTab() {
               loading={resendEmail.isPending && resendEmail.variables?.accessId === member.accessId}
               onClick={() => { if (resending.current) return; resending.current = true; setActionError(undefined); resendEmail.mutate(member); }}
             >Reenviar e-mail</Button>}
+            {activeClient && <PortalAccessShare member={member} clientName={client.name} />}
             {activeClient && canRemove && <Button
               size="sm"
               variant="secondary"

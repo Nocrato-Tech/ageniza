@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Send } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -13,10 +13,11 @@ import {
   type ContentListItem,
   type UpdateContentRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, ClientStrip, IconButton, Segmented, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, ClientStrip, IconButton, LiveStatus, Segmented, Skeleton } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
+import { ApprovalSubmitDialog, batchCandidates } from './approval-submit-dialog.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { contentsAddress } from './content-address.js';
 import { ContentCalendar } from './content-calendar.js';
@@ -295,6 +296,9 @@ export function ContentsClientPage() {
   const canOperate = useCan('conteudo.operar');
   const blocked = useWriteBlocked();
   const [moveError, setMoveError] = useState<string | null>(null);
+  // The batch send: one dialog for the contents of the period that can go together, and what it said once it went.
+  const [batching, setBatching] = useState(false);
+  const [sentNotice, setSentNotice] = useState<string | null>(null);
   const move = useMutation({
     mutationFn: ({ content, day }: { content: ContentListItem; day: string }) => httpClient.request({
       path: apiPath('/agencies/:agencyId/clients/:clientId/contents/:contentId', { agencyId: agency.agencyId, clientId: normalizedId, contentId: content.id }),
@@ -331,6 +335,7 @@ export function ContentsClientPage() {
   // Moving through periods rewrites the address; choosing another view adds a step to it, so "voltar" returns to the view before.
   const setPeriod = (nextView: ScreenView, nextAnchor: string | null, replace = true): void => {
     setMoveError(null);
+    setSentNotice(null);
     const next = new URLSearchParams(searchParams);
     const param = VIEW_PARAMS[nextView];
     if (param === null) next.delete('visao'); else next.set('visao', param);
@@ -358,6 +363,8 @@ export function ContentsClientPage() {
   const archived = clientData?.status === 'archived';
   const canEdit = canOperate && clientData !== undefined && !archived;
   const canMove = canEdit && blocked === undefined;
+  const candidates = loaded === undefined ? [] : batchCandidates(loaded.data.contents);
+  const canBatch = canEdit && candidates.some((candidate) => candidate.startsHere);
 
   // The client's profile, with the roster's address carried along so "← Clientes" there still returns to the search it left.
   const toProfile = <Link
@@ -373,6 +380,7 @@ export function ContentsClientPage() {
       {/* The title is the screen's, the same with or without a client. */}
       <h1 id="contents-title" className="contents__title">{SCREEN_TITLE}</h1>
       <div className="contents__actions">
+        {canBatch && <Button size="lg" variant="secondary" leadingIcon={<Send />} blockedReason={blocked} onClick={() => { setSentNotice(null); setBatching(true); }}>Enviar vários para aprovação</Button>}
         {canWriteScripts && <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => startContent(today)}>Nova publicação</Button>}
       </div>
     </header>
@@ -394,6 +402,7 @@ export function ContentsClientPage() {
         {archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
         {moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
         {move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
+        {sentNotice !== null && <LiveStatus>{sentNotice}</LiveStatus>}
         {loaded !== undefined && <ContentSummary contents={counted} today={today} scope={calendarView === 'week' ? 'da semana' : 'do mês'} />}
         <div className="contents__panel">
           <div className="contents__panel-head">
@@ -455,6 +464,14 @@ export function ContentsClientPage() {
       </aside>}
     </div>}
     {scriptLayer.modal}
+    {batching && <ApprovalSubmitDialog
+      target={{ kind: 'batch', clientId: normalizedId, candidates, scope: calendarView === 'week' ? 'da semana' : 'do mês' }}
+      onClose={() => { setBatching(false); }}
+      onSent={(count) => {
+        setBatching(false);
+        setSentNotice(count === 1 ? '1 conteúdo enviado para aprovação.' : `${count} conteúdos enviados para aprovação.`);
+      }}
+    />}
     <Outlet context={{
       clientId: normalizedId,
       canEdit,

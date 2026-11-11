@@ -1496,7 +1496,7 @@ describe('the detail on a card (hover and focus)', () => {
     expect(await within(tooltip).findByText('Hoje tem pão quente na padaria!')).toBeTruthy();
     expect(within(tooltip).getByText('Legenda')).toBeTruthy();
     expect(within(tooltip).getByText('2 de 4 aprovadas · 1 entregue · 1 pendente')).toBeTruthy();
-    expect(within(tooltip).getByText('50% das subtarefas')).toBeTruthy();
+    expect(within(tooltip).queryByText(/das subtarefas/)).toBeNull();
     // 01:30Z of the 12th is still the 11th in São Paulo.
     expect(within(tooltip).getByText('3 comentários · último em 11/10')).toBeTruthy();
     expect(await within(tooltip).findByText('Cliente: “Podemos trocar a foto da capa?” · 11/10')).toBeTruthy();

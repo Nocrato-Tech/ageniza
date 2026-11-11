@@ -9,11 +9,14 @@ import {
   type ContentFormat,
   type PortalApproveContentRequest,
   type PortalContentDetail,
+  type PortalContentInProduction,
+  type PortalContentOpenListItem,
   type PortalRequestContentChangesRequest
 } from '@ageniza/contracts';
 import { Button, FieldMessage, FormatTag, LiveStatus, Skeleton, StatusTag } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
+import { ApprovalRound } from './approval-deadline.js';
 import { Conversation } from './conversation.js';
 import { fullDayLabel } from './content-dates.js';
 import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
@@ -39,11 +42,16 @@ const DETAIL_PATH = '/clients/:clientId/contents/:contentId';
 
 export const portalContentQueryKey = (clientId: string, contentId: string) => ['portal', clientId, 'content', contentId] as const;
 
-const STATE_NOTES: Readonly<Partial<Record<PortalContent['status'], string>>> = {
+/** What the state of a content says to the client; the agency's "Como o cliente vê" reads the same words. */
+export const STATE_NOTES: Readonly<Partial<Record<PortalContent['status'], string>>> = {
   adjusting: 'Foi pedido um ajuste. A agência vai revisar e enviar de novo para a sua aprovação.',
   approved: 'Este conteúdo está aprovado. A agência cuida da publicação.',
   published: 'Este conteúdo já foi publicado.'
 };
+
+/** The two sentences of a post that the agency's "Como o cliente vê" says too: one copy, so the preview cannot drift from the portal. */
+export const NO_CAPTION_NOTE = 'Este post não tem legenda.';
+export const IN_PRODUCTION_NOTE = 'Este conteúdo ainda está em produção. Quando estiver pronto, ele aparece aqui para você aprovar.';
 
 const MESSAGES = {
   loadError: 'Não foi possível carregar o conteúdo.',
@@ -69,7 +77,10 @@ function PostBack() {
   return <Link className="portal-post__back" to={`/portal/${client.id}/conteudos`}><ChevronLeft aria-hidden="true" />Conteúdos</Link>;
 }
 
-function PostMeta({ content }: { content: PortalContent }) {
+/** The part of a post that the meta line reads: the agency's preview has no media or revision to hand it, and needs none. */
+export type PostMetaContent = PortalContentInProduction | Pick<PortalContentOpenListItem, 'status' | 'format' | 'publishOn' | 'publishAtTime' | 'publishedOn'>;
+
+export function PostMeta({ content }: { content: PostMetaContent }) {
   const format: ContentFormat = content.format;
   return <ul className="portal-post__meta" aria-label="Dados do conteúdo">
     <li><StatusTag status={PORTAL_STATUS_TAGS[content.status]}>{PORTAL_STATUS_LABELS[content.status]}</StatusTag></li>
@@ -181,6 +192,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
       {stateChanged !== undefined && <FieldMessage role="alert">{stateChanged}</FieldMessage>}
       {stateNote !== undefined && <p className="portal-post__hint">{stateNote}</p>}
     </div>}
+    {awaiting && <ApprovalRound approval={content.approval} agencyName={client.agencyName} />}
     <div className="portal-post__body">
       <div className="portal-post__card">
         <PortalMediaCarousel
@@ -194,7 +206,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
         <section className="portal-post__section portal-post__caption-block" aria-labelledby="portal-post-caption">
           <h2 id="portal-post-caption" className="visually-hidden">Legenda</h2>
           {content.caption === null || content.caption === ''
-            ? <p className="portal-post__hint">Este post não tem legenda.</p>
+            ? <p className="portal-post__hint">{NO_CAPTION_NOTE}</p>
             : <p className="portal-post__caption">{content.caption}</p>}
         </section>
       </div>
@@ -288,7 +300,7 @@ function Post({ contentId }: { contentId: string }) {
       <Button variant="secondary" loading={query.isFetching} onClick={() => { void query.refetch(); }}>Tentar de novo</Button>
     </div>}
     {content.status === 'in_production'
-      ? <p className="portal-block portal-post__hint">Este conteúdo ainda está em produção. Quando estiver pronto, ele aparece aqui para você aprovar.</p>
+      ? <p className="portal-block portal-post__hint">{IN_PRODUCTION_NOTE}</p>
       : <OpenPost content={content} reloading={query.isFetching} />}
   </article>;
 }

@@ -14,6 +14,11 @@ export interface DatePickerProps extends Partial<FieldControlProps> {
   value: string;
   /** Gets the day as `YYYY-MM-DD`, or `''` while what was typed is not yet a whole, real day. */
   onChange: (value: string) => void;
+  /**
+   * Tells an empty field from one that holds text that is not a whole, real day: both give `''` through `onChange`, and an optional
+   * field must not send the second as "no day". Called with `true` while there is such text, and `false` again once it is empty or valid.
+   */
+  onInvalidChange?: (invalid: boolean) => void;
   /** The business day to mark "hoje" and to open on when nothing is chosen. The caller owns the time zone. */
   today: string;
   /** Days outside `min` and `max` (inclusive) cannot be picked from the calendar; a typed one is for the caller's validation to refuse. */
@@ -25,6 +30,9 @@ export interface DatePickerProps extends Partial<FieldControlProps> {
   /** Names the button that opens the calendar. */
   toggleLabel?: string;
 }
+
+/** What a field says about text that is not a day, so every optional date field words it the same way. */
+export const invalidDayMessage = 'Data inválida. Use dia/mês/ano, como 14/10/2026.';
 
 const clampDay = (day: string, min: string | undefined, max: string | undefined): string => {
   if (min !== undefined && day < min) return min;
@@ -38,7 +46,7 @@ const clampDay = (day: string, min: string | undefined, max: string | undefined)
  * `value` and `onChange` are always `YYYY-MM-DD`.
  */
 export function DatePicker({
-  value, onChange, today, min, max, name, disabled = false, className, toggleLabel = 'Abrir calendário', id, 'aria-describedby': describedBy, 'aria-invalid': invalid, 'aria-busy': busy
+  value, onChange, onInvalidChange, today, min, max, name, disabled = false, className, toggleLabel = 'Abrir calendário', id, 'aria-describedby': describedBy, 'aria-invalid': invalid, 'aria-busy': busy
 }: DatePickerProps) {
   const [draft, setDraft] = useState(() => toTyped(value));
   const [seen, setSeen] = useState(value);
@@ -58,6 +66,13 @@ export function DatePicker({
     setSeen(value);
     if (fromTyped(draft) !== value) setDraft(toTyped(value));
   }
+
+  const invalidText = draft.trim() !== '' && fromTyped(draft) === '';
+  const reportInvalid = useRef(onInvalidChange);
+  reportInvalid.current = onInvalidChange;
+  useEffect(() => { reportInvalid.current?.(invalidText); }, [invalidText]);
+  // The field going away takes its text with it: a caller must not keep holding "invalid" for a field that no longer exists.
+  useEffect(() => () => { reportInvalid.current?.(false); }, []);
 
   const month = (focused === '' ? today : focused).slice(0, 7);
   const inRange = (day: string): boolean => (min === undefined || day >= min) && (max === undefined || day <= max);

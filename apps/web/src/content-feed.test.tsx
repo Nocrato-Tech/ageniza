@@ -74,6 +74,7 @@ const contentFixture = (overrides: Partial<ContentListItem> = {}): ContentListIt
     publishedOn: null,
     tasksTotal: 0,
     tasksApproved: 0,
+    approval: null,
     ...overrides,
     // As the API answers: the chosen cover is the file that serves as the cover, unless the test says another.
     thumbnailAssetId: 'thumbnailAssetId' in overrides ? (overrides.thumbnailAssetId ?? null) : (overrides.coverAssetId ?? null)

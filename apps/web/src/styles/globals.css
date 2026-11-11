@@ -2459,6 +2459,18 @@ a.client-general__block:focus-visible {
   font: var(--heading-lg);
 }
 
+.portal-access__last {
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-access__copy {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  max-width: 20rem;
+}
+
 /* Auth form layout: specs/auth.md section 7, the centred single column the auth screens share. */
 .form-panel {
   display: grid;
@@ -3527,6 +3539,142 @@ a.client-general__block:focus-visible {
   text-align: center;
 }
 
+/* Parado no cliente: what waits for a client, by client; the state of the deadline is an icon and words, never only a colour. */
+.awaiting-client {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.awaiting-client__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+
+.awaiting-client__title {
+  margin: 0;
+  font: var(--heading-md);
+}
+
+.awaiting-client__count,
+.awaiting-client__more {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.awaiting-client__skeleton {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.awaiting-client__clients,
+.awaiting-client__items {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.awaiting-client__clients {
+  gap: var(--space-4);
+}
+
+.awaiting-client__group {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.awaiting-client__client {
+  margin: 0;
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.awaiting-client__client-count {
+  color: var(--text-secondary);
+  font: var(--body-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.awaiting-client__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-height: 2.75rem;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.awaiting-client__item:hover .awaiting-client__item-title {
+  text-decoration: underline;
+}
+
+.awaiting-client__item-title {
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.awaiting-client__item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  grid-column: 1;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.awaiting-client__item .approval-state {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.approval-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.approval-state .ui-icon {
+  color: var(--status-waiting-fg);
+}
+
+.approval-state--expired .ui-icon {
+  color: var(--status-late-fg);
+}
+
+.approval-state .ui-icon > svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+@media (max-width: 40rem) {
+  .awaiting-client__item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .awaiting-client__item .approval-state {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
 .agency-shortcuts {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
@@ -4097,6 +4245,36 @@ main > .shell-notice {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* A request for material: its own label and deadline on the row and in the open thread; "venceu" is the one `LateBadge`. */
+.conversation__thread-subject {
+  color: var(--text-primary);
+  font: var(--label-sm);
+}
+
+.conversation__thread-due {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+/* The request list on the client's Geral tab: a block of the page, full width under the summary blocks. */
+.client-general__requests {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.client-general__requests .conversation {
+  padding-top: 0;
+  border-top: 0;
 }
 
 /* The conversation inside the brand study: rows set apart by a line instead of cards, so a thread is not a card inside a section.
@@ -5367,6 +5545,58 @@ html:has(.portal-post__bar) {
 .portal-post__card .portal-media__controls,
 .portal-post__card .portal-media__strip {
   margin-inline: var(--space-3);
+}
+
+/* What the agency asked of the client: until when and the note, signed by the agency. Plain text on the page, no box of its own. */
+.approval-round {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.approval-round__due {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.approval-round__due .ui-icon {
+  color: var(--status-waiting-fg);
+}
+
+.approval-round__note {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-default);
+}
+
+.approval-round__author {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  overflow-wrap: anywhere;
+}
+
+.approval-round__text {
+  margin: 0;
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+/* In a grid of covers the note is a preview: three lines, and the post has the whole of it. */
+.portal-awaiting__item .approval-round__text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 
 .portal-media__item {
@@ -7443,6 +7673,96 @@ html:has(.portal-post__bar) {
   border-radius: var(--radius-md);
 }
 
+/* "Enviar para aprovação": the deadline, the note and, for a batch, the contents to send together. */
+.approval-submit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.approval-submit__pick {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.approval-submit__pick legend {
+  padding: 0;
+  font: var(--label-md);
+}
+
+.approval-submit__list {
+  display: grid;
+  gap: var(--space-1);
+  max-height: 16rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.approval-submit__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.approval-submit__box {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0.125rem 0 0;
+}
+
+.approval-submit__label {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  cursor: pointer;
+}
+
+.approval-submit__title {
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.approval-submit__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.approval-submit__reason,
+.approval-submit__limit {
+  grid-column: 2;
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.approval-submit__limit {
+  grid-column: auto;
+}
+
+.approval-submit__row[data-blocked] .approval-submit__title {
+  color: var(--text-secondary);
+}
+
+.approval-submit .ui-field__counter {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* Atribuição: the owner and the subtasks as two plain blocks; each subtask is a panel of its own, and the forms inside it keep the surface. */
 .content-assignment {
   display: grid;
@@ -7577,6 +7897,28 @@ html:has(.portal-post__bar) {
   margin: 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+/* "Como o cliente vê": the post as the portal shows it, inside the content modal. */
+.client-view {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.client-view__post {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 32rem;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
+}
+
+.client-view__title {
+  margin: 0;
+  font: var(--heading-md);
+  overflow-wrap: anywhere;
 }
 
 /* The media of a content as tiles: a numbered frame and the controls under it; the folder lists the same tiles with "Adicionar". */

@@ -68,6 +68,7 @@ interface MemberFixture {
   email: string;
   status: 'active' | 'removed';
   entered: boolean;
+  lastEnteredAt: string | null;
   since: string;
 }
 
@@ -77,6 +78,8 @@ const maria: MemberFixture = {
   email: 'maria@padaria.test',
   status: 'active',
   entered: true,
+  // 01:30Z of the 11th is 22:30 of the 10th in São Paulo: the last access must read 10/10/2026 às 22:30.
+  lastEnteredAt: '2026-10-11T01:30:00.000Z',
   // 01:30 UTC of the 3rd is 22:30 of the 2nd in São Paulo: the label must read 02/09.
   since: '2026-09-03T01:30:00.000Z'
 };
@@ -86,6 +89,7 @@ const joao: MemberFixture = {
   email: 'joao@padaria.test',
   status: 'active',
   entered: true,
+  lastEnteredAt: '2026-10-12T15:05:00.000Z',
   since: '2026-09-10T12:00:00.000Z'
 };
 const ines: MemberFixture = {
@@ -94,6 +98,7 @@ const ines: MemberFixture = {
   email: 'ines@padaria.test',
   status: 'active',
   entered: false,
+  lastEnteredAt: null,
   since: '2026-09-12T12:00:00.000Z'
 };
 const pedro: MemberFixture = {
@@ -102,6 +107,7 @@ const pedro: MemberFixture = {
   email: 'pedro@padaria.test',
   status: 'removed',
   entered: true,
+  lastEnteredAt: null,
   since: '2026-09-01T12:00:00.000Z'
 };
 
@@ -895,6 +901,7 @@ const bia: MemberFixture = {
   email: 'bia@padaria.test',
   status: 'active',
   entered: false,
+  lastEnteredAt: null,
   since: '2026-09-13T12:00:00.000Z'
 };
 
@@ -1167,5 +1174,147 @@ describe('Reenviar in a read-only agency (decision 2026-10-27)', () => {
     expect(calls.some((call) => call.includes('/resend'))).toBe(false);
     expect(screen.getByRole('button', { name: 'Remover o acesso de ines@padaria.test' }).getAttribute('aria-disabled')).toBeNull();
     expect(screen.getByRole('button', { name: 'Cancelar convite de carla@padaria.test' }).getAttribute('aria-disabled')).toBeNull();
+  });
+});
+
+const messageFor = (greeting: string): string =>
+  `${greeting} Aqui é Agência Um. Este é o seu acesso ao portal de aprovação de Padaria Central, onde você aprova os conteúdos. Entre com o seu e-mail: ${window.location.origin}/entrar`;
+
+const stubClipboard = (writeText: (text: string) => Promise<void>): void => {
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+};
+
+describe('last access of each person (decisions 2026-11-10)', () => {
+  const linkOnly = { ...bia, lastEnteredAt: '2026-10-11T01:30:00.000Z' };
+  const enteredWithoutDate = { ...joao, lastEnteredAt: null };
+
+  it('says the last access in São Paulo for who entered, that the link was opened for who only opened it, and "Nunca entrou" for who did neither', async () => {
+    const { impl } = makeFetch({
+      members: (status) => json(pageOf(status === 'removed' ? [] : [maria, linkOnly, ines])),
+      clientInvitations: () => json(pageOf([]))
+    });
+    renderAccess(impl);
+    await screen.findByText('Maria Souza');
+
+    // 01:30Z of the 11th is 22:30 of the 10th in São Paulo, in every one of the lines.
+    expect(within(rowOfEmail('maria@padaria.test')).getByText('Último acesso 10/10/2026 às 22:30')).toBeTruthy();
+    expect(within(rowOfEmail('bia@padaria.test')).getByText('Ainda não entrou com a conta · abriu o link em 10/10/2026')).toBeTruthy();
+    expect(within(rowOfEmail('ines@padaria.test')).getByText('Nunca entrou')).toBeTruthy();
+    expect(within(rowOfEmail('bia@padaria.test')).queryByText(/Último acesso/)).toBeNull();
+    expect(within(rowOfEmail('ines@padaria.test')).queryByText(/abriu o link/)).toBeNull();
+  });
+
+  it('keeps "Reenviar e-mail" for who only opened the link, and never gives it to who entered with the account', async () => {
+    const { impl } = makeFetch({
+      members: (status) => json(pageOf(status === 'removed' ? [] : [maria, linkOnly, enteredWithoutDate])),
+      clientInvitations: () => json(pageOf([]))
+    });
+    renderAccess(impl);
+    await screen.findByText('Maria Souza');
+
+    expect(within(rowOfEmail('bia@padaria.test')).getByRole('button', { name: 'Reenviar e-mail para bia@padaria.test' })).toBeTruthy();
+    expect(within(rowOfEmail('maria@padaria.test')).queryByRole('button', { name: /Reenviar/ })).toBeNull();
+    expect(within(rowOfEmail('joao@padaria.test')).queryByRole('button', { name: /Reenviar/ })).toBeNull();
+    expect(within(rowOfEmail('joao@padaria.test')).getByText('Já entrou com a conta')).toBeTruthy();
+  });
+});
+
+describe('"Copiar link" and "Enviar pelo WhatsApp" (decision 2026-11-10)', () => {
+  afterEach(() => { Reflect.deleteProperty(navigator, 'clipboard'); });
+
+  const twoPeople = (scenario: Partial<Scenario> = {}) => makeFetch({
+    members: (status) => json(pageOf(status === 'removed' ? [pedro] : [maria, ines])),
+    clientInvitations: () => json(pageOf([])),
+    ...scenario
+  });
+
+  it('copies the ready message of the row that was clicked, confirms on that row only, and never writes to the API', async () => {
+    const written: string[] = [];
+    stubClipboard(async (text) => { written.push(text); });
+    const { impl, calls } = twoPeople();
+    renderAccess(impl);
+    await screen.findByText('Maria Souza');
+
+    fireEvent.click(within(rowOfEmail('ines@padaria.test')).getByRole('button', { name: 'Copiar link para ines@padaria.test' }));
+
+    expect(await within(rowOfEmail('ines@padaria.test')).findByRole('button', { name: 'Link copiado para ines@padaria.test' })).toBeTruthy();
+    expect(within(rowOfEmail('ines@padaria.test')).getByText('Link copiado')).toBeTruthy();
+    expect(within(rowOfEmail('maria@padaria.test')).getByRole('button', { name: 'Copiar link para maria@padaria.test' })).toBeTruthy();
+    expect(written).toEqual([messageFor('Olá!')]);
+
+    fireEvent.click(within(rowOfEmail('maria@padaria.test')).getByRole('button', { name: 'Copiar link para maria@padaria.test' }));
+    await waitFor(() => expect(written).toEqual([messageFor('Olá!'), messageFor('Olá, Maria!')]));
+    expect(calls.every((call) => call.startsWith('GET'))).toBe(true);
+  });
+
+  it('says it could not copy, with the address to copy by hand, when the clipboard is refused', async () => {
+    stubClipboard(() => Promise.reject(new Error('denied')));
+    const { impl } = twoPeople();
+    renderAccess(impl);
+    await screen.findByText('Maria Souza');
+
+    fireEvent.click(within(rowOfEmail('ines@padaria.test')).getByRole('button', { name: 'Copiar link para ines@padaria.test' }));
+
+    const alert = await within(rowOfEmail('ines@padaria.test')).findByRole('alert');
+    expect(alert.textContent).toBe(`Não foi possível copiar. O endereço de entrada é ${window.location.origin}/entrar`);
+    expect(within(rowOfEmail('ines@padaria.test')).queryByText('Link copiado')).toBeNull();
+    expect(within(rowOfEmail('maria@padaria.test')).queryByRole('alert')).toBeNull();
+  });
+
+  it('opens WhatsApp in a new tab with the encoded message of the row, and no token anywhere', async () => {
+    const { impl } = twoPeople();
+    renderAccess(impl);
+    await screen.findByText('Maria Souza');
+
+    const forMaria = within(rowOfEmail('maria@padaria.test')).getByRole('link', { name: 'Enviar pelo WhatsApp para maria@padaria.test (abre em nova aba)' });
+    const forInes = within(rowOfEmail('ines@padaria.test')).getByRole('link', { name: 'Enviar pelo WhatsApp para ines@padaria.test (abre em nova aba)' });
+    expect(forMaria.textContent).toBe('Enviar pelo WhatsApp');
+    expect(forMaria.getAttribute('href')).toBe(`https://wa.me/?text=${encodeURIComponent(messageFor('Olá, Maria!'))}`);
+    expect(forInes.getAttribute('href')).toBe(`https://wa.me/?text=${encodeURIComponent(messageFor('Olá!'))}`);
+    expect(new URL(forMaria.getAttribute('href') ?? '').searchParams.get('text')).toBe(messageFor('Olá, Maria!'));
+    expect(forMaria.getAttribute('href')).not.toContain(' ');
+    expect(forMaria.getAttribute('href')).not.toMatch(/token|#/);
+    expect(forMaria.getAttribute('target')).toBe('_blank');
+    expect((forMaria.getAttribute('rel') ?? '').split(' ').sort()).toEqual(['noopener', 'noreferrer']);
+  });
+
+  it('is on the active people only, and never on the removed ones', async () => {
+    const { impl } = twoPeople();
+    renderAccess(impl);
+    await screen.findByText('Maria Souza');
+    fireEvent.click(screen.getByRole('button', { name: 'Removidas (1)' }));
+    await screen.findByText('pedro@padaria.test');
+
+    expect(screen.getAllByRole('button', { name: /^Copiar link para / })).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: /^Enviar pelo WhatsApp para / })).toHaveLength(2);
+    expect(within(rowOfEmail('pedro@padaria.test')).queryByRole('button', { name: /Copiar link/ })).toBeNull();
+    expect(within(rowOfEmail('pedro@padaria.test')).queryByRole('link', { name: /WhatsApp/ })).toBeNull();
+  });
+
+  it('is there for who holds only the permission of the tab, and for a read-only agency, because nothing is written', async () => {
+    const { impl } = twoPeople({ permissions: GATE_ONLY_PERMISSIONS, readOnly: true });
+    renderAccess(impl);
+    await screen.findByText('Maria Souza');
+
+    expect(screen.getByRole('button', { name: 'Copiar link para ines@padaria.test' }).getAttribute('aria-disabled')).toBeNull();
+    expect(screen.getByRole('link', { name: /Enviar pelo WhatsApp para ines@padaria.test/ }).getAttribute('href')).toContain('https://wa.me/?text=');
+  });
+
+  it('is hidden with the whole tab from who lacks the permission of the access', async () => {
+    const { impl } = twoPeople({ permissions: ['cliente.visualizar'] });
+    renderAccess(impl);
+
+    expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Copiar link/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /WhatsApp/ })).toBeNull();
+  });
+
+  it('is hidden on an archived client, which offers no action at all', async () => {
+    const { impl } = twoPeople({ client: () => json({ ...padaria, status: 'archived', archivedAt: '2026-10-04T12:00:00.000Z' }) });
+    renderAccess(impl);
+    await screen.findByText('Maria Souza');
+
+    expect(screen.queryByRole('button', { name: /Copiar link/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /WhatsApp/ })).toBeNull();
   });
 });

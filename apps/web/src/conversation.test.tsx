@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { invalidDayMessage } from '@ageniza/ui';
 
 import { Conversation, type ConversationProps } from './conversation.js';
 import { apiError, createConversationApi } from './conversation-fixture.js';
@@ -42,6 +44,7 @@ interface Options {
   readonly canWrite?: boolean;
   readonly readOnly?: boolean;
   readonly blockedReason?: string;
+  readonly planBlockedReason?: string;
   readonly pageSize?: number;
   /** Holds every write until it resolves, to look at the screen while a send is pending. */
   readonly gate?: Promise<void>;
@@ -80,6 +83,7 @@ const mount = (options: Options = {}) => {
     canWrite: options.canWrite ?? true,
     readOnly: options.readOnly ?? false,
     blockedReason: options.blockedReason,
+    planBlockedReason: options.planBlockedReason,
     onWritten,
     onStale
   };
@@ -963,5 +967,291 @@ describe('conversation of a content (#266)', () => {
     expect(within(dialog).queryByText('mensagem 001')).toBeNull();
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Ver mensagens anteriores' }));
     await within(dialog).findByText('mensagem 001');
+  });
+});
+
+describe('request for material (decision 2026-11-10)', () => {
+  const MATERIAL = { materialRequest: true } as const;
+  // 01:30 UTC of the 11th is 22:30 of the 10th in São Paulo: the agency's day is the 10th, the UTC day is the 11th.
+  const NOW = new Date('2026-11-11T01:30:00.000Z');
+  const mountMaterial = (options: Options = {}) => mount({ subject: MATERIAL, subjectLabel: 'Pedido de material', ...options });
+  const materialArea = async (): Promise<HTMLElement> => await screen.findByRole('region', { name: 'Pedidos de material' });
+  const rowOf = (region: HTMLElement, excerpt: string): HTMLElement => {
+    const row = rowsOf(region).find((item) => item.textContent?.includes(excerpt));
+    if (row === undefined) throw new Error(`no row with ${excerpt}`);
+    return row;
+  };
+  const openDialog = async (region: HTMLElement): Promise<HTMLElement> => {
+    fireEvent.click(await within(region).findByRole('button', { name: 'Pedir material' }));
+    return await screen.findByRole('dialog', { name: 'Pedir material' });
+  };
+  const write = (dialog: HTMLElement, text: string): void => {
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }), { target: { value: text } });
+  };
+  const pickDay = (dialog: HTMLElement, typed: string): void => {
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }), { target: { value: typed } });
+  };
+  const send = (dialog: HTMLElement, name = 'Enviar pedido'): void => { fireEvent.click(within(dialog).getByRole('button', { name })); };
+
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(NOW); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('lists the requests with their own label and deadline, from the materialRequest query only', async () => {
+    const { api } = mountMaterial();
+    api.seed(MATERIAL, [{ side: 'agency', body: 'Envie 3 fotos da equipe', at: EARLIER }], undefined, '2026-11-20');
+    api.seed(MATERIAL, [{ side: 'agency', body: 'Envie o logotipo', at: LATE }]);
+    api.seed(TONE, [{ side: 'client', body: 'Isto é do tom de voz', at: LATE }]);
+
+    const region = await materialArea();
+    await within(region).findByText('Envie 3 fotos da equipe');
+    expect(within(region).getByRole('heading', { name: 'Pedidos de material (2)' })).toBeTruthy();
+    expect(within(region).queryByText('Isto é do tom de voz')).toBeNull();
+    expect(rowOf(region, 'Envie 3 fotos da equipe').textContent).toBe('Pedido de materialEntregar até 20/11Aberta por Ana (agência)Agência · 12/10Envie 3 fotos da equipeaberta');
+    expect(rowOf(region, 'Envie o logotipo').textContent).toBe('Pedido de materialAberta por Ana (agência)Agência · 12/10Envie o logotipoaberta');
+    expect(api.calls[0]).toBe(`GET /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads?materialRequest=true&state=open&pageSize=100`);
+  });
+
+  it('says "venceu" for an open request whose São Paulo day has passed, and only then', async () => {
+    const { api } = mountMaterial();
+    api.seed(MATERIAL, [{ side: 'agency', body: 'passou ontem', at: EARLIER }], undefined, '2026-11-09');
+    // 22:30 of the 10th in São Paulo: a deadline of the 10th is today there, and already yesterday on the UTC clock.
+    api.seed(MATERIAL, [{ side: 'agency', body: 'vence hoje', at: EARLIER }], undefined, '2026-11-10');
+    api.seed(MATERIAL, [{ side: 'agency', body: 'vence amanhã', at: EARLIER }], undefined, '2026-11-11');
+    api.seed(MATERIAL, [{ side: 'agency', body: 'já resolvido', at: EARLIER }], { at: LATE, by: 'Ana' }, '2026-11-01');
+
+    const region = await materialArea();
+    await within(region).findByText('passou ontem');
+    expect(within(rowOf(region, 'passou ontem')).getByText('venceu')).toBeTruthy();
+    expect(rowOf(region, 'passou ontem').textContent).toContain('Entregar até 09/11venceu');
+    expect(within(rowOf(region, 'vence hoje')).queryByText('venceu')).toBeNull();
+    expect(rowOf(region, 'vence hoje').textContent).toContain('Entregar até 10/11');
+    expect(within(rowOf(region, 'vence amanhã')).queryByText('venceu')).toBeNull();
+    expect(within(rowOf(region, 'já resolvido')).queryByText('venceu')).toBeNull();
+    expect(rowOf(region, 'já resolvido').textContent).toContain('Entregar até 01/11');
+  });
+
+  it('shows the label and the deadline again in the open request, with "venceu" when it passed', async () => {
+    const { api } = mountMaterial();
+    api.seed(MATERIAL, [{ side: 'agency', body: 'Envie 3 fotos da equipe', at: EARLIER }], undefined, '2026-11-09');
+    const region = await materialArea();
+    fireEvent.click(await within(region).findByRole('button', { name: /Envie 3 fotos/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Pedido de material' });
+    expect(within(dialog).getByText(/Entregar até 09\/11/)).toBeTruthy();
+    expect(within(dialog).getByText('venceu')).toBeTruthy();
+    await within(dialog).findByText('Envie 3 fotos da equipe');
+  });
+
+  it('opens a request without a deadline: the subject and the text travel, no dueOn, and the dialog closes', async () => {
+    const { api, onWritten } = mountMaterial();
+    const region = await materialArea();
+    await within(region).findByText('Nenhum pedido de material');
+    const dialog = await openDialog(region);
+    write(dialog, '  Envie 3 fotos da equipe  ');
+    send(dialog);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.bodies).toStrictEqual([{ subject: { materialRequest: true }, body: 'Envie 3 fotos da equipe' }]);
+    await within(region).findByText('Envie 3 fotos da equipe');
+    expect(within(region).getByRole('heading', { name: 'Pedidos de material (1)' })).toBeTruthy();
+    expect(onWritten).toHaveBeenCalledTimes(1);
+    expect(api.calls).toContain(`POST /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads`);
+  });
+
+  it('opens a request with a deadline typed or picked, sent as the São Paulo day', async () => {
+    const { api } = mountMaterial();
+    const region = await materialArea();
+    const dialog = await openDialog(region);
+    write(dialog, 'Envie 3 fotos da equipe');
+    pickDay(dialog, '20/11/2026');
+    send(dialog);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.bodies).toStrictEqual([{ subject: { materialRequest: true }, body: 'Envie 3 fotos da equipe', dueOn: '2026-11-20' }]);
+    await within(region).findByText(/Entregar até 20\/11/);
+  });
+
+  it.each([
+    ['a year of two digits', '20/11/26'],
+    ['a day that does not exist', '31/02/2026'],
+    ['half a date', '20/11']
+  ])('refuses %s as "Data inválida" on the deadline, sends nothing and keeps the dialog open with what was typed', async (_name, typed) => {
+    const { api } = mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    write(dialog, 'Envie 3 fotos da equipe');
+    pickDay(dialog, typed);
+    send(dialog);
+
+    await within(dialog).findByText(invalidDayMessage);
+    expect(within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }).getAttribute('aria-invalid')).toBe('true');
+    expect((within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }) as HTMLInputElement).value).toBe(typed);
+    expect((within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }) as HTMLTextAreaElement).value).toBe('Envie 3 fotos da equipe');
+    expect(screen.getByRole('dialog', { name: 'Pedir material' })).toBeTruthy();
+    expect(api.bodies).toHaveLength(0);
+
+    pickDay(dialog, '20112026');
+    expect(within(dialog).queryByText(invalidDayMessage)).toBeNull();
+    send(dialog);
+    await waitFor(() => expect(api.bodies).toHaveLength(1));
+    expect(api.bodies[0]).toMatchObject({ dueOn: '2026-11-20' });
+  });
+
+  it('counts a deadline typed incompletely as typed text for the discard guard', async () => {
+    mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    pickDay(dialog, '20/11');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar pedido de material' }));
+    await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' });
+  });
+
+  it('still sends no deadline when the field was typed into and then emptied', async () => {
+    const { api } = mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    write(dialog, 'Envie 3 fotos da equipe');
+    pickDay(dialog, '20/11/26');
+    pickDay(dialog, '');
+    send(dialog);
+    await waitFor(() => expect(api.bodies).toHaveLength(1));
+    expect(api.bodies[0]).toStrictEqual({ subject: { materialRequest: true }, body: 'Envie 3 fotos da equipe' });
+  });
+
+  it('accepts the deadline from today to 90 days ahead on the São Paulo day, and refuses the days outside it before sending', async () => {
+    const { api } = mountMaterial();
+    const region = await materialArea();
+    const dialog = await openDialog(region);
+    write(dialog, 'Envie 3 fotos da equipe');
+
+    // Today in São Paulo is 10/11; the UTC day is already the 11th.
+    for (const outside of ['09/11/2026', '09/02/2027']) {
+      pickDay(dialog, outside);
+      send(dialog);
+      await within(dialog).findByText('Escolha um prazo de hoje até 90 dias à frente.');
+      expect(api.bodies).toHaveLength(0);
+    }
+    expect(screen.getByRole('dialog', { name: 'Pedir material' })).toBeTruthy();
+    expect((within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }) as HTMLTextAreaElement).value).toBe('Envie 3 fotos da equipe');
+
+    pickDay(dialog, '10/11/2026');
+    send(dialog);
+    await waitFor(() => expect(api.bodies).toHaveLength(1));
+    expect(api.bodies[0]).toMatchObject({ dueOn: '2026-11-10' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    cleanup();
+
+    const last = mountMaterial();
+    const lastDialog = await openDialog(await materialArea());
+    write(lastDialog, 'Outro pedido');
+    pickDay(lastDialog, '08/02/2027');
+    send(lastDialog);
+    await waitFor(() => expect(last.api.bodies).toHaveLength(1));
+    expect(last.api.bodies[0]).toMatchObject({ dueOn: '2027-02-08' });
+  });
+
+  it('puts the refusal of the server about the deadline on the field, in Portuguese, and keeps everything typed', async () => {
+    const { api } = mountMaterial();
+    const region = await materialArea();
+    const dialog = await openDialog(region);
+    write(dialog, 'Envie 3 fotos da equipe');
+    pickDay(dialog, '20/11/2026');
+    api.failNextWrite(() => new Response(JSON.stringify({ error: {
+      code: 'VALIDATION_ERROR', message: 'Request validation failed',
+      details: { issues: [{ path: 'dueOn', code: 'custom', message: 'the deadline is from today to 90 days ahead' }] }
+    } }), { status: 400, headers: { 'content-type': 'application/json' } }));
+    send(dialog);
+
+    await within(dialog).findByText('Escolha um prazo de hoje até 90 dias à frente.');
+    expect(within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }).getAttribute('aria-invalid')).toBe('true');
+    expect(within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }).getAttribute('aria-invalid')).toBeNull();
+    expect((within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }) as HTMLTextAreaElement).value).toBe('Envie 3 fotos da equipe');
+    expect((within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }) as HTMLInputElement).value).toBe('20/11/2026');
+    expect(screen.getByRole('dialog', { name: 'Pedir material' })).toBeTruthy();
+    expect(api.threads).toHaveLength(0);
+  });
+
+  it.each([
+    ['an archived client', () => apiError(409, 'CLIENT_ARCHIVED'), 'Cliente arquivado: não é possível pedir material.'],
+    ['a refused permission', () => apiError(403, 'FORBIDDEN'), 'Você não tem permissão para pedir material a este cliente.'],
+    ['a client that is gone', () => apiError(404, 'NOT_FOUND'), 'Este cliente não existe mais.'],
+    ['a refused text', () => apiError(400, 'VALIDATION_ERROR'), 'Revise o texto e tente de novo.'],
+    ['a failing server', () => apiError(500, 'INTERNAL_ERROR'), 'Não foi possível enviar o pedido. Tente de novo.']
+  ])('says in Portuguese why the request was refused (%s) and keeps what was typed', async (_name, make, text) => {
+    const { api } = mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    write(dialog, 'Texto que não pode sumir');
+    pickDay(dialog, '20/11/2026');
+    api.failNextWrite(make);
+    send(dialog);
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toBe(text);
+    expect((within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }) as HTMLTextAreaElement).value).toBe('Texto que não pode sumir');
+    expect((within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }) as HTMLInputElement).value).toBe('20/11/2026');
+    // Trying again works and closes the dialog.
+    send(dialog, 'Tentar de novo');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.bodies).toHaveLength(2);
+  });
+
+  it('refuses an empty text without sending, and asks before discarding what was typed', async () => {
+    const { api } = mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    send(dialog);
+    await within(dialog).findByText('Escreva a mensagem.');
+    expect(api.bodies).toHaveLength(0);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar pedido de material' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    cleanup();
+
+    mountMaterial();
+    const typed = await openDialog(await materialArea());
+    write(typed, 'Rascunho');
+    fireEvent.click(within(typed).getByRole('button', { name: 'Fechar pedido de material' }));
+    const confirm = await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' });
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Continuar editando' }));
+    expect((within(typed).getByRole('textbox', { name: 'O que você precisa do cliente' }) as HTMLTextAreaElement).value).toBe('Rascunho');
+  });
+
+  it('hides "Pedir material" from whoever cannot write and from a read-only client, and blocks it on an expired plan', async () => {
+    const reader = mountMaterial({ canWrite: false });
+    reader.api.seed(MATERIAL, [{ side: 'agency', body: 'Envie 3 fotos', at: LATE }]);
+    const region = await materialArea();
+    await within(region).findByText('Envie 3 fotos');
+    expect(within(region).queryByRole('button', { name: 'Pedir material' })).toBeNull();
+    cleanup();
+
+    mountMaterial({ readOnly: true });
+    await within(await materialArea()).findByText('Nenhum pedido de material');
+    expect(screen.queryByRole('button', { name: 'Pedir material' })).toBeNull();
+    cleanup();
+
+    mountMaterial({ planBlockedReason: 'Renove o plano para escrever.' });
+    const blocked = await within(await materialArea()).findByRole('button', { name: /Pedir material/ });
+    expect(blocked.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(blocked);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('resolves exactly the request that was opened, with the other one still open', async () => {
+    const { api } = mountMaterial();
+    const first = api.seed(MATERIAL, [{ side: 'agency', body: 'Primeiro pedido', at: EARLIER }], undefined, '2026-11-20');
+    const second = api.seed(MATERIAL, [{ side: 'agency', body: 'Segundo pedido', at: LATE }], undefined, '2026-11-25');
+    const region = await materialArea();
+    fireEvent.click(await within(region).findByRole('button', { name: /Segundo pedido/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Pedido de material' });
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Resolver' }));
+    await waitFor(() => expect(api.calls).toContain(`POST /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads/${second}/resolve`));
+    expect(api.calls.some((call) => call.includes(`/threads/${first}/resolve`))).toBe(false);
+    await waitFor(() => expect(rowOf(region, 'Segundo pedido').textContent).toContain('resolvida'));
+    expect(rowOf(region, 'Primeiro pedido').textContent).toContain('aberta');
+  });
+
+  it('keeps the other subjects as they were: no material label, no deadline, no "Pedir material"', async () => {
+    const { api } = mount();
+    api.seed(TONE, [{ side: 'client', body: 'Acho formal demais', at: LATE }]);
+    const region = await area();
+    await within(region).findByText('Acho formal demais');
+    expect(within(region).getByRole('heading', { name: 'Conversas (1)' })).toBeTruthy();
+    expect(within(region).queryByText('Pedido de material')).toBeNull();
+    expect(within(region).queryByText(/Entregar até/)).toBeNull();
+    expect(within(region).queryByRole('button', { name: 'Pedir material' })).toBeNull();
+    expect(within(region).getByRole('button', { name: 'Nova conversa sobre Tom de voz' })).toBeTruthy();
   });
 });

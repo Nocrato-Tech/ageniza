@@ -14,9 +14,10 @@ import {
   type Thread,
   type ThreadComment
 } from '@ageniza/contracts';
-import { Avatar, Button, Field, FieldMessage, Modal, Pill, Skeleton, Textarea, useFormErrors } from '@ageniza/ui';
+import { Avatar, Button, DatePicker, Field, FieldMessage, invalidDayMessage, LateBadge, Modal, Pill, Skeleton, Textarea, useFormErrors } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
+import { addDays, dayMonthLabel, todayInSaoPaulo } from './content-dates.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 /**
@@ -89,13 +90,28 @@ const OPENING: Record<ConversationSide, {
 
 const subjectKeyOf = (subject: ConversationSubject): string => {
   if ('sectionKey' in subject) return `section:${subject.sectionKey}`;
-  return 'personaId' in subject ? `persona:${subject.personaId}` : `content:${subject.contentId}`;
+  if ('personaId' in subject) return `persona:${subject.personaId}`;
+  return 'materialRequest' in subject ? 'material-request' : `content:${subject.contentId}`;
 };
 
 const subjectQueryOf = (subject: ConversationSubject): string => {
   if ('sectionKey' in subject) return `sectionKey=${subject.sectionKey}`;
-  return 'personaId' in subject ? `personaId=${subject.personaId}` : `contentId=${subject.contentId}`;
+  if ('personaId' in subject) return `personaId=${subject.personaId}`;
+  return 'materialRequest' in subject ? 'materialRequest=true' : `contentId=${subject.contentId}`;
 };
+
+const MATERIAL_REQUEST_LABEL = 'Pedido de material';
+/** The deadline of a request runs from today to this many days ahead, on the São Paulo day (the database refuses anything else). */
+const MATERIAL_DUE_WINDOW_DAYS = 90;
+const MATERIAL_DUE_RANGE = 'Escolha um prazo de hoje até 90 dias à frente.';
+
+const isMaterialRequest = (subject: ConversationSubject): boolean => 'materialRequest' in subject;
+
+const deadlineLabel = (dueOn: string): string => `Entregar até ${dayMonthLabel(dueOn)}`;
+
+/** A request still open whose day has passed in São Paulo; `dueOn` is a plain day, never read through a `Date`. */
+const isOverdue = (thread: Thread, today: string): boolean =>
+  thread.state === 'open' && thread.dueOn !== null && thread.dueOn < today;
 
 const scopeKeyOf = (scope: ConversationScope) => ['conversation', scope.side, scope.clientId] as const;
 const threadsQueryKey = (scope: ConversationScope, subject: ConversationSubject) => [...scopeKeyOf(scope), 'threads', subjectKeyOf(subject)] as const;
@@ -163,6 +179,24 @@ const writeError = (error: unknown, side: ConversationSide): string => {
   if (error.status === 404) return 'Esta conversa não existe mais.';
   if (error.status === 400) return 'Revise o texto e tente de novo.';
   return 'Não foi possível enviar. Tente de novo.';
+};
+
+const refusedPaths = (details: unknown): readonly string[] => {
+  const issues = (details as { issues?: unknown } | null | undefined)?.issues;
+  if (!Array.isArray(issues)) return [];
+  return issues.map((issue) => (issue as { path?: unknown } | null)?.path).filter((path): path is string => typeof path === 'string');
+};
+
+/** What a refused request for material says: a deadline out of range is the field's, the rest is the form's. */
+const materialRequestError = (error: unknown): { readonly field: 'dueOn' | undefined; readonly message: string } => {
+  const form = (message: string) => ({ field: undefined, message });
+  if (!(error instanceof HttpClientError)) return form('Não foi possível enviar o pedido. Tente de novo.');
+  if (error.code === 'CLIENT_ARCHIVED') return form('Cliente arquivado: não é possível pedir material.');
+  if (error.status === 400 && refusedPaths(error.details).includes('dueOn')) return { field: 'dueOn', message: MATERIAL_DUE_RANGE };
+  if (error.status === 400) return form('Revise o texto e tente de novo.');
+  if (error.status === 403) return form('Você não tem permissão para pedir material a este cliente.');
+  if (error.status === 404) return form('Este cliente não existe mais.');
+  return form('Não foi possível enviar o pedido. Tente de novo.');
 };
 
 const authorName = (comment: ThreadComment): string => comment.author?.name ?? (comment.side === 'agency' ? 'Agência' : 'Cliente');
@@ -276,9 +310,11 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
   const writable = canWrite && !readOnly;
   const canResolve = writable && scope.side === 'agency' && thread.state === 'open';
 
+  const material = isMaterialRequest(thread.subject);
   // Inside the modal of a content, a second dialog with the title of the first would be two dialogs of one name.
-  return <Modal title={'contentId' in props.subject ? `Conversa sobre ${subjectLabel}` : subjectLabel} closeLabel="Fechar conversa" onClose={onClose}>
+  return <Modal title={material ? MATERIAL_REQUEST_LABEL : 'contentId' in props.subject ? `Conversa sobre ${subjectLabel}` : subjectLabel} closeLabel="Fechar conversa" onClose={onClose}>
     <div className="conversation__thread-view">
+      {material && <MaterialDue thread={thread} today={todayInSaoPaulo()} />}
       {comments.isPending && <div className="conversation__comments-skeleton" aria-busy="true">
         <Skeleton /><Skeleton /><Skeleton />
       </div>}
@@ -357,7 +393,107 @@ function NewConversationDialog({ props, onClose }: { props: ConversationProps; o
   </Modal>;
 }
 
-function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: ConversationSide; onOpen: () => void }) {
+/** The agency asks the client for material: a first message, as any thread, and a deadline that only this subject has. */
+function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; onClose: () => void }) {
+  const { scope, onWritten } = props;
+  const httpClient = useApiClient();
+  const queryClient = useQueryClient();
+  const bodyId = useId();
+  const formId = useId();
+  const { formRef, summary } = useFormErrors();
+  const [body, setBody] = useState('');
+  const [dueOn, setDueOn] = useState('');
+  // Text that is not a day also leaves `dueOn` empty: it must not go as "no deadline".
+  const [dueInvalid, setDueInvalid] = useState(false);
+  const [bodyIssue, setBodyIssue] = useState<string | undefined>();
+  const [dueIssue, setDueIssue] = useState<string | undefined>();
+  const [error, setError] = useState<string | undefined>();
+  const today = todayInSaoPaulo();
+
+  const open = useMutation({
+    mutationFn: (request: { body: string; dueOn: string }) => httpClient.request({
+      path: routesOf(scope).threads,
+      method: 'POST',
+      body: { subject: { materialRequest: true }, body: request.body, ...(request.dueOn === '' ? {} : { dueOn: request.dueOn }) },
+      response: CreateThreadResponseSchema
+    }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: scopeKeyOf(scope) });
+      onWritten();
+      onClose();
+    },
+    onError: (failure: unknown) => {
+      const refusal = materialRequestError(failure);
+      if (refusal.field === 'dueOn') setDueIssue(refusal.message);
+      else setError(refusal.message);
+    }
+  });
+
+  const submit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    const now = todayInSaoPaulo();
+    const bodyFound = bodyProblem(body);
+    const dueFound = dueInvalid ? invalidDayMessage : dueOn !== '' && (dueOn < now || dueOn > addDays(now, MATERIAL_DUE_WINDOW_DAYS)) ? MATERIAL_DUE_RANGE : undefined;
+    setBodyIssue(bodyFound);
+    setDueIssue(dueFound);
+    setError(undefined);
+    if (bodyFound !== undefined || dueFound !== undefined) return;
+    open.mutate({ body: body.trim(), dueOn });
+  };
+
+  return <Modal
+    title="Pedir material"
+    closeLabel="Fechar pedido de material"
+    description="A mensagem abre uma conversa com o cliente. O prazo é opcional."
+    onClose={onClose}
+    confirmDiscard={{ dirty: (body.trim() !== '' || dueOn !== '' || dueInvalid) && !open.isPending }}
+    actions={<Button type="submit" form={formId} loading={open.isPending}>{error === undefined ? 'Enviar pedido' : 'Tentar de novo'}</Button>}
+  >
+    <form id={formId} ref={formRef} className="conversation__composer" onSubmit={submit} noValidate>
+      {summary}
+      <Field label="O que você precisa do cliente" id={bodyId} error={bodyIssue}>
+        {(control) => (
+          <Textarea
+            {...control}
+            value={body}
+            rows={4}
+            placeholder="Ex.: envie 3 fotos da equipe"
+            readOnly={open.isPending}
+            onChange={(event) => { setBody(event.target.value); setBodyIssue(undefined); setError(undefined); }}
+          />
+        )}
+      </Field>
+      <Field label="Prazo (opcional)" hint="De hoje até 90 dias à frente." error={dueIssue}>
+        {(control) => (
+          <DatePicker
+            {...control}
+            today={today}
+            min={today}
+            max={addDays(today, MATERIAL_DUE_WINDOW_DAYS)}
+            value={dueOn}
+            disabled={open.isPending}
+            toggleLabel="Abrir calendário do prazo"
+            onInvalidChange={setDueInvalid}
+            onChange={(day) => { setDueOn(day); setDueIssue(undefined); setError(undefined); }}
+          />
+        )}
+      </Field>
+      <p className="conversation__note">{NO_EDIT_NOTE}</p>
+      {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
+    </form>
+  </Modal>;
+}
+
+/** The deadline of a request for material, and "venceu" when it passed while the request is still open. */
+function MaterialDue({ thread, today }: { thread: Thread; today: string }) {
+  if (thread.dueOn === null) return null;
+  return <span className="conversation__thread-due">
+    {deadlineLabel(thread.dueOn)}
+    {isOverdue(thread, today) && <LateBadge>venceu</LateBadge>}
+  </span>;
+}
+
+function ThreadRow({ thread, viewer, today, onOpen }: { thread: Thread; viewer: ConversationSide; today: string; onOpen: () => void }) {
   const awaiting = awaitsViewer(thread, viewer);
   const status = thread.state === 'resolved'
     ? (viewer === 'client' ? 'concluída' : 'resolvida')
@@ -365,6 +501,8 @@ function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: Convers
   const icon = thread.state === 'resolved' ? <CheckCheck /> : awaiting ? <Clock /> : <MessageSquare />;
   return <li>
     <button type="button" className="conversation__thread" onClick={onOpen}>
+      {isMaterialRequest(thread.subject) && <span className="conversation__thread-subject">{MATERIAL_REQUEST_LABEL}</span>}
+      {isMaterialRequest(thread.subject) && <MaterialDue thread={thread} today={today} />}
       <span className="conversation__thread-meta">
         {thread.openedBy.name === null
           ? `Aberta ${thread.openedBy.side === 'agency' ? 'pela agência' : 'pelo cliente'}`
@@ -387,6 +525,8 @@ export function Conversation(props: ConversationProps) {
   const subjectQuery = subjectQueryOf(subject);
   // A content has one conversation: a second "new conversation" would write into the first.
   const ofContent = 'contentId' in subject;
+  const material = isMaterialRequest(subject);
+  const today = todayInSaoPaulo();
 
   // One query reads both states and answers together: a thread that changes state moves between the
   // two lists, so reading them apart would make it vanish or repeat between the two answers.
@@ -413,15 +553,18 @@ export function Conversation(props: ConversationProps) {
   const current = openId === null ? undefined : list.find((thread) => thread.id === openId);
   const canStart = writable && blockedReason === undefined && (!ofContent || (threads.data !== undefined && list.length === 0));
 
-  return <section className="conversation" aria-label={`${ofContent ? 'Conversa' : 'Conversas'} sobre ${subjectLabel}`}>
+  const count = threads.data === undefined ? '' : ` (${totalItems})`;
+  return <section className="conversation" aria-label={material ? 'Pedidos de material' : `${ofContent ? 'Conversa' : 'Conversas'} sobre ${subjectLabel}`}>
     <header className="conversation__header">
       <Heading className="conversation__title">
-        {ofContent ? 'Conversa' : `Conversas${threads.data === undefined ? '' : ` (${totalItems})`}`}
+        {material ? `Pedidos de material${count}` : ofContent ? 'Conversa' : `Conversas${count}`}
       </Heading>
       {awaiting > 0 && <Pill tone="accent" className="conversation__status conversation__status--awaiting">
         {scope.side === 'agency' ? `${awaiting} aguardando` : `${awaiting} com resposta da agência`}
       </Pill>}
-      {canStart && (scope.side === 'client'
+      {canStart && (material
+        ? <Button size="sm" variant="secondary" leadingIcon={<Plus />} blockedReason={planBlockedReason} onClick={() => setCreating(true)}>Pedir material</Button>
+        : scope.side === 'client'
         ? <Button variant="secondary" aria-label={opening.buttonName(subjectLabel)} blockedReason={planBlockedReason} onClick={() => setCreating(true)}>Sugerir</Button>
         : <Button size="sm" variant="secondary" leadingIcon={<Plus />} aria-label={opening.buttonName(subjectLabel)} blockedReason={planBlockedReason} onClick={() => setCreating(true)}>conversa</Button>)}
     </header>
@@ -432,15 +575,17 @@ export function Conversation(props: ConversationProps) {
       <Button size="sm" variant="secondary" loading={threads.isFetching} onClick={() => { void threads.refetch(); }}>Tentar de novo</Button>
     </div>}
     {writable && blockedReason !== undefined && <p className="conversation__note">{blockedReason}</p>}
-    {threads.data !== undefined && list.length === 0 && <p className="conversation__empty">{ofContent ? 'Nenhuma conversa sobre este conteúdo' : 'Nenhuma conversa sobre esta parte'}</p>}
+    {threads.data !== undefined && list.length === 0 && <p className="conversation__empty">{material ? 'Nenhum pedido de material' : ofContent ? 'Nenhuma conversa sobre este conteúdo' : 'Nenhuma conversa sobre esta parte'}</p>}
     {list.length > 0 && <ul className="conversation__threads">
-      {list.map((thread) => <ThreadRow key={thread.id} thread={thread} viewer={scope.side} onOpen={() => setOpenId(thread.id)} />)}
+      {list.map((thread) => <ThreadRow key={thread.id} thread={thread} viewer={scope.side} today={today} onOpen={() => setOpenId(thread.id)} />)}
     </ul>}
     {truncated && <p className="conversation__note">
       Mostrando as {THREADS_PAGE_SIZE} conversas mais recentes.
     </p>}
 
     {current !== undefined && <OpenThread props={props} thread={current} onClose={() => setOpenId(null)} />}
-    {creating && <NewConversationDialog props={props} onClose={() => setCreating(false)} />}
+    {creating && (material
+      ? <MaterialRequestDialog props={props} onClose={() => setCreating(false)} />
+      : <NewConversationDialog props={props} onClose={() => setCreating(false)} />)}
   </section>;
 }

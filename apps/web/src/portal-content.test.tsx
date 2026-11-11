@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { apiError, createConversationApi } from './conversation-fixture.js';
@@ -1075,6 +1075,63 @@ describe('the post of the portal (#270)', () => {
       // On a wide screen the navigation is the tabs under the header and stays: the phone block is the only place that hides it.
       expect(css().match(/\.portal-nav \{\s*display:\s*none;/g)).toHaveLength(1);
     });
+  });
+});
+
+describe('the round the agency opened, on the post of the portal (telas-melhorias S8)', () => {
+  const ROUND = { dueOn: '2026-10-14', note: 'Confira a legenda.\nObrigada!' };
+  const round = (): HTMLElement | null => document.querySelector('.approval-round');
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-12T01:30:00.000Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('says until when, in the day of São Paulo (still the 11th at 01:30Z), and the note signed by the agency', async () => {
+    await open({ title: 'Post com prazo', approval: ROUND });
+    await title('Post com prazo');
+    expect(round()?.querySelector('.approval-round__due')?.textContent).toBe('Aprovar até qua, 14/10 · vence em 3 dias');
+    expect(screen.getByText('Recado de Agência Um')).toBeTruthy();
+    expect(round()?.querySelector('.approval-round__text')?.textContent).toBe('Confira a legenda.\nObrigada!');
+  });
+
+  it('shows the deadline as venceu once it has passed, never as Atrasado', async () => {
+    await open({ title: 'Post vencido', approval: { dueOn: '2026-10-09', note: null } });
+    await title('Post vencido');
+    expect(round()?.querySelector('.approval-round__due')?.textContent).toBe('Aprovar até sex, 09/10 · venceu há 2 dias');
+    expect(screen.queryByText(/Atrasad/)).toBeNull();
+  });
+
+  it('says nothing when the agency asked for no deadline and left no note', async () => {
+    await open({ title: 'Post sem prazo', approval: null });
+    await title('Post sem prazo');
+    expect(round()).toBeNull();
+    await open({ title: 'Post vazio', approval: { dueOn: null, note: null } });
+    expect(await screen.findAllByRole('heading', { level: 1, name: 'Post vazio' })).toHaveLength(1);
+    expect(round()).toBeNull();
+  });
+
+  it('shows only the note when there is no deadline', async () => {
+    await open({ title: 'Post com recado', approval: { dueOn: null, note: 'Sem pressa.' } });
+    await title('Post com recado');
+    expect(screen.getByText('Sem pressa.')).toBeTruthy();
+    expect(screen.queryByText(/Aprovar até/)).toBeNull();
+  });
+
+  it('does not show the round once the content is no longer waiting for the person', async () => {
+    await open({ title: 'Post aprovado', state: 'approved', approval: ROUND });
+    await title('Post aprovado');
+    expect(round()).toBeNull();
+  });
+
+  it('draws the note as text, never as markup', async () => {
+    const note = '<img src=x onerror="window.hacked = 1"><b>negrito</b>';
+    await open({ title: 'Post com marcação', approval: { dueOn: null, note } });
+    await title('Post com marcação');
+    const text = round()?.querySelector('.approval-round__text') as HTMLElement;
+    expect(text.textContent).toBe(note);
+    expect(text.querySelector('b, img')).toBeNull();
   });
 });
 
