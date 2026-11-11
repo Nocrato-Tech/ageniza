@@ -23,6 +23,7 @@ import {
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
+import { readGlobalCss } from './styles/read-css';
 
 afterEach(cleanup);
 
@@ -983,7 +984,7 @@ describe('the page of the approval link (#717)', () => {
   });
 
   describe('CSS contract', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+    const css = readGlobalCss();
     const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
       selectors: match[1]!.replace(/\/\*[\s\S]*?\*\//g, '').split(',').map((selector) => selector.trim()),
       body: match[2]!

@@ -1,0 +1,167 @@
+.agency-layout {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) var(--space-12);
+}
+
+.agency-shell {
+  display: flex;
+}
+
+.agency-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agency-body > .legal-notice,
+.agency-body > .trial-notice {
+  margin: var(--space-4) var(--space-8) 0;
+}
+
+.agency-content {
+  min-width: 0;
+}
+
+.agency-body > .agency-content {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 80rem;
+  padding: var(--space-8) var(--space-8) var(--space-12);
+}
+
+/* Side navigation: issue #628. Open at 248px, a rail at 80px, a bottom bar on a phone. */
+.agency-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-self: flex-start;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: 15.5rem;
+  height: 100vh;
+  padding: var(--space-6) var(--space-4);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-canvas);
+}
+
+.agency-sidebar__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0 var(--space-1) var(--space-2) var(--space-2);
+}
+
+.agency-sidebar__context {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.agency-sidebar__context:hover {
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
+}
+
+.agency-sidebar__context-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.agency-sidebar__context-label {
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.agency-sidebar__context-name {
+  overflow: hidden;
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The whole box is the link to the agency's Início. */
+.agency-sidebar__context-name::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.agency-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.agency-nav__group-title {
+  margin: 0;
+  padding: var(--space-4) var(--space-3) var(--space-2);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.agency-nav ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agency-nav a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font: var(--label-md);
+  text-decoration: none;
+}
+
+.agency-nav a svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.agency-nav a:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.agency-nav a[aria-current='page'] {
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+  font-weight: 600;
+}
+
+.agency-nav a[aria-current='page'] svg {
+  color: var(--color-indigo-600);
+}
+
+.agency-sidebar__foot {
+  padding-top: var(--space-3);
+}
+

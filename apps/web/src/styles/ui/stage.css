@@ -1,0 +1,139 @@
+/* Stage3D: docs/design-system.md, "Ícone 3D: o palco". The "color" render of 3dicons goes as it comes, never painted. It sits on a disc in the
+   tone of the card, with a contact shadow, and can leave the card through its top edge. Everything comes from `--ss`, the size of the icon.
+   `--ui-stage-bg` is the fill of the card the stage sits on (the disc mixes its tone with it): a colour block sets it to its own fill. */
+.ui-stage {
+  --ss: var(--stage-size-lg);
+  --st-bg: var(--ui-stage-bg, var(--bg-surface));
+  --st-tone: var(--stage-slate-tone);
+  --st-deep: var(--stage-slate-deep);
+  position: relative;
+  isolation: isolate;
+  display: block;
+  flex: none;
+  width: calc(var(--ss) * 1.16);
+  height: calc(var(--ss) * 1.32);
+  pointer-events: none;
+}
+
+.ui-stage--sm {
+  --ss: var(--stage-size-sm);
+}
+
+.ui-stage--md {
+  --ss: var(--stage-size-md);
+}
+
+.ui-stage--lg {
+  --ss: var(--stage-size-lg);
+}
+
+.ui-stage--xl {
+  --ss: var(--stage-size-xl);
+}
+
+.ui-stage--indigo {
+  --st-tone: var(--stage-indigo-tone);
+  --st-deep: var(--stage-indigo-deep);
+}
+
+.ui-stage--violet {
+  --st-tone: var(--stage-violet-tone);
+  --st-deep: var(--stage-violet-deep);
+}
+
+.ui-stage--teal {
+  --st-tone: var(--stage-teal-tone);
+  --st-deep: var(--stage-teal-deep);
+}
+
+.ui-stage--sky {
+  --st-tone: var(--stage-sky-tone);
+  --st-deep: var(--stage-sky-deep);
+}
+
+.ui-stage--red {
+  --st-tone: var(--stage-red-tone);
+  --st-deep: var(--stage-red-deep);
+}
+
+.ui-stage--breakout {
+  position: absolute;
+  top: calc(var(--ss) * -0.32);
+  right: var(--space-3);
+}
+
+.ui-stage::before,
+.ui-stage::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  z-index: 0;
+  border-radius: 50%;
+}
+
+.ui-stage::before {
+  bottom: 0;
+  width: calc(var(--ss) * 1.05);
+  height: calc(var(--ss) * 0.28);
+  margin-left: calc(var(--ss) * -0.525);
+  background: radial-gradient(
+    ellipse at 50% 30%,
+    color-mix(in srgb, var(--st-tone) var(--stage-face-top), var(--st-bg)),
+    color-mix(in srgb, var(--st-tone) var(--stage-face-bottom), var(--st-bg))
+  );
+  box-shadow:
+    0 calc(var(--ss) * 0.064) 0 color-mix(in srgb, var(--st-deep) var(--stage-edge-mix), var(--st-bg)),
+    0 calc(var(--ss) * 0.11) calc(var(--ss) * 0.145) calc(var(--ss) * -0.032) color-mix(in srgb, var(--st-deep) var(--stage-edge-mix), transparent);
+}
+
+.ui-stage::after {
+  bottom: calc(var(--ss) * 0.032);
+  width: calc(var(--ss) * 0.64);
+  height: calc(var(--ss) * 0.128);
+  margin-left: calc(var(--ss) * -0.32);
+  background: color-mix(in srgb, var(--st-deep) var(--stage-shadow-mix), transparent);
+  filter: blur(5px);
+}
+
+.ui-stage__float {
+  position: absolute;
+  bottom: calc(var(--ss) * 0.12);
+  left: 50%;
+  z-index: 1;
+  width: var(--ss);
+  height: var(--ss);
+  margin-left: calc(var(--ss) * -0.5);
+  animation: ui-stage-float var(--stage-float-duration) ease-in-out infinite;
+}
+
+.ui-stage__icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: perspective(520px) rotate(var(--stage-tilt)) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform var(--motion-base) ease-out;
+  user-select: none;
+}
+
+@keyframes ui-stage-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(calc(var(--stage-float-distance) * -1));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-stage__float {
+    animation: none;
+  }
+
+  .ui-stage__icon {
+    transition: none;
+  }
+}
+

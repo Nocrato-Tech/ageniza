@@ -1,0 +1,543 @@
+/* --- Portal: post em tela cheia (#270, #687) ---
+   Phone first: every box may shrink (`min-width: 0`), every server text wraps, no width is fixed, and the actions
+   take the whole row, so a 390 px screen never scrolls sideways. While a post is open the bottom bar of the shell steps
+   aside (the way back is the link on top) and the decision bar takes the bottom of the screen, as the last piece of the
+   page: the end of the conversation is never under it, and `scroll-padding-bottom` keeps a focused control clear of it. */
+
+.portal-post {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.portal-post h1,
+.portal-post h2 {
+  margin: 0;
+}
+
+.portal-post h1 {
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.portal-post h2 {
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+.portal-post__back {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 2.75rem;
+  /* The chevron hangs in the margin, so the word lines up with the title under it. */
+  margin-inline-start: calc(-1 * var(--space-1));
+  padding-inline-end: var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font: var(--body-md);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.portal-post__back:hover {
+  color: var(--text-primary);
+}
+
+.portal-post__back:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.portal-post__back svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.portal-post__heading {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.portal-post__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-post__notes {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  /* The confirmation takes the focus after Aprovar: it lands a step below the edge of the screen. */
+  scroll-margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.portal-post__notes:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.portal-post__notes p {
+  margin: 0;
+}
+
+/* The confirmation and the message about a changed state read in the body size of the screen, not in the 16 px of their components. */
+.portal-post__notes .ui-live-status,
+.portal-post__notes .ui-field-message {
+  font: var(--body-md);
+}
+
+.portal-post__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/* The picture on its tinted stage, the caption under it, all in one white card of the board. */
+.portal-post__card {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.portal-post__caption-block {
+  padding: 0;
+}
+
+.portal-post__eyebrow {
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.portal-post .portal-post__eyebrow {
+  font: var(--caption);
+}
+
+.portal-post__section {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.portal-post__caption,
+.portal-post__hint {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.portal-post__caption {
+  white-space: pre-wrap;
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+.portal-post__hint {
+  color: var(--text-muted);
+  font: var(--caption);
+}
+
+.portal-post__request,
+.portal-post__actions {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.portal-post__actions > .ui-button {
+  width: 100%;
+}
+
+.portal-post__bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  /* Edge to edge on a phone, over the padding of the content. */
+  margin-inline: calc(-1 * var(--space-4));
+  padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+
+.portal-post__bar .portal-post__actions {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+}
+
+/* "Pedir ajuste" and its icon fit the narrower column of a 360 px phone on one line. */
+.portal-post__bar .ui-button {
+  padding-inline: var(--space-3);
+}
+
+/* The deadline and the note, then the post, then the decision bar: the order of the page is the order of the markup, on a phone and for assistive technology. */
+.portal-post__layout {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.portal-post__layout .approval-round {
+  gap: var(--space-3);
+}
+
+.portal-post__layout .approval-round__due {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font: var(--title-md);
+  font-weight: 700;
+}
+
+.portal-post__layout .approval-round__due .ui-icon {
+  color: inherit;
+}
+
+.portal-post__layout .approval-round__note {
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.portal-post__layout .approval-round__author {
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.portal-post__layout .approval-round__text {
+  font: var(--body-lg);
+}
+
+/* The section already has its title; the conversation's own is kept for assistive technology only, and its rule is not needed under a title. */
+.portal-post .conversation {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.portal-post .conversation__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The conversation of the post in bubbles: the agency's on the left, the person's on the right. The side is still said by the author's name. */
+.portal-post .conversation__comment {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+}
+
+.portal-post .conversation__comment--client {
+  justify-self: end;
+  max-width: 92%;
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-sm);
+  background: var(--bg-tint);
+}
+
+.portal-post .conversation__comment-meta {
+  font: var(--body-md);
+}
+
+.portal-post .conversation__comment-author {
+  font: var(--label-md);
+}
+
+.portal-post__title-skeleton {
+  height: var(--space-8);
+}
+
+.portal-post__media-skeleton {
+  height: 16rem;
+}
+
+/* The focused control scrolls clear of the bar, whatever the message above its buttons makes of its height (WCAG 2.4.11). */
+html:has(.portal-post__bar) {
+  scroll-padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
+}
+
+@media (max-width: 47.99rem) {
+  /* The post is the whole screen: the way back is the link on top. The tour points at the bar, so it keeps the bar while it is open. */
+  .portal-shell:has(.portal-post):not(:has(.portal-tour)) .portal-nav {
+    display: none;
+  }
+
+  .portal-shell > .portal-content:has(.portal-post__bar) {
+    padding-bottom: 0;
+  }
+
+  /* Under the tour the shell's bar is back at the bottom, and the decision bar is a plain end of the page above it. */
+  .portal-shell:has(.portal-tour) .portal-post__bar {
+    position: static;
+  }
+}
+
+@media (min-width: 48rem) {
+  /* The post and its answer side by side, with no change in the order of the markup: the picture and the conversation span the left column, the deadline and the decision stack on the right. */
+  .portal-post__layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+    grid-template-rows: auto auto 1fr;
+    align-items: start;
+    column-gap: var(--space-6);
+    row-gap: 0;
+  }
+
+  .portal-post__layout > .portal-post__body {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+
+  .portal-post__layout > .approval-round,
+  .portal-post__layout > .portal-post__bar {
+    grid-column: 2;
+    border: 1px solid var(--border-default);
+    background: var(--bg-surface);
+  }
+
+  .portal-post__layout > .approval-round {
+    grid-row: 1;
+    padding: var(--space-6) var(--space-6) var(--space-4);
+    border-bottom: 0;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+
+  .portal-post__layout > .portal-post__bar {
+    grid-row: 2 / -1;
+    align-self: start;
+    position: sticky;
+    top: var(--space-4);
+    bottom: auto;
+    margin-inline: 0;
+    padding: var(--space-4) var(--space-6) var(--space-6);
+    border-radius: var(--radius-xl);
+  }
+
+  .portal-post__layout:has(.approval-round) > .portal-post__bar {
+    border-top: 0;
+    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  }
+
+  /* Without an answer to give (approved, published, adjusting) the post keeps its own two columns. */
+  .portal-post__layout:not(:has(.portal-post__bar)) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+  }
+
+  .portal-post__layout:not(:has(.portal-post__bar)) > .portal-post__body {
+    grid-row: auto;
+    grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
+    align-items: start;
+    column-gap: var(--space-8);
+  }
+
+  /* The picture leaves room for its controls under it. */
+  .portal-post__card .portal-media__item {
+    max-height: 32rem;
+  }
+
+  .portal-post__bar .portal-post__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.portal-media {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  border-radius: var(--radius-lg);
+}
+
+.portal-media__stage {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: var(--bg-hover);
+  overflow: hidden;
+  /* The swipe is ours sideways; the page still scrolls up and down. */
+  touch-action: pan-y;
+}
+
+/* In the card the picture sits on a lilac stage, with a soft shadow under it, as on the board. */
+.portal-post__card .portal-media__stage {
+  padding: var(--space-4);
+  background: var(--bg-tint);
+}
+
+.portal-post__card .portal-media__item {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+}
+
+.portal-post__card .portal-media__strip {
+  padding: var(--space-1);
+}
+
+/* What the agency asked of the client: until when and the note, signed by the agency. Plain text on the page, no box of its own. */
+.approval-round {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.approval-round__due {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.approval-round__due .ui-icon {
+  color: var(--status-waiting-fg);
+}
+
+.approval-round__note {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-default);
+}
+
+.approval-round__author {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  overflow-wrap: anywhere;
+}
+
+.approval-round__text {
+  margin: 0;
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+/* In a grid of covers the note is a preview: three lines, and the post has the whole of it. */
+.portal-awaiting__item .approval-round__due,
+.portal-awaiting__item .approval-round__text {
+  font: var(--caption);
+}
+
+.portal-awaiting__item .approval-round__text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.portal-media__item {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: 70dvh;
+  object-fit: contain;
+}
+
+.portal-media__skeleton {
+  width: 100%;
+  height: 16rem;
+}
+
+.portal-media__problem {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-4);
+}
+
+.portal-media__problem p,
+.portal-media__empty {
+  margin: 0;
+}
+
+.portal-media__empty {
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.portal-media__controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.portal-media__counter {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+.portal-media__strip {
+  min-width: 0;
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.portal-media__thumb {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font: var(--label-sm);
+  cursor: pointer;
+}
+
+.portal-media__thumb[aria-current='true'] {
+  border-color: var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.portal-media__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+

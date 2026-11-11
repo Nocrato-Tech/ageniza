@@ -1,0 +1,208 @@
+/* "Stories do mês": the scripts of the period as a strip of circles above the calendar. The day is the circle and the state is its ring
+   (dashed draft, violet sent, teal recorded) and the tag below it, so the state is never colour alone. The circle is drawn from the item's
+   data, not repeated in the markup, so the row still reads as "day, state, open" to a screen reader; the whole item is the button. */
+.story-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.story-list__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.story-list__title {
+  margin: 0;
+  font: var(--title-md);
+}
+
+/* The empty state of the list reads like the roster's: the block and its text centred together, never a centred block with left-aligned text. */
+.story-list__empty:not(.ui-empty-state--mascot) .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+
+.story-list__items {
+  display: flex;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-1) var(--space-1) var(--space-2);
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.story-list__item {
+  --story-ring: var(--status-production-fg);
+
+  position: relative;
+  display: grid;
+  flex: none;
+  justify-items: center;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 5rem;
+  min-height: 2.75rem;
+  padding: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+  text-align: center;
+}
+
+.story-list__item[data-status='sent'] {
+  --story-ring: var(--status-waiting-fg);
+}
+
+.story-list__item[data-status='recorded'] {
+  --story-ring: var(--status-ready-fg);
+}
+
+.story-list__item::before {
+  content: attr(data-day);
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 3px solid var(--story-ring);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.story-list__item[data-status='draft']::before {
+  border-style: dashed;
+  border-width: 2px;
+}
+
+.story-list__item::after {
+  content: attr(data-weekday) ' ' attr(data-day);
+  order: 1;
+  color: var(--text-primary);
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+.story-list__item .ui-status-tag {
+  order: 2;
+}
+
+/* The full date is the item's name for who reads it aloud; the circle and its short label are what is seen. */
+.story-list__day {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The button is the whole item, a press anywhere on the circle or its words opens the script. */
+.story-list .story-list__item > .ui-button {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: transparent;
+  font-size: 0;
+}
+
+.story-list .story-list__item > .ui-button:hover {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+.story-script__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.story-script__day {
+  margin: 0;
+}
+
+.story-script__scenes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.story-script__scene {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
+}
+
+.story-script__scene-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.story-script__scene-title {
+  margin: 0;
+  font: var(--label-md);
+}
+
+.story-script__moves {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.story-script__text,
+.story-script__guidance {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.story-script__guidance {
+  color: var(--text-secondary);
+}
+
+.story-script__add {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.story-script__loading {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.story-script .form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+

@@ -1,0 +1,30 @@
+/* Realce: the highlighter. Its corners are uneven on purpose, so they are the one shape that does not come from the radius scale. */
+.ui-realce {
+  padding: 0 var(--space-1);
+  border-radius: 0.1875rem 0.4375rem 0.25rem 0.5rem;
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.ui-realce--sweep {
+  animation: ui-realce-sweep var(--motion-slow) var(--motion-easing-standard) both;
+}
+
+@keyframes ui-realce-sweep {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-realce--sweep {
+    animation: none;
+  }
+}
+

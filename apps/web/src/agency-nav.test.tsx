@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -13,6 +11,7 @@ import { isCalendarPath } from './agency-nav.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
+import { readGlobalCss } from './styles/read-css';
 
 afterEach(cleanup);
 
@@ -241,7 +240,7 @@ describe('Sair at the foot while the sign-out is in flight', () => {
 });
 
 describe('CSS contract of the rail and the bottom bar', () => {
-  const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+  const css = readGlobalCss();
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
     selectors: match[1]!.replace(/\/\*[\s\S]*?\*\//g, '').split(',').map((selector) => selector.trim()),
     body: match[2]!

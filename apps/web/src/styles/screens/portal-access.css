@@ -1,0 +1,145 @@
+/* Portal access tab: specs/clientes.md section 7, issue #140. A person is a rounded card with who they are, when they last came in and what can be done with the access. */
+.portal-access {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+.portal-access__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.portal-access__header h2 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.portal-access__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-access__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.portal-access__who {
+  display: grid;
+  flex: 1 1 12rem;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.portal-access__name {
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.portal-access__name--pending {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.portal-access__email {
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.portal-access__since {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+/* What can be done with the access gets its own line under the person, so the buttons never squeeze the name. */
+.portal-access__actions {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.portal-access__invites .portal-access__actions {
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+
+.portal-access__row > .ui-button {
+  margin-left: auto;
+}
+
+.portal-access > .ui-button,
+.brand-personas > .ui-button {
+  justify-self: start;
+}
+
+.portal-access__error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: var(--space-6) 0;
+  color: var(--text-danger);
+}
+
+.portal-access__error p {
+  margin: 0;
+}
+
+.portal-access__removed,
+.portal-access__invites {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.portal-access__removed-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.portal-access__removed-header h3,
+.portal-access__invites h3 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.portal-access__last {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-access__last svg {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.portal-access__copy {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  max-width: 20rem;
+}
+

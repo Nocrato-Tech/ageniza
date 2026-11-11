@@ -1,0 +1,218 @@
+.content-calendar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.content-calendar__weekdays,
+.content-calendar__days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  min-width: 40rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-calendar__weekdays {
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.content-calendar__weekdays li {
+  padding: var(--space-3) var(--space-4);
+}
+
+/* `minmax(0, 1fr)` lets a card shrink to the day: tags that do not fit wrap inside it instead of widening the column. */
+.content-day {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 8rem;
+  padding: var(--space-3) var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  background: transparent;
+}
+
+.content-day:nth-child(7n) {
+  border-right: 0;
+}
+
+.content-calendar[data-view='week'] .content-day {
+  min-height: 16rem;
+}
+
+.content-day--outside {
+  background: var(--bg-canvas);
+  color: var(--text-muted);
+}
+
+/* Today is the one filled index in the grid (indigo is the action, today and the viewer's turn). */
+.content-day--today {
+  background: color-mix(in srgb, var(--action-primary-bg) 14%, var(--bg-surface));
+}
+
+.content-day__number {
+  margin: 0;
+  padding: 0 var(--space-2);
+  color: var(--text-secondary);
+  font: var(--label-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.content-day--outside .content-day__number {
+  color: var(--text-muted);
+}
+
+.content-day--today .content-day__number span[aria-hidden='true'] {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-full);
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+  font-weight: 700;
+}
+
+.content-day--today .content-day__number::after {
+  content: ' hoje';
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+
+.content-day__items > li {
+  min-width: 0;
+}
+
+.content-day__items {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-day__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The "+" is one small control in the corner of the day: seen on hover or focus, always where there is no hover. */
+.content-day__tools .ui-menu {
+  position: static;
+}
+
+.content-day__tools .ui-menu__trigger {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  opacity: 0;
+  transition: opacity var(--motion-fast);
+}
+
+.content-day:hover .ui-menu__trigger,
+.content-day:focus-within .ui-menu__trigger,
+.content-day__tools .ui-menu__trigger[aria-expanded='true'] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .content-day__tools .ui-menu__trigger {
+    opacity: 1;
+  }
+}
+
+.content-day__tools .ui-menu__trigger:hover,
+.content-day__tools .ui-menu__trigger:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.content-day__tools .ui-menu__content {
+  top: 2.5rem;
+  right: auto;
+  left: var(--space-2);
+  min-width: 11rem;
+}
+
+.content-day:nth-child(7n + 6) .content-day__tools .ui-menu__content,
+.content-day:nth-child(7n) .content-day__tools .ui-menu__content {
+  right: var(--space-2);
+  left: auto;
+}
+
+/* The story script of a day is a row of its own, the width of the day and 44px tall: a capsule of 20px was a target nobody could press. */
+.content-day__scripts {
+  display: grid;
+  flex: 1 1 100%;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-day__script {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
+  color: var(--text-secondary);
+  font: var(--label-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The mark inside the chip is the state's icon and word; the chip already is the outline. */
+.content-day__script .ui-status-tag {
+  border-color: transparent;
+}
+
+/* The ring of the board's story circle, as the edge of the day's chip: dashed for a draft, violet for a sent script, teal for a recorded one.
+   Drawn without a pseudo-element, which would become part of the button's name. */
+.content-day__script {
+  border-left: 4px dashed var(--status-production-fg);
+}
+
+.content-day__script[data-status='sent'] {
+  border-left-style: solid;
+  border-left-color: var(--status-waiting-fg);
+}
+
+.content-day__script[data-status='recorded'] {
+  border-left-style: solid;
+  border-left-color: var(--status-ready-fg);
+}
+
+.content-day__script:hover,
+.content-day__script:focus-visible {
+  border-color: var(--focus-ring);
+  color: var(--text-primary);
+}
+

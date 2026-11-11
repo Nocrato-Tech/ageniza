@@ -1,0 +1,15 @@
+/* Attention ring of the Avatar: a 2px gap in the colour it sits on, then the ring in the late-state colour, which is 3:1
+   on the canvas and the surface. `--ui-avatar-gap` names the background when it is not the canvas. */
+.ui-avatar--attention {
+  box-shadow: 0 0 0 2px var(--ui-avatar-gap, var(--bg-canvas)), 0 0 0 4px var(--status-late-fg);
+}
+
+.ui-avatar__attention {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+

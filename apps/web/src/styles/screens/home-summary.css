@@ -1,0 +1,198 @@
+/* The summary cards above it: a colour family per card, the 3D icon on its stage leaving by the top, a number and the way forward. */
+.home-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-8) var(--space-4);
+  margin: 0;
+  padding: var(--space-4) 0 0;
+  list-style: none;
+}
+
+.home-summary__card {
+  --b-bg: var(--block-slate-bg);
+  --b-fg: var(--block-slate-fg);
+  --ui-stage-bg: var(--b-bg);
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: var(--space-1);
+  min-height: 11.5rem;
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--b-bg);
+  color: var(--b-fg);
+}
+
+.home-summary__card--violet {
+  --b-bg: var(--block-violet-bg);
+  --b-fg: var(--block-violet-fg);
+}
+
+.home-summary__card--red {
+  --b-bg: var(--block-red-bg);
+  --b-fg: var(--block-red-fg);
+}
+
+.home-summary__label,
+.home-summary__number,
+.home-summary__hint {
+  margin: 0;
+}
+
+.home-summary__label {
+  max-width: 62%;
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.home-summary__number {
+  font: var(--stat-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-summary__hint {
+  font: var(--body-md);
+}
+
+.home-summary__action {
+  display: inline-flex;
+  align-items: center;
+  align-self: end;
+  justify-self: start;
+  gap: var(--space-1);
+  min-height: 2.75rem;
+  margin-top: var(--space-3);
+  color: inherit;
+  font: var(--label-md);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.home-summary__action:hover {
+  text-decoration-thickness: 2px;
+}
+
+.home-summary__action svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+
+@media (max-width: 47.99rem) {
+  .home-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-8) var(--space-3);
+  }
+
+  .home-summary__card {
+    min-height: 0;
+    padding: var(--space-4);
+  }
+
+  /* The stage shrinks with the card: its disc, shadow and box all come from `--ss`. */
+  .home-summary__card > .ui-stage {
+    --ss: var(--stage-size-md);
+    right: var(--space-2);
+  }
+
+  .home-summary__label {
+    max-width: 55%;
+  }
+
+  /* "Esperando o cliente" is "Esperando" on a phone; the rest stays for assistive technology. */
+  .home-summary__label-rest {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+.approval-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.approval-state .ui-icon {
+  color: var(--status-waiting-fg);
+}
+
+.approval-state--expired .ui-icon {
+  color: var(--status-late-fg);
+}
+
+.approval-state .ui-icon > svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+@media (max-width: 40rem) {
+  .awaiting-client__item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .awaiting-client__item .approval-state {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+  }
+}
+
+.agency-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agency-shortcut {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  height: 100%;
+  box-sizing: border-box;
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.agency-shortcut:hover {
+  border-color: var(--focus-ring);
+}
+
+.agency-shortcut__icon,
+.agency-shortcut__chevron {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--text-secondary);
+}
+
+.agency-shortcut__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.agency-shortcut__label {
+  font: var(--title-md);
+}
+
+.agency-shortcut__description {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+

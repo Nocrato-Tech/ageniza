@@ -1,0 +1,44 @@
+/* Avatar, BadgeCard, Select and Pagination: docs/design-system.md section 13 */
+.ui-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
+  color: var(--action-secondary-fg);
+}
+
+.ui-avatar--sm {
+  width: 2rem;
+  height: 2rem;
+}
+
+.ui-avatar--md {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.ui-avatar--lg {
+  width: 4rem;
+  height: 4rem;
+}
+
+.ui-avatar__photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ui-avatar__initials {
+  font: var(--label-md);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.ui-avatar--lg .ui-avatar__initials {
+  font: var(--heading-md);
+}
+

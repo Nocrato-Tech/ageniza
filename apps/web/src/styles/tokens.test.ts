@@ -2,9 +2,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { readGlobalCss } from './read-css';
+
 const STYLES = __dirname;
 const FONTS = join(STYLES, '..', '..', 'node_modules', '@fontsource-variable');
-const read = (file: string) => readFileSync(join(STYLES, file), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
+const read = (file: string) => (file === 'globals.css' ? readGlobalCss() : readFileSync(join(STYLES, file), 'utf8')).replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
 
 const declarations = (css: string, selector: string) => {
   const start = css.indexOf(`${selector} {`);
@@ -93,7 +95,7 @@ describe('design tokens (one light theme)', () => {
   it('has no dark theme left: no stylesheet, no override, no attribute selector', () => {
     expect(existsSync(join(STYLES, 'themes', 'dark.css'))).toBe(false);
     for (const file of ['globals.css', 'tokens/semantic.css', 'tokens/primitives.css']) expect(read(file), file).not.toContain('data-theme');
-    expect(readFileSync(join(STYLES, 'globals.css'), 'utf8')).not.toContain('themes/');
+    expect(readGlobalCss()).not.toContain('themes/');
   });
 
   it('sets the radius scale, the easing and the two shadows', () => {

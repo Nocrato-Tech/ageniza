@@ -1,0 +1,238 @@
+.content-folders,
+.content-folders__section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.content-folders__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* The folder in use: a tint block with its mark leaving through the top edge, as the summary blocks of the client do. */
+.content-folders__feature {
+  --ui-stage-bg: var(--block-indigo-bg);
+  position: relative;
+  margin-top: var(--space-6);
+  padding: var(--space-6);
+  padding-right: 7rem;
+  border-radius: var(--radius-xl);
+  background: var(--ui-stage-bg);
+  color: var(--block-indigo-fg);
+}
+
+.content-folders__feature-text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.content-folders__eyebrow {
+  margin: 0;
+  font: var(--caption);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.content-folders h3,
+.content-folders h4 {
+  margin: 0;
+  font: var(--heading-md);
+  overflow-wrap: anywhere;
+}
+
+.content-folders h4 {
+  font: var(--label-md);
+}
+
+.content-folders__glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.content-folders__glyph > svg {
+  width: 1rem;
+  height: 1rem;
+  stroke-width: 1.75;
+}
+
+.content-folders__path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.content-folders__path li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.content-folders__list,
+.folder-media__grid,
+.content-folders__skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11.5rem), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-folders__list > li {
+  display: grid;
+  min-width: 0;
+}
+
+/* A folder card: the folder on its small stage, its name, the Padrão mark; the arrow says it opens. */
+.content-folder {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  gap: var(--space-3) var(--space-2);
+  min-height: 8.5rem;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
+}
+
+.content-folder:hover {
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
+}
+
+.content-folder:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The right margin takes the whole row, so the name and the mark always start the next line under the stage. */
+.content-folder > .content-folder__stage {
+  margin: calc(var(--space-1) * -1) 100% 0 calc(var(--space-1) * -1);
+}
+
+.content-folder__chevron {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: inline-flex;
+  color: var(--text-secondary);
+}
+
+.content-folder__chevron > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  stroke-width: 1.75;
+}
+
+.content-folder__name {
+  min-width: 0;
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+/* "Nova pasta" is a card too, dashed: a button that takes the card's place in the grid. */
+.content-folders .content-folder--new.ui-button {
+  flex-direction: column;
+  justify-content: center;
+  align-content: center;
+  gap: var(--space-2);
+  min-height: 8.5rem;
+  height: auto;
+  border: 1.5px dashed var(--color-indigo-200);
+  background: transparent;
+  color: var(--text-link);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.content-folders .content-folder--new.ui-button:hover {
+  background: var(--bg-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+.content-folders .content-folder--new .ui-icon {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content-folder:hover {
+    transform: none;
+  }
+}
+
+.content-folders__note {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.content-folders__empty {
+  padding: var(--space-6) var(--space-4);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.content-folders__empty .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+
+.content-folders__empty .ui-empty-state__title {
+  font: var(--label-md);
+}
+
+.content-folders__empty .ui-empty-state__description {
+  font: var(--body-md);
+}
+
+.content-folders__skeleton > .ui-skeleton {
+  height: 8.5rem;
+  border-radius: var(--radius-lg);
+}
+
+/* An empty state with its folder on the stage: the dashed block is the wrapper's, the sentence inside it is bare. */
+.content-folders__blank {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-4);
+  border: 1.5px dashed var(--color-indigo-200);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, var(--color-indigo-50), var(--bg-surface) 70%);
+}
+
+.content-folders__blank > .ui-empty-state.content-folders__empty {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+

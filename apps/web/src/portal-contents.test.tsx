@@ -14,6 +14,7 @@ import { portalClientBody } from './portal-fixture.js';
 import { gateReads, retryWhileHeld, serverFailure } from './portal-retry-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
+import { readGlobalCss } from './styles/read-css';
 
 afterEach(cleanup);
 
@@ -1072,7 +1073,7 @@ describe('the portal Conteúdos (#269)', () => {
   });
 
   describe('on a phone', () => {
-    const css = (): string => readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+    const css = (): string => readGlobalCss().replace(/\r\n/g, '\n');
     /** The block that opens with `selector`, not one that merely ends with it (a line of a longer selector list). */
     const rule = (selector: string): string => {
       const text = css();
