@@ -19,6 +19,8 @@ import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
 import { todayInSaoPaulo } from './content-dates.js';
 import { contentsError, createPortalContentsApi } from './portal-contents-fixture.js';
 import { createPortalScriptsApi, portalStudyBody, scriptError } from './portal-fixture.js';
+import { createPortalMaterialRequestsApi } from './portal-material-requests-fixture.js';
+import { portalMaterialRequestsKey } from './portal-material-requests.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
@@ -110,6 +112,8 @@ interface Scenario {
   readonly scripts?: ReturnType<typeof createPortalScriptsApi>;
   /** The contents of the portal; none by default, as a client with nothing planned for any month. */
   readonly contents?: ReturnType<typeof createPortalContentsApi>;
+  /** The requests for material of the portal; none by default, as a client the agency asked nothing of. */
+  readonly materialRequests?: ReturnType<typeof createPortalMaterialRequestsApi>;
 }
 
 const makeFetch = (scenario: Scenario = {}) => {
@@ -127,6 +131,12 @@ const makeFetch = (scenario: Scenario = {}) => {
       const answered = (scenario.scripts ?? createPortalScriptsApi(CLIENT_ID, () => new Date())).handle(url, method);
       if (answered !== undefined) return answered;
     }
+    if (/^\/clients\/[^/]+\/material-requests$/.test(path) && !path.includes(CLIENT_ID)) {
+      return json({ data: [], meta: { page: 1, pageSize: 20, totalItems: 0, totalPages: 1 } });
+    }
+    const materialBody = typeof init?.body === 'string' ? JSON.parse(init.body) as unknown : undefined;
+    const material = (scenario.materialRequests ?? createPortalMaterialRequestsApi(CLIENT_ID)).handle(url, method, materialBody);
+    if (material !== undefined) return material;
     if (path.startsWith(`/clients/${CLIENT_ID}/contents`)) {
       const answered = (scenario.contents ?? createPortalContentsApi(CLIENT_ID)).handle(url, method);
       if (answered !== undefined) return answered;
@@ -1001,6 +1011,305 @@ describe('the Início: approvals and the script of today (#271)', () => {
     });
   });
 
+  describe('A agência pediu: the open requests for material', () => {
+    const materialApi = () => createPortalMaterialRequestsApi(CLIENT_ID);
+    const REQUESTS = `GET /clients/${CLIENT_ID}/material-requests`;
+    const requestsBlock = (): HTMLElement => screen.getByRole('region', { name: 'A agência pediu' });
+    const bodiesOf = (): (string | null)[] => Array.from(requestsBlock().querySelectorAll('.portal-request__body')).map((node) => node.textContent);
+    const serverError = (): Response => json({ error: { code: 'INTERNAL_ERROR', message: 'MENSAGEM DO SERVIDOR' } }, 500);
+
+    it('is not there at all with no open request, and is no "nothing pending" either', async () => {
+      const api = materialApi();
+      api.seed({ body: 'Já resolvido', state: 'resolved' });
+      renderPortal(makeFetch({ materialRequests: api }).impl);
+      await screen.findByRole('heading', { name: 'Olá, Maria' });
+      await waitFor(() => expect(api.calls).toContain(REQUESTS));
+      await screen.findByRole('heading', { name: 'Nesta semana' });
+
+      expect(screen.queryByRole('region', { name: 'A agência pediu' })).toBeNull();
+      expect(screen.queryByText('A agência pediu')).toBeNull();
+      expect(screen.queryByText('Já resolvido')).toBeNull();
+      expect(screen.queryByText(/nenhum pedido/i)).toBeNull();
+    });
+
+    it('lists what the API returned, in its order, each with the text, who asked and by when', async () => {
+      const api = materialApi();
+      api.seed({ body: 'Sem prazo nenhum' });
+      api.seed({ body: 'Envie 3 fotos da equipe', dueOn: '2026-10-20' });
+      api.seed({ body: 'Mande o logotipo em PNG', dueOn: '2026-10-15' });
+      api.seed({ body: 'Pedido já resolvido', dueOn: '2026-10-12', state: 'resolved' });
+      renderPortal(makeFetch({ materialRequests: api }).impl);
+
+      await screen.findByRole('region', { name: 'A agência pediu' });
+      expect(within(requestsBlock()).getByRole('heading', { level: 2, name: 'A agência pediu' })).toBeTruthy();
+      expect(bodiesOf()).toEqual(['Mande o logotipo em PNG', 'Envie 3 fotos da equipe', 'Sem prazo nenhum']);
+      const metas = Array.from(requestsBlock().querySelectorAll('.portal-request__meta')).map((node) => node.textContent);
+      expect(metas).toEqual(['Pedido de Agência UmEntregar até 15/10', 'Pedido de Agência UmEntregar até 20/10', 'Pedido de Agência Um']);
+      expect(within(requestsBlock()).queryByText('Pedido já resolvido')).toBeNull();
+      expect(api.calls.filter((call) => call.includes('material-requests'))).toEqual([REQUESTS]);
+    });
+
+    it('says "venceu" only when the deadline day has passed in São Paulo, not in UTC (01:30Z is still the 11th)', async () => {
+      const api = materialApi();
+      api.seed({ body: 'Venceu ontem', dueOn: '2026-10-10' });
+      api.seed({ body: 'Vence hoje', dueOn: TODAY });
+      api.seed({ body: 'Vence amanhã', dueOn: TOMORROW });
+      renderPortal(makeFetch({ materialRequests: api }).impl);
+
+      await screen.findByRole('region', { name: 'A agência pediu' });
+      const itemOf = (text: string): HTMLElement => within(requestsBlock()).getByText(text).closest('li') as HTMLElement;
+      expect(within(itemOf('Venceu ontem')).getByText('Entregar até 10/10')).toBeTruthy();
+      expect(within(itemOf('Venceu ontem')).getByText('venceu')).toBeTruthy();
+      expect(within(itemOf('Vence hoje')).getByText('Entregar até 11/10')).toBeTruthy();
+      expect(within(itemOf('Vence hoje')).queryByText('venceu')).toBeNull();
+      expect(within(itemOf('Vence amanhã')).queryByText('venceu')).toBeNull();
+      expect(requestsBlock().querySelectorAll('.ui-late-badge')).toHaveLength(1);
+
+      // The thread says the same of the same request, on the same day.
+      fireEvent.click(screen.getByRole('button', { name: 'Responder Venceu ontem' }));
+      const late = await screen.findByRole('dialog', { name: 'Pedido de material' });
+      expect(within(late).getByText('venceu')).toBeTruthy();
+      fireEvent.click(within(late).getByRole('button', { name: 'Fechar conversa' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Pedido de material' })).toBeNull());
+      fireEvent.click(screen.getByRole('button', { name: 'Responder Vence hoje' }));
+      const today = await screen.findByRole('dialog', { name: 'Pedido de material' });
+      expect(within(today).getByText('Entregar até 11/10')).toBeTruthy();
+      expect(within(today).queryByText('venceu')).toBeNull();
+    });
+
+    it('names each "Responder" by its request and answers on the right thread (two requests)', async () => {
+      const api = materialApi();
+      const first = api.seed({ body: 'Envie 3 fotos da equipe', dueOn: '2026-10-20' });
+      const second = api.seed({ body: 'Mande o logotipo em PNG', dueOn: '2026-10-25' });
+      renderPortal(makeFetch({ materialRequests: api }).impl);
+      await screen.findByRole('region', { name: 'A agência pediu' });
+
+      expect(screen.getAllByRole('button', { name: /^Responder/ }).map((button) => button.textContent)).toEqual(['Responder', 'Responder']);
+      fireEvent.click(screen.getByRole('button', { name: 'Responder Mande o logotipo em PNG' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Pedido de material' });
+      expect(await within(dialog).findByText('Mande o logotipo em PNG')).toBeTruthy();
+      expect(within(dialog).getByText('Lucas')).toBeTruthy();
+      expect(within(dialog).getByText('Entregar até 25/10')).toBeTruthy();
+      expect(within(dialog).queryByRole('button', { name: 'Resolver' })).toBeNull();
+      expect(within(dialog).queryByText('Envie 3 fotos da equipe')).toBeNull();
+
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'Segue o logotipo' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+      await waitFor(() => expect(api.posted).toEqual([{ threadId: second.threadId, body: 'Segue o logotipo' }]));
+      expect(await within(dialog).findByText('Segue o logotipo')).toBeTruthy();
+      expect(api.rows.find((row) => row.threadId === first.threadId)!.comments).toHaveLength(1);
+      expect(api.calls).toContain(`POST /clients/${CLIENT_ID}/threads/${second.threadId}/comments`);
+      // The request stays in the list: only the agency resolves.
+      expect(bodiesOf()).toEqual(['Envie 3 fotos da equipe', 'Mande o logotipo em PNG']);
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar conversa' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Pedido de material' })).toBeNull());
+      fireEvent.click(screen.getByRole('button', { name: 'Responder Envie 3 fotos da equipe' }));
+      const again = await screen.findByRole('dialog', { name: 'Pedido de material' });
+      expect(await within(again).findByText('Envie 3 fotos da equipe')).toBeTruthy();
+      expect(within(again).queryByText('Segue o logotipo')).toBeNull();
+      fireEvent.change(within(again).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'Mando amanhã' } });
+      fireEvent.click(within(again).getByRole('button', { name: 'Responder' }));
+      await waitFor(() => expect(api.posted).toEqual([
+        { threadId: second.threadId, body: 'Segue o logotipo' },
+        { threadId: first.threadId, body: 'Mando amanhã' }
+      ]));
+    });
+
+    it('refuses an empty answer without sending, and says it when the send fails, without the words of the server', async () => {
+      const api = materialApi();
+      api.seed({ body: 'Envie 3 fotos da equipe' });
+      renderPortal(makeFetch({ materialRequests: api }).impl);
+      fireEvent.click(await screen.findByRole('button', { name: 'Responder Envie 3 fotos da equipe' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Pedido de material' });
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+      expect(await within(dialog).findByText('Escreva a mensagem.')).toBeTruthy();
+      expect(api.posted).toEqual([]);
+
+      api.state.failPost = serverError;
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'Mando amanhã' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+      expect(await within(dialog).findByText('Não foi possível enviar. Tente de novo.')).toBeTruthy();
+      expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+    });
+
+    it('drops a request from the list, after the next read, once the agency resolved it, and keeps the others', async () => {
+      const api = materialApi();
+      const done = api.seed({ body: 'Envie 3 fotos da equipe', dueOn: '2026-10-20' });
+      const kept = api.seed({ body: 'Mande o logotipo em PNG', dueOn: '2026-10-25' });
+      const { queryClient } = renderPortal(makeFetch({ materialRequests: api }).impl);
+      await screen.findByRole('region', { name: 'A agência pediu' });
+      expect(bodiesOf()).toEqual(['Envie 3 fotos da equipe', 'Mande o logotipo em PNG']);
+
+      api.resolve(done.threadId);
+      expect(bodiesOf()).toEqual(['Envie 3 fotos da equipe', 'Mande o logotipo em PNG']);
+      await act(async () => { await queryClient.invalidateQueries({ queryKey: portalMaterialRequestsKey(CLIENT_ID) }); });
+      await waitFor(() => expect(bodiesOf()).toEqual(['Mande o logotipo em PNG']));
+
+      api.resolve(kept.threadId);
+      await act(async () => { await queryClient.invalidateQueries({ queryKey: portalMaterialRequestsKey(CLIENT_ID) }); });
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'A agência pediu' })).toBeNull());
+    });
+
+    it('closes the thread that left the list instead of leaving an answer box on a resolved request', async () => {
+      const api = materialApi();
+      const request = api.seed({ body: 'Envie 3 fotos da equipe' });
+      const { queryClient } = renderPortal(makeFetch({ materialRequests: api }).impl);
+      fireEvent.click(await screen.findByRole('button', { name: 'Responder Envie 3 fotos da equipe' }));
+      await screen.findByRole('dialog', { name: 'Pedido de material' });
+
+      api.resolve(request.threadId);
+      await act(async () => { await queryClient.invalidateQueries({ queryKey: portalMaterialRequestsKey(CLIENT_ID) }); });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Pedido de material' })).toBeNull());
+      expect(screen.queryByRole('region', { name: 'A agência pediu' })).toBeNull();
+    });
+
+    it('has no way to open a request: no "Pedir material" and no new conversation on the Início, in the thread or in Marca', async () => {
+      const api = materialApi();
+      api.seed({ body: 'Envie 3 fotos da equipe' });
+      renderPortal(makeFetch({ materialRequests: api }).impl);
+      fireEvent.click(await screen.findByRole('button', { name: 'Responder Envie 3 fotos da equipe' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Pedido de material' });
+      await within(dialog).findByText('Envie 3 fotos da equipe');
+
+      const creating = /pedir material|novo pedido|nova conversa|iniciar conversa/i;
+      expect(screen.queryAllByRole('button', { name: creating })).toEqual([]);
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar conversa' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Pedido de material' })).toBeNull());
+      expect(screen.queryAllByRole('button', { name: creating })).toEqual([]);
+      expect(screen.queryAllByRole('link', { name: creating })).toEqual([]);
+
+      clickTab('Marca');
+      await screen.findByRole('heading', { name: 'Sua marca' });
+      expect(screen.queryAllByRole('button', { name: creating })).toEqual([]);
+      expect(screen.queryByText(/pedir material/i)).toBeNull();
+      expect(api.calls.some((call) => call.startsWith('POST'))).toBe(false);
+    });
+
+    it('keeps the answer on screen but blocked, with the neutral reason, while the agency is read-only', async () => {
+      const api = materialApi();
+      api.seed({ body: 'Envie 3 fotos da equipe' });
+      renderPortal(makeFetch({ materialRequests: api, portal: () => json(portalClient({ agencyReadOnly: true })) }).impl);
+      fireEvent.click(await screen.findByRole('button', { name: 'Responder Envie 3 fotos da equipe' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Pedido de material' });
+
+      expect(within(dialog).queryByRole('textbox')).toBeNull();
+      const blocked = within(dialog).getByRole('button', { name: 'Responder' });
+      expect(blocked.getAttribute('aria-disabled')).toBe('true');
+      fireEvent.click(blocked);
+      expect(api.posted).toEqual([]);
+    });
+
+    it('shows the failure only in the block, with Tentar de novo that reads again, and never an empty or good-news state', async () => {
+      const api = materialApi();
+      api.seed({ body: 'Envie 3 fotos da equipe' });
+      api.state.failList = serverError;
+      renderPortal(makeFetch({ materialRequests: api }).impl);
+
+      const block = await screen.findByRole('region', { name: 'A agência pediu' }, { timeout: 5000 });
+      const alert = within(block).getByRole('alert');
+      expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+      expect(within(alert).getByRole('heading', { level: 3, name: 'Não foi possível carregar os pedidos da agência.' })).toBeTruthy();
+      expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+      expect(within(block).queryByText('Envie 3 fotos da equipe')).toBeNull();
+      expect(block.querySelector('.ui-empty-state--good-news')).toBeNull();
+      expect(screen.getByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
+      expect(await screen.findByRole('heading', { name: 'Nesta semana' })).toBeTruthy();
+      const before = api.calls.filter((call) => call === REQUESTS).length;
+
+      api.state.failList = null;
+      fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
+      expect(await within(requestsBlock()).findByText('Envie 3 fotos da equipe')).toBeTruthy();
+      expect(api.calls.filter((call) => call === REQUESTS).length).toBe(before + 1);
+      expect(screen.queryByText('Não foi possível carregar os pedidos da agência.')).toBeNull();
+    });
+
+    it('shows only the requests of the client of the address, for a person who belongs to two clients', async () => {
+      const api = materialApi();
+      api.seed({ body: 'Envie 3 fotos da equipe' });
+      const { probe } = renderPortal(makeFetch({ materialRequests: api }).impl);
+      await screen.findByRole('region', { name: 'A agência pediu' });
+
+      act(() => { probe.navigate(portalUrl('inicio', OTHER_CLIENT_ID)); });
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'A agência pediu' })).toBeNull());
+      expect(screen.queryByText('Envie 3 fotos da equipe')).toBeNull();
+      expect(api.calls.filter((call) => call === REQUESTS)).toHaveLength(1);
+    });
+
+    it('is the first block of the Início, above what waits for approval', async () => {
+      const api = materialApi();
+      api.seed({ body: 'Envie 3 fotos da equipe' });
+      const { container } = renderPortal(makeFetch({ materialRequests: api, portal: () => withHome({ contentsAwaitingApproval: 2 }) }).impl);
+      await screen.findByRole('heading', { name: '2 posts esperando sua aprovação' });
+      await screen.findByRole('region', { name: 'A agência pediu' });
+      const main = container.querySelector('.portal-home__main') as HTMLElement;
+      expect(main.firstElementChild!.classList.contains('portal-requests')).toBe(true);
+    });
+  });
+
+  describe('the three empty states of the Início', () => {
+    it('says "Nada para aprovar" as good news when the count answered zero, keeping the next action under it', async () => {
+      renderPortal(makeFetch().impl);
+      const good = (await screen.findByRole('heading', { level: 2, name: 'Nada para aprovar' })).closest('.ui-empty-state') as HTMLElement;
+      expect(good.classList.contains('ui-empty-state--good-news')).toBe(true);
+      expect(good.querySelector('.ui-empty-state__icon')).toBeTruthy();
+      expect(within(good).getByText('Quando a agência enviar um post para aprovação, ele aparece aqui.')).toBeTruthy();
+      expect(good.hasAttribute('role')).toBe(false);
+      expect(screen.getByRole('link', { name: /Conheça o estudo da sua marca/ })).toBeTruthy();
+    });
+
+    it('never says it while something waits, even when the covers of what waits could not be read', async () => {
+      const contents = createPortalContentsApi(CLIENT_ID);
+      contents.state.failAwaiting = () => contentsError(500, 'INTERNAL_ERROR');
+      renderPortal(makeFetch({ portal: () => withHome({ contentsAwaitingApproval: 2 }), contents }).impl);
+      await screen.findByRole('heading', { name: '2 posts esperando sua aprovação' });
+      expect(await screen.findByRole('alert', undefined, { timeout: 5000 })).toBeTruthy();
+      expect(screen.queryByText('Nada para aprovar')).toBeNull();
+      expect(document.querySelector('.ui-empty-state--good-news')).toBeNull();
+    });
+
+    it('says a week with nothing planned as a first use, and a week that could not be read as a failure, never as the first use', async () => {
+      const api = createPortalContentsApi(CLIENT_ID);
+      api.state.failPeriod = () => contentsError(500, 'INTERNAL_ERROR');
+      renderPortal(makeFetch({ contents: api }).impl);
+      const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
+      expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+      expect(within(alert).getByText('Não foi possível carregar a semana.')).toBeTruthy();
+      expect(screen.queryByText('Nenhum post planejado para esta semana')).toBeNull();
+      cleanup();
+
+      const empty = renderPortal(makeFetch().impl);
+      const first = (await screen.findByRole('heading', { level: 3, name: 'Nenhum post planejado para esta semana' })).closest('.ui-empty-state') as HTMLElement;
+      expect(first.classList.contains('ui-empty-state--good-news')).toBe(false);
+      expect(first.classList.contains('ui-empty-state--failure')).toBe(false);
+      expect(empty.container.querySelector('.ui-empty-state--failure')).toBeNull();
+    });
+
+    it('does not say nothing is planned when the week has posts and they all wait for approval', async () => {
+      const api = createPortalContentsApi(CLIENT_ID);
+      api.seed({ publishOn: '2026-10-08', title: 'Esperando você', status: 'awaiting_approval' });
+      renderPortal(makeFetch({ contents: api, portal: () => withHome({ contentsAwaitingApproval: 1 }) }).impl);
+      const section = (await screen.findByRole('heading', { name: 'Nesta semana' })).closest('section') as HTMLElement;
+      expect(await within(section).findByRole('heading', { level: 3, name: 'Os posts desta semana esperam sua aprovação' })).toBeTruthy();
+      expect(within(section).queryByText('Nenhum post planejado para esta semana')).toBeNull();
+    });
+
+    it('shows the failure of the script of today in its block, with a retry, and no good news on top of it', async () => {
+      const base = makeFetch().impl;
+      let broken = true;
+      const impl: typeof fetch = async (input, init) => (broken && String(input).includes('/story-scripts') ? scriptError(500, 'INTERNAL_ERROR') : base(input, init));
+      renderPortal(impl);
+      const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
+      expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+      expect(within(alert).getByText('Não foi possível carregar o roteiro de hoje.')).toBeTruthy();
+      expect(within(alert.closest('section') as HTMLElement).queryByText('Nada para aprovar')).toBeNull();
+      broken = false;
+      fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
+      await waitFor(() => expect(screen.queryByText('Não foi possível carregar o roteiro de hoje.')).toBeNull());
+    });
+  });
+
   describe('on a phone', () => {
     const css = (): string => readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
     const rule = (selector: string): string => {
@@ -1023,6 +1332,15 @@ describe('the Início: approvals and the script of today (#271)', () => {
       expect(rule('.portal-shell > .portal-content')).toMatch(/flex:\s*1;/);
       expect(rule('.portal-nav')).toMatch(/position:\s*sticky;/);
       expect(rule('.portal-nav')).toMatch(/bottom:\s*0;/);
+    });
+
+    it('lets the requests of the agency shrink and their text wrap, and styles them with tokens only', () => {
+      expect(rule('.portal-requests')).toMatch(/min-width:\s*0;/);
+      expect(rule('.portal-request__body')).toMatch(/overflow-wrap:\s*anywhere;/);
+      expect(rule('.portal-request__body')).toMatch(/white-space:\s*pre-wrap;/);
+      for (const selector of ['.portal-requests', '.portal-requests__list', '.portal-request', '.portal-request__body', '.portal-request__meta', '.portal-requests__more']) {
+        expect(rule(selector)).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|(^|[^-])(width|min-width):\s*[\d.]+(px|rem)|font(-size)?:\s*[\d.]+(px|rem)/);
+      }
     });
 
     it('lets every box of the script shrink and every text wrap, with no fixed width that could push a 390 px screen sideways', async () => {

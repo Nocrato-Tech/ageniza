@@ -4781,6 +4781,47 @@ html:has(.portal-shell) {
   height: 1.25rem;
 }
 
+/* "A agência pediu": the open requests for material, each a block with the text, who asked and by when. */
+.portal-requests {
+  min-width: 0;
+}
+
+.portal-requests__list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-request {
+  justify-items: start;
+}
+
+.portal-request__body {
+  margin: 0;
+  font: var(--body-md);
+  font-weight: 600;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.portal-request__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-requests__more {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
 .portal-today {
   min-width: 0;
 }
@@ -4869,6 +4910,13 @@ html:has(.portal-shell) {
 }
 
 .portal-empty.ui-empty-state--mascot .ui-empty-state__title {
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+/* Good news and failure carry an icon and a line, not a headline: they are a block of the screen, not the screen. */
+.portal-empty.ui-empty-state--good-news .ui-empty-state__title,
+.portal-empty.ui-empty-state--failure .ui-empty-state__title {
   font: var(--body-md);
   font-weight: 600;
 }

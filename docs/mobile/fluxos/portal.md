@@ -68,6 +68,14 @@ No detalhe de um conteúdo aprovado, **Desfazer aprovação** abre uma confirma�
 
 O portal **nunca** vê subtarefa, responsável, prazo interno nem roteiro em rascunho. A API não devolve esses dados. O prazo da aprovação (`approval.dueOn`) não é prazo interno: é o que a agência pediu ao cliente.
 
+## Estados vazios
+
+Uma lista do portal sem nada tem três formas (decisão de 2026-11-10, [três tipos de estado vazio](../../business/decisions/2026-11-10-tres-tipos-de-estado-vazio.md)), e cada uma diz uma coisa só:
+
+- **Primeiro uso:** a agência ainda não compartilhou nada ("Nenhum post planejado para esta semana", "Sua agência ainda está preparando o estudo da sua marca").
+- **Boa notícia:** "Nada para aprovar", só quando a consulta respondeu e nada espera a decisão da pessoa. Ela fala só de aprovação: um pedido de material tem o seu bloco.
+- **Falha:** a consulta não respondeu. A tela diz isso e oferece "Tentar de novo", nunca "nada para aprovar" nem "nenhum post".
+
 ## Conversas
 
 - A pessoa abre conversas e comenta, mas não as resolve. Só a agência resolve.
@@ -83,6 +91,7 @@ A agência pode pedir material ao cliente, com prazo opcional (decisão: [pedido
 2. Quem tem acesso a mais de um cliente vê, em cada Início, só os pedidos daquele cliente.
 3. Para responder, comente com `POST …/threads/:threadId/comments`, usando o `threadId` do item. O histórico da conversa vem de `GET …/threads/:threadId/comments`, que também serve para um pedido já resolvido.
 4. Só a agência resolve. Quando ela resolve, o pedido **sai da lista**. Se o cliente comentar de novo num pedido resolvido, ele volta, como em toda conversa.
+5. Sem pedido aberto, o bloco "A agência pediu" **não aparece**: ele é opcional e não diz que não há nada pendente. Se a consulta falhar, o bloco mostra a falha com "Tentar de novo", e só ele.
 
 - A pessoa do portal **não abre** pedido de material: a rota de abrir conversa responde `400` a esse assunto.
 - O pedido não entra em "com resposta da agência" do resumo do Início.
