@@ -7057,61 +7057,81 @@ html:has(.portal-post__bar) {
   font-weight: 600;
 }
 
-/* A counter of the month: the number and the state, a dot of the state's own token beside it; a zero reads quieter. */
+/* The counters of the month read like the board's filter row: a pill for each state, in the state's own family (violet waits, teal is
+   ready, red is late). They count, they do not filter, so they are plain items. The word is always there: colour is never the only signal. */
 .contents__summary {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-6);
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .contents__count {
-  display: flex;
-  align-items: baseline;
+  --count-bg: var(--status-production-bg);
+  --count-fg: var(--status-production-text);
+
+  display: inline-flex;
+  align-items: center;
   gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0 var(--space-3) 0 var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  box-shadow: inset 0 0 0 1px var(--border-default);
   color: var(--text-secondary);
   font: var(--caption);
 }
 
-.contents__count::before {
-  content: '';
-  align-self: center;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: var(--radius-full);
-  background: var(--status-production-fg);
+.contents__count[data-status='awaiting_approval'] {
+  --count-bg: var(--status-waiting-bg);
+  --count-fg: var(--status-waiting-text);
 }
 
-.contents__count[data-status='awaiting_approval']::before {
-  background: var(--status-waiting-fg);
+.contents__count[data-status='adjusting'] {
+  --count-bg: var(--status-adjust-bg);
+  --count-fg: var(--status-adjust-text);
 }
 
-.contents__count[data-status='adjusting']::before {
-  background: var(--status-adjust-fg);
+.contents__count[data-status='approved'] {
+  --count-bg: var(--status-ready-bg);
+  --count-fg: var(--status-ready-text);
 }
 
-.contents__count[data-status='approved']::before {
-  background: var(--status-ready-fg);
-}
-
-.contents__count[data-status='published']::before {
-  background: var(--status-published-fg);
-}
-
-.contents__count[data-status='late']::before {
-  background: var(--status-late-fg);
+.contents__count[data-status='late'] {
+  --count-bg: var(--status-late-bg);
+  --count-fg: var(--status-late-text);
 }
 
 .contents__count-number {
-  color: var(--text-primary);
-  font: var(--title-md);
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--count-bg);
+  color: var(--count-fg);
+  font: var(--label-md);
   font-variant-numeric: tabular-nums;
 }
 
+.contents__count-label {
+  color: var(--text-primary);
+}
+
+.contents__count[data-empty] {
+  background: transparent;
+}
+
 .contents__count[data-empty] .contents__count-number {
+  background: var(--bg-hover);
   color: var(--text-muted);
+}
+
+.contents__count[data-empty] .contents__count-label {
+  color: var(--text-secondary);
 }
 
 .contents__actions,
@@ -7132,8 +7152,8 @@ html:has(.portal-post__bar) {
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
@@ -7153,7 +7173,8 @@ html:has(.portal-post__bar) {
 .contents__period-title {
   min-width: 11rem;
   margin: 0 auto 0 0;
-  font: var(--heading-lg);
+  font: var(--heading-xl);
+  letter-spacing: -0.01em;
 }
 
 .contents__skeleton {
@@ -7235,10 +7256,11 @@ html:has(.portal-post__bar) {
 }
 
 .content-calendar__weekdays {
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font: var(--label-sm);
-  letter-spacing: 0.06em;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -7282,15 +7304,24 @@ html:has(.portal-post__bar) {
 .content-day__number {
   margin: 0;
   padding: 0 var(--space-2);
+  color: var(--text-secondary);
   font: var(--label-md);
   font-variant-numeric: tabular-nums;
 }
 
+.content-day--outside .content-day__number {
+  color: var(--text-muted);
+}
+
 .content-day--today .content-day__number span[aria-hidden='true'] {
-  padding: 0 0.3em;
-  border-radius: 3px 7px 4px 8px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-full);
   background: var(--action-primary-bg);
   color: var(--action-primary-fg);
+  font-weight: 700;
 }
 
 .content-day--today .content-day__number::after {
@@ -7403,20 +7434,39 @@ html:has(.portal-post__bar) {
   border-color: transparent;
 }
 
+/* The ring of the board's story circle, as the edge of the day's chip: dashed for a draft, violet for a sent script, teal for a recorded one.
+   Drawn without a pseudo-element, which would become part of the button's name. */
+.content-day__script {
+  border-left: 4px dashed var(--status-production-fg);
+}
+
+.content-day__script[data-status='sent'] {
+  border-left-style: solid;
+  border-left-color: var(--status-waiting-fg);
+}
+
+.content-day__script[data-status='recorded'] {
+  border-left-style: solid;
+  border-left-color: var(--status-ready-fg);
+}
+
 .content-day__script:hover,
 .content-day__script:focus-visible {
   border-color: var(--focus-ring);
   color: var(--text-primary);
 }
 
+/* "Stories do mês": the scripts of the period as a strip of circles above the calendar. The day is the circle and the state is its ring
+   (dashed draft, violet sent, teal recorded) and the tag below it, so the state is never colour alone. The circle is drawn from the item's
+   data, not repeated in the markup, so the row still reads as "day, state, open" to a screen reader; the whole item is the button. */
 .story-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
   min-width: 0;
   padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
@@ -7430,7 +7480,7 @@ html:has(.portal-post__bar) {
 
 .story-list__title {
   margin: 0;
-  font: var(--heading-lg);
+  font: var(--title-md);
 }
 
 /* The empty state of the list reads like the roster's: the block and its text centred together, never a centred block with left-aligned text. */
@@ -7440,42 +7490,98 @@ html:has(.portal-post__bar) {
 }
 
 .story-list__items {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex;
+  gap: var(--space-4);
   margin: 0;
-  padding: 0;
+  padding: var(--space-1) var(--space-1) var(--space-2);
+  overflow-x: auto;
   list-style: none;
+  scrollbar-width: thin;
 }
 
 .story-list__item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  min-width: 0;
-  padding: var(--space-2) 0;
-  border-top: 1px solid var(--border-subtle);
+  --story-ring: var(--status-production-fg);
+
+  position: relative;
+  display: grid;
+  flex: none;
+  justify-items: center;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 5rem;
+  min-height: 2.75rem;
+  padding: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+  text-align: center;
 }
 
-.story-list__item:first-child {
-  border-top: 0;
+.story-list__item[data-status='sent'] {
+  --story-ring: var(--status-waiting-fg);
 }
 
+.story-list__item[data-status='recorded'] {
+  --story-ring: var(--status-ready-fg);
+}
+
+.story-list__item::before {
+  content: attr(data-day);
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 3px solid var(--story-ring);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.story-list__item[data-status='draft']::before {
+  border-style: dashed;
+  border-width: 2px;
+}
+
+.story-list__item::after {
+  content: attr(data-weekday) ' ' attr(data-day);
+  order: 1;
+  color: var(--text-primary);
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+.story-list__item .ui-status-tag {
+  order: 2;
+}
+
+/* The full date is the item's name for who reads it aloud; the circle and its short label are what is seen. */
 .story-list__day {
-  flex: 1 1 14rem;
-  min-width: 0;
-  font: var(--body-md);
-  overflow-wrap: anywhere;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.story-list__item > :last-child {
-  margin-left: auto;
+/* The button is the whole item, a press anywhere on the circle or its words opens the script. */
+.story-list .story-list__item > .ui-button {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: transparent;
+  font-size: 0;
 }
 
-@media (max-width: 40rem) {
-  .story-list__day {
-    flex-basis: 100%;
-  }
+.story-list .story-list__item > .ui-button:hover {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
 
 .story-script__status {
@@ -7558,34 +7664,30 @@ html:has(.portal-post__bar) {
   gap: var(--space-3);
 }
 
-/* The card is a compact tile on the canvas: the state's token is the one colour it carries (a bar at the edge and a faint wash),
-   and the late card trades it for the red of the state, so lateness is the only strong signal. */
+/* The card is a compact tile tinted by its format (carousel teal, reels violet, every other one neutral), as on the board: the format
+   says what it is, the state is the tag at its foot, and the late card trades the tint's edge for the red of the state. */
 .content-card {
-  --content-card-tone: var(--status-production-fg);
+  --content-card-bg: var(--format-static-bg);
+  --content-card-fg: var(--format-static-fg);
+  --content-card-tone: transparent;
 
   position: relative;
   min-width: 0;
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--content-card-tone);
+  border: 1px solid var(--content-card-tone);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--content-card-tone) 8%, var(--bg-canvas));
+  background: var(--content-card-bg);
   color: var(--text-primary);
+  transition: transform var(--motion-base);
 }
 
-.content-card[data-status='awaiting_approval'] {
-  --content-card-tone: var(--status-waiting-fg);
+.content-card[data-format='carousel'] {
+  --content-card-bg: var(--format-carousel-bg);
+  --content-card-fg: var(--format-carousel-fg);
 }
 
-.content-card[data-status='adjusting'] {
-  --content-card-tone: var(--status-adjust-fg);
-}
-
-.content-card[data-status='approved'] {
-  --content-card-tone: var(--status-ready-fg);
-}
-
-.content-card[data-status='published'] {
-  --content-card-tone: var(--status-published-fg);
+.content-card[data-format='reels'] {
+  --content-card-bg: var(--format-reels-bg);
+  --content-card-fg: var(--format-reels-fg);
 }
 
 .content-card[data-late] {
@@ -7593,8 +7695,14 @@ html:has(.portal-post__bar) {
 }
 
 .content-card:hover {
-  border-color: var(--border-default);
-  border-left-color: var(--content-card-tone);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-raised);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content-card:hover {
+    transform: none;
+  }
 }
 
 /* The link is the whole card: a press anywhere on it opens the content, and its focus ring is the card's. */
@@ -7619,8 +7727,9 @@ html:has(.portal-post__bar) {
   align-items: center;
   min-width: 0;
   gap: var(--space-1);
-  color: var(--text-secondary);
+  color: var(--content-card-fg);
   font: var(--caption);
+  font-weight: 600;
 }
 
 .content-card__support svg {
@@ -7715,6 +7824,7 @@ html:has(.portal-post__bar) {
 }
 
 .content-agenda__day--today {
+  border-radius: var(--radius-md);
   background: var(--calendar-today-bg);
 }
 
@@ -7743,8 +7853,12 @@ html:has(.portal-post__bar) {
 }
 
 .content-agenda__today {
-  color: var(--text-secondary);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
   font: var(--caption);
+  font-weight: 700;
 }
 
 .content-agenda__day--empty .content-agenda__label {
@@ -8076,6 +8190,22 @@ html:has(.portal-post__bar) {
   background: transparent;
 }
 
+/* On the agency's screens the state pill of a tile takes the family of its state, as the tags of the calendar do. */
+.contents .content-feed__tile[data-status='awaiting_approval'] .content-feed__status {
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+}
+
+.contents .content-feed__tile[data-status='approved'] .content-feed__status {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.contents .content-feed__tile[data-status='adjusting'] .content-feed__status {
+  background: var(--status-adjust-bg);
+  color: var(--status-adjust-text);
+}
+
 .content-feed__format {
   position: absolute;
   top: var(--space-1);
@@ -8141,6 +8271,12 @@ html:has(.portal-post__bar) {
   background: var(--color-ink-900);
 }
 
+/* On the agency's calendar the device is the light one of the board; the portal's approval link keeps the ink bezel. */
+.contents .content-phone {
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
+}
+
 .content-phone__screen {
   position: relative;
   display: grid;
@@ -8151,6 +8287,10 @@ html:has(.portal-post__bar) {
   border-radius: calc(var(--radius-xl) * 2 - var(--space-2));
   background: var(--bg-surface);
   color: var(--text-primary);
+}
+
+.contents .content-phone__screen {
+  border: 1px solid var(--border-subtle);
 }
 
 .content-phone__island {
@@ -8193,7 +8333,9 @@ html:has(.portal-post__bar) {
   gap: var(--space-1);
 }
 
-.content-phone .content-feed__tile {
+.content-phone .content-feed__tile,
+.content-feed-full .content-feed__tile {
+  aspect-ratio: 3 / 4;
   border-radius: var(--radius-sm);
 }
 
@@ -9091,6 +9233,11 @@ html:has(.portal-post__bar) {
   padding-bottom: 0;
 }
 
+/* The dialog is a grid with no track of its own: the tabs of the modal were the widest thing in it and pushed the track, and the close button, past the edge on a phone. */
+.ui-modal:has(.content-modal, .approval-submit, .story-script) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .content-modal__footer {
   display: grid;
   gap: var(--space-3);
@@ -9192,9 +9339,11 @@ html:has(.portal-post__bar) {
   gap: var(--space-1);
   max-height: 16rem;
   margin: 0;
-  padding: 0;
+  padding: var(--space-2) var(--space-4);
   overflow-y: auto;
   list-style: none;
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
 }
 
 .approval-submit__row {
@@ -9205,6 +9354,10 @@ html:has(.portal-post__bar) {
   min-width: 0;
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.approval-submit__row:last-child {
+  border-bottom: 0;
 }
 
 .approval-submit__box {

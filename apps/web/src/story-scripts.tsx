@@ -4,7 +4,7 @@ import { Plus } from 'lucide-react';
 import type { StoryScriptListItem } from '@ageniza/contracts';
 import { Button, EmptyState, Menu, MenuItem } from '@ageniza/ui';
 
-import { fullDayLabel } from './content-dates.js';
+import { fullDayLabel, weekdayShortLabel } from './content-dates.js';
 import { StoryScriptModal, type StoryScriptTarget } from './story-script-modal.js';
 import { StoryScriptStatusTag } from './story-script-status.js';
 
@@ -24,7 +24,7 @@ function StoryScriptDay({ day, scripts, canCreate, onOpen, onCreate, onCreateCon
     </Menu>}
     {scripts.length > 0 && <ul className="content-day__scripts">
       {scripts.map((script) => <li key={script.id}>
-        <button type="button" className="content-day__script" aria-haspopup="dialog" onClick={() => onOpen(script.id)}>
+        <button type="button" className="content-day__script" data-status={script.status} aria-haspopup="dialog" onClick={() => onOpen(script.id)}>
           Stories · <StoryScriptStatusTag status={script.status} />
         </button>
       </li>)}
@@ -58,7 +58,13 @@ function StoryScriptList({ scripts, canCreate, today, onOpen, onCreate }: {
         action={create}
       />
       : <ul className="story-list__items">
-        {ordered.map((script) => <li key={script.id} className="story-list__item">
+        {ordered.map((script) => <li
+          key={script.id}
+          className="story-list__item"
+          data-status={script.status}
+          data-day={Number(script.scriptOn.slice(8, 10))}
+          data-weekday={weekdayShortLabel(script.scriptOn)}
+        >
           <time className="story-list__day" dateTime={script.scriptOn}>{fullDayLabel(script.scriptOn)}</time>
           <StoryScriptStatusTag status={script.status} />
           <Button variant="ghost" size="sm" aria-haspopup="dialog" aria-label={`Abrir o roteiro de ${fullDayLabel(script.scriptOn)}`} onClick={() => onOpen(script.id)}>Abrir</Button>
