@@ -287,7 +287,7 @@ describe('GET /portal-approval/batch', () => {
     for (const content of body.contents) {
       expect(content).toMatchObject({ status: 'awaiting_approval', canDecide: true, caption: 'Legenda original', revision: 1, platform: 'instagram' });
       expect(Object.keys(content).sort()).toEqual([
-        'canDecide', 'caption', 'coverAssetId', 'format', 'id', 'media', 'platform', 'publishAtTime', 'publishOn', 'publishedOn', 'revision', 'status', 'title'
+        'approval', 'canDecide', 'caption', 'coverAssetId', 'format', 'id', 'media', 'platform', 'publishAtTime', 'publishOn', 'publishedOn', 'revision', 'status', 'title'
       ]);
     }
     // The agency's identifiers and the internal ones never reach the person.
@@ -310,6 +310,29 @@ describe('GET /portal-approval/batch', () => {
     expect(byId.get(approved)).toMatchObject({ status: 'approved', canDecide: false });
     expect(byId.get(production)).toEqual({ id: production, title: expect.any(String), format: 'reels', publishOn: '2026-10-20', status: 'in_production', canDecide: false });
     expect(byId.get(link.contents[0]!)).toMatchObject({ status: 'awaiting_approval', canDecide: true });
+  });
+
+  it('carries the deadline and the note of the round, and only those: not the day it was sent, not who sent it, not the batch', async () => {
+    const link = await withSession({ count: 3 });
+    const [withBoth, withNeither, legacy] = link.contents as [string, string, string];
+    const insertRound = (contentId: string, dueOn: string | null, note: string | null) => owner()('content_approval_rounds').insert({
+      batch_id: randomUUID(), client_id: link.clientId, content_id: contentId, sequence: 1, due_on: dueOn, note, sent_by: people.manager.id
+    });
+    await insertRound(withBoth, '2026-10-30', 'Preciso da resposta até sexta.');
+    await insertRound(withNeither, null, null);
+
+    const reply = await batch(link);
+
+    const byId = new Map(reply.json<{ contents: Row[] }>().contents.map((content) => [content.id as string, content]));
+    expect(byId.get(withBoth)?.approval).toEqual({ dueOn: '2026-10-30', note: 'Preciso da resposta até sexta.' });
+    expect(byId.get(withNeither)?.approval).toEqual({ dueOn: null, note: null });
+    expect(byId.get(legacy)?.approval).toBeNull();
+    for (const secret of [people.manager.id, 'sentAt', 'sent_at', 'batch', 'sentBy']) expect(reply.body).not.toContain(secret);
+
+    // The answer to a decision is the same content, with the same round: what the person decided on is what the agency asked.
+    const approved = await approve(link, withBoth);
+    expect(approved.statusCode).toBe(200);
+    expect(approved.json()).toMatchObject({ id: withBoth, status: 'approved', approval: { dueOn: '2026-10-30', note: 'Preciso da resposta até sexta.' } });
   });
 
   it('does not answer without the cookie, with a malformed one, with an unknown one, or with the cookie of an account', async () => {
