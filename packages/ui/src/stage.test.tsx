@@ -86,6 +86,26 @@ describe('Stage3D', () => {
     expect(view.container.querySelector<HTMLElement>('.ui-stage')!.style.getPropertyValue('--ry')).toBe('13deg');
   });
 
+  it('follows the card named by an ancestor, not the wrapper the stage sits in', () => {
+    setMedia({ hover: true, reduced: false });
+    const view = render(
+      <div data-testid="card" data-stage-host>
+        <div data-testid="wrapper"><Stage3D src={SRC} /></div>
+      </div>
+    );
+    const card = view.getByTestId('card');
+    const wrapper = view.getByTestId('wrapper');
+    card.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 100, right: 200, bottom: 100, x: 0, y: 0, toJSON: () => ({}) });
+    wrapper.getBoundingClientRect = () => ({ left: 0, top: 0, width: 20, height: 10, right: 20, bottom: 10, x: 0, y: 0, toJSON: () => ({}) });
+    const stage = view.container.querySelector<HTMLElement>('.ui-stage')!;
+
+    move(wrapper, 200, 0);
+    expect(stage.style.getPropertyValue('--ry'), 'the card box (200 wide) rules, not the wrapper (20 wide)').toBe('13deg');
+
+    move(card, 0, 100);
+    expect(stage.style.getPropertyValue('--ry')).toBe('-13deg');
+  });
+
   it('stays still without a hovering pointer: a touch screen never leans', () => {
     setMedia({ hover: false, reduced: false });
     const { card, stage } = renderOnCard();

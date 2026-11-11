@@ -66,7 +66,6 @@ describe('component states', () => {
   });
 
   it.each([
-    '.ui-pill:disabled:not(.ui-pill--loading)',
     '.ui-segmented__option:disabled',
     '.ui-tabs__tab:disabled'
   ])('dims %s and shows it cannot be pressed', (selector) => {
@@ -84,6 +83,17 @@ describe('component states', () => {
     expect(disabled.get('cursor')).toBe('not-allowed');
     expect(disabled.get('box-shadow')).toBe('none');
     expect(disabled.get('transform')).toBe('none');
+    expect(disabled.has('opacity'), 'the pair is the contrast of 20.1: no opacity on top of it').toBe(false);
+  });
+
+  it('does not dim the action pill on top of the disabled pair, so its text keeps the contrast of the table', () => {
+    for (const selector of ['.ui-pill', '.ui-pill:disabled', '.ui-pill--action', '.ui-pill:disabled:not(.ui-pill--loading)', '.ui-pill--action:disabled:not(.ui-pill--loading)']) {
+      expect(rule(selector).has('opacity'), selector).toBe(false);
+    }
+  });
+
+  it('leaves the disabled ghost button with no fill, as the text-only action it is', () => {
+    expect(rule('.ui-button--ghost:disabled:not(.ui-button--loading)').get('background')).toBe('transparent');
   });
 
   it('lifts the primary button on hover with the hover token and a soft shadow, and drops it on press', () => {
@@ -875,6 +885,38 @@ describe('the conversation of a content in the Pauta look (#639)', () => {
       ['var(--text-primary)', 'var(--bg-canvas)'],
       ['var(--text-secondary)', 'var(--bg-canvas)']
     ] as const) expect(contrastOf(theme, text, surface), `${text} on ${surface}`).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('Stage3D and MilestoneTrail for people who ask for less motion', () => {
+  const reduced = reducedMotionBlocks();
+
+  it('floats the stage with the animation outside the reduced block and stops it inside it', () => {
+    expect(declarationsFor(MOTION_ON, '.ui-stage__float').get('animation')).toContain('ui-stage-float');
+    expect(declarationsFor(reduced, '.ui-stage__float').get('animation')).toBe('none');
+    expect(declarationsFor(reduced, '.ui-stage__icon').get('transition')).toBe('none');
+  });
+
+  it('pulses the current step outside the reduced block and stops it inside it', () => {
+    expect(declarationsFor(MOTION_ON, '.ui-trail__item--current .ui-trail__node').get('animation')).toContain('ui-trail-pulse');
+    expect(declarationsFor(reduced, '.ui-trail__item--current .ui-trail__node').get('animation')).toBe('none');
+  });
+
+  it.each(['.ui-trail__node', '.ui-trail__check', '.ui-trail__line::after'])('plays the fill, the check and the line of %s as a transition, and shows the end state at once with reduced motion', (selector) => {
+    expect(declarationsFor(MOTION_ON, selector).get('transition'), selector).not.toBe('none');
+    expect(declarationsFor(MOTION_ON, selector).has('transition'), selector).toBe(true);
+    expect(declarationsFor(reduced, selector).get('transition'), selector).toBe('none');
+  });
+
+  it('keeps the words of the step status out of sight, for assistive technology only', () => {
+    const status = rule('.ui-trail__status');
+
+    expect(status.get('position')).toBe('absolute');
+    expect(status.get('width')).toBe('1px');
+    expect(status.get('height')).toBe('1px');
+    expect(status.get('overflow')).toBe('hidden');
+    expect(status.get('clip-path')).toBe('inset(50%)');
+    expect(status.get('white-space')).toBe('nowrap');
   });
 });
 
