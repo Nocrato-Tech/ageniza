@@ -1217,7 +1217,8 @@ a.ui-button {
   list-style: none;
 }
 
-/* No `overflow: hidden` on the badge: the menu opens over it. The cover rounds its own top corners instead. */
+/* The badge of the roster: a rounded card with the client's mark beside the name, the situation and the seal under them, then the numbers and the
+   next action. No `overflow: hidden`: the menu opens over it. The reach of a hand (hover) lifts it, as in the board's rows and cards. */
 .clients__card {
   position: relative;
   display: flex;
@@ -1228,13 +1229,18 @@ a.ui-button {
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
   color: var(--text-primary);
-  transition: border-color var(--motion-fast);
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
 }
 
-/* Hover feedback by border, never by background: the attention badge uses `text/link`, and the
+/* Hover feedback by border and shadow, never by background: the attention badge uses `text/link`, and the
    design system forbids that color over `bg/hover` (docs/design-system.md 20.1). */
 .clients__card:hover {
-  border-color: var(--focus-ring);
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
 }
 
 .clients__card:has(.clients__card-link:focus-visible) {
@@ -1242,11 +1248,13 @@ a.ui-button {
   outline-offset: 3px;
 }
 
-/* The link holds the photo, the name and the badges; the menu and the action are buttons beside it, never inside it. */
+/* The link holds the mark, the name, the tags and the numbers; the menu and the action are buttons beside it, never inside it. */
 .clients__card-link {
   display: flex;
   flex: 1;
   flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-5) var(--space-4);
   border-radius: var(--radius-xl);
   color: var(--text-primary);
   text-decoration: none;
@@ -1257,67 +1265,59 @@ a.ui-button {
 }
 
 .clients__cover {
-  position: relative;
   display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  background: var(--bg-elevated);
+  align-items: center;
+  gap: var(--space-4);
+  padding-right: var(--space-12);
 }
 
+/* The mark of a client is a rounded square, not a person's circle: initials in white over the indigo-to-violet ink, or the photo. */
 .clients__cover .ui-avatar {
-  width: 6rem;
-  height: 6rem;
-  margin: var(--space-12) auto 0;
-  background: var(--bg-surface);
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--client-badge-fade-start), var(--client-badge-fade-end));
+  color: var(--color-white);
 }
 
 .clients__cover .ui-avatar__initials {
-  font: var(--display-lg);
-  letter-spacing: -0.02em;
+  font: var(--title-md);
+  letter-spacing: 0.02em;
 }
 
-/* The base of the photo: indigo and violet darkened over ink, white text on it. No glow, no glass. */
-.clients__fade {
+.clients__identity {
   display: grid;
   gap: var(--space-1);
-  padding: var(--space-8) var(--space-4) var(--space-4);
-  background: linear-gradient(180deg, transparent 0%, var(--client-badge-fade-start) 48%, var(--client-badge-fade-end) 100%);
+  min-width: 0;
 }
 
 .clients__card-name {
   margin: 0;
-  color: var(--color-white);
+  color: var(--text-primary);
   font: var(--heading-lg);
   letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 
-.clients__fade-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
 .clients__card-handle {
   min-width: 0;
   margin: 0;
-  color: var(--color-slate-300);
+  color: var(--text-secondary);
   font: var(--body-md);
   overflow-wrap: anywhere;
 }
 
-.clients__situation {
-  margin-left: auto;
+.clients__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.clients__seal {
-  position: absolute;
-  top: var(--space-4);
-  left: var(--space-4);
-  max-width: calc(100% - 5rem);
+.clients__situation--active {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  font-weight: 600;
 }
 
 /* A label is written in lower case by the API's words and read that way; the first letter is only drawn as a capital. */
@@ -1342,13 +1342,14 @@ a.ui-button {
   width: 2.75rem;
   height: 2.75rem;
   padding: 0;
-  background: color-mix(in srgb, var(--color-ink-900) 72%, transparent);
-  color: var(--color-white);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
 }
 
 .clients__menu .ui-menu__trigger:hover,
 .clients__menu .ui-menu__trigger:focus-visible {
-  background: var(--color-ink-900);
+  background: var(--bg-tint);
+  color: var(--text-primary);
 }
 
 .clients__body {
@@ -1356,7 +1357,6 @@ a.ui-button {
   flex: 1;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-4);
 }
 
 .clients__badges {
@@ -1422,7 +1422,7 @@ p.clients__indicators {
 
 .clients__footer {
   display: flex;
-  padding: 0 var(--space-4) var(--space-4);
+  padding: 0 var(--space-5) var(--space-5);
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
@@ -1456,7 +1456,7 @@ p.clients__indicators {
 }
 
 .clients__card-skeleton {
-  height: 24rem;
+  height: 16rem;
   border-radius: var(--radius-xl);
 }
 
@@ -1495,22 +1495,21 @@ p.clients__indicators {
   font: var(--body-md);
 }
 
+/* The header sits on the canvas, with no card of its own: the client's mark, the name with the situation, the @, and the actions. */
 .client-detail__header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-4) var(--space-6);
-  padding: var(--space-6);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
+  gap: var(--space-4) var(--space-5);
 }
 
 .client-detail__header .ui-avatar {
-  width: 6rem;
-  height: 6rem;
+  width: 5rem;
+  height: 5rem;
   flex: none;
-  background: var(--bg-elevated);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--client-badge-fade-start), var(--client-badge-fade-end));
+  color: var(--color-white);
 }
 
 .client-detail__header .ui-avatar__initials {
@@ -1518,16 +1517,16 @@ p.clients__indicators {
 }
 
 .client-detail__avatar-skeleton {
-  width: 6rem;
-  height: 6rem;
-  border-radius: var(--radius-full);
+  width: 5rem;
+  height: 5rem;
+  border-radius: var(--radius-lg);
 }
 
 .client-detail__identity {
   display: grid;
   flex: 1 1 14rem;
   align-content: start;
-  gap: var(--space-2);
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -1535,11 +1534,24 @@ p.clients__indicators {
   height: var(--space-6);
 }
 
+.client-detail__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
 .client-detail__identity h1 {
   margin: 0;
-  font: var(--heading-xl);
-  letter-spacing: -0.01em;
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
   overflow-wrap: anywhere;
+}
+
+.client-detail__status--active {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  font-weight: 600;
 }
 
 .client-detail__handle {
@@ -1555,7 +1567,6 @@ p.clients__indicators {
   gap: var(--space-2);
   margin: 0;
   padding: 0;
-  list-style: none;
 }
 
 .client-detail__actions {
@@ -1567,14 +1578,10 @@ p.clients__indicators {
 }
 
 @media (max-width: 40rem) {
-  .client-detail__header {
-    padding: var(--space-4);
-  }
-
   .client-detail__header .ui-avatar,
   .client-detail__avatar-skeleton {
-    width: 4.5rem;
-    height: 4.5rem;
+    width: 3.5rem;
+    height: 3.5rem;
   }
 
   .client-detail__header .ui-avatar__initials {
@@ -1586,7 +1593,12 @@ p.clients__indicators {
   }
 
   .client-detail__identity h1 {
-    font: var(--heading-lg);
+    font: var(--heading-xl);
+  }
+
+  .client-detail__actions {
+    flex: 1 1 100%;
+    margin-left: 0;
   }
 }
 
@@ -1617,7 +1629,7 @@ p.clients__indicators {
   flex-wrap: wrap;
   margin: 0;
   overflow-x: visible;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   list-style: none;
 }
 
@@ -1652,41 +1664,70 @@ p.clients__indicators {
   padding: var(--space-6) 0;
 }
 
+/* The General tab: the summary blocks on top, then the requests beside the registration. The blocks are the one coloured surface, each in the family
+   of what it says (docs/design-system.md 26), with the 3D mark leaving through the top edge, so the row keeps room above it. */
 .client-general {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-4);
+  gap: var(--space-6);
 }
 
 @media (min-width: 64rem) {
   .client-general {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 27rem);
     align-items: start;
   }
 
-  .client-general > :first-child {
-    grid-row: span 3;
+  .client-general:not(:has(.client-general__requests)) {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
+.client-general__summary {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: var(--space-8) var(--space-4);
+  padding-top: var(--space-8);
+}
+
 .client-general__block {
+  --ui-stage-bg: var(--block-slate-bg);
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-  gap: var(--space-3);
+  grid-template-rows: auto 1fr auto;
+  gap: var(--space-4);
+  min-height: 14.5rem;
   padding: var(--space-6);
-  border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
-  background: var(--bg-surface);
-  color: var(--text-primary);
+  background: var(--ui-stage-bg);
+  color: var(--block-slate-fg);
   text-decoration: none;
+  transition:
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
 }
 
-/* The hovered block only changes its background; the text inside stays `text-secondary` (never
-   `text/link`), so the pair keeps its approved contrast (docs/design-system.md 20.1). */
+.client-general__block--indigo {
+  --ui-stage-bg: var(--block-indigo-bg);
+  color: var(--block-indigo-fg);
+}
+
+.client-general__block--violet {
+  --ui-stage-bg: var(--block-violet-bg);
+  color: var(--block-violet-fg);
+}
+
+.client-general__block--teal {
+  --ui-stage-bg: var(--block-teal-bg);
+  color: var(--block-teal-fg);
+}
+
+/* The block lifts on hover and keeps its colour: the text inside never changes pair, so its approved contrast holds (docs/design-system.md 20.1). */
 a.client-general__block:hover {
-  background: var(--bg-hover);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
 }
 
 a.client-general__block:focus-visible {
@@ -1695,26 +1736,66 @@ a.client-general__block:focus-visible {
 }
 
 .client-general__block h2 {
+  max-width: 58%;
   margin: 0;
-  padding-right: var(--space-8);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+/* The figures sit at the bottom, under the mark that leaves through the top edge, so the two never share a line. */
+.client-general__figures {
+  display: grid;
+  align-self: end;
+  gap: var(--space-1);
+}
+
+.client-general__figures p {
+  margin: 0;
   font: var(--heading-lg);
 }
 
-.client-general__block p {
-  margin: 0;
-  color: var(--text-secondary);
+.client-general__figures .client-general__sub {
   font: var(--body-md);
 }
 
-.client-general__go {
-  position: absolute;
-  top: var(--space-6);
-  right: var(--space-6);
-  width: 1.25rem;
-  height: 1.25rem;
-  color: var(--text-secondary);
+.client-general__progress {
+  width: 100%;
+  height: 0.5rem;
+  accent-color: currentColor;
 }
 
+.client-general__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-self: start;
+  font: var(--label-md);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.client-general__cta svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.client-general__registration {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.client-general__registration h2 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+/* On a phone the name sits over its value; from 40rem the name is on the left and the value on the right, so a long value (the e-mail) wraps in its own column. */
 .client-general__fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1724,52 +1805,41 @@ a.client-general__block:focus-visible {
 .client-general__fields dt,
 .client-general__fields dd {
   margin: 0;
-  padding-block: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
   font: var(--body-md);
   overflow-wrap: anywhere;
 }
 
 .client-general__fields dt {
-  padding-bottom: 0;
-  border-top-color: var(--border-subtle);
+  padding-top: var(--space-3);
   color: var(--text-secondary);
-  font: var(--label-md);
 }
 
 .client-general__fields dd {
-  padding-top: var(--space-1);
-  border-top: 0;
+  padding-bottom: var(--space-3);
 }
 
-.client-general__fields dt:first-child {
-  border-top: 0;
-  padding-top: 0;
+.client-general__fields dt:not(:first-of-type) {
+  border-top: 1px solid var(--border-subtle);
 }
 
 @media (min-width: 40rem) {
   .client-general__fields {
-    grid-template-columns: minmax(7rem, 10rem) minmax(0, 1fr);
-    column-gap: var(--space-4);
+    grid-template-columns: minmax(6.5rem, max-content) minmax(0, 1fr);
   }
 
   .client-general__fields dt,
   .client-general__fields dd {
     padding-block: var(--space-3);
+  }
+
+  .client-general__fields dd {
+    padding-left: var(--space-4);
+    text-align: right;
+  }
+
+  .client-general__fields dt:not(:first-of-type) + dd {
     border-top: 1px solid var(--border-subtle);
   }
-
-  .client-general__fields dt:first-child,
-  .client-general__fields dt:first-child + dd {
-    padding-top: 0;
-    border-top: 0;
-  }
-}
-
-.client-general__progress {
-  width: 100%;
-  height: 0.5rem;
-  accent-color: var(--text-primary);
 }
 
 /* Edit client modal: specs/clientes.md section 7 (issue #137). */
@@ -2380,7 +2450,7 @@ a.client-general__block:focus-visible {
   justify-content: flex-start;
 }
 
-/* Portal access tab: specs/clientes.md section 7, issue #140. Rows set apart by a line, no card: a row is a person, and what it holds is the first level. */
+/* Portal access tab: specs/clientes.md section 7, issue #140. A person is a rounded card with who they are, when they last came in and what can be done with the access. */
 .portal-access {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2403,6 +2473,7 @@ a.client-general__block:focus-visible {
 .portal-access__list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2412,19 +2483,22 @@ a.client-general__block:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2) var(--space-4);
-  padding-block: var(--space-4);
-  border-top: 1px solid var(--border-subtle);
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
 }
 
 .portal-access__who {
   display: grid;
   flex: 1 1 12rem;
+  gap: 0.125rem;
   min-width: 0;
 }
 
 .portal-access__name {
-  font: var(--label-md);
+  font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
@@ -2444,10 +2518,17 @@ a.client-general__block:focus-visible {
   font: var(--body-md);
 }
 
+/* What can be done with the access gets its own line under the person, so the buttons never squeeze the name. */
 .portal-access__actions {
   display: flex;
+  flex: 1 1 100%;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: var(--space-2);
+}
+
+.portal-access__invites .portal-access__actions {
+  flex: 0 1 auto;
   margin-left: auto;
 }
 
@@ -2477,8 +2558,6 @@ a.client-general__block:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
-  padding-top: var(--space-6);
-  border-top: 1px solid var(--border-default);
 }
 
 .portal-access__removed-header {
@@ -2496,8 +2575,17 @@ a.client-general__block:focus-visible {
 }
 
 .portal-access__last {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   color: var(--text-secondary);
   font: var(--caption);
+}
+
+.portal-access__last svg {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .portal-access__copy {
@@ -4562,9 +4650,8 @@ main > .shell-notice {
   font: var(--caption);
 }
 
-/* The request list on the client's Geral tab: a block of the page, full width under the summary blocks. */
+/* The request list on the client's Geral tab: a card of the page, beside the registration on a wide screen and above it on a narrow one. */
 .client-general__requests {
-  grid-column: 1 / -1;
   min-width: 0;
   padding: var(--space-6);
   border: 1px solid var(--border-default);
@@ -4575,6 +4662,10 @@ main > .shell-notice {
 .client-general__requests .conversation {
   padding-top: 0;
   border-top: 0;
+}
+
+.client-general__requests .conversation__title {
+  font: var(--heading-lg);
 }
 
 /* The conversation inside the brand study: rows set apart by a line instead of cards, so a thread is not a card inside a section.

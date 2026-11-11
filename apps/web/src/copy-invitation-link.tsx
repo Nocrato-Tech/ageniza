@@ -51,7 +51,7 @@ export function CopyPortalAccessButton({ message, address, subject }: { message:
   return <div className="portal-access__copy">
     <Button
       size="sm"
-      variant="secondary"
+      variant="ghost"
       leadingIcon={copied ? <Check /> : <Copy />}
       aria-label={`${copied ? 'Link copiado' : 'Copiar link'} para ${subject}`}
       onClick={copy}
