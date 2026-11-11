@@ -137,6 +137,28 @@ stateDiagram-v2
 | `POST` | `…/clients/:clientId/personas/:personaId/archive` | `cliente.operar` | arquiva (some do portal) |
 | `POST` | `…/clients/:clientId/personas/:personaId/unarchive` | `cliente.operar` | desarquiva |
 
+### Navegação do estudo de marca na web
+
+A aba do cliente mostra uma seção por vez, com um índice das sete seções ao lado (uma faixa que rola na horizontal no celular). Só a apresentação mudou: as rotas, as permissões, as mensagens e o que cada seção grava são os de sempre.
+
+- **Índice.** Cada item diz se a seção está preenchida e quantas conversas dela aguardam a agência. O cabeçalho mantém "N de 7 preenchidas".
+- **Seção aberta.** É um cartão com o título, "editado por … · data" e o botão Editar. As conversas da seção ficam numa coluna própria ao lado (abaixo do cartão em telas estreitas), com "Nova conversa". Seção vazia mostra o estado vazio de primeiro uso, com o botão de preencher.
+- **Personas.** Um cartão por persona (iniciais, nome, descrição curta) e "Nova persona". Abrir uma persona mostra o perfil, com Dores, Desejos e Objeções, Editar, Arquivar (com a mesma confirmação) e as conversas dela; as conversas de uma persona arquivada continuam visíveis. Há um caminho de volta para a lista.
+- **Endereço.** A seção e a persona abertas ficam na URL: `?secao=<seção>` e `?persona=<id>`.
+
+| `secao` | seção |
+|---|---|
+| `branding` | Branding |
+| `tom-de-voz` | Tom de voz |
+| `cores` | Cores |
+| `posicionamento` | Posicionamento |
+| `arquetipo` | Arquétipo |
+| `personas` | Personas |
+| `observacoes` | Observações |
+
+- Sem `secao` abre a primeira seção (Branding). Um `secao` desconhecido cai na primeira seção, sem erro. `persona` sozinho abre o perfil dessa persona. Um `persona` que não existe é ignorado: com `secao=personas` mostra a lista, sem `secao` abre a primeira seção.
+- Cliente arquivado e plano em modo leitura continuam só leitura; sem `cliente.operar` os botões de edição não aparecem.
+
 ## Conversas com o cliente
 
 | método | rota | permissão | o que faz |
