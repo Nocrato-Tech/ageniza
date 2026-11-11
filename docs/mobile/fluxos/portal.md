@@ -55,9 +55,18 @@ No detalhe de um conteúdo aprovado, **Desfazer aprovação** abre uma confirma�
 | estado | o portal vê |
 |---|---|
 | em produção | só título, data e tipo |
-| aguardando aprovação, em ajuste, aprovado, publicado | também a legenda e a mídia |
+| aguardando aprovação, em ajuste, aprovado, publicado | também a legenda e a mídia, e `approval` com o prazo e o recado da agência |
 
-O portal **nunca** vê subtarefa, responsável, prazo interno nem roteiro em rascunho. A API não devolve esses dados.
+**Prazo e recado da agência** (decisão de 2026-11-10)
+
+- Quando a agência envia o conteúdo para aprovação, pode dar um prazo e um recado. O portal lê os dois em `approval`: `{ dueOn, note }`, na lista de um período, na lista do que espera aprovação, no post e na resposta de aprovar, pedir ajuste e desfazer aprovação.
+- `dueOn` é o dia limite da decisão (`AAAA-MM-DD`, dia de São Paulo) e `note` é o texto da agência, ambos `null` quando a agência não deu. `approval` é `null` quando o conteúdo ainda está em produção e quando ele já aguardava antes das rodadas (nesse caso, não mostre prazo nem recado).
+- Mostre o prazo como o limite da **aprovação** ("responder até"), diferente da data de publicação do post. O recado vem assinado pela agência: mostre o texto como veio, sem interpretá-lo.
+- A data em que foi enviado, quem enviou e o lote ficam com a agência e nunca chegam ao portal.
+- Se o cliente desfaz a aprovação, o conteúdo volta à mesma rodada e o portal lê o mesmo prazo e o mesmo recado. Se a agência reenvia depois de um pedido de ajuste, vale o prazo e o recado do novo envio.
+- O cliente recebe o e-mail do envio com o prazo e o recado, e dois lembretes por rodada: "vence amanhã" (na véspera do prazo) e "venceu" (no dia seguinte), às 9h de São Paulo, só para as pessoas ativas do portal e só enquanto o conteúdo aguarda decisão. Não sai nada com o cliente arquivado nem com a agência suspensa ou em modo leitura, e não sai "vence amanhã" se o envio foi feito na véspera do prazo.
+
+O portal **nunca** vê subtarefa, responsável, prazo interno nem roteiro em rascunho. A API não devolve esses dados. O prazo da aprovação (`approval.dueOn`) não é prazo interno: é o que a agência pediu ao cliente.
 
 ## Conversas
 

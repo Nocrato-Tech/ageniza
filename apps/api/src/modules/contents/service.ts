@@ -1,5 +1,6 @@
 import type {
   Content,
+  ContentApproval,
   ContentDetail,
   ContentFeedPosition,
   ContentFeedResponse,
@@ -19,7 +20,13 @@ interface RawRows<TResult> {
   readonly rows: readonly TResult[];
 }
 
-interface ContentRow {
+interface ApprovalColumns {
+  readonly approval_sent_at: Date | null;
+  readonly approval_due_on: string | null;
+  readonly approval_note: string | null;
+}
+
+interface ContentRow extends ApprovalColumns {
   readonly id: string;
   readonly client_id: string;
   readonly title: string;
@@ -45,7 +52,7 @@ interface ContentRow {
   readonly created_at: Date;
 }
 
-interface ListRow {
+interface ListRow extends ApprovalColumns {
   readonly id: string;
   readonly title: string;
   readonly platform: ContentListItem['platform'];
@@ -69,6 +76,24 @@ interface ScriptRow {
   readonly status: StoryScriptListItem['status'];
 }
 
+/**
+ * The round the content waits in: the latest one, and only while the content awaits approval (one in production, in adjustment or already
+ * decided has no deadline to show). A content that waited before the rounds existed has none, so every column is null.
+ */
+export const APPROVAL_JOIN = `
+  left join lateral (
+    select round.sent_at, round.due_on, round.note
+    from public.content_approval_rounds round
+    where round.content_id = content.id and content.status = 'awaiting_approval'
+    order by round.sequence desc
+    limit 1
+  ) approval on true
+`;
+export const APPROVAL_COLUMNS = 'approval.sent_at as approval_sent_at, approval.due_on::text as approval_due_on, approval.note as approval_note';
+
+const approvalOf = (row: ApprovalColumns): ContentApproval | null =>
+  row.approval_sent_at === null ? null : { sentAt: new Date(row.approval_sent_at).toISOString(), dueOn: row.approval_due_on, note: row.approval_note };
+
 // Dates are read as text and the time as HH:MM: the driver would turn a `date` into an instant in the server's zone.
 const CONTENT_COLUMNS = `
   content.id, content.client_id, content.title, content.platform, content.format,
@@ -78,7 +103,7 @@ const CONTENT_COLUMNS = `
   case when content.approved_by is null and content.approved_by_portal_access_id is null then null when content.approved_by_agency_reason is not null then 'agency' else 'client' end as approver_side,
   coalesce(approver_account.name, app_private.portal_access_label(content.approved_by_portal_access_id, content.client_id)) as approver_name,
   (content.approved_by_portal_access_id is not null) as approved_via_link, content.approved_at, content.approved_by_agency_reason,
-  content.published_on::text as published_on, content.cancelled_at, content.created_at
+  content.published_on::text as published_on, content.cancelled_at, content.created_at, ${APPROVAL_COLUMNS}
 `;
 
 /**
@@ -167,7 +192,7 @@ select
   to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.status,
   owner_link.id as owner_membership_id, owner_account.name as owner_name,
   content.cover_asset_id, thumbnail.asset_id as thumbnail_asset_id, content.revision, content.published_on::text as published_on,
-  tasks.total as tasks_total, tasks.approved as tasks_approved
+  tasks.total as tasks_total, tasks.approved as tasks_approved, ${APPROVAL_COLUMNS}
 from public.contents content
 ${OWNER_JOINS}
 left join lateral (
@@ -187,6 +212,7 @@ left join lateral (
   from public.content_tasks task
   where task.content_id = content.id
 ) tasks on true
+${APPROVAL_JOIN}
 `;
 
 const listItemOf = (row: ListRow): ContentListItem => ({
@@ -203,7 +229,8 @@ const listItemOf = (row: ListRow): ContentListItem => ({
   revision: Number(row.revision),
   publishedOn: row.published_on,
   tasksTotal: Number(row.tasks_total),
-  tasksApproved: Number(row.tasks_approved)
+  tasksApproved: Number(row.tasks_approved),
+  approval: approvalOf(row)
 });
 
 /** The formats of the feed's grid; long videos and VSLs live in the calendar only (specs/conteudo.md section 7). */
@@ -279,6 +306,32 @@ export const listPeriod = async (
   };
 };
 
+/** The contents among `contentIds` that are this client's and that this person reads: a batch is only ever of one client. */
+export const countClientContents = async (
+  transaction: ContentTransaction,
+  input: { readonly clientId: string; readonly contentIds: readonly string[] }
+): Promise<number> => {
+  const result = await raw<RawRows<{ total: string | number }>>(transaction, `
+    select count(*) as total from public.contents content where content.client_id = ?::uuid and content.id = any(?::uuid[])
+  `, [input.clientId, `{${input.contentIds.join(',')}}`]);
+  return Number(result.rows[0]?.total ?? 0);
+};
+
+/** The contents a batch was sent with, as the period lists them. */
+export const listBatchContents = async (
+  transaction: ContentTransaction,
+  input: { readonly clientId: string; readonly batchId: string }
+): Promise<ContentListItem[]> => {
+  const result = await raw<RawRows<ListRow>>(transaction, `
+    ${LIST_SELECT}
+    where content.client_id = ?::uuid and content.id in (
+      select round.content_id from public.content_approval_rounds round where round.batch_id = ?::uuid and round.client_id = ?::uuid
+    )
+    order by content.publish_on, content.publish_at_time, content.id
+  `, [input.clientId, input.batchId, input.clientId]);
+  return result.rows.map(listItemOf);
+};
+
 export const loadContent = async (
   transaction: ContentTransaction,
   input: { readonly clientId: string; readonly contentId: string }
@@ -288,6 +341,7 @@ export const loadContent = async (
     from public.contents content
     ${OWNER_JOINS}
     ${APPROVER_JOIN}
+    ${APPROVAL_JOIN}
     where content.id = ?::uuid and content.client_id = ?::uuid
   `, [input.contentId, input.clientId]);
   return result.rows[0];
@@ -312,7 +366,8 @@ export const contentFromRow = (row: ContentRow): Content => ({
   approvedByAgencyReason: row.approved_by_agency_reason,
   publishedOn: row.published_on,
   cancelledAt: row.cancelled_at === null ? null : new Date(row.cancelled_at).toISOString(),
-  createdAt: new Date(row.created_at).toISOString()
+  createdAt: new Date(row.created_at).toISOString(),
+  approval: approvalOf(row)
 });
 
 /** The owner is omitted, never sent as null, so the column default (who creates) applies. */

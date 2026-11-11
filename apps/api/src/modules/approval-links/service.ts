@@ -1,6 +1,7 @@
 import type { PortalApprovalBatch, PortalApprovalContent } from '@ageniza/contracts';
 import { raw } from '@ageniza/database';
 
+import { portalApprovalOf } from '../contents/portal-service.js';
 import type { ContentTransaction } from '../contents/service.js';
 
 interface RawRows<TResult> {
@@ -50,6 +51,9 @@ interface ContentRow {
   readonly caption: string | null;
   readonly cover_asset_id: string | null;
   readonly published_on: string | null;
+  readonly has_approval: boolean;
+  readonly approval_due_on: string | null;
+  readonly approval_note: string | null;
 }
 
 interface MediaRow {
@@ -66,7 +70,8 @@ interface MediaRow {
 // Days are read as text and the time as HH:MM: the driver would turn a `date` into an instant in the server's zone.
 const CONTENT_COLUMNS = `
   id, title, platform, format, publish_on::text as publish_on, status, revision, to_char(publish_at_time, 'HH24:MI') as publish_at_time,
-  caption, cover_asset_id, published_on::text as published_on
+  caption, cover_asset_id, published_on::text as published_on,
+  (approval_sent_at is not null) as has_approval, approval_due_on::text as approval_due_on, approval_note
 `;
 
 export const loadBatchHeader = async (transaction: ContentTransaction, sessionHash: string): Promise<BatchHeaderRow> => {
@@ -114,6 +119,7 @@ export const contentFrom = (row: ContentRow, media: readonly MediaRow[]): Portal
     status: row.status,
     coverAssetId: row.cover_asset_id,
     publishedOn: row.published_on,
+    approval: portalApprovalOf(row),
     caption: row.caption,
     revision: row.revision,
     media: mediaOf(media, row.id),

@@ -295,7 +295,8 @@ describe('the period query (issue #254)', () => {
       revision: 1,
       publishedOn: null,
       tasksTotal: 4,
-      tasksApproved: 2
+      tasksApproved: 2,
+      approval: null
     });
     expect(withoutTasks.id).toBe(bare);
     expect(withoutTasks.tasksTotal).toBe(0);

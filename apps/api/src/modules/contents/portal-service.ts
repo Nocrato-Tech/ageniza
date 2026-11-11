@@ -1,4 +1,4 @@
-import type { PortalContentDetail, PortalContentInProduction, PortalContentListItem, PortalContentOpenListItem } from '@ageniza/contracts';
+import type { PortalContentApproval, PortalContentDetail, PortalContentInProduction, PortalContentListItem, PortalContentOpenListItem } from '@ageniza/contracts';
 import { raw } from '@ageniza/database';
 
 import type { ContentTransaction } from './service.js';
@@ -22,7 +22,15 @@ export interface PortalContentRow {
   readonly cover_asset_id: string | null;
   readonly thumbnail_asset_id: string | null;
   readonly published_on: string | null;
+  /** The function answers a round only for a content that left production; `has_approval` is false for one with no round (sent before the rounds existed). */
+  readonly has_approval: boolean;
+  readonly approval_due_on: string | null;
+  readonly approval_note: string | null;
 }
+
+/** What the agency asked of the client: the deadline and the note. The date it was sent, who sent it and the batch never reach the portal. */
+export const portalApprovalOf = (row: Pick<PortalContentRow, 'has_approval' | 'approval_due_on' | 'approval_note'>): PortalContentApproval | null =>
+  row.has_approval ? { dueOn: row.approval_due_on, note: row.approval_note } : null;
 
 /*
  * Every read of the portal goes through `app_private.portal_contents` and `app_private.portal_content_media`
@@ -38,6 +46,7 @@ const PORTAL_COLUMNS = `
   content.id, content.title, content.platform, content.format, content.publish_on::text as publish_on, content.status,
   content.revision, to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.caption, content.cover_asset_id,
   content.published_on::text as published_on,
+  (content.approval_sent_at is not null) as has_approval, content.approval_due_on::text as approval_due_on, content.approval_note,
   (
     select media.asset_id
     from app_private.portal_content_media(content.id) media
@@ -175,7 +184,8 @@ const openDetailBaseFrom = (row: PortalContentRow & { readonly status: PortalCon
   publishAtTime: row.publish_at_time,
   status: row.status,
   coverAssetId: row.cover_asset_id,
-  publishedOn: row.published_on
+  publishedOn: row.published_on,
+  approval: portalApprovalOf(row)
 });
 
 /** `thumbnailAssetId` is the file that serves as the cover of the card: the function's first row, the chosen cover before the media. */
