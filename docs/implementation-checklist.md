@@ -142,5 +142,10 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 96. **Dado plantado não vaza para suíte paralela.** Dado plantado para provar que o teste ignora o resto não pode ser pego por outra suíte que roda ao mesmo tempo, como uma fila reivindicada globalmente. Antes de plantar, confira que os arquivos rodam em série ou num clone (telas-melhorias, onda 2).
 97. **Correção por configuração tem controle sem ela.** Quando a correção depende de configuração (arquivos em série), rode o controle com a configuração removida para saber se é ela ou a limpeza que corrige (telas-melhorias, onda 2).
 98. **Trava que espera tem corrida real.** Trava cujo comentário diz "espera a operação em andamento" tem teste com duas transações reais segurando essa operação. Um teste de deadlock em outra tabela não pega a remoção da trava (telas-melhorias, onda 2).
+99. **Data opcional digitada pela metade.** Campo de data opcional tem teste com ano de dois dígitos (`14/10/26`): a data incompleta bloqueia o envio com a mensagem do `DatePicker`, e nunca vira "sem data" (telas-melhorias, onda 4).
+100. **Teste de isolamento espera a tela de destino.** Antes de afirmar que o dado de outro cliente não aparece, o teste espera a tela de destino terminar de carregar; afirmar ausência durante o carregamento passa sempre (telas-melhorias, onda 5).
+101. **Falha que some na nova tentativa.** Com TanStack Query v5, consulta que nunca teve dado volta a `pending` ao tentar de novo: a falha continua montada com `isPending && errorUpdateCount > 0`, e o `EmptyState` recebe `retrying={isFetching}` (telas-melhorias, onda 5).
+102. **Mutação da primeira leitura.** Tela com estado de falha tem a mutação "falha na primeira leitura" (sem dado anterior), além da falha depois de já ter dado (telas-melhorias, onda 5).
+103. **Descarte por diálogo.** Cada sinal novo de "formulário com dado digitado" tem o seu teste de descarte no diálogo que o usa; o teste do `Dialog` sozinho não cobre o sinal (telas-melhorias, onda 4).
 
 As lições completas de segurança estão em `docs/security-review.md` e nas notas do projeto; este checklist só lista o que mais se repete.
