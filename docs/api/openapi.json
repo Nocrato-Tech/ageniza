@@ -1519,6 +1519,36 @@
                     "tasksApproved": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "approval": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sentAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "dueOn": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "sentAt",
+                        "dueOn",
+                        "note"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -1535,7 +1565,8 @@
                     "revision",
                     "publishedOn",
                     "tasksTotal",
-                    "tasksApproved"
+                    "tasksApproved",
+                    "approval"
                   ],
                   "additionalProperties": false
                 }
@@ -1709,6 +1740,36 @@
                     "tasksApproved": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "approval": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sentAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "dueOn": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "sentAt",
+                        "dueOn",
+                        "note"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -1725,7 +1786,8 @@
                     "revision",
                     "publishedOn",
                     "tasksTotal",
-                    "tasksApproved"
+                    "tasksApproved",
+                    "approval"
                   ],
                   "additionalProperties": false
                 }
@@ -1780,6 +1842,116 @@
             },
             "required": [
               "count"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "listContentsAwaitingClientResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "clientId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "clientName": {
+                  "type": "string"
+                },
+                "contents": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "format": {
+                        "type": "string",
+                        "enum": [
+                          "image",
+                          "carousel",
+                          "reels",
+                          "long_video",
+                          "vsl"
+                        ]
+                      },
+                      "publishOn": {
+                        "type": "string"
+                      },
+                      "sentAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "dueOn": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "daysWaiting": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 0
+                      },
+                      "daysToDue": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "title",
+                      "format",
+                      "publishOn",
+                      "sentAt",
+                      "dueOn",
+                      "daysWaiting",
+                      "daysToDue"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "minItems": 1,
+                  "maxItems": 50
+                }
+              },
+              "required": [
+                "clientId",
+                "clientName",
+                "contents"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "truncated"
             ],
             "additionalProperties": false
           }
@@ -1970,6 +2142,36 @@
           "createdAt": {
             "type": "string"
           },
+          "approval": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "sentAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "dueOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "sentAt",
+              "dueOn",
+              "note"
+            ],
+            "additionalProperties": false
+          },
           "media": {
             "type": "array",
             "items": {
@@ -2145,6 +2347,7 @@
           "publishedOn",
           "cancelledAt",
           "createdAt",
+          "approval",
           "media",
           "tasks",
           "conversation"
@@ -2281,7 +2484,214 @@
       },
       "submitContentRequest": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "dueOn": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "submitContentsBatchResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "batchId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "contents": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "platform": {
+                      "type": "string",
+                      "enum": [
+                        "instagram"
+                      ]
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "carousel",
+                        "reels",
+                        "long_video",
+                        "vsl"
+                      ]
+                    },
+                    "publishOn": {
+                      "type": "string"
+                    },
+                    "publishAtTime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "in_production",
+                        "awaiting_approval",
+                        "adjusting",
+                        "approved",
+                        "published",
+                        "cancelled"
+                      ]
+                    },
+                    "owner": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "membershipId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "membershipId",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "coverAssetId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "thumbnailAssetId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "publishedOn": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tasksTotal": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "tasksApproved": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "approval": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sentAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "dueOn": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "sentAt",
+                        "dueOn",
+                        "note"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "platform",
+                    "format",
+                    "publishOn",
+                    "publishAtTime",
+                    "status",
+                    "owner",
+                    "coverAssetId",
+                    "thumbnailAssetId",
+                    "revision",
+                    "publishedOn",
+                    "tasksTotal",
+                    "tasksApproved",
+                    "approval"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1,
+                "maxItems": 30
+              }
+            },
+            "required": [
+              "batchId",
+              "contents"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "submitContentsBatchRequest": {
+        "type": "object",
+        "properties": {
+          "contentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 30
+          },
+          "dueOn": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contentIds"
+        ],
         "additionalProperties": false
       },
       "approveContentByAgencyRequest": {
@@ -2309,6 +2719,11 @@
             "type": "string"
           }
         },
+        "additionalProperties": false
+      },
+      "unpublishContentRequest": {
+        "type": "object",
+        "properties": {},
         "additionalProperties": false
       },
       "rescheduleContentRequest": {
@@ -2592,6 +3007,31 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "approval": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "dueOn": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "dueOn",
+                        "note"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -2604,7 +3044,8 @@
                     "status",
                     "coverAssetId",
                     "thumbnailAssetId",
-                    "publishedOn"
+                    "publishedOn",
+                    "approval"
                   ],
                   "additionalProperties": false
                 }
@@ -2707,6 +3148,31 @@
                     "string",
                     "null"
                   ]
+                },
+                "approval": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "dueOn": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "dueOn",
+                    "note"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -2719,7 +3185,8 @@
                 "status",
                 "coverAssetId",
                 "thumbnailAssetId",
-                "publishedOn"
+                "publishedOn",
+                "approval"
               ],
               "additionalProperties": false
             }
@@ -2857,6 +3324,31 @@
                   "null"
                 ]
               },
+              "approval": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "dueOn": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "dueOn",
+                  "note"
+                ],
+                "additionalProperties": false
+              },
               "caption": {
                 "type": [
                   "string",
@@ -2907,6 +3399,7 @@
               "status",
               "coverAssetId",
               "publishedOn",
+              "approval",
               "caption",
               "revision",
               "media"
@@ -4320,6 +4813,21 @@
                         "contentId"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "materialRequest": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        }
+                      },
+                      "required": [
+                        "materialRequest"
+                      ],
+                      "additionalProperties": false
                     }
                   ]
                 },
@@ -4404,6 +4912,12 @@
                     "string",
                     "null"
                   ]
+                },
+                "dueOn": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -4414,7 +4928,8 @@
                 "lastComment",
                 "commentCount",
                 "resolvedBy",
-                "resolvedAt"
+                "resolvedAt",
+                "dueOn"
               ],
               "additionalProperties": false
             }
@@ -4512,6 +5027,21 @@
                       "contentId"
                     ],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "materialRequest": {
+                        "type": "boolean",
+                        "enum": [
+                          true
+                        ]
+                      }
+                    },
+                    "required": [
+                      "materialRequest"
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               },
@@ -4596,6 +5126,12 @@
                   "string",
                   "null"
                 ]
+              },
+              "dueOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -4606,7 +5142,8 @@
               "lastComment",
               "commentCount",
               "resolvedBy",
-              "resolvedAt"
+              "resolvedAt",
+              "dueOn"
             ],
             "additionalProperties": false
           },
@@ -4720,10 +5257,28 @@
                   "contentId"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "materialRequest": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "materialRequest"
+                ],
+                "additionalProperties": false
               }
             ]
           },
           "body": {
+            "type": "string"
+          },
+          "dueOn": {
             "type": "string"
           }
         },
@@ -4945,6 +5500,21 @@
                   "contentId"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "materialRequest": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "materialRequest"
+                ],
+                "additionalProperties": false
               }
             ]
           },
@@ -5029,6 +5599,12 @@
               "string",
               "null"
             ]
+          },
+          "dueOn": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -5039,7 +5615,8 @@
           "lastComment",
           "commentCount",
           "resolvedBy",
-          "resolvedAt"
+          "resolvedAt",
+          "dueOn"
         ],
         "additionalProperties": false
       },
@@ -5074,6 +5651,13 @@
                 "entered": {
                   "type": "boolean"
                 },
+                "lastEnteredAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
                 "since": {
                   "type": "string"
                 }
@@ -5084,6 +5668,7 @@
                 "email",
                 "status",
                 "entered",
+                "lastEnteredAt",
                 "since"
               ],
               "additionalProperties": false
@@ -5150,6 +5735,13 @@
           "entered": {
             "type": "boolean"
           },
+          "lastEnteredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
           "since": {
             "type": "string"
           }
@@ -5160,6 +5752,7 @@
           "email",
           "status",
           "entered",
+          "lastEnteredAt",
           "since"
         ],
         "additionalProperties": false
@@ -6712,6 +7305,31 @@
                         "null"
                       ]
                     },
+                    "approval": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "dueOn": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "dueOn",
+                        "note"
+                      ],
+                      "additionalProperties": false
+                    },
                     "caption": {
                       "type": [
                         "string",
@@ -6765,6 +7383,7 @@
                     "status",
                     "coverAssetId",
                     "publishedOn",
+                    "approval",
                     "caption",
                     "revision",
                     "media",
@@ -6891,6 +7510,31 @@
                   "null"
                 ]
               },
+              "approval": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "dueOn": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "dueOn",
+                  "note"
+                ],
+                "additionalProperties": false
+              },
               "caption": {
                 "type": [
                   "string",
@@ -6944,6 +7588,7 @@
               "status",
               "coverAssetId",
               "publishedOn",
+              "approval",
               "caption",
               "revision",
               "media",
@@ -10356,7 +11001,7 @@
       "get": {
         "operationId": "listContentsByPeriod",
         "summary": "Consulta os conteúdos e os roteiros de stories de um período",
-        "description": "A consulta por período, o formato que Tarefas e Dashboard copiam: `from` e `to` são dias\n`AAAA-MM-DD`, ambos incluídos, e o período tem no máximo 93 dias contando os dois extremos\n(93 passa, 94 não). Sem paginação: a resposta traz um vetor por tipo de item em `data`, e\n`meta.count` soma os dois. Acima de 500 itens a resposta é `400 CONTENT_PERIOD_TOO_LARGE`, sem\ntruncar. Ordem: data, hora (sem hora por último) e id. O conteúdo vem sem legenda e sem mídia;\n`tasksTotal` e `tasksApproved` dão o percentual das subtarefas. Cancelados vêm com o estado\n`cancelled`. Cliente arquivado também responde: o conteúdo dele é só leitura.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "description": "A consulta por período, o formato que Tarefas e Dashboard copiam: `from` e `to` são dias\n`AAAA-MM-DD`, ambos incluídos, e o período tem no máximo 93 dias contando os dois extremos\n(93 passa, 94 não). Sem paginação: a resposta traz um vetor por tipo de item em `data`, e\n`meta.count` soma os dois. Acima de 500 itens a resposta é `400 CONTENT_PERIOD_TOO_LARGE`, sem\ntruncar. Ordem: data, hora (sem hora por último) e id. O conteúdo vem sem legenda e sem mídia;\n`tasksTotal` e `tasksApproved` dão o percentual das subtarefas. `approval` traz `sentAt`, `dueOn` e `note` da rodada do conteúdo que\naguarda aprovação, e é `null` nos demais (e no que aguardava antes das rodadas). Cancelados vêm com o estado\n`cancelled`. Cliente arquivado também responde: o conteúdo dele é só leitura.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
         "tags": [
           "contents"
         ],
@@ -10425,7 +11070,8 @@
                         "revision": 1,
                         "publishedOn": null,
                         "tasksTotal": 3,
-                        "tasksApproved": 1
+                        "tasksApproved": 1,
+                        "approval": null
                       }
                     ],
                     "storyScripts": [
@@ -10618,6 +11264,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -10831,7 +11478,8 @@
                         "revision": 1,
                         "publishedOn": null,
                         "tasksTotal": 3,
-                        "tasksApproved": 1
+                        "tasksApproved": 1,
+                        "approval": null
                       }
                     ],
                     "nextCursor": "WyIyMDI2LTEwLTIwIiwiMTg6MzA6MDAiLCJmZmZmZmZmZi1mZmZmLTRmZmYtOGZmZi1mZmZmZmZmZmZmZmYiXQ",
@@ -10935,6 +11583,139 @@
                   "error": {
                     "code": "RATE_LIMITED",
                     "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/contents/awaiting-client": {
+      "get": {
+        "operationId": "listContentsAwaitingClient",
+        "summary": "Lista o que está parado no cliente, para o Início da agência",
+        "description": "Os conteúdos que aguardam a decisão do cliente, agrupados por cliente, com até 50 conteúdos ao todo (`meta.truncated` diz que havia\nmais). Os mais urgentes primeiro: o prazo mais próximo (um prazo vencido vem antes de um que não venceu) e, entre os sem prazo, o\nque espera há mais tempo; os clientes seguem a ordem do primeiro conteúdo deles. `daysToDue` conta os dias até `dueOn` (negativo\ndepois que venceu) e `daysWaiting` os dias desde `sentAt`, ambos no dia de São Paulo; cada um é nulo quando a data dele é (conteúdo\nenviado antes das rodadas não traz data de envio nem prazo). `dueOn` é o prazo da aprovação, não o da publicação. Cliente arquivado\nnão entra. É leitura sob a mesma política do calendário: o que a pessoa não pode ler não entra.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "O que está parado no cliente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listContentsAwaitingClientResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "clientId": "77777777-7777-4777-8777-777777777777",
+                      "clientName": "Padaria Central",
+                      "contents": [
+                        {
+                          "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                          "title": "Lançamento da coleção de outono",
+                          "format": "reels",
+                          "publishOn": "2026-10-20",
+                          "sentAt": "2026-10-14T12:00:00.000Z",
+                          "dueOn": "2026-10-18",
+                          "daysWaiting": 2,
+                          "daysToDue": 2
+                        }
+                      ]
+                    }
+                  ],
+                  "meta": {
+                    "truncated": false
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Resource not found."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
@@ -11087,7 +11868,7 @@
       "get": {
         "operationId": "getContent",
         "summary": "Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa",
-        "description": "O conteúdo inteiro, mais `media` (id e posição, em ordem), `tasks` (só leitura aqui) e\n`conversation` (`threadId` nulo enquanto ninguém comentou, `commentCount` e `lastCommentAt`).\nUm conteúdo de outro cliente, de outra agência ou que não existe responde o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "description": "O conteúdo inteiro, mais `media` (id e posição, em ordem), `tasks` (só leitura aqui) e\n`conversation` (`threadId` nulo enquanto ninguém comentou, `commentCount` e `lastCommentAt`). `approval` é a rodada do conteúdo que\naguarda aprovação (`sentAt`, `dueOn`, `note`) e `null` nos demais.\nUm conteúdo de outro cliente, de outra agência ou que não existe responde o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
         "tags": [
           "contents"
         ],
@@ -11152,6 +11933,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -11343,6 +12125,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -11495,7 +12278,7 @@
       "post": {
         "operationId": "submitContent",
         "summary": "Envia o conteúdo para aprovação",
-        "description": "Conteúdo em produção ou em ajuste passa a aguardar aprovação e entra na fila de e-mail do cliente (uma vez por pessoa\nativa do portal). Repetir o envio de um conteúdo que já aguarda não muda nada e não é erro. Exige `conteudo.operar` e\n`conteudo.visualizar`. Recusa com `409` o conteúdo sem mídia completa para o formato (`CONTENT_MEDIA_INCOMPLETE`, também\nquando a capa foi removida da pasta), com mídia que ainda não terminou de subir (`CONTENT_MEDIA_NOT_CONFIRMED`) e com\nsubtarefa que não está aprovada (`CONTENT_TASKS_NOT_APPROVED`). Cliente arquivado responde `409 CLIENT_ARCHIVED`,\ntambém quando o arquivamento termina durante a chamada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "description": "Conteúdo em produção ou em ajuste passa a aguardar aprovação e entra na fila de e-mail do cliente (uma vez por pessoa\nativa do portal). O corpo é opcional (`{}` vale): `dueOn` é o prazo da decisão do cliente, um dia `AAAA-MM-DD` de hoje até\n90 dias à frente no dia de São Paulo (`400 CONTENT_APPROVAL_DUE_INVALID` fora disso), e `note` é o recado ao cliente, de 1 a 500\ncaracteres (`400 CONTENT_APPROVAL_NOTE_INVALID` quando em branco ou longo). Cada envio abre uma rodada, e `approval` do conteúdo\ndevolvido traz `sentAt`, `dueOn` e `note`. Repetir o mesmo envio (o mesmo prazo e o mesmo recado) de um conteúdo que já aguarda não\nmuda nada e não é erro; pedir outro prazo ou outro recado para quem já aguarda é `409 CONTENT_STATE`. Exige `conteudo.operar` e\n`conteudo.visualizar`. Recusa com `409` o conteúdo sem mídia completa para o formato (`CONTENT_MEDIA_INCOMPLETE`, também\nquando a capa foi removida da pasta), com mídia que ainda não terminou de subir (`CONTENT_MEDIA_NOT_CONFIRMED`) e com\nsubtarefa que não está aprovada (`CONTENT_TASKS_NOT_APPROVED`). Cliente arquivado responde `409 CLIENT_ARCHIVED`,\ntambém quando o arquivamento termina durante a chamada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
         "tags": [
           "contents"
         ],
@@ -11536,7 +12319,10 @@
               "schema": {
                 "$ref": "#/components/schemas/submitContentRequest"
               },
-              "example": {}
+              "example": {
+                "dueOn": "2026-10-18",
+                "note": "Preciso da sua resposta até sábado para publicar na segunda."
+              }
             }
           }
         },
@@ -11571,6 +12357,11 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": {
+                    "sentAt": "2026-10-14T12:00:00.000Z",
+                    "dueOn": "2026-10-18",
+                    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+                  },
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -11603,7 +12394,7 @@
             }
           },
           "400": {
-            "description": "VALIDATION_ERROR: Request validation failed",
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_APPROVAL_DUE_INVALID: | CONTENT_APPROVAL_NOTE_INVALID:",
             "content": {
               "application/json": {
                 "schema": {
@@ -11679,7 +12470,212 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_STATE: Só um conteúdo em produção ou em ajuste é enviado para aprovação. | CONTENT_MEDIA_INCOMPLETE: A mídia ou a capa do conteúdo não está completa para este formato: falta mídia, ou a mídia ou a capa foi removida da pasta. | CONTENT_MEDIA_NOT_CONFIRMED: O conteúdo tem mídia que ainda não terminou de subir. Espere o envio terminar ou troque a mídia. | CONTENT_TASKS_NOT_APPROVED: Todas as subtarefas precisam estar aprovadas antes do envio. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_STATE: Só um conteúdo em produção ou em ajuste é enviado para aprovação. Um conteúdo que já aguarda aprovação não muda de prazo nem de recado. | CONTENT_MEDIA_INCOMPLETE: A mídia ou a capa do conteúdo não está completa para este formato: falta mídia, ou a mídia ou a capa foi removida da pasta. | CONTENT_MEDIA_NOT_CONFIRMED: O conteúdo tem mídia que ainda não terminou de subir. Espere o envio terminar ou troque a mídia. | CONTENT_TASKS_NOT_APPROVED: Todas as subtarefas precisam estar aprovadas antes do envio. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/clients/{clientId}/contents/submit": {
+      "post": {
+        "operationId": "submitContentsBatch",
+        "summary": "Envia vários conteúdos de um cliente para aprovação, de uma vez",
+        "description": "De 1 a 30 conteúdos, cada um uma vez, todos do cliente do caminho: ou todos passam a aguardar aprovação ou nenhum passa. Compartilham\no mesmo `dueOn` (de hoje até 90 dias à frente, no dia de São Paulo) e o mesmo `note` (de 1 a 500 caracteres), ambos opcionais,\ne um `batchId`. Cada conteúdo abre a própria rodada, e a resposta traz os conteúdos como a consulta por período os lista, com `approval`.\nCada conteúdo segue as regras do envio individual (mídia completa, subtarefas aprovadas, em produção ou em ajuste); um que as\ndescumpre, ou que já aguarda, recusa o lote inteiro com o mesmo código do envio individual. Um conteúdo de outro cliente, de outra\nagência ou inexistente responde `404 NOT_FOUND`. Mais de 30, repetido ou vazio é `400 VALIDATION_ERROR`. Exige `conteudo.operar` e `conteudo.visualizar`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "contents"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/submitContentsBatchRequest"
+              },
+              "example": {
+                "contentIds": [
+                  "ffffffff-ffff-4fff-8fff-ffffffffffff"
+                ],
+                "dueOn": "2026-10-18",
+                "note": "Preciso da sua resposta até sábado para publicar na segunda."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "O lote enviado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/submitContentsBatchResponse"
+                },
+                "example": {
+                  "data": {
+                    "batchId": "0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+                    "contents": [
+                      {
+                        "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                        "title": "Lançamento da coleção de outono",
+                        "platform": "instagram",
+                        "format": "reels",
+                        "publishOn": "2026-10-20",
+                        "publishAtTime": "18:30",
+                        "status": "awaiting_approval",
+                        "owner": {
+                          "membershipId": "22222222-2222-4222-8222-222222222222",
+                          "name": "Ana Souza"
+                        },
+                        "coverAssetId": null,
+                        "thumbnailAssetId": "44444444-4444-4444-8444-444444444444",
+                        "revision": 1,
+                        "publishedOn": null,
+                        "tasksTotal": 3,
+                        "tasksApproved": 1,
+                        "approval": {
+                          "sentAt": "2026-10-14T12:00:00.000Z",
+                          "dueOn": "2026-10-18",
+                          "note": "Preciso da sua resposta até sábado para publicar na segunda."
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | CONTENT_APPROVAL_DUE_INVALID: | CONTENT_APPROVAL_NOTE_INVALID: | CONTENT_BATCH_INVALID: | CONTENT_BATCH_MIXED_CLIENTS:",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Content not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Content not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | CONTENT_STATE: Só um conteúdo em produção ou em ajuste é enviado para aprovação. Um conteúdo que já aguarda aprovação não muda de prazo nem de recado. | CONTENT_MEDIA_INCOMPLETE: A mídia ou a capa do conteúdo não está completa para este formato: falta mídia, ou a mídia ou a capa foi removida da pasta. | CONTENT_MEDIA_NOT_CONFIRMED: O conteúdo tem mídia que ainda não terminou de subir. Espere o envio terminar ou troque a mídia. | CONTENT_TASKS_NOT_APPROVED: Todas as subtarefas precisam estar aprovadas antes do envio. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11805,6 +12801,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -12035,6 +13032,7 @@
                   "publishedOn": "2026-10-10",
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -12226,7 +13224,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/submitContentRequest"
+                "$ref": "#/components/schemas/unpublishContentRequest"
               },
               "example": {}
             }
@@ -12263,6 +13261,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -12454,7 +13453,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/submitContentRequest"
+                "$ref": "#/components/schemas/unpublishContentRequest"
               },
               "example": {}
             }
@@ -12491,6 +13490,7 @@
                   "publishedOn": null,
                   "cancelledAt": "2026-10-11T12:30:00.000Z",
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -12721,6 +13721,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -13817,7 +14818,7 @@
       "get": {
         "operationId": "listPortalContents",
         "summary": "Lista os conteúdos de um período, no portal",
-        "description": "Consulta por período, sem paginação: `from` e `to` inclusivos (`AAAA-MM-DD`), no máximo 93 dias (93 passa, 94 dá 400) e 500\nitens (acima disso, `400 CONTENT_PERIOD_TOO_LARGE`, sem truncar). Do dia mais antigo ao mais novo. Um conteúdo em produção traz\nsó o título, o dia e o formato; a partir de \"aguardando aprovação\" traz também a plataforma, a hora, a capa e o dia real da\npublicação, sem a legenda nem a mídia (essas vêm da leitura do conteúdo). Conteúdo cancelado nunca vem. Nenhuma resposta do\nportal traz subtarefa, responsável, prazo interno ou o id de uma pessoa, nem para o colaborador que também tem vínculo com o cliente.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Consulta por período, sem paginação: `from` e `to` inclusivos (`AAAA-MM-DD`), no máximo 93 dias (93 passa, 94 dá 400) e 500\nitens (acima disso, `400 CONTENT_PERIOD_TOO_LARGE`, sem truncar). Do dia mais antigo ao mais novo. Um conteúdo em produção traz\nsó o título, o dia e o formato; a partir de \"aguardando aprovação\" traz também a plataforma, a hora, a capa, o dia real da\npublicação e `approval` (o prazo e o recado da agência; nulo no conteúdo enviado antes das rodadas), sem a legenda nem a mídia (essas vêm da leitura do conteúdo). Conteúdo cancelado nunca vem. Nenhuma resposta do\nportal traz subtarefa, responsável, prazo interno ou o id de uma pessoa, nem para o colaborador que também tem vínculo com o cliente.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "contents"
         ],
@@ -13876,6 +14877,10 @@
                       "status": "awaiting_approval",
                       "coverAssetId": null,
                       "publishedOn": null,
+                      "approval": {
+                        "dueOn": "2026-10-18",
+                        "note": "Preciso da sua resposta até sábado para publicar na segunda."
+                      },
                       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
                     }
                   ],
@@ -13990,7 +14995,7 @@
       "get": {
         "operationId": "listPortalContentsAwaitingApproval",
         "summary": "Lista o que espera a aprovação da pessoa, no portal",
-        "description": "Os conteúdos do cliente em \"aguardando aprovação\", do dia mais próximo ao mais distante, paginados pelo contrato global de\nlistagem (20 por página). A página além do fim responde o total real.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Os conteúdos do cliente em \"aguardando aprovação\", do dia mais próximo ao mais distante, paginados pelo contrato global de\nlistagem (20 por página). Cada um traz `approval` com o prazo e o recado da agência. A página além do fim responde o total real.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "contents"
         ],
@@ -14048,6 +15053,10 @@
                       "status": "awaiting_approval",
                       "coverAssetId": null,
                       "publishedOn": null,
+                      "approval": {
+                        "dueOn": "2026-10-18",
+                        "note": "Preciso da sua resposta até sábado para publicar na segunda."
+                      },
                       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
                     }
                   ],
@@ -14163,7 +15172,7 @@
       "get": {
         "operationId": "getPortalContent",
         "summary": "Lê um conteúdo, no portal",
-        "description": "A partir de \"aguardando aprovação\", o post com a legenda, a mídia (o id e o lugar de cada arquivo, em ordem) e a `revision` que\na pessoa lê e devolve ao aprovar ou pedir ajuste. Um conteúdo em produção traz só o título, o dia e o formato. Conteúdo\ncancelado, de outro cliente (mesmo de um cliente que a pessoa também lê), de outra agência, inexistente ou com id inválido\ndevolve o mesmo 404, e o colaborador que também tem vínculo recebe o mesmo recorte que qualquer pessoa do portal.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "A partir de \"aguardando aprovação\", o post com a legenda, a mídia (o id e o lugar de cada arquivo, em ordem) e a `revision` que\na pessoa lê e devolve ao aprovar ou pedir ajuste, e `approval` com o prazo (`dueOn`) e o recado (`note`) que a agência deu ao enviar (nulo\npara o conteúdo enviado antes das rodadas). Um conteúdo em produção traz só o título, o dia e o formato. Conteúdo\ncancelado, de outro cliente (mesmo de um cliente que a pessoa também lê), de outra agência, inexistente ou com id inválido\ndevolve o mesmo 404, e o colaborador que também tem vínculo recebe o mesmo recorte que qualquer pessoa do portal.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "contents"
         ],
@@ -14206,6 +15215,10 @@
                   "status": "awaiting_approval",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": {
+                    "dueOn": "2026-10-18",
+                    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+                  },
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [
@@ -14560,6 +15573,10 @@
                   "status": "awaiting_approval",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": {
+                    "dueOn": "2026-10-18",
+                    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+                  },
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [
@@ -14750,6 +15767,10 @@
                   "status": "approved",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": {
+                    "dueOn": "2026-10-18",
+                    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+                  },
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [
@@ -14941,6 +15962,10 @@
                   "status": "adjusting",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": {
+                    "dueOn": "2026-10-18",
+                    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+                  },
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [
@@ -19215,6 +20240,17 @@
             "schema": {
               "type": "string",
               "enum": [
+                "true"
+              ]
+            },
+            "required": false,
+            "name": "materialRequest",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
                 "open",
                 "resolved"
               ]
@@ -19250,6 +20286,7 @@
                         "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
                       },
                       "commentCount": 1,
+                      "dueOn": null,
                       "resolvedBy": null,
                       "resolvedAt": null
                     }
@@ -19433,6 +20470,7 @@
                       "excerpt": "Vamos revisar o tom de voz com o time?"
                     },
                     "commentCount": 1,
+                    "dueOn": null,
                     "resolvedBy": null,
                     "resolvedAt": null
                   },
@@ -20014,6 +21052,7 @@
                     "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
                   },
                   "commentCount": 1,
+                  "dueOn": null,
                   "resolvedBy": {
                     "name": "Dono da Agência"
                   },
@@ -20199,6 +21238,7 @@
                       "email": "maria@padariacentral.exemplo.test",
                       "status": "active",
                       "entered": true,
+                      "lastEnteredAt": null,
                       "since": "2026-09-02T12:00:00.000Z"
                     },
                     {
@@ -20207,6 +21247,7 @@
                       "email": "maria@padariacentral.exemplo.test",
                       "status": "active",
                       "entered": false,
+                      "lastEnteredAt": null,
                       "since": "2026-09-02T12:00:00.000Z"
                     }
                   ],
@@ -20372,6 +21413,7 @@
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "active",
                   "entered": false,
+                  "lastEnteredAt": null,
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -20585,6 +21627,7 @@
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "active",
                   "entered": false,
+                  "lastEnteredAt": null,
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -20779,6 +21822,7 @@
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "active",
                   "entered": false,
+                  "lastEnteredAt": null,
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -20973,6 +22017,7 @@
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "removed",
                   "entered": true,
+                  "lastEnteredAt": null,
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -21129,6 +22174,7 @@
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "active",
                   "entered": true,
+                  "lastEnteredAt": null,
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -21487,6 +22533,17 @@
             "schema": {
               "type": "string",
               "enum": [
+                "true"
+              ]
+            },
+            "required": false,
+            "name": "materialRequest",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
                 "open",
                 "resolved"
               ]
@@ -21522,6 +22579,7 @@
                         "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
                       },
                       "commentCount": 1,
+                      "dueOn": null,
                       "resolvedBy": null,
                       "resolvedAt": null
                     }
@@ -21693,6 +22751,7 @@
                       "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
                     },
                     "commentCount": 1,
+                    "dueOn": null,
                     "resolvedBy": null,
                     "resolvedAt": null
                   },
@@ -26208,7 +27267,7 @@
       "get": {
         "operationId": "getPortalApprovalBatch",
         "summary": "Lê o lote do link de aprovação",
-        "description": "Os conteúdos do lote daquele e-mail, no estado de agora, com a legenda e a mídia da prévia de celular, na ordem do dia e da hora. Só o\nlote: nada da marca, da conversa geral nem de outro conteúdo do cliente, e um conteúdo cancelado some. O que já foi decidido, por esta ou\npor outra pessoa, aparece com o estado atual e `canDecide: false`; o que voltou a aguardar aprovação continua no lote enquanto o link\nvale. Um conteúdo em produção traz só título, dia e formato. `canDecide` é o que manda desenhar Aprovar e Pedir ajuste: verdadeiro\nexatamente quando o conteúdo aguarda aprovação. `personEmail` é o endereço que recebeu o acesso, para o link \"Criar conta para ver o\nportal\" levar a `/criar-conta` com ele preenchido; a resposta nunca diz se o endereço já tem conta. Sem o cookie, ou com o link morto: `404\nAPPROVAL_LINK_INVALID`. Ler não decide nada. `Cache-Control: no-store`.\n\nAcesso: Cookie da sessão de aprovação.",
+        "description": "Os conteúdos do lote daquele e-mail, no estado de agora, com a legenda e a mídia da prévia de celular, na ordem do dia e da hora. Só o\nlote: nada da marca, da conversa geral nem de outro conteúdo do cliente, e um conteúdo cancelado some. O que já foi decidido, por esta ou\npor outra pessoa, aparece com o estado atual e `canDecide: false`; o que voltou a aguardar aprovação continua no lote enquanto o link\nvale. `approval` traz o prazo (`dueOn`) e o recado (`note`) que a agência deu ao enviar, e é nulo no conteúdo enviado antes das rodadas.\nUm conteúdo em produção traz só título, dia e formato. `canDecide` é o que manda desenhar Aprovar e Pedir ajuste: verdadeiro\nexatamente quando o conteúdo aguarda aprovação. `personEmail` é o endereço que recebeu o acesso, para o link \"Criar conta para ver o\nportal\" levar a `/criar-conta` com ele preenchido; a resposta nunca diz se o endereço já tem conta. Sem o cookie, ou com o link morto: `404\nAPPROVAL_LINK_INVALID`. Ler não decide nada. `Cache-Control: no-store`.\n\nAcesso: Cookie da sessão de aprovação.",
         "tags": [
           "approval-link"
         ],
@@ -26238,6 +27297,10 @@
                       "status": "awaiting_approval",
                       "coverAssetId": null,
                       "publishedOn": null,
+                      "approval": {
+                        "dueOn": "2026-10-18",
+                        "note": "Preciso da sua resposta até sábado para publicar na segunda."
+                      },
                       "caption": "Novidades de outono chegando!",
                       "revision": 1,
                       "media": [
@@ -26539,6 +27602,10 @@
                   "status": "approved",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": {
+                    "dueOn": "2026-10-18",
+                    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+                  },
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [
@@ -26722,6 +27789,10 @@
                   "status": "adjusting",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": {
+                    "dueOn": "2026-10-18",
+                    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+                  },
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [

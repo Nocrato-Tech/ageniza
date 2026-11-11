@@ -1404,6 +1404,7 @@ Lista as conversas de um assunto do cliente.
         "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
       },
       "commentCount": 1,
+      "dueOn": null,
       "resolvedBy": null,
       "resolvedAt": null
     }
@@ -1457,6 +1458,7 @@ Abre uma conversa pela agência, com o primeiro comentário.
       "excerpt": "Vamos revisar o tom de voz com o time?"
     },
     "commentCount": 1,
+    "dueOn": null,
     "resolvedBy": null,
     "resolvedAt": null
   },
@@ -1575,6 +1577,7 @@ Resolve uma conversa.
     "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
   },
   "commentCount": 1,
+  "dueOn": null,
   "resolvedBy": {
     "name": "Dono da Agência"
   },
@@ -1610,6 +1613,7 @@ Lista as pessoas com acesso ao portal de um cliente.
       "email": "maria@padariacentral.exemplo.test",
       "status": "active",
       "entered": true,
+      "lastEnteredAt": null,
       "since": "2026-09-02T12:00:00.000Z"
     },
     {
@@ -1618,6 +1622,7 @@ Lista as pessoas com acesso ao portal de um cliente.
       "email": "maria@padariacentral.exemplo.test",
       "status": "active",
       "entered": false,
+      "lastEnteredAt": null,
       "since": "2026-09-02T12:00:00.000Z"
     }
   ],
@@ -1656,6 +1661,7 @@ Adiciona uma pessoa ao portal do cliente.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": false,
+  "lastEnteredAt": null,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1678,6 +1684,7 @@ Reenvia o e-mail de boas-vindas de quem ainda não entrou no portal.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": false,
+  "lastEnteredAt": null,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1700,6 +1707,7 @@ Transforma um convite de portal antigo em acesso direto.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": false,
+  "lastEnteredAt": null,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1722,6 +1730,7 @@ Remove uma pessoa do portal do cliente.
   "email": "maria@padariacentral.exemplo.test",
   "status": "removed",
   "entered": true,
+  "lastEnteredAt": null,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1744,6 +1753,7 @@ Reativa uma pessoa do portal do cliente.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": true,
+  "lastEnteredAt": null,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1823,6 +1833,7 @@ Lista as conversas de um assunto, no portal.
         "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
       },
       "commentCount": 1,
+      "dueOn": null,
       "resolvedBy": null,
       "resolvedAt": null
     }
@@ -1876,6 +1887,7 @@ Abre uma conversa pelo portal, com o primeiro comentário.
       "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
     },
     "commentCount": 1,
+    "dueOn": null,
     "resolvedBy": null,
     "resolvedAt": null
   },
@@ -2097,11 +2109,13 @@ Lê o estudo de marca, no portal.
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents` | Sessão + vínculo com a agência | `conteudo.visualizar` | Consulta os conteúdos e os roteiros de stories de um período |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/feed` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9 |
+| `GET` | `/agencies/:agencyId/contents/awaiting-client` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista o que está parado no cliente, para o Início da agência |
 | `GET` | `/agencies/:agencyId/contents/activation` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê os fatos do caminho de ativação da agência |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents` | Sessão + vínculo com a agência | `conteudo.operar` | Cria um conteúdo em produção |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.operar` | Edita um conteúdo; mover de data é editar `publishOn` |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/submit` | Sessão + vínculo com a agência | `conteudo.operar` | Envia o conteúdo para aprovação |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/submit` | Sessão + vínculo com a agência | `conteudo.operar` | Envia vários conteúdos de um cliente para aprovação, de uma vez |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/approve-by-agency` | Sessão + vínculo com a agência | `conteudo.aprovar_pela_agencia` | Registra a aprovação feita fora da plataforma |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/publish` | Sessão + vínculo com a agência | `conteudo.publicar` | Marca o conteúdo aprovado como publicado |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/unpublish` | Sessão + vínculo com a agência | `conteudo.publicar` | Desfaz a publicação no mesmo dia |
@@ -2159,7 +2173,8 @@ Consulta os conteúdos e os roteiros de stories de um período.
         "revision": 1,
         "publishedOn": null,
         "tasksTotal": 3,
-        "tasksApproved": 1
+        "tasksApproved": 1,
+        "approval": null
       }
     ],
     "storyScripts": [
@@ -2210,7 +2225,8 @@ Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9.
         "revision": 1,
         "publishedOn": null,
         "tasksTotal": 3,
-        "tasksApproved": 1
+        "tasksApproved": 1,
+        "approval": null
       }
     ],
     "nextCursor": "WyIyMDI2LTEwLTIwIiwiMTg6MzA6MDAiLCJmZmZmZmZmZi1mZmZmLTRmZmYtOGZmZi1mZmZmZmZmZmZmZmYiXQ",
@@ -2227,6 +2243,43 @@ Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/contents/awaiting-client`
+
+Lista o que está parado no cliente, para o Início da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — O que está parado no cliente.
+
+```json
+{
+  "data": [
+    {
+      "clientId": "77777777-7777-4777-8777-777777777777",
+      "clientName": "Padaria Central",
+      "contents": [
+        {
+          "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+          "title": "Lançamento da coleção de outono",
+          "format": "reels",
+          "publishOn": "2026-10-20",
+          "sentAt": "2026-10-14T12:00:00.000Z",
+          "dueOn": "2026-10-18",
+          "daysWaiting": 2,
+          "daysToDue": 2
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "truncated": false
+  }
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/contents/activation`
 
@@ -2295,6 +2348,7 @@ Cria um conteúdo em produção.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2360,6 +2414,7 @@ Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2434,6 +2489,7 @@ Edita um conteúdo; mover de data é editar `publishOn`.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2476,7 +2532,10 @@ Envia o conteúdo para aprovação.
 **Requisição** (`application/json`):
 
 ```json
-{}
+{
+  "dueOn": "2026-10-18",
+  "note": "Preciso da sua resposta até sábado para publicar na segunda."
+}
 ```
 
 **Resposta `200`** — Conteúdo aguardando aprovação.
@@ -2505,6 +2564,11 @@ Envia o conteúdo para aprovação.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": {
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+  },
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2535,7 +2599,64 @@ Envia o conteúdo para aprovação.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 CONTENT_TASKS_NOT_APPROVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_APPROVAL_DUE_INVALID` · `400 CONTENT_APPROVAL_NOTE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 CONTENT_TASKS_NOT_APPROVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/submit`
+
+Envia vários conteúdos de um cliente para aprovação, de uma vez.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "contentIds": [
+    "ffffffff-ffff-4fff-8fff-ffffffffffff"
+  ],
+  "dueOn": "2026-10-18",
+  "note": "Preciso da sua resposta até sábado para publicar na segunda."
+}
+```
+
+**Resposta `200`** — O lote enviado.
+
+```json
+{
+  "data": {
+    "batchId": "0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+    "contents": [
+      {
+        "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "title": "Lançamento da coleção de outono",
+        "platform": "instagram",
+        "format": "reels",
+        "publishOn": "2026-10-20",
+        "publishAtTime": "18:30",
+        "status": "awaiting_approval",
+        "owner": {
+          "membershipId": "22222222-2222-4222-8222-222222222222",
+          "name": "Ana Souza"
+        },
+        "coverAssetId": null,
+        "thumbnailAssetId": "44444444-4444-4444-8444-444444444444",
+        "revision": 1,
+        "publishedOn": null,
+        "tasksTotal": 3,
+        "tasksApproved": 1,
+        "approval": {
+          "sentAt": "2026-10-14T12:00:00.000Z",
+          "dueOn": "2026-10-18",
+          "note": "Preciso da sua resposta até sábado para publicar na segunda."
+        }
+      }
+    ]
+  }
+}
+```
+
+**Erros:** `400 CONTENT_APPROVAL_DUE_INVALID` · `400 CONTENT_APPROVAL_NOTE_INVALID` · `400 CONTENT_BATCH_INVALID` · `400 CONTENT_BATCH_MIXED_CLIENTS` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 CONTENT_TASKS_NOT_APPROVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/approve-by-agency`
 
@@ -2582,6 +2703,7 @@ Registra a aprovação feita fora da plataforma.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2655,6 +2777,7 @@ Marca o conteúdo aprovado como publicado.
   "publishedOn": "2026-10-10",
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2726,6 +2849,7 @@ Desfaz a publicação no mesmo dia.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2797,6 +2921,7 @@ Cancela o conteúdo (ele fica guardado).
   "publishedOn": null,
   "cancelledAt": "2026-10-11T12:30:00.000Z",
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2870,6 +2995,7 @@ Reagenda um conteúdo cancelado.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -3111,6 +3237,10 @@ Lista os conteúdos de um período, no portal.
       "status": "awaiting_approval",
       "coverAssetId": null,
       "publishedOn": null,
+      "approval": {
+        "dueOn": "2026-10-18",
+        "note": "Preciso da sua resposta até sábado para publicar na segunda."
+      },
       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
     }
   ],
@@ -3155,6 +3285,10 @@ Lista o que espera a aprovação da pessoa, no portal.
       "status": "awaiting_approval",
       "coverAssetId": null,
       "publishedOn": null,
+      "approval": {
+        "dueOn": "2026-10-18",
+        "note": "Preciso da sua resposta até sábado para publicar na segunda."
+      },
       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
     }
   ],
@@ -3189,6 +3323,10 @@ Lê um conteúdo, no portal.
   "status": "awaiting_approval",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3257,6 +3395,10 @@ Desfaz a aprovação de um conteúdo antes da publicação, no portal.
   "status": "awaiting_approval",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3299,6 +3441,10 @@ Aprova um conteúdo, no portal.
   "status": "approved",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3342,6 +3488,10 @@ Pede ajuste de um conteúdo, no portal.
   "status": "adjusting",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3419,6 +3569,10 @@ Lê o lote do link de aprovação.
       "status": "awaiting_approval",
       "coverAssetId": null,
       "publishedOn": null,
+      "approval": {
+        "dueOn": "2026-10-18",
+        "note": "Preciso da sua resposta até sábado para publicar na segunda."
+      },
       "caption": "Novidades de outono chegando!",
       "revision": 1,
       "media": [
@@ -3490,6 +3644,10 @@ Aprova um conteúdo do lote, pelo link.
   "status": "approved",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3534,6 +3692,10 @@ Pede ajuste de um conteúdo do lote, pelo link.
   "status": "adjusting",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [

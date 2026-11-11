@@ -59,6 +59,20 @@ Para quem vê clientes e conteúdos, o Início mostra "Primeiros passos" até a 
 2. Feito = cliente existe (ou há conteúdo); há conteúdo; algum saiu da produção; algum foi aprovado por pessoa do cliente (a aprovação fora da plataforma não conta). Com os quatro feitos, o caminho some.
 3. Marcos celebrados uma vez por agência (cliente, conteúdo, enviado, primeira aprovação, primeiro `published`): mensagem em português, confete que não bloqueia toque e some sozinho, sem confete se o aparelho pede menos movimento. O que já foi celebrado fica só no aparelho (no navegador, `localStorage`); a primeira abertura apenas registra o que já existe, sem celebrar.
 
+### Parado no cliente
+
+O Início também mostra o que está esperando a decisão do cliente (decisão de 2026-11-10), agrupado por cliente.
+
+| método | rota | permissão | o que faz |
+|---|---|---|---|
+| `GET` | `…/contents/awaiting-client` | `conteudo.visualizar` | os conteúdos em "aguardando aprovação", agrupados por cliente, até 50 ao todo |
+
+1. Sem corpo nem parâmetro. A resposta é `data` (uma lista de `{ clientId, clientName, contents }`) e `meta.truncated`, verdadeiro quando havia mais de 50 e a lista foi cortada. Cada conteúdo traz `id`, `title`, `format`, `publishOn`, `sentAt`, `dueOn`, `daysWaiting` e `daysToDue`.
+2. Os mais urgentes primeiro: o prazo mais próximo (um prazo vencido vem antes de um que ainda não venceu), depois o conteúdo sem prazo que espera há mais tempo. Os clientes seguem a ordem do primeiro conteúdo de cada um. O corte dos 50 tira o menos urgente.
+3. O estado do prazo é contado no dia de São Paulo, pelo servidor; o aplicativo só escreve o texto: `daysToDue` positivo é "vence em N dias", `1` é "vence amanhã", `0` é "vence hoje" e negativo é "venceu há N dias". Esse vocabulário é diferente do prazo de **publicação** ("Atrasado", "prazo em dois dias"): `dueOn` aqui é o prazo da **aprovação**, nunca a data da publicação.
+4. Sem prazo, o item mostra há quantos dias foi enviado (`daysWaiting`, desde `sentAt`). O conteúdo que já aguardava antes das rodadas vem sem `sentAt`, `dueOn` e contagens (todos `null`) e aparece sem esse dado, por último.
+5. Quem vê: a mesma regra do calendário. Sem `conteudo.visualizar` a resposta é `403`; o que a pessoa não pode ler não entra. Cliente arquivado não entra. Não há paginação.
+
 ## Clientes
 
 | método | rota | permissão | o que faz |
@@ -150,7 +164,8 @@ stateDiagram-v2
 | `POST` | `…/clients/:clientId/contents` | `conteudo.operar` | cria, em produção. Sem `mediaAssetIds` no corpo, o conteúdo **herda a mídia da pasta** (a que serve ao formato); com a lista, vale a lista, e `[]` cria sem mídia |
 | `GET` | `…/clients/:clientId/contents/:contentId` | `conteudo.visualizar` | detalhe com as mídias, as subtarefas e a conversa |
 | `PATCH` | `…/clients/:clientId/contents/:contentId` | `conteudo.operar` | edita; mudar a data é editar `publishOn` |
-| `POST` | `…/clients/:clientId/contents/:contentId/submit` | `conteudo.operar` | envia para aprovação (ou reenvia depois do ajuste) |
+| `POST` | `…/clients/:clientId/contents/:contentId/submit` | `conteudo.operar` | envia para aprovação (ou reenvia depois do ajuste), com prazo e recado opcionais: `{ dueOn?, note? }` |
+| `POST` | `…/clients/:clientId/contents/submit` | `conteudo.operar` | envia vários conteúdos do mesmo cliente de uma vez, com o mesmo prazo e recado: `{ contentIds, dueOn?, note? }` |
 | `POST` | `…/clients/:clientId/contents/:contentId/approve-by-agency` | `conteudo.aprovar_pela_agencia` | registra uma aprovação feita fora da plataforma, com motivo |
 | `POST` | `…/clients/:clientId/contents/:contentId/publish` | `conteudo.publicar` | marca como publicado |
 | `POST` | `…/clients/:clientId/contents/:contentId/unpublish` | `conteudo.publicar` | desfaz a publicação, só no mesmo dia |
@@ -192,6 +207,16 @@ stateDiagram-v2
     aprovado --> cancelado: cancela
     cancelado --> producao: reagenda
 ```
+
+**Rodada de aprovação: prazo e recado** (decisão de 2026-11-10)
+
+- Cada envio abre uma **rodada**, guardada por conteúdo. O corpo do envio é opcional (`{}` continua valendo): `dueOn` é o prazo da decisão do cliente, um dia `AAAA-MM-DD` de hoje até 90 dias à frente no dia de São Paulo; `note` é o recado ao cliente, de 1 a 500 caracteres, sem só espaços. Sem prazo ou sem recado, a rodada vai sem ele.
+- Prazo fora da faixa é `400 CONTENT_APPROVAL_DUE_INVALID`; recado em branco, longo ou com caractere invisível é `400 VALIDATION_ERROR` (o banco ainda responde `400 CONTENT_APPROVAL_NOTE_INVALID` como segunda barreira). Cancelar e desfazer a publicação continuam sem corpo.
+- **Envio em lote**: de 1 a 30 conteúdos do mesmo cliente, cada um uma vez, com o mesmo `dueOn` e `note`. É tudo ou nada: um conteúdo que não pode ser enviado recusa o lote inteiro com o código do envio individual (`409 CONTENT_STATE`, `CONTENT_MEDIA_INCOMPLETE`, `CONTENT_MEDIA_NOT_CONFIRMED` ou `CONTENT_TASKS_NOT_APPROVED`). Conteúdo de outro cliente, de outra agência ou inexistente é `404 NOT_FOUND`; mais de 30, repetido ou lista vazia é `400 VALIDATION_ERROR`. A resposta traz `batchId` e os conteúdos como a lista do calendário os traz, já em "aguardando aprovação".
+- Reenviar depois do ajuste abre uma rodada nova, com o prazo e o recado do novo envio. Quando o cliente desfaz a aprovação, o conteúdo volta à **mesma rodada**, com o mesmo prazo e recado.
+- Repetir o mesmo envio (o mesmo prazo e o mesmo recado) de um conteúdo que já aguarda não muda nada e não é erro; pedir outro prazo ou recado para quem já aguarda é `409 CONTENT_STATE`.
+- O conteúdo e a lista do calendário trazem `approval`: `{ sentAt, dueOn, note }` da rodada enquanto o conteúdo aguarda aprovação, e `null` nos outros estados e no conteúdo que já aguardava antes das rodadas (sem data de envio e sem prazo; nada foi reescrito).
+- O cliente é avisado por e-mail no envio, com o prazo e o recado assinados pela agência, e recebe dois lembretes: "vence amanhã", na véspera do prazo, e "venceu", no dia seguinte. Saem às 9h de São Paulo, uma vez por rodada cada um, só para as pessoas ativas do portal daquele cliente e só enquanto o conteúdo ainda aguarda decisão. Não sai nada para cliente arquivado, agência suspensa ou em somente leitura, e não sai "vence amanhã" quando o envio foi feito na própria véspera do prazo.
 
 - Não existe caminho direto de "em produção" para "aprovado".
 - Mudar a data, a hora, o título, o responsável ou as subtarefas **mantém** a aprovação.
