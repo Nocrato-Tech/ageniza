@@ -4,7 +4,7 @@ import { Bell, Eye, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { AvatarGroup, BadgeCard, Button, Chip, ChoiceRadio, DatePicker, EmptyState, Field, IconButton, Kbd, Menu, MenuItem, MenuSeparator, ProgressBar, SearchField, StatusTag, Tabs, TextInput } from './index.js';
+import { AvatarGroup, BadgeCard, Button, Chip, ChoiceRadio, DatePicker, EmptyState, Field, IconButton, Kbd, Menu, MenuItem, MenuSeparator, ProgressBar, SearchField, StatusTag, Tabs, TextInput, Trait } from './index.js';
 
 afterEach(cleanup);
 
@@ -445,5 +445,23 @@ describe('ChoiceRadio', () => {
 
     fireEvent.click(screen.getByText('Uma'));
     expect(change).not.toHaveBeenCalled();
+  });
+});
+
+describe('Trait', () => {
+  it('is a static capsule with the trait as its text, and takes extra classes', () => {
+    const { container } = render(<><Trait>Rotina corrida</Trait><Trait className="extra">Compra por impulso</Trait></>);
+    const [first, second] = Array.from(container.querySelectorAll('span'));
+
+    expect(first!.className).toBe('ui-trait');
+    expect(first!.textContent).toBe('Rotina corrida');
+    expect(second!.className).toBe('ui-trait extra');
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('passes attributes through, so a list of traits can be labelled', () => {
+    render(<Trait data-testid="trait" title="Hábito">Vai todo dia às 7h</Trait>);
+
+    expect(screen.getByTestId('trait').getAttribute('title')).toBe('Hábito');
   });
 });

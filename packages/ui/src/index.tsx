@@ -30,6 +30,7 @@ export { Select, type SelectOption, type SelectProps } from './select.js';
 export { Skeleton } from './skeleton.js';
 export { FormatTag, LateBadge, StatusTag, type FormatTagFormat, type FormatTagProps, type StatusTagProps, type StatusTagStatus } from './tags.js';
 export { Table, type TableColumn, type TableProps } from './table.js';
+export { Trait, type TraitProps } from './trait.js';
 export { Tabs, type TabItem, type TabsProps } from './tabs.js';
 export { Textarea, type TextareaProps } from './textarea.js';
 

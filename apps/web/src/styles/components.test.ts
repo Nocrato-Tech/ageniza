@@ -948,7 +948,7 @@ describe('public pages (#639)', () => {
 });
 
 describe('redesign components: sheets, tokens, motion and contrast', () => {
-  const NEW_SHEETS = ['kbd', 'search-field', 'chip', 'avatar-group', 'table', 'progress-bar'];
+  const NEW_SHEETS = ['kbd', 'search-field', 'chip', 'avatar-group', 'table', 'progress-bar', 'trait'];
   const SURFACES = ['var(--bg-canvas)', 'var(--bg-surface)'];
   const pair = (selector: string) => ({ fg: rule(selector).get('color')!, bg: rule(selector).get('background')! });
   const aa = (fg: string, bg: string): number => contrastOf('light', fg, bg);
@@ -1026,6 +1026,7 @@ describe('redesign components: sheets, tokens, motion and contrast', () => {
 
   it.each([
     '.ui-kbd',
+    '.ui-trait',
     '.ui-chip__count',
     '.ui-avatar-group__more',
     '.ui-avatar--violet',

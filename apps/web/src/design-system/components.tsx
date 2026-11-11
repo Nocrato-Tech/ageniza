@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { ArrowRight, Bell, Download, Eye, FileText, FolderInput, ImageIcon, LayoutGrid, List, Pencil, Plus, Store, Trash2, Video } from 'lucide-react';
 import {
   Avatar, AvatarGroup, BadgeCard, BrandSymbol, Button, ButtonLink, Chip, ChoiceCard, ChoiceRadio, ClientStrip, DatePicker, IconButton, Kbd, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, ErrorSummary, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
-  Modal, MilestoneTrail, Pagination, PasswordInput, Popover, ProgressBar, Realce, SearchField, Segmented, Select, Skeleton, Stage3D, StatusTag, Table, Tabs, Textarea, TextInput,
+  Modal, MilestoneTrail, Pagination, PasswordInput, Popover, ProgressBar, Realce, SearchField, Segmented, Select, Skeleton, Stage3D, StatusTag, Table, Tabs, Textarea, TextInput, Trait,
   type MilestoneStatus, type Stage3DTone, type TableColumn
 } from '@ageniza/ui';
 
@@ -362,6 +362,12 @@ export const componentEntries: readonly ComponentEntry[] = [
       { label: 'filtros com contagem, um escolhido', render: (state) => stateOnly(state, ['default'], <ChipsDemo />) },
       { label: 'desativado', render: (state) => stateOnly(state, ['disabled'], <Chip count={5} disabled>Reels</Chip>) }
     ]
+  },
+  {
+    id: 'trait',
+    name: 'Trait',
+    covers: ['Trait'],
+    examples: [{ label: 'traços da persona', render: (state) => stateOnly(state, ['default'], <span className="ds-row"><Trait>Rotina corrida</Trait><Trait>Compra por impulso</Trait><Trait>Instagram e WhatsApp</Trait></span>) }]
   },
   {
     id: 'kbd',
