@@ -17,6 +17,9 @@ Este fluxo cobre cadastro, confirmação do e-mail, login, recuperação de senh
 | `GET` | `/auth/session/check` | sessão | confere a sessão sem renovar |
 | `POST` | `/auth/logout` | sessão | sai deste aparelho |
 | `POST` | `/auth/logout-all` | sessão | sai de todos os aparelhos |
+| `GET` | `/auth/sessions` | sessão | lista as sessões ativas **da própria conta** (*proposta*, #893) |
+| `DELETE` | `/auth/sessions/:sessionId` | sessão | sai de **uma** sessão da conta que não é a atual (*proposta*) |
+| `POST` | `/auth/sessions/revoke-others` | sessão | sai de **todas menos a atual** (*proposta*) |
 | `POST` | `/auth/password/forgot` | público | pede o link de recuperação de senha |
 | `POST` | `/auth/password/reset` | público, com o token do link | define a senha nova |
 | `GET` | `/me/contexts/resolve` | sessão | decide em qual contexto entrar |
@@ -81,9 +84,19 @@ sequenceDiagram
    - sem `appRedirect`, a volta é para a web (`/entrar/google`);
    - o deep link precisa estar na lista da API ([como o app entra](../comecar.md#3-como-o-app-entra)).
 4. Para conferir a sessão quando o app volta ao primeiro plano, use `GET /auth/session/check`, que não renova a sessão. A web confere a cada 45 s e sempre que a aba volta ao foco, porque a pessoa pode ter sido removida e ter as sessões encerradas.
-5. Para sair, use `POST /auth/logout`; para sair de todos os aparelhos, `POST /auth/logout-all`.
+5. Para sair, use `POST /auth/logout`; para sair de todos os aparelhos, `POST /auth/logout-all`. **"Sair de todas as sessões" só aparece no menu de conta quando a pessoa tem 2 ou mais sessões ativas** (2026-11-11); com uma só, o menu tem só "Sair".
 
 **Regra:** um `401` em qualquer rota significa que a sessão acabou. Leve a pessoa para o login.
+
+## Sessões ativas
+
+Decisão de 2026-11-11 ([sessões ativas na conta, #893](../../business/decisions/2026-11-11-estrutural-sessoes-ativas-na-conta-com-cidade-do-cabecalho-do-cloudflare.md), pendente de validação do dono; SPEC em `specs/auth.md`, seção 14). A sessão é **global**, não de agência: a lista é a mesma em qualquer contexto, agência ou portal.
+
+1. `GET /auth/sessions` devolve as sessões da **própria conta**, da mais recente à mais antiga: `{ id, current, browser, os, city, lastUsedAt, createdAt }`. O navegador e o sistema vêm do agente do navegador; a `city` só existe quando a borda informou (sem o cabeçalho, **não mostre cidade**); `current` marca "Este aparelho". Nunca há IP, token nem dado de sessão de outra pessoa.
+2. Em cada outra sessão, "Sair deste aparelho" chama `DELETE /auth/sessions/:sessionId` (`204`). A sessão atual é `409 USE_LOGOUT` (ela sai por "Sair"), e a sessão de outra conta ou inexistente é `404`.
+3. "Sair de todas as outras" chama `POST /auth/sessions/revoke-others` (`204`; encerra todas menos a atual).
+4. A cidade é informativa e vem do cabeçalho de localização que a borda do Cloudflare põe (`cf-ipcity`), guardada só como o nome da cidade; não há serviço externo de geolocalização, e nenhuma decisão de segurança depende dela. "Usando agora" é a sessão atual; nas outras, o dia do último uso, que vem da renovação da sessão (no máximo a cada 24 horas de uso), portanto não é um relógio exato.
+5. Quem perde a sessão recebe `401` na próxima chamada e vai ao login, como sempre.
 
 ## Esqueci a senha
 
@@ -158,6 +171,7 @@ O cadastro e o aceite de convite já registram o aceite, pelo `acceptTerms: true
 
 ## Perfil
 
+- Desde 2026-11-11 o perfil mora na página **Conta** (no menu de conta, na agência e no portal): o avatar, o nome, o e-mail, "Pedir troca de e-mail" (que **saiu do menu de conta**) e a lista de [sessões ativas](#sessões-ativas). O tour se revê pelo menu **Ajuda**, não mais pelo menu de conta.
 - O próprio nome muda por `PATCH /me/profile`, e a própria foto por `POST /me/photo`.
 - A troca de e-mail tem três passos:
   1. a pessoa pede com `POST /me/email-change`;

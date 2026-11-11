@@ -11,6 +11,8 @@
 >
 > **`ClientAssignment` não existe.** Decisões anteriores e `colaboradores.md` o citavam como a ligação entre colaborador e cliente; ele nunca foi criado em migration. Nada neste módulo o cria — atribuição nasce em Conteúdo e Tarefas.
 >
+> **Atualização de 2026-11-11 (redesenho, decisões pendentes de validação do dono).** O perfil passa a ter **cinco abas** (Visão geral, Conteúdos, Mídias, Marca e Acessos): a aba Conteúdos volta e as abas Tarefas e Relatórios saem ([`o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta`](../docs/business/decisions/2026-11-11-o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta.md)). O cliente ganha a **cidade** e "quem trabalha neste cliente" é derivado dos responsáveis dos conteúdos ([`estrutural-o-cliente-ganha-cidade-…`](../docs/business/decisions/2026-11-11-estrutural-o-cliente-ganha-cidade-e-quem-trabalha-nele-e-derivado.md)); a persona ganha seis campos ([`estrutural-a-persona-ganha-…`](../docs/business/decisions/2026-11-11-estrutural-a-persona-ganha-idade-ocupacao-local-tracos-onde-esta-e-tom.md)); a pessoa convidada ganha o **nome** digitado pela agência ([`estrutural-o-nome-do-convidado-…`](../docs/business/decisions/2026-11-11-estrutural-o-nome-do-convidado-digitado-pela-agencia-aparece-antes-da-entrada.md)); o pedido de material ganha **título** ([`estrutural-o-pedido-de-material-ganha-titulo`](../docs/business/decisions/2026-11-11-estrutural-o-pedido-de-material-ganha-titulo.md)) e o cliente **envia o material pelo portal** ([`estrutural-o-cliente-envia-material-pelo-portal`](../docs/business/decisions/2026-11-11-estrutural-o-cliente-envia-material-pelo-portal.md)); o Início do portal segue o quadro ([`o-inicio-do-portal-segue-o-quadro-…`](../docs/business/decisions/2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post.md)); a colaboradora passa a ter página própria ([`colaboradores.md`](colaboradores.md)). Onde o texto abaixo disser o contrário, vale esta atualização; a seção 11 lista as decisões.
+>
 > Herda de [`autorizacao.md`](autorizacao.md): o contrato de listagem, `archived`/`removed`, "sem permissão" não é tela, os três tratamentos de carregamento e a invalidação de query depois de cada escrita. E de [`colaboradores.md`](colaboradores.md): o armazenamento de identidade (#100) e o desenho da seção de convites.
 
 ## 1. Propósito
@@ -68,7 +70,8 @@ Colaborador da agência — Owner incluído — não entra no portal sem víncul
 | `tax_id` | texto | — | CNPJ **ou** CPF, só dígitos, 14 ou 11. **Não é único** |
 | `segment` | texto | — | segmento, livre |
 | `website` | texto | — | URL `http(s)` |
-| `instagram_handle` | texto | — | sem `@`, no formato aceito pelo Instagram. O simulador de feed de Conteúdo lê daqui |
+| `instagram_handle` | texto | — | sem `@`, no formato aceito pelo Instagram. O simulador de feed de Conteúdo lê daqui; desde 2026-11-11 o @ também aparece no cabeçalho do perfil |
+| `city` | texto | — | **novo (2026-11-11)**: cidade, livre, até 80 caracteres; aparece no cabeçalho ("Panificadora · São Paulo"). Migration sem backfill |
 | `contact_name` | texto | — | contato do dono |
 | `contact_phone` | texto | — | telefone/WhatsApp |
 | `contact_email` | texto | — | e-mail de contato. **Não** é o e-mail de acesso ao portal |
@@ -77,6 +80,8 @@ Colaborador da agência — Owner incluído — não entra no portal sem víncul
 | `updated_by` | usuário | — | quem alterou o cadastro por último |
 
 **Pertence a:** agência. **Relações:** 0..N vínculos de portal, 0..N convites de portal, 1 estudo de marca (sete seções), 0..N personas, 0..N threads.
+
+**"Cliente desde" e "quem trabalha neste cliente" (2026-11-11).** "Cliente desde <mês e ano>" é a data de criação do cadastro (`createdAt` passa a constar do contrato). "Quem trabalha neste cliente" é **derivado**: os responsáveis dos conteúdos abertos do cliente, sem criar atribuição de cliente a pessoa, e só para quem tem `conteudo.visualizar`.
 
 Dados do cliente e acesso ao portal são **independentes**: o contato é cadastro, preenchido pela agência; o acesso é convite para um e-mail, que pode ou não ser o do contato. O contato nunca é derivado da conta de quem aceitou.
 
@@ -104,7 +109,13 @@ Cada linha guarda `updated_by` e `updated_at`. **Preenchimento** do estudo é de
 |---|---|:-:|---|
 | `name` | texto | ✅ | |
 | `description` · `pains` · `desires` · `objections` | texto | — | livres |
+| `age` | inteiro | — | **novo (2026-11-11)**: de 1 a 120 |
+| `occupation` · `location` | texto | — | **novos**: até 80 caracteres cada (a ocupação e o local, cidade ou bairro) |
+| `traits` | lista de textos | — | **novo**: até 5 traços, de até 24 caracteres |
+| `where_found` · `tone_that_works` | texto | — | **novos**: "onde está" e "tom que funciona", até 280 caracteres; edição por linha no perfil |
 | `status` | `active` \| `archived` | ✅ | entidade: arquiva, não exclui |
+
+Os campos novos são opcionais, sem backfill, e o portal os lê junto da persona ativa. O formulário avisa para não pôr dado de pessoa real.
 
 **Pertence a:** cliente. Várias por cliente.
 
@@ -269,7 +280,9 @@ Todas sob `requireSession` e `requireClientAccess` — o mesmo padrão de `POST 
 
 **Item da listagem de clientes:** `id`, `name`, `photoUrl`, `instagramHandle`, `status`, `closingDate`, `threadsAwaitingAgency` e `pendingInvitations`. `pendingInvitations` só vem para quem tem `cliente.convidar_usuario`; para os demais o campo é omitido, não zero.
 
-**Resumo da aba Geral**, no `GET` do detalhe: preenchimento do estudo, threads aguardando a agência, threads com resposta da agência, pessoas ativas no portal.
+**Resumo da aba Geral**, no `GET` do detalhe: preenchimento do estudo, threads aguardando a agência, threads com resposta da agência, pessoas ativas no portal. Desde 2026-11-11 o detalhe também devolve `city`, `createdAt` ("cliente desde"), as **contagens das abas** (conteúdos não cancelados do mês, arquivos, pessoas ativas no portal), o resumo de Mídias ("171 arquivos em 5 pastas") e "quem trabalha neste cliente" (os responsáveis dos conteúdos abertos); as contagens de Conteúdos e Mídias e "quem trabalha" só vêm para quem tem `conteudo.visualizar`, a de Acessos para quem tem `cliente.convidar_usuario`: sem a permissão o campo é omitido, não zero.
+
+**Acessos (2026-11-11).** `POST …/clients/:clientId/members` (adicionar pessoa) e a lista de pessoas ganham o **nome digitado pela agência**, mostrado só enquanto a pessoa não entrou; a lista e a resposta continuam iguais para e-mail com e sem conta.
 
 **Resumo do Início do portal**, no `GET /clients/:clientId`: threads abertas com resposta da agência e preenchimento do estudo.
 
@@ -289,6 +302,8 @@ Duas migrations, porque são duas estruturais diferentes e a segunda depende da 
 - tabelas `client_brand_sections`, `client_personas`, `client_threads`, `client_thread_comments`, com RLS forçada;
 - índices: threads por `(client_id, section_key)` e `(client_id, persona_id)`; comentários por `(thread_id, created_at)`;
 - permissões novas `cliente.visualizar`, `cliente.operar`, `cliente.cadastrar`, `cliente.arquivar`, `cliente.remover_usuario`, com os presets da seção 2.
+
+**Migrations de 2026-11-11** (todas forward-only e **sem backfill**, cada uma com a sua decisão estrutural): `clients.city`; seis colunas anuláveis em `client_personas`; o nome digitado em `client_portal_accesses`; o `title` do pedido de material. As policies não mudam; os grants de `UPDATE` por coluna recebem as colunas novas.
 
 **Funções `security definer`** — a forma decidida para efeito que não pode depender da RLS de outro módulo nem de uma pessoa:
 
@@ -336,21 +351,21 @@ Nenhuma policy de outro módulo é alterada.
 |---|---|---|---|
 | Carteira | `/agencia/:agenciaId/clientes` | grade de crachás de clientes para triagem | `cliente.visualizar` |
 | Cadastrar | modal sobre a carteira | só o nome | `cliente.cadastrar` |
-| Detalhe | `/agencia/:agenciaId/clientes/:clienteId/<aba>` | cabeçalho e seis abas (Geral, Mídias, Tarefas, Estudo de marca, Relatórios e Acessos); a aba Mídias e o botão "Abrir no Calendário Editorial" do cabeçalho só aparecem, e o endereço da aba só abre, com `conteudo.visualizar` | `cliente.visualizar` |
+| Detalhe | `/agencia/:agenciaId/clientes/:clienteId/<aba>` | cabeçalho e **cinco abas com contagem** (Visão geral, Conteúdos, Mídias, Marca e Acessos; 2026-11-11, antes eram seis, com Tarefas e Relatórios); as abas Conteúdos e Mídias e o botão "Abrir no Calendário Editorial" do cabeçalho só aparecem, e o endereço da aba só abre, com `conteudo.visualizar` | `cliente.visualizar` |
 | Editar cadastro | modal sobre o detalhe | todos os campos do cadastro | `cliente.operar` |
-| Portal — Início | `/portal/:clienteId` | saudação e próxima ação | vínculo de cliente |
+| Portal — Início | `/portal/:clienteId` | saudação, até três capas dos posts que esperam, "Revisar os N posts", "A agência pediu" e, sem pendência, a "Boa notícia" com o progresso do mês | vínculo de cliente |
 | Portal — Marca | `/portal/:clienteId/marca` | estudo em leitura e conversas | vínculo de cliente |
 | Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, o mês e o feed (`specs/conteudo.md` seção 7); o endereço antigo `/portal/:clienteId/calendario`, que o e-mail ao cliente ainda usa, redireciona para ele | vínculo de cliente |
-| Portal — Relatórios | `/portal/:clienteId/relatorios` | esqueleto | vínculo de cliente |
+| Portal — Pedidos da agência | `/portal/:clienteId/pedidos` | os pedidos de material abertos, cada um com o título, o prazo e o envio de arquivos pelo cliente; o selo na navegação conta os abertos (2026-11-11; no lugar de Relatórios, que saiu) | vínculo de cliente |
 
 **Duas intenções diferentes, e o designer precisa das duas.**
 
 - **Área da agência — triar.** O Gestor de conta, com oito a vinte clientes, abre Clientes várias vezes por dia perguntando *qual cliente precisa de mim agora?*. Painel de plantão: o cliente com problema salta aos olhos, o cliente em dia fica quieto. Desktop primeiro.
 - **Portal — conferir e aprovar.** O dono do negócio, sem familiaridade com ferramenta de agência, pelo celular, poucas vezes por semana. Vitrine do trabalho feito para ele: nenhum termo técnico, nenhum dado a interpretar, sempre uma próxima ação óbvia. **Celular primeiro.**
 
-### Aba esqueleto
+### Aba esqueleto (removida em 2026-11-11)
 
-Conteúdos, Tarefas e Relatórios na agência, e Conteúdos e Relatórios no portal, **existem desde o MVP** e são preenchidas pelos seus módulos. Uma aba esqueleto diz que a área existe e o que ela vai mostrar — **nunca dado fictício, nunca controle que não funciona**. Nada nela pode parecer quebrado.
+Não existe mais aba esqueleto: Tarefas e Relatórios **saíram** do perfil e do portal, e Conteúdos voltou **preenchida** ([`o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta`](../docs/business/decisions/2026-11-11-o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta.md)). Nenhuma aba nasce reservada; a regra de fundo continua: **nunca dado fictício, nunca controle que não funciona**. Quando o relatório interno ou as tarefas forem decididos, a aba volta com o módulo.
 
 ### Carteira — `/agencia/:agenciaId/clientes`
 
@@ -414,11 +429,12 @@ Só o nome, porque só ele é obrigatório: o cadastro começa numa ligação, e
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ ← Clientes                                                   │
+│ Clientes > Padaria Central                                   │
 │ (foto)  Padaria Central     Ativo · [encerra em 30/10]        │
-│         @padariacentral  [ Abrir no Calendário Editorial ] [ Editar ] [ ⋯ ] │
+│         @padariacentral · Panificadora · São Paulo            │
+│         [ Abrir no Calendário Editorial ] [ Editar ] [ ⋯ ]    │
 ├──────────────────────────────────────────────────────────────┤
-│ Geral │ Mídias │ Tarefas │ Estudo de marca │ Relatórios │ Acessos │
+│ Visão geral │ Conteúdos (16) │ Mídias (171) │ Marca │ Acessos (3) │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
 │                      (conteúdo da aba)                       │
@@ -426,29 +442,34 @@ Só o nome, porque só ele é obrigatório: o cadastro começa numa ligação, e
 └──────────────────────────────────────────────────────────────┘
 ```
 
-A aba fica na URL, para o link ser compartilhável e o "voltar" funcionar.
+A aba fica na URL, para o link ser compartilhável e o "voltar" funcionar. O cabeçalho (2026-11-11) tem a trilha "Clientes > nome", a etiqueta do estado, o @, a cidade e o segmento, a meta "cliente desde <mês e ano>" e os avatares de "quem trabalha neste cliente" (derivados dos responsáveis dos conteúdos; sem `conteudo.visualizar` o bloco não aparece). As contagens das abas seguem a seção 6.
 
 **Menu `⋯`**, só para `cliente.arquivar`: **Encerrar contrato** (escolher a data), **Desmarcar encerramento** quando houver, **Arquivar agora**. Em cliente arquivado, a única ação do cabeçalho é **Reativar**.
 
 A confirmação de arquivar diz o que acontece: o portal deixa de funcionar para as pessoas do cliente, convites pendentes são cancelados, nada é apagado. A de encerrar diz que tudo segue normal até a data, inclusive o portal.
 
-### Aba Geral
+### Aba Visão geral (antes "Geral")
 
 ```
-│  Cadastro                              Estudo de marca          │
-│  Razão social · CNPJ                   ████████░░░░  5 de 7     │
-│  Segmento · Site                                                │
-│  Contato: nome · telefone · e-mail     Conversas                │
-│                                        2 aguardando a agência   │
-│  Portal                                1 com resposta da agência│
-│  3 pessoas com acesso                                           │
-│                                                                 │
-│  ┄┄┄┄┄┄┄┄┄┄┄┄┄ saúde do cliente (reservado) ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄     │
+│  Estudo de marca          Conversas            Portal        Mídias   │
+│  ████████░░░░  5 de 7     2 aguardando a       3 pessoas     171      │
+│                           agência              com acesso    arquivos │
+│                           1 com resposta                     em 5     │
+│                                                              pastas   │
+│  Pedidos de material                              [ Pedir material ]  │
+│  Depoimentos em vídeo · aberto até 15/11                              │
+│                                                                       │
+│  Cadastro                                                  [ Editar ] │
+│  Razão social · CNPJ · Segmento · Site · Contato · cliente desde …   │
 ```
 
-Resumo de como está tudo do cliente. No MVP mostra o que existe; a área de saúde — pendentes, atrasos, próximos posts — é reservada para Conteúdo e Tarefas. Cada bloco leva à aba correspondente. Campo de cadastro vazio aparece como "não informado", não some.
+Resumo de como está tudo do cliente. O desenho de 2026-11-11 tem **quatro blocos** (Estudo de marca, Conversas, Portal e Mídias, cada um levando à aba correspondente), os **pedidos de material** com "Pedir material" e o **Cadastro** com o seu "Editar". Os blocos de Mídias e dos pedidos só aparecem para quem tem `conteudo.visualizar`. Campo de cadastro vazio aparece como "não informado", não some. A área de "saúde do cliente" reservada deixou de existir: não há reserva de espaço, e o que for decidido volta com o módulo (nunca dado fictício).
 
-### Aba Estudo de marca
+### Aba Conteúdos (volta em 2026-11-11)
+
+A lista dos conteúdos do cliente **agrupada por quem precisa agir** (Esperando o cliente, Atrasado, Em produção, Aprovado e agendado), com a opção de agrupar por data ou por formato; cada linha tem a capa, o formato, a data, quem cuida e o estado. **Nova publicação** e **Abrir no Calendário Editorial** levam ao calendário, que continua tendo **um endereço só**. Usa a rota de período por cliente que já existe, sem rota nova, e só abre com `conteudo.visualizar`. Decisão: [`o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta`](../docs/business/decisions/2026-11-11-o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta.md).
+
+### Aba Marca (antes "Estudo de marca")
 
 ```
 │  Branding                      editado por Ana · 12/10   [editar]│
@@ -466,6 +487,7 @@ Resumo de como está tudo do cliente. No MVP mostra o que existe; a área de sa�
 - Cada seção mostra o conteúdo, quem editou por último e quando, e as conversas daquela seção. Cada persona, as suas.
 - **Editar** abre a seção em modo de edição no próprio lugar, só para `cliente.operar`.
 - **Conversa**: lista das threads do assunto, abertas primeiro; abrir uma mostra os comentários, com o lado de cada autor visível — quem é da agência, quem é do cliente — e **Resolver** para `cliente.operar`. Thread resolvida continua legível; comentar nela a reabre.
+- **Persona (2026-11-11):** o cartão tem o nome e o apelido ("Camila, a mãe que corre"), a linha de apoio "34 anos · gerente de RH · Pinheiros" (idade, ocupação e local), os chips de **traços** e as linhas **Dor**, **Desejo**, **Objeções**, **Onde está** e **Tom que funciona**, cada uma com o seu lápis e salvando sozinha no mesmo `PATCH` da persona. "Objeções" continua, mesmo que o quadro não a mostre. Campo vazio aparece como "não informado". Decisão: [`estrutural-a-persona-ganha-…`](../docs/business/decisions/2026-11-11-estrutural-a-persona-ganha-idade-ocupacao-local-tracos-onde-esta-e-tom.md).
 - Personas arquivadas ficam recolhidas, com **Desarquivar**; as conversas delas são só leitura.
 - Seção vazia: "Ainda não preenchida", com **Preencher** para `cliente.operar`.
 
@@ -476,7 +498,7 @@ Só para `cliente.convidar_usuario`. O mesmo desenho da seção de convites de C
 ```
 │  Pessoas com acesso ao portal        [ + Adicionar pessoa ] │
 │  Maria Souza   maria@padaria.com   desde 02/09   [remover]  │
-│  ainda não entrou   joao@padaria.com  desde 10/09           │
+│  Débora (ainda não entrou)  debora@padaria.com  desde 10/09 │
 │                     [reenviar e-mail] [remover]             │
 │  Removidas (1) ▾                                            │
 │                                                             │
@@ -484,7 +506,8 @@ Só para `cliente.convidar_usuario`. O mesmo desenho da seção de convites de C
 │  carla@padaria.com   expira em 5 dias   [reenviar] [cancelar] │
 ```
 
-- **Adicionar pessoa**: modal só com o e-mail e o botão **Adicionar**. *Pela decisão de 2026-10-26 ([acesso ao portal por e-mail](../docs/business/decisions/2026-10-26-estrutural-o-acesso-ao-portal-e-por-e-mail-e-a-conta-e-opcional.md)), substitui o Convidar. O acesso vale na hora, sem conta e sem aceite, e a pessoa aprova pelo link do e-mail. O acesso passa à conta **no login**, quando uma conta com aquele e-mail verificado entra, e nunca na hora de adicionar. A lista mostra o nome da conta ou "ainda não entrou" e **nunca diz se o e-mail tem conta no Ageniza**. Um e-mail digitado errado ganha o acesso: é risco aceito, corrigido com Remover. Adicionar de novo um e-mail removido reativa a mesma linha. A lista, Remover e Reativar usam o id do acesso, e toda remoção, inclusive a da própria pessoa, passa pela função do acesso, que avança a geração e mata os links de aprovação. Adicionar conta no limite diário de e-mails da agência.* No sucesso o modal fecha; em erro ele fica aberto com o e-mail digitado (409 de quem já tem acesso, 429 do limite diário, 502 de falha no e-mail, que deixa o acesso criado). A tela está em [`2026-10-27-adicionar-pessoa-na-aba-acessos-como-a-tela-responde`](../docs/business/decisions/2026-10-27-adicionar-pessoa-na-aba-acessos-como-a-tela-responde.md).
+- **Nome antes da entrada (2026-11-11):** o modal ganha o campo **Nome** (opcional). O nome digitado pela agência é o que a lista e a mensagem de WhatsApp ("Olá, Débora!") mostram **enquanto a pessoa não entrou**; depois, vale o nome da conta. Ele vem só do que a agência escreveu, nunca da conta com aquele e-mail, e a lista continua igual para e-mail com e sem conta ([`estrutural-o-nome-do-convidado-…`](../docs/business/decisions/2026-11-11-estrutural-o-nome-do-convidado-digitado-pela-agencia-aparece-antes-da-entrada.md), que substitui o item 2 de `2026-10-27-a-lista-de-acessos-so-mostra-quem-entrou-no-portal-daquele-cliente` nesse ponto).
+- **Adicionar pessoa**: modal só com o e-mail e o botão **Adicionar** (e, desde 2026-11-11, o Nome opcional). *Pela decisão de 2026-10-26 ([acesso ao portal por e-mail](../docs/business/decisions/2026-10-26-estrutural-o-acesso-ao-portal-e-por-e-mail-e-a-conta-e-opcional.md)), substitui o Convidar. O acesso vale na hora, sem conta e sem aceite, e a pessoa aprova pelo link do e-mail. O acesso passa à conta **no login**, quando uma conta com aquele e-mail verificado entra, e nunca na hora de adicionar. A lista mostra o nome da conta ou "ainda não entrou" e **nunca diz se o e-mail tem conta no Ageniza**. Um e-mail digitado errado ganha o acesso: é risco aceito, corrigido com Remover. Adicionar de novo um e-mail removido reativa a mesma linha. A lista, Remover e Reativar usam o id do acesso, e toda remoção, inclusive a da própria pessoa, passa pela função do acesso, que avança a geração e mata os links de aprovação. Adicionar conta no limite diário de e-mails da agência.* No sucesso o modal fecha; em erro ele fica aberto com o e-mail digitado (409 de quem já tem acesso, 429 do limite diário, 502 de falha no e-mail, que deixa o acesso criado). A tela está em [`2026-10-27-adicionar-pessoa-na-aba-acessos-como-a-tela-responde`](../docs/business/decisions/2026-10-27-adicionar-pessoa-na-aba-acessos-como-a-tela-responde.md).
 - **Reenviar e-mail** (só na linha de quem **ainda não entrou**): manda de novo o e-mail de boas-vindas, conta no limite diário de e-mails da agência (429 diz "Limite diário de envios atingido. Tente amanhã.") e é recusado em agência somente leitura. Cada botão mostra o estado de envio só na linha clicada, e o sucesso diz "E-mail reenviado para <e-mail>.". Quem já entrou não tem o botão, e a API recusa (409 `ACCESS_NOT_PENDING`). *Proposta pendente de validação: um reenvio por pessoa por minuto (429 `RESEND_TOO_SOON`), em [`2026-10-27-reenvio-do-e-mail-de-acesso-no-maximo-um-por-minuto-por-pessoa`](../docs/business/decisions/2026-10-27-reenvio-do-e-mail-de-acesso-no-maximo-um-por-minuto-por-pessoa.md).*
 - **Convites aguardando aceite**: são os convites de portal de antes de 2026-10-26, que valem até vencer. **Reenviar** transforma o convite em acesso direto, com o mesmo efeito de Adicionar pessoa para aquele e-mail (acesso na hora, e-mail de boas-vindas, um lugar no limite diário), e revoga o convite antigo na mesma transação; o endereço que já tem acesso responde 409 e o convite fica. **Cancelar** cancela o convite, como antes. Em somente leitura **Reenviar** fica desabilitado com o motivo e **Cancelar** continua habilitado. A seção some quando o último vence, é convertido ou é cancelado. Decisão [`2026-10-27-acessos-pendentes-podem-ser-reenviados-e-removidos`](../docs/business/decisions/2026-10-27-acessos-pendentes-podem-ser-reenviados-e-removidos.md).
 - **Remover** pede confirmação: a pessoa perde o acesso ao portal deste cliente e é deslogada de tudo na hora, porque a sessão é global (2026-10-08, #411); as outras pessoas não são afetadas, e os vínculos dela com outros clientes continuam. Removidas ficam num filtro, com **Reativar**, que não cria sessão: a pessoa entra de novo. Em agência somente leitura, **Adicionar pessoa** e **Reativar** ficam desabilitados com o motivo; **Remover** continua habilitado.
@@ -499,9 +522,11 @@ O perfil não tem aba nem cópia do calendário (decisão de 2026-11-04, `2026-1
 
 A biblioteca de mídia do cliente, logo depois de Geral (decisão de 2026-10-16, `2026-10-16-pastas-viram-a-aba-midias-do-cliente-e-o-feed-deixa-de-ser-vista`): as pastas padrão e próprias, as pastas de trabalho dentro delas (dois níveis, nunca três) e as mídias da pasta aberta, com o envio direto. A pasta aberta fica no endereço (`pasta`, `subpasta`, `pagina`) e o endereço antigo `?vista=pastas` da tela de Conteúdos leva para cá. Mesmas permissões das pastas de `specs/conteudo.md` (seção 2): ver com `conteudo.visualizar`, e criar pasta, enviar e remover mídia com `conteudo.operar` num cliente ativo; sem `conteudo.visualizar` a aba não aparece e o endereço cai no mesmo "não encontrado" da página inteira. Cliente arquivado é só leitura.
 
-### Abas Tarefas e Relatórios
+**Desde 2026-11-11** a biblioteca tem o cabeçalho "171 arquivos · 5 pastas · cliente desde …", os arquivos com **nome, dimensões e texto alternativo**, **renomear e mover** para outra pasta, **PDF, áudio e SVG (logo)**, o **"onde é usada"** e **"Usar em um conteúdo"**, e o **envio do cliente** pelo portal (marcado com quem enviou). A busca da barra superior acha o arquivo pelo nome ([`busca.md`](busca.md)). Decisões: [metadados](../docs/business/decisions/2026-11-11-estrutural-a-midia-ganha-nome-dimensoes-texto-alternativo-renomear-e-mover.md), [tipos](../docs/business/decisions/2026-11-11-estrutural-a-midia-aceita-pdf-audio-e-svg-como-logo.md), [uso](../docs/business/decisions/2026-11-11-estrutural-a-midia-mostra-onde-e-usada-e-pode-abrir-um-conteudo.md) e [envio pelo cliente](../docs/business/decisions/2026-11-11-estrutural-o-cliente-envia-material-pelo-portal.md). O detalhe das regras fica em `specs/conteudo.md`, seção 3.
 
-Esqueleto: o nome da área, uma frase do que ela vai mostrar, e nenhum controle.
+### Abas Tarefas e Relatórios (removidas em 2026-11-11)
+
+Não existem mais no perfil. Voltam com o módulo de Tarefas e com o relatório interno, quando decididos.
 
 ### Portal — navegação
 
@@ -513,42 +538,34 @@ Esqueleto: o nome da área, uma frase do que ela vai mostrar, e nenhum controle.
 │        (conteúdo)         │
 │                           │
 ├───────────────────────────┤
-│ Início Conteúdos Marca Relatórios │
+│ Início Conteúdos Marca Pedidos(2) │
 └───────────────────────────┘
 ```
 
-Barra inferior com quatro itens, o padrão que um dono de negócio já sabe usar no celular; só o post em tela cheia a troca, no celular, pela barra de decisão (decisão `2026-10-15-post-do-portal-troca-as-abas-pela-barra-de-decisao`). No desktop a mesma navegação vai para a lateral ou o topo — decisão do designer. Quem acessa mais de um cliente troca pelo menu de conta decidido em [`auth.md`](auth.md).
+Barra inferior com quatro itens (**Início, Conteúdos, Marca e Pedidos da agência**, com o selo dos pedidos abertos; Relatórios saiu em 2026-11-11), o padrão que um dono de negócio já sabe usar no celular; só o post em tela cheia a troca, no celular, pela barra de decisão (decisão `2026-10-15-post-do-portal-troca-as-abas-pela-barra-de-decisao`). No desktop a mesma navegação vai para a lateral ou o topo — decisão do designer. Quem acessa mais de um cliente troca pelo menu de conta decidido em [`auth.md`](auth.md).
 
 ### Portal — Início
 
 ```
+│  quarta-feira, 11 de novembro              │
 │  Olá, Maria                                │
+│  A Agência Sol espera 3 respostas suas     │
 │                                            │
-│  ┌──────────────────────────────────────┐  │
-│  │ 2 posts esperando sua aprovação      │  │
-│  │              [ Revisar os 2 posts ]  │  │
-│  └──────────────────────────────────────┘  │
+│  [capa] Aguardando você   [capa] Atrasado  │
+│  Responda até quinta, 12 nov, 18h          │
+│  [capa] Aguardando você                    │
+│        [ Revisar os 3 posts ]              │
+│        Começamos pelo que vence primeiro   │
 │                                            │
-│  Roteiro de hoje                           │
-│  ┌──────────────────────────────────────┐  │
-│  │ Cena 1 — texto do roteiro            │  │
-│  │ Orientação: …                        │  │
-│  │                       [ Já gravei ]  │  │
-│  └──────────────────────────────────────┘  │
+│  A agência pediu                           │
+│  Depoimentos em vídeo · até 15/11          │
 ```
 
-A próxima ação é **uma**, e a pendência de aprovação vem antes de tudo:
+**Desde 2026-11-11** o Início segue o quadro ([`o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post`](../docs/business/decisions/2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post.md), que substitui os itens 3 a 6 de `2026-10-11-portal-inicio-aprovacoes-e-roteiro-de-hoje` e o trecho abaixo). A pendência de aprovação vem antes de tudo:
 
-- **Com conteúdos esperando a aprovação do cliente** (o número é o `home.contentsAwaitingApproval` da API): o título é "N posts esperando sua aprovação" (singular com 1), com as duas capas mais próximas e o botão "Revisar os N posts" ("Revisar o post" com 1), que leva a Conteúdos (`/portal/:clienteId/conteudos`).
-- **Sem pendência**, o cartão volta à próxima ação de antes: "A agência respondeu N sugestões suas", que leva à Marca; senão, "Conheça o estudo da sua marca".
-
-Abaixo, o bloco **Roteiro de hoje** traz as cenas em ordem (texto e "Orientação: …") dos roteiros **enviados** ou **gravados** do dia de São Paulo. Roteiro em rascunho não aparece para o cliente. Sem roteiro hoje, o bloco não existe.
-
-- **Enviado:** botão "Já gravei". Um clique; o botão espera a resposta. Com mais de um roteiro no dia, cada um tem o seu título, e o botão leva o número.
-- **Gravado:** "Gravado por {nome} em dd/mm", sem botão.
-- **Erro ao carregar o bloco:** "Não foi possível carregar o roteiro de hoje.", com "Tentar de novo". O resto do Início continua na tela.
-
-Por último, o bloco **Nesta semana** traz os conteúdos de segunda a domingo, sem os que esperam a aprovação do cliente, como diz [`conteudo.md`](conteudo.md) e a [decisão](../docs/business/decisions/2026-10-15-portal-na-pauta-tema-claro-sem-tokens-novos.md) do portal na Pauta.
+- **Com conteúdos esperando a aprovação do cliente** (o número é o `home.contentsAwaitingApproval` da API): o subtítulo diz "A <agência> espera N respostas suas"; até **três capas** com "Aguardando você" ou "Atrasado" e "Responda até <dia>, <hora>" (o prazo de aprovação, com hora); "Revisar os N posts" ("Revisar o post" com 1), que abre o que **vence primeiro** e encadeia o próximo; e "A agência pediu" (os pedidos de material abertos, que levam a Pedidos da agência).
+- **Sem pendência**, a **"Boa notícia"**: "Seu feed de <mês> já está N% aprovado", "N de M" e o próximo post a ir ao ar, com "Ver o que vai ao ar esta semana". Quando também não há post a ir ao ar, o cartão volta à próxima ação de antes: "A agência respondeu N sugestões suas", que leva à Marca; senão, "Conheça o estudo da sua marca".
+- **Saíram** o bloco **Roteiro de hoje** (com o "Já gravei") e o bloco **Nesta semana**. A API dos roteiros continua e a web fica sem tela para eles até o dono decidir (ponto em aberto de [`conteudo.md`](conteudo.md)). A semana do portal começa no domingo.
 
 ### Portal — Marca
 
@@ -560,7 +577,7 @@ Por último, o bloco **Nesta semana** traz os conteúdos de segunda a domingo, s
 
 ### Portal — tour
 
-Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os itens da navegação. Pode ser pulado e revisto pelo menu de conta. **Mostra só o que funciona**: no MVP, três passos — Início, Marca e como sugerir (esboço da #144). Relatórios entra no tour com o seu módulo. **Conteúdos fica fora do tour no MVP**: o tour segue só com Início e Marca, porque o dono pediu para não abrir feature nova agora ([decisão](../docs/business/decisions/2026-10-11-portal-conteudos-lista-do-mes-filtro-por-situacao-e-feed.md), item 7, pendente de validação do dono).
+Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os itens da navegação. Pode ser pulado e revisto pelo menu **Ajuda** (2026-11-11, [`ajuda-e-um-menu-com-rever-o-tour-e-o-status-do-sistema`](../docs/business/decisions/2026-11-11-ajuda-e-um-menu-com-rever-o-tour-e-o-status-do-sistema.md)); o menu de conta mantém trocar de cliente e sair. **Mostra só o que funciona**: no MVP, três passos — Início, Marca e como sugerir (esboço da #144). **Relatórios saiu do portal**, então não entra no tour; Pedidos da agência entra quando o dono pedir. **Conteúdos fica fora do tour no MVP**: o tour segue só com Início e Marca, porque o dono pediu para não abrir feature nova agora ([decisão](../docs/business/decisions/2026-10-11-portal-conteudos-lista-do-mes-filtro-por-situacao-e-feed.md), item 7, pendente de validação do dono).
 
 ### Variação por quem olha
 
@@ -568,7 +585,7 @@ Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os ite
 |---|---|
 | Admin, Owner | tudo |
 | Gestor de conta | cadastra, edita, conversa, resolve; sem menu `⋯` e sem aba Acessos |
-| Produção, Vendas, Financeiro | leem tudo, inclusive as conversas; sem **Editar**, sem **Cadastrar**, sem **+ conversa**, sem **Resolver**, sem aba Acessos, sem selo de convite |
+| Produção, Vendas, Financeiro | leem tudo, inclusive as conversas; sem **Editar**, sem **Cadastrar**, sem **+ conversa**, sem **Resolver**, sem aba Acessos, sem selo de convite. Vendas e Financeiro também não veem as abas Conteúdos e Mídias, os pedidos de material, "quem trabalha neste cliente" nem as contagens que dependem de `conteudo.visualizar` |
 | Qualquer um, em cliente arquivado | somente leitura; **Reativar** só para `cliente.arquivar` |
 
 ### Estados da tela
@@ -604,6 +621,8 @@ Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os ite
 2. **"ESTRUTURAL: a conversa com o cliente é uma tabela de threads por cliente, com assunto tipado".** É o formato que Conteúdo copia: ele acrescenta `content_id` em `client_threads`, não cria uma segunda tabela de conversa. A agência pode comentar durante a produção; o portal só vê a conversa quando o conteúdo é disponibilizado, e conteúdo cancelado não aceita comentários (decisão de 2026-11-07, issue #876).
 3. **"ESTRUTURAL: arquivar cliente é uma função `security definer` de escopo único, usada pelo job e pela rota".** Exceção à regra de que o worker age como um usuário. A forma — escopo único, auditada, sem outro efeito possível — é o modelo que a publicação agendada de Conteúdo deve seguir.
 
+4. **Quatro estruturais de 2026-11-11 (pendentes de validação do dono):** `clients.city`, seis colunas em `client_personas`, o nome digitado em `client_portal_accesses` e o `title` do pedido de material. Todas anuláveis, **sem backfill**, forward-only, com revisão de segurança independente (risco Alto: dado do cliente lido pelo portal e, no nome do convidado, a regra anti-oráculo de 2026-10-27). As decisões estão na seção 11.
+
 **RLS de outro módulo não é tocada.** Separar as permissões de convite por tipo reescreveria `invitations` e foi adiado com gatilho (seção 10). A estrutural conhecida **cliente na mídia** não é acionada: Clientes não usa `media_assets`.
 
 ## 10. Em aberto
@@ -611,7 +630,7 @@ Na primeira entrada daquela pessoa naquele cliente, um tour guiado aponta os ite
 | ponto | gatilho | quem decide |
 |---|---|---|
 | Liberar o portal a cliente real | Conteúdo entregar a aprovação | Pedro Vidal |
-| Notificação — e-mail ou push — de conversa e de aprovação, com estado de lido | Conteúdo fechar o fluxo de aprovação | Pedro Vidal |
+| Notificação por e-mail ou push, e preferências por tipo (a notificação **dentro do app** passou a existir em 2026-11-11: [`notificacoes.md`](notificacoes.md); as de conversa do cliente não estão entre os cinco eventos) | a primeira agência pedir aviso fora do app | Pedro Vidal |
 | Restringir a visibilidade de clientes por atribuição | a primeira agência precisar esconder um cliente de parte da equipe | Pedro Vidal |
 | Gestor de conta gerenciar acessos do portal — **estrutural**: separar permissões de convite por tipo | o primeiro Gestor precisar convidar pessoa de cliente sem o Admin | Pedro Vidal |
 | Integração com a Meta — métricas e anúncios no relatório | a decisão de publicar pela plataforma | Pedro Vidal |
@@ -642,6 +661,16 @@ Em [`docs/business/decisions.md`](../docs/business/decisions.md), 2026-09-26:
 - **ESTRUTURAL:** arquivar cliente é uma função `security definer` de escopo único, usada pelo job e pela rota
 - Cliente na mídia fica para Conteúdo, com diagnóstico mais grave que o registrado
 - A foto do cliente vive no armazenamento de identidade
+
+Registradas em 2026-11-11 (todas **pendentes de validação do dono**), em `docs/business/decisions/`:
+
+- [`o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta`](../docs/business/decisions/2026-11-11-o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta.md)
+- **ESTRUTURAL:** [`o-cliente-ganha-cidade-e-quem-trabalha-nele-e-derivado`](../docs/business/decisions/2026-11-11-estrutural-o-cliente-ganha-cidade-e-quem-trabalha-nele-e-derivado.md)
+- **ESTRUTURAL:** [`a-persona-ganha-idade-ocupacao-local-tracos-onde-esta-e-tom`](../docs/business/decisions/2026-11-11-estrutural-a-persona-ganha-idade-ocupacao-local-tracos-onde-esta-e-tom.md)
+- **ESTRUTURAL:** [`o-nome-do-convidado-digitado-pela-agencia-aparece-antes-da-entrada`](../docs/business/decisions/2026-11-11-estrutural-o-nome-do-convidado-digitado-pela-agencia-aparece-antes-da-entrada.md)
+- **ESTRUTURAL:** [`o-pedido-de-material-ganha-titulo`](../docs/business/decisions/2026-11-11-estrutural-o-pedido-de-material-ganha-titulo.md) e [`o-cliente-envia-material-pelo-portal`](../docs/business/decisions/2026-11-11-estrutural-o-cliente-envia-material-pelo-portal.md)
+- [`o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post`](../docs/business/decisions/2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post.md) e [`ajuda-e-um-menu-com-rever-o-tour-e-o-status-do-sistema`](../docs/business/decisions/2026-11-11-ajuda-e-um-menu-com-rever-o-tour-e-o-status-do-sistema.md)
+- As de mídia ([metadados](../docs/business/decisions/2026-11-11-estrutural-a-midia-ganha-nome-dimensoes-texto-alternativo-renomear-e-mover.md), [tipos](../docs/business/decisions/2026-11-11-estrutural-a-midia-aceita-pdf-audio-e-svg-como-logo.md), [uso](../docs/business/decisions/2026-11-11-estrutural-a-midia-mostra-onde-e-usada-e-pode-abrir-um-conteudo.md)) e a [busca](../docs/business/decisions/2026-11-11-busca-na-agencia-e-no-portal.md)
 
 Herdadas de [`autorizacao.md`](autorizacao.md) e [`colaboradores.md`](colaboradores.md): o contrato de listagem, `archived`/`removed`, as convenções de tela, o armazenamento de identidade e o desenho da seção de convites.
 
