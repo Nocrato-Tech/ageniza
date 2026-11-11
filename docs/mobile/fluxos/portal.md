@@ -29,6 +29,7 @@ No detalhe de um conteúdo aprovado, **Desfazer aprovação** abre uma confirma�
 | `POST` | `…/threads` | abre uma conversa com o primeiro comentário |
 | `GET` | `…/threads/:threadId/comments` | comentários |
 | `POST` | `…/threads/:threadId/comments` | comenta |
+| `GET` | `…/material-requests` | pedidos de material abertos deste cliente |
 | `GET` | `…/story-scripts` | roteiros enviados de um período |
 | `POST` | `…/story-scripts/:scriptId/recorded` | marca o roteiro como gravado |
 
@@ -54,9 +55,18 @@ No detalhe de um conteúdo aprovado, **Desfazer aprovação** abre uma confirma�
 | estado | o portal vê |
 |---|---|
 | em produção | só título, data e tipo |
-| aguardando aprovação, em ajuste, aprovado, publicado | também a legenda e a mídia |
+| aguardando aprovação, em ajuste, aprovado, publicado | também a legenda e a mídia, e `approval` com o prazo e o recado da agência |
 
-O portal **nunca** vê subtarefa, responsável, prazo interno nem roteiro em rascunho. A API não devolve esses dados.
+**Prazo e recado da agência** (decisão de 2026-11-10)
+
+- Quando a agência envia o conteúdo para aprovação, pode dar um prazo e um recado. O portal lê os dois em `approval`: `{ dueOn, note }`, na lista de um período, na lista do que espera aprovação, no post e na resposta de aprovar, pedir ajuste e desfazer aprovação.
+- `dueOn` é o dia limite da decisão (`AAAA-MM-DD`, dia de São Paulo) e `note` é o texto da agência, ambos `null` quando a agência não deu. `approval` é `null` quando o conteúdo ainda está em produção e quando ele já aguardava antes das rodadas (nesse caso, não mostre prazo nem recado).
+- Mostre o prazo como o limite da **aprovação** ("responder até"), diferente da data de publicação do post. O recado vem assinado pela agência: mostre o texto como veio, sem interpretá-lo.
+- A data em que foi enviado, quem enviou e o lote ficam com a agência e nunca chegam ao portal.
+- Se o cliente desfaz a aprovação, o conteúdo volta à mesma rodada e o portal lê o mesmo prazo e o mesmo recado. Se a agência reenvia depois de um pedido de ajuste, vale o prazo e o recado do novo envio.
+- O cliente recebe o e-mail do envio com o prazo e o recado, e dois lembretes por rodada: "vence amanhã" (na véspera do prazo) e "venceu" (no dia seguinte), às 9h de São Paulo, só para as pessoas ativas do portal e só enquanto o conteúdo aguarda decisão. Não sai nada com o cliente arquivado nem com a agência suspensa ou em modo leitura, e não sai "vence amanhã" se o envio foi feito na véspera do prazo.
+
+O portal **nunca** vê subtarefa, responsável, prazo interno nem roteiro em rascunho. A API não devolve esses dados. O prazo da aprovação (`approval.dueOn`) não é prazo interno: é o que a agência pediu ao cliente.
 
 ## Conversas
 
@@ -64,6 +74,19 @@ O portal **nunca** vê subtarefa, responsável, prazo interno nem roteiro em ras
 - Um comentário novo reabre uma conversa resolvida.
 - Num conteúdo, só dá para comentar a partir de "aguardando aprovação".
 - Comentário não se edita nem se apaga.
+
+### Pedido de material
+
+A agência pode pedir material ao cliente, com prazo opcional (decisão: [pedido de material](../../business/decisions/2026-11-10-estrutural-pedido-de-material-e-assunto-proprio-da-conversa-do-cliente.md)). No Início, o portal mostra o que a agência pediu.
+
+1. `GET …/material-requests` lista os pedidos **abertos deste cliente**, o prazo mais próximo primeiro e os sem prazo por último, vinte por página. Cada item traz `threadId`, `body` (o texto que a agência escreveu, para mostrar como "A agência pediu"), `dueOn` (`AAAA-MM-DD` ou `null`), `createdAt` e `state` (sempre `open`).
+2. Quem tem acesso a mais de um cliente vê, em cada Início, só os pedidos daquele cliente.
+3. Para responder, comente com `POST …/threads/:threadId/comments`, usando o `threadId` do item. O histórico da conversa vem de `GET …/threads/:threadId/comments`, que também serve para um pedido já resolvido.
+4. Só a agência resolve. Quando ela resolve, o pedido **sai da lista**. Se o cliente comentar de novo num pedido resolvido, ele volta, como em toda conversa.
+
+- A pessoa do portal **não abre** pedido de material: a rota de abrir conversa responde `400` a esse assunto.
+- O pedido não entra em "com resposta da agência" do resumo do Início.
+- A conversa de um conteúdo em produção não chega ao portal por nenhuma dessas rotas.
 
 ## Estudo de marca
 

@@ -8,10 +8,10 @@ A regra que sustenta o resto é a mesma da revisão de segurança: **um achado s
 
 ## Alvo
 
-- O alvo é a subtarefa ou o PR. Na subtarefa, revise a branch e o commit que a tarefa dá, o diff `feat/<escopo>...<branch>` contra a integração, com a lista de arquivos permitidos da tarefa: arquivo fora dela é achado. No PR, revise o head atual.
+- O alvo é a onda ou o PR. Na onda, revise a branch da onda e o commit que a tarefa dá, o diff `feat/<escopo>...feat/<escopo>--onda<k>` contra a integração, com a lista de arquivos permitidos de cada subtarefa que ela junta: arquivo fora dela é achado. No PR, revise o head atual.
 - Registre o commit revisado no topo da revisão. Se o head mudar no meio, a revisão vale para o commit registrado.
 - Nunca edite o worktree do implementador: rode testes e mutações numa cópia sua.
-- Na subtarefa, a revisão é gravada num arquivo (o caminho vem da tarefa) e o maestro a publica como comentário no PR único do escopo. Ver [decisão de 2026-11-06](business/decisions/2026-11-06-um-pr-por-escopo-com-revisao-por-subtarefa.md).
+- Na onda, a revisão é gravada num arquivo (o caminho vem da tarefa) e o maestro a publica como comentário no PR único do escopo. Ver [decisão de 2026-11-06](business/decisions/2026-11-06-um-pr-por-escopo-com-revisao-por-subtarefa.md) e [decisão de 2026-11-10](business/decisions/2026-11-10-revisao-por-onda-com-perfil-e-esforco-decididos-pelo-maestro-e-revisor.md).
 - Leia o diff, os chamadores e os contratos que ele afeta e os testes que dizem cobri-lo. O que você não leu entra como limitação, nunca como aprovado.
 - O que outro revisor já cobriu e o despacho disse para não refazer, não refaça.
 
@@ -43,7 +43,7 @@ Estes casos seguem a mesma regra: o achado traz o cenário concreto de falha, n�
 ## Quando parar
 
 - A re-revisão confere só os achados pedidos e se a correção trouxe regressão, no head novo. Ela não vira uma revisão nova do PR inteiro.
-- No laço da subtarefa, o achado volta ao mesmo implementador e o mesmo revisor confere só a correção e a regressão dela no commit novo. O laço segue até zerar os achados.
+- No laço da onda, o achado volta ao implementador da subtarefa dona dele, as correções são juntadas de novo na branch da onda e o mesmo revisor confere só as correções e a regressão delas no commit novo. O laço segue até zerar os achados.
 - Rodada nova só com evidência nova: código que mudou, ou um risco que ainda não foi verificado e é nomeado. Sem isso, a revisão termina. Vale para achado novo; a conferência da correção de um achado já aberto não é rodada nova.
 - A contagem de rodadas não volta a zero depois de uma correção. Se o dono pediu um número de rodadas, ele vale para o PR inteiro.
 - Achado de Baixa também se corrige no laço. Só vai para a issue dona como aceite adicional ou para uma issue de débito, sem segurar a subtarefa, quando é de outro escopo.

@@ -59,6 +59,20 @@ Para quem vê clientes e conteúdos, o Início mostra "Primeiros passos" até a 
 2. Feito = cliente existe (ou há conteúdo); há conteúdo; algum saiu da produção; algum foi aprovado por pessoa do cliente (a aprovação fora da plataforma não conta). Com os quatro feitos, o caminho some.
 3. Marcos celebrados uma vez por agência (cliente, conteúdo, enviado, primeira aprovação, primeiro `published`): mensagem em português, confete que não bloqueia toque e some sozinho, sem confete se o aparelho pede menos movimento. O que já foi celebrado fica só no aparelho (no navegador, `localStorage`); a primeira abertura apenas registra o que já existe, sem celebrar.
 
+### Parado no cliente
+
+O Início também mostra o que está esperando a decisão do cliente (decisão de 2026-11-10), agrupado por cliente.
+
+| método | rota | permissão | o que faz |
+|---|---|---|---|
+| `GET` | `…/contents/awaiting-client` | `conteudo.visualizar` | os conteúdos em "aguardando aprovação", agrupados por cliente, até 50 ao todo |
+
+1. Sem corpo nem parâmetro. A resposta é `data` (uma lista de `{ clientId, clientName, contents }`) e `meta.truncated`, verdadeiro quando havia mais de 50 e a lista foi cortada. Cada conteúdo traz `id`, `title`, `format`, `publishOn`, `sentAt`, `dueOn`, `daysWaiting` e `daysToDue`.
+2. Os mais urgentes primeiro: o prazo mais próximo (um prazo vencido vem antes de um que ainda não venceu), depois o conteúdo sem prazo que espera há mais tempo. Os clientes seguem a ordem do primeiro conteúdo de cada um. O corte dos 50 tira o menos urgente.
+3. O estado do prazo é contado no dia de São Paulo, pelo servidor; o aplicativo só escreve o texto: `daysToDue` positivo é "vence em N dias", `1` é "vence amanhã", `0` é "vence hoje" e negativo é "venceu há N dias". Esse vocabulário é diferente do prazo de **publicação** ("Atrasado", "prazo em dois dias"): `dueOn` aqui é o prazo da **aprovação**, nunca a data da publicação.
+4. Sem prazo, o item mostra há quantos dias foi enviado (`daysWaiting`, desde `sentAt`). O conteúdo que já aguardava antes das rodadas vem sem `sentAt`, `dueOn` e contagens (todos `null`) e aparece sem esse dado, por último.
+5. Quem vê: a mesma regra do calendário. Sem `conteudo.visualizar` a resposta é `403`; o que a pessoa não pode ler não entra. Cliente arquivado não entra. Não há paginação.
+
 ## Clientes
 
 | método | rota | permissão | o que faz |
@@ -126,6 +140,19 @@ stateDiagram-v2
   - "aguardando a agência" é a conversa aberta cujo último comentário é do cliente.
 - Comentário não se edita nem se apaga. Só a agência resolve conversas.
 
+### Pedido de material
+
+A agência pede material ao cliente (por exemplo, "envie 3 fotos da equipe") e acompanha se ele respondeu. É um assunto da conversa **do próprio cliente**, ao lado da seção da marca, da persona e do conteúdo. Não existe dentro da conversa de um conteúdo, então o portal continua sem ver a conversa de um conteúdo em produção. Decisão: [pedido de material](../../business/decisions/2026-11-10-estrutural-pedido-de-material-e-assunto-proprio-da-conversa-do-cliente.md).
+
+1. **Abrir.** `POST …/clients/:clientId/threads` com `{ "subject": { "materialRequest": true }, "body": "Envie 3 fotos da equipe", "dueOn": "2026-11-20" }`. Pede `cliente.operar`. Cada chamada abre um pedido novo. Não há rota própria de abertura.
+2. **Prazo opcional.** `dueOn` é uma data `AAAA-MM-DD`, de hoje a 90 dias, no fuso de São Paulo. Fora disso é `400` com o campo `dueOn`. `dueOn` com qualquer outro assunto também é `400`.
+3. **Listar.** `GET …/clients/:clientId/threads?materialRequest=true` traz os pedidos do cliente, em qualquer estado. O assunto vem como `subject: { materialRequest: true }` e o prazo como `dueOn` (`null` se não houver). Pede `cliente.visualizar`. Toda conversa passou a trazer `dueOn`, que é `null` fora do pedido.
+4. **Acompanhar.** O cliente responde por comentário, e a agência comenta pela rota de sempre (`…/threads/:threadId/comments`).
+5. **Resolver.** `POST …/threads/:threadId/resolve`, a mesma rota das outras conversas. Resolvido, o pedido sai do Início do portal. Um comentário novo do cliente o reabre, como em toda conversa.
+
+- Só a agência abre e resolve um pedido. O portal não consegue abrir um (`400`).
+- O pedido **não conta** em "aguardando a agência" nem em "com resposta da agência": esses números são das conversas do estudo de marca.
+
 ## Pessoas do portal do cliente
 
 | método | rota | permissão | o que faz |
@@ -139,6 +166,12 @@ stateDiagram-v2
 | `POST` | `…/clients/:clientId/invitations/:invitationId/resend` | `cliente.convidar_usuario` | transforma um convite antigo em acesso |
 
 - A pessoa do portal não tem papel. Todas as pessoas de um cliente podem as mesmas coisas.
+- **Último acesso.** Cada pessoa da lista traz `lastEnteredAt`, o último acesso àquele cliente (a última entrada no portal com a conta ou a última vez que abriu o link de aprovação do e-mail), ou `null`. Só quem já lê esta lista o recebe. Decisão: [último acesso ao portal](../../business/decisions/2026-11-10-estrutural-ultimo-acesso-ao-portal-por-cliente.md).
+- **Três casos para mostrar na lista.**
+  - `entered: true`: entrou com a conta. Mostre o nome e o último acesso, por exemplo "Último acesso em 8 de nov.".
+  - `entered: false` e `lastEnteredAt` preenchido: só abriu o link de aprovação. Mostre "Ainda não entrou com a conta · abriu o link em <data>".
+  - `entered: false` e `lastEnteredAt: null`: "Nunca entrou".
+- `entered` continua sendo "entrou com a conta" e é ele que libera **Reenviar boas-vindas**: quem só abriu o link ainda pode receber o e-mail de novo. Decisão: [quem só abriu o link ainda não entrou com a conta](../../business/decisions/2026-11-10-quem-so-abriu-o-link-de-aprovacao-ainda-nao-entrou-com-a-conta.md).
 - Um colaborador da agência, mesmo o Owner, **não entra no portal** sem um acesso próprio àquele cliente.
 
 ## Conteúdos
@@ -150,7 +183,8 @@ stateDiagram-v2
 | `POST` | `…/clients/:clientId/contents` | `conteudo.operar` | cria, em produção. Sem `mediaAssetIds` no corpo, o conteúdo **herda a mídia da pasta** (a que serve ao formato); com a lista, vale a lista, e `[]` cria sem mídia |
 | `GET` | `…/clients/:clientId/contents/:contentId` | `conteudo.visualizar` | detalhe com as mídias, as subtarefas e a conversa |
 | `PATCH` | `…/clients/:clientId/contents/:contentId` | `conteudo.operar` | edita; mudar a data é editar `publishOn` |
-| `POST` | `…/clients/:clientId/contents/:contentId/submit` | `conteudo.operar` | envia para aprovação (ou reenvia depois do ajuste) |
+| `POST` | `…/clients/:clientId/contents/:contentId/submit` | `conteudo.operar` | envia para aprovação (ou reenvia depois do ajuste), com prazo e recado opcionais: `{ dueOn?, note? }` |
+| `POST` | `…/clients/:clientId/contents/submit` | `conteudo.operar` | envia vários conteúdos do mesmo cliente de uma vez, com o mesmo prazo e recado: `{ contentIds, dueOn?, note? }` |
 | `POST` | `…/clients/:clientId/contents/:contentId/approve-by-agency` | `conteudo.aprovar_pela_agencia` | registra uma aprovação feita fora da plataforma, com motivo |
 | `POST` | `…/clients/:clientId/contents/:contentId/publish` | `conteudo.publicar` | marca como publicado |
 | `POST` | `…/clients/:clientId/contents/:contentId/unpublish` | `conteudo.publicar` | desfaz a publicação, só no mesmo dia |
@@ -192,6 +226,16 @@ stateDiagram-v2
     aprovado --> cancelado: cancela
     cancelado --> producao: reagenda
 ```
+
+**Rodada de aprovação: prazo e recado** (decisão de 2026-11-10)
+
+- Cada envio abre uma **rodada**, guardada por conteúdo. O corpo do envio é opcional (`{}` continua valendo): `dueOn` é o prazo da decisão do cliente, um dia `AAAA-MM-DD` de hoje até 90 dias à frente no dia de São Paulo; `note` é o recado ao cliente, de 1 a 500 caracteres, sem só espaços. Sem prazo ou sem recado, a rodada vai sem ele.
+- Prazo fora da faixa é `400 CONTENT_APPROVAL_DUE_INVALID`; recado em branco, longo ou com caractere invisível é `400 VALIDATION_ERROR` (o banco ainda responde `400 CONTENT_APPROVAL_NOTE_INVALID` como segunda barreira). Cancelar e desfazer a publicação continuam sem corpo.
+- **Envio em lote**: de 1 a 30 conteúdos do mesmo cliente, cada um uma vez, com o mesmo `dueOn` e `note`. É tudo ou nada: um conteúdo que não pode ser enviado recusa o lote inteiro com o código do envio individual (`409 CONTENT_STATE`, `CONTENT_MEDIA_INCOMPLETE`, `CONTENT_MEDIA_NOT_CONFIRMED` ou `CONTENT_TASKS_NOT_APPROVED`). Conteúdo de outro cliente, de outra agência ou inexistente é `404 NOT_FOUND`; mais de 30, repetido ou lista vazia é `400 VALIDATION_ERROR`. A resposta traz `batchId` e os conteúdos como a lista do calendário os traz, já em "aguardando aprovação".
+- Reenviar depois do ajuste abre uma rodada nova, com o prazo e o recado do novo envio. Quando o cliente desfaz a aprovação, o conteúdo volta à **mesma rodada**, com o mesmo prazo e recado.
+- Repetir o mesmo envio (o mesmo prazo e o mesmo recado) de um conteúdo que já aguarda não muda nada e não é erro; pedir outro prazo ou recado para quem já aguarda é `409 CONTENT_STATE`.
+- O conteúdo e a lista do calendário trazem `approval`: `{ sentAt, dueOn, note }` da rodada enquanto o conteúdo aguarda aprovação, e `null` nos outros estados e no conteúdo que já aguardava antes das rodadas (sem data de envio e sem prazo; nada foi reescrito).
+- O cliente é avisado por e-mail no envio, com o prazo e o recado assinados pela agência, e recebe dois lembretes: "vence amanhã", na véspera do prazo, e "venceu", no dia seguinte. Saem às 9h de São Paulo, uma vez por rodada cada um, só para as pessoas ativas do portal daquele cliente e só enquanto o conteúdo ainda aguarda decisão. Não sai nada para cliente arquivado, agência suspensa ou em somente leitura, e não sai "vence amanhã" quando o envio foi feito na própria véspera do prazo.
 
 - Não existe caminho direto de "em produção" para "aprovado".
 - Mudar a data, a hora, o título, o responsável ou as subtarefas **mantém** a aprovação.

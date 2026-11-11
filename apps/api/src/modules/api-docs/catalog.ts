@@ -72,6 +72,10 @@ import {
   encodeContentFeedCursor,
   CreateContentTaskRequestSchema,
   ContentMoveRequestSchema,
+  AwaitingClientResponseSchema,
+  SubmitContentRequestSchema,
+  SubmitContentsBatchRequestSchema,
+  SubmitContentsBatchResponseSchema,
   PublishContentRequestSchema,
   RescheduleContentRequestSchema,
   ReturnContentTaskRequestSchema,
@@ -149,6 +153,9 @@ import {
   PublicInvitationTokenPathParamsSchema,
   PutLastContextRequestSchema,
   SetClientClosingRequestSchema,
+  MaterialRequestListQuerySchema,
+  MaterialRequestListResponseSchema,
+  PortalCreateThreadRequestSchema,
   ThreadListQuerySchema,
   ThreadListResponseSchema,
   ThreadSchema,
@@ -406,7 +413,14 @@ const contentExample = {
   approvedByAgencyReason: null,
   publishedOn: null,
   cancelledAt: null,
-  createdAt: '2026-10-11T12:00:00.000Z'
+  createdAt: '2026-10-11T12:00:00.000Z',
+  approval: null
+} as const;
+
+const contentApprovalExample = {
+  sentAt: '2026-10-14T12:00:00.000Z',
+  dueOn: '2026-10-18',
+  note: 'Preciso da sua resposta até sábado para publicar na segunda.'
 } as const;
 
 const contentTaskExample = {
@@ -428,24 +442,27 @@ const contentDetailExample = {
   conversation: { threadId: null, commentCount: 0, lastCommentAt: null }
 } as const;
 
+const contentListItemExample = {
+  id: contentId,
+  title: 'Lançamento da coleção de outono',
+  platform: 'instagram',
+  format: 'reels',
+  publishOn: '2026-10-20',
+  publishAtTime: '18:30',
+  status: 'in_production',
+  owner: { membershipId, name: 'Ana Souza' },
+  coverAssetId: null,
+  thumbnailAssetId: assetId,
+  revision: 1,
+  publishedOn: null,
+  tasksTotal: 3,
+  tasksApproved: 1,
+  approval: null
+} as const;
+
 const contentPeriodExample = {
   data: {
-    contents: [{
-      id: contentId,
-      title: 'Lançamento da coleção de outono',
-      platform: 'instagram',
-      format: 'reels',
-      publishOn: '2026-10-20',
-      publishAtTime: '18:30',
-      status: 'in_production',
-      owner: { membershipId, name: 'Ana Souza' },
-      coverAssetId: null,
-      thumbnailAssetId: assetId,
-      revision: 1,
-      publishedOn: null,
-      tasksTotal: 3,
-      tasksApproved: 1
-    }],
+    contents: [contentListItemExample],
     storyScripts: [{ id: storyScriptId, scriptOn: '2026-10-21', status: 'draft' }]
   },
   meta: { from: '2026-10-01', to: '2026-10-31', count: 2 }
@@ -469,7 +486,8 @@ const portalContentOpenExample = {
   publishAtTime: '18:30',
   status: 'awaiting_approval',
   coverAssetId: null,
-  publishedOn: null
+  publishedOn: null,
+  approval: { dueOn: contentApprovalExample.dueOn, note: contentApprovalExample.note }
 } as const;
 
 const portalContentOpenListExample = { ...portalContentOpenExample, thumbnailAssetId: assetId } as const;
@@ -559,7 +577,16 @@ const threadExample = {
   lastComment: { side: 'client', at: '2026-10-07T12:00:00.000Z', excerpt: 'Podemos aproximar o tom de voz do que usamos nas redes?' },
   commentCount: 1,
   resolvedBy: null,
-  resolvedAt: null
+  resolvedAt: null,
+  dueOn: null
+} as const;
+
+const materialRequestExample = {
+  threadId,
+  body: 'Envie 3 fotos da equipe',
+  dueOn: '2026-10-20',
+  createdAt: '2026-10-07T12:00:00.000Z',
+  state: 'open'
 } as const;
 
 const brandSectionExample = {
@@ -602,10 +629,14 @@ const clientMemberExample = {
   email: 'maria@padariacentral.exemplo.test',
   status: 'active',
   entered: true,
+  lastEnteredAt: '2026-11-08T14:30:00.000Z',
   since: '2026-09-02T12:00:00.000Z'
 } as const;
 
-const clientMemberNotEnteredExample = { ...clientMemberExample, name: null, entered: false } as const;
+const clientMemberNotEnteredExample = { ...clientMemberExample, name: null, entered: false, lastEnteredAt: null } as const;
+
+// Opened the approval link and nothing else: not "entered" with the account, and the last entry is the one of the link.
+const clientMemberOpenedLinkExample = { ...clientMemberNotEnteredExample, email: 'joao@padariacentral.exemplo.test', lastEnteredAt: '2026-11-09T10:15:00.000Z' } as const;
 
 const portalBrandStudyExample = {
   filled: 3,
@@ -1284,7 +1315,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       '(93 passa, 94 não). Sem paginação: a resposta traz um vetor por tipo de item em `data`, e',
       '`meta.count` soma os dois. Acima de 500 itens a resposta é `400 CONTENT_PERIOD_TOO_LARGE`, sem',
       'truncar. Ordem: data, hora (sem hora por último) e id. O conteúdo vem sem legenda e sem mídia;',
-      '`tasksTotal` e `tasksApproved` dão o percentual das subtarefas. Cancelados vêm com o estado',
+      '`tasksTotal` e `tasksApproved` dão o percentual das subtarefas. `approval` traz `sentAt`, `dueOn` e `note` da rodada do conteúdo que',
+      'aguarda aprovação, e é `null` nos demais (e no que aguardava antes das rodadas). Cancelados vêm com o estado',
       '`cancelled`. Cliente arquivado também responde: o conteúdo dele é só leitura.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -1332,6 +1364,52 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/contents/awaiting-client',
+    operationId: 'listContentsAwaitingClient',
+    module: 'contents',
+    summary: 'Lista o que está parado no cliente, para o Início da agência',
+    description: [
+      'Os conteúdos que aguardam a decisão do cliente, agrupados por cliente, com até 50 conteúdos ao todo (`meta.truncated` diz que havia',
+      'mais). Os mais urgentes primeiro: o prazo mais próximo (um prazo vencido vem antes de um que não venceu) e, entre os sem prazo, o',
+      'que espera há mais tempo; os clientes seguem a ordem do primeiro conteúdo deles. `daysToDue` conta os dias até `dueOn` (negativo',
+      'depois que venceu) e `daysWaiting` os dias desde `sentAt`, ambos no dia de São Paulo; cada um é nulo quando a data dele é (conteúdo',
+      'enviado antes das rodadas não traz data de envio nem prazo). `dueOn` é o prazo da aprovação, não o da publicação. Cliente arquivado',
+      'não entra. É leitura sob a mesma política do calendário: o que a pessoa não pode ler não entra.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'O que está parado no cliente.',
+      schema: AwaitingClientResponseSchema,
+      example: {
+        data: [{
+          clientId,
+          clientName: 'Padaria Central',
+          contents: [{
+            id: contentId,
+            title: 'Lançamento da coleção de outono',
+            format: 'reels',
+            publishOn: '2026-10-20',
+            sentAt: contentApprovalExample.sentAt,
+            dueOn: contentApprovalExample.dueOn,
+            daysWaiting: 2,
+            daysToDue: 2
+          }]
+        }],
+        meta: { truncated: false }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND' }
     ]
   },
   {
@@ -1409,7 +1487,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa',
     description: [
       'O conteúdo inteiro, mais `media` (id e posição, em ordem), `tasks` (só leitura aqui) e',
-      '`conversation` (`threadId` nulo enquanto ninguém comentou, `commentCount` e `lastCommentAt`).',
+      '`conversation` (`threadId` nulo enquanto ninguém comentou, `commentCount` e `lastCommentAt`). `approval` é a rodada do conteúdo que',
+      'aguarda aprovação (`sentAt`, `dueOn`, `note`) e `null` nos demais.',
       'Um conteúdo de outro cliente, de outra agência ou que não existe responde o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -1472,7 +1551,11 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Envia o conteúdo para aprovação',
     description: [
       'Conteúdo em produção ou em ajuste passa a aguardar aprovação e entra na fila de e-mail do cliente (uma vez por pessoa',
-      'ativa do portal). Repetir o envio de um conteúdo que já aguarda não muda nada e não é erro. Exige `conteudo.operar` e',
+      'ativa do portal). O corpo é opcional (`{}` vale): `dueOn` é o prazo da decisão do cliente, um dia `AAAA-MM-DD` de hoje até',
+      '90 dias à frente no dia de São Paulo (`400 CONTENT_APPROVAL_DUE_INVALID` fora disso), e `note` é o recado ao cliente, de 1 a 500',
+      'caracteres (`400 CONTENT_APPROVAL_NOTE_INVALID` quando em branco ou longo). Cada envio abre uma rodada, e `approval` do conteúdo',
+      'devolvido traz `sentAt`, `dueOn` e `note`. Repetir o mesmo envio (o mesmo prazo e o mesmo recado) de um conteúdo que já aguarda não',
+      'muda nada e não é erro; pedir outro prazo ou outro recado para quem já aguarda é `409 CONTENT_STATE`. Exige `conteudo.operar` e',
       '`conteudo.visualizar`. Recusa com `409` o conteúdo sem mídia completa para o formato (`CONTENT_MEDIA_INCOMPLETE`, também',
       'quando a capa foi removida da pasta), com mídia que ainda não terminou de subir (`CONTENT_MEDIA_NOT_CONFIRMED`) e com',
       'subtarefa que não está aprovada (`CONTENT_TASKS_NOT_APPROVED`). Cliente arquivado responde `409 CLIENT_ARCHIVED`,',
@@ -1481,18 +1564,74 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     access: 'Sessão + vínculo com a agência',
     permission: 'conteudo.operar',
     params: AgencyClientContentPathParamsSchema,
-    body: ContentMoveRequestSchema,
-    requestExample: {},
-    responses: [{ status: 200, description: 'Conteúdo aguardando aprovação.', schema: ContentDetailSchema, example: { ...contentDetailExample, status: 'awaiting_approval' } }],
+    body: SubmitContentRequestSchema,
+    requestExample: { dueOn: '2026-10-18', note: contentApprovalExample.note },
+    responses: [{
+      status: 200,
+      description: 'Conteúdo aguardando aprovação.',
+      schema: ContentDetailSchema,
+      example: { ...contentDetailExample, status: 'awaiting_approval', approval: contentApprovalExample }
+    }],
     errors: [
       COMMON_ERRORS.csrf,
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_APPROVAL_DUE_INVALID' },
+      { status: 400, code: 'CONTENT_APPROVAL_NOTE_INVALID' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'CONTENT_STATE', message: 'Só um conteúdo em produção ou em ajuste é enviado para aprovação.' },
+      { status: 409, code: 'CONTENT_STATE', message: 'Só um conteúdo em produção ou em ajuste é enviado para aprovação. Um conteúdo que já aguarda aprovação não muda de prazo nem de recado.' },
+      { status: 409, code: 'CONTENT_MEDIA_INCOMPLETE', message: 'A mídia ou a capa do conteúdo não está completa para este formato: falta mídia, ou a mídia ou a capa foi removida da pasta.' },
+      { status: 409, code: 'CONTENT_MEDIA_NOT_CONFIRMED' },
+      { status: 409, code: 'CONTENT_TASKS_NOT_APPROVED' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/contents/submit',
+    operationId: 'submitContentsBatch',
+    module: 'contents',
+    summary: 'Envia vários conteúdos de um cliente para aprovação, de uma vez',
+    description: [
+      'De 1 a 30 conteúdos, cada um uma vez, todos do cliente do caminho: ou todos passam a aguardar aprovação ou nenhum passa. Compartilham',
+      'o mesmo `dueOn` (de hoje até 90 dias à frente, no dia de São Paulo) e o mesmo `note` (de 1 a 500 caracteres), ambos opcionais,',
+      'e um `batchId`. Cada conteúdo abre a própria rodada, e a resposta traz os conteúdos como a consulta por período os lista, com `approval`.',
+      'Cada conteúdo segue as regras do envio individual (mídia completa, subtarefas aprovadas, em produção ou em ajuste); um que as',
+      'descumpre, ou que já aguarda, recusa o lote inteiro com o mesmo código do envio individual. Um conteúdo de outro cliente, de outra',
+      'agência ou inexistente responde `404 NOT_FOUND`. Mais de 30, repetido ou vazio é `400 VALIDATION_ERROR`. Exige `conteudo.operar` e `conteudo.visualizar`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientPathParamsSchema,
+    body: SubmitContentsBatchRequestSchema,
+    requestExample: { contentIds: [contentId], dueOn: '2026-10-18', note: contentApprovalExample.note },
+    responses: [{
+      status: 200,
+      description: 'O lote enviado.',
+      schema: SubmitContentsBatchResponseSchema,
+      example: {
+        data: {
+          batchId: '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e',
+          contents: [{ ...contentListItemExample, status: 'awaiting_approval', approval: contentApprovalExample }]
+        }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_APPROVAL_DUE_INVALID' },
+      { status: 400, code: 'CONTENT_APPROVAL_NOTE_INVALID' },
+      { status: 400, code: 'CONTENT_BATCH_INVALID' },
+      { status: 400, code: 'CONTENT_BATCH_MIXED_CLIENTS' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'CONTENT_STATE', message: 'Só um conteúdo em produção ou em ajuste é enviado para aprovação. Um conteúdo que já aguarda aprovação não muda de prazo nem de recado.' },
       { status: 409, code: 'CONTENT_MEDIA_INCOMPLETE', message: 'A mídia ou a capa do conteúdo não está completa para este formato: falta mídia, ou a mídia ou a capa foi removida da pasta.' },
       { status: 409, code: 'CONTENT_MEDIA_NOT_CONFIRMED' },
       { status: 409, code: 'CONTENT_TASKS_NOT_APPROVED' },
@@ -1837,8 +1976,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     description: [
       'Consulta por período, sem paginação: `from` e `to` inclusivos (`AAAA-MM-DD`), no máximo 93 dias (93 passa, 94 dá 400) e 500',
       'itens (acima disso, `400 CONTENT_PERIOD_TOO_LARGE`, sem truncar). Do dia mais antigo ao mais novo. Um conteúdo em produção traz',
-      'só o título, o dia e o formato; a partir de "aguardando aprovação" traz também a plataforma, a hora, a capa e o dia real da',
-      'publicação, sem a legenda nem a mídia (essas vêm da leitura do conteúdo). Conteúdo cancelado nunca vem. Nenhuma resposta do',
+      'só o título, o dia e o formato; a partir de "aguardando aprovação" traz também a plataforma, a hora, a capa, o dia real da',
+      'publicação e `approval` (o prazo e o recado da agência; nulo no conteúdo enviado antes das rodadas), sem a legenda nem a mídia (essas vêm da leitura do conteúdo). Conteúdo cancelado nunca vem. Nenhuma resposta do',
       'portal traz subtarefa, responsável, prazo interno ou o id de uma pessoa, nem para o colaborador que também tem vínculo com o cliente.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
@@ -1874,7 +2013,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Lista o que espera a aprovação da pessoa, no portal',
     description: [
       'Os conteúdos do cliente em "aguardando aprovação", do dia mais próximo ao mais distante, paginados pelo contrato global de',
-      'listagem (20 por página). A página além do fim responde o total real.'
+      'listagem (20 por página). Cada um traz `approval` com o prazo e o recado da agência. A página além do fim responde o total real.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -1902,7 +2041,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Lê um conteúdo, no portal',
     description: [
       'A partir de "aguardando aprovação", o post com a legenda, a mídia (o id e o lugar de cada arquivo, em ordem) e a `revision` que',
-      'a pessoa lê e devolve ao aprovar ou pedir ajuste. Um conteúdo em produção traz só o título, o dia e o formato. Conteúdo',
+      'a pessoa lê e devolve ao aprovar ou pedir ajuste, e `approval` com o prazo (`dueOn`) e o recado (`note`) que a agência deu ao enviar (nulo',
+      'para o conteúdo enviado antes das rodadas). Um conteúdo em produção traz só o título, o dia e o formato. Conteúdo',
       'cancelado, de outro cliente (mesmo de um cliente que a pessoa também lê), de outra agência, inexistente ou com id inválido',
       'devolve o mesmo 404, e o colaborador que também tem vínculo recebe o mesmo recorte que qualquer pessoa do portal.'
     ].join('\n'),
@@ -2355,7 +2495,7 @@ path: '/agencies/:agencyId/roles',
       'Paulo, sem publicado nem cancelado) vem antes de todos. `pendingInvitations` só vem para quem tem',
       '`cliente.convidar_usuario` e `contentIndicators` (`pending`, `inReview`, `overdue`, `adjusting`, `dueSoon`) só para quem',
       'tem `conteudo.visualizar`; para os demais o campo é omitido, não zerado, e a ordem não muda. As',
-      'conversas de conteúdo não entram em `threadsAwaitingAgency`.'
+      'conversas de conteúdo e os pedidos de material não entram em `threadsAwaitingAgency`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.visualizar',
@@ -2799,7 +2939,8 @@ path: '/agencies/:agencyId/roles',
       'página, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só',
       'enquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa',
       'de persona arquivada continua legível para a agência.',
-      'Com `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.'
+      'Com `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.',
+      'Com `materialRequest=true` o assunto são os pedidos de material do cliente, em qualquer estado, e a permissão é `cliente.visualizar`; cada item traz `subject: { materialRequest: true }` e `dueOn`, o prazo (`YYYY-MM-DD`) ou `null`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: CONVERSATION_READ_PERMISSIONS,
@@ -2831,7 +2972,8 @@ path: '/agencies/:agencyId/roles',
       'do corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000',
       'bytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`',
       'e persona de outro cliente 404.',
-      'Com `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.'
+      'Com `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.',
+      'Com `{ materialRequest: true }` a conversa é um pedido de material ao cliente (decisão 2026-11-10): um assunto do próprio cliente, nunca dentro da conversa de um conteúdo, e cada chamada abre um pedido novo. Pede `cliente.operar`, como as conversas do cliente. `dueOn` (`YYYY-MM-DD`) é o prazo opcional, de hoje a 90 dias, no fuso de São Paulo; fora disso é 400 `VALIDATION_ERROR` com o campo `dueOn`. `dueOn` com outro assunto também é 400, e o portal nunca abre um pedido.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: CONVERSATION_WRITE_PERMISSIONS,
@@ -2931,7 +3073,8 @@ path: '/agencies/:agencyId/roles',
       'Grava `resolved_at` e `resolved_by`. Resolver uma conversa que já está resolvida não escreve nada.',
       'Não existe rota de reabrir: um comentário novo reabre. Só quem tem `cliente.operar` resolve; a',
       'pessoa do portal nunca.',
-      'Na conversa de um conteúdo, `conteudo.operar` e `conteudo.visualizar`.'
+      'Na conversa de um conteúdo, `conteudo.operar` e `conteudo.visualizar`.',
+      'É assim que a agência encerra um pedido de material: ele sai da lista de pedidos abertos do portal, e um comentário do cliente o reabre.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: CONVERSATION_WRITE_PERMISSIONS,
@@ -2963,9 +3106,10 @@ path: '/agencies/:agencyId/roles',
       'Vinte por página, por nome (o e-mail, enquanto a pessoa não entrou), sem diferenciar maiúsculas nem acento.',
       '`status` é `active` (padrão) ou `removed`. Cada pessoa é um acesso dado a um e-mail, com conta ou sem ela:',
       '`accessId` é o id que as rotas de Remover e Reativar usam, `email` é o endereço como foi gravado e `entered` é',
-      '`false` ("ainda não entrou") até uma conta com aquele e-mail verificado entrar. `name` é o da conta e só vem',
-      'depois disso. A lista nunca diz se um e-mail tem conta no Ageniza. Cliente arquivado continua legível;',
-      'cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
+      '`false` ("ainda não entrou com a conta") até uma conta com aquele e-mail verificado entrar. `name` é o da conta e só vem',
+      'depois disso. A lista nunca diz se um e-mail tem conta no Ageniza.',
+      '`lastEnteredAt` é o último acesso daquele cliente: a última vez que a pessoa entrou no portal com a conta ou abriu o link de aprovação do e-mail, ou `null` se nunca. Pode vir preenchido com `entered: false`: quem só abriu o link ainda não entrou com a conta, e o reenvio das boas-vindas continua valendo para essa pessoa. Só quem já lê esta lista o recebe.',
+      'Cliente arquivado continua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.convidar_usuario',
@@ -2976,7 +3120,7 @@ path: '/agencies/:agencyId/roles',
       status: 200,
       description: 'Página de pessoas do portal.',
       schema: ClientMemberListResponseSchema,
-      example: { data: [clientMemberExample, clientMemberNotEnteredExample], meta: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 } }
+      example: { data: [clientMemberExample, clientMemberOpenedLinkExample, clientMemberNotEnteredExample], meta: { page: 1, pageSize: 20, totalItems: 3, totalPages: 1 } }
     }],
     errors: [
       COMMON_ERRORS.internal,
@@ -3202,7 +3346,8 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada',
       'não é assunto válido no portal: responde 404 como se não existisse.',
-      'Com `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.'
+      'Com `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.',
+      'Com `materialRequest=true`, os pedidos de material do próprio cliente, em qualquer estado, com `dueOn`; os pedidos abertos, para o Início, vêm da rota própria `/clients/:clientId/material-requests`.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -3231,12 +3376,13 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência',
       'ainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.',
-      'Com `{ contentId }`, só enquanto o conteúdo está em "aguardando aprovação", "em ajuste", "aprovado" ou "publicado"; fora disso, e para conteúdo de outro cliente, 404. A conversa do conteúdo é uma só: abrir de novo escreve nela.'
+      'Com `{ contentId }`, só enquanto o conteúdo está em "aguardando aprovação", "em ajuste", "aprovado" ou "publicado"; fora disso, e para conteúdo de outro cliente, 404. A conversa do conteúdo é uma só: abrir de novo escreve nela.',
+      'O portal nunca abre um pedido de material: `{ materialRequest: true }` e `dueOn` são 400 `VALIDATION_ERROR`, e nada é gravado. O pedido é da agência (decisão 2026-11-10).'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
     params: ClientPathParamsSchema,
-    body: CreateThreadRequestSchema,
+    body: PortalCreateThreadRequestSchema,
     requestExample: { subject: { sectionKey: 'tone_of_voice' }, body: 'Podemos aproximar o tom de voz do que usamos nas redes?' },
     responses: [{
       status: 201,
@@ -3288,7 +3434,8 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Grava o comentário com o lado `client`; comentar numa conversa resolvida a reabre. Não existe',
       'rota de resolver no portal: só a agência resolve.',
-      'A conversa de um conteúdo que não está aberto ao cliente é 404.'
+      'A conversa de um conteúdo que não está aberto ao cliente é 404.',
+      'É a rota com que o cliente responde a um pedido de material, aberto ou já resolvido; o pedido de outro cliente da mesma pessoa é 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -3307,6 +3454,36 @@ path: '/agencies/:agencyId/roles',
   },
   {
     method: 'get',
+    path: '/clients/:clientId/material-requests',
+    operationId: 'listPortalMaterialRequests',
+    module: 'clients',
+    summary: 'Lista os pedidos de material abertos do cliente, no portal',
+    description: [
+      'Os pedidos que a agência fez ao cliente e ainda não resolveu (decisão 2026-11-10), para o Início do portal: `threadId` (o id da conversa, para responder pela rota de comentários), `body` (o primeiro comentário, o que a agência pediu),',
+      '`dueOn` (o prazo, ou `null`), `createdAt` e `state`, sempre `open`. O prazo mais próximo vem primeiro e os sem prazo por último. Vinte por página.',
+      'A lista é só do cliente da rota, mesmo para quem tem vínculo com vários clientes. O estado é o de toda conversa: quando a agência resolve, o pedido sai da lista, e um comentário do cliente o traz de volta.',
+      'Só a conversa de pedido entra aqui: a conversa de um conteúdo em produção nunca chega ao portal por esta rota. Outro cliente, cliente arquivado, agência suspensa e vínculo removido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientPathParamsSchema,
+    query: MaterialRequestListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de pedidos de material abertos.',
+      schema: MaterialRequestListResponseSchema,
+      example: { data: [materialRequestExample], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'get',
     path: '/clients/:clientId',
     operationId: 'getPortalClient',
     module: 'clients',
@@ -3316,7 +3493,7 @@ path: '/agencies/:agencyId/roles',
       'vínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com',
       'resposta da agência, só as que o portal enxerga, o preenchimento do estudo e `contentsAwaitingApproval`,',
       'os conteúdos do próprio cliente em "aguardando aprovação". A conversa de um conteúdo não entra em',
-      '`threadsAnsweredByAgency`. Outro cliente, cliente arquivado, agência suspensa, vínculo removido e',
+      '`threadsAnsweredByAgency`, nem o pedido de material. Outro cliente, cliente arquivado, agência suspensa, vínculo removido e',
       'colaborador sem vínculo de cliente (Owner inclusive) devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
@@ -4050,7 +4227,8 @@ path: '/agencies/:agencyId/roles',
       'Os conteúdos do lote daquele e-mail, no estado de agora, com a legenda e a mídia da prévia de celular, na ordem do dia e da hora. Só o',
       'lote: nada da marca, da conversa geral nem de outro conteúdo do cliente, e um conteúdo cancelado some. O que já foi decidido, por esta ou',
       'por outra pessoa, aparece com o estado atual e `canDecide: false`; o que voltou a aguardar aprovação continua no lote enquanto o link',
-      'vale. Um conteúdo em produção traz só título, dia e formato. `canDecide` é o que manda desenhar Aprovar e Pedir ajuste: verdadeiro',
+      'vale. `approval` traz o prazo (`dueOn`) e o recado (`note`) que a agência deu ao enviar, e é nulo no conteúdo enviado antes das rodadas.',
+      'Um conteúdo em produção traz só título, dia e formato. `canDecide` é o que manda desenhar Aprovar e Pedir ajuste: verdadeiro',
       'exatamente quando o conteúdo aguarda aprovação. `personEmail` é o endereço que recebeu o acesso, para o link "Criar conta para ver o',
       'portal" levar a `/criar-conta` com ele preenchido; a resposta nunca diz se o endereço já tem conta. Sem o cookie, ou com o link morto: `404',
       'APPROVAL_LINK_INVALID`. Ler não decide nada. `Cache-Control: no-store`.'

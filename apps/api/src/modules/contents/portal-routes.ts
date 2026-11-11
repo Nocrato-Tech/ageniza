@@ -49,6 +49,9 @@ import type { ContentTransaction } from './service.js';
 
 type PreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
+/** What the module gives the approval link, which reads the same round of the same content: one copy of the mapping, here. */
+export { portalApprovalOf } from './portal-service.js';
+
 export interface ContentPortalModuleDependencies {
   readonly database: DatabaseClient;
   readonly auth: AuthInstance;

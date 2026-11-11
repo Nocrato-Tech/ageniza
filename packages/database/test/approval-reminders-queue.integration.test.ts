@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { backendPid, createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, waitForBackendsBlockedBy, type DatabaseClient } from '../src/index.js';
 
-import { createApprovalFixtures, QUIET_SECONDS, secondsUntilClockIsQuiet } from './support/approval-fixtures.js';
+import { createApprovalFixtures } from './support/approval-fixtures.js';
 import { createContentWorld } from './support/content-world.js';
 import { setPortalAccessStatus } from './support/portal-access.js';
 
@@ -29,17 +29,6 @@ const OVERDUE = 'content_approval_overdue';
 const REMINDER_TYPES = [DUE_SOON, OVERDUE];
 // The people of a fresh client: portalA1 and portalA1Second, an access each.
 const PEOPLE = 2;
-
-describe('the clock guard of this suite and of the rounds', () => {
-  it('lets a run start in the middle of the day and waits out the minute on each side of São Paulo midnight', () => {
-    expect(secondsUntilClockIsQuiet(12 * 3600, 12 * 3600)).toBe(0);
-    expect(secondsUntilClockIsQuiet(QUIET_SECONDS, 86_400 - QUIET_SECONDS)).toBe(0);
-    expect(secondsUntilClockIsQuiet(10, 86_390)).toBe(QUIET_SECONDS - 10);
-    expect(secondsUntilClockIsQuiet(QUIET_SECONDS - 1, 86_000)).toBe(1);
-    expect(secondsUntilClockIsQuiet(86_370, 30)).toBe(30 + QUIET_SECONDS);
-    expect(secondsUntilClockIsQuiet(86_000, QUIET_SECONDS - 1)).toBe(QUIET_SECONDS - 1 + QUIET_SECONDS);
-  });
-});
 
 beforeAll(async () => {
   await w.setup();

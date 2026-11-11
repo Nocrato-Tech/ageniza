@@ -54,6 +54,7 @@ import {
 } from './service.js';
 import { idFromRoute } from './route-support.js';
 import { registerContentActivationRoute } from './activation-routes.js';
+import { registerAwaitingClientRoute } from './awaiting-routes.js';
 import { registerContentTaskRoutes } from './task-routes.js';
 import { registerContentTransitionRoutes } from './transition-routes.js';
 
@@ -66,7 +67,7 @@ export interface ContentModuleDependencies {
   readonly requireAgencyAccess: PreHandler;
   /** Injected by the tenancy module; same named-permission rule the RLS policy enforces. */
   readonly requirePermission: (key: string) => PreHandler;
-  /** The instant "today" is read from when a publication carries no day; only a test sets it, and without it the day is the database's own. */
+  /** The instant "today" is read from when a publication carries no day and when "Parado no cliente" counts days; only a test sets it, and without it the day is the database's own. */
   readonly now?: () => Date;
 }
 
@@ -316,5 +317,6 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
   registerContentTransitionRoutes(app, dependencies);
   registerContentTaskRoutes(app, dependencies);
   registerContentActivationRoute(app, dependencies);
+  registerAwaitingClientRoute(app, dependencies);
 };
 

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { PassThrough } from 'node:stream';
 
 import { createLogger } from '@ageniza/core';
-import { createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, type DatabaseClient } from '@ageniza/database';
+import { createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, waitForQuietClock, type DatabaseClient } from '@ageniza/database';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { APPROVAL_REMINDERS_JOB_NAME, approvalRemindersJob } from './approval-reminders-job.js';
@@ -15,7 +15,6 @@ const { applicationUrl, ownerUrl } = resolveIntegrationDatabaseUrls();
 // The hour the job judges "morning" at: it reads the clock of the machine, which this suite must not depend on. The day of the rounds is the
 // database's, which is why the suite also waits for a quiet clock below.
 const MORNING = new Date('2026-11-13T15:00:00Z');
-const QUIET_SECONDS = 60;
 
 const id = () => randomUUID();
 const ids = { agency: id(), ownerUser: id(), actor: id(), portal1: id(), portal2: id() };
@@ -51,21 +50,6 @@ const runJob = async (database: DatabaseClient = application) => {
     { logger: logs.logger, signal: new AbortController().signal }
   );
   return logs;
-};
-
-/**
- * The deadline of a round is a day of São Paulo and the function reads the clock of the database, so the suite starts only when the minutes
- * around São Paulo midnight are not ahead of it: a "due tomorrow" made before midnight would be "due today" when the job runs. The suite is
- * shorter than the quiet window. Same guard as `waitForQuietClock` of the fixtures of `packages/database/test`.
- */
-const waitForQuietClock = async (): Promise<void> => {
-  const { rows } = await knex().raw<{ rows: Array<{ since: number; until: number }> }>(`
-    select extract(epoch from now() - app_private.sao_paulo_date(now())::timestamp at time zone 'America/Sao_Paulo')::float8 as since,
-           extract(epoch from (app_private.sao_paulo_date(now()) + 1)::timestamp at time zone 'America/Sao_Paulo' - now())::float8 as until
-  `);
-  const { since, until } = rows[0]!;
-  const wait = since < QUIET_SECONDS ? QUIET_SECONDS - since : until < QUIET_SECONDS ? until + QUIET_SECONDS : 0;
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait * 1000));
 };
 
 // The function walks the whole database, so what it returns counts rounds of other clients as well (another file, a run that was cut short):
@@ -139,7 +123,7 @@ const stampsOf = async (roundId: string) =>
 
 beforeAll(async () => {
   owner = createLocalTestDatabaseClient(ownerUrl);
-  await waitForQuietClock();
+  await waitForQuietClock(knex());
   application = createLocalTestDatabaseClient(applicationUrl);
   const admin = await presetRole('admin');
   await knex().transaction(async (transaction) => {

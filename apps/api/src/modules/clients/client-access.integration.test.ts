@@ -195,7 +195,13 @@ const withRacingApp = async <T>(beforeFunction: () => Promise<void>, run: (racin
 const postOn = async (target: FastifyInstance, url: string, cookie: string): Promise<Reply> =>
   (await target.inject({ method: 'POST', url, headers: { ...origin, cookie } })) as unknown as Reply;
 
-const MEMBER_KEYS = ['accessId', 'name', 'email', 'status', 'entered', 'since'];
+const MEMBER_KEYS = ['accessId', 'name', 'email', 'status', 'entered', 'lastEnteredAt', 'since'];
+
+// What the database stamped, as the list prints it: only the database writes it, so the test reads it back and never sets it.
+const lastEnteredOf = async (accessId: string): Promise<string | null> => {
+  const value = (await owner.knex('client_portal_accesses').where({ id: accessId }).first('last_entered_at')).last_entered_at as Date | null;
+  return value === null ? null : value.toISOString();
+};
 
 describe('CLIENTS portal access, agency side (#132)', () => {
   beforeAll(async () => {
@@ -352,6 +358,7 @@ describe('CLIENTS portal access, agency side (#132)', () => {
         email: users.ana!.email,
         status: 'active',
         entered: true,
+        lastEnteredAt: await lastEnteredOf(ana.id),
         since: new Date(ana.created_at).toISOString()
       });
     });
@@ -658,6 +665,7 @@ describe('CLIENTS portal access, agency side (#132)', () => {
         email: users.ana!.email,
         status: 'removed',
         entered: true,
+        lastEnteredAt: await lastEnteredOf(ana.id),
         since: new Date(ana.created_at).toISOString()
       });
       // The generation of the approval links advances with the removal, and the membership of the person goes with the access.

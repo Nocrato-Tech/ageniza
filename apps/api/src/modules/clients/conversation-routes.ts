@@ -9,6 +9,9 @@ import {
   CreateCommentRequestSchema,
   CreateThreadRequestSchema,
   CreateThreadResponseSchema,
+  MaterialRequestListQuerySchema,
+  MaterialRequestListResponseSchema,
+  PortalCreateThreadRequestSchema,
   ThreadListQuerySchema,
   ThreadListResponseSchema,
   ThreadSchema,
@@ -36,17 +39,20 @@ import {
   authorOf,
   diagnoseConversationRefusal,
   listComments,
+  listOpenMaterialRequests,
   listThreads,
   loadAuthors,
   loadComment,
   loadThreadRow,
+  materialRequestDatabaseRefusal,
   openThread,
   resolveThread,
   threadFromRow,
   type CommentRow,
   type ConversationAuthors,
   type ConversationRefusal,
-  type ConversationScope
+  type ConversationScope,
+  type MaterialRequestDatabaseRefusal
 } from './conversation-service.js';
 import { createPhotoUrlSigner } from './photo-url.js';
 import { COMMENT_DEFAULT_PAGE_SIZE, CONVERSATION_READ_PERMISSIONS, CONVERSATION_WRITE_PERMISSIONS, THREAD_DEFAULT_PAGE_SIZE } from './policy.js';
@@ -89,6 +95,22 @@ const refusalError = (refusal: ConversationRefusal): HttpError => {
   }
 };
 
+const dueOnRefused = (message: string): HttpError => new HttpError({
+  statusCode: 400,
+  code: 'VALIDATION_ERROR',
+  message: 'Request validation failed',
+  details: { issues: [{ path: 'dueOn', code: 'custom', message }] }
+});
+
+/** The refusals of the database about a request for material, as the errors the person can act on: 400 for the date, 403 for the portal. */
+const materialRequestError = (refusal: MaterialRequestDatabaseRefusal): HttpError => {
+  switch (refusal) {
+    case 'due-on-out-of-range': return dueOnRefused('the deadline is from today to 90 days ahead');
+    case 'due-on-without-request': return dueOnRefused('only a request for material has a deadline');
+    case 'portal-cannot-request': return forbidden();
+  }
+};
+
 const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth']> => {
   const auth = request.auth;
   if (auth === undefined) throw unauthenticated();
@@ -110,7 +132,7 @@ const subjectOfQuery = (query: ThreadListQuery): ConversationSubject => {
       statusCode: 400,
       code: 'VALIDATION_ERROR',
       message: 'Request validation failed',
-      details: { issues: [{ path: 'sectionKey', code: 'custom', message: 'exactly one of sectionKey, personaId and contentId is required' }] }
+      details: { issues: [{ path: 'sectionKey', code: 'custom', message: 'exactly one of sectionKey, personaId, contentId and materialRequest is required' }] }
     });
   }
   return subject;
@@ -160,6 +182,8 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
       if (isRetryableConflict(error)) throw tryAgain();
       // The archive won the race for the client; the portal never learns that, an archived client is "not found" there.
       if (isClientNoLongerActive(error)) throw refusalError(scope.side === 'agency' ? 'client-archived' : 'client-not-found');
+      const materialRequestRefusal = materialRequestDatabaseRefusal(error);
+      if (materialRequestRefusal !== undefined) throw materialRequestError(materialRequestRefusal);
       if (!isRowLevelSecurityViolation(error) && !(error instanceof ConversationWriteRefused)) throw error;
       const refusal = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
         diagnoseConversationRefusal(transaction, scope, target));
@@ -237,7 +261,12 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
 
   const openThreadHandler = (
     scopeOf: (request: FastifyRequest) => ConversationScope,
-    docs: { readonly schemas: { readonly body: typeof CreateThreadRequestSchema; readonly response: typeof CreateThreadResponseSchema } }
+    docs: {
+      readonly schemas: {
+        readonly body: typeof CreateThreadRequestSchema | typeof PortalCreateThreadRequestSchema;
+        readonly response: typeof CreateThreadResponseSchema;
+      };
+    }
   ) => async (request: FastifyRequest, reply: FastifyReply) => {
     const scope = scopeOf(request);
     const body = routeBody(docs, request);
@@ -364,7 +393,7 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
   const portalOpenThreadDocs = {
     permission: null,
     responseStatus: 201,
-    schemas: { params: ClientPathParamsSchema, body: CreateThreadRequestSchema, response: CreateThreadResponseSchema }
+    schemas: { params: ClientPathParamsSchema, body: PortalCreateThreadRequestSchema, response: CreateThreadResponseSchema }
   } satisfies DocumentedRouteConfig;
   const portalListCommentsDocs = {
     permission: null,
@@ -377,8 +406,34 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     schemas: { params: ClientThreadPathParamsSchema, body: CreateCommentRequestSchema, response: CommentSchema }
   } satisfies DocumentedRouteConfig;
 
+  const portalListMaterialRequestsDocs = {
+    permission: null,
+    responseStatus: 200,
+    schemas: { params: ClientPathParamsSchema, query: MaterialRequestListQuerySchema, response: MaterialRequestListResponseSchema }
+  } satisfies DocumentedRouteConfig;
+
   app.get('/clients/:clientId/threads', portalGuards(portalListThreadsDocs), listThreadsHandler(portalScope, portalListThreadsDocs));
   app.post('/clients/:clientId/threads', portalGuards(portalOpenThreadDocs), openThreadHandler(portalScope, portalOpenThreadDocs));
   app.get('/clients/:clientId/threads/:threadId/comments', portalGuards(portalListCommentsDocs), listCommentsHandler(portalScope, portalListCommentsDocs));
   app.post('/clients/:clientId/threads/:threadId/comments', portalGuards(portalAddCommentDocs), addCommentHandler(portalScope, portalAddCommentDocs));
+
+  app.get('/clients/:clientId/material-requests', portalGuards(portalListMaterialRequestsDocs), async (request, reply) => {
+    const scope = portalScope(request);
+    if (scope.side !== 'client') throw notFound('Client not found.');
+    const query = routeQuery(portalListMaterialRequestsDocs, request);
+    const pagination = resolvePagination(query, THREAD_DEFAULT_PAGE_SIZE);
+
+    const page = await read(request, (transaction) => listOpenMaterialRequests(transaction, scope, pagination));
+
+    return reply.send(routeResponse(portalListMaterialRequestsDocs, request, {
+      data: page.items.map((row) => ({
+        threadId: row.thread_id,
+        body: row.body,
+        dueOn: row.due_on,
+        createdAt: isoOf(row.created_at),
+        state: 'open' as const
+      })),
+      meta: buildPaginationMetadata(pagination, page.totalItems)
+    }));
+  });
 };
