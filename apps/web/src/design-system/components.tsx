@@ -2,7 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { ArrowRight, LayoutGrid, List, Plus, Store } from 'lucide-react';
 import {
   Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, ClientStrip, DatePicker, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, ErrorSummary, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
-  Modal, Pagination, PasswordInput, Popover, Realce, Segmented, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput
+  Modal, MilestoneTrail, Pagination, PasswordInput, Popover, Realce, Segmented, Select, Skeleton, Stage3D, StatusTag, Tabs, Textarea, TextInput,
+  type MilestoneStatus, type Stage3DTone
 } from '@ageniza/ui';
 
 /** `hover` and `focus` are real interactions on the default render, so they are not states a component implements. */
@@ -99,6 +100,31 @@ function DiscardDialogExample({ close }: { close: () => void }) {
     <Field label="Lembrete">{(control) => <TextInput {...control} value={note} onChange={(event) => setNote(event.target.value)} />}</Field>
   </Dialog>;
 }
+const TRAIL_TITLES = ['Conta criada', 'Primeiro cliente', 'Primeira aprovação'] as const;
+const TRAIL_WHEN = ['Hoje, às 09:12', 'Hoje, às 09:40', 'Hoje, às 10:05'] as const;
+
+function trailSteps(statuses: readonly MilestoneStatus[], action: ReactNode) {
+  return TRAIL_TITLES.map((title, index) => ({
+    id: `step-${index}`,
+    title,
+    status: statuses[index] ?? 'upcoming',
+    when: TRAIL_WHEN[index],
+    description: index === 1 ? 'Cadastre quem vai receber o calendário.' : 'Aparece aqui quando o cliente aprovar.',
+    action: index === 1 ? action : undefined
+  }));
+}
+
+/** Reaching a step is a change of status only, so the fill, the check and the line play on their own. */
+function TrailDemo({ size }: { size: 'md' | 'sm' }) {
+  const [reached, setReached] = useState(1);
+  const statuses = TRAIL_TITLES.map((_, index): MilestoneStatus => (index < reached ? 'done' : index === reached ? 'current' : 'upcoming'));
+  return <div>
+    <MilestoneTrail aria-label="Primeiros passos de exemplo" size={size} steps={trailSteps(statuses, <Button size="sm" onClick={() => setReached((value) => (value + 1) % (TRAIL_TITLES.length + 1))}>Concluir passo</Button>)} />
+  </div>;
+}
+
+const STAGE_TONES: readonly [Stage3DTone, string][] = [['indigo', 'rocket'], ['violet', 'trophy'], ['teal', 'thumb-up'], ['sky', 'calender'], ['red', 'bell'], ['slate', 'folder']];
+
 const stateOnly =(state: RenderedState, only: readonly RenderedState[], node: ReactNode): ReactNode => only.includes(state) ? node : null;
 
 /**
@@ -337,6 +363,30 @@ export const componentEntries: readonly ComponentEntry[] = [
     examples: [
       { label: 'amigável (estado vazio)', render: (state) => stateOnly(state, ['default'], <Mascot variant="friendly" height={120} />) },
       { label: 'sério (erro)', render: (state) => stateOnly(state, ['default'], <Mascot variant="serious" height={120} />) }
+    ]
+  },
+  {
+    id: 'stage',
+    name: 'Stage3D',
+    covers: ['Stage3D'],
+    wide: true,
+    examples: [
+      { label: 'tamanhos sm, md, lg e xl', render: (state) => stateOnly(state, ['default'], <span className="ds-row" data-stage-host>
+        {(['sm', 'md', 'lg', 'xl'] as const).map((size) => <Stage3D key={size} src="/3d/rocket.png" size={size} />)}
+      </span>) },
+      { label: 'tom da família do cartão', render: (state) => stateOnly(state, ['default'], <span className="ds-row" data-stage-host>
+        {STAGE_TONES.map(([tone, icon]) => <Stage3D key={tone} src={`/3d/${icon}.png`} tone={tone} size="md" />)}
+      </span>) }
+    ]
+  },
+  {
+    id: 'milestone-trail',
+    name: 'MilestoneTrail',
+    covers: ['MilestoneTrail'],
+    wide: true,
+    examples: [
+      { label: 'médio: clique em "Concluir passo" para ver o preenchimento, o traço e a linha', render: (state) => stateOnly(state, ['default'], <TrailDemo size="md" />) },
+      { label: 'pequeno', render: (state) => stateOnly(state, ['default'], <MilestoneTrail aria-label="Trilha pequena de exemplo" size="sm" steps={trailSteps(['done', 'current', 'upcoming'], null)} />) }
     ]
   },
   {

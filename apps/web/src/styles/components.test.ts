@@ -25,14 +25,14 @@ describe('component states', () => {
     expect(rule('.ui-pill--action.ui-pill--accent:hover:not(:disabled):not(.ui-pill--loading)').get('filter')).toBe('brightness(0.94)');
   });
 
-  it('raises the text of an unchosen option and a tab on hover, never their background', () => {
+  it('raises the text of an unchosen option and a tab on hover and lays a veil of the surface, never the white of the chosen one', () => {
     const option = rule(".ui-segmented__option:hover:not(:disabled):not([aria-disabled='true']):not([aria-checked='true'])");
-    const tab = rule('.ui-tabs__tab:hover:not(:disabled)');
+    const tab = rule(".ui-tabs__tab:hover:not(:disabled):not([aria-selected='true'])");
 
-    expect(option.get('color')).toBe('var(--text-primary)');
-    expect(option.has('background')).toBe(false);
-    expect(tab.get('color')).toBe('var(--text-primary)');
-    expect(tab.has('background')).toBe(false);
+    for (const hover of [option, tab]) {
+      expect(hover.get('color')).toBe('var(--text-primary)');
+      expect(hover.get('background')).toBe('color-mix(in srgb, var(--bg-surface) 55%, transparent)');
+    }
   });
 
   it('keeps the global focus ring on buttons and rings every new control with the focus token', () => {
@@ -42,12 +42,23 @@ describe('component states', () => {
     }
   });
 
-  it('underlines only the open tab, in ink and never in indigo', () => {
+  it('lifts only the open tab: a white pill with a shadow on the tinted track, in the ink of the secondary action', () => {
     const open = rule(".ui-tabs__tab[aria-selected='true']");
 
-    expect(open.get('border-bottom-color')).toBe('var(--text-primary)');
-    expect(rule('.ui-tabs__tab').get('border-bottom')).toBe('2px solid transparent');
-    expect(rule('.ui-tabs__list').get('border-bottom')).toBe('1px solid var(--border-subtle)');
+    expect(open.get('background')).toBe('var(--bg-surface)');
+    expect(open.get('box-shadow')).toBe('var(--shadow-raised)');
+    expect(open.get('color')).toBe('var(--action-secondary-fg)');
+    expect(open.get('font-weight')).toBe('600');
+    expect(rule('.ui-tabs__tab').get('background')).toBe('transparent');
+    expect(rule('.ui-tabs__list').get('background')).toBe('var(--bg-tint)');
+    expect(rule('.ui-tabs__list').get('border-radius')).toBe('var(--radius-full)');
+  });
+
+  it('draws the open route tab of the client page the same way', () => {
+    const open = rule(".client-detail__tabs .ui-tabs__tab[aria-current='page']");
+
+    expect(open.get('background')).toBe('var(--bg-surface)');
+    expect(open.get('color')).toBe('var(--action-secondary-fg)');
   });
 
   it('insets the ring of a tab, which sits inside a scroll box that would clip an outer one', () => {
@@ -55,7 +66,6 @@ describe('component states', () => {
   });
 
   it.each([
-    '.ui-button:disabled:not(.ui-button--loading)',
     '.ui-pill:disabled:not(.ui-pill--loading)',
     '.ui-segmented__option:disabled',
     '.ui-tabs__tab:disabled'
@@ -64,6 +74,25 @@ describe('component states', () => {
 
     expect(disabled.get('opacity')).toBe('0.55');
     expect(disabled.get('cursor')).toBe('not-allowed');
+  });
+
+  it.each(['.ui-button:disabled:not(.ui-button--loading)', '.ui-pill--action:disabled:not(.ui-pill--loading)'])('gives %s the disabled pair, flat and with no hover lift', (selector) => {
+    const disabled = rule(selector);
+
+    expect(disabled.get('background')).toBe('var(--action-disabled-bg)');
+    expect(disabled.get('color')).toBe('var(--action-disabled-fg)');
+    expect(disabled.get('cursor')).toBe('not-allowed');
+    expect(disabled.get('box-shadow')).toBe('none');
+    expect(disabled.get('transform')).toBe('none');
+  });
+
+  it('lifts the primary button on hover with the hover token and a soft shadow, and drops it on press', () => {
+    const hover = rule('.ui-button--primary:hover:not(:disabled):not(.ui-button--loading)');
+
+    expect(hover.get('background')).toBe('var(--action-primary-hover)');
+    expect(hover.get('box-shadow')).toBe('var(--shadow-raised)');
+    expect(hover.get('transform')).toBe('translateY(-1px)');
+    expect(rule('.ui-button--primary:active:not(:disabled):not(.ui-button--loading)').get('transform')).toBe('translateY(0)');
   });
 
   it.each(['.ui-button--loading', '.ui-pill--loading'])('shows a spinner on %s and keeps the label in the accessibility tree', (selector) => {
@@ -119,11 +148,13 @@ describe('component tokens', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('rounds the controls with the Pauta radii: capsule, field, panel', () => {
+  it('rounds the controls with the board radii: a pill is information, a rounded rectangle is an action', () => {
     expect(rule('.ui-pill').get('border-radius')).toBe('var(--radius-full)');
-    expect(rule('.ui-segmented__option').get('border-radius')).toBe('var(--radius-md)');
-    expect(rule('.ui-segmented').get('border-radius')).toBe('var(--radius-lg)');
+    expect(rule('.ui-segmented__option').get('border-radius')).toBe('var(--radius-full)');
+    expect(rule('.ui-segmented').get('border-radius')).toBe('var(--radius-full)');
+    expect(rule('.ui-tabs__tab').get('border-radius')).toBe('var(--radius-full)');
     expect(rule('.ui-button').get('border-radius')).toBe('var(--radius-md)');
+    expect(rule('.ui-button--sm').get('border-radius')).toBe('var(--radius-sm)');
   });
 
   it('sizes every icon the same, 16px inside a capsule or a tab', () => {
@@ -143,7 +174,7 @@ describe('component tokens', () => {
   });
 });
 
-describe.each(['light', 'dark'] as const)('contrast of the new controls in %s', (theme) => {
+describe.each(['light'] as const)('contrast of the new controls in %s', (theme) => {
   const SURFACES = ['var(--bg-canvas)', 'var(--bg-surface)'];
 
   const colours = (selector: string) => {
@@ -181,9 +212,16 @@ describe.each(['light', 'dark'] as const)('contrast of the new controls in %s', 
     expect(contrastOf(theme, option.fg, option.bg)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('pairs the neutral pill and the chosen option as the design system table lists them', () => {
+  it('pairs the neutral pill, the chosen option and the secondary button as the design system table lists them', () => {
     expect(colours('.ui-pill--neutral')).toEqual({ fg: 'var(--text-secondary)', bg: 'var(--bg-hover)' });
-    expect(colours(".ui-segmented__option[aria-checked='true']")).toEqual({ fg: 'var(--text-primary)', bg: 'var(--bg-hover)' });
+    expect(colours(".ui-segmented__option[aria-checked='true']")).toEqual({ fg: 'var(--action-secondary-fg)', bg: 'var(--bg-surface)' });
+    expect(colours('.ui-button--secondary')).toEqual({ fg: 'var(--action-secondary-fg)', bg: 'var(--action-secondary-bg)' });
+  });
+
+  it('keeps the text of an unchosen option and of a tab AA on the tinted track they sit on', () => {
+    for (const selector of ['.ui-segmented__option', '.ui-tabs__tab']) {
+      expect(contrastOf(theme, colours(selector).fg, rule(selector === '.ui-tabs__tab' ? '.ui-tabs__list' : '.ui-segmented').get('background')!), selector).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it('keeps the accent pill AA on its fill and the hover of the neutral action pill AA', () => {
@@ -204,15 +242,13 @@ const CONTROLS_WITH_EDGE = ['.ui-text-input', '.ui-select', '.ui-textarea', '.ui
 describe('border/control', () => {
   it('is built from existing primitives, with no new colour', () => {
     expect(themes.light.get('--border-control')).toBe('color-mix(in srgb, var(--color-slate-400) 40%, var(--color-ink-600))');
-    expect(themes.dark.get('--border-control')).toBe(themes.light.get('--border-control'));
   });
 
   it('resolves to #6D7989', () => {
-    expect(rgbOf('var(--border-control)', 'dark').map(Math.round)).toEqual([0x6d, 0x79, 0x89]);
     expect(rgbOf('var(--border-control)', 'light').map(Math.round)).toEqual([0x6d, 0x79, 0x89]);
   });
 
-  it.each(['light', 'dark'] as const)('is 3:1 on the surface and on the canvas in %s', (theme) => {
+  it.each(['light'] as const)('is 3:1 on the surface and on the canvas in %s', (theme) => {
     expect(contrastOf(theme, 'var(--border-control)', 'var(--bg-surface)')).toBeGreaterThanOrEqual(3);
     expect(contrastOf(theme, 'var(--border-control)', 'var(--bg-canvas)')).toBeGreaterThanOrEqual(3);
   });
@@ -223,8 +259,8 @@ describe('border/control', () => {
 
   it('leaves the decorative borders on border/default', () => {
     expect(rule('.ui-avatar').has('border')).toBe(false);
-    expect(rule('.ui-button--secondary').get('border-color')).toBe('var(--border-default)');
     expect(rule('.ui-pill--action.ui-pill--neutral').get('border-color')).toBe('var(--border-default)');
+    expect(rule('.ui-status-tag--published').get('border-color')).toBe('var(--border-default)');
   });
 
   it('rounds the fields like the Pauta button and field radius', () => {
@@ -267,7 +303,7 @@ describe('field states', () => {
   it('colours the placeholder and the counter from tokens that pass AA on the surface', () => {
     expect(rule('.ui-text-input::placeholder').get('color')).toBe('var(--text-muted)');
     expect(rule('.ui-field__counter--over').get('color')).toBe('var(--text-danger)');
-    for (const theme of ['light', 'dark'] as const) {
+    for (const theme of ['light'] as const) {
       expect(contrastOf(theme, 'var(--text-muted)', 'var(--bg-surface)')).toBeGreaterThanOrEqual(4.5);
       expect(contrastOf(theme, 'var(--text-danger)', 'var(--bg-surface)')).toBeGreaterThanOrEqual(4.5);
     }
@@ -298,7 +334,13 @@ describe('dialog and popover', () => {
     expect(rule('.ui-modal').get('background')).toBe('var(--bg-surface)');
     expect(rule('.ui-dialog').get('background')).toBe('var(--bg-surface)');
     expect(rule('.ui-menu__content').get('background')).toBe('var(--bg-surface)');
-    expect(rule('.ui-menu__content').has('box-shadow')).toBe(false);
+    expect(rule('.ui-menu__content').get('box-shadow')).toBe('var(--shadow-floating)');
+    expect(rule('.ui-menu__content').get('border-radius')).toBe('var(--radius-lg)');
+  });
+
+  it('dims the backdrop of the dialog with the scrim, never a blur', () => {
+    expect(rule('.ui-modal::backdrop').get('background')).toBe('var(--scrim)');
+    expect(rule('.ui-modal::backdrop').has('backdrop-filter')).toBe(false);
   });
 
   it('sizes the dialog small, medium and large, and keeps it inside the screen', () => {
@@ -353,7 +395,7 @@ describe('dialog and popover', () => {
     expect(declarationsFor(blocks, '.ui-popover').get('animation')).toBe('none');
   });
 
-  it.each(['light', 'dark'] as const)('keeps the text AA on the surface it sits on in %s', (theme) => {
+  it.each(['light'] as const)('keeps the text AA on the surface it sits on in %s', (theme) => {
     expect(contrastOf(theme, 'var(--text-primary)', rule('.ui-popover').get('background')!)).toBeGreaterThanOrEqual(4.5);
     expect(contrastOf(theme, rule('.ui-modal__description').get('color')!, rule('.ui-modal').get('background')!)).toBeGreaterThanOrEqual(4.5);
   });
@@ -370,10 +412,19 @@ describe('format and state tags', () => {
     expect(tag.get('color')).toBe(`var(--format-${format}-tag-fg)`);
   });
 
-  it('puts the colour of a state on its icon and keeps the label on text/secondary, with an outline', () => {
-    expect(rule('.ui-status-tag').get('color')).toBe('var(--text-secondary)');
-    expect(rule('.ui-status-tag').get('border-color')).toBe('var(--border-default)');
-    for (const status of STATUSES) expect(rule(`.ui-status-tag--${status} .ui-icon`).get('color'), status).toBe(`var(--status-${status}-fg)`);
+  it.each(['ready', 'waiting', 'adjust', 'production'] as const)('draws the %s state as a soft pill, the fill and the text of its family', (status) => {
+    const tag = rule(`.ui-status-tag--${status}`);
+
+    expect(tag.get('background')).toBe(`var(--status-${status}-bg)`);
+    expect(tag.get('color')).toBe(`var(--status-${status}-text)`);
+  });
+
+  it('leaves the published state on the surface with a hairline, because done is quiet', () => {
+    const tag = rule('.ui-status-tag--published');
+
+    expect(tag.get('background')).toBe('var(--bg-surface)');
+    expect(tag.get('color')).toBe('var(--status-published-fg)');
+    expect(tag.get('border-color')).toBe('var(--border-default)');
   });
 
   it('draws the late badge as a solid block on the danger action pair', () => {
@@ -381,27 +432,28 @@ describe('format and state tags', () => {
     expect(rule('.ui-late-badge').get('color')).toBe('var(--action-danger-fg)');
   });
 
-  it('rounds the tags as a chip and sizes the state icon at 12px', () => {
-    for (const selector of ['.ui-format-tag', '.ui-status-tag', '.ui-late-badge']) expect(rule(selector).get('border-radius'), selector).toBe('var(--radius-sm)');
+  it('rounds the tags as a pill and sizes the state icon at 12px', () => {
+    for (const selector of ['.ui-format-tag', '.ui-status-tag', '.ui-late-badge']) expect(rule(selector).get('border-radius'), selector).toBe('var(--radius-full)');
     expect(rule('.ui-status-tag .ui-icon > svg').get('width')).toBe('0.75rem');
     expect(rule('.ui-status-tag .ui-icon > svg').get('height')).toBe('0.75rem');
   });
 
-  describe.each(['light', 'dark'] as const)('in %s', (theme) => {
+  describe.each(['light'] as const)('in %s', (theme) => {
     it.each(FORMATS)('keeps the %s label AA on its fill', (format) => {
       const tag = rule(`.ui-format-tag--${format}`);
 
       expect(contrastOf(theme, tag.get('color')!, tag.get('background')!), format).toBeGreaterThanOrEqual(4.5);
     });
 
-    it.each(STATUSES)('keeps the %s icon 3:1 on the canvas and the surface', (status) => {
-      const icon = rule(`.ui-status-tag--${status} .ui-icon`).get('color')!;
+    it.each(STATUSES)('keeps the %s label and icon AA on the fill of its pill', (status) => {
+      const tag = rule(`.ui-status-tag--${status}`);
+      const fill = tag.get('background')!;
 
-      for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, icon, surface), `${status} on ${surface}`).toBeGreaterThanOrEqual(3);
+      expect(contrastOf(theme, tag.get('color')!, fill), status).toBeGreaterThanOrEqual(4.5);
     });
 
-    it('keeps the label of a state AA on the canvas and the surface', () => {
-      for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, rule('.ui-status-tag').get('color')!, surface)).toBeGreaterThanOrEqual(4.5);
+    it('keeps the label of a state AA where the calendar card lays it: on the surface', () => {
+      for (const status of STATUSES) expect(contrastOf(theme, rule(`.ui-status-tag--${status}`).get('color')!, rule('.content-card .ui-status-tag').get('background')!), status).toBeGreaterThanOrEqual(4.5);
     });
 
     it('keeps the late badge AA on its fill', () => {
@@ -417,13 +469,13 @@ describe('avatar attention ring', () => {
     expect(rule('.ui-avatar--attention').get('box-shadow')).toBe('0 0 0 2px var(--ui-avatar-gap, var(--bg-canvas)), 0 0 0 4px var(--status-late-fg)');
   });
 
-  it.each(['light', 'dark'] as const)('is 3:1 on the canvas and the surface in %s, for the Avatar of the client strip as well', (theme) => {
+  it.each(['light'] as const)('is 3:1 on the canvas and the surface in %s, for the Avatar of the client strip as well', (theme) => {
     for (const selector of ['.ui-avatar--attention']) {
       for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, ringOf(selector), surface), `${selector} on ${surface}`).toBeGreaterThanOrEqual(3);
     }
   });
 
-  it.each(['light', 'dark'] as const)('is 3:1 on the hover surface the client strip item gives it in %s', (theme) => {
+  it.each(['light'] as const)('is 3:1 on the hover surface the client strip item gives it in %s', (theme) => {
     const gap = rule('.ui-client-strip__item:hover').get('--ui-avatar-gap')!;
     expect(gap).toBe('var(--bg-hover)');
     expect(contrastOf(theme, ringOf('.ui-avatar--attention'), gap)).toBeGreaterThanOrEqual(3);
@@ -439,7 +491,7 @@ describe('avatar attention ring', () => {
 });
 
 describe('Realce', () => {
-  it.each(['light', 'dark'] as const)('keeps its text AA on the indigo in %s', (theme) => {
+  it.each(['light'] as const)('keeps its text AA on the indigo in %s', (theme) => {
     expect(contrastOf(theme, rule('.ui-realce').get('color')!, rule('.ui-realce').get('background')!)).toBeGreaterThanOrEqual(4.5);
   });
 
@@ -511,7 +563,7 @@ describe('Mascot and EmptyState', () => {
     expect(rule('.ui-empty-state__title').get('overflow-wrap')).toBe('anywhere');
   });
 
-  it.each(['light', 'dark'] as const)('keeps the title and the description AA on the canvas and the surface in %s', (theme) => {
+  it.each(['light'] as const)('keeps the title and the description AA on the canvas and the surface in %s', (theme) => {
     const description = rule('.ui-empty-state__description').get('color')!;
 
     expect(description).toBe('var(--text-secondary)');
@@ -562,7 +614,7 @@ describe('ClientStrip', () => {
     expect(declarationsFor(MOTION_ON, '.ui-client-strip__item').get('transition')).toContain('var(--motion-fast)');
   });
 
-  it.each(['light', 'dark'] as const)('keeps the name AA at rest and on its hover surface in %s', (theme) => {
+  it.each(['light'] as const)('keeps the name AA at rest and on its hover surface in %s', (theme) => {
     for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) {
       expect(contrastOf(theme, rule('.ui-client-strip__item').get('color')!, surface), surface).toBeGreaterThanOrEqual(4.5);
     }
@@ -603,7 +655,7 @@ describe('FilterBar', () => {
     expect(field.get('border')).toBe('1px solid var(--border-control)');
     expect(field.get('border-radius')).toBe('var(--radius-md)');
     expect(field.get('margin-left')).toBe('0');
-    for (const theme of ['light', 'dark'] as const) {
+    for (const theme of ['light'] as const) {
       for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) expect(contrastOf(theme, 'var(--border-control)', surface), `${theme} on ${surface}`).toBeGreaterThanOrEqual(3);
     }
   });
@@ -630,7 +682,7 @@ describe('FilterBar', () => {
     expect(declarationsFor(reduced, '.ui-filter-bar__item--loading > .ui-filter-bar__label::after').get('animation')).toBe('none');
   });
 
-  it.each(['light', 'dark'] as const)('keeps the label and the choice AA on the canvas and the surface in %s', (theme) => {
+  it.each(['light'] as const)('keeps the label and the choice AA on the canvas and the surface in %s', (theme) => {
     for (const surface of ['var(--bg-canvas)', 'var(--bg-surface)']) {
       expect(contrastOf(theme, rule('.ui-filter-bar__label').get('color')!, surface), `label on ${surface}`).toBeGreaterThanOrEqual(4.5);
       expect(contrastOf(theme, rule('.ui-filter-bar__control').get('color')!, surface), `choice on ${surface}`).toBeGreaterThanOrEqual(4.5);
@@ -662,7 +714,6 @@ describe('breakpoints of docs/design-system.md 19', () => {
     const list = rule('.client-detail__tabs ul.ui-tabs__list');
 
     expect(list.get('flex-wrap')).toBe('wrap');
-    expect(list.get('row-gap')).toBe('0');
     expect(list.get('overflow-x')).toBe('visible');
   });
 
@@ -694,7 +745,7 @@ describe('content modal', () => {
     expect(css).toMatch(/@media \(max-width: 47\.99rem\) \{\s*\.content-modal__body \{\s*grid-template-columns: minmax\(0, 1fr\);/);
   });
 
-  it.each(['light', 'dark'] as const)('keeps the danger text of "Cancelar conteúdo" AA on the canvas and the surface in %s, hovered too', (theme) => {
+  it.each(['light'] as const)('keeps the danger text of "Cancelar conteúdo" AA on the canvas and the surface in %s, hovered too', (theme) => {
     const cancel = rule('.content-actions__cancel');
     const hover = rule(".content-actions__cancel:hover:not(:disabled):not([aria-busy='true'])");
 
@@ -704,7 +755,7 @@ describe('content modal', () => {
     for (const surface of SURFACES) expect(contrastOf(theme, 'var(--text-danger)', surface), surface).toBeGreaterThanOrEqual(4.5);
   });
 
-  it.each(['light', 'dark'] as const)('draws the adjustment strip on the canvas with the state icon and AA text in %s', (theme) => {
+  it.each(['light'] as const)('draws the adjustment strip on the canvas with the state icon and AA text in %s', (theme) => {
     const strip = rule('.content-modal__adjustment');
 
     expect(strip.get('background')).toBe('var(--bg-canvas)');
@@ -713,7 +764,7 @@ describe('content modal', () => {
     for (const text of ['var(--text-secondary)', 'var(--text-primary)']) expect(contrastOf(theme, text, 'var(--bg-canvas)'), text).toBeGreaterThanOrEqual(4.5);
   });
 
-  it.each(['light', 'dark'] as const)('numbers a media with the primary text on the canvas in %s', (theme) => {
+  it.each(['light'] as const)('numbers a media with the primary text on the canvas in %s', (theme) => {
     const badge = rule('.content-media__number');
 
     expect(badge.get('background')).toBe('var(--bg-canvas)');
@@ -731,7 +782,7 @@ describe('content modal', () => {
 });
 
 describe('the story scripts in the Pauta look (#635)', () => {
-  it.each(['light', 'dark'] as const)('reads the chip of a day and the list with AA text on the canvas and the surface in %s', (theme) => {
+  it.each(['light'] as const)('reads the chip of a day and the list with AA text on the canvas and the surface in %s', (theme) => {
     const chip = rule('.content-day__script');
     const scene = rule('.story-script__scene');
 
@@ -786,7 +837,7 @@ describe('the story scripts in the Pauta look (#635)', () => {
 });
 
 describe('the error summary of a refused form (#639)', () => {
-  it.each(['light', 'dark'] as const)('reads in the danger text at AA on the surface and the canvas in %s', (theme) => {
+  it.each(['light'] as const)('reads in the danger text at AA on the surface and the canvas in %s', (theme) => {
     const summary = rule('.ui-error-summary');
 
     expect(summary.get('color')).toBe('var(--text-danger)');
@@ -819,7 +870,7 @@ describe('the conversation of a content in the Pauta look (#639)', () => {
     }
   });
 
-  it.each(['light', 'dark'] as const)('keeps every text of a message at AA on its own surface in %s', (theme) => {
+  it.each(['light'] as const)('keeps every text of a message at AA on its own surface in %s', (theme) => {
     for (const [text, surface] of [
       ['var(--text-primary)', 'var(--bg-canvas)'],
       ['var(--text-secondary)', 'var(--bg-canvas)']

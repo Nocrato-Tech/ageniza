@@ -6,7 +6,6 @@ import type { AuthSessionSnapshot } from './auth.js';
 import { AcceptanceGate, AcceptancePage } from './acceptance.js';
 import { AccountMenu } from './account-menu.js';
 import { ApprovalLinkPage } from './approval-link.js';
-import { DarkArea } from './area-theme.js';
 import { AgencyAreaLayout, AgencyHomePage, AgencyPermissionRoute } from './agency.js';
 import { AuthLayout } from './auth-layout.js';
 import { CircleAlert, CircleCheck } from 'lucide-react';
@@ -141,7 +140,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="confirme-seu-email" element={<EmailPendingPage />} />
       <Route path="criar-conta" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <SignUpPage />} />
     </Route>
-    <Route path="agencia/:agenciaId" element={<DarkArea><SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate></DarkArea>}>
+    <Route path="agencia/:agenciaId" element={<SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate>}>
       <Route index element={<AgencyHomePage />} />
       <Route path="colaboradores" element={
         <AgencyPermissionRoute permission="colaborador.visualizar">

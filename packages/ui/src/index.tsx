@@ -5,6 +5,8 @@ export { ButtonLink, type ButtonLinkProps } from './button-link.js';
 export { Button, IconButton, type ButtonProps, type ButtonSize, type ButtonVariant, type IconButtonProps } from './button.js';
 export { Logo, BrandSymbol, type LogoProps, type LogoVariant, type BrandSymbolProps, type BrandSymbolVariant } from './brand.js';
 export { Mascot, type MascotProps, type MascotVariant } from './mascot.js';
+export { MilestoneTrail, type MilestoneStatus, type MilestoneStep, type MilestoneTrailProps } from './milestone-trail.js';
+export { Stage3D, type Stage3DProps, type Stage3DSize, type Stage3DTone } from './stage.js';
 export { ConfirmDialog, Menu, MenuItem, MenuSeparator } from './menu.js';
 export { EmptyState, type EmptyStateKind, type EmptyStateProps } from './empty-state.js';
 export { ClientStrip, type ClientStripItem, type ClientStripLinkProps, type ClientStripProps } from './client-strip.js';

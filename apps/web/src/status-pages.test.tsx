@@ -83,14 +83,14 @@ describe('status pages (serious mascot)', () => {
     expect(document.title).toBe('Área indisponível — Ageniza');
   });
 
-  it('keeps the public pages light and the agency area dark, on the same status page', () => {
+  it('keeps the public pages and the agency area on the same light status page', () => {
     renderAt('/caminho-inexistente');
     expect(document.documentElement.getAttribute('data-theme')).toBeNull();
     cleanup();
 
     renderAt(`/agencia/${AGENCY}`);
     expect(screen.getByRole('heading', { name: 'Área indisponível' })).toBeTruthy();
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(document.documentElement.getAttribute('data-theme')).toBeNull();
   });
 });
 
@@ -122,16 +122,7 @@ describe('unexpected error boundary', () => {
 
   afterEach(() => { window.history.pushState({}, '', '/'); });
 
-  it('is dark inside the agency area, because the crash took the area theme with it', () => {
-    crashAt(`/agencia/${AGENCY}/clientes`);
-
-    expect(screen.getByRole('heading', { name: 'Algo deu errado' })).toBeTruthy();
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-    cleanup();
-    expect(document.documentElement.getAttribute('data-theme')).toBeNull();
-  });
-
-  it.each(['/', '/entrar', '/contextos', `/portal/${AGENCY}/inicio`, '/agenciax/y'])('stays light outside the agency area (%s)', (path) => {
+  it.each(['/', '/entrar', '/contextos', `/portal/${AGENCY}/inicio`, '/agenciax/y', `/agencia/${AGENCY}/clientes`])('is light everywhere, the agency area included (%s)', (path) => {
     crashAt(path);
 
     expect(screen.getByRole('heading', { name: 'Algo deu errado' })).toBeTruthy();

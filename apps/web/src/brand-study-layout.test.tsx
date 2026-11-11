@@ -132,7 +132,7 @@ describe('brand study layout (telas-melhorias S13)', () => {
     expect(declarationsFor(css, '.brand-personas__card:hover').get('background')).toBeUndefined();
   });
 
-  it.each(['light', 'dark'] as const)('keeps the index and the cards readable in the %s theme', (theme) => {
+  it.each(['light'] as const)('keeps the index and the cards readable in the %s theme', (theme) => {
     // The index sits on the canvas; the open link and every card sit on the surface.
     expect(contrastOf(theme, 'var(--text-secondary)', 'var(--bg-canvas)')).toBeGreaterThanOrEqual(4.5);
     expect(contrastOf(theme, 'var(--text-primary)', 'var(--bg-surface)')).toBeGreaterThanOrEqual(4.5);

@@ -110,6 +110,21 @@ describe('MilestoneCelebration', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
+  it('sizes the confetti as the board does: 90 pieces for the first approval, 28 for the others, in the brand and the two warm tones', () => {
+    takeMilestone(AGENCY, nothing);
+    mount({ ...nothing, client: true, content: true, sent: true, approved: true });
+    const big = [...screen.getByTestId('confetti').querySelectorAll<HTMLElement>('.confetti__piece')];
+    expect(big).toHaveLength(90);
+    expect(new Set(big.map((piece) => piece.style.getPropertyValue('--confetti-color')))).toEqual(new Set([
+      'var(--color-indigo-600)', 'var(--color-violet-600)', 'var(--color-teal-500)', 'var(--celebration-gold)', 'var(--celebration-coral)'
+    ]));
+    cleanup();
+    localStorage.clear();
+    takeMilestone(AGENCY, nothing);
+    mount({ ...nothing, client: true });
+    expect(screen.getByTestId('confetti').querySelectorAll('.confetti__piece')).toHaveLength(28);
+  });
+
   it('does not repeat on a new visit, nor for what was done before', () => {
     takeMilestone(AGENCY, nothing);
     const facts = { ...nothing, client: true };

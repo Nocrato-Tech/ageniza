@@ -47,19 +47,13 @@ afterEach(() => {
   document.documentElement.removeAttribute('data-theme');
 });
 
-describe('theme of the areas', () => {
+describe('one light theme for every area (docs/design-system.md section 7)', () => {
   it.each([
-    ['the agency home', `/agencia/${AGENCY}`],
-    ['a screen of the agency', `/agencia/${AGENCY}/clientes`],
-    ['a deep address of the agency', `/agencia/${AGENCY}/clientes/${CLIENT}/geral`],
-    ['an unknown address inside the agency', `/agencia/${AGENCY}/nao-existe`],
-    ['an agency address that is not valid', '/agencia/nao-e-um-id']
-  ])('is dark on %s', async (_name, path) => {
-    renderAt(path);
-    await waitFor(() => expect(theme()).toBe('dark'));
-  });
-
-  it.each([
+    ['the agency home', `/agencia/${AGENCY}`, true],
+    ['a screen of the agency', `/agencia/${AGENCY}/clientes`, true],
+    ['a deep address of the agency', `/agencia/${AGENCY}/clientes/${CLIENT}/geral`, true],
+    ['an unknown address inside the agency', `/agencia/${AGENCY}/nao-existe`, true],
+    ['an agency address that is not valid', '/agencia/nao-e-um-id', true],
     ['the root, which opens the login', '/', false],
     ['the login', '/entrar', false],
     ['a public page', '/termos', false],
@@ -69,7 +63,7 @@ describe('theme of the areas', () => {
     ['the password reset', '/senha/redefinir?token=token-de-teste', false],
     ['the service status', '/status', false],
     ['an unknown address', '/nao-existe', false]
-  ])('stays light on %s', async (_name, path, isAuthenticated) => {
+  ])('puts no theme attribute on %s', async (_name, path, isAuthenticated) => {
     renderAt(path, isAuthenticated);
     await screen.findByRole('main').catch(() => undefined);
     expect(theme()).toBeNull();
@@ -79,64 +73,33 @@ describe('theme of the areas', () => {
     ['loading the session', true, 'loading'],
     ['no session', false, 'ready'],
     ['no session while loading', false, 'loading']
-  ] as const)('is dark on the agency while %s, before any agency is known', async (_name, isAuthenticated, status) => {
+  ] as const)('puts no theme attribute on the agency while %s, before any agency is known', async (_name, isAuthenticated, status) => {
     renderAt(`/agencia/${AGENCY}/clientes`, isAuthenticated, status);
-    await waitFor(() => expect(theme()).toBe('dark'));
-  });
-
-  it('takes the theme off when the person leaves the agency area', async () => {
-    renderAt(`/agencia/${AGENCY}`);
-    await waitFor(() => expect(theme()).toBe('dark'));
-    screen.getByRole('link', { name: 'sair da agência' }).click();
-    await waitFor(() => expect(theme()).toBeNull());
-  });
-
-  it('gives back the theme that was there before the agency area', async () => {
-    document.documentElement.setAttribute('data-theme', 'light');
-    renderAt(`/agencia/${AGENCY}`);
-    await waitFor(() => expect(theme()).toBe('dark'));
-    cleanup();
-    expect(theme()).toBe('light');
-  });
-});
-
-describe('theme before the first paint', () => {
-  const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
-  const inline = /<script>([\s\S]*?)<\/script>/.exec(indexHtml)?.[1];
-
-  const runEarlyScript = (path: string): void => {
-    if (inline === undefined) throw new Error('index.html has no inline theme script.');
-    window.history.pushState({}, '', path);
-    new Function(inline)();
-  };
-
-  afterEach(() => {
-    document.documentElement.removeAttribute('data-theme-early');
-    window.history.pushState({}, '', '/');
-  });
-
-  it('runs before the stylesheets and the app bundle load', () => {
-    const script = indexHtml.indexOf('<script>');
-    expect(script).toBeGreaterThan(-1);
-    expect(script).toBeLessThan(indexHtml.indexOf('type="module"'));
-  });
-
-  it.each([`/agencia/${AGENCY}`, `/agencia/${AGENCY}/clientes/${CLIENT}/geral`, '/agencia/nao-e-um-id'])('sets the dark theme on %s', (path) => {
-    runEarlyScript(path);
-    expect(theme()).toBe('dark');
-  });
-
-  it.each(['/', '/entrar', '/agencia', '/agencia/', '/agenciax/y', `/portal/${CLIENT}/inicio`, '/contextos', '/convite/abc', '/senha/redefinir'])('leaves %s light', (path) => {
-    runEarlyScript(path);
+    await screen.findByRole('main').catch(() => undefined);
     expect(theme()).toBeNull();
   });
 
-  it('is not given back as a previous theme when the person leaves the agency', async () => {
-    runEarlyScript(`/agencia/${AGENCY}`);
+  it('keeps the page light when the person enters and leaves the agency area', async () => {
     renderAt(`/agencia/${AGENCY}`);
-    await waitFor(() => expect(document.documentElement.hasAttribute('data-theme-early')).toBe(false));
-    expect(theme()).toBe('dark');
+    await waitFor(() => expect(document.querySelector('main')).not.toBeNull());
+    expect(theme()).toBeNull();
     screen.getByRole('link', { name: 'sair da agência' }).click();
-    await waitFor(() => expect(theme()).toBeNull());
+    await waitFor(() => expect(screen.getByRole('link', { name: 'sair da agência' })).toBeTruthy());
+    expect(theme()).toBeNull();
+  });
+});
+
+describe('the page that ships', () => {
+  const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
+
+  it('has no script that sets a theme before the first paint', () => {
+    expect(indexHtml).not.toContain('<script>');
+    expect(indexHtml).not.toContain('data-theme');
+  });
+
+  it('leaves the theme out of the stylesheets, so there is nothing to switch to', () => {
+    const styles = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+    expect(styles).not.toContain('data-theme');
+    expect(styles).not.toContain('themes/dark.css');
   });
 });

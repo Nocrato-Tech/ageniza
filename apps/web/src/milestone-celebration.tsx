@@ -5,7 +5,8 @@ import { IconButton } from '@ageniza/ui';
 
 import { MILESTONE_MESSAGES, takeMilestone, type MilestoneFacts, type MilestoneKey } from './milestones.js';
 
-const COLORS = ['--color-indigo-600', '--color-violet-600', '--color-teal-500', '--color-indigo-400', '--color-violet-400'] as const;
+/** The brand and the two warm tones of the celebration (docs/design-system.md, "Marco e recompensa"). */
+const COLORS = ['--color-indigo-600', '--color-violet-600', '--color-teal-500', '--celebration-gold', '--celebration-coral'] as const;
 
 /** Deterministic spread, so the confetti is the same on every render and in every test. */
 const pieces = (count: number): CSSProperties[] => Array.from({ length: count }, (_, index) => ({
