@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -19,6 +19,13 @@ const withAgencyData = (row: Stored): Scenario => ({
       tasks: [{ ...detail.tasks[0], title: 'Gravar bastidores', description: 'Briefing interno da equipe', dueOn: '2026-10-15', returnComment: 'Refazer o corte' }]
     });
   }
+});
+
+/** The round the content was sent in: until when the client decides and what the agency wrote. */
+const withRound = (row: Stored, round: { dueOn: string | null; note: string | null }): Scenario => ({
+  override: (call) => (call.method === 'GET' && call.path === contentPath(row.id)
+    ? json({ ...detailOf(row), approval: { sentAt: '2026-10-09T15:00:00.000Z', ...round } })
+    : undefined)
 });
 
 const openClientView = async (row: Stored, scenario: Scenario = {}): Promise<{ view: HTMLElement; calls: ReturnType<typeof makeFetch>['calls'] }> => {
@@ -41,6 +48,45 @@ describe('"Como o cliente vê" in the detail of a content (decision 2026-11-10)'
     expect(within(view).getByText('O cliente pode aprovar ou pedir ajuste.')).toBeTruthy();
     expect(within(view).getByText(/Prévia do conteúdo como o portal o mostra agora\./)).toBeTruthy();
     expect(within(view).queryByText(/mídias, que o cliente passa/)).toBeNull();
+  });
+
+  it('shows the round the way the portal does: until when, the days left and the note signed by the agency', async () => {
+    const row = stored({ status: 'awaiting_approval', media: [IMG_1.id] });
+    const { view } = await openClientView(row, withRound(row, { dueOn: '2026-10-14', note: 'Confira a legenda antes de sexta' }));
+
+    // 01:30Z of the 12th is still the 11th in São Paulo: the 14th is 3 days away, never 2.
+    expect(within(view).getByText(/Aprovar até/).textContent).toBe('Aprovar até qua, 14/10 · vence em 3 dias');
+    expect(within(view).getByText('Recado de Agência Um')).toBeTruthy();
+    expect(within(view).getByText('Confira a legenda antes de sexta')).toBeTruthy();
+  });
+
+  it('says nothing of a round that has neither deadline nor note, and nothing of one once the content left the wait', async () => {
+    const bare = stored({ status: 'awaiting_approval', media: [IMG_1.id] });
+    const waiting = await openClientView(bare, withRound(bare, { dueOn: null, note: null }));
+    expect(waiting.view.querySelector('.approval-round')).toBeNull();
+    cleanup();
+
+    const approved = stored({ status: 'approved', media: [IMG_1.id] });
+    const { view } = await openClientView(approved, withRound(approved, { dueOn: '2026-10-14', note: 'Confira a legenda' }));
+    expect(view.querySelector('.approval-round')).toBeNull();
+    expect(view.textContent).not.toContain('Confira a legenda');
+  });
+
+  it.each([
+    ['adjusting', 'Foi pedido um ajuste. A agência vai revisar e enviar de novo para a sua aprovação.', 'Em ajuste'],
+    ['approved', 'Este conteúdo está aprovado. A agência cuida da publicação.', 'Aprovado'],
+    ['published', 'Este conteúdo já foi publicado.', 'Publicado']
+  ] as const)('says what the portal says of a %s content', async (status, note, label) => {
+    const { view } = await openClientView(stored({ status, media: [IMG_1.id] }));
+
+    expect(within(view).getByText(note)).toBeTruthy();
+    expect(within(view).getByText(label)).toBeTruthy();
+  });
+
+  it('adds no note of state while the content waits or is in production', async () => {
+    const { view } = await openClientView(stored({ status: 'awaiting_approval', media: [IMG_1.id] }));
+
+    expect(within(view).queryByText(/Foi pedido um ajuste|está aprovado|já foi publicado/)).toBeNull();
   });
 
   it('says "Aprovado", the client\'s word, where the agency says "Pronto para publicar"', async () => {
@@ -68,7 +114,7 @@ describe('"Como o cliente vê" in the detail of a content (decision 2026-11-10)'
 
     expect(within(view).getByText('Em produção')).toBeTruthy();
     expect(within(view).getByText('terça-feira, 20 de outubro de 2026')).toBeTruthy();
-    expect(within(view).getByText(/Em produção, o cliente vê só o título, o dia e o formato\./)).toBeTruthy();
+    expect(within(view).getByText('Este conteúdo ainda está em produção. Quando estiver pronto, ele aparece aqui para você aprovar.')).toBeTruthy();
     expect(view.textContent).not.toContain('Texto ainda interno');
     expect(view.textContent).not.toContain('09:30:00');
     expect(view.textContent).not.toContain('mídias');
