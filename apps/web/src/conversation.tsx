@@ -14,7 +14,7 @@ import {
   type Thread,
   type ThreadComment
 } from '@ageniza/contracts';
-import { Avatar, Button, DatePicker, Field, FieldMessage, LateBadge, Modal, Pill, Skeleton, Textarea, useFormErrors } from '@ageniza/ui';
+import { Avatar, Button, DatePicker, Field, FieldMessage, invalidDayMessage, LateBadge, Modal, Pill, Skeleton, Textarea, useFormErrors } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { addDays, dayMonthLabel, todayInSaoPaulo } from './content-dates.js';
@@ -403,6 +403,8 @@ function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; o
   const { formRef, summary } = useFormErrors();
   const [body, setBody] = useState('');
   const [dueOn, setDueOn] = useState('');
+  // Text that is not a day also leaves `dueOn` empty: it must not go as "no deadline".
+  const [dueInvalid, setDueInvalid] = useState(false);
   const [bodyIssue, setBodyIssue] = useState<string | undefined>();
   const [dueIssue, setDueIssue] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -431,7 +433,7 @@ function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; o
     event.preventDefault();
     const now = todayInSaoPaulo();
     const bodyFound = bodyProblem(body);
-    const dueFound = dueOn !== '' && (dueOn < now || dueOn > addDays(now, MATERIAL_DUE_WINDOW_DAYS)) ? MATERIAL_DUE_RANGE : undefined;
+    const dueFound = dueInvalid ? invalidDayMessage : dueOn !== '' && (dueOn < now || dueOn > addDays(now, MATERIAL_DUE_WINDOW_DAYS)) ? MATERIAL_DUE_RANGE : undefined;
     setBodyIssue(bodyFound);
     setDueIssue(dueFound);
     setError(undefined);
@@ -444,7 +446,7 @@ function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; o
     closeLabel="Fechar pedido de material"
     description="A mensagem abre uma conversa com o cliente. O prazo é opcional."
     onClose={onClose}
-    confirmDiscard={{ dirty: (body.trim() !== '' || dueOn !== '') && !open.isPending }}
+    confirmDiscard={{ dirty: (body.trim() !== '' || dueOn !== '' || dueInvalid) && !open.isPending }}
     actions={<Button type="submit" form={formId} loading={open.isPending}>{error === undefined ? 'Enviar pedido' : 'Tentar de novo'}</Button>}
   >
     <form id={formId} ref={formRef} className="conversation__composer" onSubmit={submit} noValidate>
@@ -471,6 +473,7 @@ function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; o
             value={dueOn}
             disabled={open.isPending}
             toggleLabel="Abrir calendário do prazo"
+            onInvalidChange={setDueInvalid}
             onChange={(day) => { setDueOn(day); setDueIssue(undefined); setError(undefined); }}
           />
         )}

@@ -3,6 +3,8 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { invalidDayMessage } from '@ageniza/ui';
+
 import { Conversation, type ConversationProps } from './conversation.js';
 import { apiError, createConversationApi } from './conversation-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
@@ -1065,6 +1067,50 @@ describe('request for material (decision 2026-11-10)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(api.bodies).toStrictEqual([{ subject: { materialRequest: true }, body: 'Envie 3 fotos da equipe', dueOn: '2026-11-20' }]);
     await within(region).findByText(/Entregar até 20\/11/);
+  });
+
+  it.each([
+    ['a year of two digits', '20/11/26'],
+    ['a day that does not exist', '31/02/2026'],
+    ['half a date', '20/11']
+  ])('refuses %s as "Data inválida" on the deadline, sends nothing and keeps the dialog open with what was typed', async (_name, typed) => {
+    const { api } = mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    write(dialog, 'Envie 3 fotos da equipe');
+    pickDay(dialog, typed);
+    send(dialog);
+
+    await within(dialog).findByText(invalidDayMessage);
+    expect(within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }).getAttribute('aria-invalid')).toBe('true');
+    expect((within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }) as HTMLInputElement).value).toBe(typed);
+    expect((within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }) as HTMLTextAreaElement).value).toBe('Envie 3 fotos da equipe');
+    expect(screen.getByRole('dialog', { name: 'Pedir material' })).toBeTruthy();
+    expect(api.bodies).toHaveLength(0);
+
+    pickDay(dialog, '20112026');
+    expect(within(dialog).queryByText(invalidDayMessage)).toBeNull();
+    send(dialog);
+    await waitFor(() => expect(api.bodies).toHaveLength(1));
+    expect(api.bodies[0]).toMatchObject({ dueOn: '2026-11-20' });
+  });
+
+  it('counts a deadline typed incompletely as typed text for the discard guard', async () => {
+    mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    pickDay(dialog, '20/11');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar pedido de material' }));
+    await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' });
+  });
+
+  it('still sends no deadline when the field was typed into and then emptied', async () => {
+    const { api } = mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    write(dialog, 'Envie 3 fotos da equipe');
+    pickDay(dialog, '20/11/26');
+    pickDay(dialog, '');
+    send(dialog);
+    await waitFor(() => expect(api.bodies).toHaveLength(1));
+    expect(api.bodies[0]).toStrictEqual({ subject: { materialRequest: true }, body: 'Envie 3 fotos da equipe' });
   });
 
   it('accepts the deadline from today to 90 days ahead on the São Paulo day, and refuses the days outside it before sending', async () => {
