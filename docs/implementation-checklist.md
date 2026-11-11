@@ -52,6 +52,9 @@ _Ver também os itens 7 a 9 e 25, que estão na faixa Geral._
 62. **Gatilho com erro em UPDATE de rota existente.** Gatilho novo que levanta erro num `UPDATE` já usado por rota existente exige achar e testar cada rota que faz esse `UPDATE` antes do merge: a revisão do #545 achou, antes do merge, que o gatilho novo faria o `PATCH` de persona dar 500 (#545).
 63. **Lista de colunas do gatilho contra o grant.** Lista de colunas escrita à mão num gatilho precisa de teste de catálogo contra o grant (`tgattr` x `has_column_privilege`); senão coluna gravável nova escapa sem vermelho. Complementa o item 33 (#538).
 67. **Corrida com trava segurada.** Na trava de linha (tuple lock), o 2º waiter é bloqueado pelo 1º waiter, não pelo holder: esperar N bloqueados pelo pid do holder trava; conte `cardinality(pg_blocking_pids) > 0` (#555). Na trava consultiva, o holder bloqueia os dois waiters, e a contagem pelo pid do holder vale.
+92. **Array de uuid na função.** Função que recebe `uuid[]` confere `array_ndims(p) = 1` antes de `array_position` ou `unnest`: um array de duas dimensões passa pelo tipo e quebra com `0A000` em vez do erro de negócio (telas-melhorias, onda 1).
+93. **Função que recebe um instante.** Função que a aplicação pode executar não recebe o instante de fora: um instante passado refaz dias antigos. O instante fica numa variante interna (`…_at(p_at)`, só do dono, para teste) e a aplicação chama a versão sem argumento, que usa `now()` (telas-melhorias, onda 1).
+94. **Campo gravado por dois caminhos.** Campo novo gravado por mais de um caminho (com conta e só pelo link) tem a invariante do contrato conferida contra cada caminho, e todos os seus consumidores listados (rótulo, botão, regra do banco) antes de a tela usá-lo (telas-melhorias, onda 2).
 
 ## API e portal
 
@@ -135,5 +138,9 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 84. **Teste que depende do dia de São Paulo.** Quando a função lê `now()` por dentro e não dá para injetar o instante sem abrir a função `security definer`, o teste espera sair da borda da meia-noite (`waitForQuietClock`).
 
 85. **Scratchpad e `%TEMP%` são compartilhados entre agentes.** Prefixo da subtarefa em tudo que criar, e apague só o que criou.
+95. **Contagem global é instável.** Teste de função que age no banco inteiro (fila, lembretes) confere só o efeito nas linhas do próprio teste, ou roda num clone: o retorno global depende do que outro arquivo deixou no banco (telas-melhorias, onda 2).
+96. **Dado plantado não vaza para suíte paralela.** Dado plantado para provar que o teste ignora o resto não pode ser pego por outra suíte que roda ao mesmo tempo, como uma fila reivindicada globalmente. Antes de plantar, confira que os arquivos rodam em série ou num clone (telas-melhorias, onda 2).
+97. **Correção por configuração tem controle sem ela.** Quando a correção depende de configuração (arquivos em série), rode o controle com a configuração removida para saber se é ela ou a limpeza que corrige (telas-melhorias, onda 2).
+98. **Trava que espera tem corrida real.** Trava cujo comentário diz "espera a operação em andamento" tem teste com duas transações reais segurando essa operação. Um teste de deadlock em outra tabela não pega a remoção da trava (telas-melhorias, onda 2).
 
 As lições completas de segurança estão em `docs/security-review.md` e nas notas do projeto; este checklist só lista o que mais se repete.
