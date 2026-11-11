@@ -19,7 +19,6 @@ import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
 import { usePortalClient } from './portal.js';
 import { PortalContentCover } from './portal-content-cover.js';
-import { PortalFailure } from './portal-failure.js';
 import { PortalMaterialRequests } from './portal-material-requests.js';
 import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS, portalPostAddress } from './portal-status.js';
 import { PortalTodayScripts } from './portal-story-scripts.js';
@@ -52,7 +51,7 @@ function PortalAwaiting({ clientId, count }: { clientId: string; count: number }
     {covers.isPending
       ? <div className="portal-covers" aria-hidden="true"><Skeleton className="portal-covers__skeleton" /><Skeleton className="portal-covers__skeleton" /></div>
       : covers.isError && covers.data === undefined
-        ? <PortalFailure title="Não foi possível carregar os posts." fetching={covers.isFetching} onRetry={() => { void covers.refetch(); }} />
+        ? <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar os posts." retrying={covers.isFetching} onRetry={() => { void covers.refetch(); }} />
         : <ul className="portal-covers">
           {covers.data!.data.map((content: PortalContentOpenListItem) => <li key={content.id}>
             <Link className="portal-cover-link" to={portalPostAddress(clientId, content.id)}>
@@ -117,7 +116,7 @@ function PortalWeek({ clientId }: { clientId: string }) {
     {week.isPending
       ? <div className="portal-rows__skeleton" aria-hidden="true"><Skeleton /><Skeleton /></div>
       : week.isError && week.data === undefined
-        ? <PortalFailure title="Não foi possível carregar a semana." fetching={week.isFetching} onRetry={() => { void week.refetch(); }} />
+        ? <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar a semana." retrying={week.isFetching} onRetry={() => { void week.refetch(); }} />
         : shown.length === 0
           ? week.data!.data.length > 0
             ? <EmptyState

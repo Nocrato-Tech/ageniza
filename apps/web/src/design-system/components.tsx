@@ -348,7 +348,8 @@ export const componentEntries: readonly ComponentEntry[] = [
       { label: 'com mascote e ação', render: (state) => stateOnly(state, ['default'], <EmptyState mascot headingLevel={4} title="Cadastre o primeiro cliente" description="Com o cliente cadastrado você monta o calendário do mês." action={<Button leadingIcon={<Plus />}>Cadastrar cliente</Button>} />) },
       { label: 'sem mascote (busca sem resultado)', render: (state) => stateOnly(state, ['default'], <EmptyState headingLevel={4} title="Nenhum cliente encontrado" description="Tente outro nome ou tire um filtro." action={<Button variant="secondary">Limpar filtros</Button>} />) },
       { label: 'boa notícia (a consulta respondeu e não há pendência)', render: (state) => stateOnly(state, ['default'], <EmptyState kind="good-news" headingLevel={4} title="Nada esperando por você" description="Nenhum conteúdo aguarda aprovação ou ajuste." />) },
-      { label: 'falha (a consulta não respondeu)', render: (state) => stateOnly(state, ['default'], <EmptyState kind="failure" headingLevel={4} title="Não foi possível carregar os conteúdos" description="Não dá para afirmar que não há nada pendente. Tente de novo." onRetry={() => undefined} />) }
+      { label: 'falha (a consulta não respondeu)', render: (state) => stateOnly(state, ['default'], <EmptyState kind="failure" headingLevel={4} title="Não foi possível carregar os conteúdos" description="Não dá para afirmar que não há nada pendente. Tente de novo." onRetry={() => undefined} />) },
+      { label: 'falha repetindo (o botão fica ocupado)', render: (state) => stateOnly(state, ['default'], <EmptyState kind="failure" headingLevel={4} title="Não foi possível carregar os conteúdos" description="Repetindo a consulta." onRetry={() => undefined} retrying />) }
     ]
   },
   {

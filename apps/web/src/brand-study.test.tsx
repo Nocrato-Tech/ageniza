@@ -886,6 +886,37 @@ describe('brand study tab (#138)', () => {
     expect(await screen.findByText('Marca acolhedora do bairro')).toBeTruthy();
     expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
   });
+
+  it('keeps the retry busy and in place while it repeats, and a second click sends no second read', async () => {
+    let reads = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { impl } = makeFetch({
+      study: async () => {
+        reads += 1;
+        if (reads <= 2) return json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500);
+        await held;
+        return json(studyOf());
+      }
+    });
+    renderStudy(impl);
+
+    const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
+    const retry = within(alert).getByRole('button', { name: 'Tentar de novo' });
+    retry.focus();
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(retry.getAttribute('aria-busy')).toBe('true'));
+    expect(screen.getByRole('alert')).toBe(alert);
+    expect(document.activeElement).toBe(retry);
+    const readsInFlight = reads;
+    fireEvent.click(retry);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(reads).toBe(readsInFlight);
+
+    release();
+    expect(await screen.findByText('Marca acolhedora do bairro')).toBeTruthy();
+  });
 });
 
 describe('brand study conversations (#142)', () => {

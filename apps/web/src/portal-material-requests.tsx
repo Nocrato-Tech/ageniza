@@ -7,7 +7,7 @@ import {
   MaterialRequestListResponseSchema,
   type MaterialRequest
 } from '@ageniza/contracts';
-import { Button, Modal, Skeleton } from '@ageniza/ui';
+import { Button, EmptyState, Modal, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { todayInSaoPaulo } from './content-dates.js';
@@ -15,7 +15,6 @@ import { CommentItem, Composer, MATERIAL_REQUEST_LABEL, MaterialDue, routesOf, w
 import { useApiClient } from './http.js';
 import { PORTAL_PAUSED_REASON } from './plan-notice.js';
 import { isClientRosterKey } from './portal-brand.js';
-import { PortalFailure } from './portal-failure.js';
 import { usePortalClient } from './portal.js';
 
 const LIST_PATH = '/clients/:clientId/material-requests';
@@ -70,9 +69,8 @@ function RequestThread({ clientId, request, onClose }: { clientId: string; reque
     <div className="conversation__thread-view">
       <MaterialDue thread={request} today={todayInSaoPaulo()} />
       {comments.isPending && <div className="conversation__comments-skeleton" aria-busy="true"><Skeleton /><Skeleton /></div>}
-      {comments.isError && comments.data === undefined && <PortalFailure
-        title="Não foi possível carregar a conversa."
-        fetching={comments.isFetching}
+      {comments.isError && comments.data === undefined && <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar a conversa."
+        retrying={comments.isFetching}
         onRetry={() => { void comments.refetch(); }}
       />}
       {items.length > 0 && <ol className="conversation__comments">
@@ -128,9 +126,8 @@ export function PortalMaterialRequests({ clientId }: { clientId: string }) {
   if (requests.data === undefined) {
     return <section className="portal-section portal-requests" aria-labelledby="portal-requests-title">
       <h2 id="portal-requests-title" className="portal-section__title">A agência pediu</h2>
-      <PortalFailure
-        title="Não foi possível carregar os pedidos da agência."
-        fetching={requests.isFetching}
+      <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar os pedidos da agência."
+        retrying={requests.isFetching}
         onRetry={() => { void requests.refetch(); }}
       />
     </section>;

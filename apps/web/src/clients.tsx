@@ -125,7 +125,9 @@ export function ClientsPage() {
   if (clients.isError && isNotVisible(clients.error)) return <NotFoundPage as="section" />;
 
   // Placeholder rows are the previous filter's: an empty one must not become this filter's empty state or "0 de 0" summary, so it keeps the skeleton.
-  const loading = clients.isPending || (clients.isPlaceholderData && clients.data.data.length === 0);
+  // A retry keeps the failure and its busy button (and the focus) in place: only the first read is a skeleton.
+  const failed = clients.isError || (clients.isPending && clients.errorUpdateCount > 0);
+  const loading = (clients.isPending && !failed) || (clients.isPlaceholderData && clients.data.data.length === 0);
   const outOfRange = clients.data !== undefined && !clients.isPlaceholderData && page > Math.max(1, clients.data.meta.totalPages);
 
   const visible = { contents: canSeeContents, invitations: canSeeInvitations };
@@ -133,9 +135,9 @@ export function ClientsPage() {
   const rows = clients.data?.data ?? [];
   const defaultView = status === 'active' && search === '';
   // No client at all, on the default view: the first visit, whose only way forward is to register one.
-  const firstVisit = !loading && !clients.isError && !outOfRange && rows.length === 0 && defaultView;
+  const firstVisit = !loading && !failed && !outOfRange && rows.length === 0 && defaultView;
   // The sentence reads the top of the queue, which is only the first page of the unfiltered active roster.
-  const triage = !loading && !clients.isError && defaultView && page === 1 && rows.length > 0 ? triageSentence(rows, visible) : [];
+  const triage = !loading && !failed && defaultView && page === 1 && rows.length > 0 ? triageSentence(rows, visible) : [];
 
   const otherStatusParams = new URLSearchParams(searchParams);
   otherStatusParams.delete('page');
@@ -201,12 +203,13 @@ export function ClientsPage() {
           <ul className="clients__list" aria-hidden="true">
             {Array.from({ length: PAGE_SIZE }, (_value, index) => <li key={index}><Skeleton className="clients__card-skeleton" /></li>)}
           </ul>
-        ) : clients.isError ? (
+        ) : clients.isError || clients.isPending ? (
           <EmptyState
             kind="failure"
             className="clients__empty"
             headingLevel={3}
             title="Não foi possível carregar os clientes. Tente de novo."
+            retrying={clients.isFetching}
             onRetry={() => { void clients.refetch(); }}
           />
         ) : outOfRange ? null : <>

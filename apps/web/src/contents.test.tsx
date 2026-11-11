@@ -58,8 +58,8 @@ const VISUALIZE = 'conteudo.visualizar';
 /** A role per row, each with a single permission: the menu and the guard answer to that one only. */
 const READ_CLIENTS = 'cliente.visualizar';
 
-const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[]) => ({
-  agencyId, agencyName, isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions
+const agencyMe = (agencyId: string, agencyName: string, permissions: readonly string[], readOnly = false) => ({
+  agencyId, agencyName, isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly }, permissions
 });
 
 const clientFixture = (id: string, name: string, handle: string | null, status: 'active' | 'archived' = 'active') => ({
@@ -155,6 +155,8 @@ interface Scenario {
   /** Overrides the answer of a move, after the guard and the body were checked like the API does. */
   readonly patch?: (clientId: string, contentId: string, body: unknown, call: number) => Response | Promise<Response> | undefined;
   readonly permissions?: readonly string[];
+  /** The plan is read-only: the writes are blocked with a reason. */
+  readonly readOnly?: boolean;
   readonly roster?: readonly ReturnType<typeof clientFixture>[];
   readonly clients?: (query: URLSearchParams) => Response | Promise<Response>;
   /** Contents of one client, by its id; the fake filters them by the period like the API does. */
@@ -184,7 +186,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     calls.push(`${method} ${path}${url.search}`);
     if (path.endsWith('/auth/session')) return json(sessionBody);
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
-    if (me !== null) return json(agencyMe(me[1]!, me[1] === AGENCY_B ? 'Agência Dois' : 'Agência Um', permissions));
+    if (me !== null) return json(agencyMe(me[1]!, me[1] === AGENCY_B ? 'Agência Dois' : 'Agência Um', permissions, scenario.readOnly));
     const list = /\/agencies\/([^/]+)\/clients$/.exec(path);
     if (list !== null && method === 'GET') {
       if (!permissions.includes(READ_CLIENTS)) return forbidden();
@@ -462,6 +464,17 @@ describe('the stories (/agencia/:agenciaId/conteudos)', () => {
     // Without the permission to register there is nothing to offer: only the words.
     expect(screen.queryByRole('link', { name: 'Cadastrar cliente' })).toBeNull();
     expect(screen.queryByText('Cadastre o primeiro para começar o calendário dele.')).toBeNull();
+  });
+
+  it('shows the register button blocked, with its reason, when the plan is read-only', async () => {
+    const { impl } = makeFetch({ roster: [barbearia], permissions: [VISUALIZE, READ_CLIENTS, 'cliente.cadastrar'], readOnly: true });
+    render_(impl);
+    expect(await screen.findByText('Nenhum cliente ativo ainda.')).toBeTruthy();
+    expect(screen.getByText('Cadastre o primeiro para começar o calendário dele.')).toBeTruthy();
+    const button = screen.getByRole('button', { name: /Cadastrar cliente/ });
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('aria-describedby')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Cadastrar cliente' })).toBeNull();
   });
 
   it('invites whoever can register to start from the first client, carrying the navigation state', async () => {
