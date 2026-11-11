@@ -163,10 +163,10 @@ describe('the dialog', () => {
     expect(within(dialog()).getByRole('heading', { level: 2, name: 'Cardápio de outono' })).toBeTruthy();
   });
 
-  it('keeps one tab list, named, with Atribuição after Geral', async () => {
+  it('keeps one tab list, named, with Atribuição and Como o cliente vê after Geral', async () => {
     await openContent(stored());
     const list = within(dialog()).getByRole('tablist', { name: 'Seções do conteúdo' });
 
-    expect(within(list).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Geral', 'Atribuição']);
+    expect(within(list).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Geral', 'Atribuição', 'Como o cliente vê']);
   });
 });
