@@ -1,7 +1,7 @@
 import type { PortalApprovalBatch, PortalApprovalContent } from '@ageniza/contracts';
 import { raw } from '@ageniza/database';
 
-import { portalApprovalOf } from '../contents/portal-service.js';
+import { portalApprovalOf } from '../contents/portal-routes.js';
 import type { ContentTransaction } from '../contents/service.js';
 
 interface RawRows<TResult> {

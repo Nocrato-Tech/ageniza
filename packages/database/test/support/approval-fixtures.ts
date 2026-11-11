@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { Knex } from 'knex';
 
+import { waitForQuietClock } from '../../src/index.js';
+
 import type { ContentWorld } from './content-world.js';
 
 // What the tests of the approval rounds and of the reminders share: a content that can be sent, the state of the rounds and of the queue
@@ -30,15 +32,6 @@ export interface ApprovalFixtures {
   waitForQuietClock(): Promise<void>;
   cleanUp(): Promise<void>;
 }
-
-export const QUIET_SECONDS = 60;
-
-/** How long a suite waits before it starts: the deadline of a round is a day of São Paulo, and the database reads its own clock. */
-export const secondsUntilClockIsQuiet = (secondsSinceMidnight: number, secondsToMidnight: number): number => {
-  if (secondsSinceMidnight < QUIET_SECONDS) return QUIET_SECONDS - secondsSinceMidnight;
-  if (secondsToMidnight < QUIET_SECONDS) return secondsToMidnight + QUIET_SECONDS;
-  return 0;
-};
 
 export const createApprovalFixtures = (w: ContentWorld): ApprovalFixtures => {
   const { ids } = w;
@@ -87,14 +80,7 @@ export const createApprovalFixtures = (w: ContentWorld): ApprovalFixtures => {
       const revision = (await w.contentRow(contentId)).revision as number;
       await w.asUser(user, (t) => t.raw('select app_private.request_content_changes(?::uuid, ?::integer, ?::text)', [contentId, revision, 'Ajustar a legenda']));
     },
-    waitForQuietClock: async () => {
-      const row = (await owner().raw<{ rows: Array<{ since: number; until: number }> }>(`
-        select extract(epoch from now() - app_private.sao_paulo_date(now())::timestamp at time zone 'America/Sao_Paulo')::float8 as since,
-               extract(epoch from (app_private.sao_paulo_date(now()) + 1)::timestamp at time zone 'America/Sao_Paulo' - now())::float8 as until
-      `)).rows[0]!;
-      const wait = secondsUntilClockIsQuiet(row.since, row.until);
-      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait * 1000));
-    },
+    waitForQuietClock: () => waitForQuietClock(owner()),
     cleanUp: async () => {
       const knex = owner();
       await knex('client_portal_approval_links').whereIn('client_id', extraClients).delete();
