@@ -670,6 +670,19 @@ describe('the Início: approvals and the script of today (#271)', () => {
       expect(contents.calls.filter((call) => call.includes('awaiting-approval'))).toEqual([`GET /clients/${CLIENT_ID}/contents/awaiting-approval?pageSize=2`]);
     });
 
+    it('shows on each cover until when the post waits, counted in the day of São Paulo, and leaves the note for the post', async () => {
+      const contents = createPortalContentsApi(CLIENT_ID);
+      contents.seed({ publishOn: TODAY, title: 'Bolo de fubá', format: 'reels', status: 'awaiting_approval', approval: { dueOn: TODAY, note: 'Confira a legenda.' } });
+      contents.seed({ publishOn: TOMORROW, title: 'Fornada de sábado', format: 'image', status: 'awaiting_approval', approval: { dueOn: '2026-10-09', note: null } });
+      const { impl } = makeFetch({ portal: () => withHome({ contentsAwaitingApproval: 2 }), contents });
+      renderPortal(impl);
+
+      const covers = await screen.findAllByRole('link', { name: /Bolo de fubá|Fornada de sábado/ });
+      expect(covers[0]!.querySelector('.approval-round__due')?.textContent).toBe('Aprovar até dom, 11/10 · vence hoje');
+      expect(covers[1]!.querySelector('.approval-round__due')?.textContent).toBe('Aprovar até sex, 09/10 · venceu há 2 dias');
+      expect(screen.queryByText('Confira a legenda.')).toBeNull();
+    });
+
     it('holds the place of the covers with a skeleton nobody reads while they load', async () => {
       const contents = createPortalContentsApi(CLIENT_ID);
       let release: () => void = () => undefined;

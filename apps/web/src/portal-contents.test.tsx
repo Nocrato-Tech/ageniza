@@ -1125,3 +1125,70 @@ describe('the portal Conteúdos (#269)', () => {
 
   });
 });
+
+describe('the round the agency opened, on the Conteúdos of the portal (telas-melhorias S8)', () => {
+  const ROUND = { dueOn: '2026-10-14', note: 'Confira a legenda do Reels.\nObrigada!' };
+  const dueOf = (scope: HTMLElement): string | undefined => scope.querySelector('.approval-round__due')?.textContent ?? undefined;
+
+  it('says until when the content waits for the person, on the São Paulo day (01:30Z is still the 11th), and the note signed by the agency', async () => {
+    const world = makeWorld();
+    world.api.seed({ title: 'Carrossel da semana', format: 'carousel', publishOn: '2026-10-15', status: 'awaiting_approval', approval: ROUND });
+    renderPortal(world);
+    await ready();
+    const block = await waitFor(() => awaitingBlock());
+    expect(await within(block).findByText('qua, 14/10')).toBeTruthy();
+    expect(dueOf(block)).toBe('Aprovar até qua, 14/10 · vence em 3 dias');
+    expect(within(block).getByText('Recado de Agência Um')).toBeTruthy();
+    expect(block.querySelector('.approval-round__text')?.textContent).toBe('Confira a legenda do Reels.\nObrigada!');
+  });
+
+  it.each([
+    ['2026-10-11', 'vence hoje'],
+    ['2026-10-12', 'vence amanhã'],
+    ['2026-10-10', 'venceu há 1 dia'],
+    ['2026-10-08', 'venceu há 3 dias']
+  ])('words the deadline %s as "%s", counted from the day of São Paulo and not from UTC', async (dueOn, wording) => {
+    const world = makeWorld();
+    world.api.seed({ title: 'Post', publishOn: '2026-10-15', status: 'awaiting_approval', approval: { dueOn, note: null } });
+    renderPortal(world);
+    await ready();
+    const block = await waitFor(() => awaitingBlock());
+    await waitFor(() => expect(dueOf(block)).toContain(wording));
+  });
+
+  it('shows no deadline for a content with no round, and only the note when there is no deadline', async () => {
+    const world = makeWorld();
+    world.api.seed({ title: 'Antigo', publishOn: '2026-10-15', status: 'awaiting_approval', approval: null });
+    world.api.seed({ title: 'Só o recado', publishOn: '2026-10-16', status: 'awaiting_approval', approval: { dueOn: null, note: 'Sem pressa.' } });
+    renderPortal(world);
+    await ready();
+    const block = await waitFor(() => awaitingBlock());
+    expect(await within(block).findByText('Sem pressa.')).toBeTruthy();
+    expect(within(block).queryByText(/Aprovar até/)).toBeNull();
+    expect(block.querySelectorAll('.approval-round')).toHaveLength(1);
+  });
+
+  it('puts the deadline, not the note, on the card of the month, and only for what waits', async () => {
+    const world = makeWorld();
+    world.api.seed({ title: 'Esperando', publishOn: '2026-10-15', status: 'awaiting_approval', approval: ROUND });
+    world.api.seed({ title: 'Ajustando', publishOn: '2026-10-16', status: 'adjusting', approval: ROUND });
+    renderPortal(world);
+    await ready();
+    await screen.findByText('Ajustando');
+    expect(dueOf(cardOf('Esperando'))).toBe('Aprovar até qua, 14/10 · vence em 3 dias');
+    expect(within(cardOf('Esperando')).queryByText(/Recado de/)).toBeNull();
+    expect(cardOf('Ajustando').querySelector('.approval-round')).toBeNull();
+  });
+
+  it('draws the note as text, never as markup', async () => {
+    const world = makeWorld();
+    const note = '<img src=x onerror="window.hacked = 1"><b>negrito</b>';
+    world.api.seed({ title: 'Post', publishOn: '2026-10-15', status: 'awaiting_approval', approval: { dueOn: null, note } });
+    renderPortal(world);
+    await ready();
+    const block = await waitFor(() => awaitingBlock());
+    const text = await waitFor(() => block.querySelector('.approval-round__text') as HTMLElement);
+    expect(text.textContent).toBe(note);
+    expect(text.querySelector('b, img')).toBeNull();
+  });
+});

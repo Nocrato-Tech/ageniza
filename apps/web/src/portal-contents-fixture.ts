@@ -22,6 +22,7 @@ export interface PortalContentRow {
   caption: string | null;
   publishedOn: string | null;
   cancelled: boolean;
+  approval: { dueOn: string | null; note: string | null } | null;
 }
 
 export type PortalContentSeed = Partial<PortalContentRow> & { publishOn: string };
@@ -68,6 +69,7 @@ export const createPortalContentsApi = (clientId: string) => {
       caption: null,
       publishedOn: null,
       cancelled: false,
+      approval: null,
       ...row
     };
     // As the API answers: the cover that was chosen is the file that serves as the cover, unless the test says another.
@@ -91,7 +93,8 @@ export const createPortalContentsApi = (clientId: string) => {
       status: row.status,
       coverAssetId: row.coverAssetId,
       thumbnailAssetId: row.thumbnailAssetId,
-      publishedOn: row.publishedOn
+      publishedOn: row.publishedOn,
+      approval: row.approval
     };
   };
 

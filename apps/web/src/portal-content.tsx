@@ -14,6 +14,7 @@ import {
 import { Button, FieldMessage, FormatTag, LiveStatus, Skeleton, StatusTag } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
+import { ApprovalRound } from './approval-deadline.js';
 import { Conversation } from './conversation.js';
 import { fullDayLabel } from './content-dates.js';
 import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
@@ -181,6 +182,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
       {stateChanged !== undefined && <FieldMessage role="alert">{stateChanged}</FieldMessage>}
       {stateNote !== undefined && <p className="portal-post__hint">{stateNote}</p>}
     </div>}
+    {awaiting && <ApprovalRound approval={content.approval} agencyName={client.agencyName} />}
     <div className="portal-post__body">
       <div className="portal-post__card">
         <PortalMediaCarousel

@@ -34,6 +34,8 @@ export interface SeedContent {
   readonly revision?: number;
   readonly media?: readonly { id: string; kind: 'image' | 'video' }[];
   readonly coverAssetId?: string | null;
+  /** The round the agency opened: its deadline and note, or none. */
+  readonly approval?: { dueOn: string | null; note: string | null } | null;
   /** The server refusing to let a content be decided although it waits (a rule the page must obey from `canDecide`, not from the status). */
   readonly locked?: boolean;
 }
@@ -49,6 +51,7 @@ export interface StoredContent {
   revision: number;
   media: { id: string; kind: 'image' | 'video' }[];
   coverAssetId: string | null;
+  approval: { dueOn: string | null; note: string | null } | null;
   publishedOn: string | null;
   locked: boolean;
 }
@@ -89,6 +92,7 @@ export const stored = (seed: SeedContent): StoredContent => ({
   revision: seed.revision ?? 1,
   media: [...(seed.media ?? [{ id: asset(1), kind: 'image' as const }])],
   coverAssetId: seed.coverAssetId ?? null,
+  approval: seed.approval ?? null,
   locked: seed.locked ?? false,
   publishedOn: seed.status === 'published' ? '2026-10-13' : null
 });
@@ -110,6 +114,7 @@ const asContent = (row: StoredContent): PortalApprovalContent => {
     caption: row.caption,
     revision: row.revision,
     media: row.media.map((entry, index) => ({ id: entry.id, position: index + 1, kind: entry.kind })),
+    approval: row.approval,
     canDecide: row.status === 'awaiting_approval' && !row.locked
   };
 };

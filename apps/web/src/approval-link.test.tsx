@@ -364,6 +364,58 @@ describe('the page of the approval link (#717)', () => {
     });
   });
 
+  describe('the round the agency opened (telas-melhorias S8)', () => {
+    const ROUND = { dueOn: '2026-10-14', note: 'Confira a legenda.\nObrigada!' };
+    const roundsOnPage = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>('.approval-round'));
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-12T01:30:00.000Z'));
+    });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('says the deadline and the note once, above the list, when every content to decide has the same round', async () => {
+      await loaded([{ ...A, approval: ROUND }, { ...B, approval: ROUND }]);
+      const rounds = roundsOnPage();
+      expect(rounds).toHaveLength(1);
+      expect(rounds[0]!.querySelector('.approval-round__due')?.textContent).toBe('Aprovar até qua, 14/10 · vence em 3 dias');
+      expect(within(rounds[0]!).getByText(`Recado de ${AGENCY_NAME}`)).toBeTruthy();
+      expect(rounds[0]!.querySelector('.approval-round__text')?.textContent).toBe('Confira a legenda.\nObrigada!');
+      expect(card(A.title).querySelector('.approval-round')).toBeNull();
+      expect(card(B.title).querySelector('.approval-round')).toBeNull();
+    });
+
+    it('says each one on its own card when the contents to decide do not share a round', async () => {
+      await loaded([{ ...A, approval: ROUND }, { ...B, approval: { dueOn: '2026-10-11', note: 'Este é urgente.' } }]);
+      expect(roundsOnPage()).toHaveLength(2);
+      expect(card(A.title).querySelector('.approval-round__due')?.textContent).toBe('Aprovar até qua, 14/10 · vence em 3 dias');
+      expect(card(B.title).querySelector('.approval-round__due')?.textContent).toBe('Aprovar até dom, 11/10 · vence hoje');
+      expect(within(card(B.title)).getByText('Este é urgente.')).toBeTruthy();
+      expect(within(card(A.title)).queryByText('Este é urgente.')).toBeNull();
+    });
+
+    it('says venceu once the day has passed, and nothing when there is no round', async () => {
+      await loaded([{ ...A, approval: { dueOn: '2026-10-09', note: null } }]);
+      expect(roundsOnPage()[0]!.querySelector('.approval-round__due')?.textContent).toBe('Aprovar até sex, 09/10 · venceu há 2 dias');
+      cleanup();
+      await loaded([{ ...A, approval: null }]);
+      expect(roundsOnPage()).toHaveLength(0);
+    });
+
+    it('draws the round only for what the person can decide, not for the others of the e-mail', async () => {
+      await loaded([{ ...A, approval: ROUND }, { id: contentId(3), title: 'Já aprovado', status: 'approved', approval: ROUND }]);
+      expect(roundsOnPage()).toHaveLength(1);
+      expect(card('Já aprovado').querySelector('.approval-round')).toBeNull();
+    });
+
+    it('draws the note as text, never as markup', async () => {
+      const note = '<img src=x onerror="window.hacked = 1"><b>negrito</b>';
+      await loaded([{ ...A, approval: { dueOn: null, note } }]);
+      const text = roundsOnPage()[0]!.querySelector('.approval-round__text') as HTMLElement;
+      expect(text.textContent).toBe(note);
+      expect(text.querySelector('b, img')).toBeNull();
+    });
+  });
+
   describe('the media on the phone', () => {
     it('asks for the signed address of the original and draws it as the picture of the post', async () => {
       const { api } = await loaded([{ ...A, media: [{ id: asset(7), kind: 'image' }] }]);

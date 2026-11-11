@@ -10,6 +10,7 @@ import {
 import { Button, EmptyState, FormatTag, Select, Skeleton, StatusTag } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
+import { ApprovalRound } from './approval-deadline.js';
 import { dayMonthLabel, fullDayLabel, monthPeriod, parseAnchor, periodTitle, shiftAnchor, todayInSaoPaulo, weekdayShortLabel } from './content-dates.js';
 import { FEED_FORMATS } from './content-feed.js';
 import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
@@ -48,7 +49,7 @@ export const feedItems = (contents: readonly PortalContentListItem[]): PortalCon
   });
 
 /** What waits for the person, at the top: the covers of the contents awaiting approval, the nearest day first (the API's order). */
-function Awaiting({ clientId }: { clientId: string }) {
+function Awaiting({ clientId, agencyName }: { clientId: string; agencyName: string }) {
   const httpClient = useApiClient();
   const awaiting = useQuery({
     queryKey: ['portal', clientId, 'contents', 'awaiting'],
@@ -78,6 +79,7 @@ function Awaiting({ clientId }: { clientId: string }) {
         <PortalContentCover clientId={clientId} contentId={content.id} assetId={content.thumbnailAssetId} format={content.format} className="portal-awaiting__cover" />
         <p className="portal-awaiting__title"><Link className="portal-card-link" to={postAddress(clientId, content.id)}>{content.title}</Link></p>
         <p className="portal-awaiting__day">{dayMonthLabel(content.publishOn)}</p>
+        <ApprovalRound approval={content.approval} agencyName={agencyName} />
       </li>)}
     </ul>
     {meta.totalItems > data.length && <p className="portal-awaiting__more">Mostrando {data.length} de {meta.totalItems}</p>}
@@ -93,6 +95,7 @@ function ContentCard({ clientId, content }: { clientId: string; content: PortalC
         <FormatTag format={FORMAT_TONES[content.format]}>{FORMAT_LABELS[content.format]}</FormatTag>
         <StatusTag status={PORTAL_STATUS_TAGS[content.status]}>{PORTAL_STATUS_LABELS[content.status]}</StatusTag>
       </p>
+      {content.status === 'awaiting_approval' && <ApprovalRound approval={content.approval} showNote={false} />}
     </div>
   </article>;
 }
@@ -176,7 +179,7 @@ export function PortalContentsPage() {
 
   return <section className="portal-contents" aria-labelledby="portal-contents-title">
     <h1 id="portal-contents-title" className="portal-headline">Conteúdos</h1>
-    <Awaiting clientId={clientId} />
+    <Awaiting clientId={clientId} agencyName={client.agencyName} />
     <div className="portal-contents__period" role="group" aria-label="Período">
       <Button variant="secondary" aria-label="Mês anterior" leadingIcon={<ChevronLeft />} onClick={() => change('data', shiftAnchor('month', anchor, -1))} />
       <h2 className="portal-contents__period-title" aria-live="polite">{periodTitle('month', anchor)}</h2>
