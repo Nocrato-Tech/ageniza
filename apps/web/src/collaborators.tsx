@@ -17,7 +17,7 @@ import { PendingInvitationsSection } from './pending-invitations.js';
 import { ReactivateCollaboratorDialog } from './reactivate-collaborator.js';
 import { NotFoundPage } from './status-pages.js';
 
-/** `specs/colaboradores.md` §6: 24 per page, a multiple of both 3 and 4 so the grid never breaks. */
+/** `specs/colaboradores.md` §6: 24 per page. */
 const PAGE_SIZE = 24;
 
 /** The five system presets (specs/colaboradores.md §2). The screen only offers these. */
@@ -184,7 +184,11 @@ export function CollaboratorsPage() {
   return (
     <section aria-labelledby="collaborators-title" className="collaborators">
       <header className="collaborators__header">
-        <h1 id="collaborators-title">Colaboradores</h1>
+        <div className="collaborators__heading">
+          <p className="collaborators__eyebrow">Agência</p>
+          <h1 id="collaborators-title">Colaboradores</h1>
+          <p className="collaborators__lead">Cada pessoa tem um crachá: foto, nome, cargo e papel. Abra um para ver e mudar o que ela pode fazer.</p>
+        </div>
         {canInvite && (
           <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setInviteOpen(true)}>Convidar</Button>
         )}

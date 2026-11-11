@@ -2587,10 +2587,8 @@ describe('self profile editing (#108)', () => {
   });
 });
 
-// Issue #228: the grid must close in 3 and 4 columns. The shell's `.agency-content` is 840px at its
-// widest (72rem minus the 16rem nav, the gap and the padding), so the badge minimum has to let four
-// columns fit. jsdom has no layout, so the test reads the real CSS value and applies the same math
-// `repeat(auto-fill, minmax(..., 1fr))` does.
+// Issue #228, redone for the redesign board (agencia-equipe): the badges fill the row from a 13.5rem minimum. jsdom has no
+// layout, so the test reads the real CSS value and applies the same math `repeat(auto-fill, minmax(..., 1fr))` does.
 describe('collaborators grid columns (#228)', () => {
   const globalsCss = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
 
@@ -2606,10 +2604,12 @@ describe('collaborators grid columns (#228)', () => {
     return Math.max(1, Math.floor((availableWidthPx + gapPx) / (minPx + gapPx)));
   };
 
-  it('fits four columns in the 840px content area and three in a narrower one', () => {
+  it('fits three columns in the 840px content area, five in the wide one and two in a narrower one', () => {
     const minRem = gridMinRem();
-    expect(columnsFor(840, minRem)).toBe(4);
-    expect(columnsFor(700, minRem)).toBe(3);
+    expect(minRem).toBe(13.5);
+    expect(columnsFor(840, minRem)).toBe(3);
+    expect(columnsFor(1160, minRem)).toBe(5);
+    expect(columnsFor(600, minRem)).toBe(2);
   });
 
   it('keeps the gap on the spacing scale', () => {
@@ -2991,8 +2991,9 @@ describe('team screens in the Pauta language (#638)', () => {
   const PERMISSIONS = ['colaborador.visualizar', 'colaborador.convidar', 'convite.reenviar', 'convite.cancelar', 'colaborador.remover', 'colaborador.alterar_papel', 'colaborador.alterar_funcao'];
   const headerOf = (container: HTMLElement): HTMLElement => container.querySelector('.collaborators__header') as HTMLElement;
 
-  it('closes the grid in three columns from 64rem, so a page of 24 never leaves a broken row', () => {
-    expect(globalsCss).toMatch(/@media \(min-width: 64rem\) \{\s*\.collaborators__grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+  it('lets the badges fill the row from the minimum, with no fixed column count on a wide screen', () => {
+    expect(globalsCss).toMatch(/\.collaborators__grid \{[^}]*grid-template-columns: repeat\(auto-fill, minmax\(13\.5rem, 1fr\)\);/);
+    expect(globalsCss).not.toMatch(/@media \(min-width: 64rem\) \{\s*\.collaborators__grid \{/);
   });
 
   it('reacts to the pointer by border, never by background, over the badge', () => {
@@ -3007,9 +3008,9 @@ describe('team screens in the Pauta language (#638)', () => {
     expect(globalsCss).toMatch(/\.collaborator-detail__photo \.ui-button \{[^}]*white-space: nowrap;/);
   });
 
-  it('lays the filters out as a grid with the search on its own row, above the selects', () => {
-    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \{[^}]*display: grid;/);
-    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \.ui-filter-bar__item:first-child \{[^}]*grid-column: 1 \/ -1;/);
+  it('lays the filters out in one wrapping row, the search first and growing, then the selects', () => {
+    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \{[^}]*display: flex;[^}]*flex-wrap: wrap;/);
+    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \.ui-filter-bar__item:first-child \{[^}]*flex: 1 1 16rem;/);
   });
 
   it('writes the invite action with an icon, not a plus character', async () => {
