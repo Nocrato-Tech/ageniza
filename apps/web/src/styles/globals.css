@@ -4099,6 +4099,36 @@ main > .shell-notice {
   gap: var(--space-2);
 }
 
+/* A request for material: its own label and deadline on the row and in the open thread; "venceu" is the one `LateBadge`. */
+.conversation__thread-subject {
+  color: var(--text-primary);
+  font: var(--label-sm);
+}
+
+.conversation__thread-due {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+/* The request list on the client's Geral tab: a block of the page, full width under the summary blocks. */
+.client-general__requests {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.client-general__requests .conversation {
+  padding-top: 0;
+  border-top: 0;
+}
+
 /* The conversation inside the brand study: rows set apart by a line instead of cards, so a thread is not a card inside a section.
    Scoped to the study; the portal and the content modal keep their own look (their own goals). */
 .brand-study .conversation {
