@@ -158,8 +158,8 @@ O banco decide (migration `20261110000100`: `submit_content(uuid, date, text)`, 
 - **`approval`** no item e no detalhe do conteúdo da agência: `{ sentAt, dueOn, note }` da rodada mais recente **enquanto o conteúdo aguarda
   aprovação**, senão `null` (também para o que aguardava antes das rodadas). É a junção `APPROVAL_JOIN` de `service.ts`, que a lista, o
   feed, o detalhe e o lote compartilham.
-- **O portal e o link** devolvem só `approval: { dueOn, note }` (`portalApprovalOf` de `portal-service.ts`, também usado por
-  `approval-links/service.ts`), vindo de `portal_contents` e `portal_approval_contents`; a data de envio, quem enviou e o lote não saem do banco para eles.
+- **O portal e o link** devolvem só `approval: { dueOn, note }` (`portalApprovalOf`, uma só cópia, que `portal-routes.ts` exporta e
+  `approval-links/service.ts` importa por essa porta), vindo de `portal_contents` e `portal_approval_contents`; a data de envio, quem enviou e o lote não saem do banco para eles.
 - **Parado no cliente.** `GET /agencies/:agencyId/contents/awaiting-client` (`awaiting-routes.ts`, `awaiting-service.ts`): o que aguarda
   aprovação, até 50 (`meta.truncated` quando havia mais), do mais urgente ao menos (prazo mais próximo, depois quem espera há mais tempo,
   depois o sem rodada), agrupado por cliente na ordem do primeiro item de cada um. Os dias (`daysToDue`, `daysWaiting`) são do dia de São Paulo
