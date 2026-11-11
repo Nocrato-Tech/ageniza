@@ -83,3 +83,24 @@
   border-radius: var(--radius-lg);
 }
 
+
+/* The capsule of the role takes the colour of a block: the words say the role, the colour only tells roles apart. */
+.ui-badge-card__role--indigo .ui-pill {
+  background: var(--block-indigo-bg);
+  color: var(--block-indigo-fg);
+}
+
+.ui-badge-card__role--violet .ui-pill {
+  background: var(--block-violet-bg);
+  color: var(--block-violet-fg);
+}
+
+.ui-badge-card__role--teal .ui-pill {
+  background: var(--block-teal-bg);
+  color: var(--block-teal-fg);
+}
+
+.ui-badge-card__role--sky .ui-pill {
+  background: var(--block-sky-bg);
+  color: var(--block-sky-fg);
+}

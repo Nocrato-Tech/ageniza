@@ -35,7 +35,9 @@
 }
 
 .ui-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   width: 100%;
   min-height: 2.75rem;
   padding: var(--space-2) var(--space-3);
@@ -69,3 +71,14 @@
   background: var(--border-subtle);
 }
 
+
+/* The icon says the kind of action: quiet on a normal item, the item's own red on the danger one. */
+.ui-menu-item .ui-icon {
+  color: var(--text-secondary);
+}
+
+.ui-menu-item--destructive .ui-icon,
+.ui-menu-item--destructive:hover .ui-icon,
+.ui-menu-item--destructive:focus-visible .ui-icon {
+  color: inherit;
+}

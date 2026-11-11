@@ -29,6 +29,10 @@ export interface DatePickerProps extends Partial<FieldControlProps> {
   className?: string;
   /** Names the button that opens the calendar. */
   toggleLabel?: string;
+  /** Days (`YYYY-MM-DD`) that already hold something: each gets a dot and "tem conteúdo" in its name. */
+  markedDates?: readonly string[];
+  /** What the dot means, in the legend of the footer and in the name of each marked day. */
+  markedLabel?: string;
 }
 
 /** What a field says about text that is not a day, so every optional date field words it the same way. */
@@ -46,7 +50,7 @@ const clampDay = (day: string, min: string | undefined, max: string | undefined)
  * `value` and `onChange` are always `YYYY-MM-DD`.
  */
 export function DatePicker({
-  value, onChange, onInvalidChange, today, min, max, name, disabled = false, className, toggleLabel = 'Abrir calendário', id, 'aria-describedby': describedBy, 'aria-invalid': invalid, 'aria-busy': busy
+  value, onChange, onInvalidChange, today, min, max, name, disabled = false, className, toggleLabel = 'Abrir calendário', markedDates, markedLabel = 'tem conteúdo', id, 'aria-describedby': describedBy, 'aria-invalid': invalid, 'aria-busy': busy
 }: DatePickerProps) {
   const [draft, setDraft] = useState(() => toTyped(value));
   const [seen, setSeen] = useState(value);
@@ -183,6 +187,7 @@ export function DatePicker({
     if (open && event.relatedTarget instanceof Node && !wrapperRef.current?.contains(event.relatedTarget)) setOpen(false);
   };
 
+  const marked = new Set(markedDates);
   const grid = monthGrid(`${month}-01`);
   const monthStart = `${month}-01`;
   const style: CSSProperties | undefined = placed === null ? undefined : { '--ui-date-top': `${placed.top}px`, '--ui-date-left': `${placed.left}px` } as CSSProperties;
@@ -252,6 +257,7 @@ export function DatePicker({
                   {grid.slice(row * 7, row * 7 + 7).map((day) => {
                     const selected = day === value;
                     const enabled = inRange(day);
+                    const hasMark = marked.has(day);
                     return (
                       <td key={day} role="gridcell" aria-selected={selected}>
                         <button
@@ -259,9 +265,9 @@ export function DatePicker({
                           data-day={day}
                           tabIndex={day === focused ? 0 : -1}
                           disabled={!enabled}
-                          aria-label={fullDay(day)}
+                          aria-label={hasMark ? `${fullDay(day)}, ${markedLabel}` : fullDay(day)}
                           aria-current={day === today ? 'date' : undefined}
-                          className={['ui-date-picker__day', day.slice(0, 7) !== month && 'ui-date-picker__day--outside'].filter(Boolean).join(' ')}
+                          className={['ui-date-picker__day', day.slice(0, 7) !== month && 'ui-date-picker__day--outside', hasMark && 'ui-date-picker__day--marked'].filter(Boolean).join(' ')}
                           onClick={() => pick(day)}
                         >
                           {Number(day.slice(8, 10))}
@@ -274,6 +280,7 @@ export function DatePicker({
             </tbody>
           </table>
           <div className="ui-date-picker__foot">
+            {marked.size > 0 && <span className="ui-date-picker__legend"><span className="ui-date-picker__legend-dot" aria-hidden="true" />{markedLabel}</span>}
             {todayInRange && <Button variant="ghost" onClick={() => pick(today)}>Hoje</Button>}
             <Button variant="secondary" onClick={() => closeCalendar(true)}>Fechar</Button>
           </div>

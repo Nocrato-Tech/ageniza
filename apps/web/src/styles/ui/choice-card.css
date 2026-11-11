@@ -88,3 +88,84 @@
   font: var(--label-sm);
 }
 
+
+/* ChoiceRadio: a native radio in a card; chosen, it tints, takes the focus edge and a halo. */
+.ui-choice-radio {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard);
+}
+
+.ui-choice-radio:hover:not(:has(input:disabled)) {
+  background: var(--bg-hover);
+}
+
+.ui-choice-radio > input {
+  appearance: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 2px 0 0;
+  border: 1.5px solid var(--border-control);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  cursor: inherit;
+}
+
+.ui-choice-radio > input:checked {
+  border-color: var(--focus-ring);
+  background: radial-gradient(circle, var(--action-primary-bg) 0 45%, var(--bg-surface) 50%);
+}
+
+.ui-choice-radio:has(input:checked) {
+  border-color: var(--focus-ring);
+  background: var(--bg-tint);
+  box-shadow: 0 0 0 3px var(--focus-halo);
+}
+
+/* The ring goes on the card, which is what the person sees as the control. */
+.ui-choice-radio > input:focus-visible {
+  outline: none;
+}
+
+.ui-choice-radio:has(input:focus-visible) {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ui-choice-radio:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ui-choice-radio__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-choice-radio__title {
+  font: var(--label-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ui-choice-radio__description {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-choice-radio {
+    transition: none;
+  }
+}

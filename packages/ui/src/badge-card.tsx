@@ -1,8 +1,12 @@
-import { ShieldCheck, UserMinus } from 'lucide-react';
+import { Crown, ShieldCheck, UserMinus } from 'lucide-react';
 
 import { Avatar } from './avatar.js';
 import { IconSlot } from './icon.js';
 import { Pill } from './pill.js';
+
+export type BadgeRoleTone = 'indigo' | 'violet' | 'teal' | 'sky' | 'neutral';
+
+const OWNER_LABEL = 'Dona da agência';
 
 export interface BadgeCardProps {
   name: string;
@@ -10,6 +14,10 @@ export interface BadgeCardProps {
   /** Free text, so it can be long: the card wraps it instead of widening its grid track. */
   jobTitle?: string | null;
   role: string;
+  /** The colour of the role's capsule, from the colour blocks; `neutral` when the role has none. The words say the role: the colour only helps. */
+  roleTone?: BadgeRoleTone;
+  /** The agency's owner: not a role but a property of the agency, so the capsule says "Dona da agência" with a crown, in indigo, whatever `role` is. */
+  isOwner?: boolean;
   /** A removed membership still shows the person; the badge itself says the link ended (#105). */
   removed?: boolean;
 }
@@ -21,7 +29,8 @@ export interface BadgeCardProps {
  * explicitly rejects. The role is a neutral `Pill` with its icon, so it reads as access and not as
  * one more line of text.
  */
-export function BadgeCard({ name, photoUrl, jobTitle, role, removed = false }: BadgeCardProps) {
+export function BadgeCard({ name, photoUrl, jobTitle, role, roleTone = 'neutral', isOwner = false, removed = false }: BadgeCardProps) {
+  const tone = isOwner ? 'indigo' : roleTone;
   return (
     <article className="ui-badge-card">
       <div className="ui-badge-card__cover">
@@ -30,7 +39,7 @@ export function BadgeCard({ name, photoUrl, jobTitle, role, removed = false }: B
       <div className="ui-badge-card__body">
         <p className="ui-badge-card__name">{name}</p>
         {jobTitle !== null && jobTitle !== undefined && jobTitle !== '' && <p className="ui-badge-card__job">{jobTitle}</p>}
-        <p className="ui-badge-card__role"><Pill icon={<ShieldCheck />}>{role}</Pill></p>
+        <p className={['ui-badge-card__role', tone !== 'neutral' && `ui-badge-card__role--${tone}`].filter(Boolean).join(' ')}><Pill icon={isOwner ? <Crown /> : <ShieldCheck />}>{isOwner ? OWNER_LABEL : role}</Pill></p>
         {removed && <p className="ui-badge-card__removed"><IconSlot><UserMinus /></IconSlot>removido</p>}
       </div>
     </article>

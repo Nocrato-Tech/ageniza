@@ -1,5 +1,5 @@
 import type { HTMLAttributes } from 'react';
-import { Check, CheckCheck, Circle, Clock, Pencil } from 'lucide-react';
+import { CalendarClock, Check, CheckCheck, Circle, Clock, Pencil } from 'lucide-react';
 
 import { IconSlot } from './icon.js';
 
@@ -23,7 +23,7 @@ export function FormatTag({ format, className, children, ...props }: FormatTagPr
 }
 
 /** What a content is going through. `late` is not here: it is `LateBadge`, the only state in a filled block. */
-export type StatusTagStatus = 'ready' | 'waiting' | 'adjust' | 'published' | 'production';
+export type StatusTagStatus = 'ready' | 'waiting' | 'adjust' | 'published' | 'production' | 'scheduled';
 
 /** One lucide shape per state, so two states are told apart by form and not by colour (docs/design-system.md section 6). */
 const STATUS_ICONS: Readonly<Record<StatusTagStatus, typeof Check>> = {
@@ -31,21 +31,24 @@ const STATUS_ICONS: Readonly<Record<StatusTagStatus, typeof Check>> = {
   waiting: Clock,
   adjust: Pencil,
   published: CheckCheck,
-  production: Circle
+  production: Circle,
+  scheduled: CalendarClock
 };
 
 export type StatusTagProps = HTMLAttributes<HTMLSpanElement> & {
   status: StatusTagStatus;
+  /** `lg` is the label of a page header (a content's state at the top of its screen); `md` is the one of a list or a card. */
+  size?: 'md' | 'lg';
 };
 
 /**
  * The state of a content: an outline, the state's icon and its label. The colour goes on the icon (non-text, 3:1) and the
  * label stays `text/secondary`, so the text pair never depends on the state. It is static, like `FormatTag`.
  */
-export function StatusTag({ status, className, children, ...props }: StatusTagProps) {
+export function StatusTag({ status, size = 'md', className, children, ...props }: StatusTagProps) {
   const Icon = STATUS_ICONS[status];
   return (
-    <span className={['ui-status-tag', `ui-status-tag--${status}`, className].filter(Boolean).join(' ')} {...props}>
+    <span className={['ui-status-tag', `ui-status-tag--${status}`, size === 'lg' && 'ui-status-tag--lg', className].filter(Boolean).join(' ')} {...props}>
       <IconSlot><Icon /></IconSlot>
       {children}
     </span>

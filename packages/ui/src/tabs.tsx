@@ -65,7 +65,7 @@ export function Tabs({ label, value, items, onChange, loading = false, className
           >
             {item.icon !== undefined && <IconSlot>{item.icon}</IconSlot>}
             {item.label}
-            {item.count !== undefined && <Pill>{item.count}</Pill>}
+            {item.count !== undefined && <Pill className="ui-tabs__count">{item.count}</Pill>}
           </button>
         ))}
       </div>
