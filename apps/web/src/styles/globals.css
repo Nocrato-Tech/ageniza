@@ -1359,6 +1359,16 @@ a.ui-button {
   outline-offset: 3px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .clients__card {
+    transition: none;
+  }
+
+  .clients__card:hover {
+    transform: none;
+  }
+}
+
 /* The link holds the mark, the name, the tags and the numbers; the menu and the action are buttons beside it, never inside it. */
 .clients__card-link {
   display: flex;
@@ -1844,6 +1854,16 @@ a.client-general__block:hover {
 a.client-general__block:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .client-general__block {
+    transition: none;
+  }
+
+  a.client-general__block:hover {
+    transform: none;
+  }
 }
 
 .client-general__block h2 {
