@@ -138,7 +138,7 @@ describe('agency side navigation (#628)', () => {
     renderAt(`/agencia/${AGENCY}/clientes`);
     const aside = await sidebar();
     expect(aside.getAttribute('data-collapsed')).toBe('false');
-    expect(within(aside).getByRole('img', { name: 'Ageniza' }).getAttribute('src')).toBe('/brand/logo-para-fundo-escuro.svg');
+    expect(within(aside).getByRole('img', { name: 'Ageniza' }).getAttribute('src')).toBe('/brand/logo-para-fundo-claro.svg');
     const toggle = within(aside).getByRole('button', { name: 'Recolher navegação' });
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
@@ -147,7 +147,7 @@ describe('agency side navigation (#628)', () => {
     renderAt(`/agencia/${AGENCY}/conteudos/${CLIENT}`);
     const aside = await sidebar();
     expect(aside.getAttribute('data-collapsed')).toBe('true');
-    expect(within(aside).getByRole('img', { name: 'Ageniza' }).getAttribute('src')).toBe('/brand/simbolo-branco.svg');
+    expect(within(aside).getByRole('img', { name: 'Ageniza' }).getAttribute('src')).toBe('/brand/simbolo-colorido.svg');
     expect(within(aside).getAllByRole('img', { name: 'Ageniza' })).toHaveLength(1);
     expect(within(aside).getByRole('button', { name: 'Abrir navegação' }).getAttribute('aria-expanded')).toBe('false');
     expect(linkNames(aside)).toContain('Calendário Editorial');
