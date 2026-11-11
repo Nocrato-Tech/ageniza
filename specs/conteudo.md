@@ -72,6 +72,8 @@ Nunca vê subtarefa, responsável, prazo interno nem roteiro em rascunho.
 
 O upload é do **conteúdo pronto**; o material bruto fica fora do sistema.
 
+**Colunas e tipos novos (2026-11-11, pendentes de validação).** `media_assets` ganha `file_name` (o nome dado no envio, só rótulo: a chave do objeto não muda), `width` e `height` (gravadas no processamento de foto e vídeo), `alt_text` (até 500 caracteres, editável por `conteudo.operar`), a categoria **PDF**, **áudio** e **logo** (SVG só como logo, nunca servido como página nem inline) e, para o envio do cliente pelo portal, a ligação ao pedido de material e o lado de quem enviou. "Quem enviou" já existe (`created_by_user_id`). A agência **renomeia** e **move** o arquivo para outra pasta do mesmo cliente (a regra 12 vale para mover). Só foto e vídeo entram num conteúdo. Decisões: [metadados](../docs/business/decisions/2026-11-11-estrutural-a-midia-ganha-nome-dimensoes-texto-alternativo-renomear-e-mover.md), [tipos](../docs/business/decisions/2026-11-11-estrutural-a-midia-aceita-pdf-audio-e-svg-como-logo.md), [onde é usada e "Usar em um conteúdo"](../docs/business/decisions/2026-11-11-estrutural-a-midia-mostra-onde-e-usada-e-pode-abrir-um-conteudo.md) e [envio pelo cliente](../docs/business/decisions/2026-11-11-estrutural-o-cliente-envia-material-pelo-portal.md). **Upload pelo portal:** a pessoa ativa envia imagem e áudio **só a um pedido de material aberto do cliente dela**, para a pasta de sistema "Enviados pelo cliente", e só lê o que ela enviou; conta na cota da agência, e a mensagem de cota ou de somente leitura é neutra (nunca fala de plano).
+
 ### Conteúdo — `contents`
 
 | campo | tipo | obrigatório | regra |
@@ -143,9 +145,11 @@ aprovado ────────────▶ aguardando aprovação   # auto
 aprovado ────────────▶ aguardando aprovação   # pessoa ativa do portal desfaz a aprovação; exige revisão lida, antes de publicar (#850)
 ```
 
-- Na agência, "aprovado" aparece como **pronto para publicar**; no portal, como **Aprovado**.
+- **Agência e portal dizem "Aprovado"** (2026-11-11, [`2026-11-11-agendado-e-um-estado-derivado-de-aprovado-com-data-e-hora-futuras`](../docs/business/decisions/2026-11-11-agendado-e-um-estado-derivado-de-aprovado-com-data-e-hora-futuras.md), que substitui o "pronto para publicar" da agência).
+- **Agendado** é derivado: aprovado, com hora de publicação (`publish_at_time`) e o instante `publish_on` + hora (São Paulo) ainda no futuro. Sem hora, é só Aprovado. Não há estado novo nem publicação automática; o portal não usa a palavra Agendado.
 - Mudar data, hora, título, responsável ou subtarefas **mantém** a aprovação. Mover de data vale em todos os estados menos publicado e cancelado.
-- **Atrasado** é derivado: data planejada passada sem publicado nem cancelado. **Prazo em dois dias** também é derivado.
+- **Atrasado** é derivado: data planejada passada sem publicado nem cancelado. **Prazo em dois dias** também é derivado. O bloco "Atrasados" do Início conta pela **data de publicação**, e o prazo de aprovação vencido é "venceu há N dias", outra coisa ([`2026-11-11-atrasado-conta-pela-data-de-publicacao-e-parado-no-cliente-segue-a-ordem-de-envio`](../docs/business/decisions/2026-11-11-atrasado-conta-pela-data-de-publicacao-e-parado-no-cliente-segue-a-ordem-de-envio.md)).
+- **Rodada de aprovação** (2026-11-10 e 2026-11-11): cada envio abre uma rodada com **prazo com hora** (de agora até 90 dias, padrão proposto pela tela de 48 horas, opcional na API: [`2026-11-11-estrutural-o-prazo-de-aprovacao-tem-hora-e-padrao-de-48-horas`](../docs/business/decisions/2026-11-11-estrutural-o-prazo-de-aprovacao-tem-hora-e-padrao-de-48-horas.md)) e recado de até 500 caracteres. O portal vê o **nome, a foto e a data de envio de quem enviou**, nunca o lote, e o cliente pode **aprovar com um recado**, que vira comentário do cliente na conversa do conteúdo ([`2026-11-11-estrutural-a-rodada-de-aprovacao-mostra-ao-cliente-quem-enviou-e-aceita-recado-ao-aprovar`](../docs/business/decisions/2026-11-11-estrutural-a-rodada-de-aprovacao-mostra-ao-cliente-quem-enviou-e-aceita-recado-ao-aprovar.md)).
 
 ### Subtarefa
 
@@ -208,6 +212,10 @@ Todas sob `requireAgencyAccess`; o cliente de `:clientId` precisa pertencer a `:
 | `POST` | `/agencies/:agencyId/clients/:clientId/media-folders` | `conteudo.operar` | `201` com a pasta |
 | `GET` | `…/media-folders/:folderId/assets` | `conteudo.visualizar` | mídias da pasta, paginado |
 | `POST` | `…/media-folders/:folderId/assets/:assetId/remove` | `conteudo.operar` | `409` se usada, como arquivo ou capa, em conteúdo aguardando aprovação, aprovado ou publicado (regra 12) |
+| `PATCH` | `…/media/:assetId` | `conteudo.operar` | renomeia (`name`) e edita o texto alternativo (`altText`); *proposta* |
+| `POST` | `…/media/:assetId/move` | `conteudo.operar` | move para outra pasta do mesmo cliente (`folderId`); `409` se em uso (regra 12); *proposta* |
+| `GET` | `…/media/:assetId/usage` | `conteudo.visualizar` | os conteúdos que usam o arquivo (título e estado); *proposta* |
+| `GET` | `…/clients/:clientId/media?q=` | `conteudo.visualizar` | os arquivos do cliente por ordem de envio, com filtro pelo nome; *proposta* |
 | `POST` | `/agencies/:agencyId/clients/:clientId/story-scripts` | `conteudo.operar` | `201` com o roteiro em rascunho |
 | `GET` | `/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId` | `conteudo.visualizar` | o roteiro, em qualquer estado, com as cenas |
 | `PATCH` | `…/story-scripts/:scriptId` | `conteudo.operar` | o roteiro |
@@ -224,7 +232,9 @@ Todas sob `requireSession` e `requireClientAccess`.
 | `GET` | `/clients/:clientId/contents` | conteúdos de um período, no recorte do portal |
 | `GET` | `/clients/:clientId/contents/awaiting-approval` | o que precisa de você |
 | `GET` | `/clients/:clientId/contents/:contentId` | o post com legenda e mídias a partir de "aguardando aprovação" |
-| `POST` | `/clients/:clientId/contents/:contentId/approve` | aprovado |
+| `POST` | `/clients/:clientId/contents/:contentId/approve` | aprovado; corpo com `revision` e, opcional, `note` (até 500 caracteres), que vira comentário do cliente na conversa do conteúdo na mesma transação |
+| `GET` | `/clients/:clientId/home-progress` | o progresso do mês (aprovados, total e o próximo a ir ao ar) para a "Boa notícia" do Início; *proposta* |
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads` | inicia o envio de uma imagem ou áudio a um pedido aberto, pelo mesmo fluxo de upload direto (iniciar, confirmar); *proposta* |
 | `POST` | `/clients/:clientId/contents/:contentId/request-changes` | em ajuste; comentário obrigatório |
 | `GET` | `/clients/:clientId/story-scripts` | roteiros enviados de um período |
 | `POST` | `/clients/:clientId/story-scripts/:scriptId/recorded` | gravado |
@@ -251,13 +261,14 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 | tela | rota | o que mostra | quem acessa |
 |---|---|---|---|
 | Calendário Editorial | `/agencia/:agenciaId/conteudos` | seletor de clientes em stories | `conteudo.visualizar` |
-| Calendário Editorial do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | seletor Mês, Semana e Feed (`?visao=`); no Mês e na Semana, o calendário e, ao lado, o celular com o feed 3×3 | `conteudo.visualizar` |
+| Calendário Editorial do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | seletor Mês, Semana e Feed (`?visao=`); no Mês e na Semana, o calendário na largura toda, com a semana começando no **domingo**, **capa no card** e os chips de filtro (Todos, Em produção, Aguardando, Aprovado, Agendado, Atrasado, Publicado). **Sem o celular ao lado**: o feed é a vista Feed ([`2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco`](../docs/business/decisions/2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco.md)) | `conteudo.visualizar` |
 | Modal do conteúdo | `/agencia/:agenciaId/conteudos/:clienteId/:conteudoId` | abas Geral e Atribuição | `conteudo.visualizar` |
-| Aba Conteúdos do cliente (extinta) | `/agencia/:agenciaId/clientes/:clienteId/conteudos[/novo\|/:conteudoId]` | não há mais aba: o endereço redireciona (com `replace`, mantendo a query e o estado de navegação) para o equivalente em `/conteudos/:clienteId`; o perfil do cliente tem o botão "Abrir no Calendário Editorial" (decisão `2026-11-04-o-perfil-do-cliente-nao-tem-copia-do-calendario`) | `conteudo.visualizar` (sem ela, "não encontrado") |
+| Aba Conteúdos do cliente | `/agencia/:agenciaId/clientes/:clienteId/conteudos` | **a aba volta** (2026-11-11, [`2026-11-11-o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta`](../docs/business/decisions/2026-11-11-o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta.md), que substitui o item 1 de `2026-11-04-o-perfil-do-cliente-nao-tem-copia-do-calendario`): não é um calendário, é a lista dos conteúdos do cliente **por quem precisa agir** (Esperando o cliente, Atrasado, Em produção, Aprovado e agendado), por data ou por formato, com capa, formato, data, quem cuida e estado; "Nova publicação" e "Abrir no Calendário Editorial" levam ao calendário, que segue com um endereço só. `…/conteudos/novo` e `…/conteudos/:conteudoId` continuam redirecionando (com `replace`) para `/conteudos/:clienteId` | `conteudo.visualizar` (sem ela, "não encontrado") |
 | Aba Mídias do cliente | `/agencia/:agenciaId/clientes/:clienteId/midias` | as pastas e as mídias do cliente, com o envio; o endereço antigo `…/conteudos/:clienteId?vista=pastas` leva para cá | `conteudo.visualizar` (escrever: `conteudo.operar`) |
 | Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, calendário, feed | pessoa do portal |
-| Portal — post | `/portal/:clienteId/conteudos/:conteudoId` | post em tela cheia, Aprovar, Pedir ajuste, conversa | pessoa do portal |
-| Portal — Início | `/portal/:clienteId` | "N posts esperando sua aprovação", o roteiro de hoje e "Nesta semana" | pessoa do portal |
+| Portal — post | `/portal/:clienteId/conteudos/:conteudoId` | post em tela cheia com a trilha "Início > título", "Sua resposta" (prazo com hora, "Falta N dias"), o recado da agência com **quem enviou**, "Seu recado para a agência", "Aprovar o post", "Pedir ajuste" e a **conversa recolhida** abaixo | pessoa do portal |
+| Portal — Início | `/portal/:clienteId` | data e "Olá, <nome>", até **três capas** dos posts que esperam, "Revisar os N posts" (abre o que vence primeiro e encadeia o próximo), "A agência pediu"; sem pendência, a "Boa notícia" com o progresso do mês. **Sem "Nesta semana"**; o bloco compacto **"Roteiro de hoje" com "Já gravei" continua abaixo do quadro**, quando há roteiro enviado ou gravado do dia ([`2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post`](../docs/business/decisions/2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post.md)) | pessoa do portal |
+| Portal — Pedidos da agência | `/portal/:clienteId/pedidos` | os pedidos de material abertos, com título, prazo, "Responder", "Enviar fotos" e "Gravar depoimento" | pessoa do portal |
 | Link de aprovação | `/aprovar#<token>` (fora da casca; o fragmento é apagado ao abrir) | o lote do e-mail: o celular de cada post, Aprovar, Pedir ajuste (comentário obrigatório) e "Criar conta para ver o portal" com o e-mail preenchido | quem tem o link (7 dias), sem conta |
 
 ### Esboço — agência
@@ -268,28 +279,29 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 ┌───────────────────────────────────────────────────────────────────┐
 │ ( ◉ )  ( ◉ )  ( ○ )  ( ○ )  ( ○ )   ← clientes em stories         │
 │ Padaria Ótica  Café   Moda   Pet       anel = algo pedindo ação   │
-├──────────────────────────────────────┬────────────────────────────┤
-│ ‹ Outubro 2026 ›  [Mês|Semana|Feed]  │  @padariacentral           │
-│ [+ Criar conteúdo]                   │ ┌──┬──┬──┐                 │
-│                                      │ │  │  │  │  feed 3×3       │
-│ seg  ter  qua  qui  sex  sáb  dom    │ ├──┼──┼──┤  mais recente   │
-│      ┌─────┐       ┌─────┐           │ │  │  │  │  primeiro;      │
-│      │título│      │título│  +       │ ├──┼──┼──┤  futuros com    │
-│      │reels │       │reels │         │ │  │  │  │  marca de       │
-│      │18:30 │       │⚠ 2/4 │         │ └──┴──┴──┘  planejado      │
-│      └─────┘       └─────┘           │                            │
-│                             stories ●│                            │
-└──────────────────────────────────────┴────────────────────────────┘
+├───────────────────────────────────────────────────────────────────┤
+│ ‹ Outubro 2026 ›  [Mês|Semana|Feed]            [+ Novo conteúdo]  │
+│ [Todos 16] [Em produção 5] [Aguardando 2] [Aprovado 4] [Agendado 2]│
+│ [Atrasado 1] [Publicado 2]                                         │
+│                                                                   │
+│ dom  seg  ter  qua  qui  sex  sáb      (semana começa no domingo) │
+│      ┌─────┐       ┌─────┐                                        │
+│      │ capa │      │ capa │  +                                    │
+│      │título│      │título│                                       │
+│      │reels │       │⚠ 2/4 │                                      │
+│      └─────┘       └─────┘                         stories ●      │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 | elemento | função |
 |---|---|
 | Clientes em stories | foto ou ícone e nome; ordem da carteira; anel destacado quando há em ajuste, atraso ou prazo em dois dias; só ativos |
 | Calendário | seletor **Mês, Semana e Feed** (`?visao=semana` e `?visao=feed`; o mês é o padrão); criar pelo botão ou pelo **+** do dia (Conteúdo ou Roteiro de stories); arrastar o card para outra data |
-| Card | compacto e **sem capa**: título, formato, data e hora, status, alerta de prazo ou atraso, percentual das subtarefas; um toque em qualquer ponto abre o conteúdo e o dia cheio mostra **+N** (decisão `2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga`) |
+| Card | **com capa** (a miniatura; sem capa, o ícone do formato), ícone do formato, título e a etiqueta de estado; o alerta de prazo ou atraso e o percentual das subtarefas ficam no cartão do passar do mouse; um toque em qualquer ponto abre o conteúdo e o dia cheio mostra **+N**. Substitui o "sem capa" do item 3 de `2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga` ([`2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco`](../docs/business/decisions/2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco.md)); a legenda sob o calendário diz "O formato tinge o card; o estado fica na etiqueta" |
+| Chips de filtro | Todos, Em produção (que inclui Em ajuste), Aguardando, Aprovado, Agendado, Atrasado e Publicado, com a contagem; Atrasado atravessa os outros |
 | Detalhe ao passar o mouse | começo da legenda, responsável, resumo das subtarefas, última mensagem da conversa |
-| Feed | o celular ao lado do calendário, desenhado como um aparelho, com a grade de **3 colunas** dos conteúdos de feed não cancelados do **cliente inteiro, sem relação com o mês ou a semana abertos no calendário** (decisão `2026-11-04-o-celular-do-calendario-mostra-o-feed-inteiro-do-cliente`): abre no post mais recente, como um perfil real, e rola de verdade (roda, toque e teclado) dentro da tela do aparelho, que tem altura fixa; os próximos nove carregam ao chegar perto do fim, e a última linha pode ficar incompleta, sem quadro vazio. As setas **para cima e para baixo** movem uma tela (nove posts, três linhas) com rolagem suave (sem animação com `prefers-reduced-motion`) e só ficam travadas no começo ou no fim reais do feed. Os contadores do perfil (posts, prontos, aguardando) contam o feed inteiro e vêm da API. Vídeo longo e VSL só no calendário. Criar, editar, mover de data e cancelar atualizam o feed. O celular só aparece a partir de 48 rem de largura; abaixo disso fica escondido e o caminho é a vista **Feed** do seletor, que mostra o período em tela cheia, trinta por página (decisão `2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga`, que traz a vista Feed de volta e substitui nesse ponto a de 2026-10-16) |
-| Mídias | a biblioteca do cliente fica na aba Mídias do detalhe do cliente (`specs/clientes.md`, seção 7); subir mídia antes de existir o post (ensaio fotográfico) |
+| Feed | **O celular ao lado do calendário saiu** (2026-11-11, `2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco`, que substitui o item 4 de `2026-11-04-calendario-editorial-…` e `2026-11-04-o-celular-do-calendario-mostra-o-feed-inteiro-do-cliente` nesse ponto): o feed é a vista **Feed** do seletor, e o aparelho com os nove quadros é o desenho dessa vista no celular do cliente (moldura com @, avatar, "N no período / N prontos / N aguardando" e a legenda "Como ler o feed"). O texto abaixo descreve o aparelho e a rota de leitura do feed, que continuam. Antes, o celular ao lado do calendário, desenhado como um aparelho, com a grade de **3 colunas** dos conteúdos de feed não cancelados do **cliente inteiro, sem relação com o mês ou a semana abertos no calendário** (decisão `2026-11-04-o-celular-do-calendario-mostra-o-feed-inteiro-do-cliente`): abre no post mais recente, como um perfil real, e rola de verdade (roda, toque e teclado) dentro da tela do aparelho, que tem altura fixa; os próximos nove carregam ao chegar perto do fim, e a última linha pode ficar incompleta, sem quadro vazio. As setas **para cima e para baixo** movem uma tela (nove posts, três linhas) com rolagem suave (sem animação com `prefers-reduced-motion`) e só ficam travadas no começo ou no fim reais do feed. Os contadores do perfil (posts, prontos, aguardando) contam o feed inteiro e vêm da API. Vídeo longo e VSL só no calendário. Criar, editar, mover de data e cancelar atualizam o feed. O celular só aparece a partir de 48 rem de largura; abaixo disso fica escondido e o caminho é a vista **Feed** do seletor, que mostra o período em tela cheia, trinta por página (decisão `2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga`, que traz a vista Feed de volta e substitui nesse ponto a de 2026-10-16) |
+| Mídias | a biblioteca do cliente fica na aba Mídias do detalhe do cliente (`specs/clientes.md`, seção 7); subir mídia antes de existir o post (ensaio fotográfico). Em 2026-11-11 a mídia ganhou nome, dimensões e texto alternativo, renomear e mover, PDF, áudio e SVG (logo), "onde é usada" e "Usar em um conteúdo", e o cliente passou a enviar material pelo portal (seção 3) |
 
 ### Esboço — modal do conteúdo
 
@@ -330,13 +342,15 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 │ 15 sex  Carrossel · Em ajuste
 │ 18 seg  Post · Em produção│
 ├───────────────────────────┤
-│ Início  Conteúdos  Marca  Relatórios
+│ Início  Conteúdos  Marca  Pedidos(2)
 └───────────────────────────┘
 ```
 
 - Card: capa, título, a etiqueta do formato e a etiqueta da situação (aprovado, aguardando aprovação, em ajuste, em produção, publicado), tingido pelo formato como o do calendário da agência; o dia é o rótulo do grupo. Sem capa, o ícone do formato. Filtro por status.
 - Post em tela cheia: legenda inteira, mídias navegáveis, **Pedir ajuste** (pede comentário), **Aprovar** e a conversa. Os dois botões ficam numa barra fixa no pé da tela, que no celular toma o lugar da barra inferior de quatro itens; o caminho de volta é o link "Conteúdos" no topo (decisão `2026-10-15-post-do-portal-troca-as-abas-pela-barra-de-decisao`). Em produção, só título, data e formato.
-- Início: "N posts esperando sua aprovação", o roteiro de stories de hoje, com **Já gravei**, e "Nesta semana" (os conteúdos de segunda a domingo, sem os que esperam aprovação).
+- Início (2026-11-11): até **três** capas dos posts que esperam, "Revisar os N posts" e "A agência pediu"; sem pendência, a "Boa notícia" ("Seu feed de novembro já está 70% aprovado", N de M, o próximo post a ir ao ar). **Sai** "Nesta semana". **O roteiro de stories de hoje, com o "Já gravei", fica** num bloco compacto abaixo do quadro, só quando há roteiro do dia. A semana do portal também começa no domingo. A navegação passa a ser Início, Conteúdos, Marca e **Pedidos da agência** (com o selo de pedidos abertos); **Relatórios sai**. A busca do portal é o filtro "Buscar um post" ([`busca.md`](busca.md)).
+- A **conversa continua no post**, recolhida abaixo; ali o cliente lê as respostas da agência e o recado que deu ao aprovar. A barra de ação fixa no pé (Aprovar o post como a principal, Pedir ajuste) vale também no celular.
+- **Roteiro de stories no portal:** o "Roteiro de hoje" continua no Início, abaixo do quadro (decidido em 2026-11-11: tirar o "Já gravei" seria perda de função), com as regras de [`2026-10-11-portal-inicio-aprovacoes-e-roteiro-de-hoje`](../docs/business/decisions/2026-10-11-portal-inicio-aprovacoes-e-roteiro-de-hoje.md): cenas em ordem, rascunho nunca aparece, "Já gravei" nos enviados e "Gravado por {nome} em dd/mm" nos gravados.
 
 ### Variação por papel
 
@@ -346,7 +360,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 | Gestor de conta | tudo |
 | Produção | opera e publica; sem Aprovar pela agência, sem Cancelar |
 | Vendas, Financeiro | o item Calendário Editorial, a aba Mídias e o botão "Abrir no Calendário Editorial" do perfil não existem; carteira sem indicadores de conteúdo |
-| Pessoa do portal | aprova, pede ajuste, comenta a partir de aguardando aprovação, marca roteiro como gravado |
+| Pessoa do portal | aprova (com recado opcional), pede ajuste, comenta a partir de aguardando aprovação; envia material ao pedido aberto da agência. marca o roteiro de hoje como gravado, no Início |
 
 ### Estados da tela
 
@@ -392,7 +406,8 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 | Outras plataformas | a primeira agência precisar planejar outra rede | Pedro Vidal |
 | Publicação automática e métricas | a decisão de publicar pela plataforma (integração com a Meta) | Pedro Vidal |
 | Versões do post, banco de legendas, aprovação em várias etapas | o primeiro cliente ou agência pedir | Pedro Vidal |
-| Preferências de notificação e notificação dentro do produto | o segundo tipo de notificação entrar na fila | Pedro Vidal |
+| Preferências de notificação por tipo, e e-mail ou push | a primeira pessoa pedir para silenciar um tipo, ou para ser avisada fora do app (a notificação **dentro do app** passou a existir em 2026-11-11: [`notificacoes.md`](notificacoes.md)) | Pedro Vidal |
+| Atrasados e "Aprovados no mês" com histórico (hoje é a contagem de agora) | o primeiro pedido de ver o mês fechado | Pedro Vidal |
 | Fuso por agência (#153) | a primeira agência fora de `America/Sao_Paulo` | Pedro Vidal |
 
 ## 11. Decisões registradas
@@ -409,6 +424,8 @@ Em [decisions.md](../docs/business/decisions.md), todas de 2026-10-01:
 - Conteúdo: impacto estrutural
 
 Herdadas: publicar e medir decidem juntos (2026-09-26); conteúdo além do encerramento é cancelado (2026-09-26); tarefa e prazo interno nunca são dados do portal (2026-09-26); a conversa com o cliente é uma tabela de threads por cliente (2026-09-26); arquivar cliente é função de escopo único (2026-09-26); cliente na mídia fica para Conteúdo (2026-09-26).
+
+Registradas em 2026-11-11 (todas **pendentes de validação do dono**; o quadro do redesenho): [Agendado derivado e "Aprovado"](../docs/business/decisions/2026-11-11-agendado-e-um-estado-derivado-de-aprovado-com-data-e-hora-futuras.md), [prazo com hora](../docs/business/decisions/2026-11-11-estrutural-o-prazo-de-aprovacao-tem-hora-e-padrao-de-48-horas.md), [atrasado e ordem de "Parado no cliente"](../docs/business/decisions/2026-11-11-atrasado-conta-pela-data-de-publicacao-e-parado-no-cliente-segue-a-ordem-de-envio.md), [remetente e recado ao aprovar](../docs/business/decisions/2026-11-11-estrutural-a-rodada-de-aprovacao-mostra-ao-cliente-quem-enviou-e-aceita-recado-ao-aprovar.md), [notificações](../docs/business/decisions/2026-11-11-estrutural-notificacoes-so-dentro-do-app-com-cinco-eventos.md), [busca](../docs/business/decisions/2026-11-11-busca-na-agencia-e-no-portal.md), [abas do cliente](../docs/business/decisions/2026-11-11-o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta.md), [visual](../docs/business/decisions/2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco.md), as quatro de mídia (metadados, tipos, uso, envio pelo cliente), [Início do portal](../docs/business/decisions/2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post.md) e [Início da agência](../docs/business/decisions/2026-11-11-o-inicio-da-agencia-mostra-aprovados-no-mes-agendados-e-passos-com-data-e-nome.md).
 
 Registrada depois, em 2026-10-11: [SPEC de Conteúdo aprovada, com o recorte de implementação](../docs/business/decisions/2026-10-11-spec-de-conteudo-aprovada-com-o-recorte.md). Ela registra a aprovação desta SPEC e está pendente de validação do dono.
 

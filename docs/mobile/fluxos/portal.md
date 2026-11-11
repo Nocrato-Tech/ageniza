@@ -23,27 +23,40 @@ No detalhe de um conteúdo aprovado, **Desfazer aprovação** abre uma confirma�
 | `GET` | `…/contents/awaiting-approval` | o que espera aprovação |
 | `GET` | `…/contents/:contentId` | um post |
 | `GET` | `…/contents/:contentId/media/:assetId/url` | URL assinada de uma mídia do post |
-| `POST` | `…/contents/:contentId/approve` | aprova |
+| `POST` | `…/contents/:contentId/approve` | aprova; o corpo aceita o `note` opcional (recado à agência, até 500 caracteres) |
+| `GET` | `…/home-progress` | o progresso do mês para a "Boa notícia" do Início: aprovados, total e o próximo post a ir ao ar (*proposta*) |
 | `POST` | `…/contents/:contentId/request-changes` | pede ajuste (comentário obrigatório) |
 | `GET` | `…/threads` | conversas de um assunto |
 | `POST` | `…/threads` | abre uma conversa com o primeiro comentário |
 | `GET` | `…/threads/:threadId/comments` | comentários |
 | `POST` | `…/threads/:threadId/comments` | comenta |
-| `GET` | `…/material-requests` | pedidos de material abertos deste cliente |
+| `GET` | `…/material-requests` | pedidos de material abertos deste cliente (e a página "Pedidos da agência") |
+| `POST` | `…/material-requests/:threadId/uploads` | inicia o envio de uma foto ou áudio a um pedido aberto, pelo mesmo fluxo de upload direto (iniciar, confirmar) (*proposta*) |
 | `GET` | `…/story-scripts` | roteiros enviados de um período |
 | `POST` | `…/story-scripts/:scriptId/recorded` | marca o roteiro como gravado |
 
 ## Início
 
-1. `GET …` traz o cadastro do cliente e o resumo do Início.
+1. `GET …` traz o cadastro do cliente (inclusive a cidade) e o resumo do Início.
 2. No primeiro acesso, mostre as boas-vindas e chame `POST …/onboarding/seen`.
+
+**O Início (2026-11-11, [decisão](../../business/decisions/2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post.md))**
+
+- A pessoa vê a data, "Olá, <nome>" e um subtítulo ("A <agência> espera N respostas suas"). O rótulo de contexto é "Com a <agência>", **acima** do nome do cliente, e o papel "Aprova os posts" fica no rodapé da navegação.
+- **Com posts esperando a aprovação:** até **três capas** com "Aguardando você" ou "Atrasado" (a data de publicação já passou) e "Responda até <dia>, <hora>" (o prazo de aprovação, com hora); "Revisar os N posts" ("Começamos pelo que vence primeiro"), que abre o que vence primeiro e encadeia o próximo; e "A agência pediu" (os pedidos de material abertos).
+- **Sem nada esperando:** o bloco **"Boa notícia"**: "Seu feed de <mês> já está N% aprovado", "N de M" (M são os conteúdos do mês que não foram cancelados; N, os aprovados e publicados) e o próximo post a ir ao ar ("hoje às 18h: <título>"), com "Ver o que vai ao ar esta semana".
+- **Sai "Nesta semana".** A semana do portal começa no domingo.
+- **O "Roteiro de hoje" fica**, como um bloco compacto **abaixo do quadro**, só quando há roteiro enviado ou gravado do dia de São Paulo (ver "Roteiros de stories"): "Já gravei" nos enviados e "Gravado por {nome} em dd/mm" nos gravados. Tirar o "Já gravei" seria perda de função (decisão de 2026-11-11).
+- **Navegação:** Início, Conteúdos, Marca e **Pedidos da agência** (com o selo dos pedidos abertos). **Relatórios não existe mais.** Abaixo do contexto há o campo "Buscar um post", que filtra no aparelho, pelo título, os posts do mês que a tela de Conteúdos já carregou (de outra tela, leva a Conteúdos com `?busca=`); sem resultado diz "Nenhum post encontrado para «…»". "Rever o tour" fica no menu **Ajuda**, e o menu de conta tem "Conta" (nome, e-mail e sessões, ver [Entrada](entrada.md#sessões-ativas)), trocar de cliente e "Sair".
 
 ## Aprovar conteúdos
 
 1. O que espera a pessoa: `GET …/contents/awaiting-approval`.
 2. O calendário de um período: `GET …/contents`.
 3. Para abrir um post, use `GET …/contents/:contentId`. As mídias vêm por URL assinada de curta duração; se expirar, peça outra.
-4. Para decidir, chame `approve`, ou `request-changes` com comentário.
+4. Para decidir, chame `approve` (com o `note` opcional: o **recado do cliente à agência**, que vira comentário do cliente na conversa do conteúdo, na mesma transação), ou `request-changes` com comentário.
+
+**O post (2026-11-11).** O post tem a trilha "Início > título", a etiqueta grande "Aguardando sua aprovação", a linha "Carrossel · 5 imagens · publica na sexta, 13 nov, às 12h" (o estado agendado não existe no portal: ele mostra "Aprovado" com a data e a hora), o painel **"Sua resposta"** (com "Responda até <dia>, <hora> · Falta 1 dia"), o recado da agência **com o remetente** e o campo **"Seu recado para a agência"** (opcional). "Aprovar o post" é a ação principal do painel e "Pedir ajuste" a secundária; no celular a barra de decisão fica fixa. O texto diz "Ao aprovar, a agência é avisada e cuida da publicação": o produto **não** agenda nem publica sozinho. **A conversa continua no post**, recolhida abaixo dele: ali o cliente lê as respostas da agência e o recado que deu ao aprovar. Aprovar gera a notificação "o cliente aprovou" para a agência, e pedir ajuste, a de "pediu ajuste".
 
 **Regras**
 - Uma pessoa basta para aprovar, e fica registrado quem aprovou.
@@ -59,14 +72,14 @@ No detalhe de um conteúdo aprovado, **Desfazer aprovação** abre uma confirma�
 
 **Prazo e recado da agência** (decisão de 2026-11-10)
 
-- Quando a agência envia o conteúdo para aprovação, pode dar um prazo e um recado. O portal lê os dois em `approval`: `{ dueOn, note }`, na lista de um período, na lista do que espera aprovação, no post e na resposta de aprovar, pedir ajuste e desfazer aprovação.
-- `dueOn` é o dia limite da decisão (`AAAA-MM-DD`, dia de São Paulo) e `note` é o texto da agência, ambos `null` quando a agência não deu. `approval` é `null` quando o conteúdo ainda está em produção e quando ele já aguardava antes das rodadas (nesse caso, não mostre prazo nem recado).
-- Mostre o prazo como o limite da **aprovação** ("responder até"), diferente da data de publicação do post. O recado vem assinado pela agência: mostre o texto como veio, sem interpretá-lo.
-- A data em que foi enviado, quem enviou e o lote ficam com a agência e nunca chegam ao portal.
+- Quando a agência envia o conteúdo para aprovação, pode dar um prazo e um recado. O portal lê os dois em `approval`: `{ dueAt, note, sentAt, sentBy }`, na lista de um período, na lista do que espera aprovação, no post e na resposta de aprovar, pedir ajuste e desfazer aprovação (*proposta de nomes; ver a decisão de 2026-11-11*).
+- `dueAt` é o **instante** limite da decisão (data e hora, no fuso de São Paulo; antes era só o dia, `dueOn`) e `note` é o texto da agência, ambos `null` quando a agência não deu. `approval` é `null` quando o conteúdo ainda está em produção e quando ele já aguardava antes das rodadas (nesse caso, não mostre prazo nem recado). O prazo que estava gravado como dia vale até 23h59 daquele dia.
+- Mostre o prazo como o limite da **aprovação** ("Responda até quinta, 12 nov, 18h"; "Falta 1 dia"), diferente da data de publicação do post. O recado vem da agência: mostre o texto como veio, sem interpretá-lo.
+- **Quem enviou (2026-11-11, [decisão](../../business/decisions/2026-11-11-estrutural-a-rodada-de-aprovacao-mostra-ao-cliente-quem-enviou-e-aceita-recado-ao-aprovar.md)):** o portal vê o **nome**, a **foto** e a **data de envio** de quem da agência enviou, ao lado do recado ("Recado de João Pereira, da Agência Horizonte"); o e-mail, o cargo, o papel e o identificador do colaborador **nunca chegam**, e o lote também não. Sem recado, mostre só o prazo.
 - Se o cliente desfaz a aprovação, o conteúdo volta à mesma rodada e o portal lê o mesmo prazo e o mesmo recado. Se a agência reenvia depois de um pedido de ajuste, vale o prazo e o recado do novo envio.
 - O cliente recebe o e-mail do envio com o prazo e o recado, e dois lembretes por rodada: "vence amanhã" (na véspera do prazo) e "venceu" (no dia seguinte), às 9h de São Paulo, só para as pessoas ativas do portal e só enquanto o conteúdo aguarda decisão. Não sai nada com o cliente arquivado nem com a agência suspensa ou em modo leitura, e não sai "vence amanhã" se o envio foi feito na véspera do prazo.
 
-O portal **nunca** vê subtarefa, responsável, prazo interno nem roteiro em rascunho. A API não devolve esses dados. O prazo da aprovação (`approval.dueOn`) não é prazo interno: é o que a agência pediu ao cliente.
+O portal **nunca** vê subtarefa, responsável, prazo interno nem roteiro em rascunho. A API não devolve esses dados. O prazo da aprovação (`approval.dueAt`) não é prazo interno: é o que a agência pediu ao cliente.
 
 ## Estados vazios
 
@@ -74,7 +87,7 @@ Uma lista do portal sem nada tem três formas (decisão de 2026-11-10, [três ti
 
 - **Primeiro uso:** a agência ainda não compartilhou nada ("Nenhum post planejado para esta semana", "Sua agência ainda está preparando o estudo da sua marca").
 - **Boa notícia:** "Nada para aprovar", só quando a consulta respondeu e nada espera a decisão da pessoa. Ela fala só de aprovação: um pedido de material tem o seu bloco.
-- **Falha:** a consulta não respondeu. A tela diz isso e oferece "Tentar de novo", nunca "nada para aprovar" nem "nenhum post".
+- **Falha:** a consulta não respondeu. A tela mostra o **mascote sério** (desde 2026-11-11, também no portal), diz isso e oferece "Tentar de novo" e, quando a agência tem contato de suporte, "Avisar o suporte" com o código do erro; nunca "nada para aprovar" nem "nenhum post".
 
 ## Conversas
 
@@ -87,9 +100,16 @@ Uma lista do portal sem nada tem três formas (decisão de 2026-11-10, [três ti
 
 A agência pode pedir material ao cliente, com prazo opcional (decisão: [pedido de material](../../business/decisions/2026-11-10-estrutural-pedido-de-material-e-assunto-proprio-da-conversa-do-cliente.md)). No Início, o portal mostra o que a agência pediu.
 
-1. `GET …/material-requests` lista os pedidos **abertos deste cliente**, o prazo mais próximo primeiro e os sem prazo por último, vinte por página. Cada item traz `threadId`, `body` (o texto que a agência escreveu, para mostrar como "A agência pediu"), `dueOn` (`AAAA-MM-DD` ou `null`), `createdAt` e `state` (sempre `open`).
+1. `GET …/material-requests` lista os pedidos **abertos deste cliente**, o prazo mais próximo primeiro e os sem prazo por último, vinte por página. Cada item traz `threadId`, `title` (desde 2026-11-11, obrigatório nos pedidos novos; o pedido anterior vem sem título, e a tela usa o começo do texto), `body` (o texto que a agência escreveu, para mostrar como "A agência pediu"), `dueOn` (`AAAA-MM-DD` ou `null`; a tela diz "até <data>" e "atrasado" quando o dia passou), `createdAt` e `state` (sempre `open`). O portal **não** diz quem da agência abriu o pedido ([título](../../business/decisions/2026-11-11-estrutural-o-pedido-de-material-ganha-titulo.md)).
 2. Quem tem acesso a mais de um cliente vê, em cada Início, só os pedidos daquele cliente.
-3. Para responder, comente com `POST …/threads/:threadId/comments`, usando o `threadId` do item. O histórico da conversa vem de `GET …/threads/:threadId/comments`, que também serve para um pedido já resolvido.
+3. Para responder, comente com `POST …/threads/:threadId/comments`, usando o `threadId` do item. O histórico da conversa vem de `GET …/threads/:threadId/comments`, que também serve para um pedido já resolvido. As ações do pedido são **"Responder"** (comentário), **"Enviar fotos"**, **"Gravar depoimento"** e "Ver o pedido" (a página "Pedidos da agência", `/portal/:clienteId/pedidos`, que lista os pedidos abertos e o selo da navegação conta).
+
+**Enviar material pelo portal (2026-11-11, [decisão](../../business/decisions/2026-11-11-estrutural-o-cliente-envia-material-pelo-portal.md))**
+
+- O cliente envia **fotos** (imagem) e **áudio** (um depoimento gravado no próprio navegador ou um arquivo de áudio) **só em resposta a um pedido de material aberto** do cliente dele. Não há biblioteca de mídia no portal, nem envio sem pedido, nem vídeo, PDF ou SVG.
+- O envio usa o mesmo fluxo de upload direto da agência (iniciar, enviar ao armazenamento, confirmar) por `POST …/material-requests/:threadId/uploads` (*proposta*). Limites propostos: 25 MB por arquivo e 20 arquivos por pedido, a confirmar na implementação; os arquivos contam na cota de armazenamento da agência.
+- O arquivo cai na pasta de sistema **"Enviados pelo cliente"** do cliente, ligado ao pedido, e a agência o vê no pedido e na aba Mídias. O envio **comenta o pedido** ("enviou 3 fotos"), e isso gera a notificação para a agência. O cliente **não apaga nem edita** depois de enviado e só lê o que ele mesmo enviou no pedido.
+- Com a cota estourada ou a agência em somente leitura, o portal mostra a mensagem neutra de sempre ("A aprovação está pausada no momento…"), nunca plano, cota nem cobrança. Pedido resolvido ou cliente arquivado não recebem envio.
 4. Só a agência resolve. Quando ela resolve, o pedido **sai da lista**. Se o cliente comentar de novo num pedido resolvido, ele volta, como em toda conversa.
 5. Sem pedido aberto, o bloco "A agência pediu" **não aparece**: ele é opcional e não diz que não há nada pendente. Se a consulta falhar, o bloco mostra a falha com "Tentar de novo", e só ele.
 
@@ -99,12 +119,13 @@ A agência pode pedir material ao cliente, com prazo opcional (decisão: [pedido
 
 ## Estudo de marca
 
-É só leitura. Personas arquivadas não aparecem.
+É só leitura. Personas arquivadas não aparecem. Desde 2026-11-11 a persona traz também idade, ocupação, local, traços, "onde está" e "tom que funciona" (todos opcionais), lidos como o resto da persona ativa.
 
 ## Roteiros de stories
 
 1. `GET …/story-scripts` lista os roteiros que a agência **enviou**; rascunhos não aparecem.
 2. Depois de gravar, a pessoa marca o roteiro com `POST …/story-scripts/:scriptId/recorded`.
+3. Na web, o roteiro aparece no bloco compacto **"Roteiro de hoje"**, abaixo do quadro do Início (2026-11-11): as cenas em ordem (texto e "Orientação: …") dos roteiros enviados ou gravados do dia; com mais de um no dia, cada um tem o seu título. Sem roteiro hoje, o bloco não existe. Erro ao carregar mostra "Não foi possível carregar o roteiro de hoje." com "Tentar de novo", e o resto do Início continua.
 
 ## Agência em modo leitura
 
