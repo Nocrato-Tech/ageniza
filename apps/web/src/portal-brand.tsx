@@ -7,7 +7,7 @@ import {
   type PortalBrandStudyResponse,
   type PortalPersona
 } from '@ageniza/contracts';
-import { Button, Skeleton } from '@ageniza/ui';
+import { EmptyState, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { Conversation } from './conversation.js';
@@ -101,7 +101,7 @@ function PersonaCard({ persona, onWritten, onStale }: { persona: PortalPersona; 
   </li>;
 }
 
-const isClientRosterKey = (query: { readonly queryKey: readonly unknown[] }): boolean => {
+export const isClientRosterKey = (query: { readonly queryKey: readonly unknown[] }): boolean => {
   const key = query.queryKey;
   return key[2] === 'clients' && typeof key[3] === 'object' && key[3] !== null;
 };
@@ -143,14 +143,23 @@ export function PortalBrandPage() {
   if (study.data === undefined) {
     return <section className="portal-brand">
       <h1 className="portal-headline">Sua marca</h1>
-      <div className="portal-error" role="alert">
-        <p>{LOAD_FAILED}</p>
-        <Button variant="secondary" onClick={() => { void study.refetch(); }} loading={study.isFetching}>Tentar de novo</Button>
-      </div>
+      <EmptyState kind="failure" className="portal-empty" headingLevel={2} title={LOAD_FAILED} retrying={study.isFetching} onRetry={() => { void study.refetch(); }} />
     </section>;
   }
 
   const data = study.data;
+  // Nothing shared yet: one line for the whole study, instead of the same "preparing" line seven times.
+  if (SECTIONS.every((section) => !isFilled(section.key, data))) {
+    return <section className="portal-brand" aria-labelledby="portal-brand-title">
+      <h1 id="portal-brand-title" className="portal-headline">Sua marca</h1>
+      <EmptyState
+        className="portal-empty"
+        headingLevel={2}
+        title="Sua agência ainda está preparando o estudo da sua marca"
+        description="Quando ela compartilhar, você vê aqui e pode sugerir mudanças."
+      />
+    </section>;
+  }
   return <section className="portal-brand brand-study" aria-labelledby="portal-brand-title">
     <h1 id="portal-brand-title" className="portal-headline">Sua marca</h1>
     {SECTIONS.map((section) => {

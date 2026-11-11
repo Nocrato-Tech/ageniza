@@ -8,7 +8,7 @@ import {
   type PortalContentListItem,
   type PortalContentOpenListItem
 } from '@ageniza/contracts';
-import { Button, ButtonLink, EmptyState, FormatTag, Realce, Skeleton, StatusTag } from '@ageniza/ui';
+import { ButtonLink, EmptyState, FormatTag, Realce, Skeleton, StatusTag } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { ApprovalRound } from './approval-deadline.js';
@@ -19,6 +19,7 @@ import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
 import { usePortalClient } from './portal.js';
 import { PortalContentCover } from './portal-content-cover.js';
+import { PortalMaterialRequests } from './portal-material-requests.js';
 import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS, portalPostAddress } from './portal-status.js';
 import { PortalTodayScripts } from './portal-story-scripts.js';
 
@@ -47,13 +48,10 @@ function PortalAwaiting({ clientId, count }: { clientId: string; count: number }
 
   return <section className="portal-section portal-home__awaiting" aria-labelledby="portal-home-awaiting-title">
     <h2 id="portal-home-awaiting-title" className="portal-headline"><Realce>{count} {count === 1 ? 'post' : 'posts'}</Realce> esperando sua aprovação</h2>
-    {covers.isPending
+    {covers.isPending && covers.errorUpdateCount === 0
       ? <div className="portal-covers" aria-hidden="true"><Skeleton className="portal-covers__skeleton" /><Skeleton className="portal-covers__skeleton" /></div>
-      : covers.isError && covers.data === undefined
-        ? <div className="portal-error" role="alert">
-          <p>Não foi possível carregar os posts.</p>
-          <Button variant="secondary" loading={covers.isFetching} onClick={() => { void covers.refetch(); }}>Tentar de novo</Button>
-        </div>
+      : covers.data === undefined
+        ? <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar os posts." retrying={covers.isFetching} onRetry={() => { void covers.refetch(); }} />
         : <ul className="portal-covers">
           {covers.data!.data.map((content: PortalContentOpenListItem) => <li key={content.id}>
             <Link className="portal-cover-link" to={portalPostAddress(clientId, content.id)}>
@@ -71,6 +69,17 @@ function PortalAwaiting({ clientId, count }: { clientId: string; count: number }
       {count === 1 ? 'Revisar o post' : `Revisar os ${count} posts`}
     </ButtonLink>
   </section>;
+}
+
+/** The count of the Início answered and is zero: nothing is waiting for the person's decision. It says nothing about a request for material, which has its own block. */
+function PortalNothingToApprove() {
+  return <EmptyState
+    kind="good-news"
+    className="portal-empty"
+    headingLevel={2}
+    title="Nada para aprovar"
+    description="Quando a agência enviar um post para aprovação, ele aparece aqui."
+  />;
 }
 
 /** Nothing waits for the person: the next thing is the answer of the agency, or the study of the brand. */
@@ -104,22 +113,26 @@ function PortalWeek({ clientId }: { clientId: string }) {
 
   return <section className="portal-section portal-home__week" aria-labelledby="portal-home-week-title">
     <h2 id="portal-home-week-title" className="portal-section__title">Nesta semana</h2>
-    {week.isPending
+    {week.isPending && week.errorUpdateCount === 0
       ? <div className="portal-rows__skeleton" aria-hidden="true"><Skeleton /><Skeleton /></div>
-      : week.isError && week.data === undefined
-        ? <div className="portal-error" role="alert">
-          <p>Não foi possível carregar a semana.</p>
-          <Button variant="secondary" loading={week.isFetching} onClick={() => { void week.refetch(); }}>Tentar de novo</Button>
-        </div>
+      : week.data === undefined
+        ? <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar a semana." retrying={week.isFetching} onRetry={() => { void week.refetch(); }} />
         : shown.length === 0
-          ? <EmptyState
-            mascot
-            className="portal-empty"
-            headingLevel={3}
-            title="Nenhum post planejado para esta semana"
-            description="Quando a agência planejar, os posts aparecem aqui."
-            action={<ButtonLink as={Link} to={`/portal/${clientId}/conteudos`} variant="secondary">Ver o mês</ButtonLink>}
-          />
+          ? week.data!.data.length > 0
+            ? <EmptyState
+              className="portal-empty"
+              headingLevel={3}
+              title="Os posts desta semana esperam sua aprovação"
+              description="Eles estão no alto desta tela."
+            />
+            : <EmptyState
+              mascot
+              className="portal-empty"
+              headingLevel={3}
+              title="Nenhum post planejado para esta semana"
+              description="Quando a agência planejar, os posts aparecem aqui."
+              action={<ButtonLink as={Link} to={`/portal/${clientId}/conteudos`} variant="secondary">Ver o mês</ButtonLink>}
+            />
           : <>
             <ul className="portal-rows">
               {shown.map((content) => <li key={content.id}>
@@ -142,9 +155,10 @@ function PortalWeek({ clientId }: { clientId: string }) {
 }
 
 /**
- * The Início (specs/clientes.md §7, issues #141 and #271): greeting by the person's name, and one next action — the contents
- * waiting for the client's approval when there are any, otherwise the agency's answer, otherwise the brand study — then the
- * story script of today, which is not there when the agency sent none, and the week.
+ * The Início (specs/clientes.md §7, issues #141 and #271): greeting by the person's name, what the agency asked for (not there
+ * when nothing is open), and one next action — the contents waiting for the client's approval when there are any, otherwise
+ * "Nada para aprovar" and the agency's answer or the brand study — then the story script of today, which is not there when the
+ * agency sent none, and the week.
  */
 export function PortalHomePage() {
   const client = usePortalClient();
@@ -157,9 +171,13 @@ export function PortalHomePage() {
   return <section className="portal-home" aria-labelledby="portal-home-title">
     <h1 id="portal-home-title" className="portal-home__greeting">Olá, {session.user?.name ?? ''}</h1>
     <div className="portal-home__main">
+      <PortalMaterialRequests clientId={clienteId} />
       {awaiting > 0
         ? <PortalAwaiting clientId={clienteId} count={awaiting} />
-        : <PortalNextAction clientId={clienteId} answered={client.home.threadsAnsweredByAgency} />}
+        : <>
+          <PortalNothingToApprove />
+          <PortalNextAction clientId={clienteId} answered={client.home.threadsAnsweredByAgency} />
+        </>}
       <PortalTodayScripts clientId={clienteId} />
     </div>
     <PortalWeek clientId={clienteId} />

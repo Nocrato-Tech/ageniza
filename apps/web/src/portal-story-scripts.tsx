@@ -3,7 +3,7 @@ import { Check } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { PortalStoryScriptPeriodResponseSchema, PortalStoryScriptSchema, type PortalStoryScript } from '@ageniza/contracts';
-import { Button, FieldMessage, Skeleton } from '@ageniza/ui';
+import { Button, EmptyState, FieldMessage, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth } from './client-detail.js';
@@ -101,16 +101,13 @@ export function PortalTodayScripts({ clientId }: { clientId: string }) {
     }
   };
 
-  if (scripts.isPending) {
+  if (scripts.isPending && scripts.errorUpdateCount === 0) {
     return <div className="portal-today" aria-hidden="true"><Skeleton className="portal-today__skeleton" /></div>;
   }
-  if (scripts.isError && scripts.data === undefined) {
+  if (scripts.data === undefined) {
     return <section className="portal-section portal-today" aria-labelledby="portal-today-title">
       <h2 id="portal-today-title" className="portal-section__title">Roteiro de hoje</h2>
-      <div className="portal-error" role="alert">
-        <p>Não foi possível carregar o roteiro de hoje.</p>
-        <Button variant="secondary" loading={scripts.isFetching} onClick={() => { void scripts.refetch(); }}>Tentar de novo</Button>
-      </div>
+      <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar o roteiro de hoje." retrying={scripts.isFetching} onRetry={() => { void scripts.refetch(); }} />
     </section>;
   }
   const list = scripts.data?.data ?? [];

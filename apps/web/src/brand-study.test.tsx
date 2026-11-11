@@ -878,7 +878,43 @@ describe('brand study tab (#138)', () => {
     const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
     expect(alert.textContent).toContain('Não foi possível carregar o estudo de marca. Tente de novo.');
     expect(alert.textContent).not.toContain('private diagnostic');
-    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    // The failure kind: the empty sections and personas are never drawn for a study that did not answer.
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(screen.queryByText('Nenhuma persona ainda')).toBeNull();
+    const attemptsBeforeRetry = attempts;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
+    expect(await screen.findByText('Marca acolhedora do bairro')).toBeTruthy();
+    expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
+  });
+
+  it('keeps the retry busy and in place while it repeats, and a second click sends no second read', async () => {
+    let reads = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { impl } = makeFetch({
+      study: async () => {
+        reads += 1;
+        if (reads <= 2) return json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500);
+        await held;
+        return json(studyOf());
+      }
+    });
+    renderStudy(impl);
+
+    const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
+    const retry = within(alert).getByRole('button', { name: 'Tentar de novo' });
+    retry.focus();
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(retry.getAttribute('aria-busy')).toBe('true'));
+    expect(screen.getByRole('alert')).toBe(alert);
+    expect(document.activeElement).toBe(retry);
+    const readsInFlight = reads;
+    fireEvent.click(retry);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(reads).toBe(readsInFlight);
+
+    release();
     expect(await screen.findByText('Marca acolhedora do bairro')).toBeTruthy();
   });
 });

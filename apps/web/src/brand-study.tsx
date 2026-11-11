@@ -732,17 +732,16 @@ export function ClientBrandStudyTab() {
     })
   });
 
-  if (study.isPending) {
+  // A retry keeps the failure and its busy button (and the focus) in place: only the first read is a skeleton.
+  const failed = study.isError || (study.isPending && study.errorUpdateCount > 0);
+  if (study.isPending && !failed) {
     return <div className="brand-study" aria-busy="true">
       {SECTION_ORDER.map((key) => <Skeleton key={key} className="brand-section-skeleton" />)}
     </div>;
   }
 
-  if (study.isError && study.data === undefined) {
-    return <div className="brand-study__error" role="alert">
-      <p>{LOAD_FAILED}</p>
-      <Button onClick={() => { void study.refetch(); }} loading={study.isFetching}>Tentar de novo</Button>
-    </div>;
+  if (failed && study.data === undefined) {
+    return <EmptyState kind="failure" headingLevel={3} title={LOAD_FAILED} retrying={study.isFetching} onRetry={() => { void study.refetch(); }} />;
   }
 
   const data = study.data;

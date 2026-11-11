@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
@@ -307,16 +307,31 @@ describe('portal Marca (#143)', () => {
     ]);
   });
 
-  it('draws a study with nothing filled as seven preparing parts, without an error screen or a field', async () => {
+  it('says once, as a first use, that the agency has not shared the study when nothing is filled: no error, no field, no good news', async () => {
     const { impl } = makeWorld({ studies: { [CLIENT_ID]: portalStudyBody(), [SECOND_ID]: SECOND_STUDY } });
     renderPortal(impl);
     const main = await page();
 
-    expect(within(main).getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(SECTION_LABELS);
-    expect(within(main).getAllByText(NOT_PREPARED)).toHaveLength(7);
+    const empty = main.querySelector('.ui-empty-state') as HTMLElement;
+    expect(empty.classList.contains('ui-empty-state--failure')).toBe(false);
+    expect(empty.classList.contains('ui-empty-state--good-news')).toBe(false);
+    expect(within(empty).getByRole('heading', { level: 2, name: 'Sua agência ainda está preparando o estudo da sua marca' })).toBeTruthy();
+    expect(within(empty).getByText('Quando ela compartilhar, você vê aqui e pode sugerir mudanças.')).toBeTruthy();
+    expect(within(main).getAllByRole('heading', { level: 2 })).toHaveLength(1);
+    expect(within(main).queryByText(NOT_PREPARED)).toBeNull();
     expect(within(main).queryAllByRole('button')).toEqual([]);
     expect(within(main).queryAllByRole('textbox')).toEqual([]);
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('keeps the line of each part that is not ready, and no first use, as soon as one part is filled', async () => {
+    const { impl } = makeWorld({ studies: { [CLIENT_ID]: portalStudyBody({ branding: { body: 'Padaria de bairro desde 1990' } }), [SECOND_ID]: SECOND_STUDY } });
+    renderPortal(impl);
+    const main = await page();
+
+    expect(within(main).getAllByText(NOT_PREPARED)).toHaveLength(6);
+    expect(within(main).queryByText('Sua agência ainda está preparando o estudo da sua marca')).toBeNull();
+    expect(main.querySelector('.ui-empty-state')).toBeNull();
   });
 
   it('suggests on the part it was asked on: dialog, note, send, close on success, the suggestion in the list and the Início told', async () => {
@@ -681,9 +696,14 @@ describe('portal Marca na Pauta (#689)', () => {
     renderPortal(impl);
 
     const alert = await screen.findByRole('alert');
-    expect(alert.className).toBe('portal-error');
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(within(alert).getByRole('heading', { level: 2, name: 'Não foi possível carregar a sua marca. Tente de novo.' })).toBeTruthy();
     expect(screen.getByRole('heading', { level: 1, name: 'Sua marca' }).className).toBe('portal-headline');
     expect(within(alert).getByRole('button', { name: 'Tentar de novo' }).className).toContain('ui-button--secondary');
+    // A read that did not answer never says the study is empty, nor that anything is fine.
+    expect(screen.queryByText('Sua agência ainda está preparando o estudo da sua marca')).toBeNull();
+    expect(screen.queryByText(NOT_PREPARED)).toBeNull();
+    expect(document.querySelector('.ui-empty-state--good-news')).toBeNull();
   });
 
   it('breaks a long colour name inside its swatch column instead of widening the page', async () => {
@@ -700,7 +720,7 @@ describe('portal Marca na Pauta (#689)', () => {
   it('keeps the error, its button and the focus in place while a retry is in flight, and only the first read is a skeleton', async () => {
     let release: () => void = () => undefined;
     const holdRetry = new Promise<void>((resolve) => { release = resolve; });
-    const { impl } = makeWorld({ failStudy: () => apiError(404, 'NOT_FOUND'), holdRetry });
+    const { impl, calls } = makeWorld({ failStudy: () => apiError(404, 'NOT_FOUND'), holdRetry });
     renderPortal(impl);
 
     const alert = await screen.findByRole('alert');
@@ -709,6 +729,11 @@ describe('portal Marca na Pauta (#689)', () => {
     fireEvent.click(retry);
 
     await waitFor(() => expect(retry.getAttribute('aria-busy')).toBe('true'));
+    // A second click while the repeat is in flight sends no second read.
+    const readsInFlight = calls.filter((call) => call === `GET /clients/${CLIENT_ID}/brand-study`).length;
+    fireEvent.click(retry);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+    expect(calls.filter((call) => call === `GET /clients/${CLIENT_ID}/brand-study`)).toHaveLength(readsInFlight);
     expect(screen.getByRole('alert')).toBe(alert);
     expect(within(alert).getByRole('button', { name: 'Tentar de novo' })).toBe(retry);
     expect(document.activeElement).toBe(retry);

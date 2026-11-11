@@ -154,14 +154,18 @@ export function ClientDetailPage() {
 
   // A background refetch that fails (e.g. after the save invalidation) must not replace the page
   // nor unmount an open modal: the error screen is only for when there is nothing to show.
-  const failedWithoutData = detail.isError && detail.data === undefined;
+  // A retry keeps the failure and its busy button (and the focus) in place: only the first read is a skeleton.
+  const failedWithoutData = (detail.isError || (detail.isPending && detail.errorUpdateCount > 0)) && detail.data === undefined;
   if (failedWithoutData || (detail.data !== undefined && client === undefined)) {
     return <section className="client-detail">
       {back}
-      <div className="client-detail__error" role="alert">
-        <p>Não foi possível carregar o cliente. Tente de novo.</p>
-        <Button onClick={() => { void detail.refetch(); }} loading={detail.isFetching}>Tentar de novo</Button>
-      </div>
+      <EmptyState
+        kind="failure"
+        headingLevel={2}
+        title="Não foi possível carregar o cliente. Tente de novo."
+        retrying={detail.isFetching}
+        onRetry={() => { void detail.refetch(); }}
+      />
     </section>;
   }
 

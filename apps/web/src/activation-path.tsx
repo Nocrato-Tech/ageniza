@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, Circle } from 'lucide-react';
+import { Check, UserCheck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
 import { ClientListResponseSchema, ContentActivationResponseSchema } from '@ageniza/contracts';
@@ -16,6 +16,8 @@ interface Step {
   readonly title: string;
   readonly description: string;
   readonly done: boolean;
+  /** Who does the step: the last one is the client's, not the agency's (decision 2026-11-10). */
+  readonly owner: 'agency' | 'client';
   readonly action: { readonly to: string; readonly label: string } | null;
 }
 
@@ -55,7 +57,7 @@ export function useActivationFacts(agencyId: string, enabled: boolean) {
   return { facts, pathFacts, firstClientId };
 }
 
-/** Four steps from the first client to the first approval; each one leads to the screen that resolves it, when the role can do it. */
+/** The journey "Até a primeira aprovação": four steps from the first client to the client's approval; each one leads to the screen that resolves it, when the role can do it. */
 export function ActivationPath({ facts, firstClientId }: { facts: MilestoneFacts | undefined; firstClientId: string | undefined }) {
   const canRegister = useCan('cliente.cadastrar');
   const canInvite = useCan('cliente.convidar_usuario');
@@ -67,32 +69,37 @@ export function ActivationPath({ facts, firstClientId }: { facts: MilestoneFacts
   const steps: Step[] = [
     {
       key: 'client', title: 'Cadastre o primeiro cliente', description: 'Só o nome é obrigatório. O resto você completa depois.',
-      done: facts.client, action: canRegister && !blocked ? { to: 'clientes', label: 'Cadastrar cliente' } : null
+      done: facts.client, owner: 'agency', action: canRegister && !blocked ? { to: 'clientes', label: 'Cadastrar cliente' } : null
     },
     {
       key: 'content', title: 'Crie o primeiro conteúdo no calendário', description: 'Escolha o dia e o formato do post.',
-      done: facts.content, action: canOperate && !blocked && firstClientId !== undefined ? { to: calendar, label: 'Criar conteúdo' } : null
+      done: facts.content, owner: 'agency', action: canOperate && !blocked && firstClientId !== undefined ? { to: calendar, label: 'Criar conteúdo' } : null
     },
     {
       key: 'sent', title: 'Envie o conteúdo para aprovação', description: 'O cliente vê o post no portal e aprova ou pede ajuste.',
-      done: facts.sent, action: canOperate && !blocked && firstClientId !== undefined ? { to: calendar, label: 'Enviar para aprovação' } : null
+      done: facts.sent, owner: 'agency', action: canOperate && !blocked && firstClientId !== undefined ? { to: calendar, label: 'Enviar para aprovação' } : null
     },
     {
-      key: 'approved', title: 'Receba a primeira aprovação do cliente', description: 'Convide quem aprova os posts para o portal e acompanhe a resposta.',
-      done: facts.approved, action: canInvite && !blocked && firstClientId !== undefined ? { to: `clientes/${firstClientId}/acessos`, label: 'Convidar o cliente' } : null
+      key: 'approved', title: 'Seu cliente aprova pelo link, sem criar conta', description: 'Convide quem aprova os posts para o portal e acompanhe a resposta.',
+      done: facts.approved, owner: 'client', action: canInvite && !blocked && firstClientId !== undefined ? { to: `clientes/${firstClientId}/acessos`, label: 'Convidar o cliente' } : null
     }
   ];
   const doneCount = steps.filter((step) => step.done).length;
+  const current = steps.find((step) => !step.done)?.key;
 
   return <section aria-labelledby="activation-title" className="activation">
     <header className="activation__header">
-      <h2 id="activation-title">Primeiros passos</h2>
+      <h2 id="activation-title">Até a primeira aprovação</h2>
       <p>{doneCount} de {steps.length} concluídos</p>
     </header>
+    <progress className="activation__progress" max={steps.length} value={doneCount} aria-label="Passos concluídos até a primeira aprovação" />
     <ol className="activation__steps">
-      {steps.map((step) => <li key={step.key} className="activation__step" data-done={step.done}>
-        {step.done ? <Check className="activation__mark" aria-hidden="true" /> : <Circle className="activation__mark" aria-hidden="true" />}
+      {steps.map((step, index) => <li key={step.key} className="activation__step" data-done={step.done} data-owner={step.owner} aria-current={step.key === current ? 'step' : undefined}>
+        <span className="activation__mark" aria-hidden="true">
+          {step.done ? <Check /> : step.owner === 'client' ? <UserCheck /> : index + 1}
+        </span>
         <span className="activation__text">
+          <span className="activation__who">{step.owner === 'client' ? 'Seu cliente' : 'Você'}</span>
           <span className="activation__title">{step.title}<span className="activation__state"> — {step.done ? 'feito' : 'pendente'}</span></span>
           <span className="activation__description">{step.description}</span>
         </span>

@@ -129,6 +129,18 @@ describe('EmptyState', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
+  it('turns the retry busy while it repeats, and a click on it runs nothing', () => {
+    const onRetry = vi.fn();
+    const { rerender } = render(<EmptyState kind="failure" title="Falhou" onRetry={onRetry} />);
+    expect(screen.getByRole('button', { name: 'Tentar de novo' }).getAttribute('aria-busy')).toBeNull();
+
+    rerender(<EmptyState kind="failure" title="Falhou" onRetry={onRetry} retrying />);
+    const retry = screen.getByRole('button', { name: 'Tentar de novo' });
+    expect(retry.getAttribute('aria-busy')).toBe('true');
+    fireEvent.click(retry);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
   it('shows no retry on a failure without onRetry, and keeps the screen action beside it when both come', () => {
     const { rerender } = render(<EmptyState kind="failure" title="Falhou" />);
     expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();

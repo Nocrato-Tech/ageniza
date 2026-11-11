@@ -46,18 +46,32 @@ A equipe da agência, no contexto `agency`. Todas as rotas começam com `/agenci
 
 **Listas.** São paginadas, com `pageSize` de no máximo 100. Itens arquivados só aparecem quando pedidos.
 
-## Início: caminho de ativação e marcos
+## Listas vazias, boas notícias e falhas
 
-Para quem vê clientes e conteúdos, o Início mostra "Primeiros passos" até a agência ter a primeira aprovação de um cliente (decisão de 2026-11-06). Nada é guardado: o progresso vem de duas leituras.
+Uma lista ou painel sem itens diz uma de três coisas diferentes (decisão de 2026-11-10, [três tipos de estado vazio](../../business/decisions/2026-11-10-tres-tipos-de-estado-vazio.md)). O primeiro uso é só texto e ação, sem ícone; a boa notícia e a falha levam ícone e texto, nunca só cor. Enquanto "Tentar de novo" repete a consulta, o botão fica ocupado e não aceita outro clique.
+
+| tipo | quando | o que mostra |
+|---|---|---|
+| **Primeiro uso** | a agência ainda não criou aquilo | convida à ação, com o botão que cria, se a pessoa tem a permissão (por exemplo "Nenhum cliente ativo ainda" com "Cadastrar cliente"); sem a permissão, só o texto |
+| **Boa notícia** | a consulta respondeu e não há nada pendente (por exemplo "Nenhum convite aguardando aceite" numa equipe que já tem gente) | diz que nada está esperando, com o visto |
+| **Falha** | a consulta não respondeu | diz que não foi possível carregar, num aviso, com "Tentar de novo", que repete a consulta |
+
+- **Regra.** A tela só afirma que não há nada pendente quando a consulta **respondeu** e a tela **cobre todos os estados pendentes**. Consulta que falhou é sempre falha: nunca "nenhum", nunca boa notícia.
+- Resultado de busca ou de filtro sem itens ("Nenhum cliente encontrado para …") não é nenhum dos três: é só o texto e "Limpar busca" ou "Limpar filtros".
+
+## Início: a jornada "Até a primeira aprovação" e os marcos
+
+Para quem vê clientes e conteúdos, o Início mostra a jornada "Até a primeira aprovação" até a agência ter a primeira aprovação de um cliente (decisões de 2026-11-06 e de [2026-11-10](../../business/decisions/2026-11-10-jornada-ate-a-primeira-aprovacao.md), que só trocou a apresentação). Nada é guardado: o progresso vem de duas leituras.
 
 | método | rota | permissão | o que faz |
 |---|---|---|---|
 | `GET` | `…/clients?page=1&pageSize=1` | `cliente.visualizar` | `meta.totalItems` diz se há cliente; o primeiro `id` leva aos passos 2 a 4 |
 | `GET` | `…/contents/activation` | `conteudo.visualizar` | `hasContent`, `sentForApproval`, `approvedByClient` e `published` |
 
-1. Passos: cadastrar o primeiro cliente (`cliente.cadastrar`, vai a Clientes); criar o primeiro conteúdo (`conteudo.operar`, vai ao calendário do cliente); enviar para aprovação (`conteudo.operar`, mesmo destino); receber a primeira aprovação (`cliente.convidar_usuario`, vai aos acessos do portal do cliente). Sem a permissão do passo, ele aparece sem botão; com o plano em `readOnly`, nenhum botão de escrita.
-2. Feito = cliente existe (ou há conteúdo); há conteúdo; algum saiu da produção; algum foi aprovado por pessoa do cliente (a aprovação fora da plataforma não conta). Com os quatro feitos, o caminho some.
-3. Marcos celebrados uma vez por agência (cliente, conteúdo, enviado, primeira aprovação, primeiro `published`): mensagem em português, confete que não bloqueia toque e some sozinho, sem confete se o aparelho pede menos movimento. O que já foi celebrado fica só no aparelho (no navegador, `localStorage`); a primeira abertura apenas registra o que já existe, sem celebrar.
+1. **Apresentação.** É uma jornada, não uma lista de tarefas: o título "Até a primeira aprovação", o progresso ("N de 4 concluídos", com a barra), os passos em ordem e o primeiro ainda pendente marcado como o atual. Cada passo diz quem o faz: "Você" nos três primeiros e **"Seu cliente"** no último. Cada passo leva a palavra "feito" ou "pendente", além do ícone. Não há incentivo por concluir a jornada.
+2. Passos: cadastrar o primeiro cliente (`cliente.cadastrar`, vai a Clientes); criar o primeiro conteúdo (`conteudo.operar`, vai ao calendário do cliente); enviar para aprovação (`conteudo.operar`, mesmo destino); e o último, que é do cliente, "Seu cliente aprova pelo link, sem criar conta" (o botão "Convidar o cliente" exige `cliente.convidar_usuario` e vai aos acessos do portal do cliente). Sem a permissão do passo, ele aparece sem botão; com o plano em `readOnly`, nenhum botão de escrita.
+3. Feito = cliente existe (ou há conteúdo); há conteúdo; algum saiu da produção; algum foi aprovado por pessoa do cliente (a aprovação fora da plataforma não conta). O último passo só está feito quando o cliente aprova. Com os quatro feitos, a jornada some. Se uma das duas leituras falha, a jornada não aparece e o Início fica como era.
+4. Marcos celebrados uma vez por agência (cliente, conteúdo, enviado, primeira aprovação, primeiro `published`): mensagem em português, confete que não bloqueia toque e some sozinho, sem confete se o aparelho pede menos movimento. O que já foi celebrado fica só no aparelho (no navegador, `localStorage`); a primeira abertura apenas registra o que já existe, sem celebrar.
 
 ### Parado no cliente
 
@@ -167,10 +181,15 @@ A agência pede material ao cliente (por exemplo, "envie 3 fotos da equipe") e a
 
 - A pessoa do portal não tem papel. Todas as pessoas de um cliente podem as mesmas coisas.
 - **Último acesso.** Cada pessoa da lista traz `lastEnteredAt`, o último acesso àquele cliente (a última entrada no portal com a conta ou a última vez que abriu o link de aprovação do e-mail), ou `null`. Só quem já lê esta lista o recebe. Decisão: [último acesso ao portal](../../business/decisions/2026-11-10-estrutural-ultimo-acesso-ao-portal-por-cliente.md).
-- **Três casos para mostrar na lista.**
-  - `entered: true`: entrou com a conta. Mostre o nome e o último acesso, por exemplo "Último acesso em 8 de nov.".
-  - `entered: false` e `lastEnteredAt` preenchido: só abriu o link de aprovação. Mostre "Ainda não entrou com a conta · abriu o link em <data>".
+- **Quatro casos para mostrar na lista.** A data e a hora são sempre as de São Paulo (um instante às 01:30 UTC ainda é a noite do dia anterior), no formato da web: dia e mês com dois dígitos, ano com quatro e hora de 24 horas.
+  - `entered: true` e `lastEnteredAt` preenchido: entrou com a conta. Mostre o nome e "Último acesso <dd/mm/aaaa> às <hh:mm>", por exemplo "Último acesso 10/10/2026 às 22:30".
+  - `entered: true` e `lastEnteredAt: null`: entrou com a conta, mas não há data gravada. Mostre "Já entrou com a conta".
+  - `entered: false` e `lastEnteredAt` preenchido: só abriu o link de aprovação. Mostre "Ainda não entrou com a conta · abriu o link em <dd/mm/aaaa>", sem hora e sem as palavras "Último acesso".
   - `entered: false` e `lastEnteredAt: null`: "Nunca entrou".
+- **Compartilhar o acesso.** Cada pessoa ativa da lista tem "Copiar link" e "Enviar pelo WhatsApp" (decisão de [2026-11-10](../../business/decisions/2026-11-10-compartilhar-o-acesso-ao-portal-por-link-e-whatsapp.md)). Os dois compartilham o endereço de entrada do portal (`/entrar`), que **não tem token e não dá acesso sozinho**: a pessoa ainda entra pelo próprio e-mail. Nenhum dos dois chama a API.
+  - A mensagem pronta fala em nome da agência e é a mesma para os dois: "Olá, <primeiro nome>! Aqui é <agência>. Este é o seu acesso ao portal de aprovação de <cliente>, onde você aprova os conteúdos. Entre com o seu e-mail: <endereço>". Não há artigo antes dos nomes ("Aqui é Agência Um", "aprovação de Padaria Central"). Quem nunca entrou não tem nome para cumprimentar: a mensagem começa em "Olá!".
+  - "Copiar link" confirma na linha da pessoa com "Link copiado"; se a cópia for recusada, diz "Não foi possível copiar. O endereço de entrada é <endereço>". "Enviar pelo WhatsApp" abre o WhatsApp em outra aba com a mesma mensagem.
+  - Só para quem tem a permissão da aba (`cliente.convidar_usuario`); continuam disponíveis com o plano em somente leitura, porque nada é gravado. Não existem para pessoa removida nem para cliente arquivado.
 - `entered` continua sendo "entrou com a conta" e é ele que libera **Reenviar boas-vindas**: quem só abriu o link ainda pode receber o e-mail de novo. Decisão: [quem só abriu o link ainda não entrou com a conta](../../business/decisions/2026-11-10-quem-so-abriu-o-link-de-aprovacao-ainda-nao-entrou-com-a-conta.md).
 - Um colaborador da agência, mesmo o Owner, **não entra no portal** sem um acesso próprio àquele cliente.
 
@@ -243,6 +262,15 @@ stateDiagram-v2
 - Na agência, "aprovado" aparece como **pronto para publicar**; no portal, como **Aprovado**.
 - **Atrasado** e **prazo em dois dias** são calculados a partir da data; não são estados.
 - Conteúdo nunca é apagado.
+
+### Como o cliente vê
+
+No detalhe do conteúdo, a agência alterna para "Como o cliente vê" (decisão de [2026-11-10](../../business/decisions/2026-11-10-como-o-cliente-ve-previa-no-detalhe-do-conteudo.md)): uma prévia de como o conteúdo aparece no portal **naquele estado**.
+
+- É só uma prévia na tela da agência. Não abre o portal nem muda a regra de acesso: o colaborador continua sem entrar no portal sem acesso próprio àquele cliente. Não há rota nova: a prévia usa o que o detalhe já tem.
+- Só existe depois de o conteúdo ser criado: no formulário de um conteúdo novo, a opção fica desativada.
+- Mostra o título, a linha de apoio com o estado, a mídia e a legenda, com os mesmos textos que o portal diz para aquele estado; em "aguardando aprovação", mostra também a rodada (prazo e recado da agência) e "O cliente pode aprovar ou pedir ajuste". Em produção, mostra o aviso de que o conteúdo ainda está em produção.
+- Fica de fora o que o cliente não vê: subtarefas, responsável, prazo interno e a conversa da agência durante a produção. Conteúdo cancelado diz "Este conteúdo foi cancelado: o cliente não o vê no portal."
 
 ## Subtarefas
 

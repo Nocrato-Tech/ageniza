@@ -136,19 +136,27 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
   const outOfRange = data !== undefined && page > Math.max(1, data.meta.totalPages);
 
   let body: ReactNode;
-  if (invitations.isPending) {
+  // A retry keeps the failure and its busy button (and the focus) in place: only the first read is a skeleton.
+  const failed = invitations.isError || (invitations.isPending && invitations.errorUpdateCount > 0);
+  if (invitations.isPending && !failed) {
     body = <ul className="invites__list" aria-hidden="true">
       {Array.from({ length: 3 }, (_value, index) => <li key={index}><Skeleton /></li>)}
     </ul>;
-  } else if (invitations.isError) {
-    body = <div className="invites__error" role="alert">
-      <p>{LIST_ERROR}</p>
-      <Button variant="secondary" onClick={() => { void invitations.refetch(); }}>Tentar de novo</Button>
-    </div>;
+  } else if (failed) {
+    body = <EmptyState
+      kind="failure"
+      className="invites__empty"
+      headingLevel={3}
+      title={LIST_ERROR}
+      retrying={invitations.isFetching}
+      onRetry={() => { void invitations.refetch(); }}
+    />;
   } else if (data === undefined || outOfRange) {
     body = null;
   } else if (data.data.length === 0) {
+    // Only the team's first visit invites to start; with a full team, no invitation waiting is just good news.
     body = <EmptyState
+      kind={mascot ? 'first-use' : 'good-news'}
       className="invites__empty"
       headingLevel={3}
       mascot={mascot}

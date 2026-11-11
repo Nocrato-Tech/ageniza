@@ -173,7 +173,9 @@ export function CollaboratorsPage() {
 
   const hasFilters = search !== '' || role !== '' || jobTitle !== '';
   // Placeholder rows are the previous filter's: an empty one must not become this filter's empty state or "0 de 0" summary, so it keeps the skeleton.
-  const loading = collaborators.isPending || (collaborators.isPlaceholderData && collaborators.data.data.length === 0);
+  // A retry keeps the failure and its busy button (and the focus) in place: only the first read is a skeleton.
+  const failed = collaborators.isError || (collaborators.isPending && collaborators.errorUpdateCount > 0);
+  const loading = (collaborators.isPending && !failed) || (collaborators.isPlaceholderData && collaborators.data.data.length === 0);
   const outOfRange = collaborators.data !== undefined && !collaborators.isPlaceholderData && page > Math.max(1, collaborators.data.meta.totalPages);
   // A brand new agency has the Owner and nobody else: the only moment the owl may greet the empty invitations (docs/brand.md).
   const aloneInTheTeam = collaborators.data !== undefined && !collaborators.isPlaceholderData && collaborators.data.meta.totalItems === 1 && !hasFilters && status === 'active';
@@ -225,11 +227,15 @@ export function CollaboratorsPage() {
         <ul className="collaborators__grid" aria-hidden="true">
           {Array.from({ length: PAGE_SIZE }, (_value, index) => <li key={index}><Skeleton className="ui-badge-card__skeleton" /></li>)}
         </ul>
-      ) : collaborators.isError ? (
-        <div className="collaborators__error" role="alert">
-          <p>Não foi possível carregar a equipe. Tente de novo.</p>
-          <Button variant="secondary" onClick={() => { void collaborators.refetch(); }}>Tentar de novo</Button>
-        </div>
+      ) : collaborators.isError || collaborators.isPending ? (
+        <EmptyState
+          kind="failure"
+          className="collaborators__empty"
+          headingLevel={3}
+          title="Não foi possível carregar a equipe. Tente de novo."
+          retrying={collaborators.isFetching}
+          onRetry={() => { void collaborators.refetch(); }}
+        />
       ) : outOfRange ? null : <>
         {collaborators.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
         {collaborators.data.data.length === 0 && status === 'removed' && !hasFilters ? (

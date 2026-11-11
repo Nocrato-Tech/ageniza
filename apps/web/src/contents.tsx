@@ -13,7 +13,7 @@ import {
   type ContentListItem,
   type UpdateContentRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, ClientStrip, IconButton, LiveStatus, Segmented, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, ButtonLink, ClientStrip, EmptyState, IconButton, LiveStatus, Segmented, Skeleton } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -105,16 +105,15 @@ function ContentStories({ stories, selectedId }: { stories: StoryClients; select
   const agency = useAgencyContext();
   const location = useLocation();
 
-  if (stories.isPending) {
+  // A retry keeps the failure and its busy button (and the focus) in place: only the first read is a skeleton.
+  const failed = stories.isError || (stories.isPending && stories.errorUpdateCount > 0);
+  if (stories.isPending && !failed) {
     return <ul className="content-stories" aria-hidden="true">
       {Array.from({ length: 6 }, (_value, index) => <li key={index}><Skeleton className="content-stories__skeleton" /></li>)}
     </ul>;
   }
-  if (stories.isError) {
-    return <div className="content-stories__error" role="alert">
-      <p>Não foi possível carregar os clientes. Tente de novo.</p>
-      <Button onClick={() => { void stories.refetch(); }}>Tentar de novo</Button>
-    </div>;
+  if (stories.isError || stories.isPending) {
+    return <EmptyState kind="failure" title="Não foi possível carregar os clientes. Tente de novo." retrying={stories.isFetching} onRetry={() => { void stories.refetch(); }} />;
   }
   if (stories.data.data.length === 0) return <p className="content-stories__empty">Nenhum cliente ativo ainda.</p>;
   const total = stories.data.meta.totalItems;
@@ -150,19 +149,27 @@ const SCREEN_TITLE = 'Calendário Editorial';
 function ClientPicker({ stories }: { stories: StoryClients }) {
   const agency = useAgencyContext();
   const location = useLocation();
+  const canRegister = useCan('cliente.cadastrar');
+  const blocked = useWriteBlocked();
 
-  if (stories.isPending) {
+  const failed = stories.isError || (stories.isPending && stories.errorUpdateCount > 0);
+  if (stories.isPending && !failed) {
     return <ul className="content-clients" aria-hidden="true">
       {Array.from({ length: 6 }, (_value, index) => <li key={index}><Skeleton className="content-clients__skeleton" /></li>)}
     </ul>;
   }
-  if (stories.isError) {
-    return <div className="content-stories__error" role="alert">
-      <p>Não foi possível carregar os clientes. Tente de novo.</p>
-      <Button onClick={() => { void stories.refetch(); }}>Tentar de novo</Button>
-    </div>;
+  if (stories.isError || stories.isPending) {
+    return <EmptyState kind="failure" title="Não foi possível carregar os clientes. Tente de novo." retrying={stories.isFetching} onRetry={() => { void stories.refetch(); }} />;
   }
-  if (stories.data.data.length === 0) return <p className="content-stories__empty">Nenhum cliente ativo ainda.</p>;
+  if (stories.data.data.length === 0) {
+    return <EmptyState
+      title="Nenhum cliente ativo ainda."
+      description={canRegister ? 'Cadastre o primeiro para começar o calendário dele.' : undefined}
+      action={!canRegister ? undefined : blocked === undefined
+        ? <ButtonLink as={Link} to={`/agencia/${agency.agencyId}/clientes`} state={location.state} variant="secondary">Cadastrar cliente</ButtonLink>
+        : <Button variant="secondary" blockedReason={blocked}>Cadastrar cliente</Button>}
+    />;
+  }
   const total = stories.data.meta.totalItems;
   return <>
     <nav aria-label="Clientes">
@@ -357,7 +364,9 @@ export function ContentsClientPage() {
   }
   // The answer must be about the client in the address, or it is not shown at all.
   const clientData = client.data?.id.toLowerCase() === normalizedId ? client.data : undefined;
-  const failed = (client.isError && clientData === undefined) || (contents.isError && contents.data === undefined);
+  // A retry keeps the failure and its busy button (and the focus) in place: only the first read is a skeleton.
+  const failed = ((client.isError || (client.isPending && client.errorUpdateCount > 0)) && clientData === undefined)
+    || ((contents.isError || (contents.isPending && contents.errorUpdateCount > 0)) && contents.data === undefined);
   const loaded = contents.data;
   const unitLabel = calendarView === 'week' ? 'semana' : 'mês';
   const archived = clientData?.status === 'archived';
@@ -385,10 +394,7 @@ export function ContentsClientPage() {
       </div>
     </header>
     <ClientStories selectedId={normalizedId} />
-    {failed ? <div className="contents__error" role="alert">
-      <p>Não foi possível carregar os conteúdos. Tente de novo.</p>
-      <Button onClick={() => { void client.refetch(); void contents.refetch(); }}>Tentar de novo</Button>
-    </div> : <div className="contents__workspace">
+    {failed ? <EmptyState kind="failure" title="Não foi possível carregar os conteúdos. Tente de novo." retrying={client.isFetching || contents.isFetching} onRetry={() => { void client.refetch(); void contents.refetch(); }} /> : <div className="contents__workspace">
       <div className="contents__main">
         <header className="contents__client">
           {clientData === undefined

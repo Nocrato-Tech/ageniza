@@ -11,6 +11,7 @@ import { ApiClientProvider, HttpClient } from './http.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 import { contentsError, createPortalContentsApi } from './portal-contents-fixture.js';
 import { portalClientBody } from './portal-fixture.js';
+import { gateReads, retryWhileHeld, serverFailure } from './portal-retry-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 
@@ -618,14 +619,29 @@ describe('the portal Conteúdos (#269)', () => {
       expect(within(block).queryByText('Esperando 7')).toBeNull();
     });
 
-    it('is not there when nothing awaits approval, and says nothing about it', async () => {
+    it('says it as good news, with the icon and the words, when the read answered and nothing awaits approval', async () => {
       const world = makeWorld();
       world.api.seed({ title: 'Aprovado', publishOn: '2026-10-12', status: 'approved' });
       renderPortal(world);
       await ready();
       await screen.findByText('Aprovado');
-      expect(screen.queryByRole('region', { name: /O que precisa de você/ })).toBeNull();
-      expect(screen.queryByText(/precisa de você/)).toBeNull();
+      const block = await screen.findByRole('region', { name: 'O que precisa de você' });
+      const good = block.querySelector('.ui-empty-state--good-news') as HTMLElement;
+      expect(within(good).getByRole('heading', { level: 3, name: 'Nada para aprovar' })).toBeTruthy();
+      expect(within(good).getByText('Quando a agência enviar um post para aprovação, ele aparece aqui.')).toBeTruthy();
+      expect(good.querySelector('.ui-empty-state__icon')).toBeTruthy();
+      expect(within(block).queryByRole('heading', { name: /\(\d+\)/ })).toBeNull();
+      expect(within(block).queryByRole('alert')).toBeNull();
+    });
+
+    it('never says nothing awaits while something does', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'Para aprovar', publishOn: '2026-10-14', status: 'awaiting_approval' });
+      renderPortal(world);
+      await ready();
+      await screen.findByRole('heading', { name: 'O que precisa de você (1)' });
+      expect(screen.queryByText('Nada para aprovar')).toBeNull();
+      expect(document.querySelector('.ui-empty-state--good-news')).toBeNull();
     });
 
     it('says it could not load, keeps the month, and tries again', async () => {
@@ -636,6 +652,9 @@ describe('the portal Conteúdos (#269)', () => {
       await ready();
       expect(await screen.findByText('Não foi possível carregar o que precisa de você.', undefined, { timeout: 5000 })).toBeTruthy();
       expect(await within(days(container)).findByText('Para aprovar')).toBeTruthy();
+      // A read that did not answer is a failure, never "nothing awaits".
+      expect(screen.queryByText('Nada para aprovar')).toBeNull();
+      expect(document.querySelector('.ui-empty-state--good-news')).toBeNull();
 
       world.api.state.failAwaiting = null;
       fireEvent.click(within(screen.getByRole('region', { name: 'O que precisa de você' })).getByRole('button', { name: 'Tentar de novo' }));
@@ -949,7 +968,7 @@ describe('the portal Conteúdos (#269)', () => {
       expect(screen.getByRole('heading', { level: 2, name: 'Outubro 2026' }).classList.contains('portal-contents__period-title')).toBe(true);
       const block = await screen.findByRole('region', { name: 'O que precisa de você' }, { timeout: 5000 });
       expect(within(block).getByRole('heading', { level: 2 }).classList.contains('portal-section__title')).toBe(true);
-      expect(within(block).getByRole('alert').classList.contains('portal-error')).toBe(true);
+      expect(within(block).getByRole('alert').classList.contains('ui-empty-state--failure')).toBe(true);
     });
 
     it('says what is missing in an empty month, with the owl, and offers no way out in the month of today', async () => {
@@ -1009,9 +1028,42 @@ describe('the portal Conteúdos (#269)', () => {
       const { container } = renderPortal(world);
       await ready();
       expect(await screen.findByText('Não foi possível carregar os conteúdos. Tente de novo.', undefined, { timeout: 5000 })).toBeTruthy();
-      const retry = within(container.querySelector('.portal-error[role="alert"]') as HTMLElement).getByRole('button', { name: 'Tentar de novo' });
+      const failure = container.querySelector('.ui-empty-state--failure[role="alert"]') as HTMLElement;
+      const retry = within(failure).getByRole('button', { name: 'Tentar de novo' });
       expect(retry.classList.contains('ui-button--secondary')).toBe(true);
+      // The month that did not load is not an empty month, and says nothing is fine.
+      expect(screen.queryByText('Nenhum conteúdo planejado para este mês')).toBeNull();
+      expect(container.querySelector('.ui-empty-state--mascot')).toBeNull();
       expect(container.querySelectorAll('.ui-button--primary')).toHaveLength(0);
+    });
+  });
+
+  describe('Tentar de novo keeps its button while the read repeats', () => {
+    it('keeps it in "O que precisa de você" and then shows what waits', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'Para aprovar', publishOn: '2026-10-14', status: 'awaiting_approval' });
+      const { impl, gate } = gateReads(world.impl, (url) => url.pathname.endsWith('/contents/awaiting-approval'));
+      gate.fail = serverFailure;
+      renderPortal({ ...world, impl });
+      await ready();
+      const block = await screen.findByRole('region', { name: 'O que precisa de você' }, { timeout: 5000 });
+      await retryWhileHeld(within(block).getByRole('alert'), gate);
+      expect(await screen.findByRole('heading', { name: 'O que precisa de você (1)' })).toBeTruthy();
+      expect(within(awaitingBlock()).queryByRole('alert')).toBeNull();
+    });
+
+    it('keeps it in the month, in place of a skeleton, and then shows the month', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'De outubro', publishOn: '2026-10-12', status: 'approved' });
+      const { impl, gate } = gateReads(world.impl, (url) => url.pathname === `/clients/${CLIENT_ID}/contents`);
+      gate.fail = serverFailure;
+      const { container } = renderPortal({ ...world, impl });
+      await ready();
+      const failure = await screen.findByText('Não foi possível carregar os conteúdos. Tente de novo.', undefined, { timeout: 5000 });
+      await retryWhileHeld(failure.closest('[role="alert"]') as HTMLElement, gate);
+      expect(container.querySelector('.portal-contents__skeleton')).toBeNull();
+      expect(await screen.findByText('De outubro')).toBeTruthy();
+      expect(screen.queryByText('Não foi possível carregar os conteúdos. Tente de novo.')).toBeNull();
     });
   });
 

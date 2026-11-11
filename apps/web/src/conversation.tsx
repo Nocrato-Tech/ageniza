@@ -100,25 +100,25 @@ const subjectQueryOf = (subject: ConversationSubject): string => {
   return 'materialRequest' in subject ? 'materialRequest=true' : `contentId=${subject.contentId}`;
 };
 
-const MATERIAL_REQUEST_LABEL = 'Pedido de material';
+export const MATERIAL_REQUEST_LABEL = 'Pedido de material';
 /** The deadline of a request runs from today to this many days ahead, on the São Paulo day (the database refuses anything else). */
 const MATERIAL_DUE_WINDOW_DAYS = 90;
 const MATERIAL_DUE_RANGE = 'Escolha um prazo de hoje até 90 dias à frente.';
 
 const isMaterialRequest = (subject: ConversationSubject): boolean => 'materialRequest' in subject;
 
-const deadlineLabel = (dueOn: string): string => `Entregar até ${dayMonthLabel(dueOn)}`;
+export const deadlineLabel = (dueOn: string): string => `Entregar até ${dayMonthLabel(dueOn)}`;
 
 /** A request still open whose day has passed in São Paulo; `dueOn` is a plain day, never read through a `Date`. */
-const isOverdue = (thread: Thread, today: string): boolean =>
+export const isOverdue = (thread: Pick<Thread, 'state' | 'dueOn'>, today: string): boolean =>
   thread.state === 'open' && thread.dueOn !== null && thread.dueOn < today;
 
-const scopeKeyOf = (scope: ConversationScope) => ['conversation', scope.side, scope.clientId] as const;
+export const scopeKeyOf = (scope: ConversationScope) => ['conversation', scope.side, scope.clientId] as const;
 const threadsQueryKey = (scope: ConversationScope, subject: ConversationSubject) => [...scopeKeyOf(scope), 'threads', subjectKeyOf(subject)] as const;
 // The first page read is part of the key: a thread that grows onto a new page starts again at its end.
 const commentsQueryKey = (scope: ConversationScope, threadId: string, firstPage: number) => [...scopeKeyOf(scope), 'comments', threadId, firstPage] as const;
 
-const routesOf = (scope: ConversationScope) => {
+export const routesOf = (scope: ConversationScope) => {
   const values: Record<string, string> = scope.side === 'agency' ? { agencyId: scope.agencyId, clientId: scope.clientId } : { clientId: scope.clientId };
   const base = scope.side === 'agency' ? '/agencies/:agencyId/clients/:clientId' : '/clients/:clientId';
   return {
@@ -163,7 +163,7 @@ const bodyProblem = (body: string): string | undefined => {
 const isStaleSubject = (error: unknown): boolean =>
   error instanceof HttpClientError && (error.code === 'PERSONA_ARCHIVED' || error.code === 'SECTION_NOT_FILLED' || error.code === 'CONTENT_NOT_OPEN');
 
-const writeError = (error: unknown, side: ConversationSide): string => {
+export const writeError = (error: unknown, side: ConversationSide): string => {
   if (!(error instanceof HttpClientError)) return 'Não foi possível enviar. Tente de novo.';
   if (error.code === 'CLIENT_ARCHIVED') return 'Cliente arquivado: a conversa está somente leitura.';
   if (error.code === 'PERSONA_ARCHIVED') {
@@ -202,7 +202,7 @@ const materialRequestError = (error: unknown): { readonly field: 'dueOn' | undef
 const authorName = (comment: ThreadComment): string => comment.author?.name ?? (comment.side === 'agency' ? 'Agência' : 'Cliente');
 
 /** The writing box shared by the first message and the answers: the text leaves only once confirmed. */
-function Composer({ label, submitLabel, placeholder, note, pending, error, onSubmit, onEdit }: {
+export function Composer({ label, submitLabel, placeholder, note, pending, error, onSubmit, onEdit }: {
   label: string;
   submitLabel: string;
   placeholder?: string | undefined;
@@ -247,7 +247,7 @@ function Composer({ label, submitLabel, placeholder, note, pending, error, onSub
   </form>;
 }
 
-function CommentItem({ comment }: { comment: ThreadComment }) {
+export function CommentItem({ comment }: { comment: ThreadComment }) {
   return <li className={`conversation__comment conversation__comment--${comment.side}`}>
     <Avatar name={authorName(comment)} photoUrl={comment.author?.photoUrl ?? null} size="sm" />
     <div className="conversation__comment-main">
@@ -485,7 +485,7 @@ function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; o
 }
 
 /** The deadline of a request for material, and "venceu" when it passed while the request is still open. */
-function MaterialDue({ thread, today }: { thread: Thread; today: string }) {
+export function MaterialDue({ thread, today }: { thread: Pick<Thread, 'state' | 'dueOn'>; today: string }) {
   if (thread.dueOn === null) return null;
   return <span className="conversation__thread-due">
     {deadlineLabel(thread.dueOn)}
