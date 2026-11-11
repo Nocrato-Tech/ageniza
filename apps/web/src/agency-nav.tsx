@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, NavLink, matchPath, useLocation } from 'react-router-dom';
 import { Briefcase, CalendarDays, ChevronsLeft, ChevronsRight, House, Users, WalletCards, type LucideIcon } from 'lucide-react';
 
-import { BrandSymbol, IconButton, Logo, Skeleton } from '@ageniza/ui';
+import { Avatar, BrandSymbol, IconButton, Logo, Skeleton } from '@ageniza/ui';
 
 import { AccountMenu } from './account-menu.js';
 
@@ -68,15 +68,18 @@ export function AgencySidebar({ agenciaId, agencyName, permissions }: { agenciaI
       />
     </div>
     <div className="agency-sidebar__context">
-      <span className="agency-sidebar__context-label">Contexto ativo</span>
-      <Link className="agency-sidebar__context-name" to={base}>{agencyName}</Link>
+      <Avatar name={agencyName} size="sm" />
+      <div className="agency-sidebar__context-text">
+        <span className="agency-sidebar__context-label">Agência logada</span>
+        <Link className="agency-sidebar__context-name" to={base}>{agencyName}</Link>
+      </div>
     </div>
     <nav className="agency-nav" aria-label="Navegação da agência">
       <NavGroup id="agency-nav-work" title="Trabalho" items={work} />
       <NavGroup id="agency-nav-agency" title="Agência" items={agency} />
     </nav>
     <div className="agency-sidebar__foot">
-      <AccountMenu variant="sidebar" activeContext={agencyName} />
+      <AccountMenu variant="sidebar" activeContext={agencyName} contextLabel="Agência logada" />
     </div>
   </aside>;
 }
