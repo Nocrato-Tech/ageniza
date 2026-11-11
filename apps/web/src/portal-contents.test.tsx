@@ -11,6 +11,7 @@ import { ApiClientProvider, HttpClient } from './http.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 import { contentsError, createPortalContentsApi } from './portal-contents-fixture.js';
 import { portalClientBody } from './portal-fixture.js';
+import { gateReads, retryWhileHeld, serverFailure } from './portal-retry-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 
@@ -1034,6 +1035,35 @@ describe('the portal Conteúdos (#269)', () => {
       expect(screen.queryByText('Nenhum conteúdo planejado para este mês')).toBeNull();
       expect(container.querySelector('.ui-empty-state--mascot')).toBeNull();
       expect(container.querySelectorAll('.ui-button--primary')).toHaveLength(0);
+    });
+  });
+
+  describe('Tentar de novo keeps its button while the read repeats', () => {
+    it('keeps it in "O que precisa de você" and then shows what waits', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'Para aprovar', publishOn: '2026-10-14', status: 'awaiting_approval' });
+      const { impl, gate } = gateReads(world.impl, (url) => url.pathname.endsWith('/contents/awaiting-approval'));
+      gate.fail = serverFailure;
+      renderPortal({ ...world, impl });
+      await ready();
+      const block = await screen.findByRole('region', { name: 'O que precisa de você' }, { timeout: 5000 });
+      await retryWhileHeld(within(block).getByRole('alert'), gate);
+      expect(await screen.findByRole('heading', { name: 'O que precisa de você (1)' })).toBeTruthy();
+      expect(within(awaitingBlock()).queryByRole('alert')).toBeNull();
+    });
+
+    it('keeps it in the month, in place of a skeleton, and then shows the month', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'De outubro', publishOn: '2026-10-12', status: 'approved' });
+      const { impl, gate } = gateReads(world.impl, (url) => url.pathname === `/clients/${CLIENT_ID}/contents`);
+      gate.fail = serverFailure;
+      const { container } = renderPortal({ ...world, impl });
+      await ready();
+      const failure = await screen.findByText('Não foi possível carregar os conteúdos. Tente de novo.', undefined, { timeout: 5000 });
+      await retryWhileHeld(failure.closest('[role="alert"]') as HTMLElement, gate);
+      expect(container.querySelector('.portal-contents__skeleton')).toBeNull();
+      expect(await screen.findByText('De outubro')).toBeTruthy();
+      expect(screen.queryByText('Não foi possível carregar os conteúdos. Tente de novo.')).toBeNull();
     });
   });
 

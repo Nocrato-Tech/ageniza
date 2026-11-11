@@ -48,9 +48,9 @@ function PortalAwaiting({ clientId, count }: { clientId: string; count: number }
 
   return <section className="portal-section portal-home__awaiting" aria-labelledby="portal-home-awaiting-title">
     <h2 id="portal-home-awaiting-title" className="portal-headline"><Realce>{count} {count === 1 ? 'post' : 'posts'}</Realce> esperando sua aprovação</h2>
-    {covers.isPending
+    {covers.isPending && covers.errorUpdateCount === 0
       ? <div className="portal-covers" aria-hidden="true"><Skeleton className="portal-covers__skeleton" /><Skeleton className="portal-covers__skeleton" /></div>
-      : covers.isError && covers.data === undefined
+      : covers.data === undefined
         ? <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar os posts." retrying={covers.isFetching} onRetry={() => { void covers.refetch(); }} />
         : <ul className="portal-covers">
           {covers.data!.data.map((content: PortalContentOpenListItem) => <li key={content.id}>
@@ -113,9 +113,9 @@ function PortalWeek({ clientId }: { clientId: string }) {
 
   return <section className="portal-section portal-home__week" aria-labelledby="portal-home-week-title">
     <h2 id="portal-home-week-title" className="portal-section__title">Nesta semana</h2>
-    {week.isPending
+    {week.isPending && week.errorUpdateCount === 0
       ? <div className="portal-rows__skeleton" aria-hidden="true"><Skeleton /><Skeleton /></div>
-      : week.isError && week.data === undefined
+      : week.data === undefined
         ? <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar a semana." retrying={week.isFetching} onRetry={() => { void week.refetch(); }} />
         : shown.length === 0
           ? week.data!.data.length > 0

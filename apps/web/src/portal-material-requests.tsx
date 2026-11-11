@@ -64,12 +64,14 @@ function RequestThread({ clientId, request, onClose }: { clientId: string; reque
     onError: (error: unknown) => { setSendError(writeError(error, 'client')); }
   });
 
+  // A retry keeps the failure and its button mounted (and the focus on it): only the first read is a skeleton.
+  const firstRead = comments.isPending && comments.errorUpdateCount === 0;
   const items = comments.data?.pages.flatMap((page) => page.data) ?? [];
   return <Modal title={MATERIAL_REQUEST_LABEL} closeLabel="Fechar conversa" onClose={onClose}>
     <div className="conversation__thread-view">
       <MaterialDue thread={request} today={todayInSaoPaulo()} />
-      {comments.isPending && <div className="conversation__comments-skeleton" aria-busy="true"><Skeleton /><Skeleton /></div>}
-      {comments.isError && comments.data === undefined && <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar a conversa."
+      {firstRead && <div className="conversation__comments-skeleton" aria-busy="true"><Skeleton /><Skeleton /></div>}
+      {!firstRead && comments.data === undefined && <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar a conversa."
         retrying={comments.isFetching}
         onRetry={() => { void comments.refetch(); }}
       />}
@@ -122,7 +124,8 @@ export function PortalMaterialRequests({ clientId }: { clientId: string }) {
     })
   });
 
-  if (requests.isPending) return null;
+  // A retry keeps the failure and its button mounted (and the focus on it): only the first read is nothing.
+  if (requests.isPending && requests.errorUpdateCount === 0) return null;
   if (requests.data === undefined) {
     return <section className="portal-section portal-requests" aria-labelledby="portal-requests-title">
       <h2 id="portal-requests-title" className="portal-section__title">A agência pediu</h2>
