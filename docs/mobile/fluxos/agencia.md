@@ -137,6 +137,31 @@ stateDiagram-v2
 | `POST` | `…/clients/:clientId/personas/:personaId/archive` | `cliente.operar` | arquiva (some do portal) |
 | `POST` | `…/clients/:clientId/personas/:personaId/unarchive` | `cliente.operar` | desarquiva |
 
+### Navegação do estudo de marca na web
+
+A aba do cliente mostra uma seção por vez, com um índice das sete seções ao lado (uma faixa que rola na horizontal no celular). Só a apresentação mudou: as rotas, as permissões, as mensagens e o que cada seção grava são os de sempre.
+
+- **Índice.** Cada item diz se a seção está preenchida e quantas conversas dela aguardam a agência. O cabeçalho mantém "N de 7 preenchidas", que vem do campo `filled` da resposta do estudo; "preenchida" de cada item o app calcula com a mesma regra do servidor (texto sem contar espaços, ao menos uma cor, um arquétipo, ao menos uma persona ativa), porque a API devolve só o total.
+- **"N aguardando".** A API não devolve esse total. O app lê `GET …/threads?sectionKey=<seção>&state=open` (e `personaId=<id>` para cada persona ativa) e conta as conversas abertas cujo último comentário não é da agência, a mesma regra de "aguardando você" da coluna de conversas. Item sem nada aguardando não mostra número.
+- **Personas.** O número do item Personas soma a conversa da própria seção e as conversas das personas **ativas**; as arquivadas não entram. Cada cartão de persona traz o próprio "N aguardando", com a conversa daquela persona.
+- **Seção aberta.** É um cartão com o título, "editado por … · data" e o botão Editar. As conversas da seção ficam numa coluna própria ao lado (abaixo do cartão em telas estreitas), com "Nova conversa". Seção vazia mostra o estado vazio de primeiro uso, com o botão de preencher.
+- **Personas.** Um cartão por persona (iniciais, nome, descrição curta) e "Nova persona". Abrir uma persona mostra o perfil, com Dores, Desejos e Objeções, Editar, Arquivar (com a mesma confirmação) e as conversas dela; as conversas de uma persona arquivada continuam visíveis. Há um caminho de volta para a lista.
+- **Endereço.** A seção e a persona abertas ficam na URL: `?secao=<seção>` e `?persona=<id>`.
+
+| `secao` | seção |
+|---|---|
+| `branding` | Branding |
+| `tom-de-voz` | Tom de voz |
+| `cores` | Cores |
+| `posicionamento` | Posicionamento |
+| `arquetipo` | Arquétipo |
+| `personas` | Personas |
+| `observacoes` | Observações |
+
+- Sem `secao` abre a primeira seção (Branding). Um `secao` desconhecido cai na primeira seção, sem erro. `persona` sozinho abre o perfil dessa persona. Um `persona` que não existe é ignorado: com `secao=personas` mostra a lista, sem `secao` abre a primeira seção. `persona` junto de outra `secao` que não seja `personas` também é ignorado: abre a seção pedida.
+- Quem está editando uma persona e sai do perfil (pelo índice, por "Voltar para Personas" ou pelo voltar do navegador) não perde o texto: ao reabrir a persona, o formulário volta com o que foi digitado, como nas outras seções. Só Cancelar ou Salvar o descarta.
+- Cliente arquivado e plano em modo leitura continuam só leitura; sem `cliente.operar` os botões de edição não aparecem.
+
 ## Conversas com o cliente
 
 | método | rota | permissão | o que faz |

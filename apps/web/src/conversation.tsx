@@ -147,7 +147,7 @@ const formatDay = (value: string): string => {
 };
 
 /** What the person must do next, from where they stand: the agency answers the client and vice versa. */
-const awaitsViewer = (thread: Thread, viewer: ConversationSide): boolean =>
+export const awaitsViewer = (thread: Thread, viewer: ConversationSide): boolean =>
   thread.state === 'open' && thread.lastComment.side !== viewer;
 
 /** The rule of the API, not a copy of it: the screen asks the contract's own schema and only words the answer. */

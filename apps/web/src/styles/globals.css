@@ -3984,6 +3984,7 @@ main > .shell-notice {
   color: var(--text-primary);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -3993,7 +3994,7 @@ main > .shell-notice {
 
 .brand-personas__card:hover,
 .brand-personas__card:focus-visible {
-  background: var(--bg-hover);
+  border-color: var(--border-control);
 }
 
 .brand-personas__name {
@@ -4047,6 +4048,279 @@ main > .shell-notice {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* Brand study, agency side (telas-melhorias, S13): an index of the seven sections and one section on screen at a time.
+   Scoped to .brand-study--agency: the portal shares the section, colour and persona classes above and keeps its own rows. */
+.brand-study--agency .brand-study__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.brand-study--agency .brand-study__main {
+  min-width: 0;
+}
+
+/* The index is a column on a wide screen and a row that scrolls sideways on a narrow one; the page itself never scrolls sideways. */
+.brand-index {
+  min-width: 0;
+}
+
+.brand-index__list {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 0 var(--space-1);
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.brand-index__list > li {
+  flex: none;
+}
+
+.brand-index__link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font: var(--label-md);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.brand-index__link > svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  stroke-width: 1.75;
+}
+
+.brand-index__link:hover {
+  border-color: var(--border-control);
+  color: var(--text-primary);
+}
+
+.brand-index__link[aria-current='page'] {
+  border-color: var(--border-control);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.brand-index__awaiting {
+  margin-left: auto;
+}
+
+.brand-index--skeleton {
+  display: flex;
+  gap: var(--space-2);
+  overflow: hidden;
+}
+
+.brand-study--agency .brand-section-skeleton {
+  flex: none;
+  width: 8rem;
+  height: 2.75rem;
+  border-radius: var(--radius-md);
+}
+
+.brand-card-skeleton {
+  height: 12rem;
+  border-radius: var(--radius-lg);
+}
+
+/* The open section is a card: title and who last edited it on the left, the way to edit it on the right. */
+.brand-study--agency .brand-section {
+  align-content: start;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-section__header {
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+}
+
+.brand-study--agency .brand-section__header h3 {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.brand-section__header-action {
+  order: 2;
+}
+
+.brand-study--agency .brand-section__updated {
+  order: 3;
+  flex-basis: 100%;
+}
+
+.brand-archetype {
+  margin: 0;
+  font: var(--heading-lg);
+  overflow-wrap: anywhere;
+}
+
+/* The card, and the conversations of the same subject beside it when they fit or under it when they do not. */
+.brand-panel__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.brand-panel__main,
+.brand-panel__conversations {
+  min-width: 0;
+}
+
+.brand-personas__awaiting {
+  grid-column: 2;
+  justify-self: start;
+  margin-top: var(--space-2);
+}
+
+.brand-personas__archived-item .brand-personas__name {
+  color: var(--text-primary);
+}
+
+/* A persona is a profile: who she is on the left, one card for each long field on the right. */
+.brand-persona {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.brand-persona__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-self: start;
+  min-height: 2.75rem;
+  color: var(--text-secondary);
+  font: var(--label-md);
+  text-decoration: none;
+}
+
+.brand-persona__back > svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  stroke-width: 1.75;
+}
+
+.brand-persona__back:hover {
+  color: var(--text-primary);
+}
+
+.brand-persona__profile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.brand-persona__identity,
+.brand-persona__content {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.brand-persona__identity {
+  justify-items: start;
+}
+
+.brand-persona__content {
+  gap: var(--space-4);
+}
+
+.brand-persona__name {
+  margin: 0;
+  font: var(--heading-lg);
+  overflow-wrap: anywhere;
+}
+
+.brand-persona__description {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.brand-persona__card {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.brand-persona__card h4 {
+  margin: 0;
+  font: var(--label-md);
+}
+
+@media (min-width: 48rem) {
+  .brand-persona__profile {
+    grid-template-columns: 16rem minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 64rem) {
+  .brand-study--agency .brand-study__layout {
+    grid-template-columns: 17rem minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+
+  .brand-index__list {
+    flex-direction: column;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .brand-index__link {
+    border-color: transparent;
+    white-space: normal;
+  }
+
+  .brand-index--skeleton {
+    flex-direction: column;
+  }
+
+  .brand-study--agency .brand-section-skeleton {
+    width: auto;
+  }
+}
+
+@media (min-width: 80rem) {
+  .brand-panel__layout {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+  }
+
+  .brand-panel__conversations {
+    padding-left: var(--space-6);
+    border-left: 1px solid var(--border-default);
+  }
+
+  .brand-study--agency .brand-panel__conversations .conversation {
+    padding-top: 0;
+    border-top: 0;
+  }
 }
 
 /* The conversation about one subject (issue #142): side by label, never by color alone. */
