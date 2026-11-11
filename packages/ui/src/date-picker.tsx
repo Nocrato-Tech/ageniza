@@ -32,7 +32,7 @@ export interface DatePickerProps extends Partial<FieldControlProps> {
 }
 
 /** What a field says about text that is not a day, so every optional date field words it the same way. */
-export const invalidDayMessage = 'Data inválida. Use dia/mês/ano, com o ano de quatro dígitos.';
+export const invalidDayMessage = 'Data inválida. Use dia/mês/ano, como 14/10/2026.';
 
 const clampDay = (day: string, min: string | undefined, max: string | undefined): string => {
   if (min !== undefined && day < min) return min;

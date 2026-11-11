@@ -334,6 +334,19 @@ describe('the send', () => {
     expect(batches[0]!.body).toEqual({ contentIds: expect.any(Array) });
   });
 
+  it.each([
+    ['X', () => { fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Fechar envio para aprovação' })); }],
+    ['Esc', () => { fireEvent(batchDialog(), new Event('cancel', { bubbles: true, cancelable: true })); }]
+  ])('asks before %s discards a deadline that was only half typed, with nothing else chosen', async (_name, close) => {
+    await mount({ rows: [row({ title: 'Um' })] });
+    await openBatch();
+    fireEvent.change(within(batchDialog()).getByLabelText('Aprovar até'), { target: { value: '14/10' } });
+    close();
+    expect(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    expect((within(batchDialog()).getByLabelText('Aprovar até') as HTMLInputElement).value).toBe('14/10');
+  });
+
   it('asks before it closes with something chosen, and closes at once with nothing', async () => {
     await mount({ rows: [row({ title: 'Um' })] });
     await openBatch();
