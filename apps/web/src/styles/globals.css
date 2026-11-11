@@ -250,9 +250,9 @@ a.ui-button {
   text-decoration: none;
 }
 
-.ui-pill:disabled:not(.ui-pill--loading) {
-  cursor: not-allowed;
-  opacity: 0.55;
+/* The text-only action has no fill to lose: disabled, it stays transparent. */
+.ui-button--ghost:disabled:not(.ui-button--loading) {
+  background: transparent;
 }
 
 /* A blocked action (a plan to renew): dimmed like a disabled one, but focusable, with its reason on hover and focus. */
@@ -902,7 +902,7 @@ a.ui-button {
   animation: ui-button-spin var(--motion-slow) linear infinite;
 }
 
-/* Controls: hover and the invalid state change the edge only, so the 3:1 border/control is never lost. */
+/* Controls: hover darkens the edge and tints the fill; invalid changes the edge only, so the 3:1 border/control is never lost. */
 .ui-text-input,
 .ui-select,
 .ui-textarea {

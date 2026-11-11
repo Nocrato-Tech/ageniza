@@ -12,6 +12,12 @@
 4. **Número de resumo.** O número grande de um bloco só aparece com a ação que ele pede ao lado; o "número-herói" sem ação continua recusado.
 5. **Acessibilidade mantida.** O contraste AA de cada par continua conferido por teste; o estado nunca é só cor, e quem pede menos movimento não recebe animação.
 6. **Escopo.** A fundação (tokens, componentes de `packages/ui`, página `/design-system`) muda primeiro; as telas são refeitas depois, em escopos próprios, sem mudar o que cada uma faz.
+7. **O que esta decisão substitui.** Estas decisões não são editadas; no que segue, vale esta:
+   - [`2026-10-13-pauta-quem-tem-a-vez-decide-a-cor-e-as-quatro-excecoes`](2026-10-13-pauta-quem-tem-a-vez-decide-a-cor-e-as-quatro-excecoes.md), **item 1**, só no trecho "a cor fica no ícone e o rótulo em `text/secondary`": o estado passa a ser uma cápsula suave, com o fundo e o texto da família do estado e o ícone junto. Continuam valendo "quem tem a vez decide a cor", o atrasado em bloco cheio e "o estado nunca é só cor".
+   - A mesma decisão, **item 2**, no trecho "degradê só na base do crachá do cliente": o crachá continua com o degradê dele, e entram dois degradês suaves, o do fundo do `EmptyState` (um toque do tom da família sobre a superfície) e o do disco do palco 3D. Continuam recusados o degradê em texto, em botão e em fundo de página, e o vidro, o glow e o blur decorativo.
+   - [`2026-10-15-calendario-cards-por-formato-e-estado-na-etiqueta`](2026-10-15-calendario-cards-por-formato-e-estado-na-etiqueta.md), no trecho "o estado fica numa etiqueta com contorno": a etiqueta de estado é a cápsula suave da família (o publicado continua em superfície com fio).
+   - [`2026-10-15-detalhe-do-cliente-na-pauta-sem-dados-que-a-api-nao-entrega`](2026-10-15-detalhe-do-cliente-na-pauta-sem-dados-que-a-api-nao-entrega.md), no trecho "sublinhado em tinta" das abas: a aba aberta é uma superfície branca com sombra suave sobre a trilha tingida, não um sublinhado.
+   - A regra de `docs/design-system.md` "sombra só no que flutua" passa a ser "sombra suave só no que o dedo alcança (hover, aba e opção escolhidas) e no que flutua".
 
 **Consequência.**
 

@@ -1,5 +1,5 @@
-3dicons (icones-3d/)
-====================
+3dicons (apps/web/public/3d/)
+============================
 Autor: realvjy e colaboradores
 Origem oficial: https://3dicons.co  (repositório: https://github.com/realvjy/3dicons)
 Licença: CC0 1.0 Universal (domínio público). Uso pessoal e comercial, sem atribuição.
@@ -7,18 +7,12 @@ Confirmada em 2026-11-11 em duas fontes oficiais:
   - https://github.com/realvjy/3dicons/blob/develop/LICENSE (API do GitHub: spdx_id CC0-1.0)
   - https://3dicons.co ("open-source 3D icons that you can use completely free and without attribution
     for personal or commercial project")
-Os metadados do repositório (content/3dicons-meta/<icone>.md) listam, para cada ícone, os estilos clay,
-gradient, color e premium. O site 3dicons.co oferece os quatro de graça ("open source & free premium
-3D icons"), e o repositório inteiro é CC0; por isso color e premium também são usados aqui.
 
-Estilos nesta pasta (todos baixados de
-https://3dicons.sgp1.cdn.digitaloceanspaces.com/v1/dynamic/<estilo>/<icone>-dynamic-<estilo>.png,
-ângulo "dynamic", sem edição; 400 x 400, salvo 5 clay antigos em 320 x 320):
-  icones-3d/color/*.png      estilo "color": render colorido original, sem pintura. E o que as telas usam, no palco (15 ícones:
-                             bell, bulb, calender, clock, fav-folder, flag, folder, mail, medal, new-folder, notebook, rocket, thumb-up, tick, trophy)
-  icones-3d/premium/*.png    estilo "premium": só em icones-3d-variantes.html, como histórico da comparação (11 ícones)
-  icones-3d/clay/*.png       estilo "clay": só em icones-3d-variantes.html e no exemplo "não faz" de icones-3d.html (15 ícones)
-  icones-3d/*.png            estilo "gradient": sem uso nas telas; ficou da comparação anterior (13 ícones)
+Esta pasta tem 15 PNG do estilo "color", ângulo "dynamic", 400 x 400, sem edição, usados no palco das telas
+(Stage3D): bell, bulb, calender, clock, fav-folder, flag, folder, mail, medal, new-folder, notebook, rocket,
+thumb-up, tick, trophy. Cada um foi baixado de
+https://3dicons.sgp1.cdn.digitaloceanspaces.com/v1/dynamic/color/<icone>-dynamic-color.png e guardado como
+<icone>.png. Nenhum outro estilo do 3dicons está no repositório.
 
 O texto da licença, copiado do repositório oficial, segue abaixo.
 -----------------------------------------------------------------------------------------------
