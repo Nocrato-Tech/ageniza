@@ -1034,9 +1034,8 @@ a.ui-button {
   font: var(--body-md);
 }
 
-/* Team grid: specs/colaboradores.md section 7. Below 64rem the badge minimum decides (1 to 3 columns); from 64rem on it
-   is three, because on a wide screen the minimum would add a fifth column and leave the last row of a 24-person page
-   broken (24 is a multiple of 1, 2, 3 and 4, never of 5). The only breakpoint is a registered one (design-system.md 19). */
+/* Team grid: specs/colaboradores.md section 7. The redesign board (agencia-equipe): a heading with its lead, search and
+   filters on the canvas, and badges that fill the row (13.5rem minimum, so five columns on a wide screen). */
 .collaborators {
   display: grid;
   gap: var(--space-6);
@@ -1045,9 +1044,24 @@ a.ui-button {
 .collaborators__header {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
+}
+
+.collaborators__heading {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 44rem;
+}
+
+.collaborators__eyebrow {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .collaborators__header h1 {
@@ -1059,44 +1073,78 @@ a.ui-button {
   overflow-wrap: anywhere;
 }
 
-.collaborators__filters {
-  padding: var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
+.collaborators__lead {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+/* No box around the filters: the search is a pill and the three selects carry the edge of a field. */
+.ui-filter-bar.collaborators__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.ui-filter-bar.collaborators__filters .ui-filter-bar__item,
+.ui-filter-bar.collaborators__filters .ui-filter-bar__item + .ui-filter-bar__item {
+  min-width: min(12rem, 100%);
+  padding: 0;
+  border: 0;
+}
+
+.ui-filter-bar.collaborators__filters .ui-filter-bar__label {
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+.ui-filter-bar.collaborators__filters .ui-filter-bar__control:not(.ui-text-input) {
+  min-height: var(--control-h);
+  margin-left: 0;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface);
 }
 
-/* The search has a row of its own and the selects share the one below, in columns wide enough for "Todos os papéis"
-   ("Cargo" is free text). No divider between them: the grid gap is the separator. On a phone the bar is the stacked
-   column of the FilterBar, and its own top dividers still apply. */
-.ui-filter-bar.collaborators__filters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: var(--space-4);
+.ui-filter-bar.collaborators__filters .ui-filter-bar__control.ui-text-input {
+  border-radius: var(--radius-full);
+  padding-inline: var(--space-5);
 }
 
-.ui-filter-bar.collaborators__filters .ui-filter-bar__item {
-  padding-inline: 0;
-  border-left: 0;
+/* The search has no visible label (its placeholder and aria-label name it), like the board. */
+.ui-filter-bar.collaborators__filters .ui-filter-bar__item:first-child .ui-filter-bar__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 
-.ui-filter-bar.collaborators__filters .ui-filter-bar__item:first-child {
-  grid-column: 1 / -1;
+@media (min-width: 40rem) {
+  .ui-filter-bar.collaborators__filters {
+    align-items: flex-end;
+  }
+
+  .ui-filter-bar.collaborators__filters .ui-filter-bar__item:first-child {
+    flex: 1 1 16rem;
+    max-width: 24rem;
+  }
+
+  .ui-filter-bar.collaborators__filters .ui-filter-bar__control:not(.ui-text-input) {
+    width: 100%;
+  }
 }
 
 .collaborators__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  /* The minimum is the larger of 13.5rem and a quarter of the row, so it opens 1 to 4 columns and never a fifth: a page of 24
+     (a multiple of 1, 2, 3 and 4) never leaves a broken row (specs/colaboradores.md section 6). The 1px keeps the fourth column fitting. */
+  grid-template-columns: repeat(auto-fill, minmax(max(13.5rem, calc((100% - 3 * var(--space-4)) / 4 - 1px)), 1fr));
   gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-@media (min-width: 64rem) {
-  .collaborators__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 .collaborators__grid > li {
@@ -1107,9 +1155,74 @@ a.ui-button {
 
 .collaborators__badge-link {
   display: grid;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   color: var(--text-primary);
   text-decoration: none;
+}
+
+/* The badge of the board: a handle on top, a round avatar, then name, job title and role, all centred. */
+.collaborators__grid .ui-badge-card {
+  position: relative;
+  align-items: center;
+  border-radius: var(--radius-xl);
+  text-align: center;
+}
+
+.collaborators__grid .ui-badge-card::before {
+  content: '';
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  width: 2.25rem;
+  height: 0.375rem;
+  border-radius: var(--radius-full);
+  background: var(--border-default);
+  transform: translateX(-50%);
+}
+
+.collaborators__grid .ui-badge-card__cover {
+  padding: var(--space-8) var(--space-4) 0;
+  background: transparent;
+}
+
+.collaborators__grid .ui-badge-card .ui-avatar {
+  width: 4.5rem;
+  height: 4.5rem;
+  background: var(--bg-tint);
+}
+
+.collaborators__grid .ui-badge-card__body {
+  flex: 0 1 auto;
+  justify-items: center;
+  padding: var(--space-3) var(--space-4) var(--space-6);
+}
+
+.collaborators__grid .ui-badge-card__name {
+  font: var(--title-md);
+  letter-spacing: 0;
+}
+
+/* The link ended: the card steps back (dashed edge, canvas fill, grey avatar) and the red label says so in words. */
+.collaborators__grid .ui-badge-card:has(.ui-badge-card__removed) {
+  border-style: dashed;
+  background: var(--bg-canvas);
+}
+
+.collaborators__grid .ui-badge-card:has(.ui-badge-card__removed) .ui-avatar {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  filter: grayscale(1);
+}
+
+.collaborators__grid .ui-badge-card__removed {
+  align-self: center;
+  padding: var(--space-1) var(--space-3);
+  border-top: 0;
+  border-radius: var(--radius-full);
+  background: var(--status-late-bg);
+  color: var(--status-late-text);
+  font: var(--caption);
+  font-weight: 700;
 }
 
 /* The card the finger reaches rises 2px with a soft shadow and an indigo edge; the fill never changes under its text. */
@@ -1119,10 +1232,16 @@ a.ui-button {
   transform: translateY(-2px);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .collaborators__badge-link:hover .ui-badge-card {
+    transform: none;
+  }
+}
+
 /* The reactivate action of a removed badge sits under the card, never inside the link (#105). */
 .collaborators__reactivate {
   margin-top: var(--space-2);
-  justify-self: start;
+  justify-self: center;
 }
 
 /* Client roster: specs/clientes.md section 7. A grid of badges in the server's order; each one carries the triage seal,
@@ -1217,7 +1336,8 @@ a.ui-button {
   list-style: none;
 }
 
-/* No `overflow: hidden` on the badge: the menu opens over it. The cover rounds its own top corners instead. */
+/* The badge of the roster: a rounded card with the client's mark beside the name, the situation and the seal under them, then the numbers and the
+   next action. No `overflow: hidden`: the menu opens over it. The reach of a hand (hover) lifts it, as in the board's rows and cards. */
 .clients__card {
   position: relative;
   display: flex;
@@ -1228,13 +1348,18 @@ a.ui-button {
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
   color: var(--text-primary);
-  transition: border-color var(--motion-fast);
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
 }
 
-/* Hover feedback by border, never by background: the attention badge uses `text/link`, and the
+/* Hover feedback by border and shadow, never by background: the attention badge uses `text/link`, and the
    design system forbids that color over `bg/hover` (docs/design-system.md 20.1). */
 .clients__card:hover {
-  border-color: var(--focus-ring);
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
 }
 
 .clients__card:has(.clients__card-link:focus-visible) {
@@ -1242,11 +1367,23 @@ a.ui-button {
   outline-offset: 3px;
 }
 
-/* The link holds the photo, the name and the badges; the menu and the action are buttons beside it, never inside it. */
+@media (prefers-reduced-motion: reduce) {
+  .clients__card {
+    transition: none;
+  }
+
+  .clients__card:hover {
+    transform: none;
+  }
+}
+
+/* The link holds the mark, the name, the tags and the numbers; the menu and the action are buttons beside it, never inside it. */
 .clients__card-link {
   display: flex;
   flex: 1;
   flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-5) var(--space-4);
   border-radius: var(--radius-xl);
   color: var(--text-primary);
   text-decoration: none;
@@ -1257,67 +1394,59 @@ a.ui-button {
 }
 
 .clients__cover {
-  position: relative;
   display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  background: var(--bg-elevated);
+  align-items: center;
+  gap: var(--space-4);
+  padding-right: var(--space-12);
 }
 
+/* The mark of a client is a rounded square, not a person's circle: initials in white over the indigo-to-violet ink, or the photo. */
 .clients__cover .ui-avatar {
-  width: 6rem;
-  height: 6rem;
-  margin: var(--space-12) auto 0;
-  background: var(--bg-surface);
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--client-badge-fade-start), var(--client-badge-fade-end));
+  color: var(--color-white);
 }
 
 .clients__cover .ui-avatar__initials {
-  font: var(--display-lg);
-  letter-spacing: -0.02em;
+  font: var(--title-md);
+  letter-spacing: 0.02em;
 }
 
-/* The base of the photo: indigo and violet darkened over ink, white text on it. No glow, no glass. */
-.clients__fade {
+.clients__identity {
   display: grid;
   gap: var(--space-1);
-  padding: var(--space-8) var(--space-4) var(--space-4);
-  background: linear-gradient(180deg, transparent 0%, var(--client-badge-fade-start) 48%, var(--client-badge-fade-end) 100%);
+  min-width: 0;
 }
 
 .clients__card-name {
   margin: 0;
-  color: var(--color-white);
+  color: var(--text-primary);
   font: var(--heading-lg);
   letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 
-.clients__fade-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
 .clients__card-handle {
   min-width: 0;
   margin: 0;
-  color: var(--color-slate-300);
+  color: var(--text-secondary);
   font: var(--body-md);
   overflow-wrap: anywhere;
 }
 
-.clients__situation {
-  margin-left: auto;
+.clients__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.clients__seal {
-  position: absolute;
-  top: var(--space-4);
-  left: var(--space-4);
-  max-width: calc(100% - 5rem);
+.clients__situation--active {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  font-weight: 600;
 }
 
 /* A label is written in lower case by the API's words and read that way; the first letter is only drawn as a capital. */
@@ -1342,13 +1471,14 @@ a.ui-button {
   width: 2.75rem;
   height: 2.75rem;
   padding: 0;
-  background: color-mix(in srgb, var(--color-ink-900) 72%, transparent);
-  color: var(--color-white);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
 }
 
 .clients__menu .ui-menu__trigger:hover,
 .clients__menu .ui-menu__trigger:focus-visible {
-  background: var(--color-ink-900);
+  background: var(--bg-tint);
+  color: var(--text-primary);
 }
 
 .clients__body {
@@ -1356,7 +1486,6 @@ a.ui-button {
   flex: 1;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-4);
 }
 
 .clients__badges {
@@ -1422,7 +1551,7 @@ p.clients__indicators {
 
 .clients__footer {
   display: flex;
-  padding: 0 var(--space-4) var(--space-4);
+  padding: 0 var(--space-5) var(--space-5);
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
@@ -1456,7 +1585,7 @@ p.clients__indicators {
 }
 
 .clients__card-skeleton {
-  height: 24rem;
+  height: 16rem;
   border-radius: var(--radius-xl);
 }
 
@@ -1495,22 +1624,21 @@ p.clients__indicators {
   font: var(--body-md);
 }
 
+/* The header sits on the canvas, with no card of its own: the client's mark, the name with the situation, the @, and the actions. */
 .client-detail__header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-4) var(--space-6);
-  padding: var(--space-6);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
+  gap: var(--space-4) var(--space-5);
 }
 
 .client-detail__header .ui-avatar {
-  width: 6rem;
-  height: 6rem;
+  width: 5rem;
+  height: 5rem;
   flex: none;
-  background: var(--bg-elevated);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--client-badge-fade-start), var(--client-badge-fade-end));
+  color: var(--color-white);
 }
 
 .client-detail__header .ui-avatar__initials {
@@ -1518,16 +1646,16 @@ p.clients__indicators {
 }
 
 .client-detail__avatar-skeleton {
-  width: 6rem;
-  height: 6rem;
-  border-radius: var(--radius-full);
+  width: 5rem;
+  height: 5rem;
+  border-radius: var(--radius-lg);
 }
 
 .client-detail__identity {
   display: grid;
   flex: 1 1 14rem;
   align-content: start;
-  gap: var(--space-2);
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -1535,11 +1663,24 @@ p.clients__indicators {
   height: var(--space-6);
 }
 
+.client-detail__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
 .client-detail__identity h1 {
   margin: 0;
-  font: var(--heading-xl);
-  letter-spacing: -0.01em;
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
   overflow-wrap: anywhere;
+}
+
+.client-detail__status--active {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  font-weight: 600;
 }
 
 .client-detail__handle {
@@ -1555,7 +1696,6 @@ p.clients__indicators {
   gap: var(--space-2);
   margin: 0;
   padding: 0;
-  list-style: none;
 }
 
 .client-detail__actions {
@@ -1567,14 +1707,10 @@ p.clients__indicators {
 }
 
 @media (max-width: 40rem) {
-  .client-detail__header {
-    padding: var(--space-4);
-  }
-
   .client-detail__header .ui-avatar,
   .client-detail__avatar-skeleton {
-    width: 4.5rem;
-    height: 4.5rem;
+    width: 3.5rem;
+    height: 3.5rem;
   }
 
   .client-detail__header .ui-avatar__initials {
@@ -1586,7 +1722,12 @@ p.clients__indicators {
   }
 
   .client-detail__identity h1 {
-    font: var(--heading-lg);
+    font: var(--heading-xl);
+  }
+
+  .client-detail__actions {
+    flex: 1 1 100%;
+    margin-left: 0;
   }
 }
 
@@ -1617,7 +1758,7 @@ p.clients__indicators {
   flex-wrap: wrap;
   margin: 0;
   overflow-x: visible;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   list-style: none;
 }
 
@@ -1652,41 +1793,70 @@ p.clients__indicators {
   padding: var(--space-6) 0;
 }
 
+/* The General tab: the summary blocks on top, then the requests beside the registration. The blocks are the one coloured surface, each in the family
+   of what it says (docs/design-system.md 26), with the 3D mark leaving through the top edge, so the row keeps room above it. */
 .client-general {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-4);
+  gap: var(--space-6);
 }
 
 @media (min-width: 64rem) {
   .client-general {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 27rem);
     align-items: start;
   }
 
-  .client-general > :first-child {
-    grid-row: span 3;
+  .client-general:not(:has(.client-general__requests)) {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
+.client-general__summary {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: var(--space-8) var(--space-4);
+  padding-top: var(--space-8);
+}
+
 .client-general__block {
+  --ui-stage-bg: var(--block-slate-bg);
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-  gap: var(--space-3);
+  grid-template-rows: auto 1fr auto;
+  gap: var(--space-4);
+  min-height: 14.5rem;
   padding: var(--space-6);
-  border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
-  background: var(--bg-surface);
-  color: var(--text-primary);
+  background: var(--ui-stage-bg);
+  color: var(--block-slate-fg);
   text-decoration: none;
+  transition:
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
 }
 
-/* The hovered block only changes its background; the text inside stays `text-secondary` (never
-   `text/link`), so the pair keeps its approved contrast (docs/design-system.md 20.1). */
+.client-general__block--indigo {
+  --ui-stage-bg: var(--block-indigo-bg);
+  color: var(--block-indigo-fg);
+}
+
+.client-general__block--violet {
+  --ui-stage-bg: var(--block-violet-bg);
+  color: var(--block-violet-fg);
+}
+
+.client-general__block--teal {
+  --ui-stage-bg: var(--block-teal-bg);
+  color: var(--block-teal-fg);
+}
+
+/* The block lifts on hover and keeps its colour: the text inside never changes pair, so its approved contrast holds (docs/design-system.md 20.1). */
 a.client-general__block:hover {
-  background: var(--bg-hover);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
 }
 
 a.client-general__block:focus-visible {
@@ -1694,27 +1864,77 @@ a.client-general__block:focus-visible {
   outline-offset: 3px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .client-general__block {
+    transition: none;
+  }
+
+  a.client-general__block:hover {
+    transform: none;
+  }
+}
+
 .client-general__block h2 {
+  max-width: 58%;
   margin: 0;
-  padding-right: var(--space-8);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+/* The figures sit at the bottom, under the mark that leaves through the top edge, so the two never share a line. */
+.client-general__figures {
+  display: grid;
+  align-self: end;
+  gap: var(--space-1);
+}
+
+.client-general__figures p {
+  margin: 0;
   font: var(--heading-lg);
 }
 
-.client-general__block p {
-  margin: 0;
-  color: var(--text-secondary);
+.client-general__figures .client-general__sub {
   font: var(--body-md);
 }
 
-.client-general__go {
-  position: absolute;
-  top: var(--space-6);
-  right: var(--space-6);
-  width: 1.25rem;
-  height: 1.25rem;
-  color: var(--text-secondary);
+.client-general__progress {
+  width: 100%;
+  height: 0.5rem;
+  accent-color: currentColor;
 }
 
+.client-general__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-self: start;
+  font: var(--label-md);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.client-general__cta svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.client-general__registration {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.client-general__registration h2 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+/* On a phone the name sits over its value; from 40rem the name is on the left and the value on the right, so a long value (the e-mail) wraps in its own column. */
 .client-general__fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1724,52 +1944,41 @@ a.client-general__block:focus-visible {
 .client-general__fields dt,
 .client-general__fields dd {
   margin: 0;
-  padding-block: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
   font: var(--body-md);
   overflow-wrap: anywhere;
 }
 
 .client-general__fields dt {
-  padding-bottom: 0;
-  border-top-color: var(--border-subtle);
+  padding-top: var(--space-3);
   color: var(--text-secondary);
-  font: var(--label-md);
 }
 
 .client-general__fields dd {
-  padding-top: var(--space-1);
-  border-top: 0;
+  padding-bottom: var(--space-3);
 }
 
-.client-general__fields dt:first-child {
-  border-top: 0;
-  padding-top: 0;
+.client-general__fields dt:not(:first-of-type) {
+  border-top: 1px solid var(--border-subtle);
 }
 
 @media (min-width: 40rem) {
   .client-general__fields {
-    grid-template-columns: minmax(7rem, 10rem) minmax(0, 1fr);
-    column-gap: var(--space-4);
+    grid-template-columns: minmax(6.5rem, max-content) minmax(0, 1fr);
   }
 
   .client-general__fields dt,
   .client-general__fields dd {
     padding-block: var(--space-3);
+  }
+
+  .client-general__fields dd {
+    padding-left: var(--space-4);
+    text-align: right;
+  }
+
+  .client-general__fields dt:not(:first-of-type) + dd {
     border-top: 1px solid var(--border-subtle);
   }
-
-  .client-general__fields dt:first-child,
-  .client-general__fields dt:first-child + dd {
-    padding-top: 0;
-    border-top: 0;
-  }
-}
-
-.client-general__progress {
-  width: 100%;
-  height: 0.5rem;
-  accent-color: var(--text-primary);
 }
 
 /* Edit client modal: specs/clientes.md section 7 (issue #137). */
@@ -2114,15 +2323,45 @@ a.client-general__block:focus-visible {
   font: var(--heading-md);
 }
 
-.collaborator-detail__identity {
-  display: flex;
-  align-items: center;
+/* The profile of the board: who the person is on the left, the details on the right; one column on a phone. */
+.collaborator-detail__profile {
+  display: grid;
+  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+@media (max-width: 47.99rem) {
+  .collaborator-detail__profile {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+}
+
+.collaborator-detail__main {
+  display: grid;
   gap: var(--space-4);
+  min-width: 0;
+}
+
+.collaborator-detail__identity {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+.collaborator-detail__identity > div {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .collaborator-detail__identity .ui-avatar {
-  width: 5rem;
-  height: 5rem;
+  width: 5.5rem;
+  height: 5.5rem;
 }
 
 .collaborator-detail__identity p {
@@ -2130,6 +2369,19 @@ a.client-general__block:focus-visible {
   color: var(--text-secondary);
   font: var(--body-md);
   overflow-wrap: anywhere;
+}
+
+.collaborator-detail__meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2);
+}
+
+.collaborator-detail__meta svg {
+  width: 1rem;
+  height: 1rem;
+  margin-top: var(--space-1);
 }
 
 /* The line that says who the person is in the agency: the one that reads first. */
@@ -2211,8 +2463,20 @@ a.client-general__block:focus-visible {
   justify-items: start;
   gap: var(--space-2);
   margin-top: var(--space-2);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border-default);
+  padding: var(--space-4);
+  border: 1px solid var(--block-red-bg);
+  border-radius: var(--radius-lg);
+}
+
+/* Away from the primary action and quiet: the red is the text, not a filled block. */
+.collaborator-detail__remove .ui-button--destructive:not(:disabled) {
+  background: transparent;
+  color: var(--text-danger);
+}
+
+.collaborator-detail__remove .ui-button--destructive:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--block-red-bg);
+  filter: none;
 }
 
 .collaborator-detail__status p {
@@ -2287,15 +2551,11 @@ a.client-general__block:focus-visible {
   text-align: center;
 }
 
-/* Pending invitations: specs/colaboradores.md section 7. One surface with rows split by lines (no card inside a card):
-   an invitation has no photo or identity, only an e-mail, a role and a deadline. */
+/* Pending invitations: specs/colaboradores.md section 7. The heading and a card per invitation, straight on the canvas, like
+   the board's rows: an invitation has no photo or identity, only an e-mail, a role and a deadline. */
 .invites {
   display: grid;
   gap: var(--space-4);
-  padding: var(--space-6);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
 }
 
 .invites__header {
@@ -2313,60 +2573,73 @@ a.client-general__block:focus-visible {
 
 .invites__list {
   display: grid;
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .invites__item {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-2) var(--space-4);
-  padding-block: var(--space-4);
-  border-top: 1px solid var(--border-default);
-}
-
-.invites__item:first-child {
-  padding-top: 0;
-  border-top: none;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
 }
 
 .invites__email {
-  flex: 1 1 14rem;
+  grid-column: 1 / 3;
   min-width: 0;
   margin: 0;
-  font: var(--label-md);
+  font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
 .invites__role {
+  grid-column: 1;
   margin: 0;
 }
 
 .invites__expiry {
+  grid-column: 2;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   margin: 0;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: var(--body-md);
 }
 
 /* A deadline that passed says so in words and in the danger colour, over `bg/surface` where it is guaranteed. */
 .invites__expiry--expired {
   color: var(--text-danger);
+  font-weight: 600;
 }
 
 .invites__actions {
+  grid-column: 3;
+  grid-row: 1 / 3;
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
-  margin-left: auto;
+}
+
+/* "Cancelar" is the quiet danger action of the board: red text, no fill. */
+.invites__actions .ui-button--ghost {
+  color: var(--text-danger);
+}
+
+.invites__actions .ui-button--ghost:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--block-red-bg);
+  color: var(--text-danger);
 }
 
 .invites__error-line {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   margin: 0;
   color: var(--text-danger);
   font: var(--body-md);
@@ -2380,7 +2653,24 @@ a.client-general__block:focus-visible {
   justify-content: flex-start;
 }
 
-/* Portal access tab: specs/clientes.md section 7, issue #140. Rows set apart by a line, no card: a row is a person, and what it holds is the first level. */
+@media (max-width: 47.99rem) {
+  .invites__item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .invites__email {
+    grid-column: 1 / -1;
+  }
+
+  .invites__actions {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    justify-content: flex-start;
+    margin-top: var(--space-2);
+  }
+}
+
+/* Portal access tab: specs/clientes.md section 7, issue #140. A person is a rounded card with who they are, when they last came in and what can be done with the access. */
 .portal-access {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2403,6 +2693,7 @@ a.client-general__block:focus-visible {
 .portal-access__list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2412,19 +2703,22 @@ a.client-general__block:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2) var(--space-4);
-  padding-block: var(--space-4);
-  border-top: 1px solid var(--border-subtle);
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
 }
 
 .portal-access__who {
   display: grid;
   flex: 1 1 12rem;
+  gap: 0.125rem;
   min-width: 0;
 }
 
 .portal-access__name {
-  font: var(--label-md);
+  font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
@@ -2444,10 +2738,17 @@ a.client-general__block:focus-visible {
   font: var(--body-md);
 }
 
+/* What can be done with the access gets its own line under the person, so the buttons never squeeze the name. */
 .portal-access__actions {
   display: flex;
+  flex: 1 1 100%;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: var(--space-2);
+}
+
+.portal-access__invites .portal-access__actions {
+  flex: 0 1 auto;
   margin-left: auto;
 }
 
@@ -2477,8 +2778,6 @@ a.client-general__block:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
-  padding-top: var(--space-6);
-  border-top: 1px solid var(--border-default);
 }
 
 .portal-access__removed-header {
@@ -2496,8 +2795,17 @@ a.client-general__block:focus-visible {
 }
 
 .portal-access__last {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   color: var(--text-secondary);
   font: var(--caption);
+}
+
+.portal-access__last svg {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .portal-access__copy {
@@ -3246,24 +3554,49 @@ a.client-general__block:focus-visible {
 }
 
 .agency-sidebar__context {
-  display: grid;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
-  gap: var(--space-1);
-  padding: 0 var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.agency-sidebar__context:hover {
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
+}
+
+.agency-sidebar__context-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
 }
 
 .agency-sidebar__context-label {
-  color: var(--text-muted);
-  font: var(--label-sm);
+  color: var(--text-secondary);
+  font: var(--caption);
 }
 
 .agency-sidebar__context-name {
   overflow: hidden;
   color: var(--text-primary);
   font: var(--label-md);
+  font-weight: 600;
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The whole box is the link to the agency's Início. */
+.agency-sidebar__context-name::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 
 .agency-nav {
@@ -3275,8 +3608,10 @@ a.client-general__block:focus-visible {
 .agency-nav__group-title {
   margin: 0;
   padding: var(--space-4) var(--space-3) var(--space-2);
-  color: var(--text-muted);
-  font: var(--label-sm);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .agency-nav ul {
@@ -3306,25 +3641,32 @@ a.client-general__block:focus-visible {
 }
 
 .agency-nav a:hover {
-  background: var(--bg-surface);
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
 .agency-nav a[aria-current='page'] {
-  background: var(--bg-surface);
-  box-shadow: inset 0 0 0 1px var(--border-subtle);
-  color: var(--text-primary);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+  font-weight: 600;
+}
+
+.agency-nav a[aria-current='page'] svg {
+  color: var(--color-indigo-600);
 }
 
 .agency-sidebar__foot {
   padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
 }
 
 .account-menu--sidebar {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
 }
 
 .account-menu--sidebar .ui-menu {
@@ -3337,7 +3679,8 @@ a.client-general__block:focus-visible {
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+  border-radius: var(--radius-full);
   text-align: left;
 }
 
@@ -3437,6 +3780,9 @@ a.client-general__block:focus-visible {
 
   .agency-sidebar[data-collapsed='true'] .account-menu--sidebar {
     justify-content: center;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
   }
 
   .agency-sidebar[data-collapsed='true'] .ui-menu {
@@ -3543,6 +3889,12 @@ a.client-general__block:focus-visible {
     border-top: 0;
   }
 
+  .account-menu--sidebar {
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+  }
+
   .account-menu--sidebar .ui-menu__trigger {
     padding: var(--space-2);
   }
@@ -3576,12 +3928,28 @@ a.client-general__block:focus-visible {
   text-align: center;
 }
 
-/* Parado no cliente: what waits for a client, by client; the state of the deadline is an icon and words, never only a colour. */
+.agency-home__panels {
+  display: grid;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.agency-home__panels:has(> .agency-milestones) {
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+}
+
+@media (max-width: 80rem) {
+  .agency-home__panels:has(> .agency-milestones) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Parado no cliente: what waits for a client, by client, in rounded rows; the state of the deadline is a tag with an icon and words, never only a colour. */
 .awaiting-client {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
   min-width: 0;
-  padding: var(--space-4);
+  padding: var(--space-6);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
@@ -3590,21 +3958,44 @@ a.client-general__block:focus-visible {
 .awaiting-client__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-1) var(--space-3);
 }
 
-.awaiting-client__title {
-  margin: 0;
-  font: var(--heading-md);
+.awaiting-client__heading {
+  display: grid;
+  gap: var(--space-1);
 }
 
-.awaiting-client__count,
+.awaiting-client__title {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.awaiting-client__hint,
 .awaiting-client__more {
   margin: 0;
   color: var(--text-secondary);
   font: var(--body-md);
+}
+
+.awaiting-client__count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font: var(--caption);
+  font-weight: 600;
+}
+
+.awaiting-client__count svg {
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .awaiting-client__skeleton {
@@ -3621,12 +4012,23 @@ a.client-general__block:focus-visible {
 }
 
 .awaiting-client__clients {
-  gap: var(--space-4);
+  gap: var(--space-5);
+}
+
+.awaiting-client__items {
+  gap: var(--space-2);
 }
 
 .awaiting-client__group {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.awaiting-client__who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -3648,18 +4050,24 @@ a.client-general__block:focus-visible {
   align-items: center;
   gap: var(--space-1) var(--space-3);
   min-height: 2.75rem;
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
   color: var(--text-primary);
   text-decoration: none;
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard);
 }
 
-.awaiting-client__item:hover .awaiting-client__item-title {
-  text-decoration: underline;
+.awaiting-client__item:hover {
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
 }
 
 .awaiting-client__item-title {
-  font: var(--label-md);
+  font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
@@ -3676,6 +4084,133 @@ a.client-general__block:focus-visible {
 .awaiting-client__item .approval-state {
   grid-column: 2;
   grid-row: 1 / span 2;
+  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font-weight: 600;
+}
+
+.awaiting-client__item .approval-state .ui-icon {
+  color: inherit;
+}
+
+.awaiting-client__item .approval-state--expired {
+  background: var(--status-late-bg);
+  color: var(--status-late-text);
+}
+
+/* The summary cards above it: a colour family per card, the 3D icon on its stage leaving by the top, a number and the way forward. */
+.home-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-8) var(--space-4);
+  margin: 0;
+  padding: var(--space-4) 0 0;
+  list-style: none;
+}
+
+.home-summary__card {
+  --b-bg: var(--block-slate-bg);
+  --b-fg: var(--block-slate-fg);
+  --ui-stage-bg: var(--b-bg);
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: var(--space-1);
+  min-height: 11.5rem;
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--b-bg);
+  color: var(--b-fg);
+}
+
+.home-summary__card--violet {
+  --b-bg: var(--block-violet-bg);
+  --b-fg: var(--block-violet-fg);
+}
+
+.home-summary__card--red {
+  --b-bg: var(--block-red-bg);
+  --b-fg: var(--block-red-fg);
+}
+
+.home-summary__label,
+.home-summary__number,
+.home-summary__hint {
+  margin: 0;
+}
+
+.home-summary__label {
+  max-width: 62%;
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.home-summary__number {
+  font: var(--stat-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-summary__hint {
+  font: var(--body-md);
+}
+
+.home-summary__action {
+  display: inline-flex;
+  align-items: center;
+  align-self: end;
+  justify-self: start;
+  gap: var(--space-1);
+  min-height: 2.75rem;
+  margin-top: var(--space-3);
+  color: inherit;
+  font: var(--label-md);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.home-summary__action:hover {
+  text-decoration-thickness: 2px;
+}
+
+.home-summary__action svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+
+@media (max-width: 47.99rem) {
+  .home-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-8) var(--space-3);
+  }
+
+  .home-summary__card {
+    min-height: 0;
+    padding: var(--space-4);
+  }
+
+  /* The stage shrinks with the card: its disc, shadow and box all come from `--ss`. */
+  .home-summary__card > .ui-stage {
+    --ss: var(--stage-size-md);
+    right: var(--space-2);
+  }
+
+  .home-summary__label {
+    max-width: 55%;
+  }
+
+  /* "Esperando o cliente" is "Esperando" on a phone; the rest stays for assistive technology. */
+  .home-summary__label-rest {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 .approval-state {
@@ -3709,6 +4244,7 @@ a.client-general__block:focus-visible {
   .awaiting-client__item .approval-state {
     grid-column: 1;
     grid-row: auto;
+    justify-self: start;
   }
 }
 
@@ -4049,7 +4585,7 @@ main > .shell-notice {
 
 .brand-personas__list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
   gap: var(--space-4);
   margin: 0;
   padding: 0;
@@ -4058,12 +4594,12 @@ main > .shell-notice {
 
 .brand-personas__card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: var(--space-3);
-  align-content: start;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: var(--space-4);
+  align-items: center;
   width: 100%;
   height: 100%;
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-5);
   text-align: left;
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -4071,15 +4607,30 @@ main > .shell-notice {
   border-radius: var(--radius-lg);
   text-decoration: none;
   cursor: pointer;
+  transition: box-shadow var(--motion-base), border-color var(--motion-fast);
 }
 
-.brand-personas__card .ui-avatar {
-  grid-row: span 2;
+.brand-personas__body {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.brand-personas__go {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--text-secondary);
 }
 
 .brand-personas__card:hover,
 .brand-personas__card:focus-visible {
   border-color: var(--border-control);
+}
+
+.brand-personas__card:hover {
+  box-shadow: var(--shadow-raised);
 }
 
 .brand-personas__name {
@@ -4132,6 +4683,7 @@ main > .shell-notice {
 .brand-persona__actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-2);
 }
 
@@ -4146,6 +4698,56 @@ main > .shell-notice {
 
 .brand-study--agency .brand-study__main {
   min-width: 0;
+}
+
+/* The index is a card of its own: the title and the count, the bar of what is filled, then the seven sections. */
+.brand-study--agency .brand-study__side {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-study__header {
+  gap: var(--space-2) var(--space-3);
+}
+
+.brand-study--agency .brand-study__header h2 {
+  font: var(--title-md);
+}
+
+.brand-study--agency .brand-study__count {
+  border-color: transparent;
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.brand-study--agency .brand-study__progress {
+  appearance: none;
+  width: 100%;
+  height: 0.5rem;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--status-ready-bg);
+  overflow: hidden;
+}
+
+.brand-study--agency .brand-study__progress::-webkit-progress-bar {
+  background: var(--status-ready-bg);
+}
+
+.brand-study--agency .brand-study__progress::-webkit-progress-value {
+  border-radius: var(--radius-full);
+  background: var(--status-ready-fg);
+}
+
+.brand-study--agency .brand-study__progress::-moz-progress-bar {
+  border-radius: var(--radius-full);
+  background: var(--status-ready-fg);
 }
 
 /* The index is a column on a wide screen and a row that scrolls sideways on a narrow one; the page itself never scrolls sideways. */
@@ -4182,11 +4784,28 @@ main > .shell-notice {
   white-space: nowrap;
 }
 
-.brand-index__link > svg {
+.brand-index__dot {
+  display: grid;
+  place-items: center;
   flex: none;
-  width: 1.25rem;
-  height: 1.25rem;
-  stroke-width: 1.75;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: var(--radius-full);
+}
+
+.brand-index__dot--done {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.brand-index__dot--open {
+  border: 1.5px solid var(--border-control);
+}
+
+.brand-index__dot > svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  stroke-width: 3;
 }
 
 .brand-index__link:hover {
@@ -4195,13 +4814,17 @@ main > .shell-notice {
 }
 
 .brand-index__link[aria-current='page'] {
-  border-color: var(--border-control);
-  background: var(--bg-surface);
-  color: var(--text-primary);
+  border-color: transparent;
+  background: var(--bg-tint);
+  color: var(--action-secondary-fg);
+  font-weight: 600;
 }
 
 .brand-index__awaiting {
   margin-left: auto;
+  border-color: transparent;
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
 }
 
 .brand-index--skeleton {
@@ -4225,9 +4848,9 @@ main > .shell-notice {
 /* The open section is a card: title and who last edited it on the left, the way to edit it on the right. */
 .brand-study--agency .brand-section {
   align-content: start;
-  padding: var(--space-4);
+  padding: var(--space-5);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
@@ -4253,8 +4876,34 @@ main > .shell-notice {
 
 .brand-archetype {
   margin: 0;
-  font: var(--heading-lg);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--block-indigo-bg);
+  color: var(--block-indigo-fg);
+  font: var(--heading-xl);
   overflow-wrap: anywhere;
+}
+
+/* The colours are swatches in a card of their own: the paint, then the name and the code. */
+.brand-study--agency .brand-colors:not(.brand-colors--edit) .brand-colors__item {
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-colors__swatch {
+  height: 4.5rem;
+  border-radius: var(--radius-md);
+}
+
+.brand-study--agency .brand-colors__name {
+  padding-inline: var(--space-1);
+  font: var(--label-md);
+}
+
+.brand-study--agency .brand-colors__hex {
+  padding-inline: var(--space-1);
 }
 
 /* The card, and the conversations of the same subject beside it when they fit or under it when they do not. */
@@ -4270,10 +4919,25 @@ main > .shell-notice {
   min-width: 0;
 }
 
+/* The conversations of the subject are a card too, with the same edge as the section beside it. */
+.brand-study--agency .brand-panel__conversations {
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-panel__conversations .conversation {
+  padding-top: 0;
+  border-top: 0;
+}
+
 .brand-personas__awaiting {
-  grid-column: 2;
   justify-self: start;
-  margin-top: var(--space-2);
+  margin-top: var(--space-1);
+  border-color: transparent;
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
 }
 
 .brand-personas__archived-item .brand-personas__name {
@@ -4324,7 +4988,22 @@ main > .shell-notice {
 }
 
 .brand-persona__identity {
-  justify-items: start;
+  justify-items: center;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  text-align: center;
+}
+
+.brand-persona__avatar {
+  width: 6rem;
+  height: 6rem;
+  box-shadow: 0 0 0 4px var(--bg-tint);
+}
+
+.brand-persona__avatar .ui-avatar__initials {
+  font: var(--heading-xl);
 }
 
 .brand-persona__content {
@@ -4347,17 +5026,55 @@ main > .shell-notice {
 
 .brand-persona__card {
   display: grid;
-  gap: var(--space-2);
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
   align-content: start;
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
 }
 
+.brand-persona__card-icon {
+  display: grid;
+  grid-row: span 2;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-tint);
+  color: var(--action-secondary-fg);
+}
+
+.brand-persona__card-icon > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
 .brand-persona__card h4 {
   margin: 0;
+  color: var(--text-secondary);
   font: var(--label-md);
+}
+
+.brand-persona__conversations {
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-persona__conversations .conversation {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.brand-persona__form {
+  max-width: 40rem;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
 }
 
 @media (min-width: 48rem) {
@@ -4383,6 +5100,10 @@ main > .shell-notice {
     white-space: normal;
   }
 
+  .brand-index__link[aria-current='page'] {
+    border-color: transparent;
+  }
+
   .brand-index--skeleton {
     flex-direction: column;
   }
@@ -4397,15 +5118,19 @@ main > .shell-notice {
     grid-template-columns: minmax(0, 1fr) 20rem;
   }
 
-  .brand-panel__conversations {
-    padding-left: var(--space-6);
-    border-left: 1px solid var(--border-default);
+  /* The column is narrow here: the status goes under the text instead of taking a column of its own. */
+  .brand-study--agency .brand-panel__conversations .conversation__thread {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .brand-study--agency .brand-panel__conversations .conversation {
-    padding-top: 0;
-    border-top: 0;
+  .brand-study--agency .brand-panel__conversations .conversation__thread > .conversation__status {
+    grid-column: 1;
+    grid-row: auto;
+    order: 6;
+    justify-self: start;
+    margin-top: var(--space-1);
   }
+
 }
 
 /* The conversation about one subject (issue #142): side by label, never by color alone. */
@@ -4562,9 +5287,8 @@ main > .shell-notice {
   font: var(--caption);
 }
 
-/* The request list on the client's Geral tab: a block of the page, full width under the summary blocks. */
+/* The request list on the client's Geral tab: a card of the page, beside the registration on a wide screen and above it on a narrow one. */
 .client-general__requests {
-  grid-column: 1 / -1;
   min-width: 0;
   padding: var(--space-6);
   border: 1px solid var(--border-default);
@@ -4575,6 +5299,10 @@ main > .shell-notice {
 .client-general__requests .conversation {
   padding-top: 0;
   border-top: 0;
+}
+
+.client-general__requests .conversation__title {
+  font: var(--heading-lg);
 }
 
 /* The conversation inside the brand study: rows set apart by a line instead of cards, so a thread is not a card inside a section.
@@ -4663,6 +5391,110 @@ main > .shell-notice {
   font: var(--label-md);
 }
 
+/* The conversations of the agency (the study and the requests for material) in the look of the rows of the board: each thread is a card,
+   the viewer's turn is the filled pill and the others are soft. A content keeps the look of its modal, the client keeps the portal's. */
+.brand-study--agency .brand-panel__conversations .conversation__title {
+  font: var(--title-md);
+}
+
+.conversation--agency .conversation__threads {
+  gap: var(--space-2);
+}
+
+.conversation--agency .conversation__thread {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  transition: box-shadow var(--motion-base), border-color var(--motion-fast);
+}
+
+.conversation--agency .conversation__threads > li:first-child .conversation__thread {
+  border-top: 1px solid var(--border-default);
+}
+
+.conversation--agency .conversation__thread:hover {
+  border-color: var(--border-control);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.conversation--agency .conversation__thread > * {
+  grid-column: 1;
+}
+
+/* What the person reads first goes first: the kind of request, what was said, who said it and the deadline. */
+.conversation--agency .conversation__thread-subject {
+  order: 1;
+  font: var(--title-md);
+}
+
+.conversation--agency .conversation__thread-excerpt {
+  order: 2;
+}
+
+.conversation--agency .conversation__thread-meta {
+  order: 3;
+}
+
+.conversation--agency .conversation__thread-last {
+  order: 4;
+}
+
+.conversation--agency .conversation__thread-due {
+  order: 5;
+}
+
+.conversation--agency .conversation__thread > .conversation__status {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  justify-self: end;
+}
+
+.conversation--agency .conversation__status--open {
+  border-color: transparent;
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+}
+
+.conversation--agency .conversation__status--resolved {
+  border-color: transparent;
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+/* The empty list is a note: the bulb beside one line, on the tint of the brand. */
+.conversation--agency .conversation__tip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-hover);
+}
+
+.conversation--agency .conversation__tip .conversation__empty {
+  color: var(--text-primary);
+}
+
+/* The messages of the open thread: the agency's on the tint of the note, the client's outlined and dashed, so the side is also told by the line. */
+.conversation__thread-view--agency .conversation__comment {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.conversation__thread-view--agency .conversation__comment--client {
+  border: 1px dashed var(--border-control);
+  background: var(--bg-surface);
+}
+
 /* --- Portal do cliente (#141, #686): tema claro, celular primeiro, Pauta ---
    Peças comuns do portal, para as telas de dentro (#687 post, #688 lista, #689 marca) usarem sem criar as suas:
    .portal-section / .portal-section__title   um bloco da tela e o seu título
@@ -4675,18 +5507,29 @@ main > .shell-notice {
    .portal-error                              o erro de um bloco, com "Tentar de novo"
    Três tamanhos de texto por tela: --heading-xl, --body-md e --caption. --- */
 
-.portal-shell > .portal-header {
+/* The shell has two pieces: the navigation (the client, the bar, the person) and the content. On a phone the navigation is the top bar
+   and the bottom bar, each a flex item of the shell; from 48rem it is the side column. */
+.portal-sidebar {
+  display: contents;
+}
+
+.portal-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  order: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
   padding: var(--space-3) var(--space-4);
   background: var(--bg-canvas);
   color: var(--text-primary);
   font: var(--body-md);
 }
 
-.portal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
+.portal-header__brand {
+  display: none;
 }
 
 .portal-header__identity {
@@ -4694,6 +5537,16 @@ main > .shell-notice {
   align-items: center;
   min-width: 0;
   gap: var(--space-3);
+}
+
+/* The menu of the person opens down from the top bar of a phone, not up as it does from the foot of the side column. */
+@media (max-width: 47.99rem) {
+  .portal-header .account-menu--sidebar .ui-menu__content {
+    top: calc(100% + var(--space-2));
+    right: 0;
+    bottom: auto;
+    left: auto;
+  }
 }
 
 .portal-header__labels {
@@ -4739,6 +5592,7 @@ main > .shell-notice {
 
 /* The focused control scrolls clear of the sticky bar: below it on a phone, under the tabs on a wide screen (WCAG 2.4.11). */
 html:has(.portal-shell) {
+  scroll-padding-top: 4.5rem;
   scroll-padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
 }
 
@@ -4749,6 +5603,7 @@ html:has(.portal-shell) {
   box-sizing: border-box;
   max-width: 64rem;
   padding: var(--space-3) var(--space-4) var(--space-8);
+  order: 1;
 }
 
 .portal-nav {
@@ -4756,6 +5611,7 @@ html:has(.portal-shell) {
   position: sticky;
   bottom: 0;
   z-index: 5;
+  order: 2;
   background: var(--bg-surface);
   border-top: 1px solid var(--border-default);
   padding-bottom: env(safe-area-inset-bottom);
@@ -4795,23 +5651,24 @@ html:has(.portal-shell) {
   color: var(--text-primary);
 }
 
-/* The open tab is underlined in ink, never in indigo (docs/design-system.md section 25.2). */
+/* The open item is a tinted pill with bold text, as in the agency's navigation: it never rests on colour alone. */
 .portal-nav a[aria-current='page'] {
-  position: relative;
-  color: var(--text-primary);
-}
-
-.portal-nav a[aria-current='page']::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  width: 2rem;
-  height: 2px;
-  background: var(--text-primary);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+  font-weight: 700;
 }
 
 .portal-nav a[aria-current='page'] svg {
-  stroke-width: 2.25;
+  color: var(--color-indigo-600);
+}
+
+.portal-nav__title {
+  display: none;
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .portal-nav a[data-tour-target='true'] {
@@ -4905,7 +5762,7 @@ html:has(.portal-shell) {
   min-width: 0;
   padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
@@ -5077,8 +5934,9 @@ html:has(.portal-shell) {
 
 .portal-home__greeting {
   margin: 0;
-  color: var(--text-secondary);
-  font: var(--body-md);
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 
 .portal-home__main {
@@ -5087,9 +5945,152 @@ html:has(.portal-shell) {
   min-width: 0;
 }
 
+.portal-home__main:empty {
+  display: none;
+}
+
+.portal-home__calm {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* The week is a card of the screen, as "A agência pediu" is. */
 .portal-home__week {
   min-width: 0;
   align-content: start;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+/* What waits for the person, in the lilac block of the board: the posts as white cards on it, the one action under them. */
+.portal-hero {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--bg-tint);
+}
+
+.portal-hero .portal-headline {
+  font: var(--heading-xl);
+}
+
+.portal-hero .portal-covers {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.portal-hero .portal-covers__skeleton {
+  aspect-ratio: 5 / 4;
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.portal-hero .ui-empty-state--failure {
+  border-color: transparent;
+}
+
+.portal-postcard {
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  transition:
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
+}
+
+.portal-postcard:hover {
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-postcard {
+    transition: none;
+  }
+
+  .portal-postcard:hover {
+    transform: none;
+  }
+}
+
+.portal-postcard .portal-cover {
+  aspect-ratio: 5 / 4;
+  border-radius: var(--radius-md);
+}
+
+.portal-postcard__body {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-1) var(--space-1);
+}
+
+.portal-postcard .portal-cover-link__title {
+  font: var(--title-md);
+}
+
+.portal-postcard .approval-round__due {
+  font: var(--caption);
+  font-weight: 600;
+}
+
+/* The loose 3D icon of an empty state: a block of the tone of its family, the icon in the middle and the text under it. */
+.portal-stage-empty {
+  --ui-stage-bg: var(--block-slate-bg);
+  --sx-fg: var(--block-slate-fg);
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-8) var(--space-4) var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--ui-stage-bg);
+  color: var(--text-primary);
+}
+
+.portal-stage-empty--indigo {
+  --ui-stage-bg: var(--block-indigo-bg);
+  --sx-fg: var(--block-indigo-fg);
+}
+
+.portal-stage-empty--violet {
+  --ui-stage-bg: var(--block-violet-bg);
+  --sx-fg: var(--block-violet-fg);
+}
+
+.portal-stage-empty--teal {
+  --ui-stage-bg: var(--block-teal-bg);
+  --sx-fg: var(--block-teal-fg);
+}
+
+.portal-stage-empty--sky {
+  --ui-stage-bg: var(--block-sky-bg);
+  --sx-fg: var(--block-sky-fg);
+}
+
+.portal-stage-empty :is(.ui-empty-state) {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.portal-stage-empty .ui-empty-state__icon {
+  display: none;
+}
+
+.portal-stage-empty .ui-empty-state__title {
+  margin-top: var(--space-3);
+  color: var(--sx-fg);
+}
+
+.portal-stage-empty .ui-empty-state__description {
+  color: var(--text-primary);
 }
 
 .portal-home__title-skeleton {
@@ -5143,18 +6144,81 @@ html:has(.portal-shell) {
 /* "A agência pediu": the open requests for material, each a block with the text, who asked and by when. */
 .portal-requests {
   min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.portal-requests .portal-section__title {
+  font: var(--heading-lg);
+}
+
+.portal-requests__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* The number of requests, with its icon and its word: the same tag as the board's "2 pedidos". */
+.portal-requests__count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font: var(--caption);
+  font-weight: 600;
+}
+
+.portal-requests__count svg {
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .portal-requests__list {
   display: grid;
-  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* A request is a row: the mark, what was asked and by when, and the one action under them. */
 .portal-request {
-  justify-items: start;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+}
+
+.portal-request + .portal-request {
+  border-top: 1px solid var(--border-default);
+}
+
+.portal-request > .ui-button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.portal-request__icon {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-md);
+  background: var(--block-indigo-bg);
+  color: var(--block-indigo-fg);
+}
+
+.portal-request__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .portal-request__body {
@@ -5247,7 +6311,7 @@ html:has(.portal-shell) {
 
 .portal-skeleton h1 {
   margin: 0;
-  font: var(--heading-xl);
+  font: var(--display-lg);
   letter-spacing: -0.02em;
 }
 
@@ -5290,67 +6354,131 @@ html:has(.portal-shell) {
     scroll-padding-bottom: 0;
   }
 
-  .portal-shell > .portal-header {
-    padding: var(--space-4) var(--space-8);
+  /* A wide screen: the side column of the agency's shell. The client, the bar and the person stack in it, the tour card opens beside the bar. */
+  .portal-shell {
+    display: grid;
+    grid-template-columns: 15.5rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .portal-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    box-sizing: border-box;
+    height: 100vh;
+    height: 100dvh;
+    padding: var(--space-6) var(--space-4);
+    border-right: 1px solid var(--border-subtle);
+    background: var(--bg-canvas);
+  }
+
+  .portal-header {
+    display: contents;
+  }
+
+  .portal-header__brand {
+    display: block;
+    order: 0;
+    padding: 0 var(--space-2) var(--space-2);
+  }
+
+  .portal-header__identity {
+    order: 1;
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    background: var(--bg-surface);
+  }
+
+  .portal-header .account-menu {
+    order: 3;
   }
 
   .portal-shell > .portal-content {
-    margin: 0 auto;
-    padding: var(--space-6) var(--space-8) var(--space-12);
-    order: 2;
+    max-width: 80rem;
+    margin: 0;
+    padding: var(--space-8) var(--space-8) var(--space-12);
   }
 
-  /* On a wide screen the bar is the tabs under the header, and the tour card hangs from it. */
-  .portal-shell > .portal-nav {
-    position: sticky;
-    top: 0;
+  .portal-nav {
+    position: relative;
     bottom: auto;
-    order: 1;
+    z-index: auto;
+    flex: 1;
+    min-height: 0;
+    background: transparent;
     border-top: 0;
-    border-bottom: 1px solid var(--border-default);
+    padding-bottom: 0;
+  }
+
+  .portal-nav__title {
+    display: block;
+    padding: var(--space-4) var(--space-3) var(--space-2);
   }
 
   .portal-nav ul {
-    grid-template-columns: repeat(4, 8rem);
-    justify-content: center;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
   }
 
   .portal-nav a {
-    grid-auto-flow: column;
-    justify-content: center;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-3);
     min-height: 2.75rem;
-    font: var(--body-md);
+    padding: 0 var(--space-3);
+    font: var(--label-md);
+    text-align: left;
   }
 
-  .portal-nav a[aria-current='page']::before {
-    top: auto;
-    bottom: 0;
-    width: 100%;
+  .portal-nav a svg {
+    flex: none;
+    width: 1.25rem;
+    height: 1.25rem;
   }
 
   .portal-nav .portal-tour:not([data-step='welcome']) {
-    top: 100%;
+    inset-inline: calc(100% + var(--space-6)) auto;
+    top: 0;
     bottom: auto;
-    margin: var(--space-2) auto 0;
+    width: 22rem;
+    margin: 0;
   }
 
   .portal-home {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    column-gap: var(--space-12);
+    gap: var(--space-6);
     align-items: start;
   }
 
-  .portal-home__greeting {
+  .portal-home__greeting,
+  .portal-hero,
+  .portal-home__calm {
     grid-column: 1 / -1;
+  }
+
+  .portal-home__main:empty + .portal-home__week {
+    grid-column: 1 / -1;
+  }
+
+  .portal-hero {
+    gap: var(--space-6);
+    padding: var(--space-8);
+  }
+
+  .portal-hero .portal-covers {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-4);
   }
 
   .portal-action {
     width: auto;
     justify-self: start;
-  }
-
-  .portal-covers {
-    grid-template-columns: repeat(2, minmax(0, 12rem));
   }
 }
 
@@ -5367,10 +6495,22 @@ html:has(.portal-shell) {
   margin: 0;
 }
 
+.portal-contents h1.portal-headline {
+  font: var(--display-lg);
+}
+
+/* What waits is the lilac block of the Início: the posts are white cards on it. */
 .portal-awaiting {
   display: grid;
   gap: var(--space-3);
   min-width: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--bg-tint);
+}
+
+.portal-awaiting .portal-section__title {
+  font: var(--heading-lg);
 }
 
 .portal-awaiting__skeleton {
@@ -5393,6 +6533,9 @@ html:has(.portal-shell) {
   align-content: start;
   gap: var(--space-1);
   min-width: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
 }
 
 .portal-awaiting__title,
@@ -5499,6 +6642,14 @@ html:has(.portal-shell) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
+  padding: var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+}
+
+.portal-contents__toggle .ui-button {
+  border-radius: var(--radius-full);
 }
 
 .portal-contents__period .ui-button,
@@ -5571,9 +6722,9 @@ html:has(.portal-shell) {
   display: grid;
   grid-template-columns: 4rem minmax(0, 1fr);
   gap: var(--space-3);
-  padding: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   color: var(--text-primary);
 }
@@ -5638,6 +6789,8 @@ html:has(.portal-shell) {
 }
 
 .portal-post h1 {
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
 
@@ -5728,16 +6881,30 @@ html:has(.portal-shell) {
   min-width: 0;
 }
 
+/* The picture on its tinted stage, the caption under it, all in one white card of the board. */
 .portal-post__card {
   display: grid;
+  gap: var(--space-4);
   min-width: 0;
+  padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
 .portal-post__caption-block {
-  padding: var(--space-3) var(--space-4) var(--space-4);
+  padding: 0;
+}
+
+.portal-post__eyebrow {
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.portal-post .portal-post__eyebrow {
+  font: var(--caption);
 }
 
 .portal-post__section {
@@ -5797,6 +6964,48 @@ html:has(.portal-shell) {
   padding-inline: var(--space-3);
 }
 
+/* The deadline and the note, then the post, then the decision bar: the order of the page is the order of the markup, on a phone and for assistive technology. */
+.portal-post__layout {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.portal-post__layout .approval-round {
+  gap: var(--space-3);
+}
+
+.portal-post__layout .approval-round__due {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font: var(--title-md);
+  font-weight: 700;
+}
+
+.portal-post__layout .approval-round__due .ui-icon {
+  color: inherit;
+}
+
+.portal-post__layout .approval-round__note {
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.portal-post__layout .approval-round__author {
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.portal-post__layout .approval-round__text {
+  font: var(--body-lg);
+}
+
 /* The section already has its title; the conversation's own is kept for assistive technology only, and its rule is not needed under a title. */
 .portal-post .conversation {
   padding-top: 0;
@@ -5810,6 +7019,31 @@ html:has(.portal-shell) {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* The conversation of the post in bubbles: the agency's on the left, the person's on the right. The side is still said by the author's name. */
+.portal-post .conversation__comment {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+}
+
+.portal-post .conversation__comment--client {
+  justify-self: end;
+  max-width: 92%;
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-sm);
+  background: var(--bg-tint);
+}
+
+.portal-post .conversation__comment-meta {
+  font: var(--body-md);
+}
+
+.portal-post .conversation__comment-author {
+  font: var(--label-md);
 }
 
 .portal-post__title-skeleton {
@@ -5827,7 +7061,7 @@ html:has(.portal-post__bar) {
 
 @media (max-width: 47.99rem) {
   /* The post is the whole screen: the way back is the link on top. The tour points at the bar, so it keeps the bar while it is open. */
-  .portal-shell:has(.portal-post):not(:has(.portal-tour)) > .portal-nav {
+  .portal-shell:has(.portal-post):not(:has(.portal-tour)) .portal-nav {
     display: none;
   }
 
@@ -5842,28 +7076,70 @@ html:has(.portal-post__bar) {
 }
 
 @media (min-width: 48rem) {
-  .portal-post__body {
+  /* The post and its answer side by side, with no change in the order of the markup: the picture and the conversation span the left column, the deadline and the decision stack on the right. */
+  .portal-post__layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+    grid-template-rows: auto auto 1fr;
+    align-items: start;
+    column-gap: var(--space-6);
+    row-gap: 0;
+  }
+
+  .portal-post__layout > .portal-post__body {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+
+  .portal-post__layout > .approval-round,
+  .portal-post__layout > .portal-post__bar {
+    grid-column: 2;
+    border: 1px solid var(--border-default);
+    background: var(--bg-surface);
+  }
+
+  .portal-post__layout > .approval-round {
+    grid-row: 1;
+    padding: var(--space-6) var(--space-6) var(--space-4);
+    border-bottom: 0;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+
+  .portal-post__layout > .portal-post__bar {
+    grid-row: 2 / -1;
+    align-self: start;
+    position: sticky;
+    top: var(--space-4);
+    bottom: auto;
+    margin-inline: 0;
+    padding: var(--space-4) var(--space-6) var(--space-6);
+    border-radius: var(--radius-xl);
+  }
+
+  .portal-post__layout:has(.approval-round) > .portal-post__bar {
+    border-top: 0;
+    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  }
+
+  /* Without an answer to give (approved, published, adjusting) the post keeps its own two columns. */
+  .portal-post__layout:not(:has(.portal-post__bar)) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+  }
+
+  .portal-post__layout:not(:has(.portal-post__bar)) > .portal-post__body {
+    grid-row: auto;
     grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
     align-items: start;
     column-gap: var(--space-8);
   }
 
-  /* The card and the bar share a short wide screen: the picture leaves room for the controls under it. */
+  /* The picture leaves room for its controls under it. */
   .portal-post__card .portal-media__item {
-    max-height: 28rem;
-  }
-
-  .portal-post__bar {
-    bottom: var(--space-4);
-    margin-inline: 0;
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
+    max-height: 32rem;
   }
 
   .portal-post__bar .portal-post__actions {
-    grid-template-columns: repeat(2, minmax(0, 12rem));
-    justify-content: end;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -5885,14 +7161,19 @@ html:has(.portal-post__bar) {
   touch-action: pan-y;
 }
 
-/* In the card the picture is its top, flush with the border. */
+/* In the card the picture sits on a lilac stage, with a soft shadow under it, as on the board. */
 .portal-post__card .portal-media__stage {
-  border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
+  padding: var(--space-4);
+  background: var(--bg-tint);
 }
 
-.portal-post__card .portal-media__controls,
+.portal-post__card .portal-media__item {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+}
+
 .portal-post__card .portal-media__strip {
-  margin-inline: var(--space-3);
+  padding: var(--space-1);
 }
 
 /* What the agency asked of the client: until when and the note, signed by the agency. Plain text on the page, no box of its own. */
@@ -5940,6 +7221,11 @@ html:has(.portal-post__bar) {
 }
 
 /* In a grid of covers the note is a preview: three lines, and the post has the whole of it. */
+.portal-awaiting__item .approval-round__due,
+.portal-awaiting__item .approval-round__text {
+  font: var(--caption);
+}
+
 .portal-awaiting__item .approval-round__text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -6009,7 +7295,7 @@ html:has(.portal-post__bar) {
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--bg-hover);
   color: var(--text-secondary);
   font: var(--label-sm);
@@ -6036,10 +7322,21 @@ html:has(.portal-post__bar) {
   gap: var(--space-6);
 }
 
+.portal-brand .portal-headline {
+  font: var(--display-lg);
+}
+
+/* Each part of the study is a white card of the board. */
+.portal-brand > .brand-section {
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
 .portal-brand .brand-section__header h2 {
   margin: 0;
-  font: var(--body-md);
-  font-weight: 600;
+  font: var(--heading-lg);
 }
 
 .portal-brand__pending {
@@ -6074,7 +7371,7 @@ html:has(.portal-post__bar) {
   padding: var(--space-4);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  background: var(--bg-surface);
+  background: var(--bg-canvas);
 }
 
 .portal-persona__name {
@@ -6253,61 +7550,81 @@ html:has(.portal-post__bar) {
   font-weight: 600;
 }
 
-/* A counter of the month: the number and the state, a dot of the state's own token beside it; a zero reads quieter. */
+/* The counters of the month read like the board's filter row: a pill for each state, in the state's own family (violet waits, teal is
+   ready, red is late). They count, they do not filter, so they are plain items. The word is always there: colour is never the only signal. */
 .contents__summary {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-6);
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .contents__count {
-  display: flex;
-  align-items: baseline;
+  --count-bg: var(--status-production-bg);
+  --count-fg: var(--status-production-text);
+
+  display: inline-flex;
+  align-items: center;
   gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0 var(--space-3) 0 var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  box-shadow: inset 0 0 0 1px var(--border-default);
   color: var(--text-secondary);
   font: var(--caption);
 }
 
-.contents__count::before {
-  content: '';
-  align-self: center;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: var(--radius-full);
-  background: var(--status-production-fg);
+.contents__count[data-status='awaiting_approval'] {
+  --count-bg: var(--status-waiting-bg);
+  --count-fg: var(--status-waiting-text);
 }
 
-.contents__count[data-status='awaiting_approval']::before {
-  background: var(--status-waiting-fg);
+.contents__count[data-status='adjusting'] {
+  --count-bg: var(--status-adjust-bg);
+  --count-fg: var(--status-adjust-text);
 }
 
-.contents__count[data-status='adjusting']::before {
-  background: var(--status-adjust-fg);
+.contents__count[data-status='approved'] {
+  --count-bg: var(--status-ready-bg);
+  --count-fg: var(--status-ready-text);
 }
 
-.contents__count[data-status='approved']::before {
-  background: var(--status-ready-fg);
-}
-
-.contents__count[data-status='published']::before {
-  background: var(--status-published-fg);
-}
-
-.contents__count[data-status='late']::before {
-  background: var(--status-late-fg);
+.contents__count[data-status='late'] {
+  --count-bg: var(--status-late-bg);
+  --count-fg: var(--status-late-text);
 }
 
 .contents__count-number {
-  color: var(--text-primary);
-  font: var(--title-md);
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--count-bg);
+  color: var(--count-fg);
+  font: var(--label-md);
   font-variant-numeric: tabular-nums;
 }
 
+.contents__count-label {
+  color: var(--text-primary);
+}
+
+.contents__count[data-empty] {
+  background: transparent;
+}
+
 .contents__count[data-empty] .contents__count-number {
+  background: var(--bg-hover);
   color: var(--text-muted);
+}
+
+.contents__count[data-empty] .contents__count-label {
+  color: var(--text-secondary);
 }
 
 .contents__actions,
@@ -6328,8 +7645,8 @@ html:has(.portal-post__bar) {
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
@@ -6349,7 +7666,8 @@ html:has(.portal-post__bar) {
 .contents__period-title {
   min-width: 11rem;
   margin: 0 auto 0 0;
-  font: var(--heading-lg);
+  font: var(--heading-xl);
+  letter-spacing: -0.01em;
 }
 
 .contents__skeleton {
@@ -6431,10 +7749,11 @@ html:has(.portal-post__bar) {
 }
 
 .content-calendar__weekdays {
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font: var(--label-sm);
-  letter-spacing: 0.06em;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -6478,15 +7797,24 @@ html:has(.portal-post__bar) {
 .content-day__number {
   margin: 0;
   padding: 0 var(--space-2);
+  color: var(--text-secondary);
   font: var(--label-md);
   font-variant-numeric: tabular-nums;
 }
 
+.content-day--outside .content-day__number {
+  color: var(--text-muted);
+}
+
 .content-day--today .content-day__number span[aria-hidden='true'] {
-  padding: 0 0.3em;
-  border-radius: 3px 7px 4px 8px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-full);
   background: var(--action-primary-bg);
   color: var(--action-primary-fg);
+  font-weight: 700;
 }
 
 .content-day--today .content-day__number::after {
@@ -6599,20 +7927,39 @@ html:has(.portal-post__bar) {
   border-color: transparent;
 }
 
+/* The ring of the board's story circle, as the edge of the day's chip: dashed for a draft, violet for a sent script, teal for a recorded one.
+   Drawn without a pseudo-element, which would become part of the button's name. */
+.content-day__script {
+  border-left: 4px dashed var(--status-production-fg);
+}
+
+.content-day__script[data-status='sent'] {
+  border-left-style: solid;
+  border-left-color: var(--status-waiting-fg);
+}
+
+.content-day__script[data-status='recorded'] {
+  border-left-style: solid;
+  border-left-color: var(--status-ready-fg);
+}
+
 .content-day__script:hover,
 .content-day__script:focus-visible {
   border-color: var(--focus-ring);
   color: var(--text-primary);
 }
 
+/* "Stories do mês": the scripts of the period as a strip of circles above the calendar. The day is the circle and the state is its ring
+   (dashed draft, violet sent, teal recorded) and the tag below it, so the state is never colour alone. The circle is drawn from the item's
+   data, not repeated in the markup, so the row still reads as "day, state, open" to a screen reader; the whole item is the button. */
 .story-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
   min-width: 0;
   padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
@@ -6626,7 +7973,7 @@ html:has(.portal-post__bar) {
 
 .story-list__title {
   margin: 0;
-  font: var(--heading-lg);
+  font: var(--title-md);
 }
 
 /* The empty state of the list reads like the roster's: the block and its text centred together, never a centred block with left-aligned text. */
@@ -6636,42 +7983,98 @@ html:has(.portal-post__bar) {
 }
 
 .story-list__items {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex;
+  gap: var(--space-4);
   margin: 0;
-  padding: 0;
+  padding: var(--space-1) var(--space-1) var(--space-2);
+  overflow-x: auto;
   list-style: none;
+  scrollbar-width: thin;
 }
 
 .story-list__item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  min-width: 0;
-  padding: var(--space-2) 0;
-  border-top: 1px solid var(--border-subtle);
+  --story-ring: var(--status-production-fg);
+
+  position: relative;
+  display: grid;
+  flex: none;
+  justify-items: center;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 5rem;
+  min-height: 2.75rem;
+  padding: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+  text-align: center;
 }
 
-.story-list__item:first-child {
-  border-top: 0;
+.story-list__item[data-status='sent'] {
+  --story-ring: var(--status-waiting-fg);
 }
 
+.story-list__item[data-status='recorded'] {
+  --story-ring: var(--status-ready-fg);
+}
+
+.story-list__item::before {
+  content: attr(data-day);
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 3px solid var(--story-ring);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.story-list__item[data-status='draft']::before {
+  border-style: dashed;
+  border-width: 2px;
+}
+
+.story-list__item::after {
+  content: attr(data-weekday) ' ' attr(data-day);
+  order: 1;
+  color: var(--text-primary);
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+.story-list__item .ui-status-tag {
+  order: 2;
+}
+
+/* The full date is the item's name for who reads it aloud; the circle and its short label are what is seen. */
 .story-list__day {
-  flex: 1 1 14rem;
-  min-width: 0;
-  font: var(--body-md);
-  overflow-wrap: anywhere;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.story-list__item > :last-child {
-  margin-left: auto;
+/* The button is the whole item, a press anywhere on the circle or its words opens the script. */
+.story-list .story-list__item > .ui-button {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: transparent;
+  font-size: 0;
 }
 
-@media (max-width: 40rem) {
-  .story-list__day {
-    flex-basis: 100%;
-  }
+.story-list .story-list__item > .ui-button:hover {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
 
 .story-script__status {
@@ -6754,34 +8157,30 @@ html:has(.portal-post__bar) {
   gap: var(--space-3);
 }
 
-/* The card is a compact tile on the canvas: the state's token is the one colour it carries (a bar at the edge and a faint wash),
-   and the late card trades it for the red of the state, so lateness is the only strong signal. */
+/* The card is a compact tile tinted by its format (carousel teal, reels violet, every other one neutral), as on the board: the format
+   says what it is, the state is the tag at its foot, and the late card trades the tint's edge for the red of the state. */
 .content-card {
-  --content-card-tone: var(--status-production-fg);
+  --content-card-bg: var(--format-static-bg);
+  --content-card-fg: var(--format-static-fg);
+  --content-card-tone: transparent;
 
   position: relative;
   min-width: 0;
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--content-card-tone);
+  border: 1px solid var(--content-card-tone);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--content-card-tone) 8%, var(--bg-canvas));
+  background: var(--content-card-bg);
   color: var(--text-primary);
+  transition: transform var(--motion-base);
 }
 
-.content-card[data-status='awaiting_approval'] {
-  --content-card-tone: var(--status-waiting-fg);
+.content-card[data-format='carousel'] {
+  --content-card-bg: var(--format-carousel-bg);
+  --content-card-fg: var(--format-carousel-fg);
 }
 
-.content-card[data-status='adjusting'] {
-  --content-card-tone: var(--status-adjust-fg);
-}
-
-.content-card[data-status='approved'] {
-  --content-card-tone: var(--status-ready-fg);
-}
-
-.content-card[data-status='published'] {
-  --content-card-tone: var(--status-published-fg);
+.content-card[data-format='reels'] {
+  --content-card-bg: var(--format-reels-bg);
+  --content-card-fg: var(--format-reels-fg);
 }
 
 .content-card[data-late] {
@@ -6789,8 +8188,14 @@ html:has(.portal-post__bar) {
 }
 
 .content-card:hover {
-  border-color: var(--border-default);
-  border-left-color: var(--content-card-tone);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-raised);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content-card:hover {
+    transform: none;
+  }
 }
 
 /* The link is the whole card: a press anywhere on it opens the content, and its focus ring is the card's. */
@@ -6815,8 +8220,9 @@ html:has(.portal-post__bar) {
   align-items: center;
   min-width: 0;
   gap: var(--space-1);
-  color: var(--text-secondary);
+  color: var(--content-card-fg);
   font: var(--caption);
+  font-weight: 600;
 }
 
 .content-card__support svg {
@@ -6911,6 +8317,7 @@ html:has(.portal-post__bar) {
 }
 
 .content-agenda__day--today {
+  border-radius: var(--radius-md);
   background: var(--calendar-today-bg);
 }
 
@@ -6939,8 +8346,12 @@ html:has(.portal-post__bar) {
 }
 
 .content-agenda__today {
-  color: var(--text-secondary);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
   font: var(--caption);
+  font-weight: 700;
 }
 
 .content-agenda__day--empty .content-agenda__label {
@@ -7272,6 +8683,22 @@ html:has(.portal-post__bar) {
   background: transparent;
 }
 
+/* On the agency's screens the state pill of a tile takes the family of its state, as the tags of the calendar do. */
+.contents .content-feed__tile[data-status='awaiting_approval'] .content-feed__status {
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+}
+
+.contents .content-feed__tile[data-status='approved'] .content-feed__status {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.contents .content-feed__tile[data-status='adjusting'] .content-feed__status {
+  background: var(--status-adjust-bg);
+  color: var(--status-adjust-text);
+}
+
 .content-feed__format {
   position: absolute;
   top: var(--space-1);
@@ -7337,6 +8764,12 @@ html:has(.portal-post__bar) {
   background: var(--color-ink-900);
 }
 
+/* On the agency's calendar the device is the light one of the board; the portal's approval link keeps the ink bezel. */
+.contents .content-phone {
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
+}
+
 .content-phone__screen {
   position: relative;
   display: grid;
@@ -7347,6 +8780,10 @@ html:has(.portal-post__bar) {
   border-radius: calc(var(--radius-xl) * 2 - var(--space-2));
   background: var(--bg-surface);
   color: var(--text-primary);
+}
+
+.contents .content-phone__screen {
+  border: 1px solid var(--border-subtle);
 }
 
 .content-phone__island {
@@ -7389,7 +8826,9 @@ html:has(.portal-post__bar) {
   gap: var(--space-1);
 }
 
-.content-phone .content-feed__tile {
+.content-phone .content-feed__tile,
+.content-feed-full .content-feed__tile {
+  aspect-ratio: 3 / 4;
   border-radius: var(--radius-sm);
 }
 
@@ -7514,6 +8953,31 @@ html:has(.portal-post__bar) {
   gap: var(--space-3);
 }
 
+/* The folder in use: a tint block with its mark leaving through the top edge, as the summary blocks of the client do. */
+.content-folders__feature {
+  --ui-stage-bg: var(--block-indigo-bg);
+  position: relative;
+  margin-top: var(--space-6);
+  padding: var(--space-6);
+  padding-right: 7rem;
+  border-radius: var(--radius-xl);
+  background: var(--ui-stage-bg);
+  color: var(--block-indigo-fg);
+}
+
+.content-folders__feature-text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.content-folders__eyebrow {
+  margin: 0;
+  font: var(--caption);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .content-folders h3,
 .content-folders h4 {
   margin: 0;
@@ -7559,43 +9023,63 @@ html:has(.portal-post__bar) {
 .folder-media__grid,
 .content-folders__skeleton {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11.5rem), 1fr));
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.folder-media__grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+.content-folders__list > li {
+  display: grid;
+  min-width: 0;
 }
 
+/* A folder card: the folder on its small stage, its name, the Padrão mark; the arrow says it opens. */
 .content-folder {
+  position: relative;
   display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
   align-items: center;
-  gap: var(--space-3);
-  min-height: 3.5rem;
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-3) var(--space-2);
+  min-height: 8.5rem;
+  padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   color: var(--text-primary);
   text-decoration: none;
-  transition: border-color var(--motion-fast);
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
 }
 
 .content-folder:hover {
-  border-color: var(--border-control);
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
 }
 
-.content-folder__icon,
+.content-folder:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The right margin takes the whole row, so the name and the mark always start the next line under the stage. */
+.content-folder > .content-folder__stage {
+  margin: calc(var(--space-1) * -1) 100% 0 calc(var(--space-1) * -1);
+}
+
 .content-folder__chevron {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
   display: inline-flex;
-  flex: none;
   color: var(--text-secondary);
 }
 
-.content-folder__icon > svg,
 .content-folder__chevron > svg {
   width: 1.25rem;
   height: 1.25rem;
@@ -7603,10 +9087,45 @@ html:has(.portal-post__bar) {
 }
 
 .content-folder__name {
-  flex: 1 1 auto;
   min-width: 0;
-  font: var(--label-md);
+  font: var(--title-md);
   overflow-wrap: anywhere;
+}
+
+/* "Nova pasta" is a card too, dashed: a button that takes the card's place in the grid. */
+.content-folders .content-folder--new.ui-button {
+  flex-direction: column;
+  justify-content: center;
+  align-content: center;
+  gap: var(--space-2);
+  min-height: 8.5rem;
+  height: auto;
+  border: 1.5px dashed var(--color-indigo-200);
+  background: transparent;
+  color: var(--text-link);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.content-folders .content-folder--new.ui-button:hover {
+  background: var(--bg-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+.content-folders .content-folder--new .ui-icon {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content-folder:hover {
+    transform: none;
+  }
 }
 
 .content-folders__note {
@@ -7635,25 +9154,123 @@ html:has(.portal-post__bar) {
 }
 
 .content-folders__skeleton > .ui-skeleton {
-  height: 3.5rem;
+  height: 8.5rem;
+  border-radius: var(--radius-lg);
 }
 
-.folder-media {
+/* An empty state with its folder on the stage: the dashed block is the wrapper's, the sentence inside it is bare. */
+.content-folders__blank {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-4);
+  border: 1.5px dashed var(--color-indigo-200);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, var(--color-indigo-50), var(--bg-surface) 70%);
+}
+
+.content-folders__blank > .ui-empty-state.content-folders__empty {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* The media of a folder as a table: a row is the thumbnail, the kind, when and how big, and the two actions. The whole row opens the detail panel
+   through the stretched select button; the actions sit above it. */
+.media-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-  gap: var(--space-3);
-  padding: var(--space-3);
+  align-items: start;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.media-layout__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.folder-media__table {
+  overflow: hidden;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
 }
 
-.folder-media__body {
+.folder-media__grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.folder-media__table > .folder-media__grid {
+  gap: 0;
+}
+
+.folder-media__head,
+.folder-media {
   display: grid;
-  justify-items: start;
-  gap: var(--space-1);
-  min-width: 0;
+  grid-template-columns: 3rem minmax(0, 1fr) 11rem auto;
+  column-gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+}
+
+.folder-media__head {
+  min-height: 2.5rem;
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.folder-media__head > :first-child {
+  grid-column: 1 / 3;
+}
+
+.folder-media {
+  position: relative;
+  grid-template-rows: auto auto auto;
+  min-height: 4.25rem;
+  border-top: 1px solid var(--border-subtle);
+  transition: background var(--motion-fast);
+}
+
+.folder-media:first-child {
+  border-top: 0;
+}
+
+.folder-media:hover {
+  background: var(--bg-hover);
+}
+
+.folder-media--selected,
+.folder-media--selected:hover {
+  background: var(--bg-tint);
+  box-shadow: inset 3px 0 0 var(--color-indigo-600);
+}
+
+.folder-media:has(.folder-media__select:focus-visible) {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.folder-media > .media-thumbnail {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 3rem;
+  aspect-ratio: 1;
+}
+
+.folder-media > .media-thumbnail svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.folder-media__body {
+  display: contents;
 }
 
 .folder-media__title,
@@ -7667,13 +9284,58 @@ html:has(.portal-post__bar) {
 }
 
 .folder-media__title {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
   font: var(--label-md);
+  font-weight: 600;
+}
+
+/* With a status under it, the title sits above it; alone, it is centred on the row. */
+.folder-media__body:has(> .ui-pill, > .folder-media__failure) .folder-media__title {
+  grid-row: 1;
+  align-self: end;
+}
+
+.folder-media__select {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.folder-media__select:focus-visible {
+  outline: none;
+}
+
+.folder-media__select::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.folder-media--selected .folder-media__title {
+  color: var(--color-indigo-800);
 }
 
 .folder-media__meta {
+  grid-column: 3;
+  grid-row: 1 / span 2;
   color: var(--text-secondary);
   font: var(--caption);
   font-variant-numeric: tabular-nums;
+}
+
+.folder-media__body > .ui-pill,
+.folder-media__failure {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
 }
 
 .folder-media__failure {
@@ -7686,20 +9348,29 @@ html:has(.portal-post__bar) {
 }
 
 .folder-media__actions {
+  position: relative;
+  z-index: 1;
+  grid-column: 4;
+  grid-row: 1 / span 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
 }
 
 .folder-media > .ui-field-message {
-  margin: 0;
+  grid-column: 2 / -1;
+  grid-row: 3;
+  margin: var(--space-2) 0 0;
 }
 
 .folder-media__skeleton {
-  height: 14rem;
+  height: 4.25rem;
+  border-radius: var(--radius-md);
 }
 
+/* The media's thumbnail, wherever it is drawn: the shape and the neutral ground; the row and the panel size it. */
 .media-thumbnail {
   display: flex;
   align-items: center;
@@ -7726,45 +9397,188 @@ html:has(.portal-post__bar) {
   stroke-width: 1.75;
 }
 
+/* The detail panel of the chosen media. */
+.media-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.media-detail:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.media-detail__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.content-folders .media-detail__name {
+  font: var(--title-md);
+}
+
+.media-detail__preview {
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tint);
+}
+
+.media-detail__preview .media-thumbnail {
+  width: min(100%, 12rem);
+  box-shadow: var(--shadow-floating);
+}
+
+.media-detail__sub {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  text-align: center;
+}
+
+.media-detail__heading {
+  margin: 0 0 var(--space-2);
+  font: var(--title-md);
+}
+
+.media-detail__info {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font: var(--body-md);
+}
+
+.media-detail__info dt {
+  color: var(--text-secondary);
+}
+
+.media-detail__info dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.media-detail__actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--space-2);
+}
+
+.media-detail > .ui-field-message {
+  margin: 0;
+}
+
+/* Side by side only where the list keeps a table's width; below it the panel is the next block, and it takes the focus when it opens. */
+@media (min-width: 80rem) {
+  .media-layout--detail {
+    grid-template-columns: minmax(0, 1fr) var(--detail-w);
+  }
+
+  .media-layout--detail .media-detail {
+    position: sticky;
+    top: var(--space-4);
+  }
+}
+
 /* On a phone a media is a row: the thumbnail on the side, the touch targets at the full size. */
 @media (max-width: 40rem) {
   .folder-media__grid,
-  .content-folders__list,
   .content-folders__skeleton {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .content-folders__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+
+  .content-folder,
+  .content-folders .content-folder--new.ui-button {
+    min-height: 8rem;
+    padding: var(--space-3);
+  }
+
+  .content-folder__chevron {
+    top: var(--space-3);
+    right: var(--space-3);
+  }
+
+  .content-folders__feature {
+    padding: var(--space-5);
+    padding-right: 6rem;
+  }
+
+  .folder-media__head {
+    display: none;
+  }
+
   .folder-media {
-    grid-template-columns: 5rem minmax(0, 1fr);
-    grid-template-areas:
-      'thumb body'
-      'thumb actions'
-      'notice notice';
+    grid-template-columns: 4rem minmax(0, 1fr);
+    grid-template-rows: auto;
+    row-gap: var(--space-2);
     align-items: start;
+    padding: var(--space-3);
   }
 
   .folder-media > .media-thumbnail {
-    grid-area: thumb;
+    grid-row: 1 / span 2;
+    width: 4rem;
   }
 
   .folder-media__body {
-    grid-area: body;
+    display: grid;
+    grid-column: 2;
+    grid-row: 1;
+    justify-items: start;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .folder-media__title,
+  .folder-media__body:has(> .ui-pill, > .folder-media__failure) .folder-media__title,
+  .folder-media__meta,
+  .folder-media__body > .ui-pill,
+  .folder-media__failure {
+    grid-column: auto;
+    grid-row: auto;
+    align-self: auto;
   }
 
   .folder-media__actions {
-    grid-area: actions;
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-start;
   }
 
   .folder-media > .ui-field-message {
-    grid-area: notice;
+    grid-column: 1 / -1;
+    grid-row: 3;
   }
 
   .folder-media__actions .ui-button--sm {
     min-height: 2.75rem;
   }
 
+  .folder-media__select {
+    min-height: 1.5rem;
+  }
+
   .folder-media__skeleton {
-    height: 7rem;
+    height: 5.5rem;
+  }
+
+  .media-detail {
+    padding: var(--space-4);
   }
 }
 
@@ -7918,6 +9732,11 @@ html:has(.portal-post__bar) {
   padding-bottom: 0;
 }
 
+/* The dialog is a grid with no track of its own: the tabs of the modal were the widest thing in it and pushed the track, and the close button, past the edge on a phone. */
+.ui-modal:has(.content-modal, .approval-submit, .story-script) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .content-modal__footer {
   display: grid;
   gap: var(--space-3);
@@ -8019,9 +9838,11 @@ html:has(.portal-post__bar) {
   gap: var(--space-1);
   max-height: 16rem;
   margin: 0;
-  padding: 0;
+  padding: var(--space-2) var(--space-4);
   overflow-y: auto;
   list-style: none;
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
 }
 
 .approval-submit__row {
@@ -8032,6 +9853,10 @@ html:has(.portal-post__bar) {
   min-width: 0;
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.approval-submit__row:last-child {
+  border-bottom: 0;
 }
 
 .approval-submit__box {
@@ -8334,15 +10159,20 @@ html:has(.portal-post__bar) {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
 }
 
 .media-uploader__kind {
-  display: inline-flex;
-  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
 }
 
 .media-uploader__kind > svg {
@@ -8911,9 +10741,35 @@ html:has(.portal-post__bar) {
 
 .approval__title {
   margin: 0;
-  font: var(--heading-xl);
+  font: var(--display-lg);
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
+}
+
+/* The round of the approval: the deadline in the violet pill and the note in a bubble of the agency, as on the post of the portal. */
+.approval .approval-round {
+  gap: var(--space-3);
+}
+
+.approval .approval-round__due {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font: var(--label-md);
+  font-weight: 700;
+}
+
+.approval .approval-round__due .ui-icon {
+  color: inherit;
+}
+
+.approval .approval-round__note {
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
 }
 
 .approval__lead,
@@ -8960,7 +10816,7 @@ html:has(.portal-post__bar) {
   gap: var(--space-2);
   padding: var(--space-6) var(--space-4);
   border: 1px dashed var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
   text-align: center;
 }
@@ -8968,6 +10824,23 @@ html:has(.portal-post__bar) {
 .approval__empty .approval__empty-title {
   color: var(--text-primary);
   font: var(--label-md);
+}
+
+/* Nothing left to decide is good news: the teal block with its loose 3D icon, as in the portal. */
+.approval__empty--done {
+  --ui-stage-bg: var(--block-teal-bg);
+  justify-items: center;
+  border: 0;
+  background: var(--ui-stage-bg);
+}
+
+.approval__empty--done .approval__empty-title {
+  color: var(--block-teal-fg);
+  font: var(--heading-lg);
+}
+
+.approval__empty--done p {
+  color: var(--text-primary);
 }
 
 .approval__list {
@@ -9021,7 +10894,7 @@ html:has(.portal-post__bar) {
   min-width: 0;
   padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
@@ -9033,7 +10906,7 @@ html:has(.portal-post__bar) {
 
 .approval-card__title {
   margin: 0;
-  font: var(--label-md);
+  font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
@@ -9061,6 +10934,9 @@ html:has(.portal-post__bar) {
   display: flex;
   justify-content: center;
   min-width: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tint);
 }
 
 /* The phone is the one of the feed; here the post decides how tall it is, not the 42 rem the empty feed keeps. */
@@ -9184,24 +11060,43 @@ html:has(.portal-post__bar) {
   font: var(--body-md);
   overflow-wrap: anywhere;
 }
-/* Assinatura (issue #773): plans, extras and the simulated card, in the Pauta look (one primary action per view). */
+/* Assinatura (issue #773): plans, extras and the simulated card, in the look of the redesign board (agencia-assinatura):
+   cards on the canvas, the current plan beside the extras, the three plans side by side. */
 .subscription {
   display: grid;
   gap: var(--space-6);
-  max-width: 48rem;
+  max-width: 72rem;
+}
+
+.subscription__head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.subscription .subscription__eyebrow {
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .subscription h1 {
   margin: 0;
   font: var(--display-lg);
+  font-size: clamp(2rem, 10vw, 3rem);
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
+}
+
+.subscription__lead {
+  max-width: 44rem;
+  color: var(--text-secondary);
 }
 
 .subscription h2,
 .subscription-card__title {
   margin: 0;
-  font: var(--heading-md);
+  font: var(--heading-lg);
 }
 
 .subscription__block {
@@ -9211,18 +11106,132 @@ html:has(.portal-post__bar) {
   border-top: 1px solid var(--border-default);
 }
 
+/* A block that is a card of the board: its own surface, no divider above it. */
+.subscription__block--card {
+  align-content: start;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
 .subscription p,
 .subscription ul {
   margin: 0;
   font: var(--body-md);
 }
 
+.subscription__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.subscription__stack {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+@media (max-width: 47.99rem) {
+  .subscription__split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.subscription__current-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.subscription__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  font: var(--label-md);
+}
+
+.subscription__chip svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.subscription .subscription__plan {
+  color: var(--text-primary);
+  font: var(--heading-lg);
+  letter-spacing: -0.01em;
+}
+
 .subscription__facts {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-4);
   padding: 0;
   list-style: none;
   color: var(--text-secondary);
+}
+
+.subscription__meter {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+.subscription__meter progress {
+  width: 100%;
+  accent-color: var(--action-primary-bg);
+  height: 0.5rem;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
+  overflow: hidden;
+  appearance: none;
+}
+
+.subscription__meter progress::-webkit-progress-bar {
+  background: var(--bg-tint);
+}
+
+.subscription__meter progress::-webkit-progress-value {
+  border-radius: var(--radius-full);
+  background: var(--action-primary-bg);
+}
+
+.subscription__meter progress::-moz-progress-bar {
+  border-radius: var(--radius-full);
+  background: var(--action-primary-bg);
+}
+
+.subscription__meter--storage progress {
+  accent-color: var(--status-ready-fg);
+}
+
+.subscription__meter--storage progress::-webkit-progress-value {
+  background: var(--status-ready-fg);
+}
+
+.subscription__meter--storage progress::-moz-progress-bar {
+  background: var(--status-ready-fg);
+}
+
+.subscription__fact {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.subscription__fact svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
 }
 
 .subscription__notice {
@@ -9233,15 +11242,53 @@ html:has(.portal-post__bar) {
 }
 
 .subscription__notice--alert {
-  color: var(--text-danger);
+  border-color: transparent;
+  background: var(--block-red-bg);
+  color: var(--block-red-fg);
 }
 
 .subscription--pricing {
-  max-width: 64rem;
+  max-width: 72rem;
 }
 
+/* What the trial or the end of it means, in the board's note: a soft tint, one corner squared. */
 .subscription__state {
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.subscription__change {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.subscription__change-text {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.subscription__change-text p {
   color: var(--text-secondary);
+}
+
+@media (max-width: 47.99rem) {
+  .subscription__change {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The quiet danger action of the board: red text, no fill. */
+.subscription__cancel.ui-button--ghost {
+  color: var(--text-danger);
+}
+
+.subscription__cancel.ui-button--ghost:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--block-red-bg);
+  color: var(--text-danger);
 }
 
 .plan-cards {
@@ -9250,31 +11297,41 @@ html:has(.portal-post__bar) {
 }
 
 .plan-card {
+  position: relative;
   display: grid;
   align-content: start;
-  gap: var(--space-3);
+  gap: var(--space-4);
+  min-width: 0;
   padding: var(--space-6);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
-/* Recommended first when the cards stack, in the middle when they sit side by side. */
+/* Recommended first when the cards stack, in the middle when they sit side by side; the edge and the halo of the board's current plan. */
 .plan-card--recommended {
   order: -1;
-  border-color: var(--action-primary-bg);
-  box-shadow: 0 0 0 1px var(--action-primary-bg);
+  border: 2px solid var(--action-primary-bg);
+  box-shadow: 0 0 0 4px var(--focus-halo);
 }
 
+/* The tags ride at the top right of the card, on the line of the plan name. */
 .plan-card__tags {
+  position: absolute;
+  top: var(--space-6);
+  right: var(--space-6);
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
-  min-height: 1.5rem;
+  max-width: 50%;
 }
 
 .plan-card__name {
   margin: 0;
-  font: var(--heading-md);
+  min-height: 1.5rem;
+  padding-right: 35%;
+  font: var(--heading-lg);
 }
 
 .plan-card__price {
@@ -9284,7 +11341,7 @@ html:has(.portal-post__bar) {
 }
 
 .plan-card__amount {
-  font: var(--display-lg);
+  font: var(--stat-lg);
   letter-spacing: -0.02em;
 }
 
@@ -9313,7 +11370,7 @@ html:has(.portal-post__bar) {
   width: 1rem;
   height: 1rem;
   flex: none;
-  color: var(--action-primary-bg);
+  color: var(--status-ready-fg);
 }
 
 .plan-card .ui-button {
@@ -9370,13 +11427,17 @@ html:has(.portal-post__bar) {
 
 .subscription__extras {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
 }
 
+/* The sum of the board: a soft tinted box, the total set apart by a line. */
 .subscription__summary {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
   color: var(--text-secondary);
 }
 
@@ -9396,6 +11457,7 @@ html:has(.portal-post__bar) {
 .subscription-card {
   display: grid;
   gap: var(--space-4);
+  max-width: 40rem;
   padding: var(--space-6);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
@@ -9412,6 +11474,23 @@ html:has(.portal-post__bar) {
   width: 1.25rem;
   height: 1.25rem;
   flex: none;
+}
+
+.subscription-card__lead {
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.subscription-card__amount {
+  color: var(--text-secondary);
+}
+
+.subscription-card__amount strong {
+  color: var(--text-primary);
+  font: var(--heading-lg);
 }
 
 .subscription-card__fields {
@@ -9437,13 +11516,22 @@ html:has(.portal-post__bar) {
   padding-left: var(--space-4);
 }
 
-/* The last days before the read-only mode: the same strip, with a heavier border and the icon in the danger tone (no fill, no side border). */
+/* The plan strip of the agency (trial, end of trial, canceled period): the board's note, a soft tint with one corner squared.
+   In the last days it turns to the red block, and the icon keeps saying what it is. */
+.trial-notice {
+  border-color: transparent;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
 .trial-notice--urgent {
-  border-color: var(--border-control);
+  background: var(--block-red-bg);
+  color: var(--block-red-fg);
 }
 
 .trial-notice--urgent .shell-notice__icon {
-  color: var(--status-late-fg);
+  color: var(--block-red-fg);
 }
 
 /* A plan ceiling reached inside a form or a dialog: what blocked, and the way out. */
@@ -9451,6 +11539,10 @@ html:has(.portal-post__bar) {
   display: grid;
   gap: var(--space-3);
   justify-items: start;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--block-red-bg);
 }
 
 .plan-limit__text {
@@ -9458,19 +11550,166 @@ html:has(.portal-post__bar) {
   align-items: flex-start;
   gap: var(--space-2);
   margin: 0;
-  color: var(--text-danger);
+  color: var(--block-red-fg);
   font: var(--body-md);
 }
 
 .plan-limit__text svg {
   flex: none;
-  width: 1rem;
-  height: 1rem;
-  margin-top: var(--space-1);
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
-/* Journey "Até a primeira aprovação" of a new agency's Início (decisions 2026-11-06 and 2026-11-10): four steps, each done or pending, the last one the client's. */
+/* Journey "Até a primeira aprovação" of a new agency's Início (decisions 2026-11-06 and 2026-11-10): the rocket and the count on a tinted side, the four steps on the milestone trail. */
 .activation {
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.34fr) minmax(0, 1fr);
+  margin-top: calc(var(--space-8) + var(--space-2));
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.activation__intro {
+  --ui-stage-bg: var(--bg-tint);
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+}
+
+.activation__intro > .ui-stage {
+  margin: -4.5rem 0 var(--space-3) calc(var(--space-2) * -1);
+}
+
+.activation__eyebrow,
+.activation__count {
+  margin: 0;
+}
+
+.activation__eyebrow {
+  font: var(--label-md);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.activation__count {
+  color: var(--text-secondary);
+  font: var(--heading-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.activation__count strong {
+  color: var(--text-primary);
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+}
+
+.activation__progress {
+  appearance: none;
+  width: 100%;
+  height: 0.625rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  accent-color: var(--color-indigo-600);
+}
+
+.activation__progress::-webkit-progress-bar {
+  background: var(--bg-surface);
+}
+
+.activation__progress::-webkit-progress-value {
+  border-radius: var(--radius-full);
+  background: var(--color-indigo-600);
+}
+
+.activation__progress::-moz-progress-bar {
+  border-radius: var(--radius-full);
+  background: var(--color-indigo-600);
+}
+
+.activation__steps {
+  min-width: 0;
+  padding: var(--space-6) var(--space-8);
+}
+
+/* Who does the step: a small tag after the title, never only the colour of the dot. */
+.activation__who {
+  margin-left: var(--space-2);
+  padding: 0.0625rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+  font: var(--caption);
+  font-weight: 600;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* What the person can do on a later step when the current one is not theirs to act on. */
+.activation__ahead {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px dashed var(--border-default);
+}
+
+.activation__ahead-label {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+.activation__ahead-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+@media (max-width: 80rem) {
+  .activation {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .activation__intro {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--space-6);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+
+  .activation__intro > .ui-stage {
+    grid-row: 1 / span 3;
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .activation__intro {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-6) var(--space-4) var(--space-4);
+  }
+
+  .activation__intro > .ui-stage {
+    grid-row: auto;
+  }
+
+  .activation__steps {
+    padding: var(--space-4);
+  }
+}
+
+/* "Marcos da agência": the compact trail of the first achievements, with the medal on its stage. */
+.agency-milestones {
+  --ui-stage-bg: var(--bg-surface);
   display: grid;
   gap: var(--space-4);
   padding: var(--space-6);
@@ -9479,120 +11718,16 @@ html:has(.portal-post__bar) {
   background: var(--bg-surface);
 }
 
-.activation__header {
+.agency-milestones__head {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.activation__header h2,
-.activation__header p {
-  margin: 0;
-}
-
-.activation__header h2 {
-  font: var(--title-md);
-}
-
-.activation__header p,
-.activation__description,
-.activation__state {
-  color: var(--text-secondary);
-  font: var(--body-md);
-}
-
-.activation__steps {
-  display: grid;
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.activation__step {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  position: relative;
-  gap: var(--space-4);
-}
-
-.activation__progress {
-  width: 100%;
-  height: 0.5rem;
-  accent-color: var(--text-primary);
-}
-
-/* The line that joins a step to the next one, behind the marks. */
-.activation__step:not(:last-child)::before {
-  content: '';
-  position: absolute;
-  top: 2rem;
-  bottom: calc(-1 * var(--space-3));
-  left: calc(1rem - 1px);
-  width: 2px;
-  background: var(--border-default);
-}
-
-.activation__mark {
-  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  position: relative;
-  width: 2rem;
-  height: 2rem;
-  border: 2px solid var(--border-control);
-  border-radius: var(--radius-full);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  font: var(--body-md);
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
-.activation__mark svg {
-  width: 1rem;
-  height: 1rem;
-}
-
-.activation__step[data-done='true'] .activation__mark {
-  border-color: var(--status-ready-fg);
-  color: var(--status-ready-fg);
-}
-
-.activation__step[aria-current='step'] .activation__mark {
-  border-color: var(--text-primary);
-  color: var(--text-primary);
-}
-
-.activation__who {
-  color: var(--text-secondary);
-  font: var(--body-md);
-}
-
-.activation__step[data-owner='client'] .activation__who {
-  color: var(--text-link);
-}
-
-.activation__text {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.activation__title {
-  font: var(--title-md);
-}
-
-@media (max-width: 40rem) {
-  .activation__step {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .activation__step > .ui-button {
-    grid-column: 2;
-    justify-self: start;
-  }
+.agency-milestones__title {
+  margin: 0;
+  font: var(--heading-lg);
 }
 
 /* Milestones: a message that never blocks, and confetti that catches no click and goes away by itself. */

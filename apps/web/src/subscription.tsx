@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
+import { CalendarClock, Check } from 'lucide-react';
 
 import {
   AuthNoContentResponseSchema,
@@ -228,7 +229,11 @@ export function SubscriptionPage() {
   const actionLabel = quote === undefined ? 'Escolha as quantidades' : quote.effect === 'upgrade' ? 'Confirmar e pagar' : 'Agendar a mudança';
 
   const header = <>
-    <h1 id="subscription-title">Assinatura</h1>
+    <header className="subscription__head">
+      <p className="subscription__eyebrow">Agência</p>
+      <h1 id="subscription-title">Assinatura</h1>
+      <p className="subscription__lead">Só quem criou a agência vê esta tela: a assinatura é capacidade da dona, não de um papel.</p>
+    </header>
     {notice !== undefined && (notice.tone === 'alert' ? <p className="subscription__notice subscription__notice--alert" role="alert">{notice.text}</p> : <LiveStatus className="subscription__notice">{notice.text}</LiveStatus>)}
   </>;
 
@@ -266,7 +271,8 @@ export function SubscriptionPage() {
         : `Você está no teste grátis: ${days === 1 ? 'falta 1 dia' : `faltam ${days} dias`}. Escolha o plano para continuar depois dele.`;
     return <section aria-labelledby="subscription-title" className="subscription subscription--pricing">
       {header}
-      <p className="subscription__state">{state}</p>      {!simulated && <p className="subscription__notice">{PAYMENT_UNAVAILABLE}</p>}
+      <p className="subscription__state">{state}</p>
+      {!simulated && <p className="subscription__notice">{PAYMENT_UNAVAILABLE}</p>}
       <PlanCards
         plans={plans.plans}
         verb="Assinar"
@@ -288,7 +294,7 @@ export function SubscriptionPage() {
   if (courtesy) {
     return <section aria-labelledby="subscription-title" className="subscription">
       {header}
-      <section className="subscription__block" aria-labelledby="subscription-current">
+      <section className="subscription__block subscription__block--card" aria-labelledby="subscription-current">
         <h2 id="subscription-current">Seu plano</h2>
         <p>A agência tem um plano de cortesia, sem cobrança.</p>
       </section>
@@ -297,120 +303,141 @@ export function SubscriptionPage() {
   }
 
   const currentPlan = plans.plans.find((entry) => entry.key === subscription.planKey);
+  const upToDate = subscription.graceEndsOn === null && !subscription.cancelAtPeriodEnd;
+
+  const current = <section className="subscription__block subscription__block--card" aria-labelledby="subscription-current">
+    <div className="subscription__current-head">
+      <h2 id="subscription-current">Seu plano</h2>
+      {upToDate && <span className="subscription__chip"><Check aria-hidden="true" />Em dia</span>}
+    </div>
+    <p className="subscription__plan"><strong>{planName(subscription.planKey)}</strong>, {totalLine(
+      currentPlan?.monthlyCents ?? subscription.monthlyCents,
+      extrasCents(subscription.extraClients, subscription.extraStorageGib),
+      subscription.monthlyCents
+    )}</p>
+    <ul className="subscription__facts">
+      <li className="subscription__meter">
+        Clientes: {subscription.usedClients} de {subscription.clientLimit}
+        <progress value={subscription.usedClients} max={subscription.clientLimit} aria-label="Clientes ativos em uso" />
+      </li>
+      <li className="subscription__meter subscription__meter--storage">
+        Armazenamento: {formatGb(subscription.usedBytes)} de {formatGb(subscription.storageBytes)}
+        <progress value={subscription.usedBytes} max={subscription.storageBytes} aria-label="Armazenamento em uso" />
+      </li>
+      {subscription.currentPeriodEnd !== null && <li className="subscription__fact"><CalendarClock aria-hidden="true" />{subscription.cancelAtPeriodEnd ? 'Acesso até' : 'Próxima cobrança em'} {formatInstant(subscription.currentPeriodEnd)}</li>}
+      {subscription.pending !== null && subscription.currentPeriodEnd !== null && <li>
+        Em {formatInstant(subscription.currentPeriodEnd)} o plano passa para {planName(subscription.pending.planKey)}
+        {subscription.nextMonthlyCents !== null && <>, {formatBrl(subscription.nextMonthlyCents)}/mês</>}.
+      </li>}
+    </ul>
+    {subscription.graceEndsOn !== null && <p className="subscription__notice subscription__notice--alert" role="alert">
+      O pagamento da renovação não passou. A agência continua editando até {formatDay(subscription.graceEndsOn)}; depois disso fica somente leitura.
+    </p>}
+    {subscription.cancelAtPeriodEnd && <p>
+      A assinatura está cancelada. Depois de {subscription.currentPeriodEnd === null ? 'o período' : formatInstant(subscription.currentPeriodEnd)}, a agência fica somente leitura.
+    </p>}
+  </section>;
+
+  const extrasBlock = <section className="subscription__block subscription__block--card" aria-labelledby="subscription-extras">
+    <h2 id="subscription-extras">Adicionar extras</h2>
+    <div className="subscription__extras">
+      <Field label="Clientes extras" hint={`${formatBrl(plans.extraClientCents)} por cliente, por mês`} error={extraClients === undefined ? EXTRA_INVALID : undefined}>
+        {(control) => <TextInput {...control} inputMode="numeric" value={clientsText} onChange={(event) => { setNotice(undefined); setExtras({ clients: event.target.value, gib: gibText }); }} />}
+      </Field>
+      <Field label="Armazenamento extra, em GB" hint={`${formatBrl(plans.extraStorageGibCents)} por GB, por mês`} error={extraGib === undefined ? EXTRA_INVALID : undefined}>
+        {(control) => <TextInput {...control} inputMode="numeric" value={gibText} onChange={(event) => { setNotice(undefined); setExtras({ clients: clientsText, gib: event.target.value }); }} />}
+      </Field>
+    </div>
+    <QuoteSummary
+      terms={terms}
+      unchanged={unchanged}
+      query={quoteQuery}
+      quote={quote}
+      planCents={planCentsOf(subscription.planKey)}
+      extrasCents={terms === undefined ? 0 : extrasCents(terms.extraClients, terms.extraStorageGib)}
+      blockedReason={blockedReason}
+    />
+    <ConfirmAction label={actionLabel} disabled={quote === undefined} blockedReason={blockedReason} loading={request.isPending}
+      onConfirm={() => {
+        // Same synchronous guard as the first subscription.
+        if (terms === undefined || requesting.current) return;
+        requesting.current = true;
+        request.mutate(terms, { onSettled: () => { requesting.current = false; } });
+      }} />
+  </section>;
+
+  const lifecycle = <section className="subscription__block subscription__block--card" aria-labelledby="subscription-lifecycle">
+    <h2 id="subscription-lifecycle">Cancelamento</h2>
+    {subscription.cancelAtPeriodEnd
+      ? <>
+        <p>Você pode manter a assinatura até o fim do período.</p>
+        <div className="subscription__actions">
+          <Button variant="secondary" loading={reactivate.isPending} onClick={() => { reactivate.mutate(undefined, { onSuccess: () => { setNotice({ tone: 'status', text: 'A assinatura foi mantida.' }); } }); }}>Manter a assinatura</Button>
+        </div>
+        {reactivate.isError && <FieldMessage role="alert">Não foi possível manter a assinatura. Tente de novo.</FieldMessage>}
+      </>
+      : <>
+        <p>Cancelar mantém o acesso até o fim do período pago. Antes de confirmar, mostramos o que isso significa.</p>
+        <div className="subscription__actions">
+          <Button variant="ghost" className="subscription__cancel" onClick={() => { setCanceling(true); }}>Cancelar a assinatura</Button>
+        </div>
+      </>}
+  </section>;
 
   return <section aria-labelledby="subscription-title" className="subscription">
     {header}
 
-    <section className="subscription__block" aria-labelledby="subscription-current">
-      <h2 id="subscription-current">Seu plano</h2>
-      <p className="subscription__plan"><strong>{planName(subscription.planKey)}</strong>, {totalLine(
-        currentPlan?.monthlyCents ?? subscription.monthlyCents,
-        extrasCents(subscription.extraClients, subscription.extraStorageGib),
-        subscription.monthlyCents
-      )}</p>
-      <ul className="subscription__facts">
-        <li>Clientes: {subscription.usedClients} de {subscription.clientLimit}</li>
-        <li>Armazenamento: {formatGb(subscription.usedBytes)} de {formatGb(subscription.storageBytes)}</li>
-        {subscription.currentPeriodEnd !== null && <li>{subscription.cancelAtPeriodEnd ? 'Acesso até' : 'Próxima cobrança em'} {formatInstant(subscription.currentPeriodEnd)}</li>}
-        {subscription.pending !== null && subscription.currentPeriodEnd !== null && <li>
-          Em {formatInstant(subscription.currentPeriodEnd)} o plano passa para {planName(subscription.pending.planKey)}
-          {subscription.nextMonthlyCents !== null && <>, {formatBrl(subscription.nextMonthlyCents)}/mês</>}.
-        </li>}
-      </ul>
-      {subscription.graceEndsOn !== null && <p className="subscription__notice subscription__notice--alert" role="alert">
-        O pagamento da renovação não passou. A agência continua editando até {formatDay(subscription.graceEndsOn)}; depois disso fica somente leitura.
-      </p>}
-      {subscription.cancelAtPeriodEnd && <p>
-        A assinatura está cancelada. Depois de {subscription.currentPeriodEnd === null ? 'o período' : formatInstant(subscription.currentPeriodEnd)}, a agência fica somente leitura.
-      </p>}
-    </section>
-
     {view === 'overview'
       ? <>
-        <section className="subscription__block" aria-labelledby="subscription-extras">
-          <h2 id="subscription-extras">Adicionar extras</h2>
-          <div className="subscription__extras">
-            <Field label="Clientes extras" hint={`${formatBrl(plans.extraClientCents)} por cliente, por mês`} error={extraClients === undefined ? EXTRA_INVALID : undefined}>
-              {(control) => <TextInput {...control} inputMode="numeric" value={clientsText} onChange={(event) => { setNotice(undefined); setExtras({ clients: event.target.value, gib: gibText }); }} />}
-            </Field>
-            <Field label="Armazenamento extra, em GB" hint={`${formatBrl(plans.extraStorageGibCents)} por GB, por mês`} error={extraGib === undefined ? EXTRA_INVALID : undefined}>
-              {(control) => <TextInput {...control} inputMode="numeric" value={gibText} onChange={(event) => { setNotice(undefined); setExtras({ clients: clientsText, gib: event.target.value }); }} />}
-            </Field>
-          </div>
-          <QuoteSummary
-            terms={terms}
-            unchanged={unchanged}
-            query={quoteQuery}
-            quote={quote}
-            planCents={planCentsOf(subscription.planKey)}
-            extrasCents={terms === undefined ? 0 : extrasCents(terms.extraClients, terms.extraStorageGib)}
-            blockedReason={blockedReason}
-          />
-          <ConfirmAction label={actionLabel} disabled={quote === undefined} blockedReason={blockedReason} loading={request.isPending}
-            onConfirm={() => {
-              // Same synchronous guard as the first subscription.
-              if (terms === undefined || requesting.current) return;
-              requesting.current = true;
-              request.mutate(terms, { onSettled: () => { requesting.current = false; } });
-            }} />
-        </section>
+        <div className="subscription__split">
+          <div className="subscription__stack">{current}{lifecycle}</div>
+          {extrasBlock}
+        </div>
 
-        {!subscription.cancelAtPeriodEnd && <section className="subscription__block" aria-labelledby="subscription-change">
-          <h2 id="subscription-change">Trocar de plano</h2>
-          <p>Veja os planos lado a lado. Subir vale na hora; descer vale no próximo ciclo.</p>
+        {!subscription.cancelAtPeriodEnd && <section className="subscription__block subscription__block--card subscription__change" aria-labelledby="subscription-change">
+          <div className="subscription__change-text">
+            <h2 id="subscription-change">Trocar de plano</h2>
+            <p>Veja os planos lado a lado. Subir vale na hora; descer vale no próximo ciclo.</p>
+          </div>
           <div className="subscription__actions">
             <Button variant="secondary" onClick={() => { setNotice(undefined); setExtras(null); setView('plans'); }}>Trocar de plano</Button>
           </div>
         </section>}
       </>
-      : <section className="subscription__block subscription--pricing" aria-labelledby="subscription-change">
-        <h2 id="subscription-change">Trocar de plano</h2>
-        <PlanCards
-          plans={plans.plans}
-          currentKey={subscription.planKey}
-          verb="Escolher"
-          onChoose={(chosen: Plan) => { setNotice(undefined); setTarget(chosen.key); }}
-        />
-        {terms !== undefined && <>
-          <h3 className="subscription__target">Mudar para {planName(terms.planKey)}</h3>
-          <QuoteSummary
-            terms={terms}
-            unchanged={unchanged}
-            query={quoteQuery}
-            quote={quote}
-            planCents={planCentsOf(terms.planKey)}
-            extrasCents={extrasCents(terms.extraClients, terms.extraStorageGib)}
-            blockedReason={blockedReason}
+      : <>
+        {current}
+        <section className="subscription__block subscription--pricing" aria-labelledby="subscription-change">
+          <h2 id="subscription-change">Trocar de plano</h2>
+          <PlanCards
+            plans={plans.plans}
+            currentKey={subscription.planKey}
+            verb="Escolher"
+            onChoose={(chosen: Plan) => { setNotice(undefined); setTarget(chosen.key); }}
           />
-          <ConfirmAction label={quote?.effect === 'upgrade' ? 'Subir o plano' : 'Descer o plano'} disabled={quote === undefined} blockedReason={blockedReason} loading={request.isPending}
-            onConfirm={() => {
-              if (requesting.current) return;
-              requesting.current = true;
-              request.mutate(terms, { onSettled: () => { requesting.current = false; } });
-            }} />
-        </>}
-        <div className="subscription__actions">
-          <Button variant="ghost" onClick={() => { setView('overview'); setTarget(null); }}>Voltar ao meu plano</Button>
-        </div>
-      </section>}
-
-    <section className="subscription__block" aria-labelledby="subscription-lifecycle">
-      <h2 id="subscription-lifecycle">Cancelamento</h2>
-      {subscription.cancelAtPeriodEnd
-        ? <>
-          <p>Você pode manter a assinatura até o fim do período.</p>
+          {terms !== undefined && <>
+            <h3 className="subscription__target">Mudar para {planName(terms.planKey)}</h3>
+            <QuoteSummary
+              terms={terms}
+              unchanged={unchanged}
+              query={quoteQuery}
+              quote={quote}
+              planCents={planCentsOf(terms.planKey)}
+              extrasCents={extrasCents(terms.extraClients, terms.extraStorageGib)}
+              blockedReason={blockedReason}
+            />
+            <ConfirmAction label={quote?.effect === 'upgrade' ? 'Subir o plano' : 'Descer o plano'} disabled={quote === undefined} blockedReason={blockedReason} loading={request.isPending}
+              onConfirm={() => {
+                if (requesting.current) return;
+                requesting.current = true;
+                request.mutate(terms, { onSettled: () => { requesting.current = false; } });
+              }} />
+          </>}
           <div className="subscription__actions">
-            <Button variant="secondary" loading={reactivate.isPending} onClick={() => { reactivate.mutate(undefined, { onSuccess: () => { setNotice({ tone: 'status', text: 'A assinatura foi mantida.' }); } }); }}>Manter a assinatura</Button>
+            <Button variant="ghost" onClick={() => { setView('overview'); setTarget(null); }}>Voltar ao meu plano</Button>
           </div>
-          {reactivate.isError && <FieldMessage role="alert">Não foi possível manter a assinatura. Tente de novo.</FieldMessage>}
-        </>
-        : <>
-          <p>Cancelar mantém o acesso até o fim do período pago. Antes de confirmar, mostramos o que isso significa.</p>
-          <div className="subscription__actions">
-            <Button variant="secondary" onClick={() => { setCanceling(true); }}>Cancelar a assinatura</Button>
-          </div>
-        </>}
-    </section>
+        </section>
+        {lifecycle}
+      </>}
 
     {testTools}
 

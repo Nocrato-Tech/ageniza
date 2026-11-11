@@ -1,10 +1,9 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, UserCheck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
 import { ClientListResponseSchema, ContentActivationResponseSchema } from '@ageniza/contracts';
-import { ButtonLink } from '@ageniza/ui';
+import { ButtonLink, MilestoneTrail, Stage3D, type MilestoneStep } from '@ageniza/ui';
 
 import { useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -57,7 +56,10 @@ export function useActivationFacts(agencyId: string, enabled: boolean) {
   return { facts, pathFacts, firstClientId };
 }
 
-/** The journey "Até a primeira aprovação": four steps from the first client to the client's approval; each one leads to the screen that resolves it, when the role can do it. */
+/**
+ * The journey "Até a primeira aprovação": four steps from the first client to the client's approval, on the milestone trail.
+ * The first pending step is the current one and carries the way forward to the screen that resolves it, when the role can do it.
+ */
 export function ActivationPath({ facts, firstClientId }: { facts: MilestoneFacts | undefined; firstClientId: string | undefined }) {
   const canRegister = useCan('cliente.cadastrar');
   const canInvite = useCan('cliente.convidar_usuario');
@@ -87,24 +89,34 @@ export function ActivationPath({ facts, firstClientId }: { facts: MilestoneFacts
   const doneCount = steps.filter((step) => step.done).length;
   const current = steps.find((step) => !step.done)?.key;
 
-  return <section aria-labelledby="activation-title" className="activation">
-    <header className="activation__header">
-      <h2 id="activation-title">Até a primeira aprovação</h2>
-      <p>{doneCount} de {steps.length} concluídos</p>
-    </header>
-    <progress className="activation__progress" max={steps.length} value={doneCount} aria-label="Passos concluídos até a primeira aprovação" />
-    <ol className="activation__steps">
-      {steps.map((step, index) => <li key={step.key} className="activation__step" data-done={step.done} data-owner={step.owner} aria-current={step.key === current ? 'step' : undefined}>
-        <span className="activation__mark" aria-hidden="true">
-          {step.done ? <Check /> : step.owner === 'client' ? <UserCheck /> : index + 1}
-        </span>
-        <span className="activation__text">
-          <span className="activation__who">{step.owner === 'client' ? 'Seu cliente' : 'Você'}</span>
-          <span className="activation__title">{step.title}<span className="activation__state"> — {step.done ? 'feito' : 'pendente'}</span></span>
-          <span className="activation__description">{step.description}</span>
-        </span>
-        {!step.done && step.action !== null && <ButtonLink as={Link} to={step.action.to} variant="secondary">{step.action.label}</ButtonLink>}
-      </li>)}
-    </ol>
+  const trail: MilestoneStep[] = steps.map((step) => ({
+    id: step.key,
+    status: step.done ? 'done' : step.key === current ? 'current' : 'upcoming',
+    title: <>{step.title}<span className="activation__who">{step.owner === 'client' ? 'Seu cliente' : 'Você'}</span></>,
+    description: step.description,
+    action: step.action === null ? undefined : <ButtonLink as={Link} to={step.action.to}>{step.action.label}</ButtonLink>
+  }));
+
+  // The trail carries the way forward of the current step only. What the person can do on the later steps stays one click
+  // away, except what leads to the same screen as the current step's button, which would only repeat it.
+  const currentTo = steps.find((step) => step.key === current)?.action?.to;
+  const ahead = steps.filter((step) => !step.done && step.key !== current && step.action !== null && step.action.to !== currentTo);
+
+  return <section aria-labelledby="activation-title" className="activation" data-stage-host>
+    <div className="activation__intro">
+      <Stage3D src="/3d/rocket.png" tone="indigo" size="xl" />
+      <h2 id="activation-title" className="activation__eyebrow">Até a primeira aprovação</h2>
+      <p className="activation__count"><strong>{doneCount}</strong> de {steps.length} passos</p>
+      <progress className="activation__progress" max={steps.length} value={doneCount} aria-label="Passos concluídos até a primeira aprovação" />
+    </div>
+    <div className="activation__steps">
+      <MilestoneTrail steps={trail} aria-label="Passos até a primeira aprovação" />
+      {ahead.length > 0 && <div className="activation__ahead">
+        <p className="activation__ahead-label">Você pode adiantar:</p>
+        <div className="activation__ahead-actions">
+          {ahead.map((step) => <ButtonLink key={step.key} as={Link} to={step.action!.to} variant="secondary">{step.action!.label}</ButtonLink>)}
+        </div>
+      </div>}
+    </div>
   </section>;
 }

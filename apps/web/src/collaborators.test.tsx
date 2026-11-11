@@ -2587,29 +2587,40 @@ describe('self profile editing (#108)', () => {
   });
 });
 
-// Issue #228: the grid must close in 3 and 4 columns. The shell's `.agency-content` is 840px at its
-// widest (72rem minus the 16rem nav, the gap and the padding), so the badge minimum has to let four
-// columns fit. jsdom has no layout, so the test reads the real CSS value and applies the same math
-// `repeat(auto-fill, minmax(..., 1fr))` does.
+// Issue #228: the grid closes in 3 or 4 columns on a desktop, so a page of 24 never leaves a broken row (specs/colaboradores.md
+// section 6). jsdom has no layout, so the test reads the real minimum of the track from the CSS and applies the same math
+// `repeat(auto-fill, minmax(min, 1fr))` does, over every content width a screen can give.
 describe('collaborators grid columns (#228)', () => {
   const globalsCss = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+  const GAP_PX = 16;
+  const REM_PX = 16;
 
-  const gridMinRem = (): number => {
-    const match = /\.collaborators__grid\s*\{[^}]*minmax\(([\d.]+)rem,\s*1fr\)/.exec(globalsCss);
-    if (match === null) throw new Error('The collaborators grid min width was not found in globals.css.');
-    return Number(match[1]);
+  /** The track minimum in px for a row of `widthPx`, as the stylesheet declares it. */
+  const trackMinPx = (widthPx: number): number => {
+    const match = /\.collaborators__grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(([^;]*),\s*1fr\)\);/.exec(globalsCss);
+    if (match === null) throw new Error('The collaborators grid columns were not found in globals.css.');
+    const plain = /^([\d.]+)rem$/.exec(match[1]!.trim());
+    if (plain !== null) return Number(plain[1]) * REM_PX;
+    const capped = /^max\(([\d.]+)rem,\s*calc\(\(100% - 3 \* var\(--space-4\)\) \/ 4 - 1px\)\)$/.exec(match[1]!.trim());
+    if (capped === null) throw new Error(`Unknown track minimum: ${match[1]}`);
+    return Math.max(Number(capped[1]) * REM_PX, (widthPx - 3 * GAP_PX) / 4 - 1);
   };
 
-  const columnsFor = (availableWidthPx: number, minRem: number, gapRem = 1, rootFontSizePx = 16): number => {
-    const minPx = minRem * rootFontSizePx;
-    const gapPx = gapRem * rootFontSizePx;
-    return Math.max(1, Math.floor((availableWidthPx + gapPx) / (minPx + gapPx)));
-  };
+  const columnsFor = (widthPx: number): number => Math.max(1, Math.floor((widthPx + GAP_PX) / (trackMinPx(widthPx) + GAP_PX)));
 
-  it('fits four columns in the 840px content area and three in a narrower one', () => {
-    const minRem = gridMinRem();
-    expect(columnsFor(840, minRem)).toBe(4);
-    expect(columnsFor(700, minRem)).toBe(3);
+  it('opens 3 or 4 columns on a desktop, 2 on a middle width and 1 on a phone', () => {
+    expect(columnsFor(840)).toBe(3);
+    expect(columnsFor(1216)).toBe(4);
+    expect(columnsFor(600)).toBe(2);
+    expect(columnsFor(358)).toBe(1);
+  });
+
+  it('never opens a fifth column and never leaves a broken last row for a page of 24, at any content width', () => {
+    for (let width = 280; width <= 2400; width += 8) {
+      const columns = columnsFor(width);
+      expect(columns, `${width}px`).toBeLessThanOrEqual(4);
+      expect(24 % columns, `${width}px`).toBe(0);
+    }
   });
 
   it('keeps the gap on the spacing scale', () => {
@@ -2991,8 +3002,8 @@ describe('team screens in the Pauta language (#638)', () => {
   const PERMISSIONS = ['colaborador.visualizar', 'colaborador.convidar', 'convite.reenviar', 'convite.cancelar', 'colaborador.remover', 'colaborador.alterar_papel', 'colaborador.alterar_funcao'];
   const headerOf = (container: HTMLElement): HTMLElement => container.querySelector('.collaborators__header') as HTMLElement;
 
-  it('closes the grid in three columns from 64rem, so a page of 24 never leaves a broken row', () => {
-    expect(globalsCss).toMatch(/@media \(min-width: 64rem\) \{\s*\.collaborators__grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+  it('caps the grid at four columns by raising the track minimum to a quarter of the row, so a page of 24 never leaves a broken row', () => {
+    expect(globalsCss).toMatch(/\.collaborators__grid \{[^}]*grid-template-columns: repeat\(auto-fill, minmax\(max\(13\.5rem, calc\(\(100% - 3 \* var\(--space-4\)\) \/ 4 - 1px\)\), 1fr\)\);/);
   });
 
   it('reacts to the pointer by border, never by background, over the badge', () => {
@@ -3007,9 +3018,9 @@ describe('team screens in the Pauta language (#638)', () => {
     expect(globalsCss).toMatch(/\.collaborator-detail__photo \.ui-button \{[^}]*white-space: nowrap;/);
   });
 
-  it('lays the filters out as a grid with the search on its own row, above the selects', () => {
-    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \{[^}]*display: grid;/);
-    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \.ui-filter-bar__item:first-child \{[^}]*grid-column: 1 \/ -1;/);
+  it('lays the filters out in one wrapping row, the search first and growing, then the selects', () => {
+    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \{[^}]*display: flex;[^}]*flex-wrap: wrap;/);
+    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \.ui-filter-bar__item:first-child \{[^}]*flex: 1 1 16rem;/);
   });
 
   it('writes the invite action with an icon, not a plus character', async () => {

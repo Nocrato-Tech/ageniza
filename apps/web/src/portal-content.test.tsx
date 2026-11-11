@@ -943,9 +943,15 @@ describe('the post of the portal (#270)', () => {
       await title('Lançamento da primavera');
       expect(within(bar()).getAllByRole('button').map((button) => button.textContent)).toEqual(['Pedir ajuste', 'Aprovar']);
       expect(within(bar()).getByRole('heading', { level: 2, name: 'Sua decisão' })).toBeTruthy();
-      // The end of the conversation is never under the bar: the bar comes after everything else in the page.
+      // The end of the conversation is never under the bar: the bar comes after everything else in the markup, so a phone, the keyboard and a screen reader all meet it last.
       const post = container.querySelector('.portal-post') as HTMLElement;
-      expect(post.lastElementChild).toBe(bar());
+      const layout = post.querySelector('.portal-post__layout') as HTMLElement;
+      expect(post.lastElementChild).toBe(layout);
+      expect(layout.lastElementChild).toBe(bar());
+      const follows = (earlier: Element, later: Element): boolean => (earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      expect(follows(post.querySelector('.portal-media') as Element, bar())).toBe(true);
+      expect(follows(post.querySelector('.portal-post__caption') as Element, bar())).toBe(true);
+      expect(follows(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }), bar())).toBe(true);
       expect(post.contains(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }))).toBe(true);
       expect(bar().classList.contains('portal-post__bar')).toBe(true);
     });
@@ -1008,13 +1014,19 @@ describe('the post of the portal (#270)', () => {
       const { container } = await open({ state: 'in_production' });
       await title('Lançamento da primavera');
       const shell = container.querySelector('.portal-shell') as HTMLElement;
-      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'header', 'main', 'nav']);
-      expect(shell.lastElementChild).toBe(screen.getByRole('navigation', { name: 'Navegação do portal' }));
+      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
+      const sidebar = shell.querySelector('.portal-sidebar') as HTMLElement;
+      expect(sidebar.lastElementChild).toBe(screen.getByRole('navigation', { name: 'Navegação do portal' }));
       // jsdom has no layout: the rules that hold a short page's bar at the bottom of a 360 px phone are read from the stylesheet.
       expect(rule('.portal-shell')).toMatch(/min-height:\s*100dvh;/);
       expect(rule('.portal-shell > .portal-content')).toMatch(/flex:\s*1;/);
       expect(rule('.portal-nav')).toMatch(/position:\s*sticky;/);
       expect(rule('.portal-nav')).toMatch(/bottom:\s*0;/);
+      // The bar is the last piece on a phone only because of these: the sidebar's own box does not take part in the layout, and the bar is ordered after the content.
+      expect(rule('.portal-sidebar')).toMatch(/display:\s*contents;/);
+      expect(rule('.portal-nav')).toMatch(/order:\s*2;/);
+      expect(rule('.portal-shell > .portal-content')).toMatch(/order:\s*1;/);
+      expect(rule('.portal-header')).toMatch(/order:\s*0;/);
     });
 
     it('lets every box shrink and every server text wrap, with no fixed width that could push 390 px sideways', () => {
@@ -1058,6 +1070,24 @@ describe('the post of the portal (#270)', () => {
       throw new Error(`No @media ${query} block holds ${inside} in globals.css.`);
     };
 
+    it('lays the post out in the order of the markup on a phone, and stacks the answer beside the post only from the wide screen', () => {
+      expect(rule('.portal-post__layout')).toMatch(/display:\s*grid;/);
+      expect(rule('.portal-post__bar')).not.toMatch(/(^|[^-])order:/);
+      expect(rule('.portal-post__body')).not.toMatch(/(^|[^-])order:/);
+      const wide = mediaBlock('(min-width: 48rem)', '.portal-post__layout');
+      expect(wide).toMatch(/\.portal-post__layout \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 24rem\);/);
+      expect(wide).toMatch(/\.portal-post__layout > \.portal-post__bar \{[^}]*grid-column:\s*2;/);
+      // On a long post the answer stays in view beside it: the bar spans the flexible row and is held at the top while the page scrolls.
+      expect(wide).toMatch(/\.portal-post__layout > \.portal-post__bar \{\s*grid-row:\s*2 \/ -1;\s*align-self:\s*start;\s*position:\s*sticky;\s*top:\s*var\(--space-4\);/);
+    });
+
+    it('draws no blur on the header of the portal and takes the hover lift of a cover card away for those who ask for less motion', () => {
+      expect(rule('.portal-header')).not.toMatch(/backdrop-filter/);
+      const reduced = mediaBlock('(prefers-reduced-motion: reduce)', '.portal-postcard');
+      expect(reduced).toMatch(/\.portal-postcard \{\s*transition:\s*none;/);
+      expect(reduced).toMatch(/\.portal-postcard:hover \{\s*transform:\s*none;/);
+    });
+
     it('holds the decision bar at the bottom of the screen and keeps a focused control clear of it', () => {
       expect(rule('.portal-post__bar')).toMatch(/position:\s*sticky;/);
       expect(rule('.portal-post__bar')).toMatch(/bottom:\s*0;/);
@@ -1069,7 +1099,7 @@ describe('the post of the portal (#270)', () => {
 
     it('steps the bottom bar of the shell aside while a post is open, except under the tour that points at it', () => {
       const phone = mediaBlock('(max-width: 47.99rem)', '.portal-post__bar');
-      expect(phone).toMatch(/\.portal-shell:has\(\.portal-post\):not\(:has\(\.portal-tour\)\) > \.portal-nav \{\s*display:\s*none;/);
+      expect(phone).toMatch(/\.portal-shell:has\(\.portal-post\):not\(:has\(\.portal-tour\)\) \.portal-nav \{\s*display:\s*none;/);
       expect(phone).toMatch(/\.portal-shell:has\(\.portal-tour\) \.portal-post__bar \{\s*position:\s*static;/);
       expect(phone).toMatch(/\.portal-shell > \.portal-content:has\(\.portal-post__bar\) \{\s*padding-bottom:\s*0;/);
       // On a wide screen the navigation is the tabs under the header and stays: the phone block is the only place that hides it.

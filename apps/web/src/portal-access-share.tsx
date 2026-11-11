@@ -24,7 +24,6 @@ export function PortalAccessShare({ member, clientName }: { member: ClientMember
   const address = portalEntryAddress();
   const message = portalShareMessage({ agencyName: agency.agencyName, clientName, personName: member.name, address });
   return <>
-    <CopyPortalAccessButton message={message} address={address} subject={member.email} />
     <ButtonLink
       size="sm"
       variant="secondary"
@@ -34,5 +33,6 @@ export function PortalAccessShare({ member, clientName }: { member: ClientMember
       rel="noopener noreferrer"
       aria-label={`Enviar pelo WhatsApp para ${member.email} (abre em nova aba)`}
     >Enviar pelo WhatsApp</ButtonLink>
+    <CopyPortalAccessButton message={message} address={address} subject={member.email} />
   </>;
 }

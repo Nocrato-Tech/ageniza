@@ -88,6 +88,15 @@ const steps = {
   approved: 'Seu cliente aprova pelo link, sem criar conta'
 };
 
+/** "3 de 4 passos": the big number and the words are two elements, so the line is read as one. */
+const findCount = (text: string) => waitFor(() => { expect(document.querySelector('.activation__count')?.textContent).toBe(text); });
+
+/** The state of each step in the words the trail says before its title ("Feito", "Passo atual", "Próximo passo"). */
+const stateWords = (scope: HTMLElement): (string | undefined)[] =>
+  within(scope).getAllByRole('listitem').map((item) => item.querySelector('.ui-trail__status')?.textContent?.replace(/:\s*$/, ''));
+
+const journeyOf = (): HTMLElement => screen.getByRole('heading', { name: 'Até a primeira aprovação' }).closest('section') as HTMLElement;
+
 beforeEach(() => { window.localStorage.clear(); calls.length = 0; });
 afterEach(cleanup);
 
@@ -95,9 +104,9 @@ describe('the journey "Até a primeira aprovação" on the agency Início', () =
   it('shows the four steps pending and the first one leads to the clients', async () => {
     const probe = renderHome({ permissions: ALL });
     expect(await screen.findByRole('heading', { name: 'Até a primeira aprovação' })).toBeTruthy();
-    expect(screen.getByText('0 de 4 concluídos')).toBeTruthy();
+    await findCount('0 de 4 passos');
     for (const title of Object.values(steps)) expect(screen.getByText(title)).toBeTruthy();
-    expect(screen.getAllByText(/— pendente/)).toHaveLength(4);
+    expect(stateWords(journeyOf())).toEqual(['Passo atual', 'Próximo passo', 'Próximo passo', 'Próximo passo']);
     expect(screen.getByText('Só o nome é obrigatório. O resto você completa depois.')).toBeTruthy();
     expect(screen.getByText('O cliente vê o post no portal e aprova ou pede ajuste.')).toBeTruthy();
     // Without a client there is nowhere to create a content or invite: only the first step has a button.
@@ -110,10 +119,11 @@ describe('the journey "Até a primeira aprovação" on the agency Início', () =
 
   it('presents the steps as a journey: who does each one, the progress, and the last step belongs to the client', async () => {
     renderHome({ permissions: ALL, clients: 1, facts: { ...none, hasContent: true } });
-    expect(await screen.findByText('2 de 4 concluídos')).toBeTruthy();
-    const journey = within(screen.getByRole('heading', { name: 'Até a primeira aprovação' }).closest('section') as HTMLElement);
+    await findCount('2 de 4 passos');
+    const journey = within(journeyOf());
     const items = journey.getAllByRole('listitem');
     expect(items).toHaveLength(4);
+    expect(stateWords(journeyOf())).toEqual(['Feito', 'Feito', 'Passo atual', 'Próximo passo']);
     expect(items.map((item) => within(item).getByText(/^(Você|Seu cliente)$/).textContent)).toEqual(['Você', 'Você', 'Você', 'Seu cliente']);
     const progress = screen.getByRole('progressbar', { name: 'Passos concluídos até a primeira aprovação' });
     expect(progress.getAttribute('value')).toBe('2');
@@ -127,9 +137,8 @@ describe('the journey "Até a primeira aprovação" on the agency Início', () =
 
   it('marks done steps from the data and sends each button to the screen that resolves it', async () => {
     const probe = renderHome({ permissions: ALL, clients: 1, facts: { ...none, hasContent: true } });
-    expect(await screen.findByText('2 de 4 concluídos')).toBeTruthy();
-    expect(screen.getAllByText(/— feito/)).toHaveLength(2);
-    expect(screen.getAllByText(/— pendente/)).toHaveLength(2);
+    await findCount('2 de 4 passos');
+    expect(stateWords(journeyOf())).toEqual(['Feito', 'Feito', 'Passo atual', 'Próximo passo']);
     expect(screen.queryByRole('link', { name: 'Cadastrar cliente' })).toBeNull();
 
     fireEvent.click(screen.getByRole('link', { name: 'Enviar para aprovação' }));
@@ -144,7 +153,7 @@ describe('the journey "Até a primeira aprovação" on the agency Início', () =
 
   it('sends the invite button to the portal accesses of the client', async () => {
     const probe = renderHome({ permissions: ALL, clients: 1, facts: { hasContent: true, sentForApproval: true, approvedByClient: false, published: false } });
-    expect(await screen.findByText('3 de 4 concluídos')).toBeTruthy();
+    await findCount('3 de 4 passos');
     fireEvent.click(screen.getByRole('link', { name: 'Convidar o cliente' }));
     await waitFor(() => { expect(probe.pathname).toBe(`/agencia/${AGENCY}/clientes/${CLIENT}/acessos`); });
   });
@@ -184,7 +193,7 @@ describe('the journey "Até a primeira aprovação" on the agency Início', () =
     await waitFor(() => { expect(calls.some((url) => url.endsWith('/contents/activation'))).toBe(true); });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
     expect(screen.queryByRole('heading', { name: 'Até a primeira aprovação' })).toBeNull();
-    expect(screen.queryByText(/concluídos/)).toBeNull();
+    expect(screen.queryByText(/de 4 passos/)).toBeNull();
     expect(within(screen.getByRole('navigation', { name: 'Navegação da agência' })).getByRole('link', { name: 'Início' })).toBeTruthy();
   });
 
@@ -197,7 +206,7 @@ describe('the journey "Até a primeira aprovação" on the agency Início', () =
 
   it('counts the first step done when the default list is empty (only archived clients) but there is content', async () => {
     renderHome({ permissions: ALL, clients: 0, facts: { ...none, hasContent: true } });
-    expect(await screen.findByText('2 de 4 concluídos')).toBeTruthy();
+    await findCount('2 de 4 passos');
     expect(screen.queryByRole('link', { name: 'Cadastrar cliente' })).toBeNull();
   });
 
@@ -219,12 +228,12 @@ describe('the journey "Até a primeira aprovação" on the agency Início', () =
   it('shows the new step and celebrates it when the person comes back to the Início soon after', async () => {
     const scenario: { -readonly [K in keyof Scenario]: Scenario[K] } = { permissions: ALL, clients: 0 };
     renderHome(scenario);
-    expect(await screen.findByText('0 de 4 concluídos')).toBeTruthy();
+    await findCount('0 de 4 passos');
     scenario.clients = 1;
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Navegação da agência' })).getByRole('link', { name: 'Clientes' }));
     await screen.findByRole('heading', { name: 'Clientes' });
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Navegação da agência' })).getByRole('link', { name: 'Início' }));
-    expect(await screen.findByText('1 de 4 concluídos')).toBeTruthy();
+    await findCount('1 de 4 passos');
     expect(await screen.findByText('Primeiro cliente cadastrado!')).toBeTruthy();
   });
 
@@ -241,5 +250,85 @@ describe('the journey "Até a primeira aprovação" on the agency Início', () =
     renderHome({ permissions: ['colaborador.visualizar'] });
     expect(await screen.findByText('Colaboradores, papéis e convites.')).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Até a primeira aprovação' })).toBeNull();
+  });
+
+  it('keeps "Convidar o cliente" for a role that cannot act on the current step: the trail shows no button, the line below does', async () => {
+    const probe = renderHome({ permissions: [...VIEW, 'cliente.convidar_usuario'], clients: 1 });
+    await findCount('1 de 4 passos');
+    // The current step is the first content, which this role cannot operate: no button on the trail.
+    const trail = within(journeyOf()).getByRole('list', { name: 'Passos até a primeira aprovação' });
+    expect(within(trail).queryByRole('link')).toBeNull();
+    const line = within(journeyOf()).getByText('Você pode adiantar:').parentElement as HTMLElement;
+    expect(within(line).getAllByRole('link').map((link) => link.textContent)).toEqual(['Convidar o cliente']);
+    fireEvent.click(within(line).getByRole('link', { name: 'Convidar o cliente' }));
+    await waitFor(() => { expect(probe.pathname).toBe(`/agencia/${AGENCY}/clientes/${CLIENT}/acessos`); });
+  });
+
+  it('keeps "Convidar o cliente" for a role that can act on the current step too, without repeating the screen the current button opens', async () => {
+    const probe = renderHome({ permissions: ALL, clients: 1 });
+    await findCount('1 de 4 passos');
+    const trail = within(journeyOf()).getByRole('list', { name: 'Passos até a primeira aprovação' });
+    expect(within(trail).getAllByRole('link').map((link) => link.textContent)).toEqual(['Criar conteúdo']);
+    const line = within(journeyOf()).getByText('Você pode adiantar:').parentElement as HTMLElement;
+    // "Enviar para aprovação" opens the same calendar as "Criar conteúdo": it would only repeat the button above.
+    expect(within(line).getAllByRole('link').map((link) => link.textContent)).toEqual(['Convidar o cliente']);
+    fireEvent.click(within(line).getByRole('link', { name: 'Convidar o cliente' }));
+    await waitFor(() => { expect(probe.pathname).toBe(`/agencia/${AGENCY}/clientes/${CLIENT}/acessos`); });
+  });
+
+  it('adds no line when nothing later can be done', async () => {
+    renderHome({ permissions: VIEW, clients: 1 });
+    await findCount('1 de 4 passos');
+    expect(screen.queryByText('Você pode adiantar:')).toBeNull();
+    cleanup();
+    // The current step is the last one: nothing comes after it.
+    renderHome({ permissions: ALL, clients: 1, facts: { hasContent: true, sentForApproval: true, approvedByClient: false, published: false } });
+    await findCount('3 de 4 passos');
+    expect(screen.queryByText('Você pode adiantar:')).toBeNull();
+  });
+
+  it('puts the current step on the trail with its way forward, and the rocket and the bar beside it', async () => {
+    renderHome({ permissions: ALL, clients: 1, facts: { ...none, hasContent: true } });
+    await findCount('2 de 4 passos');
+    const journey = within(journeyOf());
+    const trail = journey.getByRole('list', { name: 'Passos até a primeira aprovação' });
+    const [current] = within(trail).getAllByRole('listitem').filter((item) => item.getAttribute('aria-current') === 'step');
+    expect(within(current as HTMLElement).getByText(steps.sent)).toBeTruthy();
+    expect(within(current as HTMLElement).getByRole('link', { name: 'Enviar para aprovação' })).toBeTruthy();
+    expect(journeyOf().querySelector('img[src="/3d/rocket.png"]')).not.toBeNull();
+  });
+});
+
+describe('"Marcos da agência" on the Início', () => {
+  const milestones = (): HTMLElement => screen.getByRole('heading', { name: 'Marcos da agência' }).closest('section') as HTMLElement;
+
+  it('is not there for a new agency: the journey already shows the whole way', async () => {
+    renderHome({ permissions: ALL });
+    await findCount('0 de 4 passos');
+    expect(screen.queryByRole('heading', { name: 'Marcos da agência' })).toBeNull();
+  });
+
+  it('lists the five first achievements in order while the journey goes on, the reached ones as achieved', async () => {
+    renderHome({ permissions: ALL, clients: 1, facts: { ...none, hasContent: true } });
+    await screen.findByRole('heading', { name: 'Marcos da agência' });
+    const titles = within(milestones()).getAllByRole('listitem').map((item) => item.querySelector('.ui-trail__title')?.lastChild?.textContent);
+    expect(titles).toEqual(['Primeiro cliente cadastrado', 'Primeiro conteúdo criado', 'Primeiro envio para aprovação', 'Primeira aprovação', 'Primeiro conteúdo postado']);
+    expect(stateWords(milestones())).toEqual(['Conquistado', 'Conquistado', 'A conquistar', 'A conquistar', 'A conquistar']);
+    expect(milestones().querySelector('img[src="/3d/medal.png"]')).not.toBeNull();
+    expect(screen.getByRole('heading', { name: 'Até a primeira aprovação' })).toBeTruthy();
+  });
+
+  it('stays on the Início after the first approval, when the journey is gone', async () => {
+    window.localStorage.setItem(`ageniza:milestones:${AGENCY}`, JSON.stringify(['client', 'content', 'sent']));
+    renderHome({ permissions: ALL, clients: 1, facts: { hasContent: true, sentForApproval: true, approvedByClient: true, published: false } });
+    await screen.findByRole('heading', { name: 'Marcos da agência' });
+    expect(stateWords(milestones())).toEqual(['Conquistado', 'Conquistado', 'Conquistado', 'Conquistado', 'A conquistar']);
+    expect(screen.queryByRole('heading', { name: 'Até a primeira aprovação' })).toBeNull();
+  });
+
+  it('is not on the Início of a role that cannot read the contents', async () => {
+    renderHome({ permissions: ['colaborador.visualizar'] });
+    expect(await screen.findByText('Colaboradores, papéis e convites.')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Marcos da agência' })).toBeNull();
   });
 });

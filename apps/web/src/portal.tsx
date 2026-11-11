@@ -1,12 +1,12 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { CalendarDays, ChartColumn, House, MessageCircle, type LucideIcon } from 'lucide-react';
+import { ChartColumn, House, LayoutGrid, Palette, type LucideIcon } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AuthNoContentResponseSchema, PortalClientResponseSchema, type PortalClientResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
 import { isTermsNotAccepted, TermsRedirect } from './acceptance.js';
-import { Avatar, Button, EmptyState, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, EmptyState, Logo, Skeleton, Stage3D, type Stage3DTone } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { useAuthSession, useAuthSessionStore } from './auth.js';
@@ -39,8 +39,8 @@ export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9
 
 const PORTAL_TABS: readonly { slug: string; label: string; icon: LucideIcon }[] = [
   { slug: 'inicio', label: 'Início', icon: House },
-  { slug: 'conteudos', label: 'Conteúdos', icon: CalendarDays },
-  { slug: 'marca', label: 'Marca', icon: MessageCircle },
+  { slug: 'conteudos', label: 'Conteúdos', icon: LayoutGrid },
+  { slug: 'marca', label: 'Marca', icon: Palette },
   { slug: 'relatorios', label: 'Relatórios', icon: ChartColumn }
 ];
 
@@ -62,21 +62,42 @@ function PortalUnavailable({ onRetry }: { onRetry: () => void }) {
 function PortalContextlessShell({ children }: { children: React.ReactNode }) {
   return <div className="app-shell portal-shell">
     <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-    <header className="portal-header"><AccountMenu /></header>
+    <div className="portal-sidebar">
+      <header className="portal-header"><PortalBrand /><AccountMenu variant="sidebar" /></header>
+    </div>
     <main className="portal-content" id="main-content">{children}</main>
+  </div>;
+}
+
+/** The mark of the shell, on a wide screen only: a phone's top bar is the client and the person's menu. */
+function PortalBrand() {
+  return <span className="portal-header__brand"><Logo variant="on-light" height={30} /></span>;
+}
+
+/**
+ * An empty state with its 3D icon on the stage, loose in the middle (docs/design-system.md, "Ícone 3D: o palco"): good news and the
+ * first use. The failure never has one. The state's own line icon is hidden here, so the stage is the only mark.
+ */
+export function PortalStageEmpty({ icon, tone, children }: { icon: string; tone: Stage3DTone; children: React.ReactNode }) {
+  return <div className={`portal-stage-empty portal-stage-empty--${tone}`} data-stage-host>
+    <Stage3D src={`/3d/${icon}.png`} tone={tone} size="xl" />
+    {children}
   </div>;
 }
 
 function PortalShellSkeleton() {
   // The Início skeleton: the header identity, the greeting block and the next action's card.
   return <div className="app-shell portal-shell">
-    <header className="portal-header">
-      <div className="portal-header__identity">
-        <Skeleton className="portal-header__avatar-skeleton" />
-        <div className="portal-header__labels"><Skeleton className="portal-header__name-skeleton" /><Skeleton /></div>
-      </div>
-      <AccountMenu reopensEmailChange={false} />
-    </header>
+    <div className="portal-sidebar">
+      <header className="portal-header">
+        <PortalBrand />
+        <div className="portal-header__identity">
+          <Skeleton className="portal-header__avatar-skeleton" />
+          <div className="portal-header__labels"><Skeleton className="portal-header__name-skeleton" /><Skeleton /></div>
+        </div>
+        <AccountMenu variant="sidebar" reopensEmailChange={false} />
+      </header>
+    </div>
     <main className="portal-content" id="main-content">
       <Skeleton className="portal-home__title-skeleton" />
       <Skeleton className="portal-home__action-skeleton" />
@@ -86,6 +107,7 @@ function PortalShellSkeleton() {
 
 function PortalNav({ clienteId, tourTarget, children }: { clienteId: string; tourTarget: PortalTourTarget | null; children?: React.ReactNode }) {
   return <nav className="portal-nav" aria-label="Navegação do portal">
+    <p className="portal-nav__title">Seu espaço</p>
     <ul>
       {PORTAL_TABS.map(({ slug, label, icon: Icon }) => <li key={slug}>
         <NavLink end to={`/portal/${clienteId}/${slug}`} data-tour-target={slug === tourTarget ? 'true' : undefined}><Icon aria-hidden="true" /><span>{label}</span></NavLink>
@@ -159,31 +181,37 @@ export function PortalAreaLayout() {
   return <PortalClientContext.Provider value={data}>
     <div className="app-shell portal-shell">
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-      <header className="portal-header">
-        <div className="portal-header__identity">
-          <Avatar name={data.name} photoUrl={data.photoUrl} size="md" />
-          <div className="portal-header__labels">
-            <p className="portal-header__name">{data.name}</p>
-            <p className="portal-header__agency">por {data.agencyName}</p>
+      <div className="portal-sidebar">
+        <header className="portal-header">
+          <PortalBrand />
+          <div className="portal-header__identity">
+            <Avatar name={data.name} photoUrl={data.photoUrl} size="sm" />
+            <div className="portal-header__labels">
+              <p className="portal-header__name">{data.name}</p>
+              <p className="portal-header__agency">por {data.agencyName}</p>
+            </div>
           </div>
-        </div>
-        {/* The account menu (#70) lives here; the active context is the client this portal is. */}
-        <AccountMenu activeContext={data.name} onReviewTour={tourMode === null ? () => { setReviewingClientId(clienteId); } : undefined} />
-      </header>
-      <LegalNotice />
-      {data.agencyReadOnly && <PortalReadOnlyNotice agencyName={data.agencyName} />}
-      <main className="portal-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/portal/${data.id}/inicio`}><Outlet /></NotFoundHomeContext.Provider></main>
-      {/* The card lives in the bar so it sits right above it, whatever the bar's height becomes. */}
-      <PortalNav clienteId={clienteId} tourTarget={tourTarget}>
-        {tourMode !== null && <PortalTour
-          key={`${clienteId}:${tourMode}`}
-          personName={session.user?.name ?? ''}
-          clientName={data.name}
-          agencyName={data.agencyName}
-          onClose={closeTour}
-          onTargetChange={setTourTarget}
-        />}
-      </PortalNav>
+          {/* The account menu (#70) lives here; the active context is the client this portal is. */}
+          <AccountMenu variant="sidebar" activeContext={data.name} onReviewTour={tourMode === null ? () => { setReviewingClientId(clienteId); } : undefined} />
+        </header>
+        {/* The card lives in the bar so it sits right above it, whatever the bar's height becomes. */}
+        <PortalNav clienteId={clienteId} tourTarget={tourTarget}>
+          {tourMode !== null && <PortalTour
+            key={`${clienteId}:${tourMode}`}
+            personName={session.user?.name ?? ''}
+            clientName={data.name}
+            agencyName={data.agencyName}
+            onClose={closeTour}
+            onTargetChange={setTourTarget}
+          />}
+        </PortalNav>
+      </div>
+      <main className="portal-content" id="main-content">
+        <LegalNotice />
+        {data.agencyReadOnly && <PortalReadOnlyNotice agencyName={data.agencyName} />}
+        <InvitationNotice />
+        <NotFoundHomeContext.Provider value={`/portal/${data.id}/inicio`}><Outlet /></NotFoundHomeContext.Provider>
+      </main>
     </div>
   </PortalClientContext.Provider>;
 }
@@ -197,6 +225,8 @@ export function PortalSkeletonPage({ title, description }: { title: string; desc
   useDocumentTitle(`${title} — Portal do cliente — Ageniza`);
   return <section className="portal-skeleton" aria-labelledby={titleId}>
     <h1 id={titleId}>{title}</h1>
-    <EmptyState mascot className="portal-empty" title="Ainda não há resultados para mostrar" description={description} />
+    <PortalStageEmpty icon="notebook" tone="indigo">
+      <EmptyState className="portal-empty" title="Ainda não há resultados para mostrar" description={description} />
+    </PortalStageEmpty>
   </section>;
 }

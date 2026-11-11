@@ -14,7 +14,7 @@ import { Conversation } from './conversation.js';
 import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
 import { PORTAL_PAUSED_REASON } from './plan-notice.js';
-import { portalClientQueryKey, usePortalClient } from './portal.js';
+import { PortalStageEmpty, portalClientQueryKey, usePortalClient } from './portal.js';
 
 /**
  * The portal's Marca (specs/clientes.md section 7, issue #143): the study made for the client, in
@@ -152,12 +152,14 @@ export function PortalBrandPage() {
   if (SECTIONS.every((section) => !isFilled(section.key, data))) {
     return <section className="portal-brand" aria-labelledby="portal-brand-title">
       <h1 id="portal-brand-title" className="portal-headline">Sua marca</h1>
-      <EmptyState
-        className="portal-empty"
-        headingLevel={2}
-        title="Sua agência ainda está preparando o estudo da sua marca"
-        description="Quando ela compartilhar, você vê aqui e pode sugerir mudanças."
-      />
+      <PortalStageEmpty icon="bulb" tone="indigo">
+        <EmptyState
+          className="portal-empty"
+          headingLevel={2}
+          title="Sua agência ainda está preparando o estudo da sua marca"
+          description="Quando ela compartilhar, você vê aqui e pode sugerir mudanças."
+        />
+      </PortalStageEmpty>
     </section>;
   }
   return <section className="portal-brand brand-study" aria-labelledby="portal-brand-title">

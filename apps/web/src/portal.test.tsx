@@ -315,12 +315,13 @@ describe('client portal shell (#141)', () => {
     expect(container.querySelector('.portal-skeleton')).toBeTruthy();
   });
 
-  it('draws Relatórios with the owl and what is missing, not as a bare paragraph', async () => {
+  it('draws Relatórios with the 3D icon on its stage and what is missing, not as a bare paragraph', async () => {
     const { container } = renderPortal(makeFetch().impl);
     await screen.findByRole('heading', { name: 'Olá, Maria' });
     clickTab('Relatórios');
     expect(await screen.findByRole('heading', { level: 2, name: 'Ainda não há resultados para mostrar' })).toBeTruthy();
-    expect(container.querySelectorAll('.portal-skeleton img.ui-mascot')).toHaveLength(1);
+    expect(container.querySelectorAll('.portal-skeleton .ui-stage')).toHaveLength(1);
+    expect(container.querySelectorAll('.portal-skeleton img.ui-mascot')).toHaveLength(0);
   });
 
   it('keeps the focused control clear of the sticky bar: room below it on a phone, under the tabs on a wide screen', () => {
@@ -348,16 +349,18 @@ describe('client portal shell (#141)', () => {
     expect(document.title).toBe('Início — Portal do cliente — Ageniza');
   });
 
-  it('keeps the bottom bar as the last piece of a screen-tall column shell, with the content taking the rest', async () => {
+  it('keeps the bar in the navigation piece of a screen-tall column shell, with the content taking the rest', async () => {
     const { impl } = makeFetch();
     const { container } = renderPortal(impl);
     await screen.findByRole('heading', { name: 'Olá, Maria' });
 
-    // Structure: header, content, bar — the bar follows the content directly inside the shell.
+    // Structure: the navigation piece (header and bar) and the content; on a phone the piece is `display: contents`, so the bar is a flex item of the shell.
     const shell = container.querySelector('.portal-shell') as HTMLElement;
     expect(shell.classList.contains('app-shell')).toBe(true);
-    expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'header', 'main', 'nav']);
-    expect(shell.lastElementChild).toBe(nav());
+    expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
+    const sidebar = shell.querySelector('.portal-sidebar') as HTMLElement;
+    expect(Array.from(sidebar.children).map((child) => child.tagName.toLowerCase())).toEqual(['header', 'nav']);
+    expect(sidebar.lastElementChild).toBe(nav());
 
     // jsdom has no layout, so the rules that put the bar at the bottom of a short page are read from
     // the stylesheet; the real 360x780 capture is in the PR (review of #401, finding 1).
@@ -769,12 +772,13 @@ describe('the Início: approvals and the script of today (#271)', () => {
       expect(within(section).getByRole('link', { name: 'Ver todos os conteúdos' }).getAttribute('href')).toBe(portalUrl('conteudos'));
     });
 
-    it('says what is missing, with the owl and the way to the month, when nothing is planned', async () => {
+    it('says what is missing, with the 3D icon on its stage and the way to the month, when nothing is planned', async () => {
       const { container } = renderPortal(makeFetch().impl);
       const section = (await screen.findByRole('heading', { name: 'Nesta semana' })).closest('section') as HTMLElement;
       expect(await within(section).findByRole('heading', { level: 3, name: 'Nenhum post planejado para esta semana' })).toBeTruthy();
       expect(within(section).getByRole('link', { name: 'Ver o mês' }).getAttribute('href')).toBe(portalUrl('conteudos'));
-      expect(container.querySelectorAll('img.ui-mascot')).toHaveLength(1);
+      expect(section.querySelectorAll('.ui-stage')).toHaveLength(1);
+      expect(container.querySelectorAll('img.ui-mascot')).toHaveLength(0);
     });
 
     it('draws a skeleton on the first load and offers to try again when the week cannot be read', async () => {
@@ -1248,14 +1252,15 @@ describe('the Início: approvals and the script of today (#271)', () => {
       expect(other.calls.filter((call) => call === `GET /clients/${OTHER_CLIENT_ID}/material-requests`)).toHaveLength(1);
     });
 
-    it('is the first block of the Início, above what waits for approval', async () => {
+    it('is the first block under what waits for approval, which the redesign puts in the lead of the Início', async () => {
       const api = materialApi();
       api.seed({ body: 'Envie 3 fotos da equipe' });
       const { container } = renderPortal(makeFetch({ materialRequests: api, portal: () => withHome({ contentsAwaitingApproval: 2 }) }).impl);
-      await screen.findByRole('heading', { name: '2 posts esperando sua aprovação' });
-      await screen.findByRole('region', { name: 'A agência pediu' });
+      const waiting = await screen.findByRole('heading', { name: '2 posts esperando sua aprovação' });
+      const requests = await screen.findByRole('region', { name: 'A agência pediu' });
       const main = container.querySelector('.portal-home__main') as HTMLElement;
-      expect(main.firstElementChild!.classList.contains('portal-requests')).toBe(true);
+      expect(main.firstElementChild).toBe(requests);
+      expect(waiting.compareDocumentPosition(requests) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
   });
 
@@ -1393,19 +1398,24 @@ describe('the Início: approvals and the script of today (#271)', () => {
       return text.slice(start, text.indexOf('}', start));
     };
 
-    it('keeps the bottom bar the last piece of the shell with the whole Início drawn, and the content taking the rest', async () => {
+    it('keeps the bar in the navigation piece of the shell with the whole Início drawn, and the content taking the rest', async () => {
       const api = scriptsApi();
       api.seed({ scriptOn: TODAY });
       const { container } = renderPortal(makeFetch({ scripts: api, portal: () => withHome({ contentsAwaitingApproval: 3 }) }).impl);
       await screen.findByRole('region', { name: 'Roteiro de hoje' });
       const shell = container.querySelector('.portal-shell') as HTMLElement;
-      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'header', 'main', 'nav']);
-      expect(shell.lastElementChild).toBe(nav());
+      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
+      expect((shell.querySelector('.portal-sidebar') as HTMLElement).lastElementChild).toBe(nav());
       // jsdom has no layout: the rules that keep a short page's bar at the bottom, and a page of 390 px from scrolling sideways, are read from the stylesheet.
       expect(rule('.portal-shell')).toMatch(/min-height:\s*100dvh;/);
       expect(rule('.portal-shell > .portal-content')).toMatch(/flex:\s*1;/);
       expect(rule('.portal-nav')).toMatch(/position:\s*sticky;/);
       expect(rule('.portal-nav')).toMatch(/bottom:\s*0;/);
+      // The bar is the last piece on a phone only because of these: the sidebar's own box does not take part in the layout, and the bar is ordered after the content.
+      expect(rule('.portal-sidebar')).toMatch(/display:\s*contents;/);
+      expect(rule('.portal-nav')).toMatch(/order:\s*2;/);
+      expect(rule('.portal-shell > .portal-content')).toMatch(/order:\s*1;/);
+      expect(rule('.portal-header')).toMatch(/order:\s*0;/);
     });
 
     it('lets the requests of the agency shrink and their text wrap, and styles them with tokens only', () => {

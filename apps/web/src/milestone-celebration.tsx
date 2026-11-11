@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { PartyPopper, X } from 'lucide-react';
 
-import { IconButton } from '@ageniza/ui';
+import { IconButton, MilestoneTrail, Stage3D, type MilestoneStep } from '@ageniza/ui';
 
 import { MILESTONE_MESSAGES, takeMilestone, type MilestoneFacts, type MilestoneKey } from './milestones.js';
 
@@ -75,4 +75,32 @@ export function MilestoneCelebration({ agencyId, facts }: { agencyId: string; fa
       <IconButton label="Fechar" icon={<X />} onClick={() => { setVisible(false); }} />
     </div>}
   </>;
+}
+
+const MILESTONE_ORDER: readonly MilestoneKey[] = ['client', 'content', 'sent', 'approved', 'published'];
+
+const MILESTONE_TITLES: Readonly<Record<MilestoneKey, string>> = {
+  client: 'Primeiro cliente cadastrado',
+  content: 'Primeiro conteúdo criado',
+  sent: 'Primeiro envio para aprovação',
+  approved: 'Primeira aprovação',
+  published: 'Primeiro conteúdo postado'
+};
+
+const MILESTONE_STATUS_LABELS = { done: 'Conquistado', current: 'Passo atual', upcoming: 'A conquistar' } as const;
+
+/**
+ * "Marcos da agência": the five first achievements on the compact trail, in the order they come. It says nothing before the facts are
+ * known and nothing before the first one is reached, since the journey above already shows the whole way to a new agency.
+ */
+export function AgencyMilestones({ facts }: { facts: MilestoneFacts | undefined }) {
+  if (facts === undefined || !MILESTONE_ORDER.some((key) => facts[key])) return null;
+  const steps: MilestoneStep[] = MILESTONE_ORDER.map((key) => ({ id: key, title: MILESTONE_TITLES[key], status: facts[key] ? 'done' : 'upcoming' }));
+  return <section className="agency-milestones" aria-labelledby="agency-milestones-title" data-stage-host>
+    <div className="agency-milestones__head">
+      <h2 id="agency-milestones-title" className="agency-milestones__title">Marcos da agência</h2>
+      <Stage3D src="/3d/medal.png" tone="indigo" size="sm" />
+    </div>
+    <MilestoneTrail size="sm" steps={steps} statusLabels={MILESTONE_STATUS_LABELS} aria-label="Marcos da agência" />
+  </section>;
 }

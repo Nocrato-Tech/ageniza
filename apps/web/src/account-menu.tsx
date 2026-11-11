@@ -50,6 +50,8 @@ const isCurrentContext = (context: Context, target: ContextTarget | null): boole
 
 export interface AccountMenuProps {
   activeContext?: string;
+  /** What the active context is called in the menu: "Agência logada" in the agency, the generic one where the context is a client portal. */
+  contextLabel?: string;
   /** Offered only where a tour exists to review (the client portal); it reopens the tour and calls nothing. */
   onReviewTour?: () => void;
   user?: AuthUser | null;
@@ -62,7 +64,7 @@ export interface AccountMenuProps {
   reopensEmailChange?: boolean;
 }
 
-export function AccountMenu({ activeContext, onReviewTour, user: userOverride, variant = 'header', reopensEmailChange = true }: AccountMenuProps) {
+export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', onReviewTour, user: userOverride, variant = 'header', reopensEmailChange = true }: AccountMenuProps) {
   const httpClient = useApiClient();
   const authStore = useOptionalAuthSessionStore();
   const session = useAuthSession(userOverride === undefined ? (authStore ?? fallbackAuthStore) : fallbackAuthStore);
@@ -172,8 +174,8 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
             <span>{user.email}</span>
           </div>
           {activeContext !== undefined && (
-            <div className='account-menu__context' role='group' aria-label='Contexto ativo'>
-              <span className='account-menu__context-label'>Contexto ativo</span>
+            <div className='account-menu__context' role='group' aria-label={contextLabel}>
+              <span className='account-menu__context-label'>{contextLabel}</span>
               <strong>{activeContext}</strong>
             </div>
           )}

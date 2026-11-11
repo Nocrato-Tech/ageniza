@@ -31,6 +31,7 @@ export function StudyConversation({ client, subject, subjectLabel, readOnly, hea
     readOnly={readOnly || client.status !== 'active'}
     planBlockedReason={blocked}
     headingLevel={headingLevel}
+    emptyTip
     onWritten={() => {
       void queryClient.invalidateQueries({ queryKey: clientDetailQueryKey(agency.agencyId, client.id) });
       void queryClient.invalidateQueries({ queryKey: ['agency', agency.agencyId, 'clients'], predicate: (query) => typeof query.queryKey[3] === 'object' });

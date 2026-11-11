@@ -388,7 +388,7 @@ describe('the portal Conteúdos (#269)', () => {
 
       expect(cardOf('Post em produção').textContent).toBe('Post em produçãoImagemEm produção');
       expect(shapeOf(cardOf('Post em produção'))).toBe('image');
-      expect(container.querySelector('img')).toBeNull();
+      expect(container.querySelector('img:not(.ui-logo, .ui-stage__icon)')).toBeNull();
       expect(container.textContent).not.toMatch(/LEGENDA INTERNA|10:00/);
       expect(within(days(container)).getByText('22 qui')).toBeTruthy();
       expect(mediaCalls(world)).toEqual([]);
@@ -494,7 +494,7 @@ describe('the portal Conteúdos (#269)', () => {
       expect(cardOf('Sem capa').querySelector('img')).toBeNull();
       expect(shapeOf(cardOf('Sem capa'))).toBe('clapperboard');
       expect(cardOf('Com capa').querySelector('.format-shape')).toBeNull();
-      expect(container.querySelectorAll('img')).toHaveLength(1);
+      expect(container.querySelectorAll('img:not(.ui-logo, .ui-stage__icon)')).toHaveLength(1);
     });
 
     it('draws the first media of a post that has no chosen cover, in the month and in what waits, as the thumbnail (issue #606)', async () => {
@@ -542,7 +542,7 @@ describe('the portal Conteúdos (#269)', () => {
       await screen.findByText('Ainda processando');
       await waitFor(() => expect(mediaCalls(world)).toHaveLength(3));
 
-      expect(container.querySelectorAll('img')).toHaveLength(0);
+      expect(container.querySelectorAll('img:not(.ui-logo, .ui-stage__icon)')).toHaveLength(0);
       expect(shapeOf(cardOf('Recusada'))).toBe('gallery-vertical');
       expect(shapeOf(cardOf('Ainda processando'))).toBe('clapperboard');
       expect(shapeOf(cardOf('Endereço estranho'))).toBe('image');
@@ -632,6 +632,8 @@ describe('the portal Conteúdos (#269)', () => {
       expect(good.querySelector('.ui-empty-state__icon')).toBeTruthy();
       expect(within(block).queryByRole('heading', { name: /\(\d+\)/ })).toBeNull();
       expect(within(block).queryByRole('alert')).toBeNull();
+      // The 3D stage of the good news is the Início's: here the line stays small, so an empty month keeps the one stage that is its subject.
+      expect(block.querySelector('.ui-stage')).toBeNull();
     });
 
     it('never says nothing awaits while something does', async () => {
@@ -971,12 +973,13 @@ describe('the portal Conteúdos (#269)', () => {
       expect(within(block).getByRole('alert').classList.contains('ui-empty-state--failure')).toBe(true);
     });
 
-    it('says what is missing in an empty month, with the owl, and offers no way out in the month of today', async () => {
+    it('says what is missing in an empty month, with the 3D icon on its stage, and offers no way out in the month of today', async () => {
       renderPortal(makeWorld());
       await ready();
-      expect(await screen.findByRole('heading', { name: 'Nenhum conteúdo planejado para este mês' })).toBeTruthy();
+      const heading = await screen.findByRole('heading', { name: 'Nenhum conteúdo planejado para este mês' });
       expect(screen.getByText('Quando a agência planejar, os posts aparecem aqui.')).toBeTruthy();
-      expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(1);
+      expect(heading.closest('.portal-stage-empty')?.querySelectorAll('.ui-stage')).toHaveLength(1);
+      expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(0);
       expect(screen.queryByRole('button', { name: 'Ir para este mês' })).toBeNull();
     });
 
@@ -985,8 +988,8 @@ describe('the portal Conteúdos (#269)', () => {
       world.api.seed({ title: 'De outubro', publishOn: '2026-10-12' });
       const { probe } = renderPortal(world, [contentsUrl('?data=2026-12-10')]);
       await ready();
-      expect(await screen.findByRole('heading', { name: 'Nenhum conteúdo planejado para este mês' })).toBeTruthy();
-      expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(1);
+      const heading = await screen.findByRole('heading', { name: 'Nenhum conteúdo planejado para este mês' });
+      expect(heading.closest('.portal-stage-empty')?.querySelectorAll('.ui-stage')).toHaveLength(1);
 
       fireEvent.click(screen.getByRole('button', { name: 'Ir para este mês' }));
       expect(await screen.findByText('De outubro')).toBeTruthy();
@@ -994,12 +997,13 @@ describe('the portal Conteúdos (#269)', () => {
       expect(screen.getByRole('heading', { name: 'Outubro 2026' })).toBeTruthy();
     });
 
-    it('offers to clear the filter when no content of the month has that status, without the owl', async () => {
+    it('offers to clear the filter when no content of the month has that status, without the stage', async () => {
       const world = makeWorld();
       world.api.seed({ title: 'Aprovado de outubro', publishOn: '2026-10-12', status: 'approved' });
       const { probe } = renderPortal(world, [contentsUrl('?situacao=adjusting')]);
       await ready();
-      expect(await screen.findByRole('heading', { name: 'Nenhum conteúdo nesta situação neste mês' })).toBeTruthy();
+      const heading = await screen.findByRole('heading', { name: 'Nenhum conteúdo nesta situação neste mês' });
+      expect(heading.closest('.portal-stage-empty')).toBeNull();
       expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(0);
 
       fireEvent.click(screen.getByRole('button', { name: 'Limpar o filtro' }));
@@ -1079,19 +1083,24 @@ describe('the portal Conteúdos (#269)', () => {
       throw new Error(`${selector} was not found in globals.css.`);
     };
 
-    it('keeps the bottom bar the last piece of the shell with a short month, and the content taking the rest', async () => {
+    it('keeps the bar in the navigation piece of the shell with a short month, and the content taking the rest', async () => {
       const world = makeWorld();
       const { container } = renderPortal(world);
       await ready();
       await screen.findByText('Nenhum conteúdo planejado para este mês');
       const shell = container.querySelector('.portal-shell') as HTMLElement;
-      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'header', 'main', 'nav']);
-      expect(shell.lastElementChild).toBe(nav());
+      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
+      expect((shell.querySelector('.portal-sidebar') as HTMLElement).lastElementChild).toBe(nav());
       // jsdom has no layout: the rules that put the bar at the bottom of a 360x780 phone with a short page are read from the stylesheet.
       expect(rule('.portal-shell')).toMatch(/min-height:\s*100dvh;/);
       expect(rule('.portal-shell > .portal-content')).toMatch(/flex:\s*1;/);
       expect(rule('.portal-nav')).toMatch(/position:\s*sticky;/);
       expect(rule('.portal-nav')).toMatch(/bottom:\s*0;/);
+      // The bar is the last piece on a phone only because of these: the sidebar's own box does not take part in the layout, and the bar is ordered after the content.
+      expect(rule('.portal-sidebar')).toMatch(/display:\s*contents;/);
+      expect(rule('.portal-nav')).toMatch(/order:\s*2;/);
+      expect(rule('.portal-shell > .portal-content')).toMatch(/order:\s*1;/);
+      expect(rule('.portal-header')).toMatch(/order:\s*0;/);
     });
 
     it('lets every box shrink and every text wrap, with no fixed width that could push a 390 px screen sideways', () => {
@@ -1145,14 +1154,14 @@ describe('the portal Conteúdos (#269)', () => {
       expect(rule('.portal-awaiting__cover--placeholder,\n.portal-card__cover--placeholder')).toContain('--format-shape-size: 1.5rem;');
     });
 
-    it('keeps the screen to the three sizes of text of the Pauta: the title of the page, the line and the caption', () => {
+    it('keeps the screen to four sizes of text: the title of the page, the title of a block, the line and the caption', () => {
       const text = css();
       const start = text.indexOf('/* --- Portal: Conteúdos (#269, #688)');
       const end = text.indexOf('/* --- Portal: post em tela cheia');
       expect(start).toBeGreaterThan(-1);
       expect(end).toBeGreaterThan(start);
       const fonts = new Set(Array.from(text.slice(start, end).matchAll(/\n\s*font: var\(--([a-z-]+)\)/g), (match) => match[1]));
-      expect([...fonts].sort()).toEqual(['body-md', 'caption']);
+      expect([...fonts].sort()).toEqual(['body-md', 'caption', 'display-lg', 'heading-lg']);
       expect(rule('.portal-contents .portal-empty .ui-empty-state__title')).toContain('font: var(--body-md);');
     });
 

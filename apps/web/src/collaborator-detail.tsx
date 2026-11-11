@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { Camera, UserMinus } from 'lucide-react';
+import { CalendarDays, Camera, Mail, UserMinus } from 'lucide-react';
 import { z } from 'zod';
 
 import {
@@ -267,7 +267,7 @@ function ReadOnlyField({ label, value, note }: { label: string; value: string; n
 
 /** SPEC §7: the modal header shows the agency entry date, for the own profile too (#357). */
 function AgencySince({ joinedAt }: { joinedAt: string }) {
-  return <p>Na agência desde <time dateTime={joinedAt}>{new Intl.DateTimeFormat('pt-BR').format(new Date(joinedAt))}</time></p>;
+  return <p className="collaborator-detail__meta"><CalendarDays aria-hidden="true" /><span>Na agência desde <time dateTime={joinedAt}>{new Intl.DateTimeFormat('pt-BR').format(new Date(joinedAt))}</time></span></p>;
 }
 
 interface AdminEditFieldsProps {
@@ -482,7 +482,7 @@ function CollaboratorDetails({ collaborator, isSelf, onRemoved }: { collaborator
   const removeOffered = canRemove && !collaborator.isOwner;
   const editable = canChangeJobTitle || roleEditable;
 
-  return <>
+  return <div className="collaborator-detail__profile">
     {isSelf
       ? <div className="collaborator-detail__identity">
         <SelfProfilePhoto collaborator={collaborator} membershipId={membershipId} />
@@ -496,48 +496,50 @@ function CollaboratorDetails({ collaborator, isSelf, onRemoved }: { collaborator
         <Avatar name={collaborator.name} photoUrl={collaborator.photoUrl} size="lg" />
         <div>
           <p className="collaborator-detail__headline">{[collaborator.jobTitle, collaborator.role.name].filter(Boolean).join(' · ')}</p>
-          <p>{collaborator.email}</p>
+          <p className="collaborator-detail__meta"><Mail aria-hidden="true" /><span>{collaborator.email}</span></p>
           <AgencySince joinedAt={collaborator.joinedAt} />
         </div>
       </div>}
-    <Tabs
-      label="Informações do colaborador"
-      value={tab}
-      onChange={setTab}
-      items={[
-        {
-          value: 'details',
-          label: 'Detalhes',
-          content: isSelf
-            ? <SelfProfileFields collaborator={collaborator} membershipId={membershipId} />
-            : <>
-              {editable
-                ? <AdminEditFields
-                    collaborator={collaborator}
-                    membershipId={membershipId}
-                    canChangeJobTitle={canChangeJobTitle}
-                    canChangeRole={roleEditable}
-                  />
-                : <dl className="collaborator-detail__fields">
-                  <dt>Cargo</dt><dd>{collaborator.jobTitle ?? 'Não informado'}</dd>
-                  <dt>Papel</dt><dd>{collaborator.role.name}</dd>
-                  <dt>E-mail</dt><dd>{collaborator.email}<p className="form-hint">{EMAIL_NOTE}</p></dd>
-                </dl>}
-              {removeOffered && <RemoveCollaborator collaborator={collaborator} membershipId={membershipId} onRemoved={onRemoved} />}
-            </>
-        },
-        { value: 'performance', label: 'Performance', disabled: true, content: null },
-        { value: 'deliveries', label: 'Entregas', disabled: true, content: null }
-      ]}
-    />
-    {/* The two future tabs say why they are off (specs/colaboradores.md §7), in words next to the tab list. */}
-    <dl className="collaborator-detail__soon">
-      {['Performance', 'Entregas'].map((label) => <div key={label}>
-        <dt>{label}</dt>
-        <dd>{UNAVAILABLE_REASON}</dd>
-      </div>)}
-    </dl>
-  </>;
+    <div className="collaborator-detail__main">
+      <Tabs
+        label="Informações do colaborador"
+        value={tab}
+        onChange={setTab}
+        items={[
+          {
+            value: 'details',
+            label: 'Detalhes',
+            content: isSelf
+              ? <SelfProfileFields collaborator={collaborator} membershipId={membershipId} />
+              : <>
+                {editable
+                  ? <AdminEditFields
+                      collaborator={collaborator}
+                      membershipId={membershipId}
+                      canChangeJobTitle={canChangeJobTitle}
+                      canChangeRole={roleEditable}
+                    />
+                  : <dl className="collaborator-detail__fields">
+                    <dt>Cargo</dt><dd>{collaborator.jobTitle ?? 'Não informado'}</dd>
+                    <dt>Papel</dt><dd>{collaborator.role.name}</dd>
+                    <dt>E-mail</dt><dd>{collaborator.email}<p className="form-hint">{EMAIL_NOTE}</p></dd>
+                  </dl>}
+                {removeOffered && <RemoveCollaborator collaborator={collaborator} membershipId={membershipId} onRemoved={onRemoved} />}
+              </>
+          },
+          { value: 'performance', label: 'Performance', disabled: true, content: null },
+          { value: 'deliveries', label: 'Entregas', disabled: true, content: null }
+        ]}
+      />
+      {/* The two future tabs say why they are off (specs/colaboradores.md §7), in words next to the tab list. */}
+      <dl className="collaborator-detail__soon">
+        {['Performance', 'Entregas'].map((label) => <div key={label}>
+          <dt>{label}</dt>
+          <dd>{UNAVAILABLE_REASON}</dd>
+        </div>)}
+      </dl>
+    </div>
+  </div>;
 }
 
 export function CollaboratorDetailDialog({ membershipId, onClose }: { membershipId: string; onClose: () => void }) {
@@ -561,7 +563,7 @@ export function CollaboratorDetailDialog({ membershipId, onClose }: { membership
   // the API says which link that is.
   const isSelf = collaborator?.isSelf === true;
 
-  return <Modal title={collaborator?.name ?? 'Detalhe do colaborador'} closeLabel="Fechar detalhe do colaborador" onClose={onClose}>
+  return <Modal title={collaborator?.name ?? 'Detalhe do colaborador'} size="lg" closeLabel="Fechar detalhe do colaborador" onClose={onClose}>
     {notFound ? <div className="collaborator-detail__status">
       <p>Colaborador não encontrado.</p>
       <Button variant="secondary" onClick={onClose}>Voltar à lista</Button>

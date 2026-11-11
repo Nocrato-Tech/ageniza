@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Clock, Plus } from 'lucide-react';
+import { ChevronDown, CircleCheck, CircleDashed, Clock, Plus } from 'lucide-react';
 import { useLocation, useSearchParams, type SetURLSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 
@@ -118,6 +118,12 @@ function MemberName({ member }: { member: ClientMember }) {
   return member.name === null
     ? <span className="portal-access__name portal-access__name--pending">{NOT_ENTERED}</span>
     : <span className="portal-access__name">{member.name}</span>;
+}
+
+/** The state of the access beside its words, so the icon's shape and not its colour tells entered, link only and never apart. */
+function LastAccess({ member }: { member: ClientMember }) {
+  const Icon = member.entered ? CircleCheck : member.lastEnteredAt === null ? CircleDashed : Clock;
+  return <span className="portal-access__last"><Icon aria-hidden="true" />{lastAccessLabel(member)}</span>;
 }
 
 /** The "Adicionar pessoa" modal (`specs/clientes.md` §7): the e-mail, and nothing else. The access is valid on the spot. */
@@ -396,22 +402,22 @@ export function ClientAccessTab() {
           <span className="portal-access__who">
             <MemberName member={member} />
             <span className="portal-access__email">{member.email}</span>
-            <span className="portal-access__last">{lastAccessLabel(member)}</span>
+            <LastAccess member={member} />
           </span>
           <span className="portal-access__since">desde {formatAgencyDayMonth(member.since)}</span>
           <span className="portal-access__actions">
+            {activeClient && <PortalAccessShare member={member} clientName={client.name} />}
             {activeClient && !member.entered && <Button
               size="sm"
-              variant="secondary"
+              variant="ghost"
               aria-label={`Reenviar e-mail para ${member.email}`}
               blockedReason={blocked}
               loading={resendEmail.isPending && resendEmail.variables?.accessId === member.accessId}
               onClick={() => { if (resending.current) return; resending.current = true; setActionError(undefined); resendEmail.mutate(member); }}
             >Reenviar e-mail</Button>}
-            {activeClient && <PortalAccessShare member={member} clientName={client.name} />}
             {activeClient && canRemove && <Button
               size="sm"
-              variant="secondary"
+              variant="ghost"
               aria-label={`Remover o acesso de ${member.name ?? member.email}`}
               onClick={() => { setActionError(undefined); setPending({ kind: 'remove', id: member.accessId, name: member.name ?? member.email }); }}
             >Remover</Button>}

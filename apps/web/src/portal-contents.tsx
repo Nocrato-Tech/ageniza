@@ -17,7 +17,7 @@ import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
 import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
 import { PortalContentCover } from './portal-content-cover.js';
-import { usePortalClient } from './portal.js';
+import { PortalStageEmpty, usePortalClient } from './portal.js';
 import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS, portalPostAddress as postAddress, type PortalStatus } from './portal-status.js';
 
 const LIST_PATH = '/clients/:clientId/contents';
@@ -198,13 +198,14 @@ export function PortalContentsPage() {
       : contents.data === undefined
         ? <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar os conteúdos. Tente de novo." retrying={contents.isFetching} onRetry={() => { void contents.refetch(); }} />
         : contents.data!.data.length === 0
-          ? <EmptyState
-            mascot
-            className="portal-empty"
-            title="Nenhum conteúdo planejado para este mês"
-            description="Quando a agência planejar, os posts aparecem aqui."
-            action={anchor.slice(0, 7) === today.slice(0, 7) ? undefined : <Button variant="secondary" onClick={() => change('data', null)}>Ir para este mês</Button>}
-          />
+          ? <PortalStageEmpty icon="calender" tone="sky">
+            <EmptyState
+              className="portal-empty"
+              title="Nenhum conteúdo planejado para este mês"
+              description="Quando a agência planejar, os posts aparecem aqui."
+              action={anchor.slice(0, 7) === today.slice(0, 7) ? undefined : <Button variant="secondary" onClick={() => change('data', null)}>Ir para este mês</Button>}
+            />
+          </PortalStageEmpty>
           : vista === 'feed'
             ? <Feed clientId={clientId} contents={shown} today={today} handle={client.instagramHandle} onBack={() => change('vista', null)} />
             : shown.length === 0

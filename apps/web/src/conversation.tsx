@@ -14,7 +14,7 @@ import {
   type Thread,
   type ThreadComment
 } from '@ageniza/contracts';
-import { Avatar, Button, DatePicker, Field, FieldMessage, invalidDayMessage, LateBadge, Modal, Pill, Skeleton, Textarea, useFormErrors } from '@ageniza/ui';
+import { Avatar, Button, DatePicker, Field, FieldMessage, invalidDayMessage, LateBadge, Modal, Pill, Skeleton, Stage3D, Textarea, useFormErrors } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { addDays, dayMonthLabel, todayInSaoPaulo } from './content-dates.js';
@@ -50,6 +50,8 @@ export interface ConversationProps {
   readonly onStale?: () => void;
   /** The heading level of "Conversas", so it nests under whatever heading holds the area. */
   readonly headingLevel?: 3 | 4;
+  /** The empty list is a note with the bulb, for a column that stands beside a card (the brand study). */
+  readonly emptyTip?: boolean;
 }
 
 const THREADS_PAGE_SIZE = 100;
@@ -313,7 +315,7 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
   const material = isMaterialRequest(thread.subject);
   // Inside the modal of a content, a second dialog with the title of the first would be two dialogs of one name.
   return <Modal title={material ? MATERIAL_REQUEST_LABEL : 'contentId' in props.subject ? `Conversa sobre ${subjectLabel}` : subjectLabel} closeLabel="Fechar conversa" onClose={onClose}>
-    <div className="conversation__thread-view">
+    <div className={scope.side === 'agency' && !('contentId' in props.subject) ? 'conversation__thread-view conversation__thread-view--agency' : 'conversation__thread-view'}>
       {material && <MaterialDue thread={thread} today={todayInSaoPaulo()} />}
       {comments.isPending && <div className="conversation__comments-skeleton" aria-busy="true">
         <Skeleton /><Skeleton /><Skeleton />
@@ -510,13 +512,13 @@ function ThreadRow({ thread, viewer, today, onOpen }: { thread: Thread; viewer: 
       </span>
       <span className="conversation__thread-last">{SIDE_TITLE[thread.lastComment.side]} · {formatDay(thread.lastComment.at)}</span>
       <span className="conversation__thread-excerpt">{thread.lastComment.excerpt}</span>
-      <Pill tone={awaiting ? 'accent' : 'neutral'} icon={icon} className={awaiting ? 'conversation__status conversation__status--awaiting' : 'conversation__status'}>{status}</Pill>
+      <Pill tone={awaiting ? 'accent' : 'neutral'} icon={icon} className={`conversation__status conversation__status--${thread.state === 'resolved' ? 'resolved' : awaiting ? 'awaiting' : 'open'}`}>{status}</Pill>
     </button>
   </li>;
 }
 
 export function Conversation(props: ConversationProps) {
-  const { scope, subject, subjectLabel, canWrite, readOnly, blockedReason, planBlockedReason, headingLevel = 4 } = props;
+  const { scope, subject, subjectLabel, canWrite, readOnly, blockedReason, planBlockedReason, headingLevel = 4, emptyTip = false } = props;
   const Heading = `h${headingLevel}` as const;
   const opening = OPENING[scope.side];
   const httpClient = useApiClient();
@@ -554,7 +556,10 @@ export function Conversation(props: ConversationProps) {
   const canStart = writable && blockedReason === undefined && (!ofContent || (threads.data !== undefined && list.length === 0));
 
   const count = threads.data === undefined ? '' : ` (${totalItems})`;
-  return <section className="conversation" aria-label={material ? 'Pedidos de material' : `${ofContent ? 'Conversa' : 'Conversas'} sobre ${subjectLabel}`}>
+  const emptyText = material ? 'Nenhum pedido de material' : ofContent ? 'Nenhuma conversa sobre este conteúdo' : 'Nenhuma conversa sobre esta parte';
+  // The agency's list is drawn as cards; a content keeps its own look in the modal.
+  const rootClass = scope.side === 'agency' && !ofContent ? 'conversation conversation--agency' : 'conversation';
+  return <section className={rootClass} aria-label={material ? 'Pedidos de material' : `${ofContent ? 'Conversa' : 'Conversas'} sobre ${subjectLabel}`}>
     <header className="conversation__header">
       <Heading className="conversation__title">
         {material ? `Pedidos de material${count}` : ofContent ? 'Conversa' : `Conversas${count}`}
@@ -575,7 +580,12 @@ export function Conversation(props: ConversationProps) {
       <Button size="sm" variant="secondary" loading={threads.isFetching} onClick={() => { void threads.refetch(); }}>Tentar de novo</Button>
     </div>}
     {writable && blockedReason !== undefined && <p className="conversation__note">{blockedReason}</p>}
-    {threads.data !== undefined && list.length === 0 && <p className="conversation__empty">{material ? 'Nenhum pedido de material' : ofContent ? 'Nenhuma conversa sobre este conteúdo' : 'Nenhuma conversa sobre esta parte'}</p>}
+    {threads.data !== undefined && list.length === 0 && (emptyTip
+      ? <div className="conversation__tip" data-stage-host>
+        <Stage3D src="/3d/bulb.png" tone="indigo" size="sm" />
+        <p className="conversation__empty">{emptyText}</p>
+      </div>
+      : <p className="conversation__empty">{emptyText}</p>)}
     {list.length > 0 && <ul className="conversation__threads">
       {list.map((thread) => <ThreadRow key={thread.id} thread={thread} viewer={scope.side} today={today} onOpen={() => setOpenId(thread.id)} />)}
     </ul>}

@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Inbox } from 'lucide-react';
 
 import {
   CommentListResponseSchema,
@@ -96,12 +97,15 @@ function RequestThread({ clientId, request, onClose }: { clientId: string; reque
 function Request({ request, agencyName, onOpen }: { request: MaterialRequest; agencyName: string; onOpen: () => void }) {
   const id = useId();
   const today = todayInSaoPaulo();
-  return <li className="portal-request portal-block">
-    <p id={`${id}-body`} className="portal-request__body">{request.body}</p>
-    <p className="portal-request__meta">
-      <span>Pedido de {agencyName}</span>
-      <MaterialDue thread={request} today={today} />
-    </p>
+  return <li className="portal-request">
+    <span className="portal-request__icon" aria-hidden="true"><Inbox /></span>
+    <div className="portal-request__text">
+      <p id={`${id}-body`} className="portal-request__body">{request.body}</p>
+      <p className="portal-request__meta">
+        <span>Pedido de {agencyName}</span>
+        <MaterialDue thread={request} today={today} />
+      </p>
+    </div>
     <Button variant="secondary" id={`${id}-button`} aria-labelledby={`${id}-button ${id}-body`} onClick={onOpen}>Responder</Button>
   </li>;
 }
@@ -139,7 +143,10 @@ export function PortalMaterialRequests({ clientId }: { clientId: string }) {
   if (data.length === 0) return null;
   const current = openId === null ? undefined : data.find((request) => request.threadId === openId);
   return <section className="portal-section portal-requests" aria-labelledby="portal-requests-title">
-    <h2 id="portal-requests-title" className="portal-section__title">A agência pediu</h2>
+    <div className="portal-requests__head">
+      <h2 id="portal-requests-title" className="portal-section__title">A agência pediu</h2>
+      <span className="portal-requests__count"><Inbox aria-hidden="true" />{meta.totalItems} {meta.totalItems === 1 ? 'pedido' : 'pedidos'}</span>
+    </div>
     <ul className="portal-requests__list">
       {data.map((request) => <Request key={request.threadId} request={request} agencyName={client.agencyName} onOpen={() => setOpenId(request.threadId)} />)}
     </ul>
