@@ -45,7 +45,8 @@ No detalhe de um conteúdo aprovado, **Desfazer aprovação** abre uma confirma�
 - A pessoa vê a data, "Olá, <nome>" e um subtítulo ("A <agência> espera N respostas suas"). O rótulo de contexto é "Com a <agência>", **acima** do nome do cliente, e o papel "Aprova os posts" fica no rodapé da navegação.
 - **Com posts esperando a aprovação:** até **três capas** com "Aguardando você" ou "Atrasado" (a data de publicação já passou) e "Responda até <dia>, <hora>" (o prazo de aprovação, com hora); "Revisar os N posts" ("Começamos pelo que vence primeiro"), que abre o que vence primeiro e encadeia o próximo; e "A agência pediu" (os pedidos de material abertos).
 - **Sem nada esperando:** o bloco **"Boa notícia"**: "Seu feed de <mês> já está N% aprovado", "N de M" (M são os conteúdos do mês que não foram cancelados; N, os aprovados e publicados) e o próximo post a ir ao ar ("hoje às 18h: <título>"), com "Ver o que vai ao ar esta semana".
-- **Saíram o roteiro de hoje (com o "Já gravei") e "Nesta semana".** A API dos roteiros continua (`…/story-scripts`), mas a web do portal não tem tela para ela até o dono decidir onde o "Já gravei" mora. A semana do portal começa no domingo.
+- **Sai "Nesta semana".** A semana do portal começa no domingo.
+- **O "Roteiro de hoje" fica**, como um bloco compacto **abaixo do quadro**, só quando há roteiro enviado ou gravado do dia de São Paulo (ver "Roteiros de stories"): "Já gravei" nos enviados e "Gravado por {nome} em dd/mm" nos gravados. Tirar o "Já gravei" seria perda de função (decisão de 2026-11-11).
 - **Navegação:** Início, Conteúdos, Marca e **Pedidos da agência** (com o selo dos pedidos abertos). **Relatórios não existe mais.** Abaixo do contexto há o campo "Buscar um post", que filtra no aparelho, pelo título, os posts do mês que a tela de Conteúdos já carregou (de outra tela, leva a Conteúdos com `?busca=`); sem resultado diz "Nenhum post encontrado para «…»". "Rever o tour" fica no menu **Ajuda**, e o menu de conta tem "Conta" (nome, e-mail e sessões, ver [Entrada](entrada.md#sessões-ativas)), trocar de cliente e "Sair".
 
 ## Aprovar conteúdos
@@ -124,7 +125,7 @@ A agência pode pedir material ao cliente, com prazo opcional (decisão: [pedido
 
 1. `GET …/story-scripts` lista os roteiros que a agência **enviou**; rascunhos não aparecem.
 2. Depois de gravar, a pessoa marca o roteiro com `POST …/story-scripts/:scriptId/recorded`.
-3. **A web do portal não mostra mais esse roteiro** (2026-11-11: o roteiro de hoje saiu do Início). O app nativo continua com a leitura e a marcação; onde o "Já gravei" volta a morar na web é um ponto em aberto de `specs/conteudo.md`.
+3. Na web, o roteiro aparece no bloco compacto **"Roteiro de hoje"**, abaixo do quadro do Início (2026-11-11): as cenas em ordem (texto e "Orientação: …") dos roteiros enviados ou gravados do dia; com mais de um no dia, cada um tem o seu título. Sem roteiro hoje, o bloco não existe. Erro ao carregar mostra "Não foi possível carregar o roteiro de hoje." com "Tentar de novo", e o resto do Início continua.
 
 ## Agência em modo leitura
 

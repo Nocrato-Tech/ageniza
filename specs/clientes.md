@@ -353,7 +353,7 @@ Nenhuma policy de outro módulo é alterada.
 | Cadastrar | modal sobre a carteira | só o nome | `cliente.cadastrar` |
 | Detalhe | `/agencia/:agenciaId/clientes/:clienteId/<aba>` | cabeçalho e **cinco abas com contagem** (Visão geral, Conteúdos, Mídias, Marca e Acessos; 2026-11-11, antes eram seis, com Tarefas e Relatórios); as abas Conteúdos e Mídias e o botão "Abrir no Calendário Editorial" do cabeçalho só aparecem, e o endereço da aba só abre, com `conteudo.visualizar` | `cliente.visualizar` |
 | Editar cadastro | modal sobre o detalhe | todos os campos do cadastro | `cliente.operar` |
-| Portal — Início | `/portal/:clienteId` | saudação, até três capas dos posts que esperam, "Revisar os N posts", "A agência pediu" e, sem pendência, a "Boa notícia" com o progresso do mês | vínculo de cliente |
+| Portal — Início | `/portal/:clienteId` | saudação, até três capas dos posts que esperam, "Revisar os N posts", "A agência pediu" e, sem pendência, a "Boa notícia" com o progresso do mês; abaixo, o "Roteiro de hoje" com "Já gravei", quando há roteiro do dia | vínculo de cliente |
 | Portal — Marca | `/portal/:clienteId/marca` | estudo em leitura e conversas | vínculo de cliente |
 | Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, o mês e o feed (`specs/conteudo.md` seção 7); o endereço antigo `/portal/:clienteId/calendario`, que o e-mail ao cliente ainda usa, redireciona para ele | vínculo de cliente |
 | Portal — Pedidos da agência | `/portal/:clienteId/pedidos` | os pedidos de material abertos, cada um com o título, o prazo e o envio de arquivos pelo cliente; o selo na navegação conta os abertos (2026-11-11; no lugar de Relatórios, que saiu) | vínculo de cliente |
@@ -565,7 +565,8 @@ Barra inferior com quatro itens (**Início, Conteúdos, Marca e Pedidos da agên
 
 - **Com conteúdos esperando a aprovação do cliente** (o número é o `home.contentsAwaitingApproval` da API): o subtítulo diz "A <agência> espera N respostas suas"; até **três capas** com "Aguardando você" ou "Atrasado" e "Responda até <dia>, <hora>" (o prazo de aprovação, com hora); "Revisar os N posts" ("Revisar o post" com 1), que abre o que **vence primeiro** e encadeia o próximo; e "A agência pediu" (os pedidos de material abertos, que levam a Pedidos da agência).
 - **Sem pendência**, a **"Boa notícia"**: "Seu feed de <mês> já está N% aprovado", "N de M" e o próximo post a ir ao ar, com "Ver o que vai ao ar esta semana". Quando também não há post a ir ao ar, o cartão volta à próxima ação de antes: "A agência respondeu N sugestões suas", que leva à Marca; senão, "Conheça o estudo da sua marca".
-- **Saíram** o bloco **Roteiro de hoje** (com o "Já gravei") e o bloco **Nesta semana**. A API dos roteiros continua e a web fica sem tela para eles até o dono decidir (ponto em aberto de [`conteudo.md`](conteudo.md)). A semana do portal começa no domingo.
+- **Saiu** o bloco **Nesta semana**. A semana do portal começa no domingo.
+- **O bloco "Roteiro de hoje" fica**, compacto, **abaixo do quadro** (decisão de 2026-11-11: tirar o "Já gravei" seria perda de função). Traz as cenas em ordem (texto e "Orientação: …") dos roteiros **enviados** ou **gravados** do dia de São Paulo; roteiro em rascunho não aparece; sem roteiro hoje, o bloco não existe. **Enviado:** botão "Já gravei" (um clique; o botão espera a resposta; com mais de um roteiro no dia, cada um tem o seu título). **Gravado:** "Gravado por {nome} em dd/mm", sem botão. **Erro ao carregar o bloco:** "Não foi possível carregar o roteiro de hoje.", com "Tentar de novo"; o resto do Início continua na tela.
 
 ### Portal — Marca
 

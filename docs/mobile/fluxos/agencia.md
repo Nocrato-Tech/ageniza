@@ -399,7 +399,7 @@ stateDiagram-v2
 ```
 
 - Ao ser enviado, o roteiro passa a aparecer no portal.
-- Quem marca como gravado é a pessoa do portal, pela API. **Desde 2026-11-11 a web do portal não tem tela para isso** (o roteiro de hoje saiu do Início); onde o "Já gravei" passa a morar é um ponto em aberto de `specs/conteudo.md`.
+- Quem marca como gravado é a pessoa do portal, pelo botão "Já gravei" do bloco "Roteiro de hoje" do Início do portal (que **continua** depois do redesenho de 2026-11-11, abaixo do quadro).
 - A lista de roteiros vem junto com a lista de conteúdos do período.
 
 ## Mídias

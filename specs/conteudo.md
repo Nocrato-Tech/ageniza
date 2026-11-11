@@ -267,7 +267,7 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 | Aba Mídias do cliente | `/agencia/:agenciaId/clientes/:clienteId/midias` | as pastas e as mídias do cliente, com o envio; o endereço antigo `…/conteudos/:clienteId?vista=pastas` leva para cá | `conteudo.visualizar` (escrever: `conteudo.operar`) |
 | Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, calendário, feed | pessoa do portal |
 | Portal — post | `/portal/:clienteId/conteudos/:conteudoId` | post em tela cheia com a trilha "Início > título", "Sua resposta" (prazo com hora, "Falta N dias"), o recado da agência com **quem enviou**, "Seu recado para a agência", "Aprovar o post", "Pedir ajuste" e a **conversa recolhida** abaixo | pessoa do portal |
-| Portal — Início | `/portal/:clienteId` | data e "Olá, <nome>", até **três capas** dos posts que esperam, "Revisar os N posts" (abre o que vence primeiro e encadeia o próximo), "A agência pediu"; sem pendência, a "Boa notícia" com o progresso do mês. **Sem "Nesta semana" e sem o roteiro de hoje** ([`2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post`](../docs/business/decisions/2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post.md)) | pessoa do portal |
+| Portal — Início | `/portal/:clienteId` | data e "Olá, <nome>", até **três capas** dos posts que esperam, "Revisar os N posts" (abre o que vence primeiro e encadeia o próximo), "A agência pediu"; sem pendência, a "Boa notícia" com o progresso do mês. **Sem "Nesta semana"**; o bloco compacto **"Roteiro de hoje" com "Já gravei" continua abaixo do quadro**, quando há roteiro enviado ou gravado do dia ([`2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post`](../docs/business/decisions/2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post.md)) | pessoa do portal |
 | Portal — Pedidos da agência | `/portal/:clienteId/pedidos` | os pedidos de material abertos, com título, prazo, "Responder", "Enviar fotos" e "Gravar depoimento" | pessoa do portal |
 | Link de aprovação | `/aprovar#<token>` (fora da casca; o fragmento é apagado ao abrir) | o lote do e-mail: o celular de cada post, Aprovar, Pedir ajuste (comentário obrigatório) e "Criar conta para ver o portal" com o e-mail preenchido | quem tem o link (7 dias), sem conta |
 
@@ -348,9 +348,9 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 
 - Card: capa, título, a etiqueta do formato e a etiqueta da situação (aprovado, aguardando aprovação, em ajuste, em produção, publicado), tingido pelo formato como o do calendário da agência; o dia é o rótulo do grupo. Sem capa, o ícone do formato. Filtro por status.
 - Post em tela cheia: legenda inteira, mídias navegáveis, **Pedir ajuste** (pede comentário), **Aprovar** e a conversa. Os dois botões ficam numa barra fixa no pé da tela, que no celular toma o lugar da barra inferior de quatro itens; o caminho de volta é o link "Conteúdos" no topo (decisão `2026-10-15-post-do-portal-troca-as-abas-pela-barra-de-decisao`). Em produção, só título, data e formato.
-- Início (2026-11-11): até **três** capas dos posts que esperam, "Revisar os N posts" e "A agência pediu"; sem pendência, a "Boa notícia" ("Seu feed de novembro já está 70% aprovado", N de M, o próximo post a ir ao ar). **Saem** o roteiro de stories de hoje (e o **Já gravei**) e "Nesta semana". A semana do portal também começa no domingo. A navegação passa a ser Início, Conteúdos, Marca e **Pedidos da agência** (com o selo de pedidos abertos); **Relatórios sai**. A busca do portal é o filtro "Buscar um post" ([`busca.md`](busca.md)).
+- Início (2026-11-11): até **três** capas dos posts que esperam, "Revisar os N posts" e "A agência pediu"; sem pendência, a "Boa notícia" ("Seu feed de novembro já está 70% aprovado", N de M, o próximo post a ir ao ar). **Sai** "Nesta semana". **O roteiro de stories de hoje, com o "Já gravei", fica** num bloco compacto abaixo do quadro, só quando há roteiro do dia. A semana do portal também começa no domingo. A navegação passa a ser Início, Conteúdos, Marca e **Pedidos da agência** (com o selo de pedidos abertos); **Relatórios sai**. A busca do portal é o filtro "Buscar um post" ([`busca.md`](busca.md)).
 - A **conversa continua no post**, recolhida abaixo; ali o cliente lê as respostas da agência e o recado que deu ao aprovar. A barra de ação fixa no pé (Aprovar o post como a principal, Pedir ajuste) vale também no celular.
-- **Roteiro de stories no portal:** a API dos roteiros enviados e do "gravado" continua, mas a web fica **sem tela** para eles até o dono decidir (seção 10).
+- **Roteiro de stories no portal:** o "Roteiro de hoje" continua no Início, abaixo do quadro (decidido em 2026-11-11: tirar o "Já gravei" seria perda de função), com as regras de [`2026-10-11-portal-inicio-aprovacoes-e-roteiro-de-hoje`](../docs/business/decisions/2026-10-11-portal-inicio-aprovacoes-e-roteiro-de-hoje.md): cenas em ordem, rascunho nunca aparece, "Já gravei" nos enviados e "Gravado por {nome} em dd/mm" nos gravados.
 
 ### Variação por papel
 
@@ -360,7 +360,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 | Gestor de conta | tudo |
 | Produção | opera e publica; sem Aprovar pela agência, sem Cancelar |
 | Vendas, Financeiro | o item Calendário Editorial, a aba Mídias e o botão "Abrir no Calendário Editorial" do perfil não existem; carteira sem indicadores de conteúdo |
-| Pessoa do portal | aprova (com recado opcional), pede ajuste, comenta a partir de aguardando aprovação; envia material ao pedido aberto da agência. Marcar o roteiro como gravado segue na API, sem tela na web (seção 10) |
+| Pessoa do portal | aprova (com recado opcional), pede ajuste, comenta a partir de aguardando aprovação; envia material ao pedido aberto da agência. marca o roteiro de hoje como gravado, no Início |
 
 ### Estados da tela
 
@@ -407,7 +407,6 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 | Publicação automática e métricas | a decisão de publicar pela plataforma (integração com a Meta) | Pedro Vidal |
 | Versões do post, banco de legendas, aprovação em várias etapas | o primeiro cliente ou agência pedir | Pedro Vidal |
 | Preferências de notificação por tipo, e e-mail ou push | a primeira pessoa pedir para silenciar um tipo, ou para ser avisada fora do app (a notificação **dentro do app** passou a existir em 2026-11-11: [`notificacoes.md`](notificacoes.md)) | Pedro Vidal |
-| Onde o portal marca o roteiro de stories como gravado (o "Já gravei" saiu do Início) | a primeira agência enviar um roteiro de stories a um cliente | Pedro Vidal |
 | Atrasados e "Aprovados no mês" com histórico (hoje é a contagem de agora) | o primeiro pedido de ver o mês fechado | Pedro Vidal |
 | Fuso por agência (#153) | a primeira agência fora de `America/Sao_Paulo` | Pedro Vidal |
 
