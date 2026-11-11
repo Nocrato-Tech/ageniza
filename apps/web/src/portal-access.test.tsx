@@ -1178,7 +1178,7 @@ describe('Reenviar in a read-only agency (decision 2026-10-27)', () => {
 });
 
 const messageFor = (greeting: string): string =>
-  `${greeting} Aqui é a Agência Um. Este é o seu acesso ao portal da Padaria Central, onde você aprova os conteúdos. Entre com o seu e-mail: ${window.location.origin}/entrar`;
+  `${greeting} Aqui é Agência Um. Este é o seu acesso ao portal de aprovação de Padaria Central, onde você aprova os conteúdos. Entre com o seu e-mail: ${window.location.origin}/entrar`;
 
 const stubClipboard = (writeText: (text: string) => Promise<void>): void => {
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });

@@ -7921,29 +7921,6 @@ html:has(.portal-post__bar) {
   overflow-wrap: anywhere;
 }
 
-.client-view__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  margin: 0;
-  padding: 0;
-  color: var(--text-secondary);
-  font: var(--caption);
-  list-style: none;
-}
-
-.client-view__hint {
-  margin: 0;
-  color: var(--text-secondary);
-  font: var(--body-md);
-}
-
-.client-view__caption {
-  margin: 0;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
 
 /* The media of a content as tiles: a numbered frame and the controls under it; the folder lists the same tiles with "Adicionar". */
 .content-media {

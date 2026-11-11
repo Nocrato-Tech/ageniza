@@ -9,6 +9,8 @@ import {
   type ContentFormat,
   type PortalApproveContentRequest,
   type PortalContentDetail,
+  type PortalContentInProduction,
+  type PortalContentOpenListItem,
   type PortalRequestContentChangesRequest
 } from '@ageniza/contracts';
 import { Button, FieldMessage, FormatTag, LiveStatus, Skeleton, StatusTag } from '@ageniza/ui';
@@ -40,7 +42,8 @@ const DETAIL_PATH = '/clients/:clientId/contents/:contentId';
 
 export const portalContentQueryKey = (clientId: string, contentId: string) => ['portal', clientId, 'content', contentId] as const;
 
-const STATE_NOTES: Readonly<Partial<Record<PortalContent['status'], string>>> = {
+/** What the state of a content says to the client; the agency's "Como o cliente vê" reads the same words. */
+export const STATE_NOTES: Readonly<Partial<Record<PortalContent['status'], string>>> = {
   adjusting: 'Foi pedido um ajuste. A agência vai revisar e enviar de novo para a sua aprovação.',
   approved: 'Este conteúdo está aprovado. A agência cuida da publicação.',
   published: 'Este conteúdo já foi publicado.'
@@ -70,7 +73,10 @@ function PostBack() {
   return <Link className="portal-post__back" to={`/portal/${client.id}/conteudos`}><ChevronLeft aria-hidden="true" />Conteúdos</Link>;
 }
 
-function PostMeta({ content }: { content: PortalContent }) {
+/** The part of a post that the meta line reads: the agency's preview has no media or revision to hand it, and needs none. */
+export type PostMetaContent = PortalContentInProduction | Pick<PortalContentOpenListItem, 'status' | 'format' | 'publishOn' | 'publishAtTime' | 'publishedOn'>;
+
+export function PostMeta({ content }: { content: PostMetaContent }) {
   const format: ContentFormat = content.format;
   return <ul className="portal-post__meta" aria-label="Dados do conteúdo">
     <li><StatusTag status={PORTAL_STATUS_TAGS[content.status]}>{PORTAL_STATUS_LABELS[content.status]}</StatusTag></li>

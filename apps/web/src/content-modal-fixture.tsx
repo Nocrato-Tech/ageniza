@@ -65,19 +65,7 @@ export const sessionBody = { user: { id: USER, name: 'Pessoa', email: 'pessoa@ex
 export const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 export const failure = (status: number, code: string, message = 'MENSAGEM DO SERVIDOR'): Response => json({ error: { code, message } }, status);
-/** The shared conversation fake still builds threads without `dueOn`; a thread of a content has no deadline, so this says `null` for it. */
-const withDeadlineField = async (response: Response): Promise<Response> => {
-  if (!response.ok) return response;
-  const fill = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(fill);
-    if (value === null || typeof value !== 'object') return value;
-    const copy: Record<string, unknown> = Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, fill(inner)]));
-    if ('lastComment' in copy && !('dueOn' in copy)) copy.dueOn = null;
-    return copy;
-  };
-  return json(fill(await response.json()), response.status);
-};
-export const invalidField =(path: string): Response =>
+export const invalidField = (path: string): Response =>
   json({ error: { code: 'VALIDATION_ERROR', message: 'MENSAGEM DO SERVIDOR', details: { issues: [{ path, code: 'custom', message: 'MENSAGEM DO SERVIDOR' }] } } }, 400);
 
 export const VISUALIZE = 'conteudo.visualizar';
@@ -278,7 +266,7 @@ export const makeFetch = (scenario: Scenario = {}) => {
       return row === undefined ? failure(404, 'NOT_FOUND') : json(clientDetail(row));
     }
     const conversationRoute = /\/agencies\/[^/]+\/clients\/([^/]+)\/threads(?:\/[^/]+\/(?:comments|resolve))?$/.exec(url.pathname);
-    if (conversationRoute !== null) return withDeadlineField(answerConversation(url, method, body, conversationRoute[1]!));
+    if (conversationRoute !== null) return answerConversation(url, method, body, conversationRoute[1]!);
     const media = /\/agencies\/[^/]+\/media\/([^/]+)\/download-url$/.exec(url.pathname);
     if (media !== null) {
       if (!permissions.includes(VISUALIZE)) return failure(403, 'FORBIDDEN');

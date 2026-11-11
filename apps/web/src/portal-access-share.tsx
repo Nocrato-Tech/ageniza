@@ -13,7 +13,7 @@ export const portalEntryAddress = (): string => `${window.location.origin}/entra
 export const portalShareMessage = (input: { agencyName: string; clientName: string; personName: string | null; address: string }): string => {
   const first = input.personName?.trim().split(/\s+/)[0] ?? '';
   const greeting = first === '' ? 'Olá!' : `Olá, ${first}!`;
-  return `${greeting} Aqui é a ${input.agencyName}. Este é o seu acesso ao portal da ${input.clientName}, onde você aprova os conteúdos. Entre com o seu e-mail: ${input.address}`;
+  return `${greeting} Aqui é ${input.agencyName}. Este é o seu acesso ao portal de aprovação de ${input.clientName}, onde você aprova os conteúdos. Entre com o seu e-mail: ${input.address}`;
 };
 
 export const whatsappShareUrl = (message: string): string => `https://wa.me/?text=${encodeURIComponent(message)}`;
