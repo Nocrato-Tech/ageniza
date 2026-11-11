@@ -764,6 +764,7 @@ Cria uma agência em período de teste.
 | `POST` | `/clients/:clientId/threads` | Sessão + vínculo com o cliente | — | Abre uma conversa pelo portal, com o primeiro comentário |
 | `GET` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Lista os comentários de uma conversa, no portal |
 | `POST` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Comenta uma conversa pelo portal |
+| `GET` | `/clients/:clientId/material-requests` | Sessão + vínculo com o cliente | — | Lista os pedidos de material abertos do cliente, no portal |
 | `GET` | `/clients/:clientId` | Sessão + vínculo com o cliente | — | Lê o cadastro do próprio cliente e o resumo do Início, no portal |
 | `GET` | `/clients/:clientId/brand-study` | Sessão + vínculo com o cliente | — | Lê o estudo de marca, no portal |
 
@@ -1404,9 +1405,9 @@ Lista as conversas de um assunto do cliente.
         "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
       },
       "commentCount": 1,
-      "dueOn": null,
       "resolvedBy": null,
-      "resolvedAt": null
+      "resolvedAt": null,
+      "dueOn": null
     }
   ],
   "meta": {
@@ -1458,9 +1459,9 @@ Abre uma conversa pela agência, com o primeiro comentário.
       "excerpt": "Vamos revisar o tom de voz com o time?"
     },
     "commentCount": 1,
-    "dueOn": null,
     "resolvedBy": null,
-    "resolvedAt": null
+    "resolvedAt": null,
+    "dueOn": null
   },
   "comment": {
     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -1577,11 +1578,11 @@ Resolve uma conversa.
     "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
   },
   "commentCount": 1,
-  "dueOn": null,
   "resolvedBy": {
     "name": "Dono da Agência"
   },
-  "resolvedAt": "2026-10-07T13:00:00.000Z"
+  "resolvedAt": "2026-10-07T13:00:00.000Z",
+  "dueOn": null
 }
 ```
 
@@ -1613,7 +1614,16 @@ Lista as pessoas com acesso ao portal de um cliente.
       "email": "maria@padariacentral.exemplo.test",
       "status": "active",
       "entered": true,
-      "lastEnteredAt": null,
+      "lastEnteredAt": "2026-11-08T14:30:00.000Z",
+      "since": "2026-09-02T12:00:00.000Z"
+    },
+    {
+      "accessId": "66666666-6666-4666-8666-666666666666",
+      "name": null,
+      "email": "joao@padariacentral.exemplo.test",
+      "status": "active",
+      "entered": false,
+      "lastEnteredAt": "2026-11-09T10:15:00.000Z",
       "since": "2026-09-02T12:00:00.000Z"
     },
     {
@@ -1629,7 +1639,7 @@ Lista as pessoas com acesso ao portal de um cliente.
   "meta": {
     "page": 1,
     "pageSize": 20,
-    "totalItems": 2,
+    "totalItems": 3,
     "totalPages": 1
   }
 }
@@ -1730,7 +1740,7 @@ Remove uma pessoa do portal do cliente.
   "email": "maria@padariacentral.exemplo.test",
   "status": "removed",
   "entered": true,
-  "lastEnteredAt": null,
+  "lastEnteredAt": "2026-11-08T14:30:00.000Z",
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1753,7 +1763,7 @@ Reativa uma pessoa do portal do cliente.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": true,
-  "lastEnteredAt": null,
+  "lastEnteredAt": "2026-11-08T14:30:00.000Z",
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1833,9 +1843,9 @@ Lista as conversas de um assunto, no portal.
         "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
       },
       "commentCount": 1,
-      "dueOn": null,
       "resolvedBy": null,
-      "resolvedAt": null
+      "resolvedAt": null,
+      "dueOn": null
     }
   ],
   "meta": {
@@ -1887,9 +1897,9 @@ Abre uma conversa pelo portal, com o primeiro comentário.
       "excerpt": "Podemos aproximar o tom de voz do que usamos nas redes?"
     },
     "commentCount": 1,
-    "dueOn": null,
     "resolvedBy": null,
-    "resolvedAt": null
+    "resolvedAt": null,
+    "dueOn": null
   },
   "comment": {
     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -1979,6 +1989,45 @@ Comenta uma conversa pelo portal.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/material-requests`
+
+Lista os pedidos de material abertos do cliente, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de pedidos de material abertos.
+
+```json
+{
+  "data": [
+    {
+      "threadId": "99999999-9999-4999-8999-999999999999",
+      "body": "Envie 3 fotos da equipe",
+      "dueOn": "2026-10-20",
+      "createdAt": "2026-10-07T12:00:00.000Z",
+      "state": "open"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId`
 

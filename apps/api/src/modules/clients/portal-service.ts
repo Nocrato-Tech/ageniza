@@ -15,7 +15,7 @@ import {
   type ClientRow,
   type ClientTransaction
 } from './service.js';
-import { latestCommentSideSql, openThreadSql } from './thread-state.js';
+import { brandStudyThreadSql, latestCommentSideSql, openThreadSql } from './thread-state.js';
 
 /**
  * The portal's reads of its own client (specs/clientes.md sections 2, 6 and 7).
@@ -86,7 +86,8 @@ interface PortalHomeRow {
  * alone, and a collaborator who also has a link would otherwise read the agency branch. The function
  * is the portal-only rule: it asks for an active link to `p_client_id` and never answers a draft.
  *
- * The conversation of a content is not a brand study suggestion, and the card leads to the study (#259).
+ * The conversation of a content is not a brand study suggestion, and the card leads to the study (#259); a request for material
+ * is not a reply of the agency either, and the portal reads it on its own list.
  */
 export const loadPortalHome = async (transaction: ClientTransaction, clientId: string): Promise<PortalHome> => {
   const result = await raw<RawRows<PortalHomeRow>>(transaction, `
@@ -95,7 +96,7 @@ export const loadPortalHome = async (transaction: ClientTransaction, clientId: s
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
-          and thread.content_id is null
+          and ${brandStudyThreadSql('thread')}
           and ${openThreadSql('thread')}
           and ${latestCommentSideSql('thread')} = 'agency'
           and (

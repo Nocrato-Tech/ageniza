@@ -29,6 +29,7 @@ No detalhe de um conteúdo aprovado, **Desfazer aprovação** abre uma confirma�
 | `POST` | `…/threads` | abre uma conversa com o primeiro comentário |
 | `GET` | `…/threads/:threadId/comments` | comentários |
 | `POST` | `…/threads/:threadId/comments` | comenta |
+| `GET` | `…/material-requests` | pedidos de material abertos deste cliente |
 | `GET` | `…/story-scripts` | roteiros enviados de um período |
 | `POST` | `…/story-scripts/:scriptId/recorded` | marca o roteiro como gravado |
 
@@ -73,6 +74,19 @@ O portal **nunca** vê subtarefa, responsável, prazo interno nem roteiro em ras
 - Um comentário novo reabre uma conversa resolvida.
 - Num conteúdo, só dá para comentar a partir de "aguardando aprovação".
 - Comentário não se edita nem se apaga.
+
+### Pedido de material
+
+A agência pode pedir material ao cliente, com prazo opcional (decisão: [pedido de material](../../business/decisions/2026-11-10-estrutural-pedido-de-material-e-assunto-proprio-da-conversa-do-cliente.md)). No Início, o portal mostra o que a agência pediu.
+
+1. `GET …/material-requests` lista os pedidos **abertos deste cliente**, o prazo mais próximo primeiro e os sem prazo por último, vinte por página. Cada item traz `threadId`, `body` (o texto que a agência escreveu, para mostrar como "A agência pediu"), `dueOn` (`AAAA-MM-DD` ou `null`), `createdAt` e `state` (sempre `open`).
+2. Quem tem acesso a mais de um cliente vê, em cada Início, só os pedidos daquele cliente.
+3. Para responder, comente com `POST …/threads/:threadId/comments`, usando o `threadId` do item. O histórico da conversa vem de `GET …/threads/:threadId/comments`, que também serve para um pedido já resolvido.
+4. Só a agência resolve. Quando ela resolve, o pedido **sai da lista**. Se o cliente comentar de novo num pedido resolvido, ele volta, como em toda conversa.
+
+- A pessoa do portal **não abre** pedido de material: a rota de abrir conversa responde `400` a esse assunto.
+- O pedido não entra em "com resposta da agência" do resumo do Início.
+- A conversa de um conteúdo em produção não chega ao portal por nenhuma dessas rotas.
 
 ## Estudo de marca
 

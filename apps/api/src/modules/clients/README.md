@@ -73,7 +73,7 @@ declara é 400.
   `unaccent`; a expressão em `service.ts` é a mesma dos dois lados, coluna e termo.
 - **`threadsAwaitingAgency`** sai da definição única de `thread-state.ts`, numa subconsulta por
   cliente que o índice `client_thread_comments (thread_id, created_at)` da #122 atende. Conta só
-  conversa do estudo de marca (`content_id is null`): a conversa de um conteúdo fica fora, aqui, no
+  conversa do estudo de marca (sem conteúdo e sem pedido de material): a conversa de um conteúdo e o pedido ficam fora, aqui, no
   resumo do detalhe e no Início do portal (decisão de 2026-10-11, a das rotas de conversa do cliente).
 - **`contentIndicators`** (`pending`, `inReview`, `overdue`, `adjusting`, `dueSoon`) vem de uma CTE materializada sobre
   `contents`, agrupada por cliente e filtrada pela agência, **uma vez por página**. Pendente é em
@@ -219,7 +219,30 @@ As mesmas rotas aceitam `contentId` como assunto (`{ subject: { contentId }, bod
 - **Erros do banco**: `A0020` dá `409 CLIENT_ARCHIVED` (agência) ou `404` (portal); `42501` é relido
   numa transação nova; `40P01` e `40001` dão `409 TRY_AGAIN`.
 - **Contadores**: o selo "sugestões aguardando", o resumo da aba Geral e o Início do portal contam só a
-  conversa do estudo de marca (`content_id is null`).
+  conversa do estudo de marca (`brandStudyThreadSql`, em `thread-state.ts`: sem conteúdo e sem pedido de material).
+
+### O pedido de material (decisão `2026-11-10-estrutural-pedido-de-material-e-assunto-proprio-da-conversa-do-cliente`)
+
+Um assunto a mais da conversa do cliente, `{ materialRequest: true }`, com prazo opcional (`dueOn`). Não há rota de
+abertura própria: é a mesma `POST …/threads`, porque o pedido é uma conversa (primeiro comentário, estado derivado,
+resolver, reabrir por comentário) e uma rota paralela repetiria essas regras.
+
+- **Só a agência abre.** O corpo do portal é `PortalCreateThreadRequestSchema`, que não conhece `materialRequest` nem
+  `dueOn` (`400`). Atrás dele está o banco (`client_threads_material_request_agency_check`): se uma escrita do lado
+  cliente chegar lá, a rota responde `403`, nunca `500`.
+- **O prazo** vai no `INSERT` de toda abertura, de propósito: quem recusa `dueOn` fora do pedido é a constraint
+  `client_threads_due_on_check` (`400` no campo `dueOn`), e quem recusa a data fora de hoje a 90 dias em São Paulo é a
+  função `A0120` (`400` no campo `dueOn`). `materialRequestDatabaseRefusal` lê os três erros; o schema do corpo só
+  antecipa os dois primeiros.
+- **Permissão**: a do estudo de marca (`cliente.visualizar` para ler, `cliente.operar` para abrir, comentar e resolver).
+  A guarda da rota ainda deixa passar quem tem `conteudo.*`; o serviço (`agencyPermissions`) e a RLS seguram o resto.
+- **`GET /clients/:clientId/material-requests`** (portal): os pedidos **abertos** do cliente da rota, com o primeiro
+  comentário (`body`), `dueOn` e `createdAt`, o prazo mais próximo primeiro. O filtro por `client_id` está no SQL
+  (`listOpenMaterialRequests`) porque a policy deixa a pessoa com vários vínculos, e a colaboradora com vínculo, ler os
+  pedidos de todos os clientes. "Aberto" é o estado derivado de sempre (`openThreadSql`): o pedido resolvido sai da lista
+  e um comentário do cliente o traz de volta.
+- **Decisão de 2026-11-07 intacta**: o pedido não tem conteúdo, então nada que o portal lê aqui é a conversa de um
+  conteúdo em produção; o filtro de `loadThreadContext` para conteúdo segue valendo nas rotas de comentário.
 
 ## Leituras do portal (#129)
 
@@ -281,8 +304,12 @@ conta com aquele e-mail verificado carrega os contextos (`app_private.link_clien
 
 - **Pessoas**: 20 por página, por nome (o e-mail, enquanto a pessoa não entrou) sem diferenciar maiúsculas nem acento,
   comparado byte a byte (`collate "C"`) com o id do acesso de desempate; `status=active` (padrão) ou `removed`. Item:
-  `accessId`, `name` (nulo até a conta entrar no portal **daquele cliente**), `email` (como foi gravado), `status`, `entered` ("ainda não entrou"
-  quando `false`; só vira `true` na primeira entrada no portal do cliente, e não no vínculo) e `since`. A consulta parte de `client_portal_accesses` filtrado pelo cliente e pela agência e chega em
+  `accessId`, `name` (nulo até a conta entrar no portal **daquele cliente**), `email` (como foi gravado), `status`, `entered` ("ainda não entrou com a conta"
+  quando `false`; só vira `true` na primeira entrada no portal do cliente, e não no vínculo), `lastEnteredAt` e `since`.
+  `lastEnteredAt` é `last_entered_at` (decisão `2026-11-10-estrutural-ultimo-acesso-ao-portal-por-cliente`), lido pela mesma
+  policy da lista e gravado só pelo banco; ele **pode vir preenchido com `entered: false`**, para quem só abriu o link de
+  aprovação (decisão `2026-11-10-quem-so-abriu-o-link-de-aprovacao-ainda-nao-entrou-com-a-conta`), e `entered` continua sendo
+  o que libera o reenvio. A consulta parte de `client_portal_accesses` filtrado pelo cliente e pela agência e chega em
   `auth."user"` só pelo `user_id` do acesso, num `LEFT JOIN`. **Nada na lista diz se um e-mail tem conta.**
 - **Adicionar pessoa**: só o e-mail. Dá o acesso na hora, sem conta e sem aceite, e manda o e-mail de boas-vindas
   ("Entrar no portal"). O mesmo e-mail de novo reativa a mesma linha (`409 ACCESS_EXISTS` se já estava ativo). Se a conta

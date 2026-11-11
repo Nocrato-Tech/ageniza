@@ -16,6 +16,9 @@ import type { ClientTransaction } from './service.js';
  * Nothing here says whether an address has an account. The name is the account's, and only once that account has entered the
  * portal of THIS client (`first_entered_at`): the link happens at any load of the contexts, even of someone who only works in
  * another agency, and the list must not turn that into a name.
+ *
+ * `lastEnteredAt` is the database's `last_entered_at`, read through the same policy as the rest of the row. It is set by the
+ * account's entry and by the approval link, so a person who only opened the link has it set while `entered` stays false.
  */
 
 interface RawRows<TResult> {
@@ -28,6 +31,7 @@ export interface ClientMemberRow {
   readonly email: string;
   readonly status: ClientMemberStatus;
   readonly entered: boolean;
+  readonly last_entered_at: Date | null;
   readonly created_at: Date;
 }
 
@@ -43,6 +47,7 @@ const MEMBER_COLUMNS = `
   access.email as email,
   access.status as status,
   (access.first_entered_at is not null and access.user_id is not null) as entered,
+  access.last_entered_at as last_entered_at,
   access.created_at as created_at
 `;
 
@@ -58,6 +63,7 @@ export const clientMemberFromRow = (row: ClientMemberRow): ClientMember => ({
   email: row.email,
   status: row.status,
   entered: row.entered,
+  lastEnteredAt: row.last_entered_at === null ? null : new Date(row.last_entered_at).toISOString(),
   since: new Date(row.created_at).toISOString()
 });
 

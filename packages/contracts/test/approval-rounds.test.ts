@@ -274,9 +274,10 @@ describe('what the portal reads of a round', () => {
 describe('the last entrance of a person of the portal, as the agency reads it', () => {
   const member = { accessId: uuid(1), name: null, email: 'a@b.co', status: 'active', entered: false, lastEnteredAt: null, since: SENT_AT };
 
-  it('is a moment or null, and is required beside entered', () => {
+  it('is a moment or null, required beside entered, and may be set while the person has not entered with the account', () => {
     expect(ClientMemberSchema.safeParse(member).success).toBe(true);
     expect(ClientMemberSchema.safeParse({ ...member, entered: true, name: 'Ana', lastEnteredAt: SENT_AT }).success).toBe(true);
+    expect(ClientMemberSchema.safeParse({ ...member, lastEnteredAt: SENT_AT }).success).toBe(true);
     expect(ClientMemberSchema.safeParse(without(member, 'lastEnteredAt')).success).toBe(false);
     expect(ClientMemberSchema.safeParse({ ...member, lastEnteredAt: 'ontem' }).success).toBe(false);
   });
