@@ -810,12 +810,14 @@ describe('the story scripts in the Pauta look (#635)', () => {
   });
 
   it('lets a script row and a scene shrink inside their grid instead of pushing it wide', () => {
-    for (const selector of ['.story-list', '.story-list__items', '.story-script__scenes', '.story-script__scene']) {
+    for (const selector of ['.story-list', '.story-script__scenes', '.story-script__scene']) {
       expect(rule(selector).get('grid-template-columns'), selector).toBe('minmax(0, 1fr)');
     }
-    expect(rule('.story-list__item').get('flex-wrap')).toBe('wrap');
-    expect(rule('.story-list__item > :last-child').get('margin-left')).toBe('auto');
-    expect(css).toMatch(/@media \(max-width: 40rem\) \{\s*\.story-list__day \{\s*flex-basis: 100%;/);
+    // The strip of the board: circles in one row that scrolls inside the card, each as wide as its circle, the whole item being the button.
+    expect(rule('.story-list__items').get('display')).toBe('flex');
+    expect(rule('.story-list__items').get('overflow-x')).toBe('auto');
+    expect(rule('.story-list__item').get('flex')).toBe('none');
+    expect(rule('.story-list .story-list__item > .ui-button').get('position')).toBe('absolute');
     for (const selector of ['.story-script__text', '.story-script__guidance']) expect(rule(selector).get('overflow-wrap'), selector).toBe('anywhere');
   });
 

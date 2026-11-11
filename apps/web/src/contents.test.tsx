@@ -358,7 +358,7 @@ const periodCalls = (calls: readonly string[]): string[] => calls.filter((call) 
 
 /** The day cell that holds a `<time dateTime>`. */
 const dayCell = (day: string): HTMLElement => {
-  const time = document.querySelector(`time[datetime="${day}"]`);
+  const time = document.querySelector(`.content-day time[datetime="${day}"], .content-agenda__day time[datetime="${day}"]`);
   const cell = time?.closest('li');
   if (cell === null || cell === undefined) throw new Error(`The day ${day} was not rendered.`);
   return cell;
@@ -2158,12 +2158,12 @@ describe('the header and the grid of the calendar', () => {
       expect(body('.content-calendar__days')).toMatch(/min-width:\s*40rem;/);
     });
 
-    it('gives the card one colour, the token of its state, and trades it for the red of the state when it is late', () => {
-      expect(body('.content-card')).toMatch(/border-left:\s*3px solid var\(--content-card-tone\);/);
-      for (const [status, token] of [['awaiting_approval', 'waiting'], ['adjusting', 'adjust'], ['approved', 'ready'], ['published', 'published']] as const) {
-        expect(body(`.content-card[data-status='${status}']`)).toContain(`--content-card-tone: var(--status-${token}-fg);`);
+    it('tints the card by its format (the state is the tag at its foot), and outlines it in the red of the state when it is late', () => {
+      expect(body('.content-card')).toMatch(/border:\s*1px solid var\(--content-card-tone\);/);
+      for (const format of ['carousel', 'reels']) {
+        expect(body(`.content-card[data-format='${format}']`)).toContain(`--content-card-bg: var(--format-${format}-bg);`);
       }
-      expect(body('.content-card')).toContain('--content-card-tone: var(--status-production-fg);');
+      expect(body('.content-card')).toContain('--content-card-bg: var(--format-static-bg);');
       expect(body('.content-card[data-late]')).toContain('--content-card-tone: var(--status-late-fg);');
       expect(body('.content-card')).not.toMatch(/gradient|backdrop-filter|box-shadow/);
     });

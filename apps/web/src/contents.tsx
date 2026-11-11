@@ -410,6 +410,7 @@ export function ContentsClientPage() {
         {move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
         {sentNotice !== null && <LiveStatus>{sentNotice}</LiveStatus>}
         {loaded !== undefined && <ContentSummary contents={counted} today={today} scope={calendarView === 'week' ? 'da semana' : 'do mês'} />}
+        {loaded !== undefined && scriptLayer.list}
         <div className="contents__panel">
           <div className="contents__panel-head">
             <div className="contents__period" role="group" aria-label="Período">
@@ -456,7 +457,6 @@ export function ContentsClientPage() {
                 />}
             </>}
         </div>
-        {loaded !== undefined && scriptLayer.list}
       </div>
       {view !== 'feed' && roomForPhone && <aside className="contents__feed" aria-label="Prévia do feed">
         <ContentPhoneFeed

@@ -222,7 +222,7 @@ const deferred = <T,>() => {
 };
 
 const dayCell = (day: string): HTMLElement => {
-  const cell = document.querySelector(`time[datetime="${day}"]`)?.closest('li');
+  const cell = document.querySelector(`.content-day time[datetime="${day}"], .content-agenda__day time[datetime="${day}"]`)?.closest('li');
   if (cell === null || cell === undefined) throw new Error(`The day ${day} was not rendered.`);
   return cell;
 };

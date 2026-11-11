@@ -997,7 +997,7 @@ describe('creating a content', () => {
     const { impl } = makeFetch();
     const first = render_(impl);
     await calendarReady();
-    const plus = within(document.querySelector('time[datetime="2026-10-22"]')!.closest('li')!).getByRole('button', { name: /^Adicionar no dia/ });
+    const plus = within(document.querySelector('.content-day time[datetime="2026-10-22"], .content-agenda__day time[datetime="2026-10-22"]')!.closest('li')!).getByRole('button', { name: /^Adicionar no dia/ });
     fireEvent.click(plus);
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Conteúdo' }));
 

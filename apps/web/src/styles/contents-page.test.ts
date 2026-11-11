@@ -78,8 +78,9 @@ describe('the story script of a day is a row with room, not a capsule (#703)', (
 });
 
 describe('the phone beside the calendar (#703)', () => {
-  it('is an ink bezel with a screen on the surface, as wide as 22rem, and tall enough to be a phone even when empty', () => {
+  it('is an ink bezel (light on the agency calendar, as on the board) with a screen on the surface, as wide as 22rem, and tall enough to be a phone even when empty', () => {
     expect(rule('.content-phone').get('background')).toBe('var(--color-ink-900)');
+    expect(rule('.contents .content-phone').get('background')).toBe('var(--bg-surface)');
     expect(rule('.content-phone').get('width')).toBe('min(100%, 22rem)');
     expect(rule('.content-phone').get('padding')).toBe('var(--space-2)');
     expect(rule('.content-phone').get('border-radius')).toBe('calc(var(--radius-xl) * 2)');
