@@ -352,7 +352,7 @@ Todos os componentes abaixo moram em [`packages/ui`](../packages/ui/src/index.ts
 | Precisa de | Use | Regra |
 |---|---|---|
 | Alternar entre duas ou três visões da mesma coisa (Grade e Lista) | `Segmented` | Grupo de rádio, uma parada de tabulação e setas. A opção escolhida leva superfície branca, sombra suave (`shadow/raised`) e peso 600, não só cor. |
-| Dividir uma tela em seções | `Tabs` | Ativação automática: setas movem e abrem, Home e End vão às pontas, aba desabilitada é pulada. A aba aberta se sublinha em tinta, nunca em índigo. `keepMounted` numa aba mantém o painel dela montado e oculto enquanto outra está aberta, para o que foi digitado sobreviver à visita (o formulário do modal do conteúdo). |
+| Dividir uma tela em seções | `Tabs` | Ativação automática: setas movem e abrem, Home e End vão às pontas, aba desabilitada é pulada. A trilha é uma cápsula em `bg/tint` e a aba aberta vira uma superfície branca com sombra suave (`shadow/raised`), com o texto na tinta da ação secundária e peso 600, nunca em índigo e sem sublinhado. `keepMounted` numa aba mantém o painel dela montado e oculto enquanto outra está aberta, para o que foi digitado sobreviver à visita (o formulário do modal do conteúdo). |
 | Escolher o cliente em que se trabalha | `ClientStrip` | Os clientes como stories, em `<nav>` com um link de verdade por cliente (`href` obrigatório). O aberto leva `aria-current="page"`, uma superfície e o `Realce` no nome. `renderLink` deixa a tela desenhar o link com o roteador. |
 | Ações de um item (os três pontos) | `Menu`, `MenuItem`, `MenuSeparator` | Menu de botão: setas, Home e End movem, Esc fecha; o foco volta ao gatilho. |
 
@@ -691,7 +691,7 @@ O índigo cheio (`action/primary/bg`, no `Button` primário, na `Pill` e `PillAc
 3. **a vez de quem olha** ("2 posts esperando você"), no `Realce` atrás da palavra que pede a decisão;
 4. **o cliente selecionado** no `ClientStrip` (decisão do dono de 2026-10-14: no tema claro, só a superfície dá 1,03:1 e o selecionado some).
 
-Duas manchas de índigo cheio competindo na mesma tela, fora destes usos, é erro. Não são índigo cheio, e portanto não entram na regra: o ícone do estado em ajuste, o link (`text/link`) e o anel de foco. A aba aberta se sublinha em tinta, nunca em índigo. O `Realce` tem cantos desiguais, como caneta marca-texto, e é a única forma fora da escala de raios; ele entra varrendo da esquerda (`sweep`, 240 ms) quando algo vira a vez de quem olha ou é aprovado, e fica parado quando a pessoa pede menos movimento.
+Duas manchas de índigo cheio competindo na mesma tela, fora destes usos, é erro. Não são índigo cheio, e portanto não entram na regra: o ícone do estado em ajuste, o link (`text/link`) e o anel de foco. A aba aberta é uma superfície branca com sombra suave sobre a trilha tingida, nunca em índigo e sem sublinhado. O `Realce` tem cantos desiguais, como caneta marca-texto, e é a única forma fora da escala de raios; ele entra varrendo da esquerda (`sweep`, 240 ms) quando algo vira a vez de quem olha ou é aprovado, e fica parado quando a pessoa pede menos movimento.
 
 ### 25.3 Exceções aprovadas pelo dono
 
