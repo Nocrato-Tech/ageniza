@@ -1138,7 +1138,9 @@ a.ui-button {
 
 .collaborators__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  /* The minimum is the larger of 13.5rem and a quarter of the row, so it opens 1 to 4 columns and never a fifth: a page of 24
+     (a multiple of 1, 2, 3 and 4) never leaves a broken row (specs/colaboradores.md section 6). The 1px keeps the fourth column fitting. */
+  grid-template-columns: repeat(auto-fill, minmax(max(13.5rem, calc((100% - 3 * var(--space-4)) / 4 - 1px)), 1fr));
   gap: var(--space-4);
   margin: 0;
   padding: 0;
@@ -1228,6 +1230,12 @@ a.ui-button {
   border-color: var(--focus-ring);
   box-shadow: var(--shadow-raised);
   transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collaborators__badge-link:hover .ui-badge-card {
+    transform: none;
+  }
 }
 
 /* The reactivate action of a removed badge sits under the card, never inside the link (#105). */
