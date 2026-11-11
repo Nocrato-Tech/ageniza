@@ -158,10 +158,12 @@ export function ClientDetailPage() {
   if (failedWithoutData || (detail.data !== undefined && client === undefined)) {
     return <section className="client-detail">
       {back}
-      <div className="client-detail__error" role="alert">
-        <p>Não foi possível carregar o cliente. Tente de novo.</p>
-        <Button onClick={() => { void detail.refetch(); }} loading={detail.isFetching}>Tentar de novo</Button>
-      </div>
+      <EmptyState
+        kind="failure"
+        headingLevel={2}
+        title="Não foi possível carregar o cliente. Tente de novo."
+        onRetry={() => { void detail.refetch(); }}
+      />
     </section>;
   }
 

@@ -878,8 +878,13 @@ describe('brand study tab (#138)', () => {
     const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
     expect(alert.textContent).toContain('Não foi possível carregar o estudo de marca. Tente de novo.');
     expect(alert.textContent).not.toContain('private diagnostic');
-    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    // The failure kind: the empty sections and personas are never drawn for a study that did not answer.
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(screen.queryByText('Nenhuma persona ainda')).toBeNull();
+    const attemptsBeforeRetry = attempts;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
     expect(await screen.findByText('Marca acolhedora do bairro')).toBeTruthy();
+    expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
   });
 });
 

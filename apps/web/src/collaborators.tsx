@@ -226,10 +226,13 @@ export function CollaboratorsPage() {
           {Array.from({ length: PAGE_SIZE }, (_value, index) => <li key={index}><Skeleton className="ui-badge-card__skeleton" /></li>)}
         </ul>
       ) : collaborators.isError ? (
-        <div className="collaborators__error" role="alert">
-          <p>Não foi possível carregar a equipe. Tente de novo.</p>
-          <Button variant="secondary" onClick={() => { void collaborators.refetch(); }}>Tentar de novo</Button>
-        </div>
+        <EmptyState
+          kind="failure"
+          className="collaborators__empty"
+          headingLevel={3}
+          title="Não foi possível carregar a equipe. Tente de novo."
+          onRetry={() => { void collaborators.refetch(); }}
+        />
       ) : outOfRange ? null : <>
         {collaborators.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
         {collaborators.data.data.length === 0 && status === 'removed' && !hasFilters ? (

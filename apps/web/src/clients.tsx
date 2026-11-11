@@ -202,10 +202,13 @@ export function ClientsPage() {
             {Array.from({ length: PAGE_SIZE }, (_value, index) => <li key={index}><Skeleton className="clients__card-skeleton" /></li>)}
           </ul>
         ) : clients.isError ? (
-          <div className="clients__error" role="alert">
-            <p>Não foi possível carregar os clientes. Tente de novo.</p>
-            <Button onClick={() => { void clients.refetch(); }}>Tentar de novo</Button>
-          </div>
+          <EmptyState
+            kind="failure"
+            className="clients__empty"
+            headingLevel={3}
+            title="Não foi possível carregar os clientes. Tente de novo."
+            onRetry={() => { void clients.refetch(); }}
+          />
         ) : outOfRange ? null : <>
           {clients.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
           {rows.length === 0 ? (

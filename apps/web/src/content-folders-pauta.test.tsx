@@ -263,11 +263,12 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
     const world = makeWorld({ override: (method, path) => (method === 'GET' && path.endsWith(suffix) ? apiError(500, 'INTERNAL_ERROR', 'boom') : undefined) });
     open(world, search);
 
-    const text = await screen.findByText(message, undefined, { timeout: 5000 });
-    expect(text.querySelector('svg')).not.toBeNull();
-    const retry = screen.getByRole('button', { name: 'Tentar de novo' });
+    expect(await screen.findByText(message, undefined, { timeout: 5000 })).toBeTruthy();
+    const alert = screen.getByRole('alert');
+    expect(alert.querySelector('svg')).not.toBeNull();
+    const retry = within(alert).getByRole('button', { name: 'Tentar de novo' });
     expect(retry.classList.contains('ui-button--secondary')).toBe(true);
-    expect(retry.closest('.content-folders__error')?.querySelectorAll('.ui-button--primary')).toHaveLength(0);
+    expect(alert.querySelectorAll('.ui-button--primary')).toHaveLength(0);
   }, 15_000);
 
   it('draws an icon on the path between folders and on the download and removal of each media', async () => {

@@ -739,10 +739,7 @@ export function ClientBrandStudyTab() {
   }
 
   if (study.isError && study.data === undefined) {
-    return <div className="brand-study__error" role="alert">
-      <p>{LOAD_FAILED}</p>
-      <Button onClick={() => { void study.refetch(); }} loading={study.isFetching}>Tentar de novo</Button>
-    </div>;
+    return <EmptyState kind="failure" headingLevel={3} title={LOAD_FAILED} onRetry={() => { void study.refetch(); }} />;
   }
 
   const data = study.data;

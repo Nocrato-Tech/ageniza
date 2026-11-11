@@ -85,16 +85,16 @@ const steps = {
   client: 'Cadastre o primeiro cliente',
   content: 'Crie o primeiro conteúdo no calendário',
   sent: 'Envie o conteúdo para aprovação',
-  approved: 'Receba a primeira aprovação do cliente'
+  approved: 'Seu cliente aprova pelo link, sem criar conta'
 };
 
 beforeEach(() => { window.localStorage.clear(); calls.length = 0; });
 afterEach(cleanup);
 
-describe('the activation path on the agency Início', () => {
+describe('the journey "Até a primeira aprovação" on the agency Início', () => {
   it('shows the four steps pending and the first one leads to the clients', async () => {
     const probe = renderHome({ permissions: ALL });
-    expect(await screen.findByRole('heading', { name: 'Primeiros passos' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Até a primeira aprovação' })).toBeTruthy();
     expect(screen.getByText('0 de 4 concluídos')).toBeTruthy();
     for (const title of Object.values(steps)) expect(screen.getByText(title)).toBeTruthy();
     expect(screen.getAllByText(/— pendente/)).toHaveLength(4);
@@ -106,6 +106,23 @@ describe('the activation path on the agency Início', () => {
 
     fireEvent.click(screen.getByRole('link', { name: 'Cadastrar cliente' }));
     await waitFor(() => { expect(probe.pathname).toBe(`/agencia/${AGENCY}/clientes`); });
+  });
+
+  it('presents the steps as a journey: who does each one, the progress, and the last step belongs to the client', async () => {
+    renderHome({ permissions: ALL, clients: 1, facts: { ...none, hasContent: true } });
+    expect(await screen.findByText('2 de 4 concluídos')).toBeTruthy();
+    const journey = within(screen.getByRole('heading', { name: 'Até a primeira aprovação' }).closest('section') as HTMLElement);
+    const items = journey.getAllByRole('listitem');
+    expect(items).toHaveLength(4);
+    expect(items.map((item) => within(item).getByText(/^(Você|Seu cliente)$/).textContent)).toEqual(['Você', 'Você', 'Você', 'Seu cliente']);
+    const progress = screen.getByRole('progressbar', { name: 'Passos concluídos até a primeira aprovação' });
+    expect(progress.getAttribute('value')).toBe('2');
+    expect(progress.getAttribute('max')).toBe('4');
+    // The first step still pending is the current one; the done ones and the rest are not.
+    expect(items.map((item) => item.getAttribute('aria-current'))).toEqual([null, null, 'step', null]);
+    expect(within(items[3] as HTMLElement).getByText(steps.approved)).toBeTruthy();
+    expect(within(items[3] as HTMLElement).getByText('Seu cliente')).toBeTruthy();
+    expect(screen.queryByText('Primeiros passos')).toBeNull();
   });
 
   it('marks done steps from the data and sends each button to the screen that resolves it', async () => {
@@ -134,7 +151,7 @@ describe('the activation path on the agency Início', () => {
 
   it('shows the steps without any button to a role that can only see', async () => {
     renderHome({ permissions: VIEW, clients: 1 });
-    expect(await screen.findByRole('heading', { name: 'Primeiros passos' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Até a primeira aprovação' })).toBeTruthy();
     for (const title of Object.values(steps)) expect(screen.getByText(title)).toBeTruthy();
     for (const label of ['Cadastrar cliente', 'Criar conteúdo', 'Enviar para aprovação', 'Convidar o cliente']) {
       expect(screen.queryByRole('link', { name: label })).toBeNull();
@@ -143,7 +160,7 @@ describe('the activation path on the agency Início', () => {
 
   it('keeps each button to the permission of its own step', async () => {
     renderHome({ permissions: [...VIEW, 'cliente.cadastrar'], clients: 1 });
-    await screen.findByRole('heading', { name: 'Primeiros passos' });
+    await screen.findByRole('heading', { name: 'Até a primeira aprovação' });
     // The first step is done, so its button is gone; the others need permissions this role lacks.
     expect(screen.queryByRole('link', { name: 'Criar conteúdo' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Convidar o cliente' })).toBeNull();
@@ -156,7 +173,7 @@ describe('the activation path on the agency Início', () => {
 
   it('offers no write button while the plan is read-only', async () => {
     renderHome({ permissions: ALL, readOnly: true });
-    expect(await screen.findByRole('heading', { name: 'Primeiros passos' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Até a primeira aprovação' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Cadastrar cliente' })).toBeNull();
   });
 
@@ -166,7 +183,7 @@ describe('the activation path on the agency Início', () => {
     // The facts were read and settled before the absence is asserted, so it is not the loading state.
     await waitFor(() => { expect(calls.some((url) => url.endsWith('/contents/activation'))).toBe(true); });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
-    expect(screen.queryByRole('heading', { name: 'Primeiros passos' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Até a primeira aprovação' })).toBeNull();
     expect(screen.queryByText(/concluídos/)).toBeNull();
     expect(within(screen.getByRole('navigation', { name: 'Navegação da agência' })).getByRole('link', { name: 'Início' })).toBeTruthy();
   });
@@ -175,7 +192,7 @@ describe('the activation path on the agency Início', () => {
     window.localStorage.setItem(`ageniza:milestones:${AGENCY}`, JSON.stringify(['client', 'content', 'sent']));
     renderHome({ permissions: ALL, clients: 1, facts: { hasContent: true, sentForApproval: true, approvedByClient: true, published: false } });
     expect(await screen.findByText('Parabéns pela primeira aprovação!')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Primeiros passos' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Até a primeira aprovação' })).toBeNull();
   });
 
   it('counts the first step done when the default list is empty (only archived clients) but there is content', async () => {
@@ -196,7 +213,7 @@ describe('the activation path on the agency Início', () => {
     await screen.findByText('Carteira, estudo de marca e conversas.');
     await waitFor(() => { expect(calls.filter((url) => url.endsWith('/contents/activation')).length).toBeGreaterThan(1); });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
-    expect(screen.queryByRole('heading', { name: 'Primeiros passos' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Até a primeira aprovação' })).toBeNull();
   });
 
   it('shows the new step and celebrates it when the person comes back to the Início soon after', async () => {
@@ -217,12 +234,12 @@ describe('the activation path on the agency Início', () => {
     expect(await screen.findByText('Carteira, estudo de marca e conversas.')).toBeTruthy();
     await waitFor(() => { expect(calls.some((url) => url.endsWith('/contents/activation'))).toBe(true); });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
-    expect(screen.queryByRole('heading', { name: 'Primeiros passos' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Até a primeira aprovação' })).toBeNull();
   });
 
   it('does not show the path to a role that cannot read clients and contents', async () => {
     renderHome({ permissions: ['colaborador.visualizar'] });
     expect(await screen.findByText('Colaboradores, papéis e convites.')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Primeiros passos' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Até a primeira aprovação' })).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { ChevronRight, CircleAlert, Download, Folder, FolderPlus, Image as ImageIcon, LoaderCircle, RotateCcw, Trash2, Upload, Video } from 'lucide-react';
+import { ChevronRight, CircleAlert, Download, Folder, FolderPlus, Image as ImageIcon, LoaderCircle, Trash2, Upload, Video } from 'lucide-react';
 import type { z } from 'zod';
 
 import {
@@ -105,10 +105,7 @@ function Glyph({ children }: { children: ReactNode }) {
 }
 
 function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return <div className="content-folders__error" role="alert">
-    <p><Glyph><CircleAlert /></Glyph>{message}</p>
-    <Button variant="secondary" leadingIcon={<RotateCcw />} onClick={onRetry}>Tentar de novo</Button>
-  </div>;
+  return <EmptyState kind="failure" className="content-folders__empty" headingLevel={4} title={message} onRetry={onRetry} />;
 }
 
 function FolderCreateDialog({ clientId, parent, onClose }: { clientId: string; parent: MediaFolder | null; onClose: () => void }) {

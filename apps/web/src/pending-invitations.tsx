@@ -141,14 +141,19 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
       {Array.from({ length: 3 }, (_value, index) => <li key={index}><Skeleton /></li>)}
     </ul>;
   } else if (invitations.isError) {
-    body = <div className="invites__error" role="alert">
-      <p>{LIST_ERROR}</p>
-      <Button variant="secondary" onClick={() => { void invitations.refetch(); }}>Tentar de novo</Button>
-    </div>;
+    body = <EmptyState
+      kind="failure"
+      className="invites__empty"
+      headingLevel={3}
+      title={LIST_ERROR}
+      onRetry={() => { void invitations.refetch(); }}
+    />;
   } else if (data === undefined || outOfRange) {
     body = null;
   } else if (data.data.length === 0) {
+    // Only the team's first visit invites to start; with a full team, no invitation waiting is just good news.
     body = <EmptyState
+      kind={mascot ? 'first-use' : 'good-news'}
       className="invites__empty"
       headingLevel={3}
       mascot={mascot}

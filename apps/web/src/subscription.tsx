@@ -209,7 +209,7 @@ export function SubscriptionPage() {
   if (plansQuery.isError || overviewQuery.isError) {
     return <section aria-labelledby="subscription-title" className="subscription">
       <h1 id="subscription-title">Assinatura</h1>
-      <EmptyState title={LOAD_FAILED} description="Nada foi alterado." action={<Button onClick={() => { void plansQuery.refetch(); void overviewQuery.refetch(); }}>Tentar de novo</Button>} />
+      <EmptyState kind="failure" title={LOAD_FAILED} description="Nada foi alterado." onRetry={() => { void plansQuery.refetch(); void overviewQuery.refetch(); }} />
     </section>;
   }
   if (plans === undefined || overviewQuery.data === undefined) {
