@@ -5479,18 +5479,30 @@ main > .shell-notice {
    .portal-error                              o erro de um bloco, com "Tentar de novo"
    Três tamanhos de texto por tela: --heading-xl, --body-md e --caption. --- */
 
-.portal-shell > .portal-header {
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg-canvas);
-  color: var(--text-primary);
-  font: var(--body-md);
+/* The shell has two pieces: the navigation (the client, the bar, the person) and the content. On a phone the navigation is the top bar
+   and the bottom bar, each a flex item of the shell; from 48rem it is the side column. */
+.portal-sidebar {
+  display: contents;
 }
 
 .portal-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  order: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--bg-canvas) 92%, transparent);
+  color: var(--text-primary);
+  font: var(--body-md);
+  backdrop-filter: blur(8px);
+}
+
+.portal-header__brand {
+  display: none;
 }
 
 .portal-header__identity {
@@ -5498,6 +5510,16 @@ main > .shell-notice {
   align-items: center;
   min-width: 0;
   gap: var(--space-3);
+}
+
+/* The menu of the person opens down from the top bar of a phone, not up as it does from the foot of the side column. */
+@media (max-width: 47.99rem) {
+  .portal-header .account-menu--sidebar .ui-menu__content {
+    top: calc(100% + var(--space-2));
+    right: 0;
+    bottom: auto;
+    left: auto;
+  }
 }
 
 .portal-header__labels {
@@ -5543,6 +5565,7 @@ main > .shell-notice {
 
 /* The focused control scrolls clear of the sticky bar: below it on a phone, under the tabs on a wide screen (WCAG 2.4.11). */
 html:has(.portal-shell) {
+  scroll-padding-top: 4.5rem;
   scroll-padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
 }
 
@@ -5553,6 +5576,7 @@ html:has(.portal-shell) {
   box-sizing: border-box;
   max-width: 64rem;
   padding: var(--space-3) var(--space-4) var(--space-8);
+  order: 1;
 }
 
 .portal-nav {
@@ -5560,6 +5584,7 @@ html:has(.portal-shell) {
   position: sticky;
   bottom: 0;
   z-index: 5;
+  order: 2;
   background: var(--bg-surface);
   border-top: 1px solid var(--border-default);
   padding-bottom: env(safe-area-inset-bottom);
@@ -5599,23 +5624,24 @@ html:has(.portal-shell) {
   color: var(--text-primary);
 }
 
-/* The open tab is underlined in ink, never in indigo (docs/design-system.md section 25.2). */
+/* The open item is a tinted pill with bold text, as in the agency's navigation: it never rests on colour alone. */
 .portal-nav a[aria-current='page'] {
-  position: relative;
-  color: var(--text-primary);
-}
-
-.portal-nav a[aria-current='page']::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  width: 2rem;
-  height: 2px;
-  background: var(--text-primary);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+  font-weight: 700;
 }
 
 .portal-nav a[aria-current='page'] svg {
-  stroke-width: 2.25;
+  color: var(--color-indigo-600);
+}
+
+.portal-nav__title {
+  display: none;
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .portal-nav a[data-tour-target='true'] {
@@ -5709,7 +5735,7 @@ html:has(.portal-shell) {
   min-width: 0;
   padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
@@ -5881,8 +5907,9 @@ html:has(.portal-shell) {
 
 .portal-home__greeting {
   margin: 0;
-  color: var(--text-secondary);
-  font: var(--body-md);
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 
 .portal-home__main {
@@ -5891,9 +5918,142 @@ html:has(.portal-shell) {
   min-width: 0;
 }
 
+.portal-home__main:empty {
+  display: none;
+}
+
+.portal-home__calm {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* The week is a card of the screen, as "A agência pediu" is. */
 .portal-home__week {
   min-width: 0;
   align-content: start;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+/* What waits for the person, in the lilac block of the board: the posts as white cards on it, the one action under them. */
+.portal-hero {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--bg-tint);
+}
+
+.portal-hero .portal-headline {
+  font: var(--heading-xl);
+}
+
+.portal-hero .portal-covers {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.portal-hero .portal-covers__skeleton {
+  aspect-ratio: 5 / 4;
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.portal-hero .ui-empty-state--failure {
+  border-color: transparent;
+}
+
+.portal-postcard {
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  transition:
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
+}
+
+.portal-postcard:hover {
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
+}
+
+.portal-postcard .portal-cover {
+  aspect-ratio: 5 / 4;
+  border-radius: var(--radius-md);
+}
+
+.portal-postcard__body {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-1) var(--space-1);
+}
+
+.portal-postcard .portal-cover-link__title {
+  font: var(--title-md);
+}
+
+.portal-postcard .approval-round__due {
+  font: var(--caption);
+  font-weight: 600;
+}
+
+/* The loose 3D icon of an empty state: a block of the tone of its family, the icon in the middle and the text under it. */
+.portal-stage-empty {
+  --ui-stage-bg: var(--block-slate-bg);
+  --sx-fg: var(--block-slate-fg);
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-8) var(--space-4) var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--ui-stage-bg);
+  color: var(--text-primary);
+}
+
+.portal-stage-empty--indigo {
+  --ui-stage-bg: var(--block-indigo-bg);
+  --sx-fg: var(--block-indigo-fg);
+}
+
+.portal-stage-empty--violet {
+  --ui-stage-bg: var(--block-violet-bg);
+  --sx-fg: var(--block-violet-fg);
+}
+
+.portal-stage-empty--teal {
+  --ui-stage-bg: var(--block-teal-bg);
+  --sx-fg: var(--block-teal-fg);
+}
+
+.portal-stage-empty--sky {
+  --ui-stage-bg: var(--block-sky-bg);
+  --sx-fg: var(--block-sky-fg);
+}
+
+.portal-stage-empty :is(.ui-empty-state) {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.portal-stage-empty .ui-empty-state__icon {
+  display: none;
+}
+
+.portal-stage-empty .ui-empty-state__title {
+  margin-top: var(--space-3);
+  color: var(--sx-fg);
+}
+
+.portal-stage-empty .ui-empty-state__description {
+  color: var(--text-primary);
 }
 
 .portal-home__title-skeleton {
@@ -5947,18 +6107,81 @@ html:has(.portal-shell) {
 /* "A agência pediu": the open requests for material, each a block with the text, who asked and by when. */
 .portal-requests {
   min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.portal-requests .portal-section__title {
+  font: var(--heading-lg);
+}
+
+.portal-requests__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* The number of requests, with its icon and its word: the same tag as the board's "2 pedidos". */
+.portal-requests__count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font: var(--caption);
+  font-weight: 600;
+}
+
+.portal-requests__count svg {
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .portal-requests__list {
   display: grid;
-  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* A request is a row: the mark, what was asked and by when, and the one action under them. */
 .portal-request {
-  justify-items: start;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+}
+
+.portal-request + .portal-request {
+  border-top: 1px solid var(--border-default);
+}
+
+.portal-request > .ui-button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.portal-request__icon {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-md);
+  background: var(--block-indigo-bg);
+  color: var(--block-indigo-fg);
+}
+
+.portal-request__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .portal-request__body {
@@ -6051,7 +6274,7 @@ html:has(.portal-shell) {
 
 .portal-skeleton h1 {
   margin: 0;
-  font: var(--heading-xl);
+  font: var(--display-lg);
   letter-spacing: -0.02em;
 }
 
@@ -6094,67 +6317,131 @@ html:has(.portal-shell) {
     scroll-padding-bottom: 0;
   }
 
-  .portal-shell > .portal-header {
-    padding: var(--space-4) var(--space-8);
+  /* A wide screen: the side column of the agency's shell. The client, the bar and the person stack in it, the tour card opens beside the bar. */
+  .portal-shell {
+    display: grid;
+    grid-template-columns: 15.5rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .portal-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    box-sizing: border-box;
+    height: 100vh;
+    height: 100dvh;
+    padding: var(--space-6) var(--space-4);
+    border-right: 1px solid var(--border-subtle);
+    background: var(--bg-canvas);
+  }
+
+  .portal-header {
+    display: contents;
+  }
+
+  .portal-header__brand {
+    display: block;
+    order: 0;
+    padding: 0 var(--space-2) var(--space-2);
+  }
+
+  .portal-header__identity {
+    order: 1;
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    background: var(--bg-surface);
+  }
+
+  .portal-header .account-menu {
+    order: 3;
   }
 
   .portal-shell > .portal-content {
-    margin: 0 auto;
-    padding: var(--space-6) var(--space-8) var(--space-12);
-    order: 2;
+    max-width: 80rem;
+    margin: 0;
+    padding: var(--space-8) var(--space-8) var(--space-12);
   }
 
-  /* On a wide screen the bar is the tabs under the header, and the tour card hangs from it. */
-  .portal-shell > .portal-nav {
-    position: sticky;
-    top: 0;
+  .portal-nav {
+    position: relative;
     bottom: auto;
-    order: 1;
+    z-index: auto;
+    flex: 1;
+    min-height: 0;
+    background: transparent;
     border-top: 0;
-    border-bottom: 1px solid var(--border-default);
+    padding-bottom: 0;
+  }
+
+  .portal-nav__title {
+    display: block;
+    padding: var(--space-4) var(--space-3) var(--space-2);
   }
 
   .portal-nav ul {
-    grid-template-columns: repeat(4, 8rem);
-    justify-content: center;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
   }
 
   .portal-nav a {
-    grid-auto-flow: column;
-    justify-content: center;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-3);
     min-height: 2.75rem;
-    font: var(--body-md);
+    padding: 0 var(--space-3);
+    font: var(--label-md);
+    text-align: left;
   }
 
-  .portal-nav a[aria-current='page']::before {
-    top: auto;
-    bottom: 0;
-    width: 100%;
+  .portal-nav a svg {
+    flex: none;
+    width: 1.25rem;
+    height: 1.25rem;
   }
 
   .portal-nav .portal-tour:not([data-step='welcome']) {
-    top: 100%;
+    inset-inline: calc(100% + var(--space-6)) auto;
+    top: 0;
     bottom: auto;
-    margin: var(--space-2) auto 0;
+    width: 22rem;
+    margin: 0;
   }
 
   .portal-home {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    column-gap: var(--space-12);
+    gap: var(--space-6);
     align-items: start;
   }
 
-  .portal-home__greeting {
+  .portal-home__greeting,
+  .portal-hero,
+  .portal-home__calm {
     grid-column: 1 / -1;
+  }
+
+  .portal-home__main:empty + .portal-home__week {
+    grid-column: 1 / -1;
+  }
+
+  .portal-hero {
+    gap: var(--space-6);
+    padding: var(--space-8);
+  }
+
+  .portal-hero .portal-covers {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-4);
   }
 
   .portal-action {
     width: auto;
     justify-self: start;
-  }
-
-  .portal-covers {
-    grid-template-columns: repeat(2, minmax(0, 12rem));
   }
 }
 
@@ -6171,10 +6458,36 @@ html:has(.portal-shell) {
   margin: 0;
 }
 
+.portal-contents h1.portal-headline {
+  font: var(--display-lg);
+}
+
+/* What waits is the lilac block of the Início: the posts are white cards on it. With nothing waiting it is the teal block of its own stage. */
 .portal-awaiting {
   display: grid;
   gap: var(--space-3);
   min-width: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--bg-tint);
+}
+
+.portal-awaiting:has(.portal-stage-empty) {
+  padding: 0;
+  background: transparent;
+}
+
+.portal-awaiting .portal-section__title {
+  font: var(--heading-lg);
+}
+
+.portal-awaiting:has(.portal-stage-empty) .portal-section__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .portal-awaiting__skeleton {
@@ -6197,6 +6510,9 @@ html:has(.portal-shell) {
   align-content: start;
   gap: var(--space-1);
   min-width: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
 }
 
 .portal-awaiting__title,
@@ -6303,6 +6619,14 @@ html:has(.portal-shell) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
+  padding: var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+}
+
+.portal-contents__toggle .ui-button {
+  border-radius: var(--radius-full);
 }
 
 .portal-contents__period .ui-button,
@@ -6375,9 +6699,9 @@ html:has(.portal-shell) {
   display: grid;
   grid-template-columns: 4rem minmax(0, 1fr);
   gap: var(--space-3);
-  padding: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   color: var(--text-primary);
 }
@@ -6442,6 +6766,8 @@ html:has(.portal-shell) {
 }
 
 .portal-post h1 {
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
 
@@ -6530,18 +6856,33 @@ html:has(.portal-shell) {
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
   min-width: 0;
+  order: 1;
 }
 
+/* The picture on its tinted stage, the caption under it, all in one white card of the board. */
 .portal-post__card {
   display: grid;
+  gap: var(--space-4);
   min-width: 0;
+  padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
 .portal-post__caption-block {
-  padding: var(--space-3) var(--space-4) var(--space-4);
+  padding: 0;
+}
+
+.portal-post__eyebrow {
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.portal-post .portal-post__eyebrow {
+  font: var(--caption);
 }
 
 .portal-post__section {
@@ -6582,6 +6923,7 @@ html:has(.portal-shell) {
   position: sticky;
   bottom: 0;
   z-index: 4;
+  order: 2;
   display: grid;
   gap: var(--space-2);
   min-width: 0;
@@ -6601,6 +6943,46 @@ html:has(.portal-shell) {
   padding-inline: var(--space-3);
 }
 
+/* On a phone the answer is the deadline and the note above the post, and the bar at the foot: the wrapper only groups them for the wide screen. */
+.portal-post__decide {
+  display: contents;
+}
+
+.portal-post__decide .approval-round {
+  gap: var(--space-3);
+}
+
+.portal-post__decide .approval-round__due {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font: var(--title-md);
+  font-weight: 700;
+}
+
+.portal-post__decide .approval-round__due .ui-icon {
+  color: inherit;
+}
+
+.portal-post__decide .approval-round__note {
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.portal-post__decide .approval-round__author {
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.portal-post__decide .approval-round__text {
+  font: var(--body-lg);
+}
+
 /* The section already has its title; the conversation's own is kept for assistive technology only, and its rule is not needed under a title. */
 .portal-post .conversation {
   padding-top: 0;
@@ -6614,6 +6996,31 @@ html:has(.portal-shell) {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* The conversation of the post in bubbles: the agency's on the left, the person's on the right. The side is still said by the author's name. */
+.portal-post .conversation__comment {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+}
+
+.portal-post .conversation__comment--client {
+  justify-self: end;
+  max-width: 92%;
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-sm);
+  background: var(--bg-tint);
+}
+
+.portal-post .conversation__comment-meta {
+  font: var(--body-md);
+}
+
+.portal-post .conversation__comment-author {
+  font: var(--label-md);
 }
 
 .portal-post__title-skeleton {
@@ -6631,7 +7038,7 @@ html:has(.portal-post__bar) {
 
 @media (max-width: 47.99rem) {
   /* The post is the whole screen: the way back is the link on top. The tour points at the bar, so it keeps the bar while it is open. */
-  .portal-shell:has(.portal-post):not(:has(.portal-tour)) > .portal-nav {
+  .portal-shell:has(.portal-post):not(:has(.portal-tour)) .portal-nav {
     display: none;
   }
 
@@ -6646,28 +7053,58 @@ html:has(.portal-post__bar) {
 }
 
 @media (min-width: 48rem) {
+  /* The post and its answer side by side: the picture and the conversation on the left, the card "Sua resposta" on the right, held in view while the page scrolls. */
+  .portal-post {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+    grid-auto-flow: row dense;
+    align-items: start;
+    column-gap: var(--space-6);
+  }
+
+  .portal-post > :not(.portal-post__body, .portal-post__decide) {
+    grid-column: 1 / -1;
+  }
+
   .portal-post__body {
+    grid-column: 1;
+  }
+
+  /* Without an answer to give (approved, published, adjusting) the post keeps its own two columns. */
+  .portal-post:not(:has(.portal-post__decide)) .portal-post__body {
+    grid-column: 1 / -1;
     grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
     align-items: start;
     column-gap: var(--space-8);
   }
 
-  /* The card and the bar share a short wide screen: the picture leaves room for the controls under it. */
+  .portal-post__decide {
+    position: sticky;
+    top: var(--space-4);
+    grid-column: 2;
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-6);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-xl);
+    background: var(--bg-surface);
+  }
+
+  /* The picture leaves room for its controls under it. */
   .portal-post__card .portal-media__item {
-    max-height: 28rem;
+    max-height: 32rem;
   }
 
   .portal-post__bar {
-    bottom: var(--space-4);
+    position: static;
+    order: 0;
     margin-inline: 0;
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
+    padding: 0;
+    border: 0;
+    background: transparent;
   }
 
   .portal-post__bar .portal-post__actions {
-    grid-template-columns: repeat(2, minmax(0, 12rem));
-    justify-content: end;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -6689,14 +7126,19 @@ html:has(.portal-post__bar) {
   touch-action: pan-y;
 }
 
-/* In the card the picture is its top, flush with the border. */
+/* In the card the picture sits on a lilac stage, with a soft shadow under it, as on the board. */
 .portal-post__card .portal-media__stage {
-  border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
+  padding: var(--space-4);
+  background: var(--bg-tint);
 }
 
-.portal-post__card .portal-media__controls,
+.portal-post__card .portal-media__item {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+}
+
 .portal-post__card .portal-media__strip {
-  margin-inline: var(--space-3);
+  padding: var(--space-1);
 }
 
 /* What the agency asked of the client: until when and the note, signed by the agency. Plain text on the page, no box of its own. */
@@ -6744,6 +7186,11 @@ html:has(.portal-post__bar) {
 }
 
 /* In a grid of covers the note is a preview: three lines, and the post has the whole of it. */
+.portal-awaiting__item .approval-round__due,
+.portal-awaiting__item .approval-round__text {
+  font: var(--caption);
+}
+
 .portal-awaiting__item .approval-round__text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -6813,7 +7260,7 @@ html:has(.portal-post__bar) {
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--bg-hover);
   color: var(--text-secondary);
   font: var(--label-sm);
@@ -6840,10 +7287,21 @@ html:has(.portal-post__bar) {
   gap: var(--space-6);
 }
 
+.portal-brand .portal-headline {
+  font: var(--display-lg);
+}
+
+/* Each part of the study is a white card of the board. */
+.portal-brand > .brand-section {
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
 .portal-brand .brand-section__header h2 {
   margin: 0;
-  font: var(--body-md);
-  font-weight: 600;
+  font: var(--heading-lg);
 }
 
 .portal-brand__pending {
@@ -6878,7 +7336,7 @@ html:has(.portal-post__bar) {
   padding: var(--space-4);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  background: var(--bg-surface);
+  background: var(--bg-canvas);
 }
 
 .portal-persona__name {
@@ -10242,9 +10700,35 @@ html:has(.portal-post__bar) {
 
 .approval__title {
   margin: 0;
-  font: var(--heading-xl);
+  font: var(--display-lg);
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
+}
+
+/* The round of the approval: the deadline in the violet pill and the note in a bubble of the agency, as on the post of the portal. */
+.approval .approval-round {
+  gap: var(--space-3);
+}
+
+.approval .approval-round__due {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font: var(--label-md);
+  font-weight: 700;
+}
+
+.approval .approval-round__due .ui-icon {
+  color: inherit;
+}
+
+.approval .approval-round__note {
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
 }
 
 .approval__lead,
@@ -10291,7 +10775,7 @@ html:has(.portal-post__bar) {
   gap: var(--space-2);
   padding: var(--space-6) var(--space-4);
   border: 1px dashed var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
   text-align: center;
 }
@@ -10299,6 +10783,23 @@ html:has(.portal-post__bar) {
 .approval__empty .approval__empty-title {
   color: var(--text-primary);
   font: var(--label-md);
+}
+
+/* Nothing left to decide is good news: the teal block with its loose 3D icon, as in the portal. */
+.approval__empty--done {
+  --ui-stage-bg: var(--block-teal-bg);
+  justify-items: center;
+  border: 0;
+  background: var(--ui-stage-bg);
+}
+
+.approval__empty--done .approval__empty-title {
+  color: var(--block-teal-fg);
+  font: var(--heading-lg);
+}
+
+.approval__empty--done p {
+  color: var(--text-primary);
 }
 
 .approval__list {
@@ -10352,7 +10853,7 @@ html:has(.portal-post__bar) {
   min-width: 0;
   padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
@@ -10364,7 +10865,7 @@ html:has(.portal-post__bar) {
 
 .approval-card__title {
   margin: 0;
-  font: var(--label-md);
+  font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
@@ -10392,6 +10893,9 @@ html:has(.portal-post__bar) {
   display: flex;
   justify-content: center;
   min-width: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tint);
 }
 
 /* The phone is the one of the feed; here the post decides how tall it is, not the 42 rem the empty feed keeps. */

@@ -943,9 +943,11 @@ describe('the post of the portal (#270)', () => {
       await title('Lançamento da primavera');
       expect(within(bar()).getAllByRole('button').map((button) => button.textContent)).toEqual(['Pedir ajuste', 'Aprovar']);
       expect(within(bar()).getByRole('heading', { level: 2, name: 'Sua decisão' })).toBeTruthy();
-      // The end of the conversation is never under the bar: the bar comes after everything else in the page.
+      // The end of the conversation is never under the bar: the bar is ordered after everything else in the page
+      // (the stylesheet orders it last on the phone) and lives in the decision column of the wide layout.
       const post = container.querySelector('.portal-post') as HTMLElement;
-      expect(post.lastElementChild).toBe(bar());
+      expect(bar().parentElement?.classList.contains('portal-post__decide')).toBe(true);
+      expect(post.contains(bar())).toBe(true);
       expect(post.contains(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }))).toBe(true);
       expect(bar().classList.contains('portal-post__bar')).toBe(true);
     });
@@ -1008,8 +1010,9 @@ describe('the post of the portal (#270)', () => {
       const { container } = await open({ state: 'in_production' });
       await title('Lançamento da primavera');
       const shell = container.querySelector('.portal-shell') as HTMLElement;
-      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'header', 'main', 'nav']);
-      expect(shell.lastElementChild).toBe(screen.getByRole('navigation', { name: 'Navegação do portal' }));
+      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
+      const sidebar = shell.querySelector('.portal-sidebar') as HTMLElement;
+      expect(sidebar.lastElementChild).toBe(screen.getByRole('navigation', { name: 'Navegação do portal' }));
       // jsdom has no layout: the rules that hold a short page's bar at the bottom of a 360 px phone are read from the stylesheet.
       expect(rule('.portal-shell')).toMatch(/min-height:\s*100dvh;/);
       expect(rule('.portal-shell > .portal-content')).toMatch(/flex:\s*1;/);
@@ -1058,6 +1061,11 @@ describe('the post of the portal (#270)', () => {
       throw new Error(`No @media ${query} block holds ${inside} in globals.css.`);
     };
 
+    it('orders the decision bar after the body of the post on the phone, where the bar is the last piece', () => {
+      expect(rule('.portal-post__bar')).toMatch(/order:\s*2;/);
+      expect(rule('.portal-post__body')).toMatch(/order:\s*1;/);
+    });
+
     it('holds the decision bar at the bottom of the screen and keeps a focused control clear of it', () => {
       expect(rule('.portal-post__bar')).toMatch(/position:\s*sticky;/);
       expect(rule('.portal-post__bar')).toMatch(/bottom:\s*0;/);
@@ -1069,7 +1077,7 @@ describe('the post of the portal (#270)', () => {
 
     it('steps the bottom bar of the shell aside while a post is open, except under the tour that points at it', () => {
       const phone = mediaBlock('(max-width: 47.99rem)', '.portal-post__bar');
-      expect(phone).toMatch(/\.portal-shell:has\(\.portal-post\):not\(:has\(\.portal-tour\)\) > \.portal-nav \{\s*display:\s*none;/);
+      expect(phone).toMatch(/\.portal-shell:has\(\.portal-post\):not\(:has\(\.portal-tour\)\) \.portal-nav \{\s*display:\s*none;/);
       expect(phone).toMatch(/\.portal-shell:has\(\.portal-tour\) \.portal-post__bar \{\s*position:\s*static;/);
       expect(phone).toMatch(/\.portal-shell > \.portal-content:has\(\.portal-post__bar\) \{\s*padding-bottom:\s*0;/);
       // On a wide screen the navigation is the tabs under the header and stays: the phone block is the only place that hides it.

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, ChevronRight } from 'lucide-react';
+import { CheckCheck, ChevronRight } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 
 import {
@@ -17,7 +17,7 @@ import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
 import { useAuthSession, useAuthSessionStore } from './auth.js';
 import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
-import { usePortalClient } from './portal.js';
+import { PortalStageEmpty, usePortalClient } from './portal.js';
 import { PortalContentCover } from './portal-content-cover.js';
 import { PortalMaterialRequests } from './portal-material-requests.js';
 import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS, portalPostAddress } from './portal-status.js';
@@ -46,7 +46,7 @@ function PortalAwaiting({ clientId, count }: { clientId: string; count: number }
     })
   });
 
-  return <section className="portal-section portal-home__awaiting" aria-labelledby="portal-home-awaiting-title">
+  return <section className="portal-hero portal-home__awaiting" aria-labelledby="portal-home-awaiting-title">
     <h2 id="portal-home-awaiting-title" className="portal-headline"><Realce>{count} {count === 1 ? 'post' : 'posts'}</Realce> esperando sua aprovação</h2>
     {covers.isPending && covers.errorUpdateCount === 0
       ? <div className="portal-covers" aria-hidden="true"><Skeleton className="portal-covers__skeleton" /><Skeleton className="portal-covers__skeleton" /></div>
@@ -54,18 +54,20 @@ function PortalAwaiting({ clientId, count }: { clientId: string; count: number }
         ? <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar os posts." retrying={covers.isFetching} onRetry={() => { void covers.refetch(); }} />
         : <ul className="portal-covers">
           {covers.data!.data.map((content: PortalContentOpenListItem) => <li key={content.id}>
-            <Link className="portal-cover-link" to={portalPostAddress(clientId, content.id)}>
+            <Link className="portal-cover-link portal-postcard" to={portalPostAddress(clientId, content.id)}>
               <PortalContentCover clientId={clientId} contentId={content.id} assetId={content.thumbnailAssetId} format={content.format} className="portal-cover" />
-              <span className="portal-cover-link__title">{content.title}</span>
-              <span className="portal-meta">
-                <FormatTag format={FORMAT_TONES[content.format]}>{FORMAT_LABELS[content.format]}</FormatTag>
-                <span>{dayLabel(content.publishOn)}</span>
+              <span className="portal-postcard__body">
+                <span className="portal-cover-link__title">{content.title}</span>
+                <span className="portal-meta">
+                  <FormatTag format={FORMAT_TONES[content.format]}>{FORMAT_LABELS[content.format]}</FormatTag>
+                  <span>{dayLabel(content.publishOn)}</span>
+                </span>
+                <ApprovalRound approval={content.approval} showNote={false} />
               </span>
-              <ApprovalRound approval={content.approval} showNote={false} />
             </Link>
           </li>)}
         </ul>}
-    <ButtonLink className="portal-action" as={Link} to={`/portal/${clientId}/conteudos`} size="lg" trailingIcon={<ArrowRight />}>
+    <ButtonLink className="portal-action" as={Link} to={`/portal/${clientId}/conteudos`} size="lg" leadingIcon={<CheckCheck />}>
       {count === 1 ? 'Revisar o post' : `Revisar os ${count} posts`}
     </ButtonLink>
   </section>;
@@ -73,13 +75,15 @@ function PortalAwaiting({ clientId, count }: { clientId: string; count: number }
 
 /** The count of the Início answered and is zero: nothing is waiting for the person's decision. It says nothing about a request for material, which has its own block. */
 function PortalNothingToApprove() {
-  return <EmptyState
-    kind="good-news"
-    className="portal-empty"
-    headingLevel={2}
-    title="Nada para aprovar"
-    description="Quando a agência enviar um post para aprovação, ele aparece aqui."
-  />;
+  return <PortalStageEmpty icon="thumb-up" tone="teal">
+    <EmptyState
+      kind="good-news"
+      className="portal-empty"
+      headingLevel={2}
+      title="Nada para aprovar"
+      description="Quando a agência enviar um post para aprovação, ele aparece aqui."
+    />
+  </PortalStageEmpty>;
 }
 
 /** Nothing waits for the person: the next thing is the answer of the agency, or the study of the brand. */
@@ -125,14 +129,15 @@ function PortalWeek({ clientId }: { clientId: string }) {
               title="Os posts desta semana esperam sua aprovação"
               description="Eles estão no alto desta tela."
             />
-            : <EmptyState
-              mascot
-              className="portal-empty"
-              headingLevel={3}
-              title="Nenhum post planejado para esta semana"
-              description="Quando a agência planejar, os posts aparecem aqui."
-              action={<ButtonLink as={Link} to={`/portal/${clientId}/conteudos`} variant="secondary">Ver o mês</ButtonLink>}
-            />
+            : <PortalStageEmpty icon="calender" tone="sky">
+              <EmptyState
+                className="portal-empty"
+                headingLevel={3}
+                title="Nenhum post planejado para esta semana"
+                description="Quando a agência planejar, os posts aparecem aqui."
+                action={<ButtonLink as={Link} to={`/portal/${clientId}/conteudos`} variant="secondary">Ver o mês</ButtonLink>}
+              />
+            </PortalStageEmpty>
           : <>
             <ul className="portal-rows">
               {shown.map((content) => <li key={content.id}>
@@ -155,10 +160,10 @@ function PortalWeek({ clientId }: { clientId: string }) {
 }
 
 /**
- * The Início (specs/clientes.md §7, issues #141 and #271): greeting by the person's name, what the agency asked for (not there
- * when nothing is open), and one next action — the contents waiting for the client's approval when there are any, otherwise
- * "Nada para aprovar" and the agency's answer or the brand study — then the story script of today, which is not there when the
- * agency sent none, and the week.
+ * The Início (specs/clientes.md §7, issues #141 and #271): greeting by the person's name, then what waits for the client — the
+ * contents waiting for approval when there are any, otherwise "Nada para aprovar" and the agency's answer or the brand study —
+ * then what the agency asked for (not there when nothing is open), the story script of today, which is not there when the agency
+ * sent none, and the week.
  */
 export function PortalHomePage() {
   const client = usePortalClient();
@@ -170,14 +175,14 @@ export function PortalHomePage() {
 
   return <section className="portal-home" aria-labelledby="portal-home-title">
     <h1 id="portal-home-title" className="portal-home__greeting">Olá, {session.user?.name ?? ''}</h1>
+    {awaiting > 0
+      ? <PortalAwaiting clientId={clienteId} count={awaiting} />
+      : <div className="portal-home__calm">
+        <PortalNothingToApprove />
+        <PortalNextAction clientId={clienteId} answered={client.home.threadsAnsweredByAgency} />
+      </div>}
     <div className="portal-home__main">
       <PortalMaterialRequests clientId={clienteId} />
-      {awaiting > 0
-        ? <PortalAwaiting clientId={clienteId} count={awaiting} />
-        : <>
-          <PortalNothingToApprove />
-          <PortalNextAction clientId={clienteId} answered={client.home.threadsAnsweredByAgency} />
-        </>}
       <PortalTodayScripts clientId={clienteId} />
     </div>
     <PortalWeek clientId={clienteId} />

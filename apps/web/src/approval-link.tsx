@@ -18,7 +18,7 @@ import {
   type PortalContentMediaUrlResponse,
   type PortalApprovalRequestChangesRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, ButtonLink, FieldMessage, FormatTag, LiveStatus, Logo, Skeleton, StatusTag } from '@ageniza/ui';
+import { Avatar, Button, ButtonLink, FieldMessage, FormatTag, LiveStatus, Logo, Skeleton, Stage3D, StatusTag } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { ApprovalRound } from './approval-deadline.js';
@@ -515,7 +515,8 @@ function ReadyView({ batch, link }: { batch: PortalApprovalBatch; link: Approval
     <section className="approval__section" aria-labelledby="approval-pending-title">
       <h2 id="approval-pending-title" className="approval__heading">Para aprovar{pending.length > 0 && ` (${pending.length})`}</h2>
       {pending.length === 0
-        ? <div className="approval__empty">
+        ? <div className={batch.contents.length === 0 ? 'approval__empty' : 'approval__empty approval__empty--done'} data-stage-host>
+          {batch.contents.length > 0 && <Stage3D src="/3d/thumb-up.png" tone="teal" size="xl" />}
           <p className="approval__empty-title">{batch.contents.length === 0 ? MESSAGES.emptyBatch : MESSAGES.nothingToApprove}</p>
           {batch.contents.length > 0 && <p>{MESSAGES.nothingLead}</p>}
         </div>
