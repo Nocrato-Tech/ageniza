@@ -114,6 +114,8 @@ interface Scenario {
   readonly contents?: ReturnType<typeof createPortalContentsApi>;
   /** The requests for material of the portal; none by default, as a client the agency asked nothing of. */
   readonly materialRequests?: ReturnType<typeof createPortalMaterialRequestsApi>;
+  /** The requests of the other client the same person belongs to; none by default. */
+  readonly otherMaterialRequests?: ReturnType<typeof createPortalMaterialRequestsApi>;
 }
 
 const makeFetch = (scenario: Scenario = {}) => {
@@ -132,6 +134,8 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (answered !== undefined) return answered;
     }
     if (/^\/clients\/[^/]+\/material-requests$/.test(path) && !path.includes(CLIENT_ID)) {
+      const other = path.includes(OTHER_CLIENT_ID) ? scenario.otherMaterialRequests?.handle(url, method) : undefined;
+      if (other !== undefined) return other;
       return json({ data: [], meta: { page: 1, pageSize: 20, totalItems: 0, totalPages: 1 } });
     }
     const materialBody = typeof init?.body === 'string' ? JSON.parse(init.body) as unknown : undefined;
@@ -1228,13 +1232,19 @@ describe('the Início: approvals and the script of today (#271)', () => {
     it('shows only the requests of the client of the address, for a person who belongs to two clients', async () => {
       const api = materialApi();
       api.seed({ body: 'Envie 3 fotos da equipe' });
-      const { probe } = renderPortal(makeFetch({ materialRequests: api }).impl);
-      await screen.findByRole('region', { name: 'A agência pediu' });
+      const other = createPortalMaterialRequestsApi(OTHER_CLIENT_ID);
+      other.seed({ body: 'Mande o cardápio do outro cliente' });
+      const { probe } = renderPortal(makeFetch({ materialRequests: api, otherMaterialRequests: other }).impl);
+      await screen.findByText('Envie 3 fotos da equipe');
 
       act(() => { probe.navigate(portalUrl('inicio', OTHER_CLIENT_ID)); });
-      await waitFor(() => expect(screen.queryByRole('region', { name: 'A agência pediu' })).toBeNull());
+      // B's Início has settled once its own request is on screen; only then is the absence of A's request a fact about the rule.
+      expect(await screen.findByText('Mande o cardápio do outro cliente')).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
+      expect(bodiesOf()).toEqual(['Mande o cardápio do outro cliente']);
       expect(screen.queryByText('Envie 3 fotos da equipe')).toBeNull();
       expect(api.calls.filter((call) => call === REQUESTS)).toHaveLength(1);
+      expect(other.calls.filter((call) => call === `GET /clients/${OTHER_CLIENT_ID}/material-requests`)).toHaveLength(1);
     });
 
     it('is the first block of the Início, above what waits for approval', async () => {
