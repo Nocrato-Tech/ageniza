@@ -65,7 +65,19 @@ export const sessionBody = { user: { id: USER, name: 'Pessoa', email: 'pessoa@ex
 export const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 export const failure = (status: number, code: string, message = 'MENSAGEM DO SERVIDOR'): Response => json({ error: { code, message } }, status);
-export const invalidField = (path: string): Response =>
+/** The shared conversation fake still builds threads without `dueOn`; a thread of a content has no deadline, so this says `null` for it. */
+const withDeadlineField = async (response: Response): Promise<Response> => {
+  if (!response.ok) return response;
+  const fill = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(fill);
+    if (value === null || typeof value !== 'object') return value;
+    const copy: Record<string, unknown> = Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, fill(inner)]));
+    if ('lastComment' in copy && !('dueOn' in copy)) copy.dueOn = null;
+    return copy;
+  };
+  return json(fill(await response.json()), response.status);
+};
+export const invalidField =(path: string): Response =>
   json({ error: { code: 'VALIDATION_ERROR', message: 'MENSAGEM DO SERVIDOR', details: { issues: [{ path, code: 'custom', message: 'MENSAGEM DO SERVIDOR' }] } } }, 400);
 
 export const VISUALIZE = 'conteudo.visualizar';
@@ -157,7 +169,7 @@ export const detailOf = (row: Stored) => ({
   id: row.id, clientId: row.clientId, title: row.title, platform: 'instagram', format: row.format, publishOn: row.publishOn,
   publishAtTime: row.publishAtTime, caption: row.caption, folderId: row.folderId, coverAssetId: row.coverAssetId, owner: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' },
   status: row.status, revision: row.revision, approvedBy: null, approvedAt: null, approvedByAgencyReason: null, publishedOn: row.publishedOn,
-  cancelledAt: null, createdAt: '2026-10-01T12:00:00.000Z',
+  cancelledAt: null, createdAt: '2026-10-01T12:00:00.000Z', approval: null,
   media: row.media.map((id, index) => ({ id, position: index + 1 })), tasks: row.tasks.map((status, index) => ({
     id: `b0b0b0b0-0000-4000-8000-${String(index + 1).padStart(12, '0')}`, title: `Subtarefa ${index + 1}`, description: null,
     assignee: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' }, dueOn: '2026-10-15', status, returnComment: null, approvedBy: null, approvedAt: null
@@ -167,7 +179,7 @@ export const detailOf = (row: Stored) => ({
 
 export const listItemOf = (row: Stored) => ({
   id: row.id, title: row.title, platform: 'instagram', format: row.format, publishOn: row.publishOn, publishAtTime: row.publishAtTime,
-  status: row.status, owner: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' }, coverAssetId: row.coverAssetId, thumbnailAssetId: row.coverAssetId ?? row.media[0] ?? null, revision: row.revision, publishedOn: null, tasksTotal: 0, tasksApproved: 0
+  status: row.status, owner: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' }, coverAssetId: row.coverAssetId, thumbnailAssetId: row.coverAssetId ?? row.media[0] ?? null, revision: row.revision, publishedOn: null, tasksTotal: 0, tasksApproved: 0, approval: null
 });
 
 export type ConversationFake = ReturnType<typeof createConversationApi>;
@@ -266,7 +278,7 @@ export const makeFetch = (scenario: Scenario = {}) => {
       return row === undefined ? failure(404, 'NOT_FOUND') : json(clientDetail(row));
     }
     const conversationRoute = /\/agencies\/[^/]+\/clients\/([^/]+)\/threads(?:\/[^/]+\/(?:comments|resolve))?$/.exec(url.pathname);
-    if (conversationRoute !== null) return answerConversation(url, method, body, conversationRoute[1]!);
+    if (conversationRoute !== null) return withDeadlineField(answerConversation(url, method, body, conversationRoute[1]!));
     const media = /\/agencies\/[^/]+\/media\/([^/]+)\/download-url$/.exec(url.pathname);
     if (media !== null) {
       if (!permissions.includes(VISUALIZE)) return failure(403, 'FORBIDDEN');

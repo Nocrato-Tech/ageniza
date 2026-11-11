@@ -10,7 +10,7 @@ import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth } from './client-detail.js';
 import { ContentCover } from './content-cover.js';
 import { dayMonthNameLabel } from './content-dates.js';
-import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, FORMAT_TONES, PLATFORM_LABELS, STATUS_LABELS, STATUS_TAGS, subtaskPercent } from './content-labels.js';
+import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, FORMAT_TONES, PLATFORM_LABELS, STATUS_LABELS, STATUS_TAGS } from './content-labels.js';
 import { useApiClient } from './http.js';
 
 const CAPTION_EXCERPT_LENGTH = 140;
@@ -43,7 +43,6 @@ const lastMessageRow = (query: LastMessage): ReactNode => {
  */
 export function ContentHoverCard({ content, clientId, today, movable }: { content: ContentListItem; clientId: string; today: string; movable: boolean }) {
   const alert = deadlineAlert(content, today);
-  const percent = subtaskPercent(content);
   return <div className="content-hover">
     <ContentCover assetId={content.thumbnailAssetId} format={content.format} className="content-hover__cover" bare={content.thumbnailAssetId === null} />
     <p className="content-hover__title">{`${FORMAT_LABELS[content.format]}: ${content.title}`}</p>
@@ -57,7 +56,6 @@ export function ContentHoverCard({ content, clientId, today, movable }: { conten
       <li><StatusTag status={STATUS_TAGS[content.status]}>{STATUS_LABELS[content.status]}</StatusTag></li>
       {alert === 'overdue' && <li><LateBadge>{DEADLINE_LABELS.overdue}</LateBadge></li>}
       {alert === 'due-soon' && <li className="content-hover__meta">{DEADLINE_LABELS['due-soon']}</li>}
-      {percent !== null && <li className="content-hover__meta">{percent}% das subtarefas</li>}
     </ul>
     {movable && <p className="content-hover__hint">Arraste para outro dia</p>}
   </div>;

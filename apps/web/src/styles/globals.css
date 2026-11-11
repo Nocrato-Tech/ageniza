@@ -2459,6 +2459,18 @@ a.client-general__block:focus-visible {
   font: var(--heading-lg);
 }
 
+.portal-access__last {
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-access__copy {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  max-width: 20rem;
+}
+
 /* Auth form layout: specs/auth.md section 7, the centred single column the auth screens share. */
 .form-panel {
   display: grid;
@@ -7852,6 +7864,52 @@ html:has(.portal-post__bar) {
 }
 
 .content-preview__caption {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* "Como o cliente vê": the post as the portal shows it, inside the content modal. */
+.client-view {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.client-view__post {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 32rem;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
+}
+
+.client-view__title {
+  margin: 0;
+  font: var(--heading-md);
+  overflow-wrap: anywhere;
+}
+
+.client-view__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  list-style: none;
+}
+
+.client-view__hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.client-view__caption {
   margin: 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
