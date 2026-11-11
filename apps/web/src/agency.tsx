@@ -13,9 +13,9 @@ import { apiPath } from './api-path.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { ActivationPath, useActivationFacts } from './activation-path.js';
-import { AwaitingClient } from './awaiting-client.js';
+import { AwaitingClient, AwaitingSummary } from './awaiting-client.js';
 import { InvitationNotice } from './invitation-notice.js';
-import { MilestoneCelebration } from './milestone-celebration.js';
+import { AgencyMilestones, MilestoneCelebration } from './milestone-celebration.js';
 import { LegalNotice } from './legal-notice.js';
 import { PLAN_RENEWAL_REASON, TrialNotice } from './plan-notice.js';
 import { StatusPanel } from './status-panel.js';
@@ -169,7 +169,11 @@ export function AgencyHomePage() {
     <h1 id="agency-home-title">{agency.agencyName}</h1>
     <MilestoneCelebration agencyId={agency.agencyId} facts={activation.facts} />
     <ActivationPath facts={activation.pathFacts} firstClientId={activation.firstClientId} />
-    {canSeeContents && <AwaitingClient agencyId={agency.agencyId} />}
+    {canSeeContents && <AwaitingSummary agencyId={agency.agencyId} />}
+    {canSeeContents && <div className="agency-home__panels">
+      <AwaitingClient agencyId={agency.agencyId} />
+      <AgencyMilestones facts={activation.pathFacts} />
+    </div>}
     {shortcuts.length === 0
       ? <EmptyState
           className="agency-home__empty"

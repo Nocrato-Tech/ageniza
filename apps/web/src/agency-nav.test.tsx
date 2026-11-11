@@ -130,8 +130,19 @@ describe('agency side navigation (#628)', () => {
   it('keeps the context link at the top, with the agency name', async () => {
     renderAt(`/agencia/${AGENCY}`);
     const aside = await sidebar();
-    expect(within(aside).getByText('Contexto ativo')).toBeTruthy();
+    expect(within(aside).getByText('Agência logada')).toBeTruthy();
+    expect(within(aside).queryByText('Contexto ativo')).toBeNull();
     expect(within(aside).getByRole('link', { name: 'Agência Um' }).getAttribute('href')).toBe(`/agencia/${AGENCY}`);
+  });
+
+  it('calls the context "Agência logada" in the account menu too, with the name of the agency', async () => {
+    renderAt(`/agencia/${AGENCY}`);
+    const aside = await sidebar();
+    fireEvent.click(within(aside).getByRole('button', { name: /Pessoa/ }));
+    const menu = await screen.findByRole('menu');
+    const context = within(menu).getByRole('group', { name: 'Agência logada' });
+    expect(within(context).getByText('Agência Um')).toBeTruthy();
+    expect(within(menu).queryByText('Contexto ativo')).toBeNull();
   });
 
   it('opens at full width with the logo on every screen but the calendar', async () => {

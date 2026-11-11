@@ -261,5 +261,71 @@ describe('who sees it', () => {
     await new Promise<void>((resolve) => { setTimeout(resolve, 100); });
     expect(screen.queryByRole('heading', { name: 'Parado no cliente' })).toBeNull();
     expect(calls).toHaveLength(0);
+    expect(screen.queryByRole('list', { name: SUMMARY })).toBeNull();
+  });
+});
+
+const SUMMARY = 'Resumo do que espera o cliente';
+const cardOf = (label: RegExp): HTMLElement => within(screen.getByRole('list', { name: SUMMARY })).getByText(label).closest('li')!;
+
+describe('the summary cards above the list', () => {
+  it('counts what waits for a client and what is past its deadline, each with the way to act on it', async () => {
+    const { calls } = await mount({ groups: TWO_CLIENTS });
+    expect(await screen.findByRole('list', { name: SUMMARY })).toBeTruthy();
+    const waiting = within(cardOf(/^Esperando/));
+    expect(waiting.getByText('3')).toBeTruthy();
+    expect(waiting.getByText('conteúdos aguardando aprovação')).toBeTruthy();
+    expect(waiting.getByRole('link', { name: 'Abrir o calendário' }).getAttribute('href')).toBe(`/agencia/${AGENCY}/conteudos`);
+    const late = within(cardOf(/^Atrasados/));
+    expect(late.getByText('1')).toBeTruthy();
+    expect(late.getByText('o prazo venceu sem resposta')).toBeTruthy();
+    expect(late.getByRole('link', { name: 'Abrir o mais atrasado' }).getAttribute('href')).toBe(`/agencia/${AGENCY}/conteudos/${CLINICA}/${cid(1)}?data=2026-10-20`);
+    // The cards and the list below share one read.
+    expect(calls).toHaveLength(1);
+  });
+
+  it('opens the most overdue content of all clients, and carries the state of the carteira', async () => {
+    const groups: Group[] = [
+      { clientId: CLINICA, clientName: 'Clínica Vida', contents: [item({ id: cid(1), title: 'Há pouco', daysToDue: -1, publishOn: '2026-10-20' })] },
+      { clientId: PADARIA, clientName: 'Padaria Trigo Bom', contents: [item({ id: cid(2), title: 'Faz tempo', daysToDue: -9, publishOn: '2026-10-17' }), item({ id: cid(3), title: 'No prazo', daysToDue: 4 })] }
+    ];
+    const { probe } = await mount({ groups });
+    await screen.findByRole('list', { name: SUMMARY });
+    expect(within(cardOf(/^Atrasados/)).getByText('2')).toBeTruthy();
+    fireEvent.click(within(cardOf(/^Atrasados/)).getByRole('link', { name: 'Abrir o mais atrasado' }));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY}/conteudos/${PADARIA}/${cid(2)}`));
+    expect(probe.search).toBe('?data=2026-10-17');
+    expect(probe.state).toEqual(STATE);
+  });
+
+  it('shows no card for the late ones when no deadline has passed: a number with nothing to act on is not shown', async () => {
+    await mount({ groups: [{ clientId: CLINICA, clientName: 'Clínica Vida', contents: [item({ id: cid(1), title: 'Post', daysToDue: 3 })] }] });
+    await screen.findByRole('list', { name: SUMMARY });
+    expect(within(cardOf(/^Esperando/)).getByText('conteúdo aguardando aprovação')).toBeTruthy();
+    expect(screen.queryByText(/^Atrasados/)).toBeNull();
+  });
+
+  it('says it is a floor when the API cut the list', async () => {
+    await mount({ groups: TWO_CLIENTS, truncated: true });
+    await screen.findByRole('list', { name: SUMMARY });
+    expect(within(cardOf(/^Esperando/)).getByText('3+')).toBeTruthy();
+  });
+
+  it('shows no card when nothing waits: the good news is the list\'s', async () => {
+    await mount({ groups: [] });
+    expect(await within(await section()).findByRole('heading', { name: 'Nada parado no cliente', level: 3 })).toBeTruthy();
+    expect(screen.queryByRole('list', { name: SUMMARY })).toBeNull();
+  });
+
+  it('shows no card when the list did not answer, so a gap is never read as a zero', async () => {
+    await mount({ answer: () => json({ error: { code: 'INTERNAL_ERROR', message: 'x' } }, 500), groups: TWO_CLIENTS });
+    expect(await within(await section()).findByRole('alert')).toBeTruthy();
+    expect(screen.queryByRole('list', { name: SUMMARY })).toBeNull();
+  });
+
+  it('shows no card while the list loads', async () => {
+    await mount({ answer: () => new Promise<Response>(() => undefined) as unknown as Response });
+    expect(document.querySelector('.awaiting-client__skeleton')).not.toBeNull();
+    expect(screen.queryByRole('list', { name: SUMMARY })).toBeNull();
   });
 });

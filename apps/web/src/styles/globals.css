@@ -3246,24 +3246,49 @@ a.client-general__block:focus-visible {
 }
 
 .agency-sidebar__context {
-  display: grid;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
-  gap: var(--space-1);
-  padding: 0 var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.agency-sidebar__context:hover {
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
+}
+
+.agency-sidebar__context-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
 }
 
 .agency-sidebar__context-label {
-  color: var(--text-muted);
-  font: var(--label-sm);
+  color: var(--text-secondary);
+  font: var(--caption);
 }
 
 .agency-sidebar__context-name {
   overflow: hidden;
   color: var(--text-primary);
   font: var(--label-md);
+  font-weight: 600;
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The whole box is the link to the agency's Início. */
+.agency-sidebar__context-name::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 
 .agency-nav {
@@ -3275,8 +3300,10 @@ a.client-general__block:focus-visible {
 .agency-nav__group-title {
   margin: 0;
   padding: var(--space-4) var(--space-3) var(--space-2);
-  color: var(--text-muted);
-  font: var(--label-sm);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .agency-nav ul {
@@ -3306,25 +3333,32 @@ a.client-general__block:focus-visible {
 }
 
 .agency-nav a:hover {
-  background: var(--bg-surface);
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
 .agency-nav a[aria-current='page'] {
-  background: var(--bg-surface);
-  box-shadow: inset 0 0 0 1px var(--border-subtle);
-  color: var(--text-primary);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+  font-weight: 600;
+}
+
+.agency-nav a[aria-current='page'] svg {
+  color: var(--color-indigo-600);
 }
 
 .agency-sidebar__foot {
   padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
 }
 
 .account-menu--sidebar {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
 }
 
 .account-menu--sidebar .ui-menu {
@@ -3337,7 +3371,8 @@ a.client-general__block:focus-visible {
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+  border-radius: var(--radius-full);
   text-align: left;
 }
 
@@ -3437,6 +3472,9 @@ a.client-general__block:focus-visible {
 
   .agency-sidebar[data-collapsed='true'] .account-menu--sidebar {
     justify-content: center;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
   }
 
   .agency-sidebar[data-collapsed='true'] .ui-menu {
@@ -3543,6 +3581,12 @@ a.client-general__block:focus-visible {
     border-top: 0;
   }
 
+  .account-menu--sidebar {
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+  }
+
   .account-menu--sidebar .ui-menu__trigger {
     padding: var(--space-2);
   }
@@ -3576,12 +3620,28 @@ a.client-general__block:focus-visible {
   text-align: center;
 }
 
-/* Parado no cliente: what waits for a client, by client; the state of the deadline is an icon and words, never only a colour. */
+.agency-home__panels {
+  display: grid;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.agency-home__panels:has(> .agency-milestones) {
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+}
+
+@media (max-width: 80rem) {
+  .agency-home__panels:has(> .agency-milestones) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Parado no cliente: what waits for a client, by client, in rounded rows; the state of the deadline is a tag with an icon and words, never only a colour. */
 .awaiting-client {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
   min-width: 0;
-  padding: var(--space-4);
+  padding: var(--space-6);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
@@ -3590,21 +3650,44 @@ a.client-general__block:focus-visible {
 .awaiting-client__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-1) var(--space-3);
 }
 
-.awaiting-client__title {
-  margin: 0;
-  font: var(--heading-md);
+.awaiting-client__heading {
+  display: grid;
+  gap: var(--space-1);
 }
 
-.awaiting-client__count,
+.awaiting-client__title {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.awaiting-client__hint,
 .awaiting-client__more {
   margin: 0;
   color: var(--text-secondary);
   font: var(--body-md);
+}
+
+.awaiting-client__count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font: var(--caption);
+  font-weight: 600;
+}
+
+.awaiting-client__count svg {
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .awaiting-client__skeleton {
@@ -3621,12 +3704,23 @@ a.client-general__block:focus-visible {
 }
 
 .awaiting-client__clients {
-  gap: var(--space-4);
+  gap: var(--space-5);
+}
+
+.awaiting-client__items {
+  gap: var(--space-2);
 }
 
 .awaiting-client__group {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.awaiting-client__who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -3648,18 +3742,24 @@ a.client-general__block:focus-visible {
   align-items: center;
   gap: var(--space-1) var(--space-3);
   min-height: 2.75rem;
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
   color: var(--text-primary);
   text-decoration: none;
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard);
 }
 
-.awaiting-client__item:hover .awaiting-client__item-title {
-  text-decoration: underline;
+.awaiting-client__item:hover {
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
 }
 
 .awaiting-client__item-title {
-  font: var(--label-md);
+  font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
@@ -3676,6 +3776,133 @@ a.client-general__block:focus-visible {
 .awaiting-client__item .approval-state {
   grid-column: 2;
   grid-row: 1 / span 2;
+  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font-weight: 600;
+}
+
+.awaiting-client__item .approval-state .ui-icon {
+  color: inherit;
+}
+
+.awaiting-client__item .approval-state--expired {
+  background: var(--status-late-bg);
+  color: var(--status-late-text);
+}
+
+/* The summary cards above it: a colour family per card, the 3D icon on its stage leaving by the top, a number and the way forward. */
+.home-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-8) var(--space-4);
+  margin: 0;
+  padding: var(--space-4) 0 0;
+  list-style: none;
+}
+
+.home-summary__card {
+  --b-bg: var(--block-slate-bg);
+  --b-fg: var(--block-slate-fg);
+  --ui-stage-bg: var(--b-bg);
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: var(--space-1);
+  min-height: 11.5rem;
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--b-bg);
+  color: var(--b-fg);
+}
+
+.home-summary__card--violet {
+  --b-bg: var(--block-violet-bg);
+  --b-fg: var(--block-violet-fg);
+}
+
+.home-summary__card--red {
+  --b-bg: var(--block-red-bg);
+  --b-fg: var(--block-red-fg);
+}
+
+.home-summary__label,
+.home-summary__number,
+.home-summary__hint {
+  margin: 0;
+}
+
+.home-summary__label {
+  max-width: 62%;
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.home-summary__number {
+  font: var(--stat-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-summary__hint {
+  font: var(--body-md);
+}
+
+.home-summary__action {
+  display: inline-flex;
+  align-items: center;
+  align-self: end;
+  justify-self: start;
+  gap: var(--space-1);
+  min-height: 2.75rem;
+  margin-top: var(--space-3);
+  color: inherit;
+  font: var(--label-md);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.home-summary__action:hover {
+  text-decoration-thickness: 2px;
+}
+
+.home-summary__action svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+
+@media (max-width: 47.99rem) {
+  .home-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-8) var(--space-3);
+  }
+
+  .home-summary__card {
+    min-height: 0;
+    padding: var(--space-4);
+  }
+
+  /* The stage shrinks with the card: its disc, shadow and box all come from `--ss`. */
+  .home-summary__card > .ui-stage {
+    --ss: var(--stage-size-md);
+    right: var(--space-2);
+  }
+
+  .home-summary__label {
+    max-width: 55%;
+  }
+
+  /* "Esperando o cliente" is "Esperando" on a phone; the rest stays for assistive technology. */
+  .home-summary__label-rest {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 .approval-state {
@@ -3709,6 +3936,7 @@ a.client-general__block:focus-visible {
   .awaiting-client__item .approval-state {
     grid-column: 1;
     grid-row: auto;
+    justify-self: start;
   }
 }
 
@@ -9469,8 +9697,135 @@ html:has(.portal-post__bar) {
   margin-top: var(--space-1);
 }
 
-/* Journey "Até a primeira aprovação" of a new agency's Início (decisions 2026-11-06 and 2026-11-10): four steps, each done or pending, the last one the client's. */
+/* Journey "Até a primeira aprovação" of a new agency's Início (decisions 2026-11-06 and 2026-11-10): the rocket and the count on a tinted side, the four steps on the milestone trail. */
 .activation {
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.34fr) minmax(0, 1fr);
+  margin-top: calc(var(--space-8) + var(--space-2));
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.activation__intro {
+  --ui-stage-bg: var(--bg-tint);
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+}
+
+.activation__intro > .ui-stage {
+  margin: -4.5rem 0 var(--space-3) calc(var(--space-2) * -1);
+}
+
+.activation__eyebrow,
+.activation__count {
+  margin: 0;
+}
+
+.activation__eyebrow {
+  font: var(--label-md);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.activation__count {
+  color: var(--text-secondary);
+  font: var(--heading-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.activation__count strong {
+  color: var(--text-primary);
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+}
+
+.activation__progress {
+  appearance: none;
+  width: 100%;
+  height: 0.625rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  accent-color: var(--color-indigo-600);
+}
+
+.activation__progress::-webkit-progress-bar {
+  background: var(--bg-surface);
+}
+
+.activation__progress::-webkit-progress-value {
+  border-radius: var(--radius-full);
+  background: var(--color-indigo-600);
+}
+
+.activation__progress::-moz-progress-bar {
+  border-radius: var(--radius-full);
+  background: var(--color-indigo-600);
+}
+
+.activation__steps {
+  min-width: 0;
+  padding: var(--space-6) var(--space-8);
+}
+
+/* Who does the step: a small tag after the title, never only the colour of the dot. */
+.activation__who {
+  margin-left: var(--space-2);
+  padding: 0.0625rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+  font: var(--caption);
+  font-weight: 600;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+@media (max-width: 80rem) {
+  .activation {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .activation__intro {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--space-6);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+
+  .activation__intro > .ui-stage {
+    grid-row: 1 / span 3;
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .activation__intro {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-6) var(--space-4) var(--space-4);
+  }
+
+  .activation__intro > .ui-stage {
+    grid-row: auto;
+  }
+
+  .activation__steps {
+    padding: var(--space-4);
+  }
+}
+
+/* "Marcos da agência": the compact trail of the first achievements, with the medal on its stage. */
+.agency-milestones {
+  --ui-stage-bg: var(--bg-surface);
   display: grid;
   gap: var(--space-4);
   padding: var(--space-6);
@@ -9479,120 +9834,16 @@ html:has(.portal-post__bar) {
   background: var(--bg-surface);
 }
 
-.activation__header {
+.agency-milestones__head {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.activation__header h2,
-.activation__header p {
-  margin: 0;
-}
-
-.activation__header h2 {
-  font: var(--title-md);
-}
-
-.activation__header p,
-.activation__description,
-.activation__state {
-  color: var(--text-secondary);
-  font: var(--body-md);
-}
-
-.activation__steps {
-  display: grid;
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.activation__step {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  position: relative;
-  gap: var(--space-4);
-}
-
-.activation__progress {
-  width: 100%;
-  height: 0.5rem;
-  accent-color: var(--text-primary);
-}
-
-/* The line that joins a step to the next one, behind the marks. */
-.activation__step:not(:last-child)::before {
-  content: '';
-  position: absolute;
-  top: 2rem;
-  bottom: calc(-1 * var(--space-3));
-  left: calc(1rem - 1px);
-  width: 2px;
-  background: var(--border-default);
-}
-
-.activation__mark {
-  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  position: relative;
-  width: 2rem;
-  height: 2rem;
-  border: 2px solid var(--border-control);
-  border-radius: var(--radius-full);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  font: var(--body-md);
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
-.activation__mark svg {
-  width: 1rem;
-  height: 1rem;
-}
-
-.activation__step[data-done='true'] .activation__mark {
-  border-color: var(--status-ready-fg);
-  color: var(--status-ready-fg);
-}
-
-.activation__step[aria-current='step'] .activation__mark {
-  border-color: var(--text-primary);
-  color: var(--text-primary);
-}
-
-.activation__who {
-  color: var(--text-secondary);
-  font: var(--body-md);
-}
-
-.activation__step[data-owner='client'] .activation__who {
-  color: var(--text-link);
-}
-
-.activation__text {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.activation__title {
-  font: var(--title-md);
-}
-
-@media (max-width: 40rem) {
-  .activation__step {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .activation__step > .ui-button {
-    grid-column: 2;
-    justify-self: start;
-  }
+.agency-milestones__title {
+  margin: 0;
+  font: var(--heading-lg);
 }
 
 /* Milestones: a message that never blocks, and confetti that catches no click and goes away by itself. */
