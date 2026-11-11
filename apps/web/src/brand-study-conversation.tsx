@@ -4,7 +4,7 @@ import { ThreadListResponseSchema, type ClientDetailResponse, type Persona, type
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { clientDetailQueryKey } from './client-detail.js';
-import { Conversation, routesOf, scopeKeyOf, type ConversationScope } from './conversation.js';
+import { awaitsViewer, Conversation, routesOf, scopeKeyOf, type ConversationScope } from './conversation.js';
 import { useApiClient } from './http.js';
 import { SECTION_ORDER, type SectionKey } from './brand-study-model.js';
 
@@ -67,7 +67,7 @@ export function useAwaitingCounts(clientId: string, personas: readonly Persona[]
           response: ThreadListResponseSchema,
           signal
         });
-        return page.data.filter((thread) => thread.lastComment.side !== 'agency').length;
+        return page.data.filter((thread) => awaitsViewer(thread, 'agency')).length;
       }
     }))
   });

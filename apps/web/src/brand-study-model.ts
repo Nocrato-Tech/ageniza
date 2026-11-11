@@ -69,14 +69,14 @@ export const resolveSelection = (params: URLSearchParams, personas: readonly { r
   return { section, personaId: section === 'personas' ? personaId : null };
 };
 
-/** The §3 rule of "filled", per section: a text, one colour, an archetype, one active persona. */
+/** The §3 rule of "filled", per section, as `sectionFilledSql` in the API defines it (the response carries only the total, in `filled`). */
 export const isSectionFilled = (key: SectionKey, study: BrandStudyResponse): boolean => {
   if (key === 'personas') return study.personas.some((persona) => persona.status === 'active');
   const section = study.sections.find((item) => item.key === key);
   if (section === undefined) return false;
   if (key === 'colors') return section.colors !== null && section.colors.length > 0;
   if (key === 'archetype') return section.archetype !== null;
-  return section.body !== null;
+  return (section.body ?? '').trim() !== '';
 };
 
 /** Validation issues carry the field path the API refused; only that field is marked. */

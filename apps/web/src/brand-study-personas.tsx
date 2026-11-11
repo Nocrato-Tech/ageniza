@@ -171,12 +171,15 @@ const PROFILE_CARDS = [['pains', 'Dores'], ['desires', 'Desejos'], ['objections'
  * The profile of one persona: identity on the left, pains, desires and objections in cards, then the persona's
  * conversations. Editing swaps the cards for the form; archiving asks first and goes back to the grid.
  */
-function PersonaProfile({ client, persona, canEdit, backState, headingRef }: {
+function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft, onDraft }: {
   client: ClientDetailResponse;
   persona: Persona;
   canEdit: boolean;
   backState: unknown;
   headingRef: Ref<HTMLHeadingElement>;
+  /** The edit in progress, kept by the section so it outlives the profile when the person goes to another part of the study. */
+  draft: PersonaDraft | null;
+  onDraft: (update: (current: PersonaDraft | null) => PersonaDraft | null) => void;
 }) {
   const blocked = useWriteBlocked();
   const agency = useAgencyContext();
@@ -185,8 +188,6 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef }: {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const archived = persona.status === 'archived';
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<PersonaDraft>(() => draftFromPersona(persona));
   const [nameError, setNameError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
   const [confirmingArchive, setConfirmingArchive] = useState(false);
@@ -203,7 +204,7 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef }: {
       response: PersonaSchema
     }),
     onSuccess: () => {
-      setEditing(false);
+      onDraft(() => null);
       setFormError(undefined);
       invalidateStudyWrites(queryClient, agency.agencyId, client.id);
     },
@@ -237,10 +238,11 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef }: {
 
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
+    if (draft === null) return;
     const problem = nameProblem(draft.name);
     if (problem !== undefined) { setNameError(problem); return; }
     const body = personaChanges(persona, draft);
-    if (Object.keys(body).length === 0) { setEditing(false); return; }
+    if (Object.keys(body).length === 0) { onDraft(() => null); return; }
     save.mutate(body);
   };
 
@@ -249,7 +251,7 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef }: {
     {SECTION_LABELS.personas}
   </Link>;
 
-  if (editing) {
+  if (draft !== null) {
     return <div className="brand-persona">
       {back}
       <h3 ref={headingRef} tabIndex={-1} className="brand-persona__name">{persona.name}</h3>
@@ -258,12 +260,12 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef }: {
         <PersonaFields
           draft={draft}
           nameError={nameError}
-          onChange={(patch) => { setDraft((current) => ({ ...current, ...patch })); setNameError(undefined); setFormError(undefined); }}
+          onChange={(patch) => { onDraft((current) => (current === null ? current : { ...current, ...patch })); setNameError(undefined); setFormError(undefined); }}
         />
         {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
         <div className="form-actions">
           <Button type="submit" loading={save.isPending}>Salvar</Button>
-          <Button type="button" variant="ghost" disabled={save.isPending} onClick={() => { setEditing(false); setDraft(draftFromPersona(persona)); setFormError(undefined); setNameError(undefined); }}>Cancelar</Button>
+          <Button type="button" variant="ghost" disabled={save.isPending} onClick={() => { onDraft(() => null); setFormError(undefined); setNameError(undefined); }}>Cancelar</Button>
         </div>
       </form>
     </div>;
@@ -278,7 +280,7 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef }: {
         {archived && <Pill>Arquivada</Pill>}
         <p className="brand-persona__description">{persona.description ?? NOT_INFORMED}</p>
         {canEdit && !archived && <div className="brand-persona__actions">
-          <Button size="sm" variant="secondary" leadingIcon={<Pencil />} blockedReason={blocked} onClick={() => { setDraft(draftFromPersona(persona)); setEditing(true); setNameError(undefined); }}>Editar</Button>
+          <Button size="sm" variant="secondary" leadingIcon={<Pencil />} blockedReason={blocked} onClick={() => { onDraft(() => draftFromPersona(persona)); setNameError(undefined); }}>Editar</Button>
           <Button size="sm" variant="secondary" blockedReason={blocked} onClick={() => { setFormError(undefined); setConfirmingArchive(true); }}>Arquivar</Button>
         </div>}
         {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
@@ -326,6 +328,7 @@ export function PersonasSection({ client, personas, canEdit, active, selectedId,
   const location = useLocation();
   const [creating, setCreating] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [drafts, setDrafts] = useState<ReadonlyMap<string, PersonaDraft>>(() => new Map());
   const [error, setError] = useState<string | undefined>();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -366,7 +369,16 @@ export function PersonasSection({ client, personas, canEdit, active, selectedId,
   const createDialog = creating && <CreatePersonaDialog client={client} onClose={() => setCreating(false)} />;
 
   if (selected !== null) {
-    return <PersonaProfile key={selected.id} client={client} persona={selected} canEdit={canEdit} backState={location.state} headingRef={headingRef} />;
+    const personaId = selected.id;
+    const onDraft = (update: (current: PersonaDraft | null) => PersonaDraft | null): void => {
+      setDrafts((current) => {
+        const next = update(current.get(personaId) ?? null);
+        const copy = new Map(current);
+        if (next === null) copy.delete(personaId); else copy.set(personaId, next);
+        return copy;
+      });
+    };
+    return <PersonaProfile key={personaId} client={client} persona={selected} canEdit={canEdit} backState={location.state} headingRef={headingRef} draft={drafts.get(personaId) ?? null} onDraft={onDraft} />;
   }
 
   return <PanelLayout conversation={active ? <StudyConversation client={client} subject={{ sectionKey: 'personas' }} subjectLabel={SECTION_LABELS.personas} readOnly={false} /> : null}>

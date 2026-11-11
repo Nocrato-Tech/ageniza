@@ -34,8 +34,8 @@ const sessionBody = { user: { id: '11111111-1111-4111-8111-111111111111', name: 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-const agencyMe = (permissions: readonly string[]) => ({
-  agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions
+const agencyMe = (permissions: readonly string[], readOnly = false) => ({
+  agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly }, permissions
 });
 
 const ADMIN_PERMISSIONS = ['cliente.visualizar', 'cliente.operar', 'cliente.cadastrar', 'cliente.arquivar', 'cliente.convidar_usuario', 'cliente.remover_usuario'];
@@ -124,6 +124,8 @@ const studyOf = (over: Partial<{ filled: number; sections: SectionFixture[]; per
 
 interface Scenario {
   readonly permissions?: readonly string[];
+  /** The plan is read only (a trial that ended): every write control stays on screen but blocked. */
+  readonly planReadOnly?: boolean;
   readonly client?: () => Response | Promise<Response>;
   readonly study?: () => Response | Promise<Response>;
   readonly putSection?: (sectionKey: string, body: unknown) => Response | Promise<Response>;
@@ -149,7 +151,7 @@ const makeFetch = (scenario: Scenario = {}) => {
     const talked = conversation.handle(url, method, init?.body === undefined ? undefined : JSON.parse(String(init.body)));
     if (talked !== undefined) return talked;
     const me = /\/agencies\/([^/]+)\/me$/.exec(path);
-    if (me !== null) return json(agencyMe(permissions));
+    if (me !== null) return json(agencyMe(permissions, scenario.planReadOnly ?? false));
     const section = /\/agencies\/([^/]+)\/clients\/([^/]+)\/brand-study\/sections\/([^/]+)$/.exec(path);
     if (section !== null && method === 'PUT') {
       if (scenario.putSection === undefined) throw new Error(`unexpected PUT ${url}`);
@@ -1412,6 +1414,143 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
     expect(link.getAttribute('href')).toBe(`${studyUrl}?secao=personas&persona=${donaAposentada.id}`);
     fireEvent.click(link);
     expect(await screen.findByRole('heading', { level: 3, name: 'Dona Aposentada' })).toBeTruthy();
+  });
+
+  it('keeps the draft of a persona edit when the person leaves the profile through the index, the way back or the browser', async () => {
+    const { impl } = makeFetch({ study: () => json(twoPersonas()) });
+    const { probe } = renderStudy(impl, { pathname: studyUrl, search: `?secao=personas&persona=${donaMaria.id}` });
+    const profile = await screen.findByRole('heading', { level: 3, name: 'Dona Maria' });
+    fireEvent.click(within(profile.closest<HTMLElement>('.brand-persona')!).getByRole('button', { name: 'Editar' }));
+    const typeInPains = (value: string): void => { fireEvent.change(screen.getByRole('textbox', { name: 'Dores' }), { target: { value } }); };
+    const painsNow = (): string => (screen.getByRole('textbox', { name: 'Dores' }) as HTMLTextAreaElement).value;
+    typeInPains('Fila enorme na hora do almoço');
+
+    // Through the index: another section and back to Personas, which shows the grid; the card opens the form with the text.
+    await openSection('Cores');
+    await openSection('Personas');
+    expect(screen.queryByRole('textbox', { name: 'Dores' })).toBeNull();
+    fireEvent.click(screen.getByRole('link', { name: /Dona Maria/ }));
+    await screen.findByRole('textbox', { name: 'Dores' });
+    expect(painsNow()).toBe('Fila enorme na hora do almoço');
+
+    // Through "Voltar para Personas".
+    typeInPains('Fila enorme e pouco tempo');
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Personas' }));
+    await screen.findByRole('link', { name: /Dona Maria/ });
+    fireEvent.click(screen.getByRole('link', { name: /Dona Maria/ }));
+    await screen.findByRole('textbox', { name: 'Dores' });
+    expect(painsNow()).toBe('Fila enorme e pouco tempo');
+
+    // Through the browser's back: the grid, then forward to the profile.
+    typeInPains('Fila enorme, pouco tempo e preço');
+    await act(async () => { probe.navigate(-1); });
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Dores' })).toBeNull());
+    await act(async () => { probe.navigate(1); });
+    await screen.findByRole('textbox', { name: 'Dores' });
+    expect(painsNow()).toBe('Fila enorme, pouco tempo e preço');
+
+    // Cancelling is what discards it: the next edit starts from the saved text.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    fireEvent.click(within(document.querySelector<HTMLElement>('.brand-persona')!).getByRole('button', { name: 'Editar' }));
+    expect(painsNow()).toBe('Pouco tempo');
+  });
+
+  it('keeps the way back to the roster after archiving from the profile and in the link of an archived persona', async () => {
+    let studyData = studyOf();
+    const { impl } = makeFetch({
+      study: () => json(studyData),
+      archivePersona: (personaId) => {
+        const updated = { ...donaMaria, status: 'archived' as const };
+        studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
+        return json(updated);
+      }
+    });
+    const { probe } = renderStudy(impl, { pathname: studyUrl, search: `?secao=personas&persona=${donaMaria.id}`, state: { clientListUrl: roster } });
+    await screen.findByRole('heading', { level: 3, name: 'Dona Maria' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Arquivar' }));
+    const confirm = screen.getByText('Ela some do portal e as conversas dela ficam somente leitura. Você pode desarquivar depois.').closest('.ui-dialog');
+    fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Arquivar' }));
+    await waitFor(() => expect(probe.search).toBe('?secao=personas'));
+    expect(probe.state).toEqual({ clientListUrl: roster });
+    expect(screen.getByRole('link', { name: 'Voltar para Clientes' }).getAttribute('href')).toBe(roster);
+
+    // The archived list links to the profile of each one without dropping the address either.
+    fireEvent.click(await screen.findByRole('button', { name: 'Arquivadas (2)' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Dona Aposentada' }));
+    await screen.findByRole('heading', { level: 3, name: 'Dona Aposentada' });
+    expect(probe.search).toBe(`?secao=personas&persona=${donaAposentada.id}`);
+    expect(probe.state).toEqual({ clientListUrl: roster });
+  });
+
+  it('blocks every write control with the reason while the plan is read only, and keeps the reading', async () => {
+    const { impl, calls } = makeFetch({ planReadOnly: true, study: () => json(twoPersonas()) });
+    const { container } = renderStudy(impl, { pathname: studyUrl, search: '?secao=personas' });
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    const blocked = (button: HTMLElement): void => {
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.querySelector('.ui-button__tip')?.textContent ?? '').not.toBe('');
+    };
+
+    blocked(screen.getByRole('button', { name: 'Nova persona' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Nova persona' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    fireEvent.click(screen.getByRole('link', { name: /Dona Maria/ }));
+    await screen.findByRole('heading', { level: 3, name: 'Dona Maria' });
+    for (const name of ['Editar', 'Arquivar']) {
+      blocked(within(document.querySelector<HTMLElement>('.brand-persona')!).getByRole('button', { name }));
+      fireEvent.click(within(document.querySelector<HTMLElement>('.brand-persona')!).getByRole('button', { name }));
+    }
+    expect(screen.queryByRole('textbox', { name: 'Dores' })).toBeNull();
+    expect(screen.queryByText('Arquivar Dona Maria?')).toBeNull();
+    expect(screen.getByText('Pouco tempo')).toBeTruthy();
+
+    await openSection('Branding');
+    blocked(within(panelOf(container, 'Branding')).getByRole('button', { name: 'Editar Branding' }));
+    await openSection('Tom de voz');
+    blocked(within(panelOf(container, 'Tom de voz')).getByRole('button', { name: 'Preencher Tom de voz' }));
+    expect(calls.filter((call) => call.startsWith('POST') || call.startsWith('PUT') || call.startsWith('PATCH'))).toEqual([]);
+  });
+
+  it('tells filled from not filled by the icon of each link in the index, not only by the hidden word', async () => {
+    const { impl } = makeFetch();
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    const nav = screen.getByRole('navigation', { name: 'Seções do estudo de marca' });
+    const marks = within(nav).getAllByRole('link').map((link) => [
+      link.querySelector('.brand-index__label')?.textContent,
+      link.querySelector('svg')?.classList.contains('lucide-check') ? 'check' : 'circle',
+      link.textContent?.includes('não preenchida') ? 'no' : 'yes'
+    ]);
+    expect(marks).toEqual([
+      ['Branding', 'check', 'yes'],
+      ['Tom de voz', 'circle', 'no'],
+      ['Cores', 'check', 'yes'],
+      ['Posicionamento', 'circle', 'no'],
+      ['Arquétipo', 'check', 'yes'],
+      ['Personas', 'check', 'yes'],
+      ['Observações', 'circle', 'no']
+    ]);
+  });
+
+  it('counts a text of only spaces as not filled, as the API does', async () => {
+    const study = studyOf();
+    const { impl } = makeFetch({ study: () => json({ ...study, sections: study.sections.map((section) => (section.key === 'branding' ? { ...section, body: '   ' } : section)) }) });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    expect(within(screen.getByRole('navigation', { name: 'Seções do estudo de marca' })).getByRole('link', { name: /^Branding/ }).textContent).toContain('não preenchida');
+  });
+
+  it('mounts the conversations of the open section only: one listing per section and per active persona for the counts, plus the open section\'s own pair', async () => {
+    const { impl, calls } = makeFetch();
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    await waitFor(() => expect(calls.filter((call) => call.startsWith('GET') && call.endsWith('/threads')).length).toBeGreaterThanOrEqual(10));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // 7 sections + 1 active persona for the counts, plus the open and resolved listings of the open section: 10, not 7 x 2 more.
+    expect(calls.filter((call) => call.startsWith('GET') && call.endsWith('/threads'))).toHaveLength(10);
   });
 
   it('draws an empty section as the first-use state, never as good news or a failure', async () => {

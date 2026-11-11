@@ -19,6 +19,8 @@ export function SectionIndex({ active, filled, awaiting }: {
 }) {
   const location = useLocation();
   const listRef = useRef<HTMLUListElement>(null);
+  // The counts arrive after the first paint and widen the links before the open one: centre it again when they do.
+  const widths = SECTION_ORDER.map((key) => awaitingOf(key, awaiting) ?? '-').join(',');
 
   // On a narrow screen the row scrolls: bring the open section into view without moving the page.
   useEffect(() => {
@@ -27,7 +29,7 @@ export function SectionIndex({ active, filled, awaiting }: {
     if (list === null || list === undefined || current === null || current === undefined || list.scrollWidth <= list.clientWidth) return;
     const offset = current.getBoundingClientRect().left - list.getBoundingClientRect().left + list.scrollLeft;
     list.scrollLeft = offset - (list.clientWidth - current.offsetWidth) / 2;
-  }, [active]);
+  }, [active, widths]);
 
   return <nav className="brand-index" aria-label="Seções do estudo de marca">
     <ul className="brand-index__list" ref={listRef}>
