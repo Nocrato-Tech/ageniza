@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SubmitContentsBatchRequestSchema } from '@ageniza/contracts';
+import { invalidDayMessage } from '@ageniza/ui';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
@@ -301,6 +302,36 @@ describe('the send', () => {
     send('Enviar 1 para aprovação');
     expect(await within(batchDialog()).findByText('Escolha um dia de hoje até 90 dias à frente.')).toBeTruthy();
     expect(batches).toHaveLength(0);
+  });
+
+  it.each([
+    ['a year of two digits', '14/10/26'],
+    ['a day that does not exist', '31/02/2026'],
+    ['half a date', '14/10']
+  ])('refuses %s as "Data inválida" on the field, sends nothing and keeps the dialog open with what was typed', async (_name, typed) => {
+    const { batches } = await mount({ rows: [row({ title: 'Um' })] });
+    await openBatch();
+    fireEvent.click(box(/Um/));
+    fireEvent.change(within(batchDialog()).getByLabelText('Aprovar até'), { target: { value: typed } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Recado para o cliente'), { target: { value: 'Até sábado.' } });
+    send('Enviar 1 para aprovação');
+    expect(await within(batchDialog()).findByText(invalidDayMessage)).toBeTruthy();
+    expect(within(batchDialog()).getByLabelText('Aprovar até').getAttribute('aria-invalid')).toBe('true');
+    expect((within(batchDialog()).getByLabelText('Aprovar até') as HTMLInputElement).value).toBe(typed);
+    expect((within(batchDialog()).getByLabelText('Recado para o cliente') as HTMLTextAreaElement).value).toBe('Até sábado.');
+    expect(box(/Um/).checked).toBe(true);
+    expect(batches).toHaveLength(0);
+  });
+
+  it('still sends no dueOn when the field was typed into and then emptied', async () => {
+    const { batches } = await mount({ rows: [row({ title: 'Um' })] });
+    await openBatch();
+    fireEvent.click(box(/Um/));
+    fireEvent.change(within(batchDialog()).getByLabelText('Aprovar até'), { target: { value: '14/10/26' } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Aprovar até'), { target: { value: '' } });
+    send('Enviar 1 para aprovação');
+    await waitFor(() => expect(batches).toHaveLength(1));
+    expect(batches[0]!.body).toEqual({ contentIds: expect.any(Array) });
   });
 
   it('asks before it closes with something chosen, and closes at once with nothing', async () => {

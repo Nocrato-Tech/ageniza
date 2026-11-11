@@ -14,7 +14,7 @@ import {
   type SubmitContentRequest,
   type SubmitContentsBatchRequest
 } from '@ageniza/contracts';
-import { Button, DatePicker, Dialog, Field, FieldMessage, FormatTag, Textarea } from '@ageniza/ui';
+import { Button, DatePicker, Dialog, Field, FieldMessage, FormatTag, invalidDayMessage, Textarea } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -137,6 +137,8 @@ export function ApprovalSubmitDialog({ target, onClose, onSent, onBusyChange }: 
   const batch = target.kind === 'batch';
 
   const [dueOn, setDueOn] = useState('');
+  // The field holds text that is not a day: `dueOn` is '' then too, and sending it as "no deadline" would drop what the person meant.
+  const [dueInvalid, setDueInvalid] = useState(false);
   const [note, setNote] = useState('');
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [refusal, setRefusal] = useState<Refusal | undefined>();
@@ -203,7 +205,7 @@ export function ApprovalSubmitDialog({ target, onClose, onSent, onBusyChange }: 
     event.preventDefault();
     if (sending.current) return;
     const found = {
-      dueOn: dueProblem(dueOn, today),
+      dueOn: dueInvalid ? invalidDayMessage : dueProblem(dueOn, today),
       note: noteProblem(note),
       pick: batch && chosen.length === 0 ? 'Escolha ao menos um conteúdo.' : undefined
     };
@@ -217,7 +219,7 @@ export function ApprovalSubmitDialog({ target, onClose, onSent, onBusyChange }: 
     });
   };
 
-  const dirty = dueOn !== '' || note !== '' || picked.size > 0;
+  const dirty = dueOn !== '' || dueInvalid || note !== '' || picked.size > 0;
   const label = batch ? (chosen.length === 0 ? 'Enviar para aprovação' : `Enviar ${chosen.length} para aprovação`) : 'Enviar para aprovação';
 
   return <Dialog
@@ -269,6 +271,7 @@ export function ApprovalSubmitDialog({ target, onClose, onSent, onBusyChange }: 
           max={addDays(today, DUE_MAX_DAYS)}
           value={dueOn}
           disabled={busy}
+          onInvalidChange={setDueInvalid}
           onChange={(day) => { setDueOn(day); setProblems((current) => ({ ...current, dueOn: undefined })); setRefusal(undefined); }}
         />}
       </Field>
