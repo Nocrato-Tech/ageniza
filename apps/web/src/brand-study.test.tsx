@@ -1429,7 +1429,17 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
     await openSection('Cores');
     await openSection('Personas');
     expect(screen.queryByRole('textbox', { name: 'Dores' })).toBeNull();
-    fireEvent.click(screen.getByRole('link', { name: /Dona Maria/ }));
+
+    // The draft belongs to Dona Maria: Seu Joaquim opens as a reading, with none of her text.
+    fireEvent.click(screen.getByRole('link', { name: /Seu Joaquim/ }));
+    await screen.findByRole('heading', { level: 3, name: 'Seu Joaquim' });
+    expect(screen.queryByRole('textbox', { name: 'Dores' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull();
+    expect(screen.queryByDisplayValue('Fila enorme na hora do almoço')).toBeNull();
+    expect(screen.getByText('Fila longa')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Personas' }));
+
+    fireEvent.click(await screen.findByRole('link', { name: /Dona Maria/ }));
     await screen.findByRole('textbox', { name: 'Dores' });
     expect(painsNow()).toBe('Fila enorme na hora do almoço');
 
@@ -1453,6 +1463,30 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     fireEvent.click(within(document.querySelector<HTMLElement>('.brand-persona')!).getByRole('button', { name: 'Editar' }));
     expect(painsNow()).toBe('Pouco tempo');
+  });
+
+  it('opens as a reading, without the form or a save, a persona archived after the edit was left, and drops the draft', async () => {
+    let studyData = studyOf();
+    const { impl, calls } = makeFetch({ study: () => json(studyData) });
+    const { queryClient } = renderStudy(impl, { pathname: studyUrl, search: `?secao=personas&persona=${donaMaria.id}` });
+    const profile = (await screen.findByRole('heading', { level: 3, name: 'Dona Maria' })).closest<HTMLElement>('.brand-persona')!;
+    fireEvent.click(within(profile).getByRole('button', { name: 'Editar' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Dores' }), { target: { value: 'Fila enorme' } });
+    await openSection('Cores');
+
+    // Someone else archives her; the study is read again.
+    studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === donaMaria.id ? { ...persona, status: 'archived' as const } : persona)) };
+    await act(async () => { await queryClient.invalidateQueries(); });
+    await openSection('Personas');
+    fireEvent.click(await screen.findByRole('button', { name: 'Arquivadas (2)' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Dona Maria' }));
+
+    await screen.findByRole('heading', { level: 3, name: 'Dona Maria' });
+    expect(screen.getByText('Arquivada')).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: 'Dores' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull();
+    expect(screen.getByText('Pouco tempo')).toBeTruthy();
+    expect(calls.filter((call) => call.startsWith('PATCH'))).toEqual([]);
   });
 
   it('keeps the way back to the roster after archiving from the profile and in the link of an archived persona', async () => {

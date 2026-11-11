@@ -251,7 +251,14 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
     {SECTION_LABELS.personas}
   </Link>;
 
-  if (draft !== null) {
+  const editing = draft !== null && canEdit && !archived && blocked === undefined;
+
+  // A draft kept while the persona was left can outlive the right to edit her (archived, client archived, plan or permission lost).
+  useEffect(() => {
+    if (draft !== null && !editing) onDraft(() => null);
+  }, [draft, editing, onDraft]);
+
+  if (draft !== null && editing) {
     return <div className="brand-persona">
       {back}
       <h3 ref={headingRef} tabIndex={-1} className="brand-persona__name">{persona.name}</h3>
