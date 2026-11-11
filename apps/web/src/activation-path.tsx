@@ -97,12 +97,10 @@ export function ActivationPath({ facts, firstClientId }: { facts: MilestoneFacts
     action: step.action === null ? undefined : <ButtonLink as={Link} to={step.action.to}>{step.action.label}</ButtonLink>
   }));
 
-  // The trail carries the way forward of the current step only. When the person cannot act on it, what they can do on the
-  // later steps stays one click away instead of disappearing.
-  const currentStep = steps.find((step) => step.key === current);
-  const ahead = currentStep !== undefined && currentStep.action === null
-    ? steps.filter((step) => !step.done && step.key !== current && step.action !== null)
-    : [];
+  // The trail carries the way forward of the current step only. What the person can do on the later steps stays one click
+  // away, except what leads to the same screen as the current step's button, which would only repeat it.
+  const currentTo = steps.find((step) => step.key === current)?.action?.to;
+  const ahead = steps.filter((step) => !step.done && step.key !== current && step.action !== null && step.action.to !== currentTo);
 
   return <section aria-labelledby="activation-title" className="activation" data-stage-host>
     <div className="activation__intro">
