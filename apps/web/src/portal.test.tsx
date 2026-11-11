@@ -1411,6 +1411,11 @@ describe('the Início: approvals and the script of today (#271)', () => {
       expect(rule('.portal-shell > .portal-content')).toMatch(/flex:\s*1;/);
       expect(rule('.portal-nav')).toMatch(/position:\s*sticky;/);
       expect(rule('.portal-nav')).toMatch(/bottom:\s*0;/);
+      // The bar is the last piece on a phone only because of these: the sidebar's own box does not take part in the layout, and the bar is ordered after the content.
+      expect(rule('.portal-sidebar')).toMatch(/display:\s*contents;/);
+      expect(rule('.portal-nav')).toMatch(/order:\s*2;/);
+      expect(rule('.portal-shell > .portal-content')).toMatch(/order:\s*1;/);
+      expect(rule('.portal-header')).toMatch(/order:\s*0;/);
     });
 
     it('lets the requests of the agency shrink and their text wrap, and styles them with tokens only', () => {
