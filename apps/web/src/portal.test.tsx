@@ -21,6 +21,7 @@ import { contentsError, createPortalContentsApi } from './portal-contents-fixtur
 import { createPortalScriptsApi, portalStudyBody, scriptError } from './portal-fixture.js';
 import { createPortalMaterialRequestsApi } from './portal-material-requests-fixture.js';
 import { portalMaterialRequestsKey } from './portal-material-requests.js';
+import { gateReads, retryWhileHeld, serverFailure } from './portal-retry-fixture.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 
 afterEach(cleanup);
@@ -1317,6 +1318,69 @@ describe('the Início: approvals and the script of today (#271)', () => {
       broken = false;
       fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
       await waitFor(() => expect(screen.queryByText('Não foi possível carregar o roteiro de hoje.')).toBeNull());
+    });
+  });
+
+  describe('Tentar de novo keeps its button while the read repeats', () => {
+    it('keeps it in "A agência pediu" and then shows the requests, with no failure left', async () => {
+      const api = createPortalMaterialRequestsApi(CLIENT_ID);
+      api.seed({ body: 'Envie 3 fotos da equipe' });
+      const { impl, gate } = gateReads(makeFetch({ materialRequests: api }).impl, (url) => url.pathname === `/clients/${CLIENT_ID}/material-requests`);
+      gate.fail = serverFailure;
+      renderPortal(impl);
+      const block = await screen.findByRole('region', { name: 'A agência pediu' }, { timeout: 5000 });
+      await retryWhileHeld(within(block).getByRole('alert'), gate);
+      expect(await within(screen.getByRole('region', { name: 'A agência pediu' })).findByText('Envie 3 fotos da equipe')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('keeps it in the covers of what waits and then shows them', async () => {
+      const contents = createPortalContentsApi(CLIENT_ID);
+      contents.seed({ publishOn: TODAY, title: 'Bolo de fubá', format: 'reels', status: 'awaiting_approval' });
+      const { impl, gate } = gateReads(makeFetch({ portal: () => withHome({ contentsAwaitingApproval: 1 }), contents }).impl, (url) => url.pathname.endsWith('/contents/awaiting-approval'));
+      gate.fail = serverFailure;
+      renderPortal(impl);
+      await retryWhileHeld(await screen.findByRole('alert', undefined, { timeout: 5000 }), gate);
+      expect(await screen.findByRole('link', { name: /Bolo de fubá/ })).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('keeps it in the week, in place of a skeleton, and then shows the week', async () => {
+      const contents = createPortalContentsApi(CLIENT_ID);
+      contents.seed({ publishOn: '2026-10-07', title: 'Sonho recheado', status: 'approved' });
+      const { impl, gate } = gateReads(makeFetch({ contents }).impl, (url) => url.pathname === `/clients/${CLIENT_ID}/contents`);
+      gate.fail = serverFailure;
+      const { container } = renderPortal(impl);
+      await retryWhileHeld(await screen.findByRole('alert', undefined, { timeout: 5000 }), gate);
+      expect(container.querySelector('.portal-rows__skeleton')).toBeNull();
+      expect(await screen.findByText('Sonho recheado')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('keeps it in the script of today and then shows the script', async () => {
+      const scripts = scriptsApi();
+      scripts.seed({ scriptOn: TODAY, scenes: [{ position: 1, text: 'Abra mostrando a vitrine', guidance: null }] });
+      const { impl, gate } = gateReads(makeFetch({ scripts }).impl, (url) => url.pathname === `/clients/${CLIENT_ID}/story-scripts`);
+      gate.fail = serverFailure;
+      renderPortal(impl);
+      await retryWhileHeld(await screen.findByRole('alert', undefined, { timeout: 5000 }), gate);
+      expect(await screen.findByText('Abra mostrando a vitrine')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('keeps it, and the focus inside the dialog, in the comments of a request, and then shows the thread', async () => {
+      const api = createPortalMaterialRequestsApi(CLIENT_ID);
+      api.seed({ body: 'Envie 3 fotos da equipe' });
+      const { impl, gate } = gateReads(makeFetch({ materialRequests: api }).impl, (url) => url.pathname.endsWith('/comments'));
+      gate.fail = serverFailure;
+      renderPortal(impl);
+      fireEvent.click(await screen.findByRole('button', { name: 'Responder Envie 3 fotos da equipe' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Pedido de material' });
+      const failure = await within(dialog).findByRole('alert', undefined, { timeout: 5000 });
+      await retryWhileHeld(failure, gate);
+      expect(dialog.contains(document.activeElement)).toBe(true);
+      expect(await within(dialog).findByText('Lucas')).toBeTruthy();
+      expect(within(dialog).queryByRole('alert')).toBeNull();
     });
   });
 

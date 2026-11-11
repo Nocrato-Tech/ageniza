@@ -60,8 +60,8 @@ function Awaiting({ clientId, agencyName }: { clientId: string; agencyName: stri
     })
   });
 
-  if (awaiting.isPending) return <div className="portal-awaiting" aria-hidden="true"><Skeleton className="portal-awaiting__skeleton" /></div>;
-  if (awaiting.isError && awaiting.data === undefined) {
+  if (awaiting.isPending && awaiting.errorUpdateCount === 0) return <div className="portal-awaiting" aria-hidden="true"><Skeleton className="portal-awaiting__skeleton" /></div>;
+  if (awaiting.data === undefined) {
     return <section className="portal-awaiting" aria-labelledby="portal-awaiting-title">
       <h2 id="portal-awaiting-title" className="portal-section__title">O que precisa de você</h2>
       <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar o que precisa de você." retrying={awaiting.isFetching} onRetry={() => { void awaiting.refetch(); }} />
@@ -193,9 +193,9 @@ export function PortalContentsPage() {
       <Button variant={vista === 'feed' ? 'secondary' : 'ghost'} aria-pressed={vista === 'feed'} onClick={() => change('vista', 'feed')}>Feed</Button>
     </div>
     {vista === 'calendar' && <Select label="Filtro" placeholder="Todos" value={status} options={STATUS_OPTIONS} onChange={(value) => change('situacao', value === '' ? null : value)} />}
-    {contents.isPending
+    {contents.isPending && contents.errorUpdateCount === 0
       ? <div className="portal-contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
-      : contents.isError && contents.data === undefined
+      : contents.data === undefined
         ? <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar os conteúdos. Tente de novo." retrying={contents.isFetching} onRetry={() => { void contents.refetch(); }} />
         : contents.data!.data.length === 0
           ? <EmptyState
