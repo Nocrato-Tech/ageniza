@@ -101,12 +101,9 @@ const newClient = async (label: string, portalUsers: readonly string[] = []): Pr
   return id;
 };
 
-/**
- * An app over the same database whose statement that inserts a thread goes through `rewrite` first: the bindings the service sent are
- * changed to what only a bug could send, so the refusal that the database gives (and nothing earlier) is what the route has to answer.
- */
-const withRewrittenThreadInsert = async <T>(
-  rewrite: (bindings: unknown[]) => unknown[],
+/** An app over the same database whose every statement goes through `through` first, which may answer with other bindings to send instead. */
+const withObservedStatements = async <T>(
+  through: (statement: string, bindings: readonly unknown[] | undefined) => readonly unknown[] | undefined,
   run: (proxied: FastifyInstance) => Promise<T>
 ): Promise<T> => {
   const proxied = Fastify();
@@ -120,7 +117,7 @@ const withRewrittenThreadInsert = async <T>(
             get(target, property, receiver) {
               if (property === 'raw') {
                 return async (statement: string, bindings?: readonly unknown[]) =>
-                  target.raw(statement, (/^insert into public\.client_threads \(client_id, section_key/i.test(statement.trim()) ? rewrite([...(bindings ?? [])]) : bindings) as never);
+                  target.raw(statement, through(statement.trim(), bindings) as never);
               }
               return Reflect.get(target, property, receiver);
             }
@@ -141,6 +138,25 @@ const withRewrittenThreadInsert = async <T>(
   } finally {
     await proxied.close();
   }
+};
+
+const INSERTS_A_THREAD = /^insert into public\.client_threads\b/i;
+
+/**
+ * The statement that inserts a thread goes through `rewrite` first: the bindings the service sent are changed to what only a bug
+ * could send, so the refusal that the database gives (and nothing earlier) is what the route has to answer.
+ */
+const withRewrittenThreadInsert = <T>(rewrite: (bindings: unknown[]) => unknown[], run: (proxied: FastifyInstance) => Promise<T>): Promise<T> =>
+  withObservedStatements((statement, bindings) => (/^insert into public\.client_threads \(client_id, section_key/i.test(statement) ? rewrite([...(bindings ?? [])]) : bindings), run);
+
+/** Runs `work` on an app that records the statements that insert a thread: what reached the database, not what the route answered. */
+const threadInsertsSentBy = async (work: (proxied: FastifyInstance) => Promise<void>): Promise<string[]> => {
+  const sent: string[] = [];
+  await withObservedStatements((statement, bindings) => {
+    if (INSERTS_A_THREAD.test(statement)) sent.push(statement);
+    return bindings;
+  }, work);
+  return sent;
 };
 
 describe('CLIENTES request for material (decision 2026-11-10)', () => {
@@ -331,6 +347,21 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
       expect((await openRequest(cookies.dual!, clientA1)).statusCode).toBe(201);
     });
 
+    it('refuses in the service, before the database, whoever holds conteudo.operar and not cliente.operar (the policy would refuse it too, later)', async () => {
+      const client = await newClient('so-conteudo');
+      const sent = await threadInsertsSentBy(async (proxied) => {
+        for (const who of ['contentOnly', 'clientRead']) {
+          const refused = await openRequest(cookies[who]!, client, 'Envie as fotos', undefined, proxied);
+          expect(refused.statusCode, who).toBe(403);
+          expect(JSON.stringify(refused.json()), who).not.toMatch(NO_DATABASE_DETAIL);
+        }
+        // The same app does write for who holds the permission, so an empty record is a refusal and not a recorder that sees nothing.
+        expect((await openRequest(cookies.manager!, client, 'Envie as fotos', undefined, proxied)).statusCode).toBe(201);
+      });
+      expect(sent).toHaveLength(1);
+      expect(await countThreads(client)).toBe(1);
+    });
+
     it('does not open it for an archived client', async () => {
       const refused = await openRequest(cookies.admin!, clientArchived);
       expect(refused.statusCode).toBe(409);
@@ -504,6 +535,34 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
       expect((await call('GET', `${portalThreads(client)}/${productionThread}/comments`, cookies.portalOne!)).statusCode).toBe(404);
       expect((await portalComment(cookies.portalOne!, client, productionThread)).statusCode).toBe(404);
       expect((await call('GET', `${portalThreads(client)}?contentId=${contentId}`, cookies.portalOne!)).statusCode).toBe(404);
+    });
+
+    it('lists only the open requests of the client, to every person that reaches it, among threads of every other subject of the same client', async () => {
+      // `dual` and `dualBare` read the rows of this client through the agency branch of the policy as well, so what keeps the
+      // other subjects out of the list is the subject filter of the query, and not a policy that hides them from a portal-only person.
+      const client = await newClient('assuntos', ['portalOne', 'dual', 'dualBare', 'crossDual']);
+      const contentId = await seedContent(client, 'in_production');
+      const planted = {
+        production: (await call('POST', agencyThreads(agencyA, client), cookies.admin!, { subject: { contentId }, body: 'NOTA INTERNA DA PRODUCAO' })).json().thread.id as string,
+        study: randomUUID(),
+        otherSection: randomUUID()
+      };
+      for (const [id, sectionKey, body] of [[planted.study, 'branding', 'SUGESTAO DO ESTUDO'], [planted.otherSection, 'observations', 'SUGESTAO DE OUTRA SECAO']] as const) {
+        await owner.knex('client_threads').insert({ id, client_id: client, section_key: sectionKey, opened_by: users.admin!.id, opened_side: 'agency' });
+        await owner.knex('client_thread_comments').insert({ thread_id: id, client_id: client, author_user_id: users.admin!.id, author_side: 'agency', body });
+      }
+      const open = (await openRequest(cookies.admin!, client, 'Pedido real aberto')).json().thread.id as string;
+      const done = (await openRequest(cookies.admin!, client, 'Pedido real resolvido')).json().thread.id as string;
+      expect((await resolveAs(cookies.admin!, client, done)).statusCode).toBe(200);
+      expect(await countThreads(client)).toBe(5);
+
+      for (const who of ['portalOne', 'dual', 'dualBare', 'crossDual']) {
+        const listed = await call('GET', requestsOf(client), cookies[who]!);
+        expect(listed.statusCode, who).toBe(200);
+        expect(idsOf(listed), who).toEqual([open]);
+        expect(listed.json().meta.totalItems, who).toBe(1);
+        expect(JSON.stringify(listed.json()), who).not.toMatch(/NOTA INTERNA|SUGESTAO|resolvido/);
+      }
     });
 
     it('lists the requests of its own client through the thread listing too, resolved ones included, and never the ones of another client', async () => {
