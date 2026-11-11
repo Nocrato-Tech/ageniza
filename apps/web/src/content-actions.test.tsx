@@ -2,6 +2,8 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { invalidDayMessage } from '@ageniza/ui';
+
 import {
   AGENCY,
   barbearia,
@@ -274,6 +276,41 @@ describe('Enviar para aprovação', () => {
     expect(await within(submitDialog()).findByText('Escolha um dia de hoje até 90 dias à frente.')).toBeTruthy();
     expect(within(submitDialog()).getByLabelText('Aprovar até').getAttribute('aria-invalid')).toBe('true');
     expect(moves(calls)).toHaveLength(0);
+  });
+
+  it.each([
+    ['a year of two digits', '14/10/26', '14/10/26'],
+    ['a day that does not exist', '31/02/2026', '31/02/2026'],
+    ['half a date', '14/10', '14/10']
+  ])('refuses %s as "Data inválida" on the field, sends nothing and keeps what was typed', async (_name, typed, shown) => {
+    const { calls } = await openContent(complete(), { permissions: EDITOR });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: typed } });
+    confirmSubmit();
+    expect(await within(submitDialog()).findByText(invalidDayMessage)).toBeTruthy();
+    expect(within(submitDialog()).getByLabelText('Aprovar até').getAttribute('aria-invalid')).toBe('true');
+    expect((within(submitDialog()).getByLabelText('Aprovar até') as HTMLInputElement).value).toBe(shown);
+    await stillOpen();
+    expect(moves(calls)).toHaveLength(0);
+
+    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: '14102026' } });
+    expect(within(submitDialog()).queryByText(invalidDayMessage)).toBeNull();
+    confirmSubmit();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(moves(calls)).toHaveLength(1);
+    expect(moves(calls)[0]!.body).toEqual({ dueOn: '2026-10-14' });
+  });
+
+  it('still sends no dueOn when the field was typed into and then emptied', async () => {
+    const { calls } = await openContent(complete(), { permissions: EDITOR });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: '14/10/26' } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: '' } });
+    confirmSubmit();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(moves(calls)[0]!.body).toEqual({});
   });
 
   it('refuses a note over 500 characters on the field, with the counter, and sends nothing', async () => {
