@@ -17,6 +17,7 @@ import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
 import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
 import { PortalContentCover } from './portal-content-cover.js';
+import { PortalFailure } from './portal-failure.js';
 import { usePortalClient } from './portal.js';
 import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS, portalPostAddress as postAddress, type PortalStatus } from './portal-status.js';
 
@@ -64,14 +65,17 @@ function Awaiting({ clientId, agencyName }: { clientId: string; agencyName: stri
   if (awaiting.isError && awaiting.data === undefined) {
     return <section className="portal-awaiting" aria-labelledby="portal-awaiting-title">
       <h2 id="portal-awaiting-title" className="portal-section__title">O que precisa de você</h2>
-      <div className="portal-error" role="alert">
-        <p>Não foi possível carregar o que precisa de você.</p>
-        <Button variant="secondary" loading={awaiting.isFetching} onClick={() => { void awaiting.refetch(); }}>Tentar de novo</Button>
-      </div>
+      <PortalFailure title="Não foi possível carregar o que precisa de você." fetching={awaiting.isFetching} onRetry={() => { void awaiting.refetch(); }} />
     </section>;
   }
   const { data, meta } = awaiting.data!;
-  if (meta.totalItems === 0) return null;
+  // Only an answered read, here, says nothing waits: awaiting approval is the one state the client has to decide on.
+  if (meta.totalItems === 0) {
+    return <section className="portal-awaiting" aria-labelledby="portal-awaiting-title">
+      <h2 id="portal-awaiting-title" className="portal-section__title">O que precisa de você</h2>
+      <EmptyState kind="good-news" className="portal-empty" headingLevel={3} title="Nada para aprovar" description="Quando a agência enviar um post para aprovação, ele aparece aqui." />
+    </section>;
+  }
   return <section className="portal-awaiting" aria-labelledby="portal-awaiting-title">
     <h2 id="portal-awaiting-title" className="portal-section__title">O que precisa de você <span>({meta.totalItems})</span></h2>
     <ul className="portal-awaiting__list">
@@ -193,10 +197,7 @@ export function PortalContentsPage() {
     {contents.isPending
       ? <div className="portal-contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
       : contents.isError && contents.data === undefined
-        ? <div className="portal-error" role="alert">
-          <p>Não foi possível carregar os conteúdos. Tente de novo.</p>
-          <Button variant="secondary" loading={contents.isFetching} onClick={() => { void contents.refetch(); }}>Tentar de novo</Button>
-        </div>
+        ? <PortalFailure title="Não foi possível carregar os conteúdos. Tente de novo." fetching={contents.isFetching} onRetry={() => { void contents.refetch(); }} />
         : contents.data!.data.length === 0
           ? <EmptyState
             mascot

@@ -10,6 +10,7 @@ import { formatAgencyDayMonth } from './client-detail.js';
 import { todayInSaoPaulo } from './content-dates.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { PORTAL_PAUSED_REASON } from './plan-notice.js';
+import { PortalFailure } from './portal-failure.js';
 import { usePortalClient } from './portal.js';
 
 const LIST_PATH = '/clients/:clientId/story-scripts';
@@ -107,10 +108,7 @@ export function PortalTodayScripts({ clientId }: { clientId: string }) {
   if (scripts.isError && scripts.data === undefined) {
     return <section className="portal-section portal-today" aria-labelledby="portal-today-title">
       <h2 id="portal-today-title" className="portal-section__title">Roteiro de hoje</h2>
-      <div className="portal-error" role="alert">
-        <p>Não foi possível carregar o roteiro de hoje.</p>
-        <Button variant="secondary" loading={scripts.isFetching} onClick={() => { void scripts.refetch(); }}>Tentar de novo</Button>
-      </div>
+      <PortalFailure title="Não foi possível carregar o roteiro de hoje." fetching={scripts.isFetching} onRetry={() => { void scripts.refetch(); }} />
     </section>;
   }
   const list = scripts.data?.data ?? [];
