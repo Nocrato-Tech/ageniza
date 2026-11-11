@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type Ref } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ChevronDown, Clock, Pencil, Plus } from 'lucide-react';
+import { Archive, ArrowLeft, ChevronDown, ChevronRight, Clock, Frown, Heart, MessageCircleWarning, Pencil, Plus } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import {
@@ -164,8 +164,12 @@ function CreatePersonaDialog({ client, onClose }: { client: ClientDetailResponse
 const AwaitingPill = ({ count }: { count: number | undefined }) =>
   count === undefined || count === 0 ? null : <Pill icon={<Clock />} className="brand-personas__awaiting">{count} aguardando</Pill>;
 
-/** The three long fields of a persona, each in a card of its own. */
-const PROFILE_CARDS = [['pains', 'Dores'], ['desires', 'Desejos'], ['objections', 'Objeções']] as const;
+/** The three long fields of a persona, each in a card of its own with the icon that names it. */
+const PROFILE_CARDS = [
+  ['pains', 'Dores', Frown],
+  ['desires', 'Desejos', Heart],
+  ['objections', 'Objeções', MessageCircleWarning]
+] as const;
 
 /**
  * The profile of one persona: identity on the left, pains, desires and objections in cards, then the persona's
@@ -282,18 +286,19 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
     {back}
     <div className="brand-persona__profile">
       <div className="brand-persona__identity">
-        <Avatar name={persona.name} size="lg" />
+        <Avatar name={persona.name} size="lg" className="brand-persona__avatar" />
         <h3 ref={headingRef} tabIndex={-1} className="brand-persona__name">{persona.name}</h3>
         {archived && <Pill>Arquivada</Pill>}
         <p className="brand-persona__description">{persona.description ?? NOT_INFORMED}</p>
         {canEdit && !archived && <div className="brand-persona__actions">
           <Button size="sm" variant="secondary" leadingIcon={<Pencil />} blockedReason={blocked} onClick={() => { onDraft(() => draftFromPersona(persona)); setNameError(undefined); }}>Editar</Button>
-          <Button size="sm" variant="secondary" blockedReason={blocked} onClick={() => { setFormError(undefined); setConfirmingArchive(true); }}>Arquivar</Button>
+          <Button size="sm" variant="ghost" leadingIcon={<Archive />} blockedReason={blocked} onClick={() => { setFormError(undefined); setConfirmingArchive(true); }}>Arquivar</Button>
         </div>}
         {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
       </div>
       <div className="brand-persona__content">
-        {PROFILE_CARDS.map(([field, label]) => <article key={field} className="brand-persona__card">
+        {PROFILE_CARDS.map(([field, label, FieldIcon]) => <article key={field} className="brand-persona__card">
+          <span className="brand-persona__card-icon" aria-hidden="true"><FieldIcon /></span>
           <h4>{label}</h4>
           <p className="brand-section__body">{persona[field] ?? NOT_INFORMED}</p>
         </article>)}
@@ -405,10 +410,13 @@ export function PersonasSection({ client, personas, canEdit, active, selectedId,
         : <ul className="brand-personas__list">
           {activePersonas.map((persona) => <li key={persona.id}>
             <Link className="brand-personas__card" data-persona-id={persona.id} to={{ search: personaSearch(persona.id) }} state={location.state}>
-              <Avatar name={persona.name} size="md" />
-              <span className="brand-personas__name">{persona.name}</span>
-              {persona.description !== null && <span className="brand-personas__description">{persona.description}</span>}
-              <AwaitingPill count={awaiting.persona[persona.id]} />
+              <Avatar name={persona.name} size="lg" />
+              <span className="brand-personas__body">
+                <span className="brand-personas__name">{persona.name}</span>
+                {persona.description !== null && <span className="brand-personas__description">{persona.description}</span>}
+                <AwaitingPill count={awaiting.persona[persona.id]} />
+              </span>
+              <ChevronRight className="brand-personas__go" aria-hidden="true" />
             </Link>
           </li>)}
         </ul>}

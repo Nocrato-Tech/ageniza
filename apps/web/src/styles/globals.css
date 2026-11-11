@@ -4557,7 +4557,7 @@ main > .shell-notice {
 
 .brand-personas__list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
   gap: var(--space-4);
   margin: 0;
   padding: 0;
@@ -4566,12 +4566,12 @@ main > .shell-notice {
 
 .brand-personas__card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: var(--space-3);
-  align-content: start;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: var(--space-4);
+  align-items: center;
   width: 100%;
   height: 100%;
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-5);
   text-align: left;
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -4579,15 +4579,30 @@ main > .shell-notice {
   border-radius: var(--radius-lg);
   text-decoration: none;
   cursor: pointer;
+  transition: box-shadow var(--motion-base), border-color var(--motion-fast);
 }
 
-.brand-personas__card .ui-avatar {
-  grid-row: span 2;
+.brand-personas__body {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.brand-personas__go {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--text-secondary);
 }
 
 .brand-personas__card:hover,
 .brand-personas__card:focus-visible {
   border-color: var(--border-control);
+}
+
+.brand-personas__card:hover {
+  box-shadow: var(--shadow-raised);
 }
 
 .brand-personas__name {
@@ -4640,6 +4655,7 @@ main > .shell-notice {
 .brand-persona__actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-2);
 }
 
@@ -4654,6 +4670,56 @@ main > .shell-notice {
 
 .brand-study--agency .brand-study__main {
   min-width: 0;
+}
+
+/* The index is a card of its own: the title and the count, the bar of what is filled, then the seven sections. */
+.brand-study--agency .brand-study__side {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-study__header {
+  gap: var(--space-2) var(--space-3);
+}
+
+.brand-study--agency .brand-study__header h2 {
+  font: var(--title-md);
+}
+
+.brand-study--agency .brand-study__count {
+  border-color: transparent;
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.brand-study--agency .brand-study__progress {
+  appearance: none;
+  width: 100%;
+  height: 0.5rem;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--status-ready-bg);
+  overflow: hidden;
+}
+
+.brand-study--agency .brand-study__progress::-webkit-progress-bar {
+  background: var(--status-ready-bg);
+}
+
+.brand-study--agency .brand-study__progress::-webkit-progress-value {
+  border-radius: var(--radius-full);
+  background: var(--status-ready-fg);
+}
+
+.brand-study--agency .brand-study__progress::-moz-progress-bar {
+  border-radius: var(--radius-full);
+  background: var(--status-ready-fg);
 }
 
 /* The index is a column on a wide screen and a row that scrolls sideways on a narrow one; the page itself never scrolls sideways. */
@@ -4690,11 +4756,28 @@ main > .shell-notice {
   white-space: nowrap;
 }
 
-.brand-index__link > svg {
+.brand-index__dot {
+  display: grid;
+  place-items: center;
   flex: none;
-  width: 1.25rem;
-  height: 1.25rem;
-  stroke-width: 1.75;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: var(--radius-full);
+}
+
+.brand-index__dot--done {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.brand-index__dot--open {
+  border: 1.5px solid var(--border-control);
+}
+
+.brand-index__dot > svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  stroke-width: 3;
 }
 
 .brand-index__link:hover {
@@ -4703,13 +4786,17 @@ main > .shell-notice {
 }
 
 .brand-index__link[aria-current='page'] {
-  border-color: var(--border-control);
-  background: var(--bg-surface);
-  color: var(--text-primary);
+  border-color: transparent;
+  background: var(--bg-tint);
+  color: var(--action-secondary-fg);
+  font-weight: 600;
 }
 
 .brand-index__awaiting {
   margin-left: auto;
+  border-color: transparent;
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
 }
 
 .brand-index--skeleton {
@@ -4733,9 +4820,9 @@ main > .shell-notice {
 /* The open section is a card: title and who last edited it on the left, the way to edit it on the right. */
 .brand-study--agency .brand-section {
   align-content: start;
-  padding: var(--space-4);
+  padding: var(--space-5);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
@@ -4761,8 +4848,34 @@ main > .shell-notice {
 
 .brand-archetype {
   margin: 0;
-  font: var(--heading-lg);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--block-indigo-bg);
+  color: var(--block-indigo-fg);
+  font: var(--heading-xl);
   overflow-wrap: anywhere;
+}
+
+/* The colours are swatches in a card of their own: the paint, then the name and the code. */
+.brand-study--agency .brand-colors:not(.brand-colors--edit) .brand-colors__item {
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-colors__swatch {
+  height: 4.5rem;
+  border-radius: var(--radius-md);
+}
+
+.brand-study--agency .brand-colors__name {
+  padding-inline: var(--space-1);
+  font: var(--label-md);
+}
+
+.brand-study--agency .brand-colors__hex {
+  padding-inline: var(--space-1);
 }
 
 /* The card, and the conversations of the same subject beside it when they fit or under it when they do not. */
@@ -4778,10 +4891,25 @@ main > .shell-notice {
   min-width: 0;
 }
 
+/* The conversations of the subject are a card too, with the same edge as the section beside it. */
+.brand-study--agency .brand-panel__conversations {
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-panel__conversations .conversation {
+  padding-top: 0;
+  border-top: 0;
+}
+
 .brand-personas__awaiting {
-  grid-column: 2;
   justify-self: start;
-  margin-top: var(--space-2);
+  margin-top: var(--space-1);
+  border-color: transparent;
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
 }
 
 .brand-personas__archived-item .brand-personas__name {
@@ -4832,7 +4960,22 @@ main > .shell-notice {
 }
 
 .brand-persona__identity {
-  justify-items: start;
+  justify-items: center;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  text-align: center;
+}
+
+.brand-persona__avatar {
+  width: 6rem;
+  height: 6rem;
+  box-shadow: 0 0 0 4px var(--bg-tint);
+}
+
+.brand-persona__avatar .ui-avatar__initials {
+  font: var(--heading-xl);
 }
 
 .brand-persona__content {
@@ -4855,17 +4998,55 @@ main > .shell-notice {
 
 .brand-persona__card {
   display: grid;
-  gap: var(--space-2);
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
   align-content: start;
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
 }
 
+.brand-persona__card-icon {
+  display: grid;
+  grid-row: span 2;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-tint);
+  color: var(--action-secondary-fg);
+}
+
+.brand-persona__card-icon > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
 .brand-persona__card h4 {
   margin: 0;
+  color: var(--text-secondary);
   font: var(--label-md);
+}
+
+.brand-persona__conversations {
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-persona__conversations .conversation {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.brand-persona__form {
+  max-width: 40rem;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
 }
 
 @media (min-width: 48rem) {
@@ -4891,6 +5072,10 @@ main > .shell-notice {
     white-space: normal;
   }
 
+  .brand-index__link[aria-current='page'] {
+    border-color: transparent;
+  }
+
   .brand-index--skeleton {
     flex-direction: column;
   }
@@ -4905,15 +5090,19 @@ main > .shell-notice {
     grid-template-columns: minmax(0, 1fr) 20rem;
   }
 
-  .brand-panel__conversations {
-    padding-left: var(--space-6);
-    border-left: 1px solid var(--border-default);
+  /* The column is narrow here: the status goes under the text instead of taking a column of its own. */
+  .brand-study--agency .brand-panel__conversations .conversation__thread {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .brand-study--agency .brand-panel__conversations .conversation {
-    padding-top: 0;
-    border-top: 0;
+  .brand-study--agency .brand-panel__conversations .conversation__thread > .conversation__status {
+    grid-column: 1;
+    grid-row: auto;
+    order: 6;
+    justify-self: start;
+    margin-top: var(--space-1);
   }
+
 }
 
 /* The conversation about one subject (issue #142): side by label, never by color alone. */
@@ -5172,6 +5361,110 @@ main > .shell-notice {
 
 .brand-study .conversation__composer-label {
   font: var(--label-md);
+}
+
+/* The conversations of the agency (the study and the requests for material) in the look of the rows of the board: each thread is a card,
+   the viewer's turn is the filled pill and the others are soft. A content keeps the look of its modal, the client keeps the portal's. */
+.brand-study--agency .brand-panel__conversations .conversation__title {
+  font: var(--title-md);
+}
+
+.conversation--agency .conversation__threads {
+  gap: var(--space-2);
+}
+
+.conversation--agency .conversation__thread {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  transition: box-shadow var(--motion-base), border-color var(--motion-fast);
+}
+
+.conversation--agency .conversation__threads > li:first-child .conversation__thread {
+  border-top: 1px solid var(--border-default);
+}
+
+.conversation--agency .conversation__thread:hover {
+  border-color: var(--border-control);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.conversation--agency .conversation__thread > * {
+  grid-column: 1;
+}
+
+/* What the person reads first goes first: the kind of request, what was said, who said it and the deadline. */
+.conversation--agency .conversation__thread-subject {
+  order: 1;
+  font: var(--title-md);
+}
+
+.conversation--agency .conversation__thread-excerpt {
+  order: 2;
+}
+
+.conversation--agency .conversation__thread-meta {
+  order: 3;
+}
+
+.conversation--agency .conversation__thread-last {
+  order: 4;
+}
+
+.conversation--agency .conversation__thread-due {
+  order: 5;
+}
+
+.conversation--agency .conversation__thread > .conversation__status {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  justify-self: end;
+}
+
+.conversation--agency .conversation__status--open {
+  border-color: transparent;
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+}
+
+.conversation--agency .conversation__status--resolved {
+  border-color: transparent;
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+/* The empty list is a note: the bulb beside one line, on the tint of the brand. */
+.conversation--agency .conversation__tip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-hover);
+}
+
+.conversation--agency .conversation__tip .conversation__empty {
+  color: var(--text-primary);
+}
+
+/* The messages of the open thread: the agency's on the tint of the note, the client's outlined and dashed, so the side is also told by the line. */
+.conversation__thread-view--agency .conversation__comment {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.conversation__thread-view--agency .conversation__comment--client {
+  border: 1px dashed var(--border-control);
+  background: var(--bg-surface);
 }
 
 /* --- Portal do cliente (#141, #686): tema claro, celular primeiro, Pauta ---
