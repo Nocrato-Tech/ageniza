@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Check } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 
 import { BrandStudyResponseSchema, type BrandStudyResponse, type ClientDetailResponse } from '@ageniza/contracts';
@@ -46,13 +47,15 @@ function BrandStudyView({ client, study, canEdit }: { client: ClientDetailRespon
   const filled = Object.fromEntries(SECTION_ORDER.map((key) => [key, isSectionFilled(key, study)])) as Record<SectionKey, boolean>;
 
   return <div className="brand-study brand-study--agency">
-    <header className="brand-study__header">
-      <h2>Estudo de marca</h2>
-      <Pill className="brand-study__count">{study.filled} de 7 preenchidas</Pill>
-    </header>
-
     <div className="brand-study__layout">
-      <SectionIndex active={selection.section} filled={filled} awaiting={awaiting} />
+      <div className="brand-study__side">
+        <header className="brand-study__header">
+          <h2>Estudo de marca</h2>
+          <Pill className="brand-study__count" icon={<Check />}>{study.filled} de 7 preenchidas</Pill>
+        </header>
+        <progress className="brand-study__progress" aria-label="Seções preenchidas" value={study.filled} max={SECTION_ORDER.length} />
+        <SectionIndex active={selection.section} filled={filled} awaiting={awaiting} />
+      </div>
       <div className="brand-study__main">
         {SECTION_ORDER.map((key) => {
           const open = key === selection.section;
@@ -97,8 +100,10 @@ export function ClientBrandStudyTab() {
   if (study.isPending && !failed) {
     return <div className="brand-study brand-study--agency" aria-busy="true">
       <div className="brand-study__layout">
-        <div className="brand-index brand-index--skeleton">
-          {SECTION_ORDER.map((key) => <Skeleton key={key} className="brand-section-skeleton" />)}
+        <div className="brand-study__side">
+          <div className="brand-index brand-index--skeleton">
+            {SECTION_ORDER.map((key) => <Skeleton key={key} className="brand-section-skeleton" />)}
+          </div>
         </div>
         <Skeleton className="brand-card-skeleton" />
       </div>

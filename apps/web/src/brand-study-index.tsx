@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Check, Circle, Clock } from 'lucide-react';
+import { Check, Clock } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 import { Pill } from '@ageniza/ui';
@@ -42,7 +42,7 @@ export function SectionIndex({ active, filled, awaiting }: {
             state={location.state}
             aria-current={key === active ? 'page' : undefined}
           >
-            {filled[key] ? <Check aria-hidden="true" /> : <Circle aria-hidden="true" />}
+            <span className={`brand-index__dot brand-index__dot--${filled[key] ? 'done' : 'open'}`} aria-hidden="true">{filled[key] && <Check />}</span>
             <span className="brand-index__label">{SECTION_LABELS[key]}</span>
             <span className="visually-hidden">{filled[key] ? ' preenchida' : ' não preenchida'}</span>
             {pending !== undefined && pending > 0 && <Pill icon={<Clock />} className="brand-index__awaiting">{pending} aguardando</Pill>}
