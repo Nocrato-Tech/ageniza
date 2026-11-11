@@ -951,7 +951,8 @@ describe('the post of the portal (#270)', () => {
       const follows = (earlier: Element, later: Element): boolean => (earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
       expect(follows(post.querySelector('.portal-media') as Element, bar())).toBe(true);
       expect(follows(post.querySelector('.portal-post__caption') as Element, bar())).toBe(true);
-      expect(follows(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }), bar())).toBe(true);      expect(post.contains(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }))).toBe(true);
+      expect(follows(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }), bar())).toBe(true);
+      expect(post.contains(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }))).toBe(true);
       expect(bar().classList.contains('portal-post__bar')).toBe(true);
     });
 
@@ -1076,6 +1077,8 @@ describe('the post of the portal (#270)', () => {
       const wide = mediaBlock('(min-width: 48rem)', '.portal-post__layout');
       expect(wide).toMatch(/\.portal-post__layout \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 24rem\);/);
       expect(wide).toMatch(/\.portal-post__layout > \.portal-post__bar \{[^}]*grid-column:\s*2;/);
+      // On a long post the answer stays in view beside it: the bar spans the flexible row and is held at the top while the page scrolls.
+      expect(wide).toMatch(/\.portal-post__layout > \.portal-post__bar \{\s*grid-row:\s*2 \/ -1;\s*align-self:\s*start;\s*position:\s*sticky;\s*top:\s*var\(--space-4\);/);
     });
 
     it('draws no blur on the header of the portal and takes the hover lift of a cover card away for those who ask for less motion', () => {

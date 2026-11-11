@@ -7105,8 +7105,11 @@ html:has(.portal-post__bar) {
   }
 
   .portal-post__layout > .portal-post__bar {
-    grid-row: 2;
-    position: static;
+    grid-row: 2 / -1;
+    align-self: start;
+    position: sticky;
+    top: var(--space-4);
+    bottom: auto;
     margin-inline: 0;
     padding: var(--space-4) var(--space-6) var(--space-6);
     border-radius: var(--radius-xl);
