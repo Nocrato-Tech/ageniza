@@ -92,3 +92,25 @@
   }
 }
 
+
+/* A failure with the serious owl: one centred column, the way the other two empty states read on the board. */
+.ui-empty-state--serious {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.ui-empty-state--serious .ui-empty-state__body {
+  justify-items: center;
+}
+
+.ui-empty-state--serious .ui-empty-state__action {
+  justify-content: center;
+}
+
+.ui-empty-state__code {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}

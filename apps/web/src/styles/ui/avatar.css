@@ -11,6 +11,22 @@
   color: var(--action-secondary-fg);
 }
 
+/* Tones for telling people apart in a stack; the indigo one is the default above. */
+.ui-avatar--violet {
+  background: var(--block-violet-bg);
+  color: var(--block-violet-fg);
+}
+
+.ui-avatar--teal {
+  background: var(--block-teal-bg);
+  color: var(--block-teal-fg);
+}
+
+.ui-avatar--sky {
+  background: var(--block-sky-bg);
+  color: var(--block-sky-fg);
+}
+
 .ui-avatar--sm {
   width: 2rem;
   height: 2rem;

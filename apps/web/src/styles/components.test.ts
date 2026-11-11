@@ -946,3 +946,161 @@ describe('public pages (#639)', () => {
     expect(rule('.public-page__ok svg').get('color')).toBe('var(--status-ready-fg)');
   });
 });
+
+describe('redesign components: sheets, tokens, motion and contrast', () => {
+  const NEW_SHEETS = ['kbd', 'search-field', 'chip', 'avatar-group', 'table', 'progress-bar'];
+  const SURFACES = ['var(--bg-canvas)', 'var(--bg-surface)'];
+  const pair = (selector: string) => ({ fg: rule(selector).get('color')!, bg: rule(selector).get('background')! });
+  const aa = (fg: string, bg: string): number => contrastOf('light', fg, bg);
+  const atRest = css.replace(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g, '');
+
+  it('imports every new sheet after the existing component sheets, in the entry point', () => {
+    const entry = readFileSync(join(__dirname, 'globals.css'), 'utf8');
+    const last = entry.indexOf('./ui/milestone-trail.css');
+
+    for (const sheet of NEW_SHEETS) {
+      expect(entry.indexOf(`@import './ui/${sheet}.css';`), sheet).toBeGreaterThan(last);
+    }
+  });
+
+  it('takes every colour of the new sheets from tokens, with no literal value', () => {
+    const offenders: string[] = [];
+    for (const sheet of NEW_SHEETS) {
+      for (const declaration of readStyles(`ui/${sheet}.css`).matchAll(/([\w-]+):\s*([^;]+);/g)) {
+        const [property, value] = [declaration[1]!, declaration[2]!.trim()];
+        if (/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i.test(value)) offenders.push(`${sheet}: ${property}: ${value}`);
+        if (/^(color|background|border-color)$/.test(property) && !/var\(--|^(transparent|inherit)$/.test(value)) offenders.push(`${sheet}: ${property}: ${value}`);
+        if (/^(padding|gap)$/.test(property) && !/^(0|var\(--space-\d+\)|calc\(var\(--space-\d+\) \* -?\d+\))( (0|var\(--space-\d+\)))*$/.test(value)) offenders.push(`${sheet}: ${property}: ${value}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it.each([
+    '.ui-chip',
+    '.ui-search-field',
+    '.ui-choice-radio',
+    '.ui-table__body .ui-table__row'
+  ])('animates %s with the motion tokens and stops for people who ask for less motion', (selector) => {
+    expect(declarationsFor(atRest, selector).get('transition'), selector).toMatch(/var\(--motion-(fast|base)\)/);
+    expect(declarationsFor(reducedMotionBlocks(), selector).get('transition'), selector).toBe('none');
+  });
+
+  it('fills the progress bar with a transition that stops for people who ask for less motion', () => {
+    expect(declarationsFor(atRest, '.ui-progress-bar__fill').get('transition')).toBe('width var(--motion-slow) var(--motion-easing-standard)');
+    expect(declarationsFor(reducedMotionBlocks(), '.ui-progress-bar__fill').get('transition')).toBe('none');
+  });
+
+  it('rings every new control with the focus token', () => {
+    for (const selector of ['.ui-chip:focus-visible', '.ui-table__select:focus-visible::after', '.ui-choice-radio:has(input:focus-visible)']) {
+      expect(rule(selector).get('outline'), selector).toMatch(/^3px solid var\(--focus-ring\)$/);
+    }
+    expect(rule('.ui-search-field:has(.ui-search-field__input:focus-visible)').get('outline')).toBe('2px solid var(--focus-ring)');
+  });
+
+  it('draws the discreet danger without a fill, and its hover in the red block', () => {
+    expect(rule('.ui-button--danger-quiet').get('background')).toBe('transparent');
+    expect(rule('.ui-button--danger-quiet').get('color')).toBe('var(--text-danger)');
+    expect(rule('.ui-button--danger-quiet:hover:not(:disabled):not(.ui-button--loading)').get('background')).toBe('var(--block-red-bg)');
+    expect(rule('.ui-button--danger-quiet:disabled:not(.ui-button--loading)').get('background')).toBe('transparent');
+    for (const surface of SURFACES) expect(aa('var(--text-danger)', surface)).toBeGreaterThanOrEqual(4.5);
+    expect(aa('var(--block-red-fg)', 'var(--block-red-bg)')).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('rings the notification dot with the surface and paints it in the late colour', () => {
+    const dot = rule('.ui-icon-button__dot');
+
+    expect(dot.get('background')).toBe('var(--status-late-bg)');
+    expect(dot.get('box-shadow')).toBe('0 0 0 2px var(--bg-surface)');
+    expect(rule('.ui-icon-button--dot').get('position')).toBe('relative');
+    expect(aa('var(--status-late-bg)', 'var(--bg-surface)')).toBeGreaterThanOrEqual(3);
+  });
+
+  it('colours Agendado with its own status tokens, readable on its fill', () => {
+    const scheduled = pair('.ui-status-tag--scheduled');
+
+    expect(scheduled).toEqual({ fg: 'var(--status-scheduled-text)', bg: 'var(--status-scheduled-bg)' });
+    expect(aa(scheduled.fg, scheduled.bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each([
+    '.ui-kbd',
+    '.ui-chip__count',
+    '.ui-avatar-group__more',
+    '.ui-avatar--violet',
+    '.ui-avatar--teal',
+    '.ui-avatar--sky',
+    '.ui-badge-card__role--indigo .ui-pill',
+    '.ui-badge-card__role--violet .ui-pill',
+    '.ui-badge-card__role--teal .ui-pill',
+    '.ui-badge-card__role--sky .ui-pill'
+  ])('keeps the text of %s AA on its own fill', (selector) => {
+    const colours = pair(selector);
+
+    expect(colours.fg, selector).toMatch(/^var\(--/);
+    expect(aa(colours.fg, colours.bg), selector).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('keeps the selected chip AA on its tint, and its count on the surface', () => {
+    const chosen = pair('.ui-chip--selected');
+    const count = pair('.ui-chip--selected .ui-chip__count');
+
+    expect(chosen).toEqual({ fg: 'var(--action-secondary-fg)', bg: 'var(--bg-tint)' });
+    expect(aa(chosen.fg, chosen.bg)).toBeGreaterThanOrEqual(4.5);
+    expect(aa(count.fg, count.bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('keeps the count of a tab AA on the track, and on the secondary action fill when the tab is open', () => {
+    const open = rule(".ui-tabs__tab[aria-selected='true'] .ui-tabs__count");
+    const count = pair('.ui-tabs__count');
+
+    expect(aa(count.fg, count.bg)).toBeGreaterThanOrEqual(4.5);
+    expect(open.get('background')).toBe('var(--action-secondary-bg)');
+    expect(aa(count.fg, open.get('background')!)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('keeps the dot of a marked day visible on the plain, today and chosen day', () => {
+    expect(rule('.ui-date-picker__day--marked::after').get('background')).toBe('var(--status-waiting-fg)');
+    expect(aa('var(--status-waiting-fg)', 'var(--bg-surface)')).toBeGreaterThanOrEqual(3);
+    expect(rule(".ui-date-picker__day--marked[aria-current='date']::after").get('background')).toBe('var(--action-primary-fg)');
+    expect(aa('var(--action-primary-fg)', 'var(--action-primary-bg)')).toBeGreaterThanOrEqual(3);
+    expect(rule(".ui-date-picker__grid td[aria-selected='true'] .ui-date-picker__day--marked::after").get('background')).toBe('var(--bg-surface)');
+    expect(aa('var(--bg-surface)', 'var(--text-primary)')).toBeGreaterThanOrEqual(3);
+  });
+
+  it('draws the progress fill with 3:1 over its track, in both tones', () => {
+    const track = rule('.ui-progress-bar').get('background')!;
+
+    expect(aa(rule('.ui-progress-bar__fill').get('background')!, track)).toBeGreaterThanOrEqual(3);
+    expect(aa(rule('.ui-progress-bar--teal .ui-progress-bar__fill').get('background')!, track)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('tints the chosen choice card and gives its radio a filled dot', () => {
+    expect(rule('.ui-choice-radio:has(input:checked)').get('background')).toBe('var(--bg-tint)');
+    expect(rule('.ui-choice-radio:has(input:checked)').get('border-color')).toBe('var(--focus-ring)');
+    expect(rule('.ui-choice-radio > input:checked').get('background')).toContain('var(--action-primary-bg)');
+    expect(aa('var(--text-secondary)', 'var(--bg-tint)')).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('turns the table into a list in a narrow box, as on a phone: no header row, only the name, the kept columns and the actions', () => {
+    const table = readStyles('ui/table.css');
+    const phone = /@container \(max-width: 40rem\) \{([\s\S]*?)\n\}\n/.exec(table)![1]!;
+
+    expect(declarationsFor(phone, '.ui-table__row--head').get('display')).toBe('none');
+    expect(declarationsFor(phone, '.ui-table__body .ui-table__row').get('display')).toBe('flex');
+    expect(declarationsFor(phone, '.ui-table__cell:not(.ui-table__cell--name):not(.ui-table__cell--keep):not(.ui-table__cell--actions)').get('display')).toBe('none');
+  });
+
+  it('lays the table rows on the columns the component sets, and lets the press area be the whole row', () => {
+    expect(rule('.ui-table__row').get('grid-template-columns')).toBe('var(--ui-table-columns)');
+    expect(rule('.ui-table__select::after').get('inset')).toBe('0');
+    expect(rule('.ui-table__cell--actions').get('z-index')).toBe('1');
+    expect(rule('.ui-table__row--selected').get('background')).toBe('var(--bg-tint)');
+  });
+
+  it('keeps the serious failure in one centred column', () => {
+    expect(rule('.ui-empty-state--serious').get('flex-direction')).toBe('column');
+    expect(rule('.ui-empty-state--serious').get('text-align')).toBe('center');
+  });
+});

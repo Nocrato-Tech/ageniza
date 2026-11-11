@@ -116,6 +116,17 @@
   text-underline-offset: 3px;
 }
 
+/* The discreet danger: no fill until hover, so a destructive action does not compete with the one primary. */
+.ui-button--danger-quiet {
+  background: transparent;
+  color: var(--text-danger);
+}
+
+.ui-button--danger-quiet:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--block-red-bg);
+  color: var(--block-red-fg);
+}
+
 /* Disabled buttons and action pills take the disabled pair; the other controls dim. */
 .ui-button:disabled:not(.ui-button--loading),
 .ui-pill--action:disabled:not(.ui-pill--loading) {
@@ -128,8 +139,30 @@
 }
 
 /* The text-only action has no fill to lose: disabled, it stays transparent. */
-.ui-button--ghost:disabled:not(.ui-button--loading) {
+.ui-button--ghost:disabled:not(.ui-button--loading),
+.ui-button--danger-quiet:disabled:not(.ui-button--loading) {
   background: transparent;
+}
+
+/* The notification dot of an icon button: a ring of the surface keeps it apart from the glyph. The text of the dot is in the button's name. */
+.ui-icon-button--dot {
+  position: relative;
+}
+
+.ui-icon-button__dot {
+  position: absolute;
+  top: 0.625rem;
+  right: 0.6875rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-late-bg);
+  box-shadow: 0 0 0 2px var(--bg-surface);
+}
+
+.ui-icon-button--dot.ui-button--sm .ui-icon-button__dot {
+  top: 0.25rem;
+  right: 0.25rem;
 }
 
 /* A blocked action (a plan to renew): dimmed like a disabled one, but focusable, with its reason on hover and focus. */

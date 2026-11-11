@@ -95,3 +95,9 @@
 @import './screens/milestones.css';
 @import './ui/stage.css';
 @import './ui/milestone-trail.css';
+@import './ui/kbd.css';
+@import './ui/search-field.css';
+@import './ui/chip.css';
+@import './ui/avatar-group.css';
+@import './ui/table.css';
+@import './ui/progress-bar.css';

@@ -55,6 +55,19 @@
   opacity: 0.55;
 }
 
+/* The count of a tab: a white capsule on the track, and on the open tab the soft fill of the secondary action. */
+.ui-tabs__count {
+  justify-content: center;
+  min-width: 1.25rem;
+  background: var(--bg-surface);
+  color: var(--action-secondary-fg);
+  font-weight: 600;
+}
+
+.ui-tabs__tab[aria-selected='true'] .ui-tabs__count {
+  background: var(--action-secondary-bg);
+}
+
 .ui-tabs__panel {
   padding-top: var(--space-4);
 }

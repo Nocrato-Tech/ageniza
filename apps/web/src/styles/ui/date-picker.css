@@ -162,10 +162,52 @@
   outline-offset: 2px;
 }
 
+/* A dot on the days that already hold something; it takes the colour that reads on the fill the day may have. */
+.ui-date-picker__day--marked {
+  position: relative;
+}
+
+.ui-date-picker__day--marked::after {
+  content: '';
+  position: absolute;
+  bottom: var(--space-1);
+  left: 50%;
+  width: 0.25rem;
+  height: 0.25rem;
+  margin-left: -0.125rem;
+  border-radius: var(--radius-full);
+  background: var(--status-waiting-fg);
+}
+
+.ui-date-picker__day--marked[aria-current='date']::after {
+  background: var(--action-primary-fg);
+}
+
+.ui-date-picker__grid td[aria-selected='true'] .ui-date-picker__day--marked::after {
+  background: var(--bg-surface);
+}
+
 .ui-date-picker__foot {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+.ui-date-picker__legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-right: auto;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.ui-date-picker__legend-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-waiting-fg);
 }
 
 @media (prefers-reduced-motion: reduce) {

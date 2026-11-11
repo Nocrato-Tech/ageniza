@@ -1,4 +1,5 @@
 .ui-field {
+  position: relative;
   display: grid;
   gap: var(--space-1);
 }
@@ -36,6 +37,37 @@
 
 .ui-field__counter--over {
   color: var(--text-danger);
+}
+
+/* The unit inside the edge of the control ("horas"); the control keeps room for it by the number of characters. */
+.ui-field__control--suffix {
+  position: relative;
+  display: grid;
+}
+
+.ui-field__control--suffix > .ui-text-input {
+  padding-inline-end: calc(var(--space-4) * 2 + var(--ui-field-suffix-ch, 0) * 1ch);
+}
+
+.ui-field__suffix {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+  font: var(--caption);
+  pointer-events: none;
+}
+
+/* The counter speaks only near and over the limit; this region is for that and has nothing to see. */
+.ui-field__live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* The spinner sits after the label and the control stays editable: loading here is a check in progress. */
