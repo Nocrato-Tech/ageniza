@@ -11,6 +11,7 @@ import { AuthSessionProvider, createAuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
+import { readGlobalCss } from './styles/read-css';
 
 const AGENCY = '11111111-1111-4111-8111-111111111111';
 const CLIENT = '22222222-2222-4222-8222-222222222222';
@@ -98,7 +99,7 @@ describe('the page that ships', () => {
   });
 
   it('leaves the theme out of the stylesheets, so there is nothing to switch to', () => {
-    const styles = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+    const styles = readGlobalCss();
     expect(styles).not.toContain('data-theme');
     expect(styles).not.toContain('themes/dark.css');
   });

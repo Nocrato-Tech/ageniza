@@ -1,0 +1,49 @@
+/* ClientStrip: the clients as stories. The one you are on carries the highlighter and a surface, not only a colour. */
+.ui-client-strip__list {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-2);
+  overflow-x: auto;
+  list-style: none;
+}
+
+.ui-client-strip__item {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: var(--space-2);
+  width: 5.75rem;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast);
+}
+
+.ui-client-strip__item:hover,
+.ui-client-strip__item[aria-current='page'] {
+  --ui-avatar-gap: var(--bg-hover);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* The ring of a tab-like item sits inside a scroll box that would clip an outer one. */
+.ui-client-strip__item:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.ui-client-strip__item .ui-avatar--md {
+  width: 3rem;
+  height: 3rem;
+}
+
+.ui-client-strip__name {
+  font: var(--caption);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+

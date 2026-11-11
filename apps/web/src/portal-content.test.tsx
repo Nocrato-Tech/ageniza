@@ -2,8 +2,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
@@ -14,6 +12,7 @@ import { createPortalContentsApi, portalContentError, type PortalContentSeed } f
 import { portalClientBody } from './portal-fixture.js';
 import { ApplicationRoutes } from './routes.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
+import { readGlobalCss } from './styles/read-css';
 
 afterEach(cleanup);
 
@@ -1002,7 +1001,7 @@ describe('the post of the portal (#270)', () => {
   });
 
   describe('on a phone', () => {
-    const css = (): string => readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+    const css = (): string => readGlobalCss().replace(/\r\n/g, '\n');
     const rule = (selector: string): string => {
       const text = css();
       const start = text.indexOf(`\n${selector} {`);

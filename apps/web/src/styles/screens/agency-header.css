@@ -1,0 +1,30 @@
+/* Agency area shell: issue #181. Header, side navigation and content, all on tokens. */
+
+.agency-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) max(var(--space-6), calc((100vw - 72rem) / 2));
+  background: var(--color-ink-900);
+  color: var(--color-white);
+}
+
+.agency-header__skeleton {
+  width: 12rem;
+  height: 1.75rem;
+}
+
+.protected-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.protected-header > a {
+  color: inherit;
+  font: var(--heading-md);
+  text-decoration: none;
+}
+

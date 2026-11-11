@@ -1,16 +1,15 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { contrastOf, declarationsFor, readStyles } from './styles/theme-colors';
+import { readGlobalCss } from './styles/read-css';
 
 /**
  * The layout of the brand study lives in CSS, which jsdom does not lay out: these tests read the block
  * (telas-melhorias S13) and pin what keeps every control reachable at 390 px and what keeps the portal's rows as they were.
  */
-const raw = readFileSync(join(__dirname, 'styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+const raw = readGlobalCss().replace(/\r\n/g, '\n');
 const START = '/* Brand study, agency side (telas-melhorias, S13)';
 const END = '/* The conversation about one subject (issue #142)';
 const block = raw.slice(raw.indexOf(START), raw.indexOf(END)).replace(/\/\*[\s\S]*?\*\//g, '');

@@ -6,6 +6,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { apiError, assetFixture, folderFixture, foldersUrl, idOf, makeFetch, makeWorld, renderFolders, type World } from './content-folders-fixture.js';
+import { readGlobalCss } from './styles/read-css';
 import { declarationsFor, readStyles } from './styles/theme-colors';
 
 const VIDEOS = idOf('f', 1);
@@ -300,7 +301,7 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
     for (const file of ['content-folders.tsx', 'media-uploader.tsx', 'media-thumbnail.tsx']) {
       expect(source(file), file).not.toMatch(/[▤▣▶›‹]/u);
     }
-    expect(source('styles/globals.css')).not.toContain("content: '›'");
+    expect(readGlobalCss()).not.toContain("content: '›'");
   });
 
   it('keeps the grids and the card of the view from growing past their column', () => {

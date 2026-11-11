@@ -1,0 +1,156 @@
+/* Parado no cliente: what waits for a client, by client, in rounded rows; the state of the deadline is a tag with an icon and words, never only a colour. */
+.awaiting-client {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.awaiting-client__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+
+.awaiting-client__heading {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.awaiting-client__title {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.awaiting-client__hint,
+.awaiting-client__more {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.awaiting-client__count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font: var(--caption);
+  font-weight: 600;
+}
+
+.awaiting-client__count svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.awaiting-client__skeleton {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.awaiting-client__clients,
+.awaiting-client__items {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.awaiting-client__clients {
+  gap: var(--space-5);
+}
+
+.awaiting-client__items {
+  gap: var(--space-2);
+}
+
+.awaiting-client__group {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.awaiting-client__who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.awaiting-client__client {
+  margin: 0;
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.awaiting-client__client-count {
+  color: var(--text-secondary);
+  font: var(--body-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.awaiting-client__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-height: 2.75rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard);
+}
+
+.awaiting-client__item:hover {
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
+}
+
+.awaiting-client__item-title {
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.awaiting-client__item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  grid-column: 1;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.awaiting-client__item .approval-state {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font-weight: 600;
+}
+
+.awaiting-client__item .approval-state .ui-icon {
+  color: inherit;
+}
+
+.awaiting-client__item .approval-state--expired {
+  background: var(--status-late-bg);
+  color: var(--status-late-text);
+}
+

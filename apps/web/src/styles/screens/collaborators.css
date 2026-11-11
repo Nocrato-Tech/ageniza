@@ -1,0 +1,210 @@
+/* Team grid: specs/colaboradores.md section 7. The redesign board (agencia-equipe): a heading with its lead, search and
+   filters on the canvas, and badges that fill the row (13.5rem minimum, so five columns on a wide screen). */
+.collaborators {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.collaborators__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.collaborators__heading {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 44rem;
+}
+
+.collaborators__eyebrow {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.collaborators__header h1 {
+  margin: 0;
+  font: var(--display-lg);
+  /* "Colaboradores" at 48px is 418px wide: on a phone the title shrinks to the 358px of content instead of widening the page. */
+  font-size: clamp(2rem, 10vw, 3rem);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.collaborators__lead {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+/* No box around the filters: the search is a pill and the three selects carry the edge of a field. */
+.ui-filter-bar.collaborators__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.ui-filter-bar.collaborators__filters .ui-filter-bar__item,
+.ui-filter-bar.collaborators__filters .ui-filter-bar__item + .ui-filter-bar__item {
+  min-width: min(12rem, 100%);
+  padding: 0;
+  border: 0;
+}
+
+.ui-filter-bar.collaborators__filters .ui-filter-bar__label {
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+.ui-filter-bar.collaborators__filters .ui-filter-bar__control:not(.ui-text-input) {
+  min-height: var(--control-h);
+  margin-left: 0;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.ui-filter-bar.collaborators__filters .ui-filter-bar__control.ui-text-input {
+  border-radius: var(--radius-full);
+  padding-inline: var(--space-5);
+}
+
+/* The search has no visible label (its placeholder and aria-label name it), like the board. */
+.ui-filter-bar.collaborators__filters .ui-filter-bar__item:first-child .ui-filter-bar__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+@media (min-width: 40rem) {
+  .ui-filter-bar.collaborators__filters {
+    align-items: flex-end;
+  }
+
+  .ui-filter-bar.collaborators__filters .ui-filter-bar__item:first-child {
+    flex: 1 1 16rem;
+    max-width: 24rem;
+  }
+
+  .ui-filter-bar.collaborators__filters .ui-filter-bar__control:not(.ui-text-input) {
+    width: 100%;
+  }
+}
+
+.collaborators__grid {
+  display: grid;
+  /* The minimum is the larger of 13.5rem and a quarter of the row, so it opens 1 to 4 columns and never a fifth: a page of 24
+     (a multiple of 1, 2, 3 and 4) never leaves a broken row (specs/colaboradores.md section 6). The 1px keeps the fourth column fitting. */
+  grid-template-columns: repeat(auto-fill, minmax(max(13.5rem, calc((100% - 3 * var(--space-4)) / 4 - 1px)), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collaborators__grid > li {
+  display: grid;
+  grid-template-rows: 1fr;
+  min-width: 0;
+}
+
+.collaborators__badge-link {
+  display: grid;
+  border-radius: var(--radius-xl);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+/* The badge of the board: a handle on top, a round avatar, then name, job title and role, all centred. */
+.collaborators__grid .ui-badge-card {
+  position: relative;
+  align-items: center;
+  border-radius: var(--radius-xl);
+  text-align: center;
+}
+
+.collaborators__grid .ui-badge-card::before {
+  content: '';
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  width: 2.25rem;
+  height: 0.375rem;
+  border-radius: var(--radius-full);
+  background: var(--border-default);
+  transform: translateX(-50%);
+}
+
+.collaborators__grid .ui-badge-card__cover {
+  padding: var(--space-8) var(--space-4) 0;
+  background: transparent;
+}
+
+.collaborators__grid .ui-badge-card .ui-avatar {
+  width: 4.5rem;
+  height: 4.5rem;
+  background: var(--bg-tint);
+}
+
+.collaborators__grid .ui-badge-card__body {
+  flex: 0 1 auto;
+  justify-items: center;
+  padding: var(--space-3) var(--space-4) var(--space-6);
+}
+
+.collaborators__grid .ui-badge-card__name {
+  font: var(--title-md);
+  letter-spacing: 0;
+}
+
+/* The link ended: the card steps back (dashed edge, canvas fill, grey avatar) and the red label says so in words. */
+.collaborators__grid .ui-badge-card:has(.ui-badge-card__removed) {
+  border-style: dashed;
+  background: var(--bg-canvas);
+}
+
+.collaborators__grid .ui-badge-card:has(.ui-badge-card__removed) .ui-avatar {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  filter: grayscale(1);
+}
+
+.collaborators__grid .ui-badge-card__removed {
+  align-self: center;
+  padding: var(--space-1) var(--space-3);
+  border-top: 0;
+  border-radius: var(--radius-full);
+  background: var(--status-late-bg);
+  color: var(--status-late-text);
+  font: var(--caption);
+  font-weight: 700;
+}
+
+/* The card the finger reaches rises 2px with a soft shadow and an indigo edge; the fill never changes under its text. */
+.collaborators__badge-link:hover .ui-badge-card {
+  border-color: var(--focus-ring);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collaborators__badge-link:hover .ui-badge-card {
+    transform: none;
+  }
+}
+
+/* The reactivate action of a removed badge sits under the card, never inside the link (#105). */
+.collaborators__reactivate {
+  margin-top: var(--space-2);
+  justify-self: center;
+}
+

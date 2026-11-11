@@ -1,0 +1,90 @@
+/* ChoiceCard and Skeleton: docs/design-system.md section 13 */
+.ui-choice-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-6) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ui-choice-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-4) var(--space-6);
+  text-align: left;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.ui-choice-card {
+  transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard);
+}
+
+.ui-choice-card:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  background: var(--bg-hover);
+}
+
+/* The suggested option: the brand's soft fill, the focus-colour edge and a halo. It never selects by itself. */
+.ui-choice-card--highlighted,
+.ui-choice-card--highlighted:hover:not(:disabled) {
+  border-color: var(--focus-ring);
+  background: var(--bg-hover);
+  box-shadow: 0 0 0 3px var(--focus-halo);
+}
+
+.ui-choice-card:disabled {
+  cursor: progress;
+  opacity: 0.55;
+}
+
+.ui-choice-card__icon {
+  display: inline-flex;
+  color: var(--text-secondary);
+}
+
+.ui-choice-card__icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.ui-choice-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-choice-card:not(:has(.ui-choice-card__icon)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ui-choice-card__title {
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.ui-choice-card__description {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.ui-choice-card__badge {
+  align-self: flex-start;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
+  color: var(--action-secondary-fg);
+  font: var(--label-sm);
+}
+

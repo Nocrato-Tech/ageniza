@@ -1,0 +1,15 @@
+.skip-link {
+  position: fixed;
+  left: var(--space-4);
+  top: -5rem;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  padding: var(--space-3);
+  /* Above the agency sidebar (z-index 3), or the focused link lands behind it. */
+  z-index: 4;
+}
+
+.skip-link:focus {
+  top: var(--space-4);
+}
+

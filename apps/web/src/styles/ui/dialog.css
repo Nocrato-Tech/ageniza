@@ -1,0 +1,33 @@
+.ui-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--bg-canvas);
+}
+
+.ui-dialog {
+  display: grid;
+  gap: var(--space-4);
+  width: min(100%, 32rem);
+  padding: var(--space-6);
+  border: 2px solid var(--action-danger-bg);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.ui-dialog h2,
+.ui-dialog p {
+  margin: 0;
+}
+
+.ui-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+

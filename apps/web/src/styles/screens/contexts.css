@@ -1,0 +1,42 @@
+/* /contextos: one quiet column, like the sign-in it comes from. */
+.contexts {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin: 0 auto;
+}
+
+.contexts h1 {
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.02em;
+}
+
+.contexts > .ui-button {
+  justify-self: start;
+}
+
+.contexts .ui-choice-list {
+  margin: var(--space-2) 0;
+}
+
+.contexts__error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  color: var(--text-danger);
+}
+
+.contexts__error p {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.contexts__error svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+

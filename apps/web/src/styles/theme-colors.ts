@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { readGlobalCss } from './read-css';
+
 const STYLES = __dirname;
 
-/** A stylesheet of the app with comments removed and line endings normalised, so a CRLF checkout reads the same. */
+/** A stylesheet of the app with comments removed and line endings normalised, so a CRLF checkout reads the same. `globals.css` reads with its sheets in place. */
 export const readStyles = (file: string): string =>
-  readFileSync(join(STYLES, file), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
+  (file === 'globals.css' ? readGlobalCss() : readFileSync(join(STYLES, file), 'utf8')).replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
 
 const customProperties = (css: string, selector: string): Map<string, string> => {
   const start = css.indexOf(`${selector} {`);

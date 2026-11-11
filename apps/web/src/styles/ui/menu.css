@@ -1,0 +1,71 @@
+.ui-menu {
+  position: relative;
+}
+
+.ui-menu__trigger {
+  min-height: 2.75rem;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: var(--label-md);
+  cursor: pointer;
+}
+
+.ui-menu__trigger:hover,
+.ui-menu__trigger:focus-visible {
+  background: var(--bg-hover);
+}
+
+.ui-menu__content {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 2;
+  display: grid;
+  min-width: 16rem;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
+  color: var(--text-primary);
+}
+
+.ui-menu-item {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--label-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ui-menu-item:hover,
+.ui-menu-item:focus-visible {
+  background: var(--bg-hover);
+}
+
+.ui-menu-item--destructive {
+  color: var(--text-danger);
+}
+
+.ui-menu-item--destructive:hover,
+.ui-menu-item--destructive:focus-visible {
+  background: var(--block-red-bg);
+  color: var(--block-red-fg);
+}
+
+.ui-menu-separator {
+  height: 1px;
+  margin: var(--space-2) 0;
+  background: var(--border-subtle);
+}
+

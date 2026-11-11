@@ -1,0 +1,68 @@
+/* Public pages (home, status): the logo on the light page, one column, and the way forward. */
+.app-shell > header.public-header {
+  padding-inline: var(--space-4);
+  background: transparent;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.public-header__inner {
+  display: flex;
+  max-width: calc(72rem - 2 * var(--space-4));
+  margin-inline: auto;
+}
+
+.public-header__inner > a {
+  display: inline-flex;
+}
+
+.public-page {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin: 0;
+}
+
+.public-page h1 {
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.02em;
+}
+
+.public-page p {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+.public-page__ok,
+.public-page__alert p {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.public-page__ok svg {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--status-ready-fg);
+}
+
+.public-page__alert {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.public-page__alert p {
+  color: var(--text-danger);
+}
+
+.public-page__alert svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+

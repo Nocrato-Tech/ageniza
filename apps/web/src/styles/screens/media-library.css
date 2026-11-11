@@ -1,0 +1,407 @@
+/* The media of a folder as a table: a row is the thumbnail, the kind, when and how big, and the two actions. The whole row opens the detail panel
+   through the stretched select button; the actions sit above it. */
+.media-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.media-layout__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.folder-media__table {
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.folder-media__grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.folder-media__table > .folder-media__grid {
+  gap: 0;
+}
+
+.folder-media__head,
+.folder-media {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr) 11rem auto;
+  column-gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+}
+
+.folder-media__head {
+  min-height: 2.5rem;
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.folder-media__head > :first-child {
+  grid-column: 1 / 3;
+}
+
+.folder-media {
+  position: relative;
+  grid-template-rows: auto auto auto;
+  min-height: 4.25rem;
+  border-top: 1px solid var(--border-subtle);
+  transition: background var(--motion-fast);
+}
+
+.folder-media:first-child {
+  border-top: 0;
+}
+
+.folder-media:hover {
+  background: var(--bg-hover);
+}
+
+.folder-media--selected,
+.folder-media--selected:hover {
+  background: var(--bg-tint);
+  box-shadow: inset 3px 0 0 var(--color-indigo-600);
+}
+
+.folder-media:has(.folder-media__select:focus-visible) {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.folder-media > .media-thumbnail {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 3rem;
+  aspect-ratio: 1;
+}
+
+.folder-media > .media-thumbnail svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.folder-media__body {
+  display: contents;
+}
+
+.folder-media__title,
+.folder-media__meta,
+.folder-media__failure {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.folder-media__title {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+/* With a status under it, the title sits above it; alone, it is centred on the row. */
+.folder-media__body:has(> .ui-pill, > .folder-media__failure) .folder-media__title {
+  grid-row: 1;
+  align-self: end;
+}
+
+.folder-media__select {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.folder-media__select:focus-visible {
+  outline: none;
+}
+
+.folder-media__select::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.folder-media--selected .folder-media__title {
+  color: var(--color-indigo-800);
+}
+
+.folder-media__meta {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.folder-media__body > .ui-pill,
+.folder-media__failure {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+}
+
+.folder-media__failure {
+  color: var(--text-danger);
+  font: var(--caption);
+}
+
+.folder-media__failure .content-folders__glyph {
+  color: inherit;
+}
+
+.folder-media__actions {
+  position: relative;
+  z-index: 1;
+  grid-column: 4;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.folder-media > .ui-field-message {
+  grid-column: 2 / -1;
+  grid-row: 3;
+  margin: var(--space-2) 0 0;
+}
+
+.folder-media__skeleton {
+  height: 4.25rem;
+  border-radius: var(--radius-md);
+}
+
+/* The media's thumbnail, wherever it is drawn: the shape and the neutral ground; the row and the panel size it. */
+.media-thumbnail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.media-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-thumbnail--placeholder {
+  color: var(--text-secondary);
+}
+
+.media-thumbnail--placeholder svg {
+  width: 2rem;
+  height: 2rem;
+  stroke-width: 1.75;
+}
+
+/* The detail panel of the chosen media. */
+.media-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.media-detail:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.media-detail__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.content-folders .media-detail__name {
+  font: var(--title-md);
+}
+
+.media-detail__preview {
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tint);
+}
+
+.media-detail__preview .media-thumbnail {
+  width: min(100%, 12rem);
+  box-shadow: var(--shadow-floating);
+}
+
+.media-detail__sub {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  text-align: center;
+}
+
+.media-detail__heading {
+  margin: 0 0 var(--space-2);
+  font: var(--title-md);
+}
+
+.media-detail__info {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font: var(--body-md);
+}
+
+.media-detail__info dt {
+  color: var(--text-secondary);
+}
+
+.media-detail__info dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.media-detail__actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--space-2);
+}
+
+.media-detail > .ui-field-message {
+  margin: 0;
+}
+
+/* Side by side only where the list keeps a table's width; below it the panel is the next block, and it takes the focus when it opens. */
+@media (min-width: 80rem) {
+  .media-layout--detail {
+    grid-template-columns: minmax(0, 1fr) var(--detail-w);
+  }
+
+  .media-layout--detail .media-detail {
+    position: sticky;
+    top: var(--space-4);
+  }
+}
+
+/* On a phone a media is a row: the thumbnail on the side, the touch targets at the full size. */
+@media (max-width: 40rem) {
+  .folder-media__grid,
+  .content-folders__skeleton {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .content-folders__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+
+  .content-folder,
+  .content-folders .content-folder--new.ui-button {
+    min-height: 8rem;
+    padding: var(--space-3);
+  }
+
+  .content-folder__chevron {
+    top: var(--space-3);
+    right: var(--space-3);
+  }
+
+  .content-folders__feature {
+    padding: var(--space-5);
+    padding-right: 6rem;
+  }
+
+  .folder-media__head {
+    display: none;
+  }
+
+  .folder-media {
+    grid-template-columns: 4rem minmax(0, 1fr);
+    grid-template-rows: auto;
+    row-gap: var(--space-2);
+    align-items: start;
+    padding: var(--space-3);
+  }
+
+  .folder-media > .media-thumbnail {
+    grid-row: 1 / span 2;
+    width: 4rem;
+  }
+
+  .folder-media__body {
+    display: grid;
+    grid-column: 2;
+    grid-row: 1;
+    justify-items: start;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .folder-media__title,
+  .folder-media__body:has(> .ui-pill, > .folder-media__failure) .folder-media__title,
+  .folder-media__meta,
+  .folder-media__body > .ui-pill,
+  .folder-media__failure {
+    grid-column: auto;
+    grid-row: auto;
+    align-self: auto;
+  }
+
+  .folder-media__actions {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
+
+  .folder-media > .ui-field-message {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .folder-media__actions .ui-button--sm {
+    min-height: 2.75rem;
+  }
+
+  .folder-media__select {
+    min-height: 1.5rem;
+  }
+
+  .folder-media__skeleton {
+    height: 5.5rem;
+  }
+
+  .media-detail {
+    padding: var(--space-4);
+  }
+}
+

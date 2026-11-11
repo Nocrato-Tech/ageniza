@@ -1,0 +1,381 @@
+/* Client detail: specs/clientes.md section 7. The header answers the roster's badge: the same photo, the same situation pill and the
+   same surface, so opening a badge feels like the same client. Docs/design-system.md sections 13.3 and 25. */
+.client-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+.client-detail__back {
+  justify-self: start;
+  color: var(--text-link);
+  font: var(--label-md);
+}
+
+.client-detail__archived {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+/* The header sits on the canvas, with no card of its own: the client's mark, the name with the situation, the @, and the actions. */
+.client-detail__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-5);
+}
+
+.client-detail__header .ui-avatar {
+  width: 5rem;
+  height: 5rem;
+  flex: none;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--client-badge-fade-start), var(--client-badge-fade-end));
+  color: var(--color-white);
+}
+
+.client-detail__header .ui-avatar__initials {
+  font: var(--heading-xl);
+}
+
+.client-detail__avatar-skeleton {
+  width: 5rem;
+  height: 5rem;
+  border-radius: var(--radius-lg);
+}
+
+.client-detail__identity {
+  display: grid;
+  flex: 1 1 14rem;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.client-detail__identity .ui-skeleton {
+  height: var(--space-6);
+}
+
+.client-detail__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.client-detail__identity h1 {
+  margin: 0;
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.client-detail__status--active {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  font-weight: 600;
+}
+
+.client-detail__handle {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.client-detail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+}
+
+.client-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+@media (max-width: 40rem) {
+  .client-detail__header .ui-avatar,
+  .client-detail__avatar-skeleton {
+    width: 3.5rem;
+    height: 3.5rem;
+  }
+
+  .client-detail__header .ui-avatar__initials {
+    font: var(--heading-lg);
+  }
+
+  .client-detail__identity {
+    flex-basis: 10rem;
+  }
+
+  .client-detail__identity h1 {
+    font: var(--heading-xl);
+  }
+
+  .client-detail__actions {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+}
+
+/* The lifecycle controls of #139 (⋯ menu / Reativar) and the error they can report. */
+.client-lifecycle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.client-lifecycle .ui-field-message {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.client-lifecycle__effects {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-4);
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+/* The tabs are routes (a link each, the open one is aria-current), drawn as the Tabs component: the open one is the white pill. They wrap instead of scrolling: a scrolled list hides the last ones with no cue. */
+.client-detail__tabs ul.ui-tabs__list {
+  flex-wrap: wrap;
+  margin: 0;
+  overflow-x: visible;
+  border-radius: var(--radius-xl);
+  list-style: none;
+}
+
+.client-detail__tabs li {
+  display: flex;
+}
+
+.client-detail__tabs .ui-tabs__tab {
+  text-decoration: none;
+}
+
+.client-detail__tabs .ui-tabs__tab[aria-current='page'] {
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--action-secondary-fg);
+  font-weight: 600;
+}
+
+.client-detail__tabs-skeleton .ui-skeleton {
+  height: 2.75rem;
+}
+
+.client-detail__panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-height: var(--space-12);
+}
+
+.client-detail .client-skeleton-tab {
+  justify-content: flex-start;
+  padding: var(--space-6) 0;
+}
+
+/* The General tab: the summary blocks on top, then the requests beside the registration. The blocks are the one coloured surface, each in the family
+   of what it says (docs/design-system.md 26), with the 3D mark leaving through the top edge, so the row keeps room above it. */
+.client-general {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+@media (min-width: 64rem) {
+  .client-general {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 27rem);
+    align-items: start;
+  }
+
+  .client-general:not(:has(.client-general__requests)) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.client-general__summary {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: var(--space-8) var(--space-4);
+  padding-top: var(--space-8);
+}
+
+.client-general__block {
+  --ui-stage-bg: var(--block-slate-bg);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  gap: var(--space-4);
+  min-height: 14.5rem;
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--ui-stage-bg);
+  color: var(--block-slate-fg);
+  text-decoration: none;
+  transition:
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
+}
+
+.client-general__block--indigo {
+  --ui-stage-bg: var(--block-indigo-bg);
+  color: var(--block-indigo-fg);
+}
+
+.client-general__block--violet {
+  --ui-stage-bg: var(--block-violet-bg);
+  color: var(--block-violet-fg);
+}
+
+.client-general__block--teal {
+  --ui-stage-bg: var(--block-teal-bg);
+  color: var(--block-teal-fg);
+}
+
+/* The block lifts on hover and keeps its colour: the text inside never changes pair, so its approved contrast holds (docs/design-system.md 20.1). */
+a.client-general__block:hover {
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
+}
+
+a.client-general__block:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .client-general__block {
+    transition: none;
+  }
+
+  a.client-general__block:hover {
+    transform: none;
+  }
+}
+
+.client-general__block h2 {
+  max-width: 58%;
+  margin: 0;
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+/* The figures sit at the bottom, under the mark that leaves through the top edge, so the two never share a line. */
+.client-general__figures {
+  display: grid;
+  align-self: end;
+  gap: var(--space-1);
+}
+
+.client-general__figures p {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.client-general__figures .client-general__sub {
+  font: var(--body-md);
+}
+
+.client-general__progress {
+  width: 100%;
+  height: 0.5rem;
+  accent-color: currentColor;
+}
+
+.client-general__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-self: start;
+  font: var(--label-md);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.client-general__cta svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.client-general__registration {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.client-general__registration h2 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+/* On a phone the name sits over its value; from 40rem the name is on the left and the value on the right, so a long value (the e-mail) wraps in its own column. */
+.client-general__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+}
+
+.client-general__fields dt,
+.client-general__fields dd {
+  margin: 0;
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.client-general__fields dt {
+  padding-top: var(--space-3);
+  color: var(--text-secondary);
+}
+
+.client-general__fields dd {
+  padding-bottom: var(--space-3);
+}
+
+.client-general__fields dt:not(:first-of-type) {
+  border-top: 1px solid var(--border-subtle);
+}
+
+@media (min-width: 40rem) {
+  .client-general__fields {
+    grid-template-columns: minmax(6.5rem, max-content) minmax(0, 1fr);
+  }
+
+  .client-general__fields dt,
+  .client-general__fields dd {
+    padding-block: var(--space-3);
+  }
+
+  .client-general__fields dd {
+    padding-left: var(--space-4);
+    text-align: right;
+  }
+
+  .client-general__fields dt:not(:first-of-type) + dd {
+    border-top: 1px solid var(--border-subtle);
+  }
+}
+

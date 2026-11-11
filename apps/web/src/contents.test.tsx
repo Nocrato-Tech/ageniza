@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -16,6 +14,7 @@ import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
+import { readGlobalCss } from './styles/read-css';
 
 afterEach(() => {
   cleanup();
@@ -2129,7 +2128,7 @@ describe('the header and the grid of the calendar', () => {
   });
 
   describe('CSS contract', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+    const css = readGlobalCss();
     const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
       selectors: match[1]!.replace(/\/\*[\s\S]*?\*\//g, '').split(',').map((selector) => selector.trim()),
       body: match[2]!

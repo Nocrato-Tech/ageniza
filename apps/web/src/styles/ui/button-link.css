@@ -1,0 +1,5 @@
+/* ButtonLink: an anchor wearing the Button classes (the way out is a navigation): no underline, and it keeps the button's own color. */
+a.ui-button {
+  text-decoration: none;
+}
+

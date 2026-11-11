@@ -1,0 +1,131 @@
+/* No-result and error states of the team list: one quiet surface, like the client roster's. */
+.collaborators__empty {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.collaborators__empty:not(.ui-empty-state--mascot) .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+
+/* Pending invitations: specs/colaboradores.md section 7. The heading and a card per invitation, straight on the canvas, like
+   the board's rows: an invitation has no photo or identity, only an e-mail, a role and a deadline. */
+.invites {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.invites__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.invites__header h2 {
+  margin: 0;
+  font: var(--heading-lg);
+  letter-spacing: -0.01em;
+}
+
+.invites__list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.invites__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.invites__email {
+  grid-column: 1 / 3;
+  min-width: 0;
+  margin: 0;
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.invites__role {
+  grid-column: 1;
+  margin: 0;
+}
+
+.invites__expiry {
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+/* A deadline that passed says so in words and in the danger colour, over `bg/surface` where it is guaranteed. */
+.invites__expiry--expired {
+  color: var(--text-danger);
+  font-weight: 600;
+}
+
+.invites__actions {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* "Cancelar" is the quiet danger action of the board: red text, no fill. */
+.invites__actions .ui-button--ghost {
+  color: var(--text-danger);
+}
+
+.invites__actions .ui-button--ghost:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--block-red-bg);
+  color: var(--text-danger);
+}
+
+.invites__error-line {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.invites__empty {
+  padding: var(--space-2) 0;
+}
+
+.invites__empty:not(.ui-empty-state--mascot) {
+  justify-content: flex-start;
+}
+
+@media (max-width: 47.99rem) {
+  .invites__item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .invites__email {
+    grid-column: 1 / -1;
+  }
+
+  .invites__actions {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    justify-content: flex-start;
+    margin-top: var(--space-2);
+  }
+}
+

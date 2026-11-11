@@ -1,0 +1,183 @@
+/* --- Portal do cliente (#141, #686): tema claro, celular primeiro, Pauta ---
+   Peças comuns do portal, para as telas de dentro (#687 post, #688 lista, #689 marca) usarem sem criar as suas:
+   .portal-section / .portal-section__title   um bloco da tela e o seu título
+   .portal-headline                           a frase de destaque da tela, em tipografia expandida
+   .portal-block                              o bloco com borda (um roteiro, um formulário)
+   .portal-cover / .portal-cover-link         a capa 4:5 de um post e o link que a leva com título e etiquetas
+   .portal-row                                a linha de lista com capa pequena, título e estado
+   .portal-meta                               a linha de etiqueta e data embaixo de um título
+   .portal-action                             a única ação primária da tela, em largura cheia no celular
+   .portal-error                              o erro de um bloco, com "Tentar de novo"
+   Três tamanhos de texto por tela: --heading-xl, --body-md e --caption. --- */
+
+/* The shell has two pieces: the navigation (the client, the bar, the person) and the content. On a phone the navigation is the top bar
+   and the bottom bar, each a flex item of the shell; from 48rem it is the side column. */
+.portal-sidebar {
+  display: contents;
+}
+
+.portal-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  order: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+.portal-header__brand {
+  display: none;
+}
+
+.portal-header__identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+/* The menu of the person opens down from the top bar of a phone, not up as it does from the foot of the side column. */
+@media (max-width: 47.99rem) {
+  .portal-header .account-menu--sidebar .ui-menu__content {
+    top: calc(100% + var(--space-2));
+    right: 0;
+    bottom: auto;
+    left: auto;
+  }
+}
+
+.portal-header__labels {
+  display: grid;
+  min-width: 0;
+  gap: 0;
+}
+
+.portal-header__name {
+  margin: 0;
+  color: inherit;
+  font: var(--body-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.portal-header__agency {
+  margin: 0;
+  color: var(--text-muted);
+  font: var(--caption);
+}
+
+.portal-header__avatar-skeleton {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-full);
+}
+
+.portal-header__name-skeleton {
+  width: 10rem;
+}
+
+/* The shell is a column as tall as the screen: the content takes what is left, so the bottom bar
+   sits at the bottom of a 360x780 phone even when the page is short. `sticky` alone only holds a
+   bar that would already be below the fold (review of #401). */
+.portal-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg-canvas);
+}
+
+/* The focused control scrolls clear of the sticky bar: below it on a phone, under the tabs on a wide screen (WCAG 2.4.11). */
+html:has(.portal-shell) {
+  scroll-padding-top: 4.5rem;
+  scroll-padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+
+/* A flex item with auto side margins shrinks to its content: the width is restated. */
+.portal-shell > .portal-content {
+  width: 100%;
+  flex: 1;
+  box-sizing: border-box;
+  max-width: 64rem;
+  padding: var(--space-3) var(--space-4) var(--space-8);
+  order: 1;
+}
+
+.portal-nav {
+  /* Also the containing block of the tour card, which rests on the bar's own top edge. */
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  order: 2;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-default);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.portal-nav ul {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  list-style: none;
+}
+
+.portal-nav a {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: var(--space-1);
+  min-height: 3.25rem;
+  padding: var(--space-1) 0;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font: var(--caption);
+  text-align: center;
+  text-decoration: none;
+}
+
+.portal-nav a svg {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.portal-nav a:hover,
+.portal-nav a:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* The open item is a tinted pill with bold text, as in the agency's navigation: it never rests on colour alone. */
+.portal-nav a[aria-current='page'] {
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+  font-weight: 700;
+}
+
+.portal-nav a[aria-current='page'] svg {
+  color: var(--color-indigo-600);
+}
+
+.portal-nav__title {
+  display: none;
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.portal-nav a[data-tour-target='true'] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+

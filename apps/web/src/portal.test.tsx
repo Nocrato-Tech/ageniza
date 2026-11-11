@@ -23,6 +23,7 @@ import { createPortalMaterialRequestsApi } from './portal-material-requests-fixt
 import { portalMaterialRequestsKey } from './portal-material-requests.js';
 import { gateReads, retryWhileHeld, serverFailure } from './portal-retry-fixture.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
+import { readGlobalCss } from './styles/read-css';
 
 afterEach(cleanup);
 
@@ -325,7 +326,7 @@ describe('client portal shell (#141)', () => {
   });
 
   it('keeps the focused control clear of the sticky bar: room below it on a phone, under the tabs on a wide screen', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+    const css = readGlobalCss().replace(/\r\n/g, '\n');
     const phone = css.slice(css.indexOf('\nhtml:has(.portal-shell) {'));
     expect(phone.slice(0, phone.indexOf('}'))).toMatch(/scroll-padding-bottom:\s*calc\(5\.5rem \+ env\(safe-area-inset-bottom\)\);/);
     const wide = css.slice(css.indexOf('@media (min-width: 48rem) {\n  html:has(.portal-shell) {'));
@@ -364,7 +365,7 @@ describe('client portal shell (#141)', () => {
 
     // jsdom has no layout, so the rules that put the bar at the bottom of a short page are read from
     // the stylesheet; the real 360x780 capture is in the PR (review of #401, finding 1).
-    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+    const css = readGlobalCss();
     const rule = (selector: string): string => {
       const start = css.indexOf(`\n${selector} {`);
       if (start === -1) throw new Error(`${selector} was not found in globals.css.`);
@@ -1390,7 +1391,7 @@ describe('the Início: approvals and the script of today (#271)', () => {
   });
 
   describe('on a phone', () => {
-    const css = (): string => readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+    const css = (): string => readGlobalCss().replace(/\r\n/g, '\n');
     const rule = (selector: string): string => {
       const text = css();
       const start = text.indexOf(`\n${selector} {`);

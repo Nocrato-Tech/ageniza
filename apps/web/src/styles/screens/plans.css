@@ -1,0 +1,99 @@
+.plan-cards {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.plan-card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+/* Recommended first when the cards stack, in the middle when they sit side by side; the edge and the halo of the board's current plan. */
+.plan-card--recommended {
+  order: -1;
+  border: 2px solid var(--action-primary-bg);
+  box-shadow: 0 0 0 4px var(--focus-halo);
+}
+
+/* The tags ride at the top right of the card, on the line of the plan name. */
+.plan-card__tags {
+  position: absolute;
+  top: var(--space-6);
+  right: var(--space-6);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  max-width: 50%;
+}
+
+.plan-card__name {
+  margin: 0;
+  min-height: 1.5rem;
+  padding-right: 35%;
+  font: var(--heading-lg);
+}
+
+.plan-card__price {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.plan-card__amount {
+  font: var(--stat-lg);
+  letter-spacing: -0.02em;
+}
+
+.plan-card__period,
+.plan-card__audience {
+  color: var(--text-secondary);
+}
+
+.plan-card__limits,
+.plan-includes ul {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.plan-card__limits li,
+.plan-includes li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.plan-card__limits svg,
+.plan-includes svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  color: var(--status-ready-fg);
+}
+
+.plan-card .ui-button {
+  align-self: end;
+  justify-content: center;
+}
+
+.plan-includes {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--bg-hover);
+}
+
+.plan-includes ul {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
