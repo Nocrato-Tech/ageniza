@@ -97,6 +97,13 @@ export function ActivationPath({ facts, firstClientId }: { facts: MilestoneFacts
     action: step.action === null ? undefined : <ButtonLink as={Link} to={step.action.to}>{step.action.label}</ButtonLink>
   }));
 
+  // The trail carries the way forward of the current step only. When the person cannot act on it, what they can do on the
+  // later steps stays one click away instead of disappearing.
+  const currentStep = steps.find((step) => step.key === current);
+  const ahead = currentStep !== undefined && currentStep.action === null
+    ? steps.filter((step) => !step.done && step.key !== current && step.action !== null)
+    : [];
+
   return <section aria-labelledby="activation-title" className="activation" data-stage-host>
     <div className="activation__intro">
       <Stage3D src="/3d/rocket.png" tone="indigo" size="xl" />
@@ -106,6 +113,12 @@ export function ActivationPath({ facts, firstClientId }: { facts: MilestoneFacts
     </div>
     <div className="activation__steps">
       <MilestoneTrail steps={trail} aria-label="Passos até a primeira aprovação" />
+      {ahead.length > 0 && <div className="activation__ahead">
+        <p className="activation__ahead-label">Você pode adiantar:</p>
+        <div className="activation__ahead-actions">
+          {ahead.map((step) => <ButtonLink key={step.key} as={Link} to={step.action!.to} variant="secondary">{step.action!.label}</ButtonLink>)}
+        </div>
+      </div>}
     </div>
   </section>;
 }
