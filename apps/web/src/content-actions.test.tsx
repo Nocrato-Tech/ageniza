@@ -339,6 +339,21 @@ describe('Enviar para aprovação', () => {
     expect((within(submitDialog()).getByLabelText('Recado para o cliente') as HTMLTextAreaElement).value).toBe('Oi!');
   });
 
+  it.each([
+    ['X', () => { fireEvent.click(within(submitDialog()).getByRole('button', { name: 'Fechar envio para aprovação' })); }],
+    ['Esc', () => { fireEvent(submitDialog(), new Event('cancel', { bubbles: true, cancelable: true })); }]
+  ])('asks before %s discards a deadline that was only half typed', async (_name, close) => {
+    const { calls } = await openContent(complete(), { permissions: EDITOR });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: '14/10' } });
+    close();
+    expect(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    expect((within(submitDialog()).getByLabelText('Aprovar até') as HTMLInputElement).value).toBe('14/10');
+    expect(moves(calls)).toHaveLength(0);
+  });
+
   it('keeps what was typed when the API refuses, and says the refused field in its own words', async () => {
     const { calls } = await openContent(complete(), {
       permissions: EDITOR,

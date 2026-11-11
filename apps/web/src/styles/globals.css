@@ -7921,7 +7921,6 @@ html:has(.portal-post__bar) {
   overflow-wrap: anywhere;
 }
 
-
 /* The media of a content as tiles: a numbered frame and the controls under it; the folder lists the same tiles with "Adicionar". */
 .content-media {
   display: grid;
