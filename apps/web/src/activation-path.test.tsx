@@ -264,13 +264,26 @@ describe('the journey "Até a primeira aprovação" on the agency Início', () =
     await waitFor(() => { expect(probe.pathname).toBe(`/agencia/${AGENCY}/clientes/${CLIENT}/acessos`); });
   });
 
-  it('adds no line when the current step has its own button, or when nothing later can be done', async () => {
-    renderHome({ permissions: ALL, clients: 1 });
+  it('keeps "Convidar o cliente" for a role that can act on the current step too, without repeating the screen the current button opens', async () => {
+    const probe = renderHome({ permissions: ALL, clients: 1 });
+    await findCount('1 de 4 passos');
+    const trail = within(journeyOf()).getByRole('list', { name: 'Passos até a primeira aprovação' });
+    expect(within(trail).getAllByRole('link').map((link) => link.textContent)).toEqual(['Criar conteúdo']);
+    const line = within(journeyOf()).getByText('Você pode adiantar:').parentElement as HTMLElement;
+    // "Enviar para aprovação" opens the same calendar as "Criar conteúdo": it would only repeat the button above.
+    expect(within(line).getAllByRole('link').map((link) => link.textContent)).toEqual(['Convidar o cliente']);
+    fireEvent.click(within(line).getByRole('link', { name: 'Convidar o cliente' }));
+    await waitFor(() => { expect(probe.pathname).toBe(`/agencia/${AGENCY}/clientes/${CLIENT}/acessos`); });
+  });
+
+  it('adds no line when nothing later can be done', async () => {
+    renderHome({ permissions: VIEW, clients: 1 });
     await findCount('1 de 4 passos');
     expect(screen.queryByText('Você pode adiantar:')).toBeNull();
     cleanup();
-    renderHome({ permissions: VIEW, clients: 1 });
-    await findCount('1 de 4 passos');
+    // The current step is the last one: nothing comes after it.
+    renderHome({ permissions: ALL, clients: 1, facts: { hasContent: true, sentForApproval: true, approvedByClient: false, published: false } });
+    await findCount('3 de 4 passos');
     expect(screen.queryByText('Você pode adiantar:')).toBeNull();
   });
 
