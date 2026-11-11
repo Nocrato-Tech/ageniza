@@ -9,8 +9,6 @@
 @import './tokens/typography.css';
 @import './tokens/motion.css';
 @import './tokens/semantic.css';
-@import './themes/light.css';
-@import './themes/dark.css';
 
 /**
  * shadcn/Tailwind bridge (docs/design-system.md section 15): not active.
@@ -55,7 +53,7 @@ textarea:focus-visible {
 
 .app-shell > header {
   padding: var(--space-4) max(var(--space-6), calc((100vw - 72rem) / 2));
-  /* Dark in both themes on purpose, carried over from the pre-token stylesheet (docs/design-system.md 17). */
+  /* A fixed dark band on purpose, carried over from the pre-token stylesheet (docs/design-system.md 17). */
   background: var(--color-ink-900);
   color: var(--color-white);
   font: var(--heading-md);
@@ -155,7 +153,9 @@ a.ui-button {
   transition:
     background-color var(--motion-fast),
     border-color var(--motion-fast),
-    color var(--motion-fast);
+    color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
 }
 
 /* Square: the icon-only button keeps the height of its size and takes the same width. */
@@ -178,6 +178,7 @@ a.ui-button {
 .ui-button--sm {
   min-height: 2rem;
   padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
 }
 
 .ui-button--md {
@@ -200,32 +201,58 @@ a.ui-button {
   color: var(--action-danger-fg);
 }
 
-.ui-button--primary:hover:not(:disabled):not(.ui-button--loading),
+.ui-button--primary:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--action-primary-hover);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-1px);
+}
+
+.ui-button--primary:active:not(:disabled):not(.ui-button--loading) {
+  box-shadow: none;
+  transform: translateY(0);
+}
+
 .ui-button--destructive:hover:not(:disabled):not(.ui-button--loading) {
   filter: brightness(0.94);
 }
 
+/* The secondary is the brand colour in a soft tone; the ghost is the text-only action. */
 .ui-button--secondary {
-  background: transparent;
-  border-color: var(--border-default);
-  color: var(--text-primary);
+  background: var(--action-secondary-bg);
+  color: var(--action-secondary-fg);
 }
 
 .ui-button--ghost {
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-link);
 }
 
-.ui-button--secondary:hover:not(:disabled):not(.ui-button--loading),
+.ui-button--secondary:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--action-secondary-hover);
+  color: var(--action-secondary-fg);
+}
+
 .ui-button--ghost:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--bg-hover);
-  color: var(--text-primary);
+  color: var(--text-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
+/* Disabled buttons and action pills take the disabled pair; the other controls dim. */
 .ui-button:disabled:not(.ui-button--loading),
-.ui-pill:disabled:not(.ui-pill--loading) {
+.ui-pill--action:disabled:not(.ui-pill--loading) {
+  background: var(--action-disabled-bg);
+  color: var(--action-disabled-fg);
   cursor: not-allowed;
-  opacity: 0.55;
+  box-shadow: none;
+  transform: none;
+  text-decoration: none;
+}
+
+/* The text-only action has no fill to lose: disabled, it stays transparent. */
+.ui-button--ghost:disabled:not(.ui-button--loading) {
+  background: transparent;
 }
 
 /* A blocked action (a plan to renew): dimmed like a disabled one, but focusable, with its reason on hover and focus. */
@@ -362,14 +389,13 @@ a.ui-button {
   outline-offset: 3px;
 }
 
-/* Segmented: Grade/Lista. The chosen option carries a border and a lifted surface, not only a colour. */
+/* Segmented: Grade/Lista. A tinted track; the chosen option is a raised white pill with a heavier weight, not only a colour. */
 .ui-segmented {
   display: inline-flex;
   gap: var(--space-1);
   padding: var(--space-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
 }
 
 .ui-segmented[aria-busy='true'] {
@@ -381,9 +407,9 @@ a.ui-button {
   align-items: center;
   gap: var(--space-2);
   min-height: 2.25rem;
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-4);
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--text-secondary);
   font: var(--button-md);
@@ -394,15 +420,17 @@ a.ui-button {
     color var(--motion-fast);
 }
 
-/* Hover only raises the text: a background here would read as the chosen option. */
+/* Hover raises the text and lays a veil of the surface: it stays well below the white of the chosen pill. */
 .ui-segmented__option:hover:not(:disabled):not([aria-disabled='true']):not([aria-checked='true']) {
+  background: color-mix(in srgb, var(--bg-surface) 55%, transparent);
   color: var(--text-primary);
 }
 
 .ui-segmented__option[aria-checked='true'] {
-  border-color: var(--border-default);
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--action-secondary-fg);
+  font-weight: 600;
 }
 
 .ui-segmented__option:focus-visible {
@@ -420,12 +448,20 @@ a.ui-button {
   opacity: 0.55;
 }
 
-/* Tabs: the open tab is underlined in ink, never in indigo (indigo is the action, today, the viewer's turn and the selected client). */
+/* Tabs: a pill on a tinted track. The open tab turns white and rises, with the secondary action's ink on it. */
 .ui-tabs__list {
-  display: flex;
-  gap: var(--space-4);
+  display: inline-flex;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: var(--space-1);
   overflow-x: auto;
-  border-bottom: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
+  scrollbar-width: none;
+}
+
+.ui-tabs__list::-webkit-scrollbar {
+  display: none;
 }
 
 .ui-tabs__tab {
@@ -433,25 +469,29 @@ a.ui-button {
   align-items: center;
   gap: var(--space-2);
   min-height: 2.75rem;
-  margin-bottom: -1px;
-  padding: 0 var(--space-1);
+  padding: 0 var(--space-4);
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--text-secondary);
   font: var(--button-md);
   white-space: nowrap;
   cursor: pointer;
-  transition: color var(--motion-fast);
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast);
 }
 
-.ui-tabs__tab:hover:not(:disabled) {
+.ui-tabs__tab:hover:not(:disabled):not([aria-selected='true']) {
+  background: color-mix(in srgb, var(--bg-surface) 55%, transparent);
   color: var(--text-primary);
 }
 
 .ui-tabs__tab[aria-selected='true'] {
-  border-bottom-color: var(--text-primary);
-  color: var(--text-primary);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--action-secondary-fg);
+  font-weight: 600;
 }
 
 /* Inside the scroll box of the list an outer ring would be clipped. */
@@ -484,11 +524,11 @@ a.ui-button {
 }
 
 .ui-text-input {
-  min-height: 2.75rem;
+  min-height: 3rem;
   width: 100%;
   border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
   font: var(--body-md);
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -530,6 +570,9 @@ a.ui-button {
   align-items: flex-start;
   gap: var(--space-2);
   margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--block-red-bg);
   font: var(--body-md);
   color: var(--text-danger);
 }
@@ -563,15 +606,24 @@ a.ui-button {
   cursor: pointer;
 }
 
-.ui-choice-card:hover:not(:disabled) {
-  border-color: var(--text-muted);
+.ui-choice-card {
+  transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard);
 }
 
-/* There is no "emphasis/suggested" border token yet; `--focus-ring` is the documented strong
- * emphasis colour, used here on purpose and registered as a design-system gap in the PR. */
+.ui-choice-card:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  background: var(--bg-hover);
+}
+
+/* The suggested option: the brand's soft fill, the focus-colour edge and a halo. It never selects by itself. */
 .ui-choice-card--highlighted,
 .ui-choice-card--highlighted:hover:not(:disabled) {
   border-color: var(--focus-ring);
+  background: var(--bg-hover);
+  box-shadow: 0 0 0 3px var(--focus-halo);
 }
 
 .ui-choice-card:disabled {
@@ -614,8 +666,8 @@ a.ui-button {
   align-self: flex-start;
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);
-  background: var(--bg-hover);
-  color: var(--text-secondary);
+  background: var(--bg-tint);
+  color: var(--action-secondary-fg);
   font: var(--label-sm);
 }
 
@@ -664,7 +716,7 @@ a.ui-button {
 .ui-skeleton {
   height: 4.5rem;
   border-radius: var(--radius-md);
-  background: var(--bg-hover);
+  background: var(--bg-tint);
 }
 
 /* Avatar, BadgeCard, Select and Pagination: docs/design-system.md section 13 */
@@ -676,8 +728,8 @@ a.ui-button {
   flex: none;
   overflow: hidden;
   border-radius: var(--radius-full);
-  background: var(--bg-hover);
-  color: var(--text-secondary);
+  background: var(--bg-tint);
+  color: var(--action-secondary-fg);
 }
 
 .ui-avatar--sm {
@@ -703,6 +755,8 @@ a.ui-button {
 
 .ui-avatar__initials {
   font: var(--label-md);
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .ui-avatar--lg .ui-avatar__initials {
@@ -717,18 +771,21 @@ a.ui-button {
   min-width: 0;
   height: 100%;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   color: var(--text-primary);
-  transition: border-color var(--motion-fast);
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
 }
 
 .ui-badge-card__cover {
   display: flex;
   justify-content: center;
   padding: var(--space-6) var(--space-4);
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  background: var(--bg-elevated);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--bg-tint);
 }
 
 .ui-badge-card .ui-avatar {
@@ -788,7 +845,7 @@ a.ui-button {
 
 .ui-badge-card__skeleton {
   height: 17rem;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
 }
 
 .ui-field {
@@ -797,8 +854,8 @@ a.ui-button {
 }
 
 .ui-field__label {
-  color: var(--text-secondary);
-  font: var(--label-sm);
+  color: var(--text-primary);
+  font: var(--label-md);
 }
 
 .ui-field:has(:disabled) > .ui-field__label {
@@ -813,7 +870,7 @@ a.ui-button {
 
 .ui-field__hint {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: var(--caption);
 }
 
@@ -822,7 +879,7 @@ a.ui-button {
   align-items: center;
   gap: var(--space-1);
   margin-left: auto;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: var(--caption);
   font-variant-numeric: tabular-nums;
 }
@@ -845,11 +902,14 @@ a.ui-button {
   animation: ui-button-spin var(--motion-slow) linear infinite;
 }
 
-/* Controls: hover and the invalid state change the edge only, so the 3:1 border/control is never lost. */
+/* Controls: hover darkens the edge and tints the fill; invalid changes the edge only, so the 3:1 border/control is never lost. */
 .ui-text-input,
 .ui-select,
 .ui-textarea {
-  transition: border-color var(--motion-fast);
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    background-color var(--motion-fast);
 }
 
 .ui-text-input::placeholder,
@@ -861,12 +921,31 @@ a.ui-button {
 .ui-select:hover:not(:disabled),
 .ui-textarea:hover:not(:disabled) {
   border-color: var(--text-muted);
+  background: var(--bg-hover);
+}
+
+/* Focus: the edge turns to the focus colour with a 4px halo; the 2px ring is kept for the keyboard on top of the edge. */
+.ui-text-input:focus-visible:not(:disabled),
+.ui-select:focus-visible:not(:disabled),
+.ui-textarea:focus-visible:not(:disabled) {
+  border-color: var(--focus-ring);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 4px var(--focus-halo);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
 }
 
 .ui-text-input[aria-invalid='true']:not(:disabled),
 .ui-select[aria-invalid='true']:not(:disabled),
 .ui-textarea[aria-invalid='true']:not(:disabled) {
   border-color: var(--text-danger);
+}
+
+.ui-text-input[aria-invalid='true']:focus-visible:not(:disabled),
+.ui-select[aria-invalid='true']:focus-visible:not(:disabled),
+.ui-textarea[aria-invalid='true']:focus-visible:not(:disabled) {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--text-danger) 18%, transparent);
+  outline-color: var(--text-danger);
 }
 
 .ui-text-input:disabled,
@@ -884,9 +963,9 @@ a.ui-button {
 }
 
 .ui-select {
-  min-height: 2.75rem;
+  min-height: 3rem;
   width: 100%;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
@@ -918,7 +997,7 @@ a.ui-button {
   min-width: 2.25rem;
   min-height: 2.25rem;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--text-primary);
   font: var(--label-md);
@@ -933,8 +1012,10 @@ a.ui-button {
 }
 
 .ui-pagination__page[aria-current='page'] {
+  background: var(--action-secondary-bg);
   border-color: var(--focus-ring);
-  color: var(--text-link);
+  color: var(--action-secondary-fg);
+  font-weight: 600;
 }
 
 .ui-pagination__step:disabled {
@@ -1026,14 +1107,16 @@ a.ui-button {
 
 .collaborators__badge-link {
   display: grid;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   color: var(--text-primary);
   text-decoration: none;
 }
 
-/* Hover by border, never by background: the capsule and the muted text are only guaranteed over `bg/surface` (docs/design-system.md 20.1). */
+/* The card the finger reaches rises 2px with a soft shadow and an indigo edge; the fill never changes under its text. */
 .collaborators__badge-link:hover .ui-badge-card {
   border-color: var(--focus-ring);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
 }
 
 /* The reactivate action of a removed badge sits under the card, never inside the link (#105). */
@@ -1529,13 +1612,12 @@ p.clients__indicators {
   font: var(--body-md);
 }
 
-/* The tabs are routes (a link each, the open one is aria-current), drawn as the Tabs component: ink underline, never indigo. They wrap instead of scrolling: a scrolled list hides the last ones with no cue. */
+/* The tabs are routes (a link each, the open one is aria-current), drawn as the Tabs component: the open one is the white pill. They wrap instead of scrolling: a scrolled list hides the last ones with no cue. */
 .client-detail__tabs ul.ui-tabs__list {
   flex-wrap: wrap;
-  row-gap: 0;
   margin: 0;
-  padding: 0;
   overflow-x: visible;
+  border-radius: var(--radius-lg);
   list-style: none;
 }
 
@@ -1548,8 +1630,10 @@ p.clients__indicators {
 }
 
 .client-detail__tabs .ui-tabs__tab[aria-current='page'] {
-  border-bottom-color: var(--text-primary);
-  color: var(--text-primary);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--action-secondary-fg);
+  font-weight: 600;
 }
 
 .client-detail__tabs-skeleton .ui-skeleton {
@@ -1750,7 +1834,7 @@ a.client-general__block:focus-visible {
 }
 
 .ui-modal::backdrop {
-  background: color-mix(in srgb, var(--bg-canvas) 75%, transparent);
+  background: var(--scrim);
 }
 
 .ui-modal[open] {
@@ -1907,7 +1991,7 @@ a.client-general__block:focus-visible {
   width: min(21.5rem, calc(100vw - var(--space-8)));
   padding: var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   box-shadow: var(--shadow-floating);
   color: var(--text-primary);
@@ -1964,7 +2048,7 @@ a.client-general__block:focus-visible {
   min-height: 2.75rem;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--text-primary);
   font: var(--body-md);
@@ -3026,8 +3110,9 @@ a.client-general__block:focus-visible {
   gap: var(--space-1);
   padding: var(--space-2);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
   color: var(--text-primary);
 }
 
@@ -3040,7 +3125,7 @@ a.client-general__block:focus-visible {
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-primary);
-  font: var(--body-md);
+  font: var(--label-md);
   text-align: left;
   cursor: pointer;
 }
@@ -3056,8 +3141,8 @@ a.client-general__block:focus-visible {
 
 .ui-menu-item--destructive:hover,
 .ui-menu-item--destructive:focus-visible {
-  background: var(--action-danger-bg);
-  color: var(--action-danger-fg);
+  background: var(--block-red-bg);
+  color: var(--block-red-fg);
 }
 
 .ui-menu-separator {
@@ -3888,10 +3973,10 @@ main > .shell-notice {
 
 .ui-textarea {
   width: 100%;
-  min-height: 6rem;
+  min-height: 6.5rem;
   border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
   font: var(--body-md);
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -6511,7 +6596,6 @@ html:has(.portal-post__bar) {
 
 /* The mark inside the chip is the state's icon and word; the chip already is the outline. */
 .content-day__script .ui-status-tag {
-  padding: 0;
   border-color: transparent;
 }
 
@@ -6759,18 +6843,17 @@ html:has(.portal-post__bar) {
   min-width: 0;
 }
 
-/* The state is its icon and word with no outline of its own: the card is already the frame. */
+/* The card is tinted by its format, so the state pill sits on the surface to keep its own colours readable. */
 .content-card .ui-status-tag {
   min-width: min-content;
-  padding: 0;
   border-color: transparent;
+  background: var(--bg-surface);
   overflow-wrap: normal;
   white-space: normal;
 }
 
 .content-card .ui-late-badge {
   min-width: min-content;
-  padding: 0 var(--space-1);
   overflow-wrap: normal;
   white-space: normal;
 }
@@ -7175,11 +7258,11 @@ html:has(.portal-post__bar) {
 }
 
 .content-feed__tile[data-status='awaiting_approval'] .content-feed__dot {
-  background: var(--color-violet-400);
+  background: var(--status-waiting-fg);
 }
 
 .content-feed__tile[data-status='adjusting'] .content-feed__dot {
-  background: var(--color-indigo-400);
+  background: var(--status-adjust-fg);
 }
 
 .content-feed__tile[data-status='in_production'] .content-feed__dot {
@@ -8405,9 +8488,10 @@ html:has(.portal-post__bar) {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 0 var(--space-2);
+  min-height: 1.5rem;
+  padding: 0 var(--space-3) 0 var(--space-2);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   font: var(--caption);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -8433,35 +8517,42 @@ html:has(.portal-post__bar) {
   color: var(--format-static-tag-fg);
 }
 
-/* Outlined by state: the colour is the icon's (non-text, 3:1) and the label stays `text/secondary`. */
+/* A soft pill by state: the family's fill and text pair, with the icon in the text colour. The icon and the words say the state; the colour only helps. */
 .ui-status-tag {
-  border-color: var(--border-default);
-  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 .ui-status-tag .ui-icon > svg {
   width: 0.75rem;
   height: 0.75rem;
+  stroke-width: 2.4;
 }
 
-.ui-status-tag--ready .ui-icon {
-  color: var(--status-ready-fg);
+.ui-status-tag--ready {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
 }
 
-.ui-status-tag--waiting .ui-icon {
-  color: var(--status-waiting-fg);
+.ui-status-tag--waiting {
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
 }
 
-.ui-status-tag--adjust .ui-icon {
-  color: var(--status-adjust-fg);
+.ui-status-tag--adjust {
+  background: var(--status-adjust-bg);
+  color: var(--status-adjust-text);
 }
 
-.ui-status-tag--published .ui-icon {
+.ui-status-tag--production {
+  background: var(--status-production-bg);
+  color: var(--status-production-text);
+}
+
+/* Published is done and quiet: the surface and a hairline, not a colour. */
+.ui-status-tag--published {
+  border-color: var(--border-default);
+  background: var(--bg-surface);
   color: var(--status-published-fg);
-}
-
-.ui-status-tag--production .ui-icon {
-  color: var(--status-production-fg);
 }
 
 /* The one state in a solid block, on the danger action's own pair. */
@@ -8472,7 +8563,7 @@ html:has(.portal-post__bar) {
 }
 
 /* Attention ring of the Avatar: a 2px gap in the colour it sits on, then the ring in the late-state colour, which is 3:1
-   on the canvas and the surface in both themes. `--ui-avatar-gap` names the background when it is not the canvas. */
+   on the canvas and the surface. `--ui-avatar-gap` names the background when it is not the canvas. */
 .ui-avatar--attention {
   box-shadow: 0 0 0 2px var(--ui-avatar-gap, var(--bg-canvas)), 0 0 0 4px var(--status-late-fg);
 }
@@ -8537,6 +8628,20 @@ html:has(.portal-post__bar) {
   justify-content: center;
   gap: var(--space-12);
   padding: var(--space-8);
+  border: 1.5px dashed var(--color-indigo-200);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, var(--color-indigo-50), var(--bg-surface) 70%);
+}
+
+/* Good news and a failure are not an invitation: a solid frame, teal wash for the first and the plain surface for the second. */
+.ui-empty-state--good-news {
+  border: 1px solid var(--color-teal-100);
+  background: linear-gradient(180deg, var(--block-teal-bg), var(--bg-surface) 80%);
+}
+
+.ui-empty-state--failure {
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
 }
 
 .ui-empty-state__body {
@@ -9563,5 +9668,357 @@ html:has(.portal-post__bar) {
 @media (prefers-reduced-motion: reduce) {
   .confetti {
     display: none;
+  }
+}
+
+/* Stage3D: docs/design-system.md, "Ícone 3D: o palco". The "color" render of 3dicons goes as it comes, never painted. It sits on a disc in the
+   tone of the card, with a contact shadow, and can leave the card through its top edge. Everything comes from `--ss`, the size of the icon.
+   `--ui-stage-bg` is the fill of the card the stage sits on (the disc mixes its tone with it): a colour block sets it to its own fill. */
+.ui-stage {
+  --ss: var(--stage-size-lg);
+  --st-bg: var(--ui-stage-bg, var(--bg-surface));
+  --st-tone: var(--stage-slate-tone);
+  --st-deep: var(--stage-slate-deep);
+  position: relative;
+  isolation: isolate;
+  display: block;
+  flex: none;
+  width: calc(var(--ss) * 1.16);
+  height: calc(var(--ss) * 1.32);
+  pointer-events: none;
+}
+
+.ui-stage--sm {
+  --ss: var(--stage-size-sm);
+}
+
+.ui-stage--md {
+  --ss: var(--stage-size-md);
+}
+
+.ui-stage--lg {
+  --ss: var(--stage-size-lg);
+}
+
+.ui-stage--xl {
+  --ss: var(--stage-size-xl);
+}
+
+.ui-stage--indigo {
+  --st-tone: var(--stage-indigo-tone);
+  --st-deep: var(--stage-indigo-deep);
+}
+
+.ui-stage--violet {
+  --st-tone: var(--stage-violet-tone);
+  --st-deep: var(--stage-violet-deep);
+}
+
+.ui-stage--teal {
+  --st-tone: var(--stage-teal-tone);
+  --st-deep: var(--stage-teal-deep);
+}
+
+.ui-stage--sky {
+  --st-tone: var(--stage-sky-tone);
+  --st-deep: var(--stage-sky-deep);
+}
+
+.ui-stage--red {
+  --st-tone: var(--stage-red-tone);
+  --st-deep: var(--stage-red-deep);
+}
+
+.ui-stage--breakout {
+  position: absolute;
+  top: calc(var(--ss) * -0.32);
+  right: var(--space-3);
+}
+
+.ui-stage::before,
+.ui-stage::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  z-index: 0;
+  border-radius: 50%;
+}
+
+.ui-stage::before {
+  bottom: 0;
+  width: calc(var(--ss) * 1.05);
+  height: calc(var(--ss) * 0.28);
+  margin-left: calc(var(--ss) * -0.525);
+  background: radial-gradient(
+    ellipse at 50% 30%,
+    color-mix(in srgb, var(--st-tone) var(--stage-face-top), var(--st-bg)),
+    color-mix(in srgb, var(--st-tone) var(--stage-face-bottom), var(--st-bg))
+  );
+  box-shadow:
+    0 calc(var(--ss) * 0.064) 0 color-mix(in srgb, var(--st-deep) var(--stage-edge-mix), var(--st-bg)),
+    0 calc(var(--ss) * 0.11) calc(var(--ss) * 0.145) calc(var(--ss) * -0.032) color-mix(in srgb, var(--st-deep) var(--stage-edge-mix), transparent);
+}
+
+.ui-stage::after {
+  bottom: calc(var(--ss) * 0.032);
+  width: calc(var(--ss) * 0.64);
+  height: calc(var(--ss) * 0.128);
+  margin-left: calc(var(--ss) * -0.32);
+  background: color-mix(in srgb, var(--st-deep) var(--stage-shadow-mix), transparent);
+  filter: blur(5px);
+}
+
+.ui-stage__float {
+  position: absolute;
+  bottom: calc(var(--ss) * 0.12);
+  left: 50%;
+  z-index: 1;
+  width: var(--ss);
+  height: var(--ss);
+  margin-left: calc(var(--ss) * -0.5);
+  animation: ui-stage-float var(--stage-float-duration) ease-in-out infinite;
+}
+
+.ui-stage__icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: perspective(520px) rotate(var(--stage-tilt)) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform var(--motion-base) ease-out;
+  user-select: none;
+}
+
+@keyframes ui-stage-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(calc(var(--stage-float-distance) * -1));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-stage__float {
+    animation: none;
+  }
+
+  .ui-stage__icon {
+    transition: none;
+  }
+}
+
+/* MilestoneTrail: docs/design-system.md, "Marco e recompensa". Done is a filled dot with a check and the line up to it filled; current is a ring
+   with a calm pulse; upcoming is an empty dot. The fill, the check and the line are transitions of the status class, so a step that changes
+   status plays them by itself. */
+.ui-trail {
+  --node: 2rem;
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ui-trail--sm {
+  --node: 1.75rem;
+}
+
+.ui-trail__item {
+  display: grid;
+  grid-template-columns: var(--node) minmax(0, 1fr);
+  column-gap: var(--space-4);
+}
+
+.ui-trail__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ui-trail__node {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--node);
+  height: var(--node);
+  border: 2px solid var(--text-muted);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  transition:
+    background-color 0.3s var(--motion-easing-standard),
+    border-color 0.3s var(--motion-easing-standard);
+}
+
+.ui-trail__check {
+  width: 56%;
+  height: 56%;
+  fill: none;
+  stroke: var(--color-white);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  transition: stroke-dashoffset 0.4s var(--motion-easing-standard) 0.25s;
+}
+
+.ui-trail__item--done .ui-trail__node {
+  border-color: var(--status-ready-fg);
+  background: var(--status-ready-fg);
+}
+
+.ui-trail__item--done .ui-trail__check {
+  stroke-dashoffset: 0;
+}
+
+.ui-trail__item--current .ui-trail__node {
+  border: 3px solid var(--focus-ring);
+  transition-delay: 0.45s;
+  animation: ui-trail-pulse 2.4s ease-out 1s infinite;
+}
+
+.ui-trail__item--current .ui-trail__node::before {
+  content: '';
+  position: absolute;
+  inset: 24%;
+  border-radius: var(--radius-full);
+  background: var(--focus-ring);
+}
+
+@keyframes ui-trail-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--focus-ring) 35%, transparent);
+  }
+
+  70%,
+  100% {
+    box-shadow: 0 0 0 0.625rem color-mix(in srgb, var(--focus-ring) 0%, transparent);
+  }
+}
+
+.ui-trail__line {
+  position: relative;
+  flex: 1;
+  width: 3px;
+  min-height: 1.5rem;
+  margin: var(--space-1) 0;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-slate-300);
+}
+
+.ui-trail__line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--status-ready-fg);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 0.6s var(--motion-easing-standard);
+}
+
+.ui-trail__item:has(+ .ui-trail__item--done) .ui-trail__line::after,
+.ui-trail__item:has(+ .ui-trail__item--current) .ui-trail__line::after {
+  transform: scaleY(1);
+}
+
+.ui-trail__item:last-child .ui-trail__line {
+  display: none;
+}
+
+.ui-trail__body {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0.25rem 0 var(--space-5);
+}
+
+.ui-trail__item:last-child .ui-trail__body {
+  padding-bottom: 0;
+}
+
+.ui-trail__status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ui-trail__title {
+  margin: 0;
+  font: var(--title-md);
+}
+
+.ui-trail__item--done .ui-trail__title {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.ui-trail__when,
+.ui-trail__desc {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.ui-trail__when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ui-trail__item--current .ui-trail__desc {
+  color: var(--text-primary);
+}
+
+.ui-trail__act {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.ui-trail__item--current .ui-trail__body {
+  margin: 0 calc(var(--space-4) * -1) var(--space-4) 0;
+  padding: var(--space-4);
+  border: 1.5px solid var(--color-indigo-200);
+  border-radius: var(--radius-lg);
+  background: var(--bg-hover);
+}
+
+.ui-trail__item--current .ui-trail__title {
+  font: var(--heading-lg);
+}
+
+.ui-trail__item--current .ui-trail__rail {
+  padding-top: var(--space-4);
+}
+
+.ui-trail__item--current:last-child .ui-trail__body {
+  margin-bottom: 0;
+}
+
+@media (max-width: 47.99rem) {
+  .ui-trail__item--current .ui-trail__body {
+    margin-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-trail__node,
+  .ui-trail__check,
+  .ui-trail__line::after {
+    transition: none;
+  }
+
+  .ui-trail__item--current .ui-trail__node {
+    animation: none;
   }
 }

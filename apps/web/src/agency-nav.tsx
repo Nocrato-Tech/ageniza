@@ -58,7 +58,7 @@ export function AgencySidebar({ agenciaId, agencyName, permissions }: { agenciaI
 
   return <aside className="agency-sidebar" data-collapsed={collapsed}>
     <div className="agency-sidebar__top">
-      {collapsed ? <BrandSymbol variant="white" size={32} label="Ageniza" /> : <Logo variant="on-dark" height={30} />}
+      {collapsed ? <BrandSymbol variant="color" size={32} label="Ageniza" /> : <Logo variant="on-light" height={30} />}
       <IconButton
         className="agency-sidebar__toggle"
         label={collapsed ? 'Abrir navegação' : 'Recolher navegação'}
@@ -83,7 +83,7 @@ export function AgencySidebar({ agenciaId, agencyName, permissions }: { agenciaI
 
 export function AgencySidebarSkeleton() {
   return <aside className="agency-sidebar" data-collapsed={false}>
-    <div className="agency-sidebar__top"><Logo variant="on-dark" height={30} /></div>
+    <div className="agency-sidebar__top"><Logo variant="on-light" height={30} /></div>
     <div className="agency-sidebar__context"><Skeleton className="agency-header__skeleton" /></div>
     <nav className="agency-nav" aria-label="Navegação da agência"><Skeleton /></nav>
     <div className="agency-sidebar__foot"><AccountMenu variant="sidebar" reopensEmailChange={false} /></div>

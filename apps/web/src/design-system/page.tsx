@@ -1,23 +1,21 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
+import { Stage3D, type Stage3DTone } from '@ageniza/ui';
 
 import { componentEntries, type ComponentEntry, type RenderedState } from './components.js';
-import { colorFamily, designTokens, groupTokens, semanticGroup, valueIn, type Token } from './tokens.js';
+import { colorFamily, designTokens, groupTokens, semanticGroup, type Token } from './tokens.js';
 import './design-system.css';
-
-type ThemeName = 'light' | 'dark';
 
 export const DESIGN_SYSTEM_MARKER = 'ageniza-design-system-page';
 
-const themes: readonly { name: ThemeName; label: string }[] = [{ name: 'light', label: 'Claro' }, { name: 'dark', label: 'Escuro' }];
 const sections = [
   ['cores', 'Cores primitivas'], ['semanticos', 'Tokens semânticos'], ['tipografia', 'Tipografia'], ['espaco', 'Espaço e raio'],
-  ['elevacao', 'Elevação'], ['movimento', 'Movimento'], ['componentes', 'Componentes']
+  ['elevacao', 'Elevação'], ['blocos', 'Blocos de cor e palco'], ['movimento', 'Movimento'], ['componentes', 'Componentes']
 ] as const;
 
 const asVar = (token: Token): string => `var(${token.name})`;
 
-function TokenName({ token, theme }: { token: Token; theme?: ThemeName }) {
-  return <><code className="ds-token__name">{token.name}</code><span className="ds-token__value">{theme === undefined ? token.value : valueIn(theme, token)}</span></>;
+function TokenName({ token }: { token: Token }) {
+  return <><code className="ds-token__name">{token.name}</code><span className="ds-token__value">{token.value}</span></>;
 }
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -40,16 +38,14 @@ function SemanticSwatch({ token }: { token: Token }) {
 }
 
 function SemanticTokens() {
-  return <div className="ds-themes">{themes.map((theme) => <div key={theme.name} data-theme={theme.name} className="ds-theme-panel" data-testid={`semantic-${theme.name}`}>
-    <h3>{theme.label}</h3>
+  return <div className="ds-panel" data-testid="semantic">
     {groupTokens(designTokens.semantic, semanticGroup).map((group) => <div key={group.key} className="ds-group">
       <h4>{group.key}</h4>
       <ul className="ds-list">{group.tokens.map((token) => <li key={token.name} className="ds-token">
-        <SemanticSwatch token={token} /><TokenName token={token} theme={theme.name} />
-        {theme.name === 'dark' && designTokens.darkOverrides.has(token.name) && <span className="ds-token__flag">sobrescrito no escuro</span>}
+        <SemanticSwatch token={token} /><TokenName token={token} />
       </li>)}</ul>
     </div>)}
-  </div>)}</div>;
+  </div>;
 }
 
 function Typography() {
@@ -73,17 +69,35 @@ function SpaceAndRadius() {
 }
 
 function Elevation() {
-  return <div className="ds-themes">{themes.map((theme) => <div key={theme.name} data-theme={theme.name} className="ds-theme-panel" data-testid={`elevation-${theme.name}`}>
-    <h3>{theme.label}</h3>
+  return <div className="ds-panel" data-testid="elevation">
     <ul className="ds-list">
       {designTokens.elevation.map((token) => <li key={token.name} className="ds-token">
-        <span className="ds-elevation" style={{ boxShadow: asVar(token) }} aria-hidden="true" /><TokenName token={token} theme={theme.name} />
+        <span className="ds-elevation" style={{ boxShadow: asVar(token) }} aria-hidden="true" /><TokenName token={token} />
       </li>)}
       {['--bg-canvas', '--bg-surface', '--bg-elevated'].map((name) => <li key={name} className="ds-token">
         <span className="ds-elevation" style={{ background: `var(${name})` }} aria-hidden="true" /><code className="ds-token__name">{name}</code><span className="ds-token__value">separa por superfície e borda</span>
       </li>)}
     </ul>
-  </div>)}</div>;
+  </div>;
+}
+
+const BLOCKS: readonly { tone: Stage3DTone; icon: string; label: string }[] = [
+  { tone: 'indigo', icon: 'rocket', label: 'Índigo' }, { tone: 'violet', icon: 'trophy', label: 'Violeta' }, { tone: 'teal', icon: 'thumb-up', label: 'Verde-água' },
+  { tone: 'sky', icon: 'calender', label: 'Céu' }, { tone: 'red', icon: 'bell', label: 'Vermelho' }, { tone: 'slate', icon: 'folder', label: 'Neutro' }
+];
+
+/** A colour block is a soft fill with its own text colour; the stage mixes its disc with that fill. */
+function Blocks() {
+  return <ul className="ds-blocks" data-testid="blocks">{BLOCKS.map((block) => <li
+    key={block.tone}
+    data-stage-host
+    className="ds-block"
+    style={{ background: `var(--block-${block.tone}-bg)`, color: `var(--block-${block.tone}-fg)`, '--ui-stage-bg': `var(--block-${block.tone}-bg)` } as CSSProperties}
+  >
+    <Stage3D src={`/3d/${block.icon}.png`} tone={block.tone} size="md" />
+    <strong>{block.label}</strong>
+    <code>--block-{block.tone}-bg</code>
+  </li>)}</ul>;
 }
 
 function Motion() {
@@ -142,13 +156,7 @@ function ComponentTable({ entry }: { entry: ComponentEntry }) {
 }
 
 function Components() {
-  const [theme, setTheme] = useState<ThemeName>('light');
-  return <>
-    <div role="group" aria-label="Tema dos componentes" className="ds-toggle">
-      {themes.map((option) => <button key={option.name} type="button" aria-pressed={theme === option.name} onClick={() => setTheme(option.name)}>{option.label}</button>)}
-    </div>
-    <div data-theme={theme} className="ds-theme-panel" data-testid="components-panel">{componentEntries.map((entry) => <ComponentTable key={entry.id} entry={entry} />)}</div>
-  </>;
+  return <div className="ds-panel" data-testid="components-panel">{componentEntries.map((entry) => <ComponentTable key={entry.id} entry={entry} />)}</div>;
 }
 
 export default function DesignSystemPage() {
@@ -157,7 +165,7 @@ export default function DesignSystemPage() {
     <header className="ds-header">
       <p className="ds-eyebrow">Interno · só em desenvolvimento</p>
       <h1>Design system</h1>
-      <p>Os valores abaixo são lidos dos arquivos de <code>apps/web/src/styles</code>; nada é copiado à mão.</p>
+      <p>Tema único, claro. Os valores abaixo são lidos dos arquivos de <code>apps/web/src/styles</code>; nada é copiado à mão.</p>
       <nav aria-label="Seções"><ul>{sections.map(([id, label]) => <li key={id}><a href={`#${id}`}>{label}</a></li>)}</ul></nav>
     </header>
     <main id="main-content">
@@ -166,6 +174,7 @@ export default function DesignSystemPage() {
       <Section id="tipografia" title="Tipografia"><Typography /></Section>
       <Section id="espaco" title="Espaço e raio"><SpaceAndRadius /></Section>
       <Section id="elevacao" title="Elevação"><Elevation /></Section>
+      <Section id="blocos" title="Blocos de cor e palco"><Blocks /></Section>
       <Section id="movimento" title="Movimento"><Motion /></Section>
       <Section id="componentes" title="Componentes"><Components /></Section>
     </main>

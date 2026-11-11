@@ -33,7 +33,7 @@ describe('the build and the /design-system page', () => {
     const code = await bundle('production');
     expect(code).not.toContain(PAGE_MARKER);
     expect(code).not.toContain(ROUTE_PATH);
-    expect(code).not.toContain('sobrescrito no escuro');
+    expect(code).not.toContain('Blocos de cor e palco');
     expect(code).not.toContain('.ds-page');
   }, 120_000);
 });

@@ -16,11 +16,11 @@ const customProperties = (css: string, selector: string): Map<string, string> =>
 
 const light = new Map([
   ...customProperties(readStyles('tokens/primitives.css'), ':root'),
-  ...customProperties(readStyles('tokens/semantic.css'), ":root,\n[data-theme='light']")
+  ...customProperties(readStyles('tokens/semantic.css'), ':root')
 ]);
-const dark = new Map([...light, ...customProperties(readStyles('themes/dark.css'), "[data-theme='dark']")]);
 
-export const themes = { light, dark } as const;
+/** The app has one theme; the name stays an argument of the helpers so a test says which tokens it reads. */
+export const themes = { light } as const;
 
 type Rgb = [number, number, number];
 
