@@ -192,7 +192,17 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
       {stateChanged !== undefined && <FieldMessage role="alert">{stateChanged}</FieldMessage>}
       {stateNote !== undefined && <p className="portal-post__hint">{stateNote}</p>}
     </div>}
-    {awaiting && <ApprovalRound approval={content.approval} agencyName={client.agencyName} />}
+    {awaiting && <div className="portal-post__decide">
+      <ApprovalRound approval={content.approval} agencyName={client.agencyName} />
+      <section className="portal-post__bar" aria-labelledby="portal-post-decision">
+        <h2 id="portal-post-decision" className="visually-hidden">Sua decisão</h2>
+        {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
+        <div className="portal-post__actions">
+          <Button variant="secondary" size="lg" leadingIcon={<Pencil />} disabled={reloading || approve.isPending} blockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined} onClick={() => { setRequestError(undefined); setStateChanged(undefined); setAsking(true); }}>Pedir ajuste</Button>
+          <Button size="lg" leadingIcon={<Check />} loading={approve.isPending} disabled={reloading || requestChanges.isPending} blockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined} onClick={() => { setActionError(undefined); setStateChanged(undefined); setNotice(undefined); send(() => { approve.mutate(); }); }}>Aprovar</Button>
+        </div>
+      </section>
+    </div>}
     <div className="portal-post__body">
       <div className="portal-post__card">
         <PortalMediaCarousel
@@ -204,7 +214,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
           title={content.title}
         />
         <section className="portal-post__section portal-post__caption-block" aria-labelledby="portal-post-caption">
-          <h2 id="portal-post-caption" className="visually-hidden">Legenda</h2>
+          <h2 id="portal-post-caption" className="portal-post__eyebrow">Legenda</h2>
           {content.caption === null || content.caption === ''
             ? <p className="portal-post__hint">{NO_CAPTION_NOTE}</p>
             : <p className="portal-post__caption">{content.caption}</p>}
@@ -224,14 +234,6 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
         />
       </section>
     </div>
-    {awaiting && <section className="portal-post__bar" aria-labelledby="portal-post-decision">
-      <h2 id="portal-post-decision" className="visually-hidden">Sua decisão</h2>
-      {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
-      <div className="portal-post__actions">
-        <Button variant="secondary" size="lg" leadingIcon={<Pencil />} disabled={reloading || approve.isPending} blockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined} onClick={() => { setRequestError(undefined); setStateChanged(undefined); setAsking(true); }}>Pedir ajuste</Button>
-        <Button size="lg" leadingIcon={<Check />} loading={approve.isPending} disabled={reloading || requestChanges.isPending} blockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined} onClick={() => { setActionError(undefined); setStateChanged(undefined); setNotice(undefined); send(() => { approve.mutate(); }); }}>Aprovar</Button>
-      </div>
-    </section>}
     {asking && <RequestChangesDialog
       hint="A agência vai ver a sua mensagem e responder na conversa deste conteúdo."
       draft={draft}
