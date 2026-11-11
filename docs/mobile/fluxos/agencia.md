@@ -126,6 +126,19 @@ stateDiagram-v2
   - "aguardando a agência" é a conversa aberta cujo último comentário é do cliente.
 - Comentário não se edita nem se apaga. Só a agência resolve conversas.
 
+### Pedido de material
+
+A agência pede material ao cliente (por exemplo, "envie 3 fotos da equipe") e acompanha se ele respondeu. É um assunto da conversa **do próprio cliente**, ao lado da seção da marca, da persona e do conteúdo. Não existe dentro da conversa de um conteúdo, então o portal continua sem ver a conversa de um conteúdo em produção. Decisão: [pedido de material](../../business/decisions/2026-11-10-estrutural-pedido-de-material-e-assunto-proprio-da-conversa-do-cliente.md).
+
+1. **Abrir.** `POST …/clients/:clientId/threads` com `{ "subject": { "materialRequest": true }, "body": "Envie 3 fotos da equipe", "dueOn": "2026-11-20" }`. Pede `cliente.operar`. Cada chamada abre um pedido novo. Não há rota própria de abertura.
+2. **Prazo opcional.** `dueOn` é uma data `AAAA-MM-DD`, de hoje a 90 dias, no fuso de São Paulo. Fora disso é `400` com o campo `dueOn`. `dueOn` com qualquer outro assunto também é `400`.
+3. **Listar.** `GET …/clients/:clientId/threads?materialRequest=true` traz os pedidos do cliente, em qualquer estado. O assunto vem como `subject: { materialRequest: true }` e o prazo como `dueOn` (`null` se não houver). Pede `cliente.visualizar`. Toda conversa passou a trazer `dueOn`, que é `null` fora do pedido.
+4. **Acompanhar.** O cliente responde por comentário, e a agência comenta pela rota de sempre (`…/threads/:threadId/comments`).
+5. **Resolver.** `POST …/threads/:threadId/resolve`, a mesma rota das outras conversas. Resolvido, o pedido sai do Início do portal. Um comentário novo do cliente o reabre, como em toda conversa.
+
+- Só a agência abre e resolve um pedido. O portal não consegue abrir um (`400`).
+- O pedido **não conta** em "aguardando a agência" nem em "com resposta da agência": esses números são das conversas do estudo de marca.
+
 ## Pessoas do portal do cliente
 
 | método | rota | permissão | o que faz |
@@ -139,6 +152,12 @@ stateDiagram-v2
 | `POST` | `…/clients/:clientId/invitations/:invitationId/resend` | `cliente.convidar_usuario` | transforma um convite antigo em acesso |
 
 - A pessoa do portal não tem papel. Todas as pessoas de um cliente podem as mesmas coisas.
+- **Último acesso.** Cada pessoa da lista traz `lastEnteredAt`, o último acesso àquele cliente (a última entrada no portal com a conta ou a última vez que abriu o link de aprovação do e-mail), ou `null`. Só quem já lê esta lista o recebe. Decisão: [último acesso ao portal](../../business/decisions/2026-11-10-estrutural-ultimo-acesso-ao-portal-por-cliente.md).
+- **Três casos para mostrar na lista.**
+  - `entered: true`: entrou com a conta. Mostre o nome e o último acesso, por exemplo "Último acesso em 8 de nov.".
+  - `entered: false` e `lastEnteredAt` preenchido: só abriu o link de aprovação. Mostre "Ainda não entrou com a conta · abriu o link em <data>".
+  - `entered: false` e `lastEnteredAt: null`: "Nunca entrou".
+- `entered` continua sendo "entrou com a conta" e é ele que libera **Reenviar boas-vindas**: quem só abriu o link ainda pode receber o e-mail de novo. Decisão: [quem só abriu o link ainda não entrou com a conta](../../business/decisions/2026-11-10-quem-so-abriu-o-link-de-aprovacao-ainda-nao-entrou-com-a-conta.md).
 - Um colaborador da agência, mesmo o Owner, **não entra no portal** sem um acesso próprio àquele cliente.
 
 ## Conteúdos

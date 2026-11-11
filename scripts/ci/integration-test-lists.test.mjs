@@ -45,6 +45,23 @@ describe('test:integration selects the integration files by pattern, not by list
     });
   }
 
+  // The worker files share one global notification queue, and the database files share the global authorization metadata: files that
+  // overlap send each other's items and fail on each other's counts (wave 2 of telas-melhorias raced on exactly this). Both run one file
+  // at a time, from the config the script names. The value is read from the imported config, not from its text.
+  it('apps/worker: test:integration runs the integration config, the one that runs files serially', () => {
+    const tokens = readPackage('apps/worker').scripts['test:integration'].split(/\s+/).filter((token) => token !== '');
+
+    expect(tokens[tokens.indexOf('--config') + 1], 'sem --config o vitest usa a configuração padrão, que roda os arquivos em paralelo').toBe('vitest.integration.config.ts');
+  });
+
+  for (const dir of ['apps/worker', 'packages/database']) {
+    it(`${dir}: the integration config runs the files one at a time (fileParallelism: false)`, async () => {
+      const { default: config } = await import(pathToFileURL(join(root, dir, 'vitest.integration.config.ts')).href);
+
+      expect(config.test.fileParallelism, `${dir}/vitest.integration.config.ts: arquivos em paralelo disputam a fila e as contagens globais`).toBe(false);
+    });
+  }
+
   it('apps/worker: the test:integration pattern matches every integration file', () => {
     const tokens = readPackage('apps/worker').scripts['test:integration'].split(/\s+/).filter((token) => token !== '');
     const patterns = tokens.slice(tokens.indexOf('run') + 1).filter((token) => !token.startsWith('-'));

@@ -1519,6 +1519,36 @@
                     "tasksApproved": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "approval": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sentAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "dueOn": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "sentAt",
+                        "dueOn",
+                        "note"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -1535,7 +1565,8 @@
                     "revision",
                     "publishedOn",
                     "tasksTotal",
-                    "tasksApproved"
+                    "tasksApproved",
+                    "approval"
                   ],
                   "additionalProperties": false
                 }
@@ -1709,6 +1740,36 @@
                     "tasksApproved": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "approval": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "sentAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "dueOn": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "sentAt",
+                        "dueOn",
+                        "note"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -1725,7 +1786,8 @@
                     "revision",
                     "publishedOn",
                     "tasksTotal",
-                    "tasksApproved"
+                    "tasksApproved",
+                    "approval"
                   ],
                   "additionalProperties": false
                 }
@@ -1970,6 +2032,36 @@
           "createdAt": {
             "type": "string"
           },
+          "approval": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "sentAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "dueOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "sentAt",
+              "dueOn",
+              "note"
+            ],
+            "additionalProperties": false
+          },
           "media": {
             "type": "array",
             "items": {
@@ -2145,6 +2237,7 @@
           "publishedOn",
           "cancelledAt",
           "createdAt",
+          "approval",
           "media",
           "tasks",
           "conversation"
@@ -2592,6 +2685,31 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "approval": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "dueOn": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "dueOn",
+                        "note"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -2604,7 +2722,8 @@
                     "status",
                     "coverAssetId",
                     "thumbnailAssetId",
-                    "publishedOn"
+                    "publishedOn",
+                    "approval"
                   ],
                   "additionalProperties": false
                 }
@@ -2707,6 +2826,31 @@
                     "string",
                     "null"
                   ]
+                },
+                "approval": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "dueOn": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "dueOn",
+                    "note"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -2719,7 +2863,8 @@
                 "status",
                 "coverAssetId",
                 "thumbnailAssetId",
-                "publishedOn"
+                "publishedOn",
+                "approval"
               ],
               "additionalProperties": false
             }
@@ -2857,6 +3002,31 @@
                   "null"
                 ]
               },
+              "approval": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "dueOn": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "dueOn",
+                  "note"
+                ],
+                "additionalProperties": false
+              },
               "caption": {
                 "type": [
                   "string",
@@ -2907,6 +3077,7 @@
               "status",
               "coverAssetId",
               "publishedOn",
+              "approval",
               "caption",
               "revision",
               "media"
@@ -4320,6 +4491,21 @@
                         "contentId"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "materialRequest": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        }
+                      },
+                      "required": [
+                        "materialRequest"
+                      ],
+                      "additionalProperties": false
                     }
                   ]
                 },
@@ -4404,6 +4590,12 @@
                     "string",
                     "null"
                   ]
+                },
+                "dueOn": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -4414,7 +4606,8 @@
                 "lastComment",
                 "commentCount",
                 "resolvedBy",
-                "resolvedAt"
+                "resolvedAt",
+                "dueOn"
               ],
               "additionalProperties": false
             }
@@ -4512,6 +4705,21 @@
                       "contentId"
                     ],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "materialRequest": {
+                        "type": "boolean",
+                        "enum": [
+                          true
+                        ]
+                      }
+                    },
+                    "required": [
+                      "materialRequest"
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               },
@@ -4596,6 +4804,12 @@
                   "string",
                   "null"
                 ]
+              },
+              "dueOn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -4606,7 +4820,8 @@
               "lastComment",
               "commentCount",
               "resolvedBy",
-              "resolvedAt"
+              "resolvedAt",
+              "dueOn"
             ],
             "additionalProperties": false
           },
@@ -4720,10 +4935,28 @@
                   "contentId"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "materialRequest": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "materialRequest"
+                ],
+                "additionalProperties": false
               }
             ]
           },
           "body": {
+            "type": "string"
+          },
+          "dueOn": {
             "type": "string"
           }
         },
@@ -4945,6 +5178,21 @@
                   "contentId"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "materialRequest": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "materialRequest"
+                ],
+                "additionalProperties": false
               }
             ]
           },
@@ -5029,6 +5277,12 @@
               "string",
               "null"
             ]
+          },
+          "dueOn": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -5039,7 +5293,8 @@
           "lastComment",
           "commentCount",
           "resolvedBy",
-          "resolvedAt"
+          "resolvedAt",
+          "dueOn"
         ],
         "additionalProperties": false
       },
@@ -5074,6 +5329,13 @@
                 "entered": {
                   "type": "boolean"
                 },
+                "lastEnteredAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
                 "since": {
                   "type": "string"
                 }
@@ -5084,6 +5346,7 @@
                 "email",
                 "status",
                 "entered",
+                "lastEnteredAt",
                 "since"
               ],
               "additionalProperties": false
@@ -5150,6 +5413,13 @@
           "entered": {
             "type": "boolean"
           },
+          "lastEnteredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
           "since": {
             "type": "string"
           }
@@ -5160,6 +5430,7 @@
           "email",
           "status",
           "entered",
+          "lastEnteredAt",
           "since"
         ],
         "additionalProperties": false
@@ -5201,6 +5472,148 @@
                 "invitationId",
                 "email",
                 "expiresAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "pageSize": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "totalItems": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalPages": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "page",
+              "pageSize",
+              "totalItems",
+              "totalPages"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "openPortalThreadRequest": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "sectionKey": {
+                    "type": "string",
+                    "enum": [
+                      "branding",
+                      "tone_of_voice",
+                      "colors",
+                      "positioning",
+                      "archetype",
+                      "personas",
+                      "observations"
+                    ]
+                  }
+                },
+                "required": [
+                  "sectionKey"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "personaId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "personaId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "contentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "contentId"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "listPortalMaterialRequestsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "threadId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "dueOn": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "resolved"
+                  ]
+                }
+              },
+              "required": [
+                "threadId",
+                "body",
+                "dueOn",
+                "createdAt",
+                "state"
               ],
               "additionalProperties": false
             }
@@ -6712,6 +7125,31 @@
                         "null"
                       ]
                     },
+                    "approval": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "dueOn": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "dueOn",
+                        "note"
+                      ],
+                      "additionalProperties": false
+                    },
                     "caption": {
                       "type": [
                         "string",
@@ -6765,6 +7203,7 @@
                     "status",
                     "coverAssetId",
                     "publishedOn",
+                    "approval",
                     "caption",
                     "revision",
                     "media",
@@ -6891,6 +7330,31 @@
                   "null"
                 ]
               },
+              "approval": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "dueOn": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "dueOn",
+                  "note"
+                ],
+                "additionalProperties": false
+              },
               "caption": {
                 "type": [
                   "string",
@@ -6944,6 +7408,7 @@
               "status",
               "coverAssetId",
               "publishedOn",
+              "approval",
               "caption",
               "revision",
               "media",
@@ -10425,7 +10890,8 @@
                         "revision": 1,
                         "publishedOn": null,
                         "tasksTotal": 3,
-                        "tasksApproved": 1
+                        "tasksApproved": 1,
+                        "approval": null
                       }
                     ],
                     "storyScripts": [
@@ -10618,6 +11084,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -10831,7 +11298,8 @@
                         "revision": 1,
                         "publishedOn": null,
                         "tasksTotal": 3,
-                        "tasksApproved": 1
+                        "tasksApproved": 1,
+                        "approval": null
                       }
                     ],
                     "nextCursor": "WyIyMDI2LTEwLTIwIiwiMTg6MzA6MDAiLCJmZmZmZmZmZi1mZmZmLTRmZmYtOGZmZi1mZmZmZmZmZmZmZmYiXQ",
@@ -11152,6 +11620,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -11343,6 +11812,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -11571,6 +12041,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -11805,6 +12276,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -12035,6 +12507,7 @@
                   "publishedOn": "2026-10-10",
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -12263,6 +12736,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -12491,6 +12965,7 @@
                   "publishedOn": null,
                   "cancelledAt": "2026-10-11T12:30:00.000Z",
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -12721,6 +13196,7 @@
                   "publishedOn": null,
                   "cancelledAt": null,
                   "createdAt": "2026-10-11T12:00:00.000Z",
+                  "approval": null,
                   "media": [
                     {
                       "id": "44444444-4444-4444-8444-444444444444",
@@ -13876,6 +14352,7 @@
                       "status": "awaiting_approval",
                       "coverAssetId": null,
                       "publishedOn": null,
+                      "approval": null,
                       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
                     }
                   ],
@@ -14048,6 +14525,7 @@
                       "status": "awaiting_approval",
                       "coverAssetId": null,
                       "publishedOn": null,
+                      "approval": null,
                       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
                     }
                   ],
@@ -14206,6 +14684,7 @@
                   "status": "awaiting_approval",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": null,
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [
@@ -14560,6 +15039,7 @@
                   "status": "awaiting_approval",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": null,
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [
@@ -14750,6 +15230,7 @@
                   "status": "approved",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": null,
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [
@@ -14941,6 +15422,7 @@
                   "status": "adjusting",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": null,
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [
@@ -16260,7 +16742,7 @@
       "get": {
         "operationId": "listClients",
         "summary": "Lista a carteira de clientes com ordem de triagem",
-        "description": "Paginada pelo contrato global de listagem, com busca por nome, razão social e @ (sem\ndiferenciar maiúsculas nem acento), filtro de status e ordem `attention` por padrão: quem tem\nthread aguardando a agência vem primeiro, depois nome ascendente, com `id` como desempate; para quem\ntem `conteudo.visualizar`, o cliente com conteúdo atrasado (data planejada anterior ao dia de São\nPaulo, sem publicado nem cancelado) vem antes de todos. `pendingInvitations` só vem para quem tem\n`cliente.convidar_usuario` e `contentIndicators` (`pending`, `inReview`, `overdue`, `adjusting`, `dueSoon`) só para quem\ntem `conteudo.visualizar`; para os demais o campo é omitido, não zerado, e a ordem não muda. As\nconversas de conteúdo não entram em `threadsAwaitingAgency`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "description": "Paginada pelo contrato global de listagem, com busca por nome, razão social e @ (sem\ndiferenciar maiúsculas nem acento), filtro de status e ordem `attention` por padrão: quem tem\nthread aguardando a agência vem primeiro, depois nome ascendente, com `id` como desempate; para quem\ntem `conteudo.visualizar`, o cliente com conteúdo atrasado (data planejada anterior ao dia de São\nPaulo, sem publicado nem cancelado) vem antes de todos. `pendingInvitations` só vem para quem tem\n`cliente.convidar_usuario` e `contentIndicators` (`pending`, `inReview`, `overdue`, `adjusting`, `dueSoon`) só para quem\ntem `conteudo.visualizar`; para os demais o campo é omitido, não zerado, e a ordem não muda. As\nconversas de conteúdo e os pedidos de material não entram em `threadsAwaitingAgency`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
         "tags": [
           "clients"
         ],
@@ -19127,7 +19609,7 @@
       "get": {
         "operationId": "listAgencyThreads",
         "summary": "Lista as conversas de um assunto do cliente",
-        "description": "O assunto é obrigatório e é exatamente um: `sectionKey` (uma das sete seções) ou `personaId`; os dois\njuntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por\npágina, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só\nenquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa\nde persona arquivada continua legível para a agência.\nCom `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar` ou `conteudo.visualizar`.",
+        "description": "O assunto é obrigatório e é exatamente um: `sectionKey` (uma das sete seções) ou `personaId`; os dois\njuntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por\npágina, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só\nenquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa\nde persona arquivada continua legível para a agência.\nCom `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.\nCom `materialRequest=true` o assunto são os pedidos de material do cliente, em qualquer estado, e a permissão é `cliente.visualizar`; cada item traz `subject: { materialRequest: true }` e `dueOn`, o prazo (`YYYY-MM-DD`) ou `null`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar` ou `conteudo.visualizar`.",
         "tags": [
           "clients"
         ],
@@ -19215,6 +19697,17 @@
             "schema": {
               "type": "string",
               "enum": [
+                "true"
+              ]
+            },
+            "required": false,
+            "name": "materialRequest",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
                 "open",
                 "resolved"
               ]
@@ -19251,7 +19744,8 @@
                       },
                       "commentCount": 1,
                       "resolvedBy": null,
-                      "resolvedAt": null
+                      "resolvedAt": null,
+                      "dueOn": null
                     }
                   ],
                   "meta": {
@@ -19364,7 +19858,7 @@
       "post": {
         "operationId": "openAgencyThread",
         "summary": "Abre uma conversa pela agência, com o primeiro comentário",
-        "description": "Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem\ndo corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000\nbytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`\ne persona de outro cliente 404.\nCom `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
+        "description": "Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem\ndo corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000\nbytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`\ne persona de outro cliente 404.\nCom `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.\nCom `{ materialRequest: true }` a conversa é um pedido de material ao cliente (decisão 2026-11-10): um assunto do próprio cliente, nunca dentro da conversa de um conteúdo, e cada chamada abre um pedido novo. Pede `cliente.operar`, como as conversas do cliente. `dueOn` (`YYYY-MM-DD`) é o prazo opcional, de hoje a 90 dias, no fuso de São Paulo; fora disso é 400 `VALIDATION_ERROR` com o campo `dueOn`. `dueOn` com outro assunto também é 400, e o portal nunca abre um pedido.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
         "tags": [
           "clients"
         ],
@@ -19434,7 +19928,8 @@
                     },
                     "commentCount": 1,
                     "resolvedBy": null,
-                    "resolvedAt": null
+                    "resolvedAt": null,
+                    "dueOn": null
                   },
                   "comment": {
                     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -19953,7 +20448,7 @@
       "post": {
         "operationId": "resolveThread",
         "summary": "Resolve uma conversa",
-        "description": "Grava `resolved_at` e `resolved_by`. Resolver uma conversa que já está resolvida não escreve nada.\nNão existe rota de reabrir: um comentário novo reabre. Só quem tem `cliente.operar` resolve; a\npessoa do portal nunca.\nNa conversa de um conteúdo, `conteudo.operar` e `conteudo.visualizar`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
+        "description": "Grava `resolved_at` e `resolved_by`. Resolver uma conversa que já está resolvida não escreve nada.\nNão existe rota de reabrir: um comentário novo reabre. Só quem tem `cliente.operar` resolve; a\npessoa do portal nunca.\nNa conversa de um conteúdo, `conteudo.operar` e `conteudo.visualizar`.\nÉ assim que a agência encerra um pedido de material: ele sai da lista de pedidos abertos do portal, e um comentário do cliente o reabre.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
         "tags": [
           "clients"
         ],
@@ -20017,7 +20512,8 @@
                   "resolvedBy": {
                     "name": "Dono da Agência"
                   },
-                  "resolvedAt": "2026-10-07T13:00:00.000Z"
+                  "resolvedAt": "2026-10-07T13:00:00.000Z",
+                  "dueOn": null
                 }
               }
             }
@@ -20124,7 +20620,7 @@
       "get": {
         "operationId": "listClientMembers",
         "summary": "Lista as pessoas com acesso ao portal de um cliente",
-        "description": "Vinte por página, por nome (o e-mail, enquanto a pessoa não entrou), sem diferenciar maiúsculas nem acento.\n`status` é `active` (padrão) ou `removed`. Cada pessoa é um acesso dado a um e-mail, com conta ou sem ela:\n`accessId` é o id que as rotas de Remover e Reativar usam, `email` é o endereço como foi gravado e `entered` é\n`false` (\"ainda não entrou\") até uma conta com aquele e-mail verificado entrar. `name` é o da conta e só vem\ndepois disso. A lista nunca diz se um e-mail tem conta no Ageniza. Cliente arquivado continua legível;\ncliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
+        "description": "Vinte por página, por nome (o e-mail, enquanto a pessoa não entrou), sem diferenciar maiúsculas nem acento.\n`status` é `active` (padrão) ou `removed`. Cada pessoa é um acesso dado a um e-mail, com conta ou sem ela:\n`accessId` é o id que as rotas de Remover e Reativar usam, `email` é o endereço como foi gravado e `entered` é\n`false` (\"ainda não entrou com a conta\") até uma conta com aquele e-mail verificado entrar. `name` é o da conta e só vem\ndepois disso. A lista nunca diz se um e-mail tem conta no Ageniza.\n`lastEnteredAt` é o último acesso daquele cliente: a última vez que a pessoa entrou no portal com a conta ou abriu o link de aprovação do e-mail, ou `null` se nunca. Pode vir preenchido com `entered: false`: quem só abriu o link ainda não entrou com a conta, e o reenvio das boas-vindas continua valendo para essa pessoa. Só quem já lê esta lista o recebe.\nCliente arquivado continua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
         "tags": [
           "clients"
         ],
@@ -20199,6 +20695,16 @@
                       "email": "maria@padariacentral.exemplo.test",
                       "status": "active",
                       "entered": true,
+                      "lastEnteredAt": "2026-11-08T14:30:00.000Z",
+                      "since": "2026-09-02T12:00:00.000Z"
+                    },
+                    {
+                      "accessId": "66666666-6666-4666-8666-666666666666",
+                      "name": null,
+                      "email": "joao@padariacentral.exemplo.test",
+                      "status": "active",
+                      "entered": false,
+                      "lastEnteredAt": "2026-11-09T10:15:00.000Z",
                       "since": "2026-09-02T12:00:00.000Z"
                     },
                     {
@@ -20207,13 +20713,14 @@
                       "email": "maria@padariacentral.exemplo.test",
                       "status": "active",
                       "entered": false,
+                      "lastEnteredAt": null,
                       "since": "2026-09-02T12:00:00.000Z"
                     }
                   ],
                   "meta": {
                     "page": 1,
                     "pageSize": 20,
-                    "totalItems": 2,
+                    "totalItems": 3,
                     "totalPages": 1
                   }
                 }
@@ -20372,6 +20879,7 @@
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "active",
                   "entered": false,
+                  "lastEnteredAt": null,
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -20585,6 +21093,7 @@
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "active",
                   "entered": false,
+                  "lastEnteredAt": null,
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -20779,6 +21288,7 @@
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "active",
                   "entered": false,
+                  "lastEnteredAt": null,
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -20973,6 +21483,7 @@
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "removed",
                   "entered": true,
+                  "lastEnteredAt": "2026-11-08T14:30:00.000Z",
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -21129,6 +21640,7 @@
                   "email": "maria@padariacentral.exemplo.test",
                   "status": "active",
                   "entered": true,
+                  "lastEnteredAt": "2026-11-08T14:30:00.000Z",
                   "since": "2026-09-02T12:00:00.000Z"
                 }
               }
@@ -21411,7 +21923,7 @@
       "get": {
         "operationId": "listPortalThreads",
         "summary": "Lista as conversas de um assunto, no portal",
-        "description": "Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada\nnão é assunto válido no portal: responde 404 como se não existisse.\nCom `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada\nnão é assunto válido no portal: responde 404 como se não existisse.\nCom `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.\nCom `materialRequest=true`, os pedidos de material do próprio cliente, em qualquer estado, com `dueOn`; os pedidos abertos, para o Início, vêm da rota própria `/clients/:clientId/material-requests`.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -21487,6 +21999,17 @@
             "schema": {
               "type": "string",
               "enum": [
+                "true"
+              ]
+            },
+            "required": false,
+            "name": "materialRequest",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
                 "open",
                 "resolved"
               ]
@@ -21523,7 +22046,8 @@
                       },
                       "commentCount": 1,
                       "resolvedBy": null,
-                      "resolvedAt": null
+                      "resolvedAt": null,
+                      "dueOn": null
                     }
                   ],
                   "meta": {
@@ -21636,7 +22160,7 @@
       "post": {
         "operationId": "openPortalThread",
         "summary": "Abre uma conversa pelo portal, com o primeiro comentário",
-        "description": "Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência\nainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.\nCom `{ contentId }`, só enquanto o conteúdo está em \"aguardando aprovação\", \"em ajuste\", \"aprovado\" ou \"publicado\"; fora disso, e para conteúdo de outro cliente, 404. A conversa do conteúdo é uma só: abrir de novo escreve nela.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência\nainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.\nCom `{ contentId }`, só enquanto o conteúdo está em \"aguardando aprovação\", \"em ajuste\", \"aprovado\" ou \"publicado\"; fora disso, e para conteúdo de outro cliente, 404. A conversa do conteúdo é uma só: abrir de novo escreve nela.\nO portal nunca abre um pedido de material: `{ materialRequest: true }` e `dueOn` são 400 `VALIDATION_ERROR`, e nada é gravado. O pedido é da agência (decisão 2026-11-10).\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -21657,7 +22181,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/openAgencyThreadRequest"
+                "$ref": "#/components/schemas/openPortalThreadRequest"
               },
               "example": {
                 "subject": {
@@ -21694,7 +22218,8 @@
                     },
                     "commentCount": 1,
                     "resolvedBy": null,
-                    "resolvedAt": null
+                    "resolvedAt": null,
+                    "dueOn": null
                   },
                   "comment": {
                     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -22009,7 +22534,7 @@
       "post": {
         "operationId": "addPortalThreadComment",
         "summary": "Comenta uma conversa pelo portal",
-        "description": "Grava o comentário com o lado `client`; comentar numa conversa resolvida a reabre. Não existe\nrota de resolver no portal: só a agência resolve.\nA conversa de um conteúdo que não está aberto ao cliente é 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Grava o comentário com o lado `client`; comentar numa conversa resolvida a reabre. Não existe\nrota de resolver no portal: só a agência resolve.\nA conversa de um conteúdo que não está aberto ao cliente é 404.\nÉ a rota com que o cliente responde a um pedido de material, aberto ou já resolvido; o pedido de outro cliente da mesma pessoa é 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -22185,11 +22710,179 @@
         }
       }
     },
+    "/clients/{clientId}/material-requests": {
+      "get": {
+        "operationId": "listPortalMaterialRequests",
+        "summary": "Lista os pedidos de material abertos do cliente, no portal",
+        "description": "Os pedidos que a agência fez ao cliente e ainda não resolveu (decisão 2026-11-10), para o Início do portal: `threadId` (o id da conversa, para responder pela rota de comentários), `body` (o primeiro comentário, o que a agência pediu),\n`dueOn` (o prazo, ou `null`), `createdAt` e `state`, sempre `open`. O prazo mais próximo vem primeiro e os sem prazo por último. Vinte por página.\nA lista é só do cliente da rota, mesmo para quem tem vínculo com vários clientes. O estado é o de toda conversa: quando a agência resolve, o pedido sai da lista, e um comentário do cliente o traz de volta.\nSó a conversa de pedido entra aqui: a conversa de um conteúdo em produção nunca chega ao portal por esta rota. Outro cliente, cliente arquivado, agência suspensa e vínculo removido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de pedidos de material abertos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listPortalMaterialRequestsResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "threadId": "99999999-9999-4999-8999-999999999999",
+                      "body": "Envie 3 fotos da equipe",
+                      "dueOn": "2026-10-20",
+                      "createdAt": "2026-10-07T12:00:00.000Z",
+                      "state": "open"
+                    }
+                  ],
+                  "meta": {
+                    "page": 1,
+                    "pageSize": 20,
+                    "totalItems": 1,
+                    "totalPages": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TERMS_NOT_ACCEPTED",
+                    "message": "Aceite os Termos de Uso e a Política de Privacidade para continuar."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/clients/{clientId}": {
       "get": {
         "operationId": "getPortalClient",
         "summary": "Lê o cadastro do próprio cliente e o resumo do Início, no portal",
-        "description": "Somente leitura. Traz o cadastro inteiro, a foto assinada, o nome da agência, `onboardingSeenAt` do\nvínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com\nresposta da agência, só as que o portal enxerga, o preenchimento do estudo e `contentsAwaitingApproval`,\nos conteúdos do próprio cliente em \"aguardando aprovação\". A conversa de um conteúdo não entra em\n`threadsAnsweredByAgency`. Outro cliente, cliente arquivado, agência suspensa, vínculo removido e\ncolaborador sem vínculo de cliente (Owner inclusive) devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Somente leitura. Traz o cadastro inteiro, a foto assinada, o nome da agência, `onboardingSeenAt` do\nvínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com\nresposta da agência, só as que o portal enxerga, o preenchimento do estudo e `contentsAwaitingApproval`,\nos conteúdos do próprio cliente em \"aguardando aprovação\". A conversa de um conteúdo não entra em\n`threadsAnsweredByAgency`, nem o pedido de material. Outro cliente, cliente arquivado, agência suspensa, vínculo removido e\ncolaborador sem vínculo de cliente (Owner inclusive) devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -26238,6 +26931,7 @@
                       "status": "awaiting_approval",
                       "coverAssetId": null,
                       "publishedOn": null,
+                      "approval": null,
                       "caption": "Novidades de outono chegando!",
                       "revision": 1,
                       "media": [
@@ -26539,6 +27233,7 @@
                   "status": "approved",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": null,
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [
@@ -26722,6 +27417,7 @@
                   "status": "adjusting",
                   "coverAssetId": null,
                   "publishedOn": null,
+                  "approval": null,
                   "caption": "Novidades de outono chegando!",
                   "revision": 1,
                   "media": [

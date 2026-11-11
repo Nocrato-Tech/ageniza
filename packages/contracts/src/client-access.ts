@@ -23,14 +23,17 @@ export const ClientMemberAddRequestSchema = z.object({
 
 export const ClientMemberSchema = z.object({
   accessId: z.string().uuid(),
-  /** The name of the account once the person has entered; `null` before, so the list is no oracle of which addresses have an account. */
+  /** The name of the account once the person has entered this portal with it (`first_entered_at`); `null` before, so the list is no oracle of which addresses have an account. */
   name: z.string().nullable(),
   /** The address as it was recorded. */
   email: z.string(),
   status: ClientMemberStatusSchema,
-  /** `false` is "ainda não entrou": no account has linked the access yet. */
+  /** `false` is "ainda não entrou com a conta": no account has entered with the access yet. It also gates the resend of the welcome. */
   entered: z.boolean(),
-  /** The last time the person entered this client's portal or used its approval link; `null` when none was recorded, always so while `entered` is `false` ("nunca entrou"). */
+  /**
+   * The last time the person entered this client's portal or opened its approval link; `null` when none was recorded. It may be set while
+   * `entered` is `false`: a person who only opened the approval link has not entered with the account (decision 2026-11-10).
+   */
   lastEnteredAt: z.string().datetime().nullable(),
   /** When the access was created (`created_at`). */
   since: z.string()

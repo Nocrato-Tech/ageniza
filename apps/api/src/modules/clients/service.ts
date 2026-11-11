@@ -19,7 +19,7 @@ import { databaseErrorCode, raw, type DatabaseClient, type SqlBinding } from '@a
 
 import { foldTextSql } from '../../plugins/infra/sql-text.js';
 import { contentDeadlineSql } from '../contents/deadline-sql.js';
-import { latestCommentSideSql, openThreadSql } from './thread-state.js';
+import { brandStudyThreadSql, latestCommentSideSql, openThreadSql } from './thread-state.js';
 
 export type ClientTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 
@@ -226,7 +226,7 @@ export const BRAND_STUDY_FILLED_SQL = `(
  * when at least one persona is active; "aguardando a agência" and "com resposta da agência" come
  * from the single thread-state definition, so this count cannot drift from the listing (#125). They count the
  * brand study conversations only: the one of a content is Conteúdo's, and the policy hides it from Sales and Finance, so
- * counting it would give the same client two different badges (#259).
+ * counting it would give the same client two different badges (#259); a request for material is the agency's own ask and is not counted either.
  */
 export const loadClientSummary = async (transaction: ClientTransaction, clientId: string): Promise<ClientSummary> => {
   const result = await raw<RawRows<SummaryRow>>(transaction, `
@@ -235,14 +235,14 @@ export const loadClientSummary = async (transaction: ClientTransaction, clientId
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
-          and thread.content_id is null
+          and ${brandStudyThreadSql('thread')}
           and ${openThreadSql('thread')}
           and ${latestCommentSideSql('thread')} = 'client'
       ) as threads_awaiting_agency,
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
-          and thread.content_id is null
+          and ${brandStudyThreadSql('thread')}
           and ${openThreadSql('thread')}
           and ${latestCommentSideSql('thread')} = 'agency'
       ) as threads_answered_by_agency,
@@ -449,7 +449,7 @@ export const listClients = async (
           select count(*)
           from public.client_threads thread
           where thread.client_id = client.id
-            and thread.content_id is null
+            and ${brandStudyThreadSql('thread')}
             and ${openThreadSql('thread')}
             and ${latestCommentSideSql('thread')} = 'client'
         ) as threads_awaiting_agency,

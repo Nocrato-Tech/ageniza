@@ -1,5 +1,5 @@
 import type { BrandSectionKey, ConversationSide, ConversationSubject, Thread, ThreadState } from '@ageniza/contracts';
-import { raw, type SqlBinding } from '@ageniza/database';
+import { databaseErrorCode, raw, type SqlBinding } from '@ageniza/database';
 
 import { THREAD_EXCERPT_LENGTH } from './policy.js';
 import { loadClient, sectionFilledSql, type ClientTransaction } from './service.js';
@@ -83,6 +83,9 @@ export interface ThreadRow {
   readonly section_key: BrandSectionKey | null;
   readonly persona_id: string | null;
   readonly content_id: string | null;
+  readonly is_material_request: boolean;
+  /** The deadline of a request for material as `YYYY-MM-DD`; a `date` has no instant to shift with a time zone. */
+  readonly due_on: string | null;
   /** An account, or null when the conversation was opened by the access of an approval link (exactly one of the two). */
   readonly opened_by: string | null;
   readonly opened_by_portal_access_id: string | null;
@@ -156,7 +159,7 @@ export const loadAuthors = async (transaction: ClientTransaction, threadIds: rea
 // `openThreadSql` and `latestCommentSideSql` are the single definition of the derived state; the
 // statistics below only add what a thread item shows.
 const THREAD_COLUMNS = `
-  thread.id, thread.section_key, thread.persona_id, thread.content_id, thread.opened_by, thread.opened_by_portal_access_id, thread.opened_side,
+  thread.id, thread.section_key, thread.persona_id, thread.content_id, thread.is_material_request, thread.due_on::text as due_on, thread.opened_by, thread.opened_by_portal_access_id, thread.opened_side,
   thread.resolved_at, thread.resolved_by,
   stats.comment_count, stats.last_comment_at,
   ${latestCommentSideSql('thread')} as last_side,
@@ -181,6 +184,7 @@ const THREAD_FROM = `
 `;
 
 const subjectOfRow = (row: ThreadRow): ConversationSubject => {
+  if (row.is_material_request) return { materialRequest: true };
   if (row.section_key !== null) return { sectionKey: row.section_key };
   if (row.content_id !== null) return { contentId: row.content_id };
   return { personaId: row.persona_id ?? '' };
@@ -199,7 +203,8 @@ export const threadFromRow = (row: ThreadRow, authors: ConversationAuthors): Thr
     // A thread that a later comment reopened keeps its old stamps in the row, but it is not resolved
     // anymore: showing who resolved it and when would describe a state the thread is no longer in.
     resolvedBy: resolved ? { name: authorOf(authors, row.id, 'agency', row.resolved_by ?? '')?.name ?? null } : null,
-    resolvedAt: resolved ? new Date(row.resolved_at ?? 0).toISOString() : null
+    resolvedAt: resolved ? new Date(row.resolved_at ?? 0).toISOString() : null,
+    dueOn: row.due_on
   };
 };
 
@@ -301,6 +306,8 @@ const checkSubject = async (
   subject: ConversationSubject,
   options: { readonly forWrite: boolean }
 ): Promise<ConversationRefusal | undefined> => {
+  // A request for material belongs to the client and to no other row, so there is nothing to find, fill or archive.
+  if ('materialRequest' in subject) return undefined;
   if ('contentId' in subject) {
     const content = await loadSubjectContent(transaction, scope, subject.contentId);
     if (content === undefined) return 'subject-not-found';
@@ -344,14 +351,14 @@ const insertComment = async (
 const openContentThread = async (
   transaction: ClientTransaction,
   scope: ConversationScope,
-  input: { readonly contentId: string; readonly body: string }
+  input: { readonly contentId: string; readonly body: string; readonly dueOn?: string }
 ): Promise<OpenThreadResult> => {
   const created = await raw<RawRows<{ id: string }>>(transaction, `
-    insert into public.client_threads (client_id, content_id, opened_by, opened_side)
-    values (?::uuid, ?::uuid, ?::uuid, ?)
+    insert into public.client_threads (client_id, content_id, due_on, opened_by, opened_side)
+    values (?::uuid, ?::uuid, ?::date, ?::uuid, ?)
     on conflict (content_id) where content_id is not null do nothing
     returning id
-  `, [scope.clientId, input.contentId, scope.userId, scope.side]);
+  `, [scope.clientId, input.contentId, input.dueOn ?? null, scope.userId, scope.side]);
   let threadId = created.rows[0]?.id;
   if (threadId === undefined) {
     const existing = await raw<RawRows<{ id: string }>>(transaction, `
@@ -366,11 +373,15 @@ const openContentThread = async (
   return { kind: 'ok', threadId, commentId };
 };
 
-/** Opens a thread and writes its first comment in the same transaction, on the side of the scope. */
+/**
+ * Opens a thread and writes its first comment in the same transaction, on the side of the scope. `dueOn` is written with every subject
+ * on purpose: the deadline belongs to a request for material alone and the database is the one that refuses it anywhere else, as it
+ * refuses a request opened from the portal (`client_threads_material_request_agency_check`) and a date out of range (A0120).
+ */
 export const openThread = async (
   transaction: ClientTransaction,
   scope: ConversationScope,
-  input: { readonly subject: ConversationSubject; readonly body: string }
+  input: { readonly subject: ConversationSubject; readonly body: string; readonly dueOn?: string }
 ): Promise<OpenThreadResult> => {
   const permissionRefusal = subjectPermissionRefusal(scope, input.subject, 'write');
   if (permissionRefusal !== undefined) return { kind: permissionRefusal };
@@ -379,16 +390,20 @@ export const openThread = async (
   const subjectRefusal = await checkSubject(transaction, scope, input.subject, { forWrite: true });
   if (subjectRefusal !== undefined) return { kind: subjectRefusal };
 
-  if ('contentId' in input.subject) return openContentThread(transaction, scope, { contentId: input.subject.contentId, body: input.body });
+  if ('contentId' in input.subject) {
+    return openContentThread(transaction, scope, { contentId: input.subject.contentId, body: input.body, dueOn: input.dueOn });
+  }
 
   const opened = await raw<RawRows<{ id: string }>>(transaction, `
-    insert into public.client_threads (client_id, section_key, persona_id, opened_by, opened_side)
-    values (?::uuid, ?, ?::uuid, ?::uuid, ?)
+    insert into public.client_threads (client_id, section_key, persona_id, is_material_request, due_on, opened_by, opened_side)
+    values (?::uuid, ?, ?::uuid, ?, ?::date, ?::uuid, ?)
     returning id
   `, [
     scope.clientId,
     'sectionKey' in input.subject ? input.subject.sectionKey : null,
     'personaId' in input.subject ? input.subject.personaId : null,
+    'materialRequest' in input.subject,
+    input.dueOn ?? null,
     scope.userId,
     scope.side
   ]);
@@ -558,6 +573,8 @@ export const listThreads = async (
   } else if ('contentId' in input.subject) {
     conditions.push('thread.content_id = ?::uuid');
     bindings.push(input.subject.contentId);
+  } else if ('materialRequest' in input.subject) {
+    conditions.push('thread.is_material_request');
   } else {
     conditions.push('thread.persona_id = ?::uuid');
     bindings.push(input.subject.personaId);
@@ -583,6 +600,75 @@ export const listThreads = async (
     select count(*) as total ${THREAD_FROM} where ${where}
   `, bindings);
   return { kind: 'ok', page: { items: [], totalItems: Number(count.rows[0]?.total ?? 0) } };
+};
+
+export interface MaterialRequestRow {
+  readonly thread_id: string;
+  readonly body: string;
+  readonly due_on: string | null;
+  readonly created_at: Date;
+}
+
+export interface MaterialRequestPage {
+  readonly items: readonly MaterialRequestRow[];
+  readonly totalItems: number;
+}
+
+const OPEN_MATERIAL_REQUESTS_FROM = `
+  from public.client_threads thread
+  cross join lateral (
+    select comment.body
+    from public.client_thread_comments comment
+    where comment.thread_id = thread.id
+    order by comment.created_at asc, comment.id asc
+    limit 1
+  ) asked
+  where thread.client_id = ?::uuid
+    and thread.is_material_request
+    and ${openThreadSql('thread')}
+`;
+
+/**
+ * The requests for material the client still owes, for the Início of the portal: the first comment of each thread (what the agency
+ * asked), its deadline and when it was opened, the nearest deadline first and the ones with no deadline last. The client is the one the
+ * guard proved and is filtered here: a person with a link to several clients reads every one of them through the policy, and each
+ * Início is the list of its own client. The state is the one definition of the conversations, so a request the agency resolved leaves
+ * the list and a comment of the client on it brings it back, as in every thread.
+ */
+export const listOpenMaterialRequests = async (
+  transaction: ClientTransaction,
+  scope: Extract<ConversationScope, { readonly side: 'client' }>,
+  pagination: { readonly pageSize: number; readonly offset: number }
+): Promise<MaterialRequestPage> => {
+  const result = await raw<RawRows<MaterialRequestRow & { readonly total: string | number }>>(transaction, `
+    select thread.id as thread_id, asked.body, thread.due_on::text as due_on, thread.created_at, count(*) over () as total
+    ${OPEN_MATERIAL_REQUESTS_FROM}
+    order by thread.due_on asc nulls last, thread.created_at asc, thread.id asc
+    limit ? offset ?
+  `, [scope.clientId, pagination.pageSize, pagination.offset]);
+  if (result.rows.length > 0) return { items: result.rows, totalItems: Number(result.rows[0]?.total ?? 0) };
+  // An empty first page is the whole truth; a second count could only answer from another snapshot.
+  if (pagination.offset === 0) return { items: [], totalItems: 0 };
+
+  const count = await raw<RawRows<{ total: string | number }>>(transaction, `select count(*) as total ${OPEN_MATERIAL_REQUESTS_FROM}`, [scope.clientId]);
+  return { items: [], totalItems: Number(count.rows[0]?.total ?? 0) };
+};
+
+/** What the database refuses about a request for material, whatever the route let through. */
+export type MaterialRequestDatabaseRefusal = 'due-on-out-of-range' | 'due-on-without-request' | 'portal-cannot-request';
+
+/**
+ * Reads a refusal of the database about a request for material: a deadline outside today to 90 days in São Paulo (A0120), a deadline
+ * on any other subject, and a request opened from the portal. The routes refuse the last two before the database, so these are the
+ * barrier behind them and the first one is the only that a valid-looking body can reach.
+ */
+export const materialRequestDatabaseRefusal = (error: unknown): MaterialRequestDatabaseRefusal | undefined => {
+  const code = databaseErrorCode(error);
+  if (code === 'A0120') return 'due-on-out-of-range';
+  if (code !== '23514') return undefined;
+  const constraint = (error as { constraint?: unknown }).constraint;
+  if (constraint === 'client_threads_due_on_check') return 'due-on-without-request';
+  return constraint === 'client_threads_material_request_agency_check' ? 'portal-cannot-request' : undefined;
 };
 
 export interface CommentPage {

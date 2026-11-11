@@ -764,6 +764,7 @@ Cria uma agência em período de teste.
 | `POST` | `/clients/:clientId/threads` | Sessão + vínculo com o cliente | — | Abre uma conversa pelo portal, com o primeiro comentário |
 | `GET` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Lista os comentários de uma conversa, no portal |
 | `POST` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Comenta uma conversa pelo portal |
+| `GET` | `/clients/:clientId/material-requests` | Sessão + vínculo com o cliente | — | Lista os pedidos de material abertos do cliente, no portal |
 | `GET` | `/clients/:clientId` | Sessão + vínculo com o cliente | — | Lê o cadastro do próprio cliente e o resumo do Início, no portal |
 | `GET` | `/clients/:clientId/brand-study` | Sessão + vínculo com o cliente | — | Lê o estudo de marca, no portal |
 
@@ -1405,7 +1406,8 @@ Lista as conversas de um assunto do cliente.
       },
       "commentCount": 1,
       "resolvedBy": null,
-      "resolvedAt": null
+      "resolvedAt": null,
+      "dueOn": null
     }
   ],
   "meta": {
@@ -1458,7 +1460,8 @@ Abre uma conversa pela agência, com o primeiro comentário.
     },
     "commentCount": 1,
     "resolvedBy": null,
-    "resolvedAt": null
+    "resolvedAt": null,
+    "dueOn": null
   },
   "comment": {
     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -1578,7 +1581,8 @@ Resolve uma conversa.
   "resolvedBy": {
     "name": "Dono da Agência"
   },
-  "resolvedAt": "2026-10-07T13:00:00.000Z"
+  "resolvedAt": "2026-10-07T13:00:00.000Z",
+  "dueOn": null
 }
 ```
 
@@ -1610,6 +1614,16 @@ Lista as pessoas com acesso ao portal de um cliente.
       "email": "maria@padariacentral.exemplo.test",
       "status": "active",
       "entered": true,
+      "lastEnteredAt": "2026-11-08T14:30:00.000Z",
+      "since": "2026-09-02T12:00:00.000Z"
+    },
+    {
+      "accessId": "66666666-6666-4666-8666-666666666666",
+      "name": null,
+      "email": "joao@padariacentral.exemplo.test",
+      "status": "active",
+      "entered": false,
+      "lastEnteredAt": "2026-11-09T10:15:00.000Z",
       "since": "2026-09-02T12:00:00.000Z"
     },
     {
@@ -1618,13 +1632,14 @@ Lista as pessoas com acesso ao portal de um cliente.
       "email": "maria@padariacentral.exemplo.test",
       "status": "active",
       "entered": false,
+      "lastEnteredAt": null,
       "since": "2026-09-02T12:00:00.000Z"
     }
   ],
   "meta": {
     "page": 1,
     "pageSize": 20,
-    "totalItems": 2,
+    "totalItems": 3,
     "totalPages": 1
   }
 }
@@ -1656,6 +1671,7 @@ Adiciona uma pessoa ao portal do cliente.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": false,
+  "lastEnteredAt": null,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1678,6 +1694,7 @@ Reenvia o e-mail de boas-vindas de quem ainda não entrou no portal.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": false,
+  "lastEnteredAt": null,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1700,6 +1717,7 @@ Transforma um convite de portal antigo em acesso direto.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": false,
+  "lastEnteredAt": null,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1722,6 +1740,7 @@ Remove uma pessoa do portal do cliente.
   "email": "maria@padariacentral.exemplo.test",
   "status": "removed",
   "entered": true,
+  "lastEnteredAt": "2026-11-08T14:30:00.000Z",
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1744,6 +1763,7 @@ Reativa uma pessoa do portal do cliente.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": true,
+  "lastEnteredAt": "2026-11-08T14:30:00.000Z",
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1824,7 +1844,8 @@ Lista as conversas de um assunto, no portal.
       },
       "commentCount": 1,
       "resolvedBy": null,
-      "resolvedAt": null
+      "resolvedAt": null,
+      "dueOn": null
     }
   ],
   "meta": {
@@ -1877,7 +1898,8 @@ Abre uma conversa pelo portal, com o primeiro comentário.
     },
     "commentCount": 1,
     "resolvedBy": null,
-    "resolvedAt": null
+    "resolvedAt": null,
+    "dueOn": null
   },
   "comment": {
     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -1967,6 +1989,45 @@ Comenta uma conversa pelo portal.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/material-requests`
+
+Lista os pedidos de material abertos do cliente, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de pedidos de material abertos.
+
+```json
+{
+  "data": [
+    {
+      "threadId": "99999999-9999-4999-8999-999999999999",
+      "body": "Envie 3 fotos da equipe",
+      "dueOn": "2026-10-20",
+      "createdAt": "2026-10-07T12:00:00.000Z",
+      "state": "open"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId`
 
@@ -2159,7 +2220,8 @@ Consulta os conteúdos e os roteiros de stories de um período.
         "revision": 1,
         "publishedOn": null,
         "tasksTotal": 3,
-        "tasksApproved": 1
+        "tasksApproved": 1,
+        "approval": null
       }
     ],
     "storyScripts": [
@@ -2210,7 +2272,8 @@ Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9.
         "revision": 1,
         "publishedOn": null,
         "tasksTotal": 3,
-        "tasksApproved": 1
+        "tasksApproved": 1,
+        "approval": null
       }
     ],
     "nextCursor": "WyIyMDI2LTEwLTIwIiwiMTg6MzA6MDAiLCJmZmZmZmZmZi1mZmZmLTRmZmYtOGZmZi1mZmZmZmZmZmZmZmYiXQ",
@@ -2295,6 +2358,7 @@ Cria um conteúdo em produção.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2360,6 +2424,7 @@ Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2434,6 +2499,7 @@ Edita um conteúdo; mover de data é editar `publishOn`.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2505,6 +2571,7 @@ Envia o conteúdo para aprovação.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2582,6 +2649,7 @@ Registra a aprovação feita fora da plataforma.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2655,6 +2723,7 @@ Marca o conteúdo aprovado como publicado.
   "publishedOn": "2026-10-10",
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2726,6 +2795,7 @@ Desfaz a publicação no mesmo dia.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2797,6 +2867,7 @@ Cancela o conteúdo (ele fica guardado).
   "publishedOn": null,
   "cancelledAt": "2026-10-11T12:30:00.000Z",
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2870,6 +2941,7 @@ Reagenda um conteúdo cancelado.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -3111,6 +3183,7 @@ Lista os conteúdos de um período, no portal.
       "status": "awaiting_approval",
       "coverAssetId": null,
       "publishedOn": null,
+      "approval": null,
       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
     }
   ],
@@ -3155,6 +3228,7 @@ Lista o que espera a aprovação da pessoa, no portal.
       "status": "awaiting_approval",
       "coverAssetId": null,
       "publishedOn": null,
+      "approval": null,
       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
     }
   ],
@@ -3189,6 +3263,7 @@ Lê um conteúdo, no portal.
   "status": "awaiting_approval",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": null,
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3257,6 +3332,7 @@ Desfaz a aprovação de um conteúdo antes da publicação, no portal.
   "status": "awaiting_approval",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": null,
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3299,6 +3375,7 @@ Aprova um conteúdo, no portal.
   "status": "approved",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": null,
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3342,6 +3419,7 @@ Pede ajuste de um conteúdo, no portal.
   "status": "adjusting",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": null,
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3419,6 +3497,7 @@ Lê o lote do link de aprovação.
       "status": "awaiting_approval",
       "coverAssetId": null,
       "publishedOn": null,
+      "approval": null,
       "caption": "Novidades de outono chegando!",
       "revision": 1,
       "media": [
@@ -3490,6 +3569,7 @@ Aprova um conteúdo do lote, pelo link.
   "status": "approved",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": null,
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3534,6 +3614,7 @@ Pede ajuste de um conteúdo do lote, pelo link.
   "status": "adjusting",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": null,
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [

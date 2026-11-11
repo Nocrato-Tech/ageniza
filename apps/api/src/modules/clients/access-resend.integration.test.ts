@@ -184,7 +184,7 @@ describe('CLIENTS Reenviar e-mail and Reenviar convite, agency side', () => {
       const response = await call('POST', resendAccessUrl(agencyA, clientA1, second.id), cookies.admin);
 
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ accessId: second.id, name: null, email: second.email, status: 'active', entered: false, since: new Date(before.created_at).toISOString() });
+      expect(response.json()).toEqual({ accessId: second.id, name: null, email: second.email, status: 'active', entered: false, lastEnteredAt: null, since: new Date(before.created_at).toISOString() });
       expect(await welcomes(second.email)).toHaveLength(1);
       expect(await welcomes(first.email)).toHaveLength(0);
       expect(await auditCount('client_member.resent', second.id)).toBe(1);
