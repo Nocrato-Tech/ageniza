@@ -1034,9 +1034,8 @@ a.ui-button {
   font: var(--body-md);
 }
 
-/* Team grid: specs/colaboradores.md section 7. Below 64rem the badge minimum decides (1 to 3 columns); from 64rem on it
-   is three, because on a wide screen the minimum would add a fifth column and leave the last row of a 24-person page
-   broken (24 is a multiple of 1, 2, 3 and 4, never of 5). The only breakpoint is a registered one (design-system.md 19). */
+/* Team grid: specs/colaboradores.md section 7. The redesign board (agencia-equipe): a heading with its lead, search and
+   filters on the canvas, and badges that fill the row (13.5rem minimum, so five columns on a wide screen). */
 .collaborators {
   display: grid;
   gap: var(--space-6);
@@ -1045,9 +1044,24 @@ a.ui-button {
 .collaborators__header {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
+}
+
+.collaborators__heading {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 44rem;
+}
+
+.collaborators__eyebrow {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .collaborators__header h1 {
@@ -1059,44 +1073,76 @@ a.ui-button {
   overflow-wrap: anywhere;
 }
 
-.collaborators__filters {
-  padding: var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
+.collaborators__lead {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+/* No box around the filters: the search is a pill and the three selects carry the edge of a field. */
+.ui-filter-bar.collaborators__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.ui-filter-bar.collaborators__filters .ui-filter-bar__item,
+.ui-filter-bar.collaborators__filters .ui-filter-bar__item + .ui-filter-bar__item {
+  min-width: min(12rem, 100%);
+  padding: 0;
+  border: 0;
+}
+
+.ui-filter-bar.collaborators__filters .ui-filter-bar__label {
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+.ui-filter-bar.collaborators__filters .ui-filter-bar__control:not(.ui-text-input) {
+  min-height: var(--control-h);
+  margin-left: 0;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface);
 }
 
-/* The search has a row of its own and the selects share the one below, in columns wide enough for "Todos os papéis"
-   ("Cargo" is free text). No divider between them: the grid gap is the separator. On a phone the bar is the stacked
-   column of the FilterBar, and its own top dividers still apply. */
-.ui-filter-bar.collaborators__filters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: var(--space-4);
+.ui-filter-bar.collaborators__filters .ui-filter-bar__control.ui-text-input {
+  border-radius: var(--radius-full);
+  padding-inline: var(--space-5);
 }
 
-.ui-filter-bar.collaborators__filters .ui-filter-bar__item {
-  padding-inline: 0;
-  border-left: 0;
+/* The search has no visible label (its placeholder and aria-label name it), like the board. */
+.ui-filter-bar.collaborators__filters .ui-filter-bar__item:first-child .ui-filter-bar__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 
-.ui-filter-bar.collaborators__filters .ui-filter-bar__item:first-child {
-  grid-column: 1 / -1;
+@media (min-width: 40rem) {
+  .ui-filter-bar.collaborators__filters {
+    align-items: flex-end;
+  }
+
+  .ui-filter-bar.collaborators__filters .ui-filter-bar__item:first-child {
+    flex: 1 1 16rem;
+    max-width: 24rem;
+  }
+
+  .ui-filter-bar.collaborators__filters .ui-filter-bar__control:not(.ui-text-input) {
+    width: 100%;
+  }
 }
 
 .collaborators__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
   gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-@media (min-width: 64rem) {
-  .collaborators__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 .collaborators__grid > li {
@@ -1107,9 +1153,74 @@ a.ui-button {
 
 .collaborators__badge-link {
   display: grid;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   color: var(--text-primary);
   text-decoration: none;
+}
+
+/* The badge of the board: a handle on top, a round avatar, then name, job title and role, all centred. */
+.collaborators__grid .ui-badge-card {
+  position: relative;
+  align-items: center;
+  border-radius: var(--radius-xl);
+  text-align: center;
+}
+
+.collaborators__grid .ui-badge-card::before {
+  content: '';
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  width: 2.25rem;
+  height: 0.375rem;
+  border-radius: var(--radius-full);
+  background: var(--border-default);
+  transform: translateX(-50%);
+}
+
+.collaborators__grid .ui-badge-card__cover {
+  padding: var(--space-8) var(--space-4) 0;
+  background: transparent;
+}
+
+.collaborators__grid .ui-badge-card .ui-avatar {
+  width: 4.5rem;
+  height: 4.5rem;
+  background: var(--bg-tint);
+}
+
+.collaborators__grid .ui-badge-card__body {
+  flex: 0 1 auto;
+  justify-items: center;
+  padding: var(--space-3) var(--space-4) var(--space-6);
+}
+
+.collaborators__grid .ui-badge-card__name {
+  font: var(--title-md);
+  letter-spacing: 0;
+}
+
+/* The link ended: the card steps back (dashed edge, canvas fill, grey avatar) and the red label says so in words. */
+.collaborators__grid .ui-badge-card:has(.ui-badge-card__removed) {
+  border-style: dashed;
+  background: var(--bg-canvas);
+}
+
+.collaborators__grid .ui-badge-card:has(.ui-badge-card__removed) .ui-avatar {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  filter: grayscale(1);
+}
+
+.collaborators__grid .ui-badge-card__removed {
+  align-self: center;
+  padding: var(--space-1) var(--space-3);
+  border-top: 0;
+  border-radius: var(--radius-full);
+  background: var(--status-late-bg);
+  color: var(--status-late-text);
+  font: var(--caption);
+  font-weight: 700;
 }
 
 /* The card the finger reaches rises 2px with a soft shadow and an indigo edge; the fill never changes under its text. */
@@ -1122,7 +1233,7 @@ a.ui-button {
 /* The reactivate action of a removed badge sits under the card, never inside the link (#105). */
 .collaborators__reactivate {
   margin-top: var(--space-2);
-  justify-self: start;
+  justify-self: center;
 }
 
 /* Client roster: specs/clientes.md section 7. A grid of badges in the server's order; each one carries the triage seal,
@@ -2184,15 +2295,45 @@ a.client-general__block:focus-visible {
   font: var(--heading-md);
 }
 
-.collaborator-detail__identity {
-  display: flex;
-  align-items: center;
+/* The profile of the board: who the person is on the left, the details on the right; one column on a phone. */
+.collaborator-detail__profile {
+  display: grid;
+  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+@media (max-width: 47.99rem) {
+  .collaborator-detail__profile {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+}
+
+.collaborator-detail__main {
+  display: grid;
   gap: var(--space-4);
+  min-width: 0;
+}
+
+.collaborator-detail__identity {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+.collaborator-detail__identity > div {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .collaborator-detail__identity .ui-avatar {
-  width: 5rem;
-  height: 5rem;
+  width: 5.5rem;
+  height: 5.5rem;
 }
 
 .collaborator-detail__identity p {
@@ -2200,6 +2341,19 @@ a.client-general__block:focus-visible {
   color: var(--text-secondary);
   font: var(--body-md);
   overflow-wrap: anywhere;
+}
+
+.collaborator-detail__meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2);
+}
+
+.collaborator-detail__meta svg {
+  width: 1rem;
+  height: 1rem;
+  margin-top: var(--space-1);
 }
 
 /* The line that says who the person is in the agency: the one that reads first. */
@@ -2281,8 +2435,20 @@ a.client-general__block:focus-visible {
   justify-items: start;
   gap: var(--space-2);
   margin-top: var(--space-2);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border-default);
+  padding: var(--space-4);
+  border: 1px solid var(--block-red-bg);
+  border-radius: var(--radius-lg);
+}
+
+/* Away from the primary action and quiet: the red is the text, not a filled block. */
+.collaborator-detail__remove .ui-button--destructive:not(:disabled) {
+  background: transparent;
+  color: var(--text-danger);
+}
+
+.collaborator-detail__remove .ui-button--destructive:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--block-red-bg);
+  filter: none;
 }
 
 .collaborator-detail__status p {
@@ -2357,15 +2523,11 @@ a.client-general__block:focus-visible {
   text-align: center;
 }
 
-/* Pending invitations: specs/colaboradores.md section 7. One surface with rows split by lines (no card inside a card):
-   an invitation has no photo or identity, only an e-mail, a role and a deadline. */
+/* Pending invitations: specs/colaboradores.md section 7. The heading and a card per invitation, straight on the canvas, like
+   the board's rows: an invitation has no photo or identity, only an e-mail, a role and a deadline. */
 .invites {
   display: grid;
   gap: var(--space-4);
-  padding: var(--space-6);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
 }
 
 .invites__header {
@@ -2383,60 +2545,73 @@ a.client-general__block:focus-visible {
 
 .invites__list {
   display: grid;
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .invites__item {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-2) var(--space-4);
-  padding-block: var(--space-4);
-  border-top: 1px solid var(--border-default);
-}
-
-.invites__item:first-child {
-  padding-top: 0;
-  border-top: none;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
 }
 
 .invites__email {
-  flex: 1 1 14rem;
+  grid-column: 1 / 3;
   min-width: 0;
   margin: 0;
-  font: var(--label-md);
+  font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
 .invites__role {
+  grid-column: 1;
   margin: 0;
 }
 
 .invites__expiry {
+  grid-column: 2;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   margin: 0;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: var(--body-md);
 }
 
 /* A deadline that passed says so in words and in the danger colour, over `bg/surface` where it is guaranteed. */
 .invites__expiry--expired {
   color: var(--text-danger);
+  font-weight: 600;
 }
 
 .invites__actions {
+  grid-column: 3;
+  grid-row: 1 / 3;
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
-  margin-left: auto;
+}
+
+/* "Cancelar" is the quiet danger action of the board: red text, no fill. */
+.invites__actions .ui-button--ghost {
+  color: var(--text-danger);
+}
+
+.invites__actions .ui-button--ghost:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--block-red-bg);
+  color: var(--text-danger);
 }
 
 .invites__error-line {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   margin: 0;
   color: var(--text-danger);
   font: var(--body-md);
@@ -2448,6 +2623,23 @@ a.client-general__block:focus-visible {
 
 .invites__empty:not(.ui-empty-state--mascot) {
   justify-content: flex-start;
+}
+
+@media (max-width: 47.99rem) {
+  .invites__item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .invites__email {
+    grid-column: 1 / -1;
+  }
+
+  .invites__actions {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    justify-content: flex-start;
+    margin-top: var(--space-2);
+  }
 }
 
 /* Portal access tab: specs/clientes.md section 7, issue #140. A person is a rounded card with who they are, when they last came in and what can be done with the access. */
@@ -9275,24 +9467,43 @@ html:has(.portal-post__bar) {
   font: var(--body-md);
   overflow-wrap: anywhere;
 }
-/* Assinatura (issue #773): plans, extras and the simulated card, in the Pauta look (one primary action per view). */
+/* Assinatura (issue #773): plans, extras and the simulated card, in the look of the redesign board (agencia-assinatura):
+   cards on the canvas, the current plan beside the extras, the three plans side by side. */
 .subscription {
   display: grid;
   gap: var(--space-6);
-  max-width: 48rem;
+  max-width: 72rem;
+}
+
+.subscription__head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.subscription .subscription__eyebrow {
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .subscription h1 {
   margin: 0;
   font: var(--display-lg);
+  font-size: clamp(2rem, 10vw, 3rem);
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
+}
+
+.subscription__lead {
+  max-width: 44rem;
+  color: var(--text-secondary);
 }
 
 .subscription h2,
 .subscription-card__title {
   margin: 0;
-  font: var(--heading-md);
+  font: var(--heading-lg);
 }
 
 .subscription__block {
@@ -9302,18 +9513,132 @@ html:has(.portal-post__bar) {
   border-top: 1px solid var(--border-default);
 }
 
+/* A block that is a card of the board: its own surface, no divider above it. */
+.subscription__block--card {
+  align-content: start;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
 .subscription p,
 .subscription ul {
   margin: 0;
   font: var(--body-md);
 }
 
+.subscription__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.subscription__stack {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+@media (max-width: 47.99rem) {
+  .subscription__split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.subscription__current-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.subscription__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  font: var(--label-md);
+}
+
+.subscription__chip svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.subscription .subscription__plan {
+  color: var(--text-primary);
+  font: var(--heading-lg);
+  letter-spacing: -0.01em;
+}
+
 .subscription__facts {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-4);
   padding: 0;
   list-style: none;
   color: var(--text-secondary);
+}
+
+.subscription__meter {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+.subscription__meter progress {
+  width: 100%;
+  accent-color: var(--action-primary-bg);
+  height: 0.5rem;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
+  overflow: hidden;
+  appearance: none;
+}
+
+.subscription__meter progress::-webkit-progress-bar {
+  background: var(--bg-tint);
+}
+
+.subscription__meter progress::-webkit-progress-value {
+  border-radius: var(--radius-full);
+  background: var(--action-primary-bg);
+}
+
+.subscription__meter progress::-moz-progress-bar {
+  border-radius: var(--radius-full);
+  background: var(--action-primary-bg);
+}
+
+.subscription__meter--storage progress {
+  accent-color: var(--status-ready-fg);
+}
+
+.subscription__meter--storage progress::-webkit-progress-value {
+  background: var(--status-ready-fg);
+}
+
+.subscription__meter--storage progress::-moz-progress-bar {
+  background: var(--status-ready-fg);
+}
+
+.subscription__fact {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.subscription__fact svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
 }
 
 .subscription__notice {
@@ -9324,15 +9649,53 @@ html:has(.portal-post__bar) {
 }
 
 .subscription__notice--alert {
-  color: var(--text-danger);
+  border-color: transparent;
+  background: var(--block-red-bg);
+  color: var(--block-red-fg);
 }
 
 .subscription--pricing {
-  max-width: 64rem;
+  max-width: 72rem;
 }
 
+/* What the trial or the end of it means, in the board's note: a soft tint, one corner squared. */
 .subscription__state {
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.subscription__change {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.subscription__change-text {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.subscription__change-text p {
   color: var(--text-secondary);
+}
+
+@media (max-width: 47.99rem) {
+  .subscription__change {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The quiet danger action of the board: red text, no fill. */
+.subscription__cancel.ui-button--ghost {
+  color: var(--text-danger);
+}
+
+.subscription__cancel.ui-button--ghost:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--block-red-bg);
+  color: var(--text-danger);
 }
 
 .plan-cards {
@@ -9341,31 +9704,41 @@ html:has(.portal-post__bar) {
 }
 
 .plan-card {
+  position: relative;
   display: grid;
   align-content: start;
-  gap: var(--space-3);
+  gap: var(--space-4);
+  min-width: 0;
   padding: var(--space-6);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
-/* Recommended first when the cards stack, in the middle when they sit side by side. */
+/* Recommended first when the cards stack, in the middle when they sit side by side; the edge and the halo of the board's current plan. */
 .plan-card--recommended {
   order: -1;
-  border-color: var(--action-primary-bg);
-  box-shadow: 0 0 0 1px var(--action-primary-bg);
+  border: 2px solid var(--action-primary-bg);
+  box-shadow: 0 0 0 4px var(--focus-halo);
 }
 
+/* The tags ride at the top right of the card, on the line of the plan name. */
 .plan-card__tags {
+  position: absolute;
+  top: var(--space-6);
+  right: var(--space-6);
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
-  min-height: 1.5rem;
+  max-width: 50%;
 }
 
 .plan-card__name {
   margin: 0;
-  font: var(--heading-md);
+  min-height: 1.5rem;
+  padding-right: 35%;
+  font: var(--heading-lg);
 }
 
 .plan-card__price {
@@ -9375,7 +9748,7 @@ html:has(.portal-post__bar) {
 }
 
 .plan-card__amount {
-  font: var(--display-lg);
+  font: var(--stat-lg);
   letter-spacing: -0.02em;
 }
 
@@ -9404,7 +9777,7 @@ html:has(.portal-post__bar) {
   width: 1rem;
   height: 1rem;
   flex: none;
-  color: var(--action-primary-bg);
+  color: var(--status-ready-fg);
 }
 
 .plan-card .ui-button {
@@ -9461,13 +9834,17 @@ html:has(.portal-post__bar) {
 
 .subscription__extras {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
 }
 
+/* The sum of the board: a soft tinted box, the total set apart by a line. */
 .subscription__summary {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
   color: var(--text-secondary);
 }
 
@@ -9487,6 +9864,7 @@ html:has(.portal-post__bar) {
 .subscription-card {
   display: grid;
   gap: var(--space-4);
+  max-width: 40rem;
   padding: var(--space-6);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
@@ -9503,6 +9881,23 @@ html:has(.portal-post__bar) {
   width: 1.25rem;
   height: 1.25rem;
   flex: none;
+}
+
+.subscription-card__lead {
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.subscription-card__amount {
+  color: var(--text-secondary);
+}
+
+.subscription-card__amount strong {
+  color: var(--text-primary);
+  font: var(--heading-lg);
 }
 
 .subscription-card__fields {
@@ -9528,13 +9923,22 @@ html:has(.portal-post__bar) {
   padding-left: var(--space-4);
 }
 
-/* The last days before the read-only mode: the same strip, with a heavier border and the icon in the danger tone (no fill, no side border). */
+/* The plan strip of the agency (trial, end of trial, canceled period): the board's note, a soft tint with one corner squared.
+   In the last days it turns to the red block, and the icon keeps saying what it is. */
+.trial-notice {
+  border-color: transparent;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
 .trial-notice--urgent {
-  border-color: var(--border-control);
+  background: var(--block-red-bg);
+  color: var(--block-red-fg);
 }
 
 .trial-notice--urgent .shell-notice__icon {
-  color: var(--status-late-fg);
+  color: var(--block-red-fg);
 }
 
 /* A plan ceiling reached inside a form or a dialog: what blocked, and the way out. */
@@ -9542,6 +9946,10 @@ html:has(.portal-post__bar) {
   display: grid;
   gap: var(--space-3);
   justify-items: start;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--block-red-bg);
 }
 
 .plan-limit__text {
@@ -9549,15 +9957,14 @@ html:has(.portal-post__bar) {
   align-items: flex-start;
   gap: var(--space-2);
   margin: 0;
-  color: var(--text-danger);
+  color: var(--block-red-fg);
   font: var(--body-md);
 }
 
 .plan-limit__text svg {
   flex: none;
-  width: 1rem;
-  height: 1rem;
-  margin-top: var(--space-1);
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 /* Journey "Até a primeira aprovação" of a new agency's Início (decisions 2026-11-06 and 2026-11-10): four steps, each done or pending, the last one the client's. */
