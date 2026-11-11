@@ -29,9 +29,10 @@ const seedWaiting = async (
   clientId: string,
   title: string,
   round?: { dueOn: string | null; sentAt: string; note?: string | null },
-  ownerUserId = people.production.id
+  ownerUserId = people.production.id,
+  publishOn?: string
 ): Promise<string> => {
-  const id = await w.seedContent(clientId, { status: 'awaiting_approval', title, ownerUserId });
+  const id = await w.seedContent(clientId, { status: 'awaiting_approval', title, ownerUserId, ...(publishOn === undefined ? {} : { publishOn }) });
   if (round !== undefined) {
     await knex()('content_approval_rounds').insert({
       batch_id: randomUUID(), client_id: clientId, content_id: id, sequence: 1,
@@ -57,6 +58,10 @@ beforeAll(async () => {
     overdue: await seedWaiting(clientY, 'Venceu ontem', { dueOn: '2026-11-08', sentAt: '2026-11-05T12:00:00.000Z' }),
     today: await seedWaiting(clientY, 'Vence hoje', { dueOn: '2026-11-09', sentAt: '2026-11-06T12:00:00.000Z' }),
     tomorrow: await seedWaiting(clientX, 'Vence amanhã', { dueOn: '2026-11-10', sentAt: '2026-11-08T12:00:00.000Z', note: 'Preciso até amanhã.' }),
+    // Sent before the other two of its client, yet due between them: the deadline orders, not the age.
+    twoDays: await seedWaiting(clientX, 'Vence em dois dias', { dueOn: '2026-11-11', sentAt: '2026-11-07T12:00:00.000Z' }),
+    // Same deadline as the next one, waiting longer: it comes first.
+    olderSameDue: await seedWaiting(clientX, 'Vence em três dias, esperando mais', { dueOn: '2026-11-12', sentAt: '2026-11-06T12:00:00.000Z' }, people.production.id, '2026-12-01'),
     later: await seedWaiting(clientX, 'Vence em três dias', { dueOn: '2026-11-12', sentAt: '2026-11-08T12:00:00.000Z' }),
     noDue: await seedWaiting(clientX, 'Sem prazo', { dueOn: null, sentAt: '2026-11-09T02:30:00.000Z' }),
     legacy: await seedWaiting(clientX, 'Antes das rodadas')
@@ -128,14 +133,14 @@ describe('what is stuck with the client, on the day of São Paulo', () => {
     expect(groups.map((group) => group.clientId)).toEqual([clientY, clientX]);
     expect(groups[0]!.clientName).toContain('Contents awaiting y');
     expect(groups[0]!.contents.map((item) => item.id)).toEqual([ids.overdue, ids.today]);
-    expect(groups[1]!.contents.map((item) => item.id)).toEqual([ids.tomorrow, ids.later, ids.noDue, ids.legacy]);
+    expect(groups[1]!.contents.map((item) => item.id)).toEqual([ids.tomorrow, ids.twoDays, ids.olderSameDue, ids.later, ids.noDue, ids.legacy]);
     expect(Object.keys(groups[1]!.contents[0]!).sort()).toEqual(['daysToDue', 'daysWaiting', 'dueOn', 'format', 'id', 'publishOn', 'sentAt', 'title']);
   });
 
   it('lists only what awaits the client, of clients still active, of this agency', async () => {
     const titles = groupsOf(await read()).flatMap((group) => group.contents.map((item) => item.title));
 
-    expect(titles.sort()).toEqual(['Antes das rodadas', 'Sem prazo', 'Venceu ontem', 'Vence amanhã', 'Vence em três dias', 'Vence hoje'].sort());
+    expect(titles.sort()).toEqual(['Antes das rodadas', 'Sem prazo', 'Venceu ontem', 'Vence amanhã', 'Vence em dois dias', 'Vence em três dias', 'Vence em três dias, esperando mais', 'Vence hoje'].sort());
   });
 
   it('does not give the note, the batch or who sent it: this is a summary of the agency', async () => {
