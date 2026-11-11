@@ -789,7 +789,7 @@ describe('client detail (#136)', () => {
 
     await screen.findByRole('heading', { name: hostile });
     expect(within(rendered.container).getAllByText(hostile).length).toBeGreaterThanOrEqual(4);
-    expect(rendered.container.querySelector('img:not([src^="/brand/"])')).toBeNull();
+    expect(rendered.container.querySelector('img:not([src^="/brand/"]):not([src^="/3d/"])')).toBeNull();
     expect(rendered.container.querySelector('[onerror]')).toBeNull();
   });
 

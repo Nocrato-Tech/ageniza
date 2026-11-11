@@ -30,7 +30,7 @@ interface ClientCardProps {
 }
 
 /**
- * The client's badge (`specs/clientes.md` §7): the photo or initials over a dark base with the name and the situation, the triage
+ * The client's badge (`specs/clientes.md` §7): the photo or initials beside the name and the @, the situation and the triage
  * seal, the badges that did not become the seal, the three content numbers and the next action. The link covers the photo, the name
  * and the badges, and is named by the name alone; the menu and the action are buttons beside it, never inside it. The strip never shows a number for who cannot read contents.
  * An archived badge is dimmed and carries no seal, badge, number or action: its only destination is the read-only detail.
@@ -66,14 +66,14 @@ export function ClientCard({ client, visible, agencyId, listUrl }: ClientCardPro
     >
       <div className="clients__cover">
         <Avatar name={client.name} photoUrl={client.photoUrl} size="lg" />
-        {seal !== null && <div className="clients__seal"><Seal seal={seal} /></div>}
-        <div className="clients__fade">
+        <div className="clients__identity">
           <h3 className="clients__card-name" id={`client-${client.id}-name`}>{client.name}</h3>
-          <div className="clients__fade-line">
-            {client.instagramHandle !== null && <p className="clients__card-handle">@{client.instagramHandle}</p>}
-            <Pill className="clients__situation" icon={archived ? <Archive /> : <Circle />}>{archived ? 'Arquivado' : 'Ativo'}</Pill>
-          </div>
+          {client.instagramHandle !== null && <p className="clients__card-handle">@{client.instagramHandle}</p>}
         </div>
+      </div>
+      <div className="clients__tags">
+        <Pill className={archived ? 'clients__situation' : 'clients__situation clients__situation--active'} icon={archived ? <Archive /> : <Circle />}>{archived ? 'Arquivado' : 'Ativo'}</Pill>
+        {seal !== null && <Seal seal={seal} />}
       </div>
       {!archived && <div className="clients__body">
         {badges.length > 0 && <ul className="clients__badges">

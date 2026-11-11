@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, NavLink, Outlet, useLocation, useMatch, useOutletContext, useParams } from 'react-router-dom';
 import { Archive, ArrowLeft, ArrowRight, CalendarDays, Circle, Clock, Pencil } from 'lucide-react';
 import { z } from 'zod';
 
 import { ClientDetailResponseSchema, ClientSchema, type ClientDetailResponse } from '@ageniza/contracts';
-import { Avatar, Button, ButtonLink, EmptyState, Pill, Realce, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, ButtonLink, EmptyState, Pill, Realce, Skeleton, Stage3D } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -87,12 +87,12 @@ function ClientHeader({ client, onEdit }: { client: ClientDetailResponse; onEdit
   return <header className="client-detail__header">
     <Avatar className="client-detail__avatar" name={client.name} photoUrl={client.photoUrl} size="lg" />
     <div className="client-detail__identity">
-      <h1 id="client-detail-title">{client.name}</h1>
+      <div className="client-detail__title">
+        <h1 id="client-detail-title">{client.name}</h1>
+        <Pill className={active ? 'client-detail__status client-detail__status--active' : 'client-detail__status'} icon={active ? <Circle /> : <Archive />}>{active ? 'Ativo' : 'Arquivado'}</Pill>
+      </div>
       {client.instagramHandle !== null && <p className="client-detail__handle">@{client.instagramHandle}</p>}
-      <ul className="client-detail__meta">
-        <li><Pill className="client-detail__status" icon={active ? <Circle /> : <Archive />}>{active ? 'Ativo' : 'Arquivado'}</Pill></li>
-        {active && client.closingDate !== null && <li><Pill className="client-detail__closing" icon={<Clock />}>encerra em {formatDayMonth(client.closingDate)}</Pill></li>}
-      </ul>
+      {active && client.closingDate !== null && <p className="client-detail__meta"><Pill className="client-detail__closing" icon={<Clock />}>encerra em {formatDayMonth(client.closingDate)}</Pill></p>}
     </div>
     <div className="client-detail__actions">
       {/* The calendar and the feed live only on the screen of Conteúdos (decision 2026-11-04); the roster address travels along, so coming back keeps it. */}
@@ -222,13 +222,38 @@ export function ClientGeneralTab() {
     : `${summary.activePortalMembers} pessoas com acesso`;
   // The tab it belongs to is not a screen for this person: the block stays readable, without the
   // promise of a link (specs/clientes.md §7). A `text/link` never sits over the hover background.
-  const portalBlock = <section className="client-general__block" aria-labelledby="client-portal-title">
-    <h2 id="client-portal-title">Portal</h2>
-    <p>{portalCount}</p>
-  </section>;
+  const study = <>
+    <progress className="client-general__progress" max={7} value={summary.brandStudyFilled} aria-label="Seções preenchidas do estudo de marca" />
+    <p>{summary.brandStudyFilled} de 7</p>
+  </>;
+  const threads = <>
+    <p>{summary.threadsAwaitingAgency > 0
+      ? <Realce>{summary.threadsAwaitingAgency} aguardando a agência</Realce>
+      : `${summary.threadsAwaitingAgency} aguardando a agência`}</p>
+    <p className="client-general__sub">{summary.threadsAnsweredByAgency} com resposta da agência</p>
+  </>;
 
   return <div className="client-general">
-    <section className="client-general__block" aria-labelledby="client-registration-title">
+    <section className="client-general__summary" aria-label="Resumo do cliente">
+      <SummaryBlock tone="indigo" icon="bulb" title="Estudo de marca" to={`${base}/estudo-de-marca`} state={location.state} cta="Ver o estudo">{study}</SummaryBlock>
+      <SummaryBlock tone="violet" icon="mail" title="Conversas" to={`${base}/estudo-de-marca`} state={location.state} cta="Ver conversas">{threads}</SummaryBlock>
+      <SummaryBlock tone="teal" icon="thumb-up" title="Portal" titleId="client-portal-title" to={canSeeAccess ? `${base}/acessos` : undefined} state={location.state} cta="Ver acessos">
+        <p>{portalCount}</p>
+      </SummaryBlock>
+    </section>
+    {canSeeClient && <section className="client-general__requests" aria-label="Pedidos de material ao cliente">
+      <Conversation
+        scope={{ side: 'agency', agencyId: agency.agencyId, clientId: client.id }}
+        subject={{ materialRequest: true }}
+        subjectLabel="Pedido de material"
+        canWrite={canOperate}
+        readOnly={client.status !== 'active'}
+        planBlockedReason={blocked}
+        headingLevel={3}
+        onWritten={() => undefined}
+      />
+    </section>}
+    <section className="client-general__registration" aria-labelledby="client-registration-title">
       <h2 id="client-registration-title">Cadastro</h2>
       <dl className="client-general__fields">
         <dt>Razão social</dt><dd>{client.legalName ?? NOT_INFORMED}</dd>
@@ -244,40 +269,37 @@ export function ClientGeneralTab() {
         <dt>E-mail de contato</dt><dd>{client.contactEmail ?? NOT_INFORMED}</dd>
       </dl>
     </section>
-    <Link className="client-general__block" state={location.state} to={`${base}/estudo-de-marca`}>
-      <h2>Estudo de marca</h2>
-      <progress className="client-general__progress" max={7} value={summary.brandStudyFilled} aria-label="Seções preenchidas do estudo de marca" />
-      <p>{summary.brandStudyFilled} de 7</p>
-      <ArrowRight className="client-general__go" aria-hidden="true" />
-    </Link>
-    <Link className="client-general__block" state={location.state} to={`${base}/estudo-de-marca`}>
-      <h2>Conversas</h2>
-      <p>{summary.threadsAwaitingAgency > 0
-        ? <Realce>{summary.threadsAwaitingAgency} aguardando a agência</Realce>
-        : `${summary.threadsAwaitingAgency} aguardando a agência`}</p>
-      <p>{summary.threadsAnsweredByAgency} com resposta da agência</p>
-      <ArrowRight className="client-general__go" aria-hidden="true" />
-    </Link>
-    {canSeeAccess
-      ? <Link className="client-general__block" state={location.state} to={`${base}/acessos`}>
-        <h2>Portal</h2>
-        <p>{portalCount}</p>
-        <ArrowRight className="client-general__go" aria-hidden="true" />
-      </Link>
-      : portalBlock}
-    {canSeeClient && <section className="client-general__requests" aria-label="Pedidos de material ao cliente">
-      <Conversation
-        scope={{ side: 'agency', agencyId: agency.agencyId, clientId: client.id }}
-        subject={{ materialRequest: true }}
-        subjectLabel="Pedido de material"
-        canWrite={canOperate}
-        readOnly={client.status !== 'active'}
-        planBlockedReason={blocked}
-        headingLevel={3}
-        onWritten={() => undefined}
-      />
-    </section>}
   </div>;
+}
+
+type SummaryTone = 'indigo' | 'violet' | 'teal';
+
+interface SummaryBlockProps {
+  tone: SummaryTone;
+  /** The 3D render, by file name in `/3d/`. */
+  icon: string;
+  title: string;
+  titleId?: string;
+  /** Where the block leads; without it the block is readable text, with no promise of a link. */
+  to: string | undefined;
+  state: unknown;
+  cta: string;
+  children: ReactNode;
+}
+
+/** A summary block of the General tab: the family colour, the 3D mark on its stage, the figures and where it leads. */
+function SummaryBlock({ tone, icon, title, titleId, to, state, cta, children }: SummaryBlockProps) {
+  const className = `client-general__block client-general__block--${tone}`;
+  const head = <>
+    <Stage3D src={`/3d/${icon}.png`} tone={tone} size="lg" breakout />
+    <h2 id={to === undefined ? titleId : undefined}>{title}</h2>
+    <div className="client-general__figures">{children}</div>
+  </>;
+  if (to === undefined) return <section className={className} aria-labelledby={titleId} data-stage-host>{head}</section>;
+  return <Link className={className} state={state} to={to} data-stage-host>
+    {head}
+    <span className="client-general__cta">{cta}<ArrowRight aria-hidden="true" /></span>
+  </Link>;
 }
 
 /**
