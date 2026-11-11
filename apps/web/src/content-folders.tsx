@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { ChevronRight, CircleAlert, Download, Folder, FolderPlus, Image as ImageIcon, LoaderCircle, Trash2, Upload, Video } from 'lucide-react';
+import { ArrowRight, ChevronRight, CircleAlert, Download, Folder, FolderPlus, Image as ImageIcon, LoaderCircle, Plus, Trash2, Upload, Video, X } from 'lucide-react';
 import type { z } from 'zod';
 
 import {
@@ -16,7 +16,7 @@ import {
   type MediaFolder,
   type MediaFolderAsset
 } from '@ageniza/contracts';
-import { Button, ButtonLink, ConfirmDialog, EmptyState, FieldMessage, Modal, Pagination, Pill, Skeleton, TextInput } from '@ageniza/ui';
+import { Button, ButtonLink, ConfirmDialog, EmptyState, FieldMessage, IconButton, Modal, Pagination, Pill, Skeleton, Stage3D, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -42,6 +42,7 @@ const CREATE_FAILED = 'Não foi possível criar a pasta. Tente de novo.';
 
 const sizeFormat = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const dateFormat = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' });
+const timeFormat = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
 
 export const sizeLabel = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;
@@ -172,11 +173,13 @@ function FolderCreateDialog({ clientId, parent, onClose }: { clientId: string; p
   </Modal>;
 }
 
-function FolderLinks({ folders, searchParams, param, extra }: {
+function FolderLinks({ folders, searchParams, param, extra, newFolder }: {
   folders: readonly MediaFolder[];
   searchParams: URLSearchParams;
   param: 'pasta' | 'subpasta';
   extra?: Readonly<Record<string, string | null>>;
+  /** The "Nova pasta" card that closes the grid, for whoever can create one. */
+  newFolder?: ReactNode;
 }) {
   const location = useLocation();
   return <ul className="content-folders__list">
@@ -185,24 +188,65 @@ function FolderLinks({ folders, searchParams, param, extra }: {
         className="content-folder"
         to={hrefWith(searchParams, { ...extra, [param]: folder.id, pagina: null })}
         state={location.state}
+        data-stage-host
       >
-        <span className="content-folder__icon" aria-hidden="true"><Folder /></span>
+        <Stage3D className="content-folder__stage" src={folder.isDefault ? '/3d/fav-folder.png' : '/3d/folder.png'} tone={folder.isDefault ? 'indigo' : 'sky'} size="sm" />
         <span className="content-folder__name">{folder.name}</span>
         {folder.isDefault && <Pill>Padrão</Pill>}
-        <span className="content-folder__chevron" aria-hidden="true"><ChevronRight /></span>
+        <span className="content-folder__chevron" aria-hidden="true"><ArrowRight /></span>
       </Link>
     </li>)}
+    {newFolder !== undefined && <li>{newFolder}</li>}
   </ul>;
 }
 
-function MediaTile({ clientId, folderId, asset, canOperate }: { clientId: string; folderId: string; asset: MediaFolderAsset; canOperate: boolean }) {
+/** The empty states of the library: the folder on its stage above the sentence, in one dashed block. */
+function BlankStage({ src, children }: { src: string; children: ReactNode }) {
+  return <div className="content-folders__blank" data-stage-host>
+    <Stage3D src={src} tone="sky" size="md" />
+    {children}
+  </div>;
+}
+
+/** The folder that is open, as the feature block of the library: the open folder is the one in use. */
+function FolderFeature({ name, action }: { name: string; action?: ReactNode }) {
+  return <div className="content-folders__heading content-folders__feature" data-stage-host>
+    <Stage3D src="/3d/fav-folder.png" tone="indigo" size="md" breakout />
+    <div className="content-folders__feature-text">
+      <p className="content-folders__eyebrow">Pasta aberta</p>
+      <h3>{name}</h3>
+    </div>
+    {action}
+  </div>;
+}
+
+const mediaLabel = (asset: MediaFolderAsset): string =>
+  `${CATEGORY_LABELS[asset.category]} de ${dateFormat.format(new Date(asset.createdAt))}, ${sizeLabel(asset.sizeBytes)}`;
+
+const VIDEO_STATUS_LABELS: Readonly<Record<MediaFolderAsset['videoProcessingStatus'], string | undefined>> = {
+  not_applicable: undefined,
+  pending: 'Em andamento',
+  processing: 'Em andamento',
+  ready: 'Pronto',
+  failed: 'Falhou'
+};
+
+/** Download and removal of one media, with the notice and the confirmation: the row and the detail panel share them. */
+function MediaActions({ clientId, folderId, asset, canOperate, size, className }: {
+  clientId: string;
+  folderId: string;
+  asset: MediaFolderAsset;
+  canOperate: boolean;
+  size: 'sm' | 'md';
+  className: string;
+}) {
   const agency = useAgencyContext();
   const blocked = useWriteBlocked();
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState<string | undefined>();
-  const label = `${CATEGORY_LABELS[asset.category]} de ${dateFormat.format(new Date(asset.createdAt))}, ${sizeLabel(asset.sizeBytes)}`;
+  const label = mediaLabel(asset);
 
   const remove = useMutation({
     mutationFn: () => httpClient.request({
@@ -248,19 +292,10 @@ function MediaTile({ clientId, folderId, asset, canOperate }: { clientId: string
     onError: () => { setNotice('Não foi possível preparar o download. Tente de novo.'); }
   });
 
-  const processing = asset.category === 'video' && (asset.videoProcessingStatus === 'pending' || asset.videoProcessingStatus === 'processing');
-  const processingFailed = asset.category === 'video' && asset.videoProcessingStatus === 'failed';
-  return <li className="folder-media">
-    <MediaThumbnail assetId={asset.id} category={asset.category} />
-    <div className="folder-media__body">
-      <p className="folder-media__title"><Glyph>{CATEGORY_ICONS[asset.category]}</Glyph>{CATEGORY_LABELS[asset.category]}</p>
-      <p className="folder-media__meta">{dateFormat.format(new Date(asset.createdAt))} · {sizeLabel(asset.sizeBytes)}</p>
-      {processing && <Pill icon={<LoaderCircle />}>Processando vídeo</Pill>}
-      {processingFailed && <p className="folder-media__failure"><Glyph><CircleAlert /></Glyph>Falha no processamento do vídeo</p>}
-    </div>
-    <div className="folder-media__actions">
-      <Button size="sm" variant="secondary" leadingIcon={<Download />} aria-label={`Baixar ${label}`} loading={download.isPending} onClick={() => { setNotice(undefined); download.mutate(); }}>Baixar</Button>
-      {canOperate && <Button size="sm" variant="ghost" leadingIcon={<Trash2 />} aria-label={`Remover ${label}`} blockedReason={blocked} onClick={() => { setNotice(undefined); setConfirming(true); }}>Remover</Button>}
+  return <>
+    <div className={className}>
+      <Button size={size} variant="secondary" leadingIcon={<Download />} aria-label={`Baixar ${label}`} loading={download.isPending} onClick={() => { setNotice(undefined); download.mutate(); }}>Baixar</Button>
+      {canOperate && <Button size={size} variant="ghost" leadingIcon={<Trash2 />} aria-label={`Remover ${label}`} blockedReason={blocked} onClick={() => { setNotice(undefined); setConfirming(true); }}>Remover</Button>}
     </div>
     {notice !== undefined && <FieldMessage role="alert">{notice}</FieldMessage>}
     <ConfirmDialog
@@ -273,7 +308,77 @@ function MediaTile({ clientId, folderId, asset, canOperate }: { clientId: string
       onConfirm={() => remove.mutate()}
       onCancel={() => setConfirming(false)}
     />
+  </>;
+}
+
+function MediaTile({ clientId, folderId, asset, canOperate, selected, onSelect }: {
+  clientId: string;
+  folderId: string;
+  asset: MediaFolderAsset;
+  canOperate: boolean;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const label = mediaLabel(asset);
+  const processing = asset.category === 'video' && (asset.videoProcessingStatus === 'pending' || asset.videoProcessingStatus === 'processing');
+  const processingFailed = asset.category === 'video' && asset.videoProcessingStatus === 'failed';
+  return <li className={`folder-media${selected ? ' folder-media--selected' : ''}`}>
+    <MediaThumbnail assetId={asset.id} category={asset.category} />
+    <div className="folder-media__body">
+      <p className="folder-media__title">
+        <button type="button" className="folder-media__select" aria-pressed={selected} aria-label={`Ver detalhes de ${label}`} onClick={onSelect}>
+          <Glyph>{CATEGORY_ICONS[asset.category]}</Glyph>{CATEGORY_LABELS[asset.category]}
+        </button>
+      </p>
+      <p className="folder-media__meta">{dateFormat.format(new Date(asset.createdAt))} · {sizeLabel(asset.sizeBytes)}</p>
+      {processing && <Pill icon={<LoaderCircle />}>Processando vídeo</Pill>}
+      {processingFailed && <p className="folder-media__failure"><Glyph><CircleAlert /></Glyph>Falha no processamento do vídeo</p>}
+    </div>
+    <MediaActions clientId={clientId} folderId={folderId} asset={asset} canOperate={canOperate} size="sm" className="folder-media__actions" />
   </li>;
+}
+
+/** The panel of the media that was chosen: what the API tells about it and the actions its row has. Under the list on a phone. */
+function MediaDetail({ clientId, folder, asset, canOperate, onClose }: {
+  clientId: string;
+  folder: MediaFolder;
+  asset: MediaFolderAsset;
+  canOperate: boolean;
+  onClose: () => void;
+}) {
+  const panel = useRef<HTMLElement>(null);
+  const titleId = useId();
+  const sentAt = new Date(asset.createdAt);
+  const status = VIDEO_STATUS_LABELS[asset.videoProcessingStatus];
+
+  useEffect(() => {
+    // Side by side the panel is already in view; stacked under a long list it is not.
+    let stacked = false;
+    try { stacked = !window.matchMedia('(min-width: 64rem)').matches; } catch { stacked = false; }
+    if (!stacked) return;
+    panel.current?.scrollIntoView?.({ block: 'nearest' });
+    panel.current?.focus({ preventScroll: true });
+  }, [asset.id]);
+
+  return <aside ref={panel} className="media-detail" aria-labelledby={titleId} tabIndex={-1}>
+    <div className="media-detail__top">
+      <h4 id={titleId} className="media-detail__name">Detalhe da mídia</h4>
+      <IconButton label="Fechar detalhes" icon={<X />} size="sm" onClick={onClose} />
+    </div>
+    <div className="media-detail__preview"><MediaThumbnail assetId={asset.id} category={asset.category} /></div>
+    <p className="media-detail__sub">{CATEGORY_LABELS[asset.category]} · {sizeLabel(asset.sizeBytes)} · enviada em {dateFormat.format(sentAt)}</p>
+    <div>
+      <h5 className="media-detail__heading">Informações</h5>
+      <dl className="media-detail__info">
+        <dt>Pasta</dt><dd>{folder.name}</dd>
+        <dt>Formato</dt><dd>{asset.contentType}</dd>
+        <dt>Tamanho</dt><dd>{sizeLabel(asset.sizeBytes)}</dd>
+        <dt>Enviada em</dt><dd>{dateFormat.format(sentAt)}, {timeFormat.format(sentAt)}</dd>
+        {status !== undefined && <><dt>Processamento</dt><dd>{status}</dd></>}
+      </dl>
+    </div>
+    <MediaActions clientId={clientId} folderId={folder.id} asset={asset} canOperate={canOperate} size="md" className="media-detail__actions" />
+  </aside>;
 }
 
 const parsePage = (raw: string | null): number => {
@@ -288,6 +393,7 @@ function FolderMedia({ clientId, folder, canOperate }: { clientId: string; folde
   const [searchParams, setSearchParams] = useSearchParams();
   const page = parsePage(searchParams.get('pagina'));
   const picker = useRef<HTMLInputElement>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const assets = useQuery({
     queryKey: [...assetsQueryKey(agency.agencyId, clientId, folder.id), page],
@@ -314,13 +420,15 @@ function FolderMedia({ clientId, folder, canOperate }: { clientId: string; folde
   } else if ((assets.isError && assets.data === undefined) || assets.isPending) {
     body = <LoadError message="Não foi possível carregar as mídias. Tente de novo." retrying={assets.isFetching} onRetry={() => { void assets.refetch(); }} />;
   } else if (assets.data.meta.totalItems === 0) {
-    body = <EmptyState
-      className="content-folders__empty"
-      headingLevel={4}
-      title="Nenhuma mídia nesta pasta ainda."
-      description={canOperate ? 'Envie imagens ou vídeos para esta pasta.' : undefined}
-      action={canOperate ? <Button variant="secondary" leadingIcon={<Upload />} blockedReason={blocked} onClick={() => picker.current?.click()}>Enviar mídia</Button> : undefined}
-    />;
+    body = <BlankStage src="/3d/folder.png">
+      <EmptyState
+        className="content-folders__empty"
+        headingLevel={4}
+        title="Nenhuma mídia nesta pasta ainda."
+        description={canOperate ? 'Envie imagens ou vídeos para esta pasta.' : undefined}
+        action={canOperate ? <Button variant="secondary" leadingIcon={<Upload />} blockedReason={blocked} onClick={() => picker.current?.click()}>Enviar mídia</Button> : undefined}
+      />
+    </BlankStage>;
   } else if (assets.data.data.length === 0) {
     body = <EmptyState
       className="content-folders__empty"
@@ -329,17 +437,33 @@ function FolderMedia({ clientId, folder, canOperate }: { clientId: string; folde
       action={<Button variant="secondary" onClick={() => goToPage(assets.data.meta.totalPages)}>Ir para a última página</Button>}
     />;
   } else {
-    body = <>
-      <ul className="folder-media__grid" aria-label="Mídias da pasta">
-        {assets.data.data.map((asset) => <MediaTile key={asset.id} clientId={clientId} folderId={folder.id} asset={asset} canOperate={canOperate} />)}
-      </ul>
-      <Pagination
-        page={assets.data.meta.page}
-        totalPages={assets.data.meta.totalPages}
-        onPageChange={goToPage}
-        summary={`${assets.data.meta.totalItems} ${assets.data.meta.totalItems === 1 ? 'mídia' : 'mídias'}`}
-      />
-    </>;
+    // The panel follows the media that was chosen; one that left the page (removed, another page) closes it.
+    const selected = assets.data.data.find((asset) => asset.id === selectedId);
+    body = <div className={`media-layout${selected === undefined ? '' : ' media-layout--detail'}`}>
+      <div className="media-layout__list">
+        <div className="folder-media__table">
+          <div className="folder-media__head" aria-hidden="true"><span>Mídia</span><span>Enviada em · tamanho</span></div>
+          <ul className="folder-media__grid" aria-label="Mídias da pasta">
+            {assets.data.data.map((asset) => <MediaTile
+              key={asset.id}
+              clientId={clientId}
+              folderId={folder.id}
+              asset={asset}
+              canOperate={canOperate}
+              selected={asset.id === selected?.id}
+              onSelect={() => setSelectedId(asset.id === selected?.id ? null : asset.id)}
+            />)}
+          </ul>
+        </div>
+        <Pagination
+          page={assets.data.meta.page}
+          totalPages={assets.data.meta.totalPages}
+          onPageChange={goToPage}
+          summary={`${assets.data.meta.totalItems} ${assets.data.meta.totalItems === 1 ? 'mídia' : 'mídias'}`}
+        />
+      </div>
+      {selected !== undefined && <MediaDetail clientId={clientId} folder={folder} asset={selected} canOperate={canOperate} onClose={() => setSelectedId(null)} />}
+    </div>;
   }
 
   const heading = <h3 id={`media-${folder.id}`}>Mídias</h3>;
@@ -417,37 +541,50 @@ export function ContentFolders({ clientId, canWrite }: { clientId: string; canWr
     {open === undefined && <>
       <div className="content-folders__heading">
         <h3>Pastas</h3>
-        {canOperate && firstLevel.length > 0 && <Button variant="secondary" leadingIcon={<FolderPlus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta</Button>}
       </div>
       {firstLevel.length === 0
-        ? <EmptyState
-          className="content-folders__empty"
-          headingLevel={4}
-          title={canOperate ? 'Nenhuma pasta ainda. Crie a primeira.' : 'Nenhuma pasta ainda.'}
-          description={canOperate ? 'As pastas guardam as mídias deste cliente.' : undefined}
-          action={canOperate ? <Button variant="secondary" leadingIcon={<FolderPlus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta</Button> : undefined}
-        />
-        : <FolderLinks folders={firstLevel} searchParams={searchParams} param="pasta" extra={{ subpasta: null }} />}
+        ? <BlankStage src="/3d/new-folder.png">
+          <EmptyState
+            className="content-folders__empty"
+            headingLevel={4}
+            title={canOperate ? 'Nenhuma pasta ainda. Crie a primeira.' : 'Nenhuma pasta ainda.'}
+            description={canOperate ? 'As pastas guardam as mídias deste cliente.' : undefined}
+            action={canOperate ? <Button variant="secondary" leadingIcon={<FolderPlus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta</Button> : undefined}
+          />
+        </BlankStage>
+        : <FolderLinks
+          folders={firstLevel}
+          searchParams={searchParams}
+          param="pasta"
+          extra={{ subpasta: null }}
+          newFolder={canOperate
+            ? <Button className="content-folder content-folder--new" variant="ghost" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta</Button>
+            : undefined}
+        />}
     </>}
     {top !== undefined && sub === undefined && <>
-      <div className="content-folders__heading">
-        <h3>{top.name}</h3>
-        {canOperate && children.length > 0 && <Button variant="secondary" leadingIcon={<FolderPlus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta de trabalho</Button>}
-      </div>
+      <FolderFeature
+        name={top.name}
+        action={canOperate && children.length > 0
+          ? <Button variant="secondary" leadingIcon={<FolderPlus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta de trabalho</Button>
+          : undefined}
+      />
       <section className="content-folders__section" aria-labelledby={`work-${top.id}`}>
         <h4 id={`work-${top.id}`}>Pastas de trabalho</h4>
         {children.length === 0
-          ? <EmptyState
-            className="content-folders__empty"
-            headingLevel={4}
-            title="Nenhuma pasta de trabalho nesta pasta."
-            description={canOperate ? 'Uma pasta de trabalho agrupa mídias dentro desta pasta.' : undefined}
-            action={canOperate ? <Button variant="secondary" leadingIcon={<FolderPlus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta de trabalho</Button> : undefined}
-          />
+          ? <BlankStage src="/3d/new-folder.png">
+            <EmptyState
+              className="content-folders__empty"
+              headingLevel={4}
+              title="Nenhuma pasta de trabalho nesta pasta."
+              description={canOperate ? 'Uma pasta de trabalho agrupa mídias dentro desta pasta.' : undefined}
+              action={canOperate ? <Button variant="secondary" leadingIcon={<FolderPlus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova pasta de trabalho</Button> : undefined}
+            />
+          </BlankStage>
           : <FolderLinks folders={children} searchParams={searchParams} param="subpasta" />}
       </section>
     </>}
-    {sub !== undefined && <div className="content-folders__heading"><h3>{sub.name}</h3></div>}
+    {sub !== undefined && <FolderFeature name={sub.name} />}
     {truncated && <p className="content-folders__note">Mostrando {all.length} de {folders.data.total} pastas.</p>}
     {open !== undefined && <FolderMedia clientId={clientId} folder={open} canOperate={canOperate} />}
     {creating && <FolderCreateDialog clientId={clientId} parent={top ?? null} onClose={() => setCreating(false)} />}
