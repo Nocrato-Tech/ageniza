@@ -18,9 +18,12 @@ export interface ApprovalFixtures {
   readyContent(clientId?: string, status?: 'in_production' | 'approved' | 'adjusting' | 'awaiting_approval'): Promise<string>;
   /** The day of São Paulo `offset` days from now, as the database computes it. */
   day(offset?: number): Promise<string>;
+  /** The instant `hours` hours from now, as the database reads its clock (an ISO text with its offset). */
+  at(hours: number): Promise<string>;
   sql<T = string>(query: string, bindings?: readonly unknown[]): Promise<T>;
-  submit(user: string, contentId: string, dueOn?: string | null, note?: string | null): Promise<unknown>;
-  submitBatch(user: string, contentIds: readonly string[], dueOn?: string | null, note?: string | null): Promise<string>;
+  /** `due` is an instant, or a São Paulo day (YYYY-MM-DD), which means the end of that day: the deadline the screens used to give. */
+  submit(user: string, contentId: string, due?: string | null, note?: string | null): Promise<unknown>;
+  submitBatch(user: string, contentIds: readonly string[], due?: string | null, note?: string | null): Promise<string>;
   roundsOf(contentId: string): Promise<Array<Record<string, unknown>>>;
   queueOf(contentId: string): Promise<Array<Record<string, unknown>>>;
   /** Moves a waiting content to "in adjustment" the way the portal does, with a request for changes by `user`. */
@@ -32,6 +35,12 @@ export interface ApprovalFixtures {
   waitForQuietClock(): Promise<void>;
   cleanUp(): Promise<void>;
 }
+
+const IS_A_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const deadlineOf = (due: string | null | undefined): { readonly sql: string; readonly binding: string | null } =>
+  due !== null && due !== undefined && IS_A_DAY.test(due)
+    ? { sql: 'app_private.sao_paulo_end_of_day(?::date)', binding: due }
+    : { sql: '?::timestamptz', binding: due ?? null };
 
 export const createApprovalFixtures = (w: ContentWorld): ApprovalFixtures => {
   const { ids } = w;
@@ -60,19 +69,24 @@ export const createApprovalFixtures = (w: ContentWorld): ApprovalFixtures => {
       return id;
     },
     day: (offset = 0) => sql('select (app_private.sao_paulo_date(pg_catalog.now()) + ?::integer)::text as value', [offset]),
+    at: (hours) => sql("select (pg_catalog.now() + ?::integer * interval '1 hour')::text as value", [hours]),
     sql,
-    submit: (user, contentId, dueOn, note) =>
-      w.asUser(user, (t) => t.raw('select app_private.submit_content(?::uuid, ?::date, ?::text)', [contentId, dueOn ?? null, note ?? null])),
-    submitBatch: (user, contentIds, dueOn, note) =>
-      w.asUser(user, async (t) =>
+    submit: (user, contentId, due, note) => {
+      const deadline = deadlineOf(due);
+      return w.asUser(user, (t) => t.raw(`select app_private.submit_content(?::uuid, ${deadline.sql}, ?::text)`, [contentId, deadline.binding, note ?? null]));
+    },
+    submitBatch: (user, contentIds, due, note) => {
+      const deadline = deadlineOf(due);
+      return w.asUser(user, async (t) =>
         (await t.raw<{ rows: Array<{ batch_id: string }> }>(
-          'select app_private.submit_contents(?::uuid[], ?::date, ?::text) as batch_id', [[...contentIds], dueOn ?? null, note ?? null]
+          `select app_private.submit_contents(?::uuid[], ${deadline.sql}, ?::text) as batch_id`, [[...contentIds], deadline.binding, note ?? null]
         )).rows[0]!.batch_id
-      ),
+      );
+    },
     // `due_on` as text: the driver reads a DATE as a JS Date in the zone of the machine, which is not the day of the database.
     roundsOf: async (contentId) =>
       (await owner()('content_approval_rounds').where({ content_id: contentId }).orderBy('sequence').select(
-        'id', 'batch_id', 'client_id', 'content_id', 'sequence', 'note', 'sent_by', 'sent_at', 'reminded_due_soon_at', 'reminded_overdue_at',
+        'id', 'batch_id', 'client_id', 'content_id', 'sequence', 'note', 'sent_by', 'sent_at', 'due_at', 'reminded_due_soon_at', 'reminded_overdue_at',
         owner().raw('due_on::text as due_on')
       )) as Array<Record<string, unknown>>,
     queueOf: async (contentId) => (await owner()('notification_queue').where({ content_id: contentId })) as Array<Record<string, unknown>>,

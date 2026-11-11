@@ -97,7 +97,10 @@ const enqueueAt = (instant: string): Promise<number> =>
  */
 const age = async (roundId: string, dueOffset: number | null, sentDaysAgo = 14): Promise<void> => {
   const dueOn = dueOffset === null ? null : await f.day(dueOffset);
-  await owner().raw("update public.content_approval_rounds set due_on = ?::date, sent_at = pg_catalog.now() - (?::integer * interval '1 day') where id = ?::uuid", [dueOn, sentDaysAgo, roundId]);
+  await owner().raw(
+    "update public.content_approval_rounds set due_on = ?::date, due_at = app_private.sao_paulo_end_of_day(?::date), sent_at = pg_catalog.now() - (?::integer * interval '1 day') where id = ?::uuid",
+    [dueOn, dueOn, sentDaysAgo, roundId]
+  );
 };
 const latestRound = async (content: string): Promise<string> => {
   const rounds = await f.roundsOf(content);

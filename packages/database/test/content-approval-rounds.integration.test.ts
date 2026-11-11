@@ -196,20 +196,22 @@ describe('the table of rounds is closed to the application role', () => {
          from pg_proc p where p.oid = ?::regprocedure`, [signature]
       )).rows[0];
     for (const signature of [
-      'app_private.submit_content(uuid, date, text)',
-      'app_private.submit_contents(uuid[], date, text)',
+      'app_private.submit_content(uuid, timestamptz, text)',
+      'app_private.submit_contents(uuid[], timestamptz, text)',
       'app_private.portal_contents(uuid, date, date, text[], uuid)',
       'app_private.portal_approval_contents(text)'
     ]) {
       expect(await privileges(signature), signature).toEqual({ app: true, public_acl: false, config: ['search_path=""'], definer: true });
     }
-    // The rule of sending runs as its owner (it writes a table the application role cannot write); the two checks are read-only helpers.
-    expect(await privileges('app_private.send_content_for_approval(public.contents, uuid, date, text)')).toEqual({ app: false, public_acl: false, config: ['search_path=""'], definer: true });
-    for (const signature of ['app_private.check_approval_round_input(date, text, timestamptz)', 'app_private.approval_note_is_valid(text)']) {
+    // The rule of sending runs as its owner (it writes a table the application role cannot write); the checks are read-only helpers.
+    expect(await privileges('app_private.send_content_for_approval(public.contents, uuid, timestamptz, text)')).toEqual({ app: false, public_acl: false, config: ['search_path=""'], definer: true });
+    for (const signature of ['app_private.check_approval_round_deadline(timestamptz, text, timestamptz)', 'app_private.approval_note_is_valid(text)']) {
       expect(await privileges(signature), signature).toEqual({ app: false, public_acl: false, config: ['search_path=""'], definer: false });
     }
-    // The old signature is gone: one function by that name, so the API calls the same one with or without a deadline.
-    expect(await f.sql("select count(*)::text as value from pg_proc where pronamespace = 'app_private'::regnamespace and proname = 'submit_content'")).toBe('1');
+    // The old signatures are gone: one function by each name, so the API calls the same one with or without a deadline.
+    for (const name of ['submit_content', 'submit_contents', 'send_content_for_approval']) {
+      expect(await f.sql(`select count(*)::text as value from pg_proc where pronamespace = 'app_private'::regnamespace and proname = '${name}'`), name).toBe('1');
+    }
   });
 });
 
@@ -439,68 +441,121 @@ const ENTRANCES = [
   ['submit_contents', async (content: string, dueOn: string | null, note: string | null) => batchAs(ids.productionA, [content], dueOn, note)]
 ] as const;
 
+// The deadline is an instant: after now and up to 90 days ahead (2160 hours). The entrances read "now" at the instant of the transaction,
+// which a test cannot fix, so the edges of the window are tested on the check (below) and these tests keep clear of them.
 describe.each(ENTRANCES)('the deadline of %s', (_name, send) => {
   it.each([
-    ['yesterday', -1, false],
-    ['today', 0, true],
-    ['90 days ahead', 90, true],
-    ['91 days ahead', 91, false]
-  ])('%s is %s', async (_label, offset, accepted) => {
+    ['a minute ago', -1 / 60, false],
+    ['in a minute', 1 / 60, true],
+    ['in 48 hours, the standard of the screen', 48, true],
+    ['in 89 days', 89 * 24, true],
+    ['in 91 days', 91 * 24, false]
+  ])('%s is accepted: %s', async (_label, hours, accepted) => {
     const content = await f.readyContent();
-    const dueOn = await f.day(offset);
+    const dueAt = await f.sql<string>('select (pg_catalog.now() + (?::double precision * interval \'1 hour\'))::text as value', [hours]);
 
     if (accepted) {
-      await send(content, dueOn, null);
-      expect((await f.roundsOf(content))[0]).toMatchObject({ due_on: dueOn });
+      await send(content, dueAt, null);
+      const [round] = await f.roundsOf(content);
+      expect((round!.due_at as Date).getTime()).toBe(new Date(dueAt).getTime());
+      expect(round!.due_on).toBe(await f.sql<string>('select app_private.sao_paulo_date(?::timestamptz)::text as value', [dueAt]));
     } else {
-      await expect(send(content, dueOn, null)).rejects.toMatchObject({ code: 'A0120' });
+      await expect(send(content, dueAt, null)).rejects.toMatchObject({ code: 'A0120' });
       await expectUntouched([content]);
     }
+  });
+
+  it('keeps the hour the person gave, to the second, and the day of São Paulo that hour falls on', async () => {
+    const content = await f.readyContent();
+    const tomorrow = await f.day(1);
+    await send(content, `${tomorrow}T02:30:15-03:00`, null);
+    expect((await f.roundsOf(content))[0]).toMatchObject({ due_on: tomorrow, due_at: new Date(`${tomorrow}T05:30:15Z`) });
+  });
+
+  it('turns a day into the end of that day in São Paulo: 23:59', async () => {
+    const content = await f.readyContent();
+    const day = await f.day(3);
+    await send(content, day, null);
+    const [round] = await f.roundsOf(content);
+    expect(round).toMatchObject({ due_on: day });
+    expect(await f.sql<string>("select to_char(due_at at time zone 'America/Sao_Paulo', 'YYYY-MM-DD HH24:MI:SS') as value from content_approval_rounds where id = ?", [round!.id])).toBe(`${day} 23:59:00`);
   });
 
   it('accepts no deadline at all', async () => {
     const content = await f.readyContent();
     await send(content, null, null);
-    expect((await f.roundsOf(content))[0]).toMatchObject({ due_on: null });
+    expect((await f.roundsOf(content))[0]).toMatchObject({ due_on: null, due_at: null });
   });
 
   it('is checked for a content that already waits too, so the same call fails the same way every time', async () => {
     const content = await f.readyContent();
     await send(content, null, null);
-    await expect(send(content, await f.day(-1), null)).rejects.toMatchObject({ code: 'A0120' });
+    await expect(send(content, await f.at(-1), null)).rejects.toMatchObject({ code: 'A0120' });
   });
 });
 
-// The entrances read "today" at the instant of the transaction, so a test through them lives with the hour it runs at (the suite only keeps
-// away from São Paulo midnight): the check takes the instant, and these tests fix it, at the hours where São Paulo and UTC are on another day.
-describe('the day of the deadline is the one of São Paulo at the instant of the check', () => {
-  const checkAt = (dueOn: string | null, instant: string, note: string | null = null): Promise<unknown> =>
-    owner().raw('select app_private.check_approval_round_input(?::date, ?::text, ?::timestamptz)', [dueOn, note, instant]);
-  const plusDays = (day: string, days: number): Promise<string> => f.sql('select (?::date + ?::integer)::text as value', [day, days]);
+describe('the window of the deadline, at an instant the check is given', () => {
+  const NOW = '2026-11-10T15:00:00Z';
+  const checkAt = (dueAt: string | null, instant: string | null, note: string | null = null): Promise<unknown> =>
+    owner().raw('select app_private.check_approval_round_deadline(?::timestamptz, ?::text, ?::timestamptz)', [dueAt, note, instant]);
+  const shifted = (instant: string, seconds: number): string => new Date(new Date(instant).getTime() + seconds * 1000).toISOString();
+  const NINETY_DAYS = 90 * 24 * 3600;
 
-  // São Paulo is three hours behind UTC all year: from 21:00 on, the UTC date is already the next day of São Paulo.
   it.each([
-    ['12:00', '2026-11-10T15:00:00Z', '2026-11-10'],
-    ['20:59:59, the last second the UTC date is still the same', '2026-11-10T23:59:59Z', '2026-11-10'],
-    ['21:00:00, the first second the UTC date is the next day', '2026-11-11T00:00:00Z', '2026-11-10'],
-    ['22:30', '2026-11-11T01:30:00Z', '2026-11-10'],
-    ['23:59:59, the last second of the day', '2026-11-11T02:59:59Z', '2026-11-10'],
-    ['00:00:00, the first second of the next day', '2026-11-11T03:00:00Z', '2026-11-11'],
-    ['00:30', '2026-11-11T03:30:00Z', '2026-11-11']
-  ])('at %s of São Paulo, today is %s: the deadline is accepted from today to 90 days ahead, and refused yesterday and 91 days ahead (A0120)', async (_label, instant, today) => {
-    for (const offset of [0, 90]) await expect(checkAt(await plusDays(today, offset), instant), `today + ${offset}`).resolves.toBeDefined();
-    for (const offset of [-1, 91]) await expect(checkAt(await plusDays(today, offset), instant), `today + ${offset}`).rejects.toMatchObject({ code: 'A0120' });
+    ['one second after now', 1, true],
+    ['one minute after now', 60, true],
+    ['48 hours after now', 48 * 3600, true],
+    ['exactly 90 days after now, the last instant', NINETY_DAYS, true],
+    ['one second past 90 days', NINETY_DAYS + 1, false],
+    ['exactly now', 0, false],
+    ['one second ago', -1, false],
+    ['a day ago', -86_400, false]
+  ])('%s is %s', async (_label, seconds, accepted) => {
+    const outcome = checkAt(shifted(NOW, seconds), NOW);
+    if (accepted) await expect(outcome).resolves.toBeDefined();
+    else await expect(outcome).rejects.toMatchObject({ code: 'A0120' });
+  });
+
+  // São Paulo is three hours behind UTC all year: the window is made of instants, so the edges are the same whatever the day it is there.
+  it.each([
+    ['12:00', '2026-11-10T15:00:00Z'],
+    ['20:59:59', '2026-11-10T23:59:59Z'],
+    ['21:00:00, the UTC date turns', '2026-11-11T00:00:00Z'],
+    ['23:59:59, the last second of the day', '2026-11-11T02:59:59Z'],
+    ['00:00:00, the first second of the next day', '2026-11-11T03:00:00Z']
+  ])('at %s of São Paulo, the edges are one second after and 90 days after (and one second past that is refused)', async (_label, instant) => {
+    await expect(checkAt(shifted(instant, 1), instant)).resolves.toBeDefined();
+    await expect(checkAt(shifted(instant, NINETY_DAYS), instant)).resolves.toBeDefined();
+    await expect(checkAt(shifted(instant, NINETY_DAYS + 1), instant)).rejects.toMatchObject({ code: 'A0120' });
+    await expect(checkAt(instant, instant)).rejects.toMatchObject({ code: 'A0120' });
     await expect(checkAt(null, instant)).resolves.toBeDefined();
   });
 
+  it('does not depend on the time zone of the session: 90 days is 2160 hours', async () => {
+    for (const zone of ['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles', 'Asia/Tokyo']) {
+      await owner().transaction(async (transaction) => {
+        await transaction.raw(`set local time zone '${zone}'`);
+        await expect(transaction.raw('select app_private.check_approval_round_deadline(?::timestamptz, null, ?::timestamptz)', [shifted(NOW, NINETY_DAYS), NOW]), zone).resolves.toBeDefined();
+        await expect(transaction.raw('select app_private.check_approval_round_deadline(?::timestamptz, null, ?::timestamptz)', [shifted(NOW, NINETY_DAYS + 1), NOW]).catch((error: { code: string }) => error.code), zone).resolves.toBe('A0120');
+      });
+    }
+  });
+
   it('refuses a missing instant, which would turn the range into a comparison with null that refuses nothing', async () => {
-    await expect(checkAt('2031-01-01', null as never)).rejects.toMatchObject({ code: '22023' });
+    await expect(checkAt('2031-01-01T00:00:00Z', null)).rejects.toMatchObject({ code: '22023' });
+  });
+
+  it('judges the note with the deadline, once the deadline is in the window', async () => {
+    await expect(checkAt(shifted(NOW, 3600), NOW, 'a'.repeat(501))).rejects.toMatchObject({ code: 'A0068' });
+    await expect(checkAt(shifted(NOW, 3600), NOW, ' ​ ')).rejects.toMatchObject({ code: 'A0068' });
+    await expect(checkAt(shifted(NOW, 3600), NOW, 'a'.repeat(500))).resolves.toBeDefined();
+    await expect(checkAt(shifted(NOW, -3600), NOW, 'a'.repeat(501))).rejects.toMatchObject({ code: 'A0120' });
   });
 
   it('is asked by both entrances at the instant of the transaction: the text of each says so', async () => {
     for (const name of ['submit_content', 'submit_contents']) {
       const source = await f.sql<string>(`select pg_get_functiondef(p.oid) as value from pg_proc p where p.pronamespace = 'app_private'::regnamespace and p.proname = ?`, [name]);
-      expect(source, name).toContain('check_approval_round_input(p_due_on, p_note, pg_catalog.now())');
+      expect(source, name).toContain('check_approval_round_deadline(p_due_at, p_note, pg_catalog.now())');
     }
   });
 });
@@ -600,6 +655,36 @@ describe('the note is also a CHECK of the table', () => {
     await owner()('content_media').where({ content_id: content }).delete();
     await owner()('contents').where({ id: content }).delete();
     expect(await f.roundsOf(content)).toEqual([]);
+  });
+});
+
+describe('the deadline is also a CHECK of the table: the day is the São Paulo day of the instant', () => {
+  const insertWith = async (deadline: { due_on: string | null; due_at: string | null }): Promise<unknown> => {
+    const content = await f.readyContent();
+    return owner()(THE_ROUNDS_TABLE).insert({ batch_id: randomUUID(), client_id: ids.clientA1, content_id: content, sequence: 1, sent_by: ids.adminA, ...deadline });
+  };
+
+  it.each([
+    ['a day with no instant', { due_on: '2030-01-01', due_at: null }],
+    ['an instant with no day', { due_on: null, due_at: '2030-01-01T12:00:00Z' }],
+    ['the last second of the day before, which is still the day before in São Paulo', { due_on: '2030-01-01', due_at: '2030-01-01T02:59:59Z' }],
+    ['the first second of the day after, which is already the next day in São Paulo', { due_on: '2030-01-01', due_at: '2030-01-02T03:00:00Z' }]
+  ])('refuses %s even for the owner of the database', async (_label, deadline) => {
+    await expect(insertWith(deadline)).rejects.toMatchObject({ code: '23514', constraint: 'content_approval_rounds_due_check' });
+  });
+
+  it.each([
+    ['the first second of the day in São Paulo', { due_on: '2030-01-01', due_at: '2030-01-01T03:00:00Z' }],
+    ['the last second of the day in São Paulo', { due_on: '2030-01-01', due_at: '2030-01-02T02:59:59Z' }],
+    ['no deadline at all', { due_on: null, due_at: null }]
+  ])('accepts %s', async (_label, deadline) => {
+    await expect(insertWith(deadline)).resolves.toBeDefined();
+  });
+
+  it('is not writable by the application role, which has no grant on the column', async () => {
+    const content = await f.readyContent();
+    await submitAs(ids.adminA, content, await f.day(2));
+    await expect(w.asUser(ids.adminA, (t) => t(THE_ROUNDS_TABLE).where({ content_id: content }).update({ due_at: '2030-01-01T12:00:00Z' }))).rejects.toMatchObject({ code: '42501' });
   });
 });
 
@@ -846,6 +931,39 @@ describe('two sends of the same contents at once', () => {
     expect((await f.roundsOf(contents[0]!))[0]).toMatchObject({ sent_by: ids.adminA });
   });
 
+  it('keeps the deadline of the first batch, to the hour, when a second one with another deadline arrives at the same moment: the loser leaves no round and changes nothing', async () => {
+    const contents = [await f.readyContent(), await f.readyContent()];
+    const firstDeadline = await f.at(48);
+    const secondDeadline = await f.at(72);
+    const first = await w.openTransactionAs(ids.adminA);
+    const firstPid = await backendPid(first);
+    let second: Promise<unknown> | undefined;
+    try {
+      await first.raw('select app_private.submit_contents(?::uuid[], ?::timestamptz, ?::text)', [[...contents], firstDeadline, 'Primeiro lote']);
+      second = batchAs(ids.managerA, [...contents].reverse(), secondDeadline, 'Segundo lote').then(() => 'sent', (error: unknown) => error);
+      await waitForBackendsBlockedBy(owner(), firstPid);
+    } finally {
+      await first.commit();
+    }
+
+    expect(await second).toMatchObject({ code: 'A0062' });
+    for (const content of contents) {
+      const rounds = await f.roundsOf(content);
+      expect(rounds).toHaveLength(1);
+      expect(rounds[0]).toMatchObject({ sent_by: ids.adminA, note: 'Primeiro lote' });
+      expect((rounds[0]!.due_at as Date).getTime()).toBe(new Date(firstDeadline).getTime());
+    }
+  });
+
+  it('lets two batches of different contents with a deadline each go through together, each keeping its own hour', async () => {
+    const [mine, theirs] = [[await f.readyContent()], [await f.readyContent()]];
+    const [a, b] = [await f.at(24), await f.at(96)];
+    await Promise.all([batchAs(ids.adminA, mine, a, null), batchAs(ids.managerA, theirs, b, null)]);
+
+    expect((await f.roundsOf(mine[0]!))[0]!.due_at).toEqual(new Date(a));
+    expect((await f.roundsOf(theirs[0]!))[0]!.due_at).toEqual(new Date(b));
+  });
+
   it('refuses a batch while the archive of the client is uncommitted, with A0061, and sends nothing once the archive commits', async () => {
     const client = await f.freshClient();
     const contents = [await f.readyContent(client), await f.readyContent(client)];
@@ -937,13 +1055,88 @@ describe('what the portal reads of the current round', () => {
     expect(await portalRows(ids.crossDual, ids.clientA1, content)).toHaveLength(1);
   });
 
-  it('hands the portal no column of who sent it or of the batch', async () => {
-    const columns = await f.sql<string>("select pg_get_function_result('app_private.portal_contents(uuid, date, date, text[], uuid)'::regprocedure) as value");
-    expect(columns).toContain('approval_sent_at timestamp with time zone, approval_due_on date, approval_note text');
-    expect(columns).not.toMatch(/sent_by|batch_id|sequence|reminded/);
+  it('returns the deadline as the instant the sender gave, and the day it falls on in São Paulo', async () => {
+    const content = await f.readyContent();
+    const tomorrow = await f.day(1);
+    await submitAs(ids.productionA, content, `${tomorrow}T21:30:00-03:00`, null);
+
+    const [row] = await w.asUser(ids.portalA1, async (t) =>
+      (await t.raw<{ rows: Array<{ approval_due_at: Date; approval_due_on: string }> }>(
+        'select approval_due_at, approval_due_on::text as approval_due_on from app_private.portal_contents(?::uuid, null::date, null::date, null::text[], ?::uuid)', [ids.clientA1, content]
+      )).rows
+    );
+    expect(row!.approval_due_at).toEqual(new Date(`${tomorrow}T21:30:00-03:00`));
+    expect(row!.approval_due_on).toBe(tomorrow);
+  });
+
+  describe('who sent the round', () => {
+    interface SenderRow { id: string; approval_sent_by_name: string | null; approval_sent_by_photo_key: string | null }
+    const senderOf = async (user: string, clientId: string, contentId: string): Promise<SenderRow | undefined> =>
+      (await w.asUser(user, async (t) =>
+        (await t.raw<{ rows: SenderRow[] }>(
+          'select id, approval_sent_by_name, approval_sent_by_photo_key from app_private.portal_contents(?::uuid, null::date, null::date, null::text[], ?::uuid)', [clientId, contentId]
+        )).rows
+      ))[0];
+
+    it('returns the name and the photo key of the person who sent, and of nobody else', async () => {
+      const content = await f.readyContent();
+      await owner()('auth.user').where({ id: ids.managerA }).update({ image: 'identity/photo-do-gerente.png' });
+      await submitAs(ids.managerA, content, null, 'Recado');
+      const manager = await owner()('auth.user').where({ id: ids.managerA }).first('name');
+
+      expect(await senderOf(ids.portalA1, ids.clientA1, content)).toEqual({ id: content, approval_sent_by_name: manager.name, approval_sent_by_photo_key: 'identity/photo-do-gerente.png' });
+    });
+
+    it('is the sender of the LATEST round: the first person is not read once another sends again', async () => {
+      const content = await f.readyContent();
+      await submitAs(ids.managerA, content);
+      await f.requestChanges(ids.portalA1, content);
+      await submitAs(ids.adminA, content);
+      const admin = await owner()('auth.user').where({ id: ids.adminA }).first('name');
+
+      expect((await senderOf(ids.portalA1, ids.clientA1, content))?.approval_sent_by_name).toBe(admin.name);
+    });
+
+    it('keeps the name of a sender who left the agency, with the name they had', async () => {
+      const content = await f.readyContent();
+      await submitAs(ids.productionA, content);
+      const sender = await owner()('auth.user').where({ id: ids.productionA }).first('name');
+      await owner()('agency_memberships').where({ user_id: ids.productionA, agency_id: ids.agencyA }).update({ status: 'removed' });
+      try {
+        expect((await senderOf(ids.portalA1, ids.clientA1, content))?.approval_sent_by_name).toBe(sender.name);
+      } finally {
+        await owner()('agency_memberships').where({ user_id: ids.productionA, agency_id: ids.agencyA }).update({ status: 'active' });
+      }
+    });
+
+    it('is null for a content that waited before the rounds existed and for one in production', async () => {
+      const legacy = await w.seedContent(ids.clientA1, { status: 'awaiting_approval' });
+      const draft = await f.readyContent();
+      await owner()(THE_ROUNDS_TABLE).insert({ batch_id: randomUUID(), client_id: ids.clientA1, content_id: draft, sequence: 1, sent_by: ids.adminA });
+
+      expect(await senderOf(ids.portalA1, ids.clientA1, legacy)).toMatchObject({ approval_sent_by_name: null, approval_sent_by_photo_key: null });
+      expect(await senderOf(ids.portalA1, ids.clientA1, draft)).toMatchObject({ approval_sent_by_name: null, approval_sent_by_photo_key: null });
+    });
+
+    it('is read only by a person of THIS client: another portal, another agency and a person without a link read no sender', async () => {
+      const content = await f.readyContent();
+      await submitAs(ids.managerA, content);
+      for (const user of [ids.portalA2, ids.portalB, ids.dualRemoved, ids.adminB, ids.productionA, ids.managerA]) {
+        expect(await senderOf(user, ids.clientA1, content), user).toBeUndefined();
+      }
+    });
+
+    it('hands the portal the name and the photo key and nothing else of the sender: no id, e-mail, role or batch', async () => {
+      const columns = (await f.sql<string>("select pg_get_function_result('app_private.portal_contents(uuid, date, date, text[], uuid)'::regprocedure) as value")).split(', ').map((column) => column.split(' ')[0]);
+      expect(columns.filter((column) => /sent_by|sender/.test(column!))).toEqual(['approval_sent_by_name', 'approval_sent_by_photo_key']);
+      expect(columns.join(' ')).not.toMatch(/email|role|batch_id|sequence|reminded|member|user_id/);
+    });
+  });
+
+  it('hands the link no sender, and no column of the batch', async () => {
     const linkColumns = await f.sql<string>("select pg_get_function_result('app_private.portal_approval_contents(text)'::regprocedure) as value");
     expect(linkColumns).toContain('approval_sent_at timestamp with time zone, approval_due_on date, approval_note text');
-    expect(linkColumns).not.toMatch(/sent_by|batch_id|sequence|reminded/);
+    expect(linkColumns).not.toMatch(/sent_by|sender|batch_id|sequence|reminded|email|role/);
   });
 });
 
