@@ -104,8 +104,8 @@ function Glyph({ children }: { children: ReactNode }) {
   return <span className="content-folders__glyph" aria-hidden="true">{children}</span>;
 }
 
-function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return <EmptyState kind="failure" className="content-folders__empty" headingLevel={4} title={message} onRetry={onRetry} />;
+function LoadError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
+  return <EmptyState kind="failure" className="content-folders__empty" headingLevel={4} title={message} retrying={retrying} onRetry={onRetry} />;
 }
 
 function FolderCreateDialog({ clientId, parent, onClose }: { clientId: string; parent: MediaFolder | null; onClose: () => void }) {
@@ -304,13 +304,15 @@ function FolderMedia({ clientId, folder, canOperate }: { clientId: string; folde
     setSearchParams(params);
   };
 
+  // A retry keeps the failure and its busy button (and the focus) in place: only the first read is a skeleton.
+  const assetsFailed = assets.isError || (assets.isPending && assets.errorUpdateCount > 0);
   let body;
-  if (assets.isPending) {
+  if (assets.isPending && !assetsFailed) {
     body = <ul className="folder-media__grid" aria-hidden="true">
       {Array.from({ length: 6 }, (_value, index) => <li key={index}><Skeleton className="folder-media__skeleton" /></li>)}
     </ul>;
-  } else if (assets.isError && assets.data === undefined) {
-    body = <LoadError message="Não foi possível carregar as mídias. Tente de novo." onRetry={() => { void assets.refetch(); }} />;
+  } else if ((assets.isError && assets.data === undefined) || assets.isPending) {
+    body = <LoadError message="Não foi possível carregar as mídias. Tente de novo." retrying={assets.isFetching} onRetry={() => { void assets.refetch(); }} />;
   } else if (assets.data.meta.totalItems === 0) {
     body = <EmptyState
       className="content-folders__empty"
@@ -372,11 +374,12 @@ export function ContentFolders({ clientId, canWrite }: { clientId: string; canWr
   const [creating, setCreating] = useState(false);
   const folders = useClientFolders(clientId);
 
-  if (folders.isPending) {
+  const foldersFailed = folders.isError || (folders.isPending && folders.errorUpdateCount > 0);
+  if (folders.isPending && !foldersFailed) {
     return <div className="content-folders__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /><Skeleton /></div>;
   }
-  if (folders.isError && folders.data === undefined) {
-    return <LoadError message="Não foi possível carregar as pastas. Tente de novo." onRetry={() => { void folders.refetch(); }} />;
+  if ((folders.isError && folders.data === undefined) || folders.isPending) {
+    return <LoadError message="Não foi possível carregar as pastas. Tente de novo." retrying={folders.isFetching} onRetry={() => { void folders.refetch(); }} />;
   }
 
   const all = folders.data.folders;

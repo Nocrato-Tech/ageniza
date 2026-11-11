@@ -206,10 +206,12 @@ export function SubscriptionPage() {
     refresh();
   };
 
-  if (plansQuery.isError || overviewQuery.isError) {
+  // A retry keeps the failure and its busy button (and the focus) in place: only the first read is a skeleton.
+  const failed = [plansQuery, overviewQuery].some((query) => query.isError || (query.isPending && query.errorUpdateCount > 0));
+  if (failed) {
     return <section aria-labelledby="subscription-title" className="subscription">
       <h1 id="subscription-title">Assinatura</h1>
-      <EmptyState kind="failure" title={LOAD_FAILED} description="Nada foi alterado." onRetry={() => { void plansQuery.refetch(); void overviewQuery.refetch(); }} />
+      <EmptyState kind="failure" title={LOAD_FAILED} description="Nada foi alterado." retrying={plansQuery.isFetching || overviewQuery.isFetching} onRetry={() => { void plansQuery.refetch(); void overviewQuery.refetch(); }} />
     </section>;
   }
   if (plans === undefined || overviewQuery.data === undefined) {

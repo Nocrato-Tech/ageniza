@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
@@ -720,7 +720,7 @@ describe('portal Marca na Pauta (#689)', () => {
   it('keeps the error, its button and the focus in place while a retry is in flight, and only the first read is a skeleton', async () => {
     let release: () => void = () => undefined;
     const holdRetry = new Promise<void>((resolve) => { release = resolve; });
-    const { impl } = makeWorld({ failStudy: () => apiError(404, 'NOT_FOUND'), holdRetry });
+    const { impl, calls } = makeWorld({ failStudy: () => apiError(404, 'NOT_FOUND'), holdRetry });
     renderPortal(impl);
 
     const alert = await screen.findByRole('alert');
@@ -729,6 +729,11 @@ describe('portal Marca na Pauta (#689)', () => {
     fireEvent.click(retry);
 
     await waitFor(() => expect(retry.getAttribute('aria-busy')).toBe('true'));
+    // A second click while the repeat is in flight sends no second read.
+    const readsInFlight = calls.filter((call) => call === `GET /clients/${CLIENT_ID}/brand-study`).length;
+    fireEvent.click(retry);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+    expect(calls.filter((call) => call === `GET /clients/${CLIENT_ID}/brand-study`)).toHaveLength(readsInFlight);
     expect(screen.getByRole('alert')).toBe(alert);
     expect(within(alert).getByRole('button', { name: 'Tentar de novo' })).toBe(retry);
     expect(document.activeElement).toBe(retry);

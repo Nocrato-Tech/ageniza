@@ -14,7 +14,6 @@ import { Conversation } from './conversation.js';
 import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
 import { PORTAL_PAUSED_REASON } from './plan-notice.js';
-import { PortalFailure } from './portal-failure.js';
 import { portalClientQueryKey, usePortalClient } from './portal.js';
 
 /**
@@ -144,7 +143,7 @@ export function PortalBrandPage() {
   if (study.data === undefined) {
     return <section className="portal-brand">
       <h1 className="portal-headline">Sua marca</h1>
-      <PortalFailure headingLevel={2} title={LOAD_FAILED} fetching={study.isFetching} onRetry={() => { void study.refetch(); }} />
+      <EmptyState kind="failure" className="portal-empty" headingLevel={2} title={LOAD_FAILED} retrying={study.isFetching} onRetry={() => { void study.refetch(); }} />
     </section>;
   }
 

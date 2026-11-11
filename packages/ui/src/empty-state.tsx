@@ -16,6 +16,8 @@ export type EmptyStateProps = Omit<HTMLAttributes<HTMLDivElement>, 'title'> & {
   kind?: EmptyStateKind;
   /** The way forward of a failure: shows a "Tentar de novo" button that runs this. */
   onRetry?: () => void;
+  /** The repeat is in flight: the retry button turns busy (`aria-busy`, keeps its focus) and ignores clicks until the answer arrives. */
+  retrying?: boolean;
   /** What is missing, as a sentence ("Cadastre o primeiro cliente"). */
   title: string;
   /** Why it matters or what comes next. */
@@ -29,7 +31,7 @@ export type EmptyStateProps = Omit<HTMLAttributes<HTMLDivElement>, 'title'> & {
 };
 
 /** What a list, calendar or search shows when there is nothing to show yet: what is missing, and the way to fix it. */
-export function EmptyState({ kind = 'first-use', onRetry, title, description, action, mascot = false, headingLevel = 2, className, ...props }: EmptyStateProps) {
+export function EmptyState({ kind = 'first-use', onRetry, retrying = false, title, description, action, mascot = false, headingLevel = 2, className, ...props }: EmptyStateProps) {
   const Heading = `h${headingLevel}` as const;
   const retry = kind === 'failure' && onRetry !== undefined;
   return (
@@ -44,7 +46,7 @@ export function EmptyState({ kind = 'first-use', onRetry, title, description, ac
         <Heading className="ui-empty-state__title">{title}</Heading>
         {description !== undefined && <p className="ui-empty-state__description">{description}</p>}
         {(action !== undefined || retry) && <div className="ui-empty-state__action">
-          {retry && <Button variant="secondary" onClick={onRetry}>Tentar de novo</Button>}
+          {retry && <Button variant="secondary" loading={retrying} onClick={onRetry}>Tentar de novo</Button>}
           {action}
         </div>}
       </div>

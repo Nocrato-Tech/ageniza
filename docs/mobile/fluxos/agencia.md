@@ -48,7 +48,7 @@ A equipe da agência, no contexto `agency`. Todas as rotas começam com `/agenci
 
 ## Listas vazias, boas notícias e falhas
 
-Uma lista ou painel sem itens diz uma de três coisas diferentes (decisão de 2026-11-10, [três tipos de estado vazio](../../business/decisions/2026-11-10-tres-tipos-de-estado-vazio.md)). Cada uma leva ícone e texto, nunca só cor.
+Uma lista ou painel sem itens diz uma de três coisas diferentes (decisão de 2026-11-10, [três tipos de estado vazio](../../business/decisions/2026-11-10-tres-tipos-de-estado-vazio.md)). O primeiro uso é só texto e ação, sem ícone; a boa notícia e a falha levam ícone e texto, nunca só cor. Enquanto "Tentar de novo" repete a consulta, o botão fica ocupado e não aceita outro clique.
 
 | tipo | quando | o que mostra |
 |---|---|---|
