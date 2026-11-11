@@ -35,6 +35,8 @@ export interface PortalContentRow {
   coverAssetId: string | null;
   media: Array<{ id: string; position: number; kind: 'image' | 'video' }>;
   publishedOn: string | null;
+  /** The round the agency opened: the deadline and the note it gave, or none (sent before the rounds). */
+  approval: { dueOn: string | null; note: string | null } | null;
 }
 
 export type PortalContentSeed = Partial<PortalContentRow> & Pick<PortalContentRow, 'id' | 'clientId'>;
@@ -64,6 +66,7 @@ export const createPortalContentsApi = (
       coverAssetId: null,
       media: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', position: 1, kind: ['image', 'carousel'].includes(input.format ?? 'image') ? 'image' : 'video' }],
       publishedOn: null,
+      approval: null,
       ...input
     };
     rows.set(row.id, row);
@@ -84,7 +87,8 @@ export const createPortalContentsApi = (
       publishedOn: row.publishedOn,
       caption: row.caption,
       revision: row.revision,
-      media: row.media
+      media: row.media,
+      approval: row.approval
     };
 
   // What the portal can read: its own client's, and never a cancelled one.

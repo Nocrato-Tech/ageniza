@@ -11,6 +11,7 @@ import {
 import { Button, ButtonLink, EmptyState, FormatTag, Realce, Skeleton, StatusTag } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
+import { ApprovalRound } from './approval-deadline.js';
 import { addDays, dayMonthLabel, startOfWeek, todayInSaoPaulo, weekdayShortLabel } from './content-dates.js';
 import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
 import { useAuthSession, useAuthSessionStore } from './auth.js';
@@ -62,6 +63,7 @@ function PortalAwaiting({ clientId, count }: { clientId: string; count: number }
                 <FormatTag format={FORMAT_TONES[content.format]}>{FORMAT_LABELS[content.format]}</FormatTag>
                 <span>{dayLabel(content.publishOn)}</span>
               </span>
+              <ApprovalRound approval={content.approval} showNote={false} />
             </Link>
           </li>)}
         </ul>}
