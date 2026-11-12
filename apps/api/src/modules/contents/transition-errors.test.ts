@@ -36,6 +36,10 @@ describe('the refusals of the database a transition answers by name (issue #256)
     expect(answer('A0068', 'submit')).toEqual({ status: 400, code: 'CONTENT_APPROVAL_NOTE_INVALID' });
   });
 
+  it('says the window of the deadline as an instant, from now to 90 days ahead, and no longer as a day', () => {
+    expect(translateTransitionError(failure('A0120'), 'submit')?.message).toBe('O prazo de aprovação é um momento entre agora e 90 dias à frente.');
+  });
+
   it('says what each action needs when the state is wrong, and a different thing for each', () => {
     const messages = (['submit', 'approve-by-agency', 'publish', 'unpublish', 'cancel', 'reschedule'] as const)
       .map((action) => translateTransitionError(failure('A0062'), action)?.message);
