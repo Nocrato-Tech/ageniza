@@ -15,6 +15,8 @@ import {
 } from '@ageniza/database';
 
 import { DEMO_CONTENTS, ensureContentDemo, type ContentSpec } from './seed-demo-content.js';
+import { ensurePortalDemo } from './seed-demo-portal.js';
+import { ensureDemoSessions } from './seed-demo-session.js';
 
 /**
  * Demo data for the local environment (issue #183). The command refuses to run anywhere but a
@@ -200,6 +202,12 @@ interface DemoPersonaSpec {
   readonly pains: string;
   readonly desires: string;
   readonly objections: string;
+  readonly age: number;
+  readonly occupation: string;
+  readonly location: string;
+  readonly traits: readonly string[];
+  readonly whereTheyAre: string;
+  readonly toneThatWorks: string;
 }
 
 interface DemoThreadCommentSpec {
@@ -228,6 +236,7 @@ export interface DemoClientSpec {
     readonly segment?: string;
     readonly website?: string;
     readonly instagramHandle?: string;
+    readonly city?: string;
     readonly contactName?: string;
     readonly contactPhone?: string;
     readonly contactEmail?: string;
@@ -251,6 +260,7 @@ const MAIN_CLIENTS: readonly DemoClientSpec[] = [
       segment: 'Alimentação',
       website: 'https://padariacentral.exemplo.test',
       instagramHandle: 'padariacentral',
+      city: 'São Paulo',
       contactName: 'João Batista',
       contactPhone: '+55 11 95555-0101',
       contactEmail: 'joao@padariacentral.exemplo.test'
@@ -270,7 +280,13 @@ const MAIN_CLIENTS: readonly DemoClientSpec[] = [
         description: 'Trabalha perto, passa a pé todos os dias e compra para levar.',
         pains: 'Fila grande no horário de pico e pão que acaba cedo.',
         desires: 'Resolver o café da manhã em minutos, com qualidade constante.',
-        objections: 'Acha caro quando o preço sobe sem aviso.'
+        objections: 'Acha caro quando o preço sobe sem aviso.',
+        age: 34,
+        occupation: 'Analista de marketing',
+        location: 'Vila Mariana, São Paulo',
+        traits: ['Pontual', 'Prática', 'Fiel ao bairro'],
+        whereTheyAre: 'Instagram no trajeto para o trabalho e grupos de moradores do bairro.',
+        toneThatWorks: 'Direto e caloroso, com preço e horário claros.'
       },
       {
         key: 'persona:padaria-escritorio',
@@ -278,7 +294,13 @@ const MAIN_CLIENTS: readonly DemoClientSpec[] = [
         description: 'Faz encomendas de última hora para reuniões pequenas.',
         pains: 'Não sabe se a encomenda chega a tempo.',
         desires: 'Confirmar o pedido por WhatsApp e receber no horário.',
-        objections: 'Já teve pedido errado em outra padaria.'
+        objections: 'Já teve pedido errado em outra padaria.',
+        age: 41,
+        occupation: 'Assistente administrativa',
+        location: 'Pinheiros, São Paulo',
+        traits: ['Organizada', 'Sem tempo', 'Exigente com prazo'],
+        whereTheyAre: 'WhatsApp e e-mail corporativo; decide perto do meio-dia.',
+        toneThatWorks: 'Objetivo, com confirmação por escrito e horário de entrega.'
       }
     ],
     threads: [
@@ -313,6 +335,7 @@ const MAIN_CLIENTS: readonly DemoClientSpec[] = [
       segment: 'Saúde',
       website: 'https://viverbem.exemplo.test',
       instagramHandle: 'clinicaviverbem',
+      city: 'Rio de Janeiro',
       contactName: 'Dra. Alice Prado',
       contactPhone: '+55 21 94444-0202',
       contactEmail: 'contato@viverbem.exemplo.test'
@@ -328,7 +351,13 @@ const MAIN_CLIENTS: readonly DemoClientSpec[] = [
         description: 'Organiza a saúde da casa e decide onde todos são atendidos.',
         pains: 'Não consegue encaixar consultas de rotina na agenda.',
         desires: 'Um lugar só, com lembretes de retorno.',
-        objections: 'Tem receio de esperar muito com criança pequena.'
+        objections: 'Tem receio de esperar muito com criança pequena.',
+        age: 37,
+        occupation: 'Professora de ensino fundamental',
+        location: 'Tijuca, Rio de Janeiro',
+        traits: ['Cuidadosa', 'Pesquisa antes', 'Indica para amigas'],
+        whereTheyAre: 'Instagram à noite e grupos de pais da escola.',
+        toneThatWorks: 'Acolhedor e claro, sem termos técnicos.'
       }
     ],
     threads: [
@@ -343,11 +372,11 @@ const MAIN_CLIENTS: readonly DemoClientSpec[] = [
       }
     ]
   },
-  { key: 'client:estudio-mova', name: 'Estúdio Mova' },
+  { key: 'client:estudio-mova', name: 'Estúdio Mova', registration: { segment: 'Estúdio de pilates', instagramHandle: 'estudiomova', city: 'Belo Horizonte' } },
   {
     key: 'client:cafe-do-alto',
     name: 'Café do Alto',
-    registration: { segment: 'Cafeteria', instagramHandle: 'cafedoalto' },
+    registration: { segment: 'Cafeteria', instagramHandle: 'cafedoalto', city: 'Campos do Jordão' },
     sections: [
       { sectionKey: 'colors', colors: [{ name: 'Verde montanha', hex: '#2F5D50' }, { name: 'Areia', hex: '#E5D9C3' }] },
       { sectionKey: 'archetype', archetype: 'Explorador' }
@@ -361,17 +390,19 @@ const MAIN_CLIENTS: readonly DemoClientSpec[] = [
       taxId: '11222333000144',
       segment: 'Educação',
       website: 'https://novaera.exemplo.test',
+      instagramHandle: 'colegionovaera',
+      city: 'Campinas',
       contactName: 'Rita Campos',
       contactEmail: 'secretaria@novaera.exemplo.test'
     }
   },
-  { key: 'client:oficina-ferro-e-fogo', name: 'Oficina Ferro & Fogo' }
+  { key: 'client:oficina-ferro-e-fogo', name: 'Oficina Ferro & Fogo', registration: { segment: 'Serralheria artística', instagramHandle: 'ferroefogo.oficina', city: 'Sorocaba' } }
 ];
 
 const SECOND_CLIENT: DemoClientSpec = {
   key: 'client:livraria-pagina-viva',
   name: 'Livraria Página Viva',
-  registration: { segment: 'Livraria', instagramHandle: 'pagina.viva' },
+  registration: { segment: 'Livraria', instagramHandle: 'pagina.viva', city: 'Curitiba' },
   sections: [{ sectionKey: 'branding', body: 'Livraria de rua com clube de leitura mensal e sarau no fim do mês.' }]
 };
 
@@ -719,8 +750,8 @@ const ensureClient = async (database: DatabaseClient, userId: string, agencyId: 
     if (clientId === undefined) {
       const inserted = await raw<RawRows<{ id: string }>>(transaction, `
         insert into public.clients
-          (agency_id, name, legal_name, tax_id, segment, website, instagram_handle, contact_name, contact_phone, contact_email)
-        values (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (agency_id, name, legal_name, tax_id, segment, website, instagram_handle, city, contact_name, contact_phone, contact_email)
+        values (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         on conflict (agency_id, ${normalizedName('name')}) where status = 'active' do nothing
         returning id
       `, [
@@ -731,6 +762,7 @@ const ensureClient = async (database: DatabaseClient, userId: string, agencyId: 
         client.registration?.segment ?? null,
         client.registration?.website ?? null,
         client.registration?.instagramHandle ?? null,
+        client.registration?.city ?? null,
         client.registration?.contactName ?? null,
         client.registration?.contactPhone ?? null,
         client.registration?.contactEmail ?? null
@@ -748,6 +780,7 @@ const ensureClient = async (database: DatabaseClient, userId: string, agencyId: 
         segment = ?,
         website = ?,
         instagram_handle = ?,
+        city = ?,
         contact_name = ?,
         contact_phone = ?,
         contact_email = ?,
@@ -761,6 +794,7 @@ const ensureClient = async (database: DatabaseClient, userId: string, agencyId: 
       client.registration?.segment ?? null,
       client.registration?.website ?? null,
       client.registration?.instagramHandle ?? null,
+      client.registration?.city ?? null,
       client.registration?.contactName ?? null,
       client.registration?.contactPhone ?? null,
       client.registration?.contactEmail ?? null,
@@ -770,6 +804,9 @@ const ensureClient = async (database: DatabaseClient, userId: string, agencyId: 
     return clientId;
   });
 };
+
+const personaProfile = (persona: DemoPersonaSpec): [number, string, string, string, string, string] =>
+  [persona.age, persona.occupation, persona.location, JSON.stringify(persona.traits), persona.whereTheyAre, persona.toneThatWorks];
 
 /** The persona is found by its name inside the client (no table key exists for it), and its text follows the spec on every run. */
 const ensureBrandStudy = async (database: DatabaseClient, userId: string, client: DemoClientSpec, clientId: string): Promise<ReadonlyMap<string, string>> => {
@@ -801,10 +838,11 @@ const ensureBrandStudy = async (database: DatabaseClient, userId: string, client
       let personaId = found.rows[0]?.id;
       if (personaId === undefined) {
         const inserted = await raw<RawRows<{ id: string }>>(transaction, `
-          insert into public.client_personas (client_id, name, description, pains, desires, objections, updated_by)
-          values (?::uuid, ?, ?, ?, ?, ?, ?::uuid)
+          insert into public.client_personas
+            (client_id, name, description, pains, desires, objections, age, occupation, location, traits, where_they_are, tone_that_works, updated_by)
+          values (?::uuid, ?, ?, ?, ?, ?, ?::smallint, ?, ?, ?::jsonb, ?, ?, ?::uuid)
           returning id
-        `, [clientId, persona.name, persona.description, persona.pains, persona.desires, persona.objections, userId]);
+        `, [clientId, persona.name, persona.description, persona.pains, persona.desires, persona.objections, ...personaProfile(persona), userId]);
         personaId = oneRow(inserted.rows, `Could not create the demo persona ${persona.name}.`).id;
       } else {
         await raw(transaction, `
@@ -813,10 +851,16 @@ const ensureBrandStudy = async (database: DatabaseClient, userId: string, client
             pains = ?,
             desires = ?,
             objections = ?,
+            age = ?::smallint,
+            occupation = ?,
+            location = ?,
+            traits = ?::jsonb,
+            where_they_are = ?,
+            tone_that_works = ?,
             updated_by = ?::uuid,
             updated_at = now()
           where id = ?::uuid
-        `, [persona.description, persona.pains, persona.desires, persona.objections, userId, personaId]);
+        `, [persona.description, persona.pains, persona.desires, persona.objections, ...personaProfile(persona), userId, personaId]);
       }
       personaIds.set(persona.key, personaId);
     }
@@ -1095,6 +1139,7 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
     }
     await ensureContentDemo({
       database,
+      owner,
       idFor,
       clientIds: clientIdByKey,
       agencyId: mainAgencyId,
@@ -1105,6 +1150,7 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
         portal: portalUserId
       }
     });
+    await ensurePortalDemo({ database, adminUserId, clientIds: clientIdByKey, emailFor });
     profiles.push({
       label: 'Portal',
       email: portalEmail,
@@ -1124,6 +1170,8 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
         return { email: emailFor(invite.emailLocal), roleId };
       })
     });
+
+    await ensureDemoSessions(database, mainOwnerId);
 
     const secondUserIds = await ensureTeam(SECOND_AGENCY, SECOND_USERS);
     const secondAgencyId = idFor(SECOND_AGENCY.key);

@@ -47,6 +47,8 @@ export interface ContentDemoPeople {
 
 export interface ContentDemoInput {
   readonly database: DatabaseClient;
+  /** The migration owner: the only writer that can put an approval deadline in the past, which no function of the product accepts. */
+  readonly owner: DatabaseClient;
   readonly idFor: SeedId;
   /** The id the database gave each demo client, by the key of its spec: the seed does not choose it. */
   readonly clientIds: ReadonlyMap<string, string>;
@@ -54,7 +56,7 @@ export interface ContentDemoInput {
   readonly people: ContentDemoPeople;
 }
 
-type Category = 'image' | 'video';
+type Category = 'image' | 'video' | 'logo' | 'pdf';
 type Format = 'image' | 'carousel' | 'reels';
 type Target = 'in_production' | 'awaiting_approval' | 'adjusting' | 'approved' | 'published' | 'cancelled';
 type Actor = keyof ContentDemoPeople;
@@ -89,9 +91,54 @@ export interface ContentSpec {
   readonly tasks?: readonly TaskSpec[];
   readonly changeRequest?: string;
   readonly approvalReason?: string;
+  /** What the client wrote when it approved. */
+  readonly approvalNote?: string;
+  /** The round the content is sent with: the deadline in hours from now (negative is overdue) and the note to the client. */
+  readonly round?: { readonly hours: number; readonly note?: string };
   /** A conversation of the person of the portal and the agency about the content. */
   readonly conversation?: readonly { readonly side: 'agency' | 'client'; readonly body: string }[];
 }
+
+interface MediaInfo {
+  readonly fileName: string;
+  readonly width?: number;
+  readonly height?: number;
+  readonly alt: string;
+  readonly uploader: 'admin' | 'manager';
+}
+
+const MEDIA_INFO: Readonly<Record<string, MediaInfo>> = {
+  'pais-1': { fileName: 'dia-dos-pais-mesa.png', width: 1080, height: 1350, alt: 'Mesa de café da manhã com pães, café e uma xícara para o pai', uploader: 'admin' },
+  'pais-2': { fileName: 'dia-dos-pais-balcao.png', width: 1080, height: 1350, alt: 'Balcão da padaria com a cesta de presente do Dia dos Pais', uploader: 'admin' },
+  'receita-1': { fileName: 'receita-pao-de-queijo.mp4', alt: 'Passo a passo do pão de queijo, da massa ao forno', uploader: 'admin' },
+  'torrada-1': { fileName: 'torrada-pao-de-ontem.png', width: 1080, height: 1080, alt: 'Fatias de pão de ontem douradas, servidas como torrada', uploader: 'admin' },
+  'familia-1': { fileName: 'cafe-em-familia-1.png', width: 1080, height: 1350, alt: 'Família reunida ao redor da mesa de domingo', uploader: 'admin' },
+  'familia-2': { fileName: 'cafe-em-familia-2.png', width: 1080, height: 1350, alt: 'Mesa de café da manhã com pouca luz', uploader: 'admin' },
+  'familia-3': { fileName: 'cafe-em-familia-3.png', width: 1080, height: 1350, alt: 'Criança servindo suco na mesa de domingo', uploader: 'admin' },
+  'promo-1': { fileName: 'combo-cafe-e-pao.png', width: 1080, height: 1080, alt: 'Combo de café com leite e pão na chapa sobre a bancada', uploader: 'admin' },
+  'bastidores-1': { fileName: 'fornada-das-cinco.mp4', alt: 'Padeiros tirando a fornada das cinco do forno', uploader: 'admin' },
+  'queijo-1': { fileName: 'pao-de-queijo-em-dobro.png', width: 1080, height: 1080, alt: 'Duas bandejas de pão de queijo recém-saído do forno', uploader: 'admin' },
+  'checkup-1': { fileName: 'checkup-anual.mp4', alt: 'Médica explicando quais exames fazer no check-up anual', uploader: 'manager' },
+  'vacina-1': { fileName: 'calendario-de-vacinas.png', width: 1080, height: 1350, alt: 'Calendário de vacinação da família em tons de azul', uploader: 'manager' },
+  'coado-1': { fileName: 'cafe-coado-na-hora.png', width: 1080, height: 1350, alt: 'Café sendo coado na hora em um filtro de pano', uploader: 'admin' },
+  'lib-logo-padaria': { fileName: 'logo-padaria-central.png', width: 1200, height: 1200, alt: 'Logotipo da Padaria Central: um pão em vermelho terracota', uploader: 'admin' },
+  'lib-manual-padaria': { fileName: 'manual-da-marca-padaria-central.pdf', alt: 'Manual da marca da Padaria Central', uploader: 'admin' },
+  'lib-fachada-viver-bem': { fileName: 'fachada-clinica-viver-bem.png', width: 1920, height: 1080, alt: 'Fachada da Clínica Viver Bem em um fim de tarde', uploader: 'manager' }
+};
+
+interface LibraryMediaSpec {
+  readonly key: string;
+  readonly client: string;
+  readonly category: Category;
+  readonly folder: FolderSpec;
+}
+
+/** Media that sit in the library of a client without being in any content. */
+const LIBRARY_MEDIA: readonly LibraryMediaSpec[] = [
+  { key: 'lib-logo-padaria', client: 'client:padaria-central', category: 'logo', folder: { name: 'Imagens' } },
+  { key: 'lib-manual-padaria', client: 'client:padaria-central', category: 'pdf', folder: { name: 'Campanha de Natal' } },
+  { key: 'lib-fachada-viver-bem', client: 'client:clinica-viver-bem', category: 'image', folder: { name: 'Imagens' } }
+];
 
 interface OwnFolderSpec {
   readonly client: string;
@@ -127,6 +174,7 @@ export const DEMO_CONTENTS: readonly ContentSpec[] = [
     key: 'padaria-receita-sabado', client: PADARIA, title: 'Receita de sábado: pão de queijo', format: 'reels', offset: 2, time: '09:30',
     caption: 'O jeito mineiro, sem pressa e com muito queijo.',
     folder: { name: 'Vídeos' }, media: [{ key: 'receita-1', category: 'video' }], target: 'awaiting_approval', actor: 'admin',
+    round: { hours: 20, note: 'Oi, Sofia! Segue o vídeo da receita de sábado. Consegue aprovar até amanhã cedo?' },
     conversation: [
       { side: 'client', body: 'Gostei do vídeo! Dá para mostrar o forno no final?' },
       { side: 'agency', body: 'Dá, sim. Incluímos o forno nos últimos segundos e avisamos aqui.' }
@@ -135,7 +183,8 @@ export const DEMO_CONTENTS: readonly ContentSpec[] = [
   {
     key: 'padaria-pao-de-ontem', client: PADARIA, title: 'O pão de ontem vira torrada', format: 'image', offset: -1,
     caption: 'Nada se joga fora na nossa cozinha.',
-    folder: { name: 'Imagens' }, media: [{ key: 'torrada-1', category: 'image' }], target: 'awaiting_approval', actor: 'admin'
+    folder: { name: 'Imagens' }, media: [{ key: 'torrada-1', category: 'image' }], target: 'awaiting_approval', actor: 'admin',
+    round: { hours: -30, note: 'Precisamos da sua aprovação para publicar ainda esta semana.' }
   },
   {
     key: 'padaria-cafe-em-familia', client: PADARIA, title: 'Café da manhã em família', format: 'carousel', offset: 4,
@@ -146,7 +195,14 @@ export const DEMO_CONTENTS: readonly ContentSpec[] = [
   {
     key: 'padaria-promocao', client: PADARIA, title: 'Promoção da semana: combo café e pão', format: 'image', offset: 1, time: '08:00',
     caption: 'Combo de segunda a quarta, das 6h às 10h.',
-    folder: { name: 'Imagens' }, media: [{ key: 'promo-1', category: 'image' }], target: 'approved', actor: 'admin'
+    folder: { name: 'Imagens' }, media: [{ key: 'promo-1', category: 'image' }], target: 'approved', actor: 'admin',
+    approvalNote: 'Aprovado! Pode publicar às 8h, o combo já está no balcão.'
+  },
+  {
+    key: 'padaria-queijo-em-dobro', client: PADARIA, title: 'Pão de queijo em dobro às quartas', format: 'image', offset: 3, time: '12:00',
+    caption: 'Toda quarta, o segundo pão de queijo sai por nossa conta.',
+    folder: { name: 'Imagens' }, media: [{ key: 'queijo-1', category: 'image' }], target: 'approved', actor: 'admin',
+    approvalNote: 'Adorei a foto. Vamos avisar o time do balcão sobre a promoção.'
   },
   {
     key: 'padaria-bastidores', client: PADARIA, title: 'Bastidores da fornada das cinco', format: 'reels', offset: -3,
@@ -166,13 +222,20 @@ export const DEMO_CONTENTS: readonly ContentSpec[] = [
   {
     key: 'viver-bem-checkup', client: VIVER_BEM, title: 'Check-up anual: o que pedir', format: 'reels', offset: 2,
     caption: 'Exames de rotina que vale agendar neste semestre.',
-    folder: { name: 'Vídeos' }, media: [{ key: 'checkup-1', category: 'video' }], target: 'approved', actor: 'manager',
+    folder: { name: 'Vídeos' }, media: [{ key: 'checkup-1', category: 'video' }], target: 'approved', actor: 'manager', time: '10:00',
     approvalReason: 'Aprovado por telefone com a Dra. Paula.'
+  },
+  {
+    key: 'viver-bem-vacinas', client: VIVER_BEM, title: 'Vacinação em dia: o calendário da família', format: 'image', offset: 1,
+    caption: 'Um calendário simples para ninguém perder o reforço.',
+    folder: { name: 'Imagens' }, media: [{ key: 'vacina-1', category: 'image' }], target: 'awaiting_approval', actor: 'manager',
+    round: { hours: -5, note: 'Dra. Alice, conseguimos aprovar hoje? O post sai amanhã.' }
   },
   {
     key: 'cafe-coado', client: CAFE, title: 'Lançamento do café coado na hora', format: 'image', offset: 1,
     caption: 'Grão da serra, moído na hora.',
-    folder: { name: 'Imagens' }, media: [{ key: 'coado-1', category: 'image' }], target: 'awaiting_approval', actor: 'admin'
+    folder: { name: 'Imagens' }, media: [{ key: 'coado-1', category: 'image' }], target: 'awaiting_approval', actor: 'admin',
+    round: { hours: 48 }
   }
 ];
 
@@ -228,7 +291,7 @@ interface Rows<TRow> {
 }
 
 export const ensureContentDemo = async (input: ContentDemoInput): Promise<void> => {
-  const { database, idFor, clientIds, agencyId, people } = input;
+  const { database, owner, idFor, clientIds, agencyId, people } = input;
   const as = <TResult>(actor: Actor, work: (transaction: ContentTransaction) => Promise<TResult>): Promise<TResult> =>
     withAuthenticatedUserTransaction(database, createVerifiedUserClaims({ userId: people[actor] }), work);
   const clientId = (key: string): string => {
@@ -258,27 +321,36 @@ export const ensureContentDemo = async (input: ContentDemoInput): Promise<void> 
 
   const ensureMedia = async (client: string, folderId: string, media: { readonly key: string; readonly category: Category }): Promise<string> => {
     const id = idFor(`media:${media.key}`);
-    await as('admin', async (transaction) => {
+    const info = MEDIA_INFO[media.key];
+    if (info === undefined) throw new Error(`The demo media ${media.key} has no description.`);
+    const extension = { image: 'png', logo: 'png', video: 'mp4', pdf: 'pdf' }[media.category];
+    const contentType = { image: 'image/png', logo: 'image/png', video: 'video/mp4', pdf: 'application/pdf' }[media.category];
+    await as(info.uploader, async (transaction) => {
       const found = await raw<Rows<{ id: string }>>(transaction, 'select id from public.media_assets where id = ?::uuid', [id]);
-      if (found.rows[0] !== undefined) return;
-      const extension = media.category === 'image' ? 'png' : 'mp4';
-      const contentType = media.category === 'image' ? 'image/png' : 'video/mp4';
-      await insertPendingAsset(transaction, {
-        id,
-        agencyId,
-        category: media.category,
-        declaredContentType: contentType,
-        extension,
-        objectKey: `${agencyId}/${id}/original.${extension}`,
-        uploadObjectKey: `staging/${agencyId}/${id}/upload.${extension}`,
-        declaredSizeBytes: 48_211,
-        clientId: clientId(client),
-        folderId
-      });
-      await markAssetConfirmed(transaction, id, 48_211, contentType, media.category);
+      if (found.rows[0] === undefined) {
+        await insertPendingAsset(transaction, {
+          id,
+          agencyId,
+          category: media.category,
+          declaredContentType: contentType,
+          extension,
+          fileName: info.fileName,
+          objectKey: `${agencyId}/${id}/original.${extension}`,
+          uploadObjectKey: `staging/${agencyId}/${id}/upload.${extension}`,
+          declaredSizeBytes: 48_211,
+          clientId: clientId(client),
+          folderId
+        });
+        await markAssetConfirmed(
+          transaction, id, 48_211, contentType, media.category,
+          info.width === undefined || info.height === undefined ? undefined : { width: info.width, height: info.height }
+        );
+      }
+      await raw(transaction, 'update public.media_assets set file_name = ?, alt_text = ?, updated_at = now() where id = ?::uuid', [info.fileName, info.alt, id]);
     });
     return id;
   };
+  for (const library of LIBRARY_MEDIA) await ensureMedia(library.client, await folderIdOf(library.client, library.folder), library);
 
   const statusOf = (actor: Actor, contentId: string): Promise<{ status: Target; revision: number }> =>
     as(actor, async (transaction) => {
@@ -295,15 +367,35 @@ export const ensureContentDemo = async (input: ContentDemoInput): Promise<void> 
       const at = path.indexOf(current.status);
       if (at === -1 || at === path.length - 1) return;
       const next = path[at + 1]!;
-      if (next === 'awaiting_approval') await as(spec.actor, (transaction) => submitContent(transaction, contentId));
+      if (next === 'awaiting_approval') {
+        // The function takes only a deadline still to come: one already overdue is set afterwards, by `refreshRound`.
+        const hours = Math.max(spec.round?.hours ?? 48, 1);
+        const round = { dueAt: new Date(Date.now() + hours * 3_600_000).toISOString(), ...(spec.round?.note === undefined ? {} : { note: spec.round.note }) };
+        await as(spec.actor, (transaction) => submitContent(transaction, contentId, spec.round === undefined ? {} : round));
+      }
       else if (next === 'adjusting') {
         await as('portal', (transaction) => requestContentChanges(transaction, { contentId, revision: current.revision, comment: spec.changeRequest ?? 'Pedido de ajuste.' }));
       } else if (next === 'approved') {
-        if (spec.approvalReason === undefined) await as('portal', (transaction) => approveContent(transaction, { contentId, revision: current.revision }));
+        if (spec.approvalReason === undefined) await as('portal', (transaction) => approveContent(transaction, { contentId, revision: current.revision, ...(spec.approvalNote === undefined ? {} : { note: spec.approvalNote }) }));
         else await as(spec.actor, (transaction) => approveContentByAgency(transaction, { contentId, revision: current.revision, reason: spec.approvalReason! }));
       } else if (next === 'published') await as(spec.actor, (transaction) => publishContent(transaction, { contentId, publishedOn: publishOn }));
       else if (next === 'cancelled') await as(spec.actor, (transaction) => cancelContent(transaction, contentId));
     }
+  };
+
+  /** Puts the deadline of the round of a waiting content where the demo says, relative to now, so a rerun keeps "vencido" and "a vencer" true. */
+  const refreshRound = async (spec: ContentSpec, contentId: string): Promise<void> => {
+    if (spec.round === undefined || spec.target !== 'awaiting_approval') return;
+    const dueAt = new Date(Date.now() + spec.round.hours * 3_600_000).toISOString();
+    await owner.transaction((transaction) => raw(transaction, `
+      update public.content_approval_rounds
+      set due_at = ?::timestamptz,
+          due_on = app_private.sao_paulo_date(?::timestamptz),
+          sent_at = least(sent_at, ?::timestamptz - interval '48 hours'),
+          note = ?
+      where content_id = ?::uuid
+        and sequence = (select max(latest.sequence) from public.content_approval_rounds latest where latest.content_id = ?::uuid)
+    `, [dueAt, dueAt, dueAt, spec.round?.note ?? null, contentId, contentId]));
   };
 
   const ensureTasks = async (spec: ContentSpec, contentId: string): Promise<void> => {
@@ -386,6 +478,7 @@ export const ensureContentDemo = async (input: ContentDemoInput): Promise<void> 
     }
     await ensureTasks(spec, contentId);
     await moveTo(spec, contentId, publishOn);
+    await refreshRound(spec, contentId);
     await ensureConversation(spec, contentId);
   }
 
