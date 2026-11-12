@@ -14,7 +14,8 @@
 //  3. `filed_at` is the instant a file was put in its folder by a person: the confirmation of the upload, the rename of the file and
 //     its move to a folder (decision rule 10, the folder in use now). `updated_at` is written by more than that (the alternative text,
 //     the processing of a video), so it could not say it. Nobody writes the column: `media_assets_stamp_filed_at` derives it from the
-//     transition of the row, the way `confirmed_at` is stamped, and `ageniza_app` gets no grant on it. A confirmed file always has one.
+//     transition of the row, the way `confirmed_at` is stamped, and `ageniza_app` gets no grant on it. A confirmed file always has one, and a
+//     row that is not confirmed has none (the owner can still move a row back, as a correction, and then the instant goes).
 //     Backfill: the files that exist were filed when they were confirmed (`coalesce(confirmed_at, updated_at)`), since no rename or
 //     move existed before.
 
@@ -76,6 +77,8 @@ export async function up(knex) {
         or (new.folder_id is not null and new.folder_id is distinct from old.folder_id)
       ) then
         new.filed_at := pg_catalog.now();
+      elsif new.status <> 'confirmed' then
+        new.filed_at := null;
       end if;
       return new;
     end;

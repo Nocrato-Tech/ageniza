@@ -137,8 +137,9 @@ describe('the instant the existing files were filed', () => {
     expect((await rowOf('rejected')).filed_at).toBeNull();
   });
 
-  it('is kept with the state: a confirmed file with no instant, or an unconfirmed one with it, is refused', async () => {
+  it('is kept with the state: a confirmed file with no instant is refused, and an unconfirmed one has none', async () => {
     await expect(upgrade('media_assets').where({ id: assets.clean }).update({ filed_at: null })).rejects.toMatchObject({ constraint: 'media_assets_filed_at_confirmed' });
-    await expect(upgrade('media_assets').where({ id: assets.pending }).update({ filed_at: new Date() })).rejects.toMatchObject({ constraint: 'media_assets_filed_at_confirmed' });
+    await upgrade('media_assets').where({ id: assets.pending }).update({ filed_at: new Date() });
+    expect((await rowOf('pending')).filed_at).toBeNull();
   });
 });

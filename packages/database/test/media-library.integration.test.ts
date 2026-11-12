@@ -932,14 +932,21 @@ describe('the instant a file was filed: its confirmation, its rename and its mov
     expect(await filedAt(removed)).toBe(FILED.getTime());
   });
 
-  it('is nobody\'s to write: the application has no grant on the column, and the state of the row refuses an instant that does not match it', async () => {
+  it('is nobody\'s to write: the application has no grant on the column, and a confirmed file never loses its instant', async () => {
     const confirmed = await seed({ confirmedAt: FILED });
-    const pending = await seed({ status: 'pending' });
     await expect(edit(ids.adminA, confirmed, { filed_at: new Date() })).rejects.toMatchObject(deniedByGrant);
     await expect(w.getOwner().knex('media_assets').where({ id: confirmed }).update({ filed_at: null })).rejects.toMatchObject(check('media_assets_filed_at_confirmed'));
-    await expect(w.getOwner().knex('media_assets').where({ id: pending }).update({ filed_at: new Date() })).rejects.toMatchObject(check('media_assets_filed_at_confirmed'));
     expect(await filedAt(confirmed)).toBe(FILED.getTime());
+  });
+
+  it('goes with the state: a row that is not confirmed has none, even when an owner writes one or moves a confirmed row back', async () => {
+    const pending = await seed({ status: 'pending' });
+    await w.getOwner().knex('media_assets').where({ id: pending }).update({ filed_at: new Date() });
     expect(await filedAt(pending)).toBeNull();
+
+    const corrected = await seed({ confirmedAt: FILED });
+    await w.getOwner().knex('media_assets').where({ id: corrected }).update({ status: 'pending' });
+    expect(await rowOf(corrected)).toMatchObject({ status: 'pending', filed_at: null });
   });
 });
 
