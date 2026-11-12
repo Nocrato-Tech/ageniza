@@ -730,16 +730,16 @@ describe('the Início: approvals and the script of today (#271)', () => {
   });
 
   describe('the week', () => {
-    const WEEK = `GET /clients/${CLIENT_ID}/contents?from=2026-10-05&to=2026-10-11`;
+    const WEEK = `GET /clients/${CLIENT_ID}/contents?from=2026-10-11&to=2026-10-17`;
     const weekCalls = (api: ReturnType<typeof createPortalContentsApi>): string[] => api.calls.filter((call) => call.includes('?from='));
 
-    it('asks for Monday to Sunday of the day in São Paulo, and lists what is planned with its state in words and the day', async () => {
+    it('asks for Sunday to Saturday of the day in São Paulo (a Sunday: it opens its own week), and lists what is planned with its state in words and the day', async () => {
       const api = createPortalContentsApi(CLIENT_ID);
-      const approved = api.seed({ publishOn: '2026-10-07', title: 'Sonho recheado', status: 'approved' });
-      api.seed({ publishOn: '2026-10-09', title: 'Cardápio de outono', status: 'adjusting' });
-      api.seed({ publishOn: '2026-10-10', title: 'Na fila', status: 'in_production' });
-      api.seed({ publishOn: '2026-10-08', title: 'Esperando você', status: 'awaiting_approval' });
-      api.seed({ publishOn: '2026-10-12', title: 'Semana que vem', status: 'approved' });
+      const approved = api.seed({ publishOn: '2026-10-13', title: 'Sonho recheado', status: 'approved' });
+      api.seed({ publishOn: '2026-10-16', title: 'Cardápio de outono', status: 'adjusting' });
+      api.seed({ publishOn: '2026-10-17', title: 'Na fila', status: 'in_production' });
+      api.seed({ publishOn: '2026-10-14', title: 'Esperando você', status: 'awaiting_approval' });
+      api.seed({ publishOn: '2026-10-18', title: 'Semana que vem', status: 'approved' });
       renderPortal(makeFetch({ contents: api }).impl);
 
       const section = (await screen.findByRole('heading', { name: 'Nesta semana' })).closest('section') as HTMLElement;
@@ -750,9 +750,9 @@ describe('the Início: approvals and the script of today (#271)', () => {
         row.querySelector('.ui-status-tag')!.className,
         row.querySelector('.portal-meta')!.lastElementChild!.textContent
       ])).toEqual([
-        ['Sonho recheado', 'Aprovado', 'ui-status-tag ui-status-tag--ready', 'qua, 07/10'],
-        ['Cardápio de outono', 'Em ajuste', 'ui-status-tag ui-status-tag--adjust', 'sex, 09/10'],
-        ['Na fila', 'Em produção', 'ui-status-tag ui-status-tag--production', 'sáb, 10/10']
+        ['Sonho recheado', 'Aprovado', 'ui-status-tag ui-status-tag--ready', 'ter, 13/10'],
+        ['Cardápio de outono', 'Em ajuste', 'ui-status-tag ui-status-tag--adjust', 'sex, 16/10'],
+        ['Na fila', 'Em produção', 'ui-status-tag ui-status-tag--production', 'sáb, 17/10']
       ]);
       expect(rows[0]!.getAttribute('href')).toBe(portalUrl(`conteudos/${approved.id}`));
       expect(within(section).queryByText('Esperando você')).toBeNull();
@@ -762,12 +762,12 @@ describe('the Início: approvals and the script of today (#271)', () => {
 
     it('shows five rows and leads to the rest in Conteúdos', async () => {
       const api = createPortalContentsApi(CLIENT_ID);
-      for (let day = 5; day <= 10; day += 1) api.seed({ publishOn: `2026-10-${String(day).padStart(2, '0')}`, title: `Post ${day}`, status: 'approved' });
+      for (let day = 11; day <= 16; day += 1) api.seed({ publishOn: `2026-10-${String(day).padStart(2, '0')}`, title: `Post ${day}`, status: 'approved' });
       renderPortal(makeFetch({ contents: api }).impl);
 
       const section = (await screen.findByRole('heading', { name: 'Nesta semana' })).closest('section') as HTMLElement;
-      await within(section).findByText('Post 5');
-      expect(within(section).queryByText('Post 10')).toBeNull();
+      await within(section).findByText('Post 11');
+      expect(within(section).queryByText('Post 16')).toBeNull();
       expect(within(section).getByRole('link', { name: 'Ver todos os conteúdos' }).getAttribute('href')).toBe(portalUrl('conteudos'));
     });
 
@@ -1303,7 +1303,7 @@ describe('the Início: approvals and the script of today (#271)', () => {
 
     it('does not say nothing is planned when the week has posts and they all wait for approval', async () => {
       const api = createPortalContentsApi(CLIENT_ID);
-      api.seed({ publishOn: '2026-10-08', title: 'Esperando você', status: 'awaiting_approval' });
+      api.seed({ publishOn: '2026-10-14', title: 'Esperando você', status: 'awaiting_approval' });
       renderPortal(makeFetch({ contents: api, portal: () => withHome({ contentsAwaitingApproval: 1 }) }).impl);
       const section = (await screen.findByRole('heading', { name: 'Nesta semana' })).closest('section') as HTMLElement;
       expect(await within(section).findByRole('heading', { level: 3, name: 'Os posts desta semana esperam sua aprovação' })).toBeTruthy();
@@ -1351,7 +1351,7 @@ describe('the Início: approvals and the script of today (#271)', () => {
 
     it('keeps it in the week, in place of a skeleton, and then shows the week', async () => {
       const contents = createPortalContentsApi(CLIENT_ID);
-      contents.seed({ publishOn: '2026-10-07', title: 'Sonho recheado', status: 'approved' });
+      contents.seed({ publishOn: '2026-10-13', title: 'Sonho recheado', status: 'approved' });
       const { impl, gate } = gateReads(makeFetch({ contents }).impl, (url) => url.pathname === `/clients/${CLIENT_ID}/contents`);
       gate.fail = serverFailure;
       const { container } = renderPortal(impl);

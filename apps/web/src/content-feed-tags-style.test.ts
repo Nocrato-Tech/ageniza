@@ -4,22 +4,28 @@ import { declarationsFor, readStyles } from './styles/theme-colors';
 
 const css = readStyles('globals.css');
 
-// The date and the "Planejado" tag were both pinned to the bottom of the tile, one to each corner, so on a narrow tile the tag
-// covered the date. They are now two items of one row that wraps, so they never share the same place.
-describe('the date and the planned tag of a feed tile', () => {
-  it('sit in one wrapping row pinned to the bottom of the tile', () => {
-    const row = declarationsFor(css, '.content-feed__tags');
-    expect(row.get('position')).toBe('absolute');
-    expect(row.get('display')).toBe('flex');
-    expect(row.get('flex-wrap')).toBe('wrap');
-    expect(row.get('left')).toBe('var(--space-1)');
-    expect(row.get('right')).toBe('var(--space-1)');
-    expect(row.get('bottom')).toBe('var(--space-1)');
+// The board's tile has the date at the top-left, the format at the top-right and the state at the bottom-left: three corners, so no two
+// of them share a place. What is still planned is a dashed outline inside the tile, not a word on it.
+describe('the date, the format and the state of a feed tile', () => {
+  it('pins each to its own corner of the tile', () => {
+    expect([declarationsFor(css, '.content-feed__date').get('top'), declarationsFor(css, '.content-feed__date').get('left')]).toEqual(['var(--space-1)', 'var(--space-1)']);
+    expect([declarationsFor(css, '.content-feed__format').get('top'), declarationsFor(css, '.content-feed__format').get('right')]).toEqual(['var(--space-1)', 'var(--space-1)']);
+    expect([declarationsFor(css, '.content-feed__state').get('bottom'), declarationsFor(css, '.content-feed__state').get('left')]).toEqual(['var(--space-1)', 'var(--space-1)']);
   });
 
-  it.each(['.content-feed__date', '.content-feed__planned'])('%s is placed by the row, never pinned to a corner of its own', (selector) => {
-    const own = declarationsFor(css, selector);
-    for (const property of ['position', 'left', 'right', 'bottom', 'top']) expect(own.has(property), property).toBe(false);
-    expect(own.get('white-space')).toBe('nowrap');
+  it('keeps the date on one line and the state inside the tile', () => {
+    expect(declarationsFor(css, '.content-feed__date').get('white-space')).toBe('nowrap');
+    expect(declarationsFor(css, '.content-feed__state').get('max-width')).toBe('calc(100% - 2 * var(--space-1))');
+  });
+
+  it('outlines what is still planned with a dashed line inside the tile', () => {
+    const outline = declarationsFor(css, ".content-feed__tile[data-planned] .content-feed__link::after");
+    expect(outline.get('border')).toContain('dashed');
+    expect(outline.get('pointer-events')).toBe('none');
+  });
+
+  it('draws the tile of the agency in three by four, and leaves the portal tile square', () => {
+    expect(declarationsFor(css, '.content-feed__tile').get('aspect-ratio')).toBe('1');
+    expect(declarationsFor(css, '.content-feed-layout .content-feed__tile').get('aspect-ratio')).toBe('3 / 4');
   });
 });

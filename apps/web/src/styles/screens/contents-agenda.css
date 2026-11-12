@@ -1,6 +1,7 @@
-/* The agenda of a narrow screen: a block for each day, the date on the left and the same cards on the right. */
+/* The agenda of a narrow screen: a block for each day, headed "Hoje", "Amanhã" or the weekday with the date, and the same cards under it. */
 .content-agenda {
   display: grid;
+  gap: var(--space-5);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -9,49 +10,30 @@
 .content-agenda__day {
   position: relative;
   display: grid;
-  grid-template-columns: 3rem minmax(0, 1fr);
-  gap: var(--space-3);
-  min-height: 3.5rem;
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.content-agenda__day--today {
-  border-radius: var(--radius-md);
-  background: var(--calendar-today-bg);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .content-agenda__label {
-  display: grid;
-  justify-items: center;
-  align-content: start;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0;
-  font-variant-numeric: tabular-nums;
+  font: var(--label-md);
+  font-weight: 700;
 }
 
-.content-agenda__weekday,
-.content-agenda__number {
-  display: block;
+.content-agenda__date {
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
-.content-agenda__weekday {
-  color: var(--text-muted);
-  font: var(--label-sm);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.content-agenda__number {
-  font: var(--title-md);
-}
-
-.content-agenda__today {
-  padding: 0 var(--space-2);
+.content-agenda__day--today .content-agenda__when {
+  padding: 0 var(--space-3);
   border-radius: var(--radius-full);
   background: var(--action-primary-bg);
   color: var(--action-primary-fg);
-  font: var(--caption);
-  font-weight: 700;
 }
 
 .content-agenda__day--empty .content-agenda__label {
@@ -63,34 +45,76 @@
   align-content: start;
   gap: var(--space-2);
   min-width: 0;
-  padding-right: var(--space-8);
+}
+
+.content-agenda .content-card__link {
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3);
+}
+
+.content-agenda .content-card {
+  border-radius: var(--radius-lg);
+}
+
+.content-agenda .content-card__cover {
+  width: 3rem;
+}
+
+.content-agenda .content-card__title {
+  font-size: 0.9375rem;
+  line-height: 1.375rem;
+}
+
+/* The tools of a day are a row in the flow here, not the corner of a cell: the "+" and the story row, both 44 px tall. */
+.content-agenda__day .content-day__tools {
+  position: static;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .content-agenda__day .content-day__tools .ui-menu__trigger {
-  top: var(--space-2);
-  right: var(--space-2);
   min-width: 2.75rem;
   min-height: 2.75rem;
   opacity: 1;
 }
 
 .content-agenda__day .content-day__tools .ui-menu__content {
-  right: var(--space-2);
-  left: auto;
+  top: 3rem;
+  right: auto;
+  left: 0;
 }
 
-.content-agenda__day .content-day__scripts {
-  padding-right: var(--space-8);
+.content-agenda__day .content-day__story {
+  flex: 1 1 100%;
+  justify-content: flex-start;
+  gap: var(--space-3);
+  min-height: 3.25rem;
+  padding: var(--space-3);
+  border: 1px dashed var(--color-slate-300);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  font: var(--label-md);
+  text-align: left;
 }
 
-.contents__note,
-.contents__move-error {
-  margin: 0;
+.content-agenda__day .content-day__story .story-ring {
+  --story-size: 2rem;
 }
 
-.contents__move-error {
-  color: var(--text-danger);
+.content-agenda__day .content-day__story-text {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
 }
 
-
-
+.content-agenda__day .content-day__story-text small {
+  display: block;
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-weight: 500;
+}

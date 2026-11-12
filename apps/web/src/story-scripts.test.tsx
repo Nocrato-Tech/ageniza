@@ -233,7 +233,7 @@ const calendarReady = (): Promise<HTMLElement> => waitFor(() => {
   return calendar;
 });
 const plusOf = (day: string): HTMLElement => within(dayCell(day)).getByRole('button', { name: /^Adicionar no dia/ });
-const scriptMarks = (day: string): string[] => within(dayCell(day)).queryAllByRole('button', { name: /^Stories/ }).map((button) => button.textContent ?? '');
+const scriptMarks = (day: string): string[] => within(dayCell(day)).queryAllByRole('button', { name: /^Stories/ }).map((button) => button.querySelector('.content-day__story-text')?.textContent ?? '');
 const dialog = (): HTMLElement => screen.getByRole('dialog');
 const writes = (calls: readonly Call[]): string[] => calls.filter((call) => call.method !== 'GET').map((call) => `${call.method} ${call.path.replace(`/agencies/${AGENCY}/clients/${padaria.id}/story-scripts`, '')}`);
 const periodCalls = (calls: readonly Call[]): Call[] => calls.filter((call) => /\/contents\?/.test(call.path));
@@ -272,7 +272,7 @@ describe('the + of the day and the mark of a script', () => {
     await calendarReady();
 
     expect(screen.queryAllByRole('button', { name: /^Adicionar no dia/ })).toHaveLength(0);
-    expect(scriptMarks('2026-10-20')).toEqual(['Stories · Rascunho']);
+    expect(scriptMarks('2026-10-20')).toEqual(['Stories 2 cenas · Rascunho']);
   });
 
   it('draws no + on an archived client, whose scripts still open', async () => {
@@ -282,7 +282,7 @@ describe('the + of the day and the mark of a script', () => {
     await calendarReady();
 
     expect(screen.queryAllByRole('button', { name: /^Adicionar no dia/ })).toHaveLength(0);
-    expect(scriptMarks('2026-10-20')).toEqual(['Stories · Enviado']);
+    expect(scriptMarks('2026-10-20')).toEqual(['Stories 2 cenas · Enviado']);
   });
 
   it('marks each day with its own scripts and their state, and no other day or client', async () => {
@@ -297,10 +297,10 @@ describe('the + of the day and the mark of a script', () => {
     render_(impl);
     await calendarReady();
 
-    expect(scriptMarks('2026-10-20')).toEqual(['Stories · Rascunho']);
-    expect(scriptMarks('2026-10-22')).toEqual(['Stories · Enviado', 'Stories · Gravado']);
+    expect(scriptMarks('2026-10-20')).toEqual(['Stories 2 cenas · Rascunho']);
+    expect(scriptMarks('2026-10-22')).toEqual(['Stories 2 cenas · Enviado', 'Stories 2 cenas · Gravado']);
     expect(scriptMarks('2026-10-21')).toEqual([]);
-    expect(document.querySelectorAll('.content-day__script')).toHaveLength(3);
+    expect(document.querySelectorAll('.content-day__story')).toHaveLength(3);
   });
 });
 
@@ -326,7 +326,7 @@ describe('creating a script', () => {
       scenes: [{ text: 'Abrir a loja', guidance: 'Filmar na vertical' }, { text: 'Mostrar a vitrine', guidance: '' }]
     });
     await waitFor(() => expect(periodCalls(calls).length).toBeGreaterThan(before));
-    await waitFor(() => expect(scriptMarks('2026-10-20')).toEqual(['Stories · Rascunho']));
+    await waitFor(() => expect(scriptMarks('2026-10-20')).toEqual(['Stories 2 cenas · Rascunho']));
   });
 
   it('keeps everything typed when the save fails, says it in its own words and never shows the server\'s text', async () => {
@@ -546,7 +546,7 @@ describe('opening, editing and reordering', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect((calls.find((call) => call.method === 'PATCH')!.body as { scriptOn: string }).scriptOn).toBe('2026-10-25');
-    await waitFor(() => expect(scriptMarks('2026-10-25')).toEqual(['Stories · Rascunho']));
+    await waitFor(() => expect(scriptMarks('2026-10-25')).toEqual(['Stories 1 cena · Rascunho']));
     expect(scriptMarks('2026-10-20')).toEqual([]);
   });
 });
@@ -563,7 +563,7 @@ describe('sending to the client', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(writes(calls)).toEqual([`POST /${script.id}/send`]);
-    await waitFor(() => expect(scriptMarks('2026-10-20')).toEqual(['Stories · Enviado']));
+    await waitFor(() => expect(scriptMarks('2026-10-20')).toEqual(['Stories 2 cenas · Enviado']));
   });
 
   it('saves a changed draft first and then sends the same script, in that order', async () => {
@@ -713,34 +713,42 @@ describe('the states of the modal', () => {
   });
 });
 
-const iconOf = (tag: Element): string => tag.querySelector('svg')?.getAttribute('class') ?? '';
-const listRows = (): HTMLElement[] => within(document.querySelector<HTMLElement>('.story-list')!).queryAllByRole('listitem');
+const stripItems = (): HTMLElement[] => within(document.querySelector<HTMLElement>('.story-list')!).queryAllByRole('listitem').filter((item) => item.classList.contains('story-list__item'));
+const itemTexts = (): string[] => stripItems().map((item) => item.textContent ?? '');
 
-describe('the list of scripts of the period (#635)', () => {
-  it('says there is none and offers "Novo roteiro", which opens the new script on today', async () => {
+describe('Stories do mês, the strip of circles above the calendar (#635)', () => {
+  it('says there is none and offers the "Novo" circle, which opens the new script on today', async () => {
     const { impl } = makeFetch();
     render_(impl);
     await calendarReady();
 
     const list = document.querySelector<HTMLElement>('.story-list')!;
-    expect(within(list).getByRole('heading', { name: 'Roteiros de stories' })).toBeTruthy();
-    expect(within(list).getByRole('heading', { name: 'Nenhum roteiro de stories neste período' })).toBeTruthy();
-    expect(within(list).queryAllByRole('listitem')).toHaveLength(0);
-    fireEvent.click(within(list).getByRole('button', { name: 'Novo roteiro' }));
+    expect(within(list).getByRole('heading', { name: 'Stories do mês' })).toBeTruthy();
+    expect(within(list).getByText('Nenhum roteiro de stories neste período.')).toBeTruthy();
+    expect(itemTexts()).toEqual(['Novo']);
+    fireEvent.click(within(list).getByRole('button', { name: 'Novo roteiro de stories' }));
 
     await screen.findByRole('dialog', { name: 'Novo roteiro de stories' });
     expect((within(dialog()).getByLabelText('Dia dos stories') as HTMLInputElement).value).toBe('11/10/2026');
   });
 
-  it('lays the empty state out like the clients roster (no mascot, centred text), through its own class', async () => {
+  it('names the strip after the week on the week view, and keeps the month on the month view', async () => {
+    const { impl } = makeFetch();
+    render_(impl);
+    await calendarReady();
+    expect(screen.getByRole('heading', { name: 'Stories do mês' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Semana' }));
+    expect(await screen.findByRole('heading', { name: 'Stories da semana' })).toBeTruthy();
+  });
+
+  it('draws the legend of the three states under the strip: Rascunho, Enviado ao cliente and Gravado', async () => {
     const { impl } = makeFetch();
     render_(impl);
     await calendarReady();
 
-    const empty = document.querySelector<HTMLElement>('.story-list .ui-empty-state')!;
-    expect(empty.classList.contains('story-list__empty')).toBe(true);
-    expect(empty.classList.contains('ui-empty-state--mascot')).toBe(false);
-    expect(empty.querySelector('img')).toBeNull();
+    const legend = within(document.querySelector<HTMLElement>('.story-list')!).getByRole('list', { name: 'Legenda dos roteiros' });
+    expect(within(legend).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Rascunho', 'Enviado ao cliente', 'Gravado']);
   });
 
   it('offers no way to write one without conteudo.operar, and still says there is none', async () => {
@@ -749,33 +757,34 @@ describe('the list of scripts of the period (#635)', () => {
     await calendarReady();
 
     const list = document.querySelector<HTMLElement>('.story-list')!;
-    expect(within(list).getByRole('heading', { name: 'Nenhum roteiro de stories neste período' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Novo roteiro' })).toBeNull();
+    expect(within(list).getByText('Nenhum roteiro de stories neste período.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Novo roteiro de stories' })).toBeNull();
+    expect(itemTexts()).toEqual([]);
   });
 
-  it('lists each script by day with its state, in the order of the days, and opens the one that was chosen', async () => {
-    const later = scriptOf(padaria.id, { scriptOn: '2026-10-22', status: 'recorded', texts: ['Depois'] });
+  it('lists each script by weekday and day with its scenes and state, in the order of the days, and opens the one that was chosen', async () => {
+    const later = scriptOf(padaria.id, { scriptOn: '2026-10-22', status: 'recorded', texts: ['Depois', 'Fim', 'Extra'] });
     const first = scriptOf(padaria.id, { scriptOn: '2026-10-05', status: 'draft', texts: ['Primeiro'] });
-    const middle = scriptOf(padaria.id, { scriptOn: '2026-10-20', status: 'sent', texts: ['Meio'] });
+    const middle = scriptOf(padaria.id, { scriptOn: '2026-10-20', status: 'sent', texts: ['Meio', 'Dois'] });
     const { impl } = makeFetch({ scripts: [later, first, middle] });
     render_(impl);
     await calendarReady();
 
-    expect(listRows().map((row) => row.textContent)).toEqual([
-      'segunda-feira, 5 de outubro de 2026RascunhoAbrir',
-      'terça-feira, 20 de outubro de 2026EnviadoAbrir',
-      'quinta-feira, 22 de outubro de 2026GravadoAbrir'
+    expect(itemTexts()).toEqual([
+      'Novo',
+      '5seg 51 cena · Rascunho',
+      '20ter 202 cenas · Enviado',
+      '22qui 223 cenas · Gravado'
     ]);
-    expect(within(document.querySelector<HTMLElement>('.story-list')!).getByRole('button', { name: 'Novo roteiro' })).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Nenhum roteiro de stories neste período' })).toBeNull();
+    expect(screen.queryByText('Nenhum roteiro de stories neste período.')).toBeNull();
 
-    fireEvent.click(within(listRows()[1]!).getByRole('button', { name: 'Abrir o roteiro de terça-feira, 20 de outubro de 2026' }));
+    fireEvent.click(within(stripItems()[2]!).getByRole('button', { name: /ter 20/ }));
     await screen.findByRole('dialog', { name: 'Roteiro de stories' });
     expect(await within(dialog()).findByText('Meio')).toBeTruthy();
     expect(within(dialog()).queryByText('Primeiro')).toBeNull();
   });
 
-  it('keeps the other clients and the other periods out of the list', async () => {
+  it('keeps the other clients and the other periods out of the strip', async () => {
     const { impl } = makeFetch({
       scripts: [
         scriptOf(padaria.id, { scriptOn: '2026-10-20' }),
@@ -786,13 +795,12 @@ describe('the list of scripts of the period (#635)', () => {
     render_(impl);
     await calendarReady();
 
-    expect(listRows()).toHaveLength(1);
+    expect(stripItems()).toHaveLength(2);
   });
-
 });
 
 describe('the three states of a script (#635)', () => {
-  it('tells draft, sent and recorded apart by word and by icon shape, in the list, on the day and in the modal', async () => {
+  it('tells draft, sent and recorded apart by word, in the strip, on the day and in the modal', async () => {
     const scripts = [
       scriptOf(padaria.id, { scriptOn: '2026-10-05', status: 'draft' }),
       scriptOf(padaria.id, { scriptOn: '2026-10-06', status: 'sent' }),
@@ -802,19 +810,17 @@ describe('the three states of a script (#635)', () => {
     render_(impl);
     await calendarReady();
 
-    const inList = listRows().map((row) => row.querySelector('.ui-status-tag')!);
-    const onDays = ['2026-10-05', '2026-10-06', '2026-10-07'].map((day) => within(dayCell(day)).getByRole('button', { name: /^Stories/ }).querySelector('.ui-status-tag')!);
-    for (const tags of [inList, onDays]) {
-      expect(tags.map((tag) => tag.textContent)).toEqual(['Rascunho', 'Enviado', 'Gravado']);
-      expect(new Set(tags.map(iconOf)).size).toBe(3);
-      for (const tag of tags) expect(tag.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-    }
-    expect(inList.map(iconOf)).toEqual(onDays.map(iconOf));
+    const inStrip = stripItems().slice(1).map((item) => item.querySelector('.story-ring')!.getAttribute('data-status'));
+    expect(inStrip).toEqual(['draft', 'sent', 'recorded']);
+    const onDays = ['2026-10-05', '2026-10-06', '2026-10-07'].map((day) => within(dayCell(day)).getByRole('button', { name: /^Stories/ }));
+    expect(onDays.map((button) => button.getAttribute('data-status'))).toEqual(['draft', 'sent', 'recorded']);
+    expect(onDays.map((button) => button.querySelector('small')?.textContent)).toEqual(['2 cenas · Rascunho', '2 cenas · Enviado', '2 cenas · Gravado']);
+    // The ring and its number are decoration: the button is named by its words.
+    for (const button of onDays) expect(button.querySelector('.story-ring')?.getAttribute('aria-hidden')).toBe('true');
 
     fireEvent.click(within(dayCell('2026-10-06')).getByRole('button', { name: /^Stories/ }));
     const modal = await screen.findByRole('dialog', { name: 'Roteiro de stories' });
     await waitFor(() => expect(modal.querySelector('.story-script__status .ui-status-tag')?.textContent).toBe('Enviado'));
-    expect(iconOf(modal.querySelector('.story-script__status .ui-status-tag')!)).toBe(iconOf(inList[1]!));
   });
 
   it('shows the state of a draft in the editor, and who recorded a recorded one', async () => {
@@ -962,7 +968,7 @@ describe('the day of the script: typed or picked on the calendar (#703)', () => 
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect((calls.find((call) => call.method === 'POST')!.body as { scriptOn: string }).scriptOn).toBe('2026-10-27');
-    await waitFor(() => expect(scriptMarks('2026-10-27')).toEqual(['Stories · Rascunho']));
+    await waitFor(() => expect(scriptMarks('2026-10-27')).toEqual(['Stories 1 cena · Rascunho']));
   });
 
   it('offers "Hoje" as the day of São Paulo, which is the 11th at 01:30Z of the 12th', async () => {
