@@ -3,11 +3,42 @@
   gap: var(--space-6);
 }
 
+.agency-home__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.agency-home__head-text {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.agency-home__eyebrow,
+.agency-home__subtitle {
+  margin: 0;
+}
+
+.agency-home__eyebrow {
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .agency-home h1 {
   margin: 0;
-  font: var(--display-lg);
-  letter-spacing: -0.02em;
+  font: var(--heading-xl);
+  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
+}
+
+.agency-home__subtitle {
+  color: var(--text-secondary);
+  font: var(--body-lg);
 }
 
 .agency-home__empty {
@@ -37,3 +68,14 @@
   }
 }
 
+@media (max-width: 47.99rem) {
+  .agency-home__head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .agency-home h1 {
+    font-size: 1.625rem;
+    line-height: 2rem;
+  }
+}
