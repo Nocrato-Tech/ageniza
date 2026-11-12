@@ -29,6 +29,17 @@ interface Scenario {
 
 const none = { hasContent: false, sentForApproval: false, approvedByClient: false, published: false };
 
+/** The date and the name of each step the facts say was taken; the steps not taken are `null`. */
+const stepsOf = (facts: NonNullable<Scenario['facts']>, clients: number) => {
+  const taken = (name: string) => ({ at: '2026-10-05T12:00:00.000Z', name });
+  return {
+    firstClient: clients > 0 || facts.hasContent ? taken('Cliente') : null,
+    firstContent: facts.hasContent ? taken('Pessoa') : null,
+    firstSent: facts.sentForApproval ? { ...taken('Cliente'), others: 0 } : null,
+    firstApproved: facts.approvedByClient ? taken('Cliente') : null
+  };
+};
+
 const calls: string[] = [];
 
 const makeFetch = (scenario: Scenario): typeof fetch => async (input) => {
@@ -48,7 +59,10 @@ const makeFetch = (scenario: Scenario): typeof fetch => async (input) => {
       meta: { page: 1, pageSize: 1, totalItems: total, totalPages: total }
     });
   }
-  if (url.endsWith(`/agencies/${AGENCY}/contents/activation`)) return json({ data: scenario.facts ?? none });
+  if (url.endsWith(`/agencies/${AGENCY}/contents/activation`)) {
+    const facts = scenario.facts ?? none;
+    return json({ data: { ...facts, steps: stepsOf(facts, scenario.clients ?? 0) } });
+  }
   return json({ error: { code: 'NOT_FOUND', message: 'x' } }, 404);
 };
 

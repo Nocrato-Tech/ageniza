@@ -1,6 +1,7 @@
 import type { ContentFormat } from '@ageniza/contracts';
 
 import { daysBetween } from './content-dates.js';
+import { portalApprovalOf, type SeededApproval } from './portal-approval-fixture.js';
 
 /**
  * The contents routes of the portal (#257, #584) as the API answers them, for the screens of the portal. What the API refuses it
@@ -22,7 +23,7 @@ export interface PortalContentRow {
   caption: string | null;
   publishedOn: string | null;
   cancelled: boolean;
-  approval: { dueOn: string | null; note: string | null } | null;
+  approval: SeededApproval | null;
 }
 
 export type PortalContentSeed = Partial<PortalContentRow> & { publishOn: string };
@@ -94,7 +95,7 @@ export const createPortalContentsApi = (clientId: string) => {
       coverAssetId: row.coverAssetId,
       thumbnailAssetId: row.thumbnailAssetId,
       publishedOn: row.publishedOn,
-      approval: row.approval
+      approval: portalApprovalOf(row.approval)
     };
   };
 

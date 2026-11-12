@@ -7,6 +7,7 @@ import {
 } from '@ageniza/contracts';
 
 import type { createConversationApi } from './conversation-fixture.js';
+import { portalApprovalOf, type SeededApproval } from './portal-approval-fixture.js';
 
 /**
  * A stateful stand-in for the content routes of the portal (#257, #584), answering as the API does: a content of another client, a
@@ -36,7 +37,7 @@ export interface PortalContentRow {
   media: Array<{ id: string; position: number; kind: 'image' | 'video' }>;
   publishedOn: string | null;
   /** The round the agency opened: the deadline and the note it gave, or none (sent before the rounds). */
-  approval: { dueOn: string | null; note: string | null } | null;
+  approval: SeededApproval | null;
 }
 
 export type PortalContentSeed = Partial<PortalContentRow> & Pick<PortalContentRow, 'id' | 'clientId'>;
@@ -88,7 +89,7 @@ export const createPortalContentsApi = (
       caption: row.caption,
       revision: row.revision,
       media: row.media,
-      approval: row.approval
+      approval: portalApprovalOf(row.approval)
     };
 
   // What the portal can read: its own client's, and never a cancelled one.

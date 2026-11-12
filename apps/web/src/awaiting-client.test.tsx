@@ -47,7 +47,10 @@ interface Item {
 }
 
 const item = (input: Item) => ({
-  format: 'reels', publishOn: '2026-10-20', sentAt: '2026-10-09T12:00:00.000Z', dueOn: null, daysWaiting: null, daysToDue: null, ...input
+  format: 'reels', publishOn: '2026-10-20', sentAt: '2026-10-09T12:00:00.000Z', dueOn: null, daysWaiting: null, daysToDue: null,
+  thumbnailAssetId: null, daysLate: null, ...input,
+  // Noon of São Paulo on the day of the deadline.
+  dueAt: input.dueOn === undefined || input.dueOn === null ? null : `${input.dueOn}T15:00:00.000Z`
 });
 const cid = (n: number): string => `c0c0c0c0-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -73,7 +76,7 @@ const makeFetch = (scenario: Scenario) => {
       calls.push(`${method} ${url.pathname}`);
       const custom = scenario.answer?.(calls.length);
       if (custom !== undefined) return custom;
-      return json({ data: scenario.groups ?? [], meta: { truncated: scenario.truncated ?? false } });
+      return json({ data: (scenario.groups ?? []).map((group) => ({ approvers: null, ...group })), meta: { truncated: scenario.truncated ?? false } });
     }
     throw new Error(`unexpected ${method} ${url}`);
   };
