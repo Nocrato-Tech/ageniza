@@ -110,7 +110,7 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
           // The city comes from the one header the edge sets, cleaned here and nowhere else; a header that is not a city is no city,
           // and the sign-in never fails for it.
           before: async (_session, context) => ({
-            data: { city: cleanSessionCity((context?.headers ?? context?.request?.headers)?.get(SESSION_CITY_HEADER)) }
+            data: { city: cleanSessionCity(context?.headers?.get(SESSION_CITY_HEADER)) }
           })
         },
         update: {

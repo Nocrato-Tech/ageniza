@@ -31,6 +31,8 @@ const CASES: readonly (readonly [string, string, string | null, string | null])[
   ['a Chromium that says only Chromium', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/130.0.0.0', 'Chrome', 'Linux'],
   ['an iPod', 'Mozilla/5.0 (iPod; U; CPU like Mac OS X; en) AppleWebKit/420.1 (KHTML, like Gecko) Version/3.0 Mobile/3A101a Safari/419.3', 'Safari', 'iOS'],
   ['a Mac that says only Mac OS X', 'Mozilla/5.0 (Mac OS X 10_15_7) Gecko/20100101 Firefox/132.0', 'Firefox', 'macOS'],
+  ['a Mac that says only Macintosh', 'Mozilla/5.0 (Macintosh; U; 68K) Gecko/20100101 Firefox/132.0', 'Firefox', 'macOS'],
+  ['a desktop that says only Linux, with no X11', 'Mozilla/5.0 (Linux x86_64) Gecko/20100101 Firefox/132.0', 'Firefox', 'Linux'],
   ['an X11 desktop that does not say Linux', 'Mozilla/5.0 (X11; Ubuntu; rv:132.0) Gecko/20100101 Firefox/132.0', 'Firefox', 'Linux'],
   ['only a Safari token, which names no browser without a Version', 'Mozilla/5.0 (compatible) Safari/537.36', null, null],
   ['only a Version token, which names no browser without Safari', 'Mozilla/5.0 (compatible) Version/17.5', null, null],

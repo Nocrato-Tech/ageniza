@@ -959,6 +959,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       '`browser` e `os` são lidos do `User-Agent` no servidor, de uma lista fechada, e são `null` quando ele não diz.',
       '`city` é a cidade aproximada que o cabeçalho de localização do Cloudflare (`cf-ipcity`) trouxe **na criação da sessão**, ou `null`;',
       'só informa, nenhuma decisão de segurança depende dela. O IP, o token e o `User-Agent` bruto nunca saem da API.',
+      'O cabeçalho `cf-ipcity` só chega com a regra "Add visitor location headers" ligada no Cloudflare (ação do dono); desligada, `city` é sempre `null`.',
       '`lastUsedAt` é a última renovação da sessão (no máximo a cada 24 horas de uso): vale como o dia, não como a hora.',
       'A resposta não é guardada em cache (`Cache-Control: no-store`).'
     ].join('\n'),
