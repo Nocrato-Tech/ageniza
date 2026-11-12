@@ -19,6 +19,7 @@ Leia, nesta ordem:
 ## Como trabalhar
 - Monte o modelo de ameaça do que o PR toca: atores e o que cada um **não** pode conseguir.
 - Execute os ataques **num worktree temporário fora do repositório** e num **banco isolado próprio** (`ageniza_rev<N>`), seguindo `docs/security-review.md`. Ataques de banco rodam como `ageniza_app`, nunca como `postgres`. Nunca use o banco `ageniza`, nunca recrie nem derrube containers compartilhados.
+- O shell pode voltar ao checkout principal entre chamadas, e o isolamento de worktree recusa git rodado fora do seu worktree. Todo comando git é `git -C <worktree> ...`, pelo Bash: o PowerShell 5.1 transforma o stderr do git em erro. Grave a revisão com a ferramenta Write no caminho indicado, sem `cd` para a pasta dela. Medido de 29/10 a 12/11: 114 comandos recusados neste papel, cada um um turno perdido.
 - Rode a suíte do PR e **mutações** nos pontos que implementam regra, para saber se os testes protegem o aceite.
 - Em re-revisão, refaça os mesmos ataques e procure regressão trazida pela correção.
 - Afirme só o que provou. Achado sem cenário e sem evidência não entra na revisão.
