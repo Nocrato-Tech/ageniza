@@ -317,6 +317,29 @@ describe('approve_content with a note', () => {
       expect(await threadsOf(content)).toEqual([]);
     });
 
+    // The person still passes the door (the archive is not committed), so only the lock on the client can tell: it waits for the archive and reads the client after it.
+    it('finds the client archived by an archive that was in course when it asked: not found, and nothing written', async () => {
+      const client = await f.freshClient([ids.portalA1]);
+      const content = await f.readyContent(client);
+      await f.submit(ids.productionA, content, null, 'Durante o arquivamento');
+
+      const archiving = await owner().transaction();
+      const archivingPid = await backendPid(archiving);
+      let approving: Promise<unknown> | undefined;
+      try {
+        await archiving('clients').where({ id: client }).update({ status: 'archived', archived_at: new Date() });
+        approving = approveAs(ids.portalA1, content, THE_NOTE).then(() => 'done', (error: unknown) => error);
+        await waitForBackendsBlockedBy(owner(), archivingPid);
+      } finally {
+        await archiving.commit();
+      }
+
+      expect(await approving).toMatchObject({ code: 'A0060' });
+      expect(await statusOf(content)).toBe('awaiting_approval');
+      expect(await commentsOf(content)).toEqual([]);
+      expect(await threadsOf(content)).toEqual([]);
+    });
+
     it('is refused for an agency whose trial has ended (A0090), and the content keeps waiting with no conversation', async () => {
       const content = await waiting();
       const before = await owner()('agencies').where({ id: ids.agencyA }).first('status', 'plan', 'trial_ends_at', 'trial_owner_email_key');

@@ -481,6 +481,19 @@ describe.each(ENTRANCES)('the deadline of %s', (_name, send) => {
     expect(await f.sql<string>("select to_char(due_at at time zone 'America/Sao_Paulo', 'YYYY-MM-DD HH24:MI:SS') as value from content_approval_rounds where id = ?", [round!.id])).toBe(`${day} 23:59:00`);
   });
 
+  // The offset moves with the daylight saving time São Paulo still had in 2018-2019: the last minute of a day is 23:59 there, not 23:59 at -03:00.
+  it.each([
+    ['a day with the offset of -03:00', '2026-12-31', '2027-01-01T02:59:00Z'],
+    ['a leap day', '2028-02-29', '2028-03-01T02:59:00Z'],
+    ['the eve of the first day of the daylight saving time', '2018-11-03', '2018-11-04T02:59:00Z'],
+    ['the first day of the daylight saving time, which starts at 01:00', '2018-11-04', '2018-11-05T01:59:00Z'],
+    ['a day in the middle of the daylight saving time (-02:00)', '2018-12-15', '2018-12-16T01:59:00Z'],
+    ['the day the daylight saving time ends, whose 23:xx hour happens twice: the second one is the last', '2019-02-16', '2019-02-17T02:59:00Z'],
+    ['the first day after the daylight saving time', '2019-02-17', '2019-02-18T02:59:00Z']
+  ])('has as the end of %s (%s) the instant %s', async (_label, day, expected) => {
+    expect(await f.sql<string>('select to_char(app_private.sao_paulo_end_of_day(?::date) at time zone \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS"Z"\') as value', [day])).toBe(expected);
+  });
+
   it('accepts no deadline at all', async () => {
     const content = await f.readyContent();
     await send(content, null, null);

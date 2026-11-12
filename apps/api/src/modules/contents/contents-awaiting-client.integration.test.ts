@@ -114,6 +114,10 @@ beforeAll(async () => {
   await seedPortalPerson(clientX, 'Edu Nunca Entrou', 'not-entered');
   invitedEmail = `convidada-${randomUUID().slice(0, 8)}@approvers.test`;
   await knex()('client_portal_accesses').insert({ client_id: clientX, email: invitedEmail, status: 'active' });
+  // One who entered and whose account was purged afterwards (the delete only the owner can make): the access keeps its entry date but has no account, so it has no name.
+  const purged = await seedPortalPerson(clientX, 'Gil Conta Apagada');
+  await knex()('client_memberships').where({ client_id: clientX, user_id: purged.id }).delete();
+  await knex().raw('delete from auth."user" where id = ?', [purged.id]);
 }, 90_000);
 
 afterEach(() => {
@@ -225,6 +229,9 @@ describe('what is stuck with the client, on the day of São Paulo', () => {
 
 describe('who approves, for whoever may read the people of the portal', () => {
   it('names the active people of the portal who entered, in the order they were given the access, and nobody else', async () => {
+    const withoutAccount = await knex()('client_portal_accesses').where({ client_id: clientX, user_id: null, status: 'active' }).whereNotNull('first_entered_at').count<Array<{ count: string }>>('id as count');
+    expect(Number(withoutAccount[0]?.count)).toBe(1);
+
     const reply = await read(people.admin.cookie);
 
     expect(reply.statusCode).toBe(200);

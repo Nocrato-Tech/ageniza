@@ -103,6 +103,7 @@ describe('the progress of the month, "Boa notícia"', () => {
       approvedPast: await seed('approved', '2026-11-02', 'Aprovado e passou'),
       approvedFuture: await seed('approved', '2026-11-30', 'Aprovado para o fim do mês', '09:00'),
       published: await seed('published', '2026-11-01', 'Publicado'),
+      publishedAhead: await seed('published', '2026-11-12', 'Publicado, com o dia planejado adiante', '08:00'),
       cancelled: await seed('cancelled', '2026-11-10', 'Cancelado'),
       todayLate: await seed('approved', '2026-11-09', 'Hoje à noite', '23:00'),
       todayNoHour: await seed('approved', '2026-11-09', 'Hoje sem hora'),
@@ -120,14 +121,21 @@ describe('the progress of the month, "Boa notícia"', () => {
     const data = await progress();
 
     expect(data.month).toBe('2026-11');
-    expect(data.total).toBe(9);
-    expect(data.approved).toBe(6);
+    expect(data.total).toBe(10);
+    expect(data.approved).toBe(7);
   });
 
   it('gives the next post to go on air: the earliest approved one whose hour has not come', async () => {
     const data = await progress();
 
     expect(data.next).toEqual({ id: ids.todayLate, title: 'Hoje à noite', publishOn: '2026-11-09', publishAtTime: '23:00' });
+  });
+
+  it('never gives a post that is already published as the next one, whatever day it was planned for', async () => {
+    const data = await progress(new Date('2026-11-10T03:00:00.000Z'));
+
+    expect(data.next?.id).not.toBe(ids.publishedAhead);
+    expect(data.next?.id).toBe(ids.approvedFuture);
   });
 
   it('keeps today\'s post with no hour until the day is over, then goes on to the next day\'s', async () => {
@@ -144,7 +152,7 @@ describe('the progress of the month, "Boa notícia"', () => {
 
   it('turns the month at midnight of São Paulo, though it is the same UTC day', async () => {
     const lastMinute = await progress(new Date('2026-12-01T02:59:00.000Z'));
-    expect(lastMinute).toMatchObject({ month: '2026-11', total: 9, approved: 6 });
+    expect(lastMinute).toMatchObject({ month: '2026-11', total: 10, approved: 7 });
 
     const december = await progress(new Date('2026-12-01T03:00:00.000Z'));
     expect(december).toMatchObject({ month: '2026-12', total: 2, approved: 1 });
@@ -414,6 +422,24 @@ describe('approving with a note to the agency', () => {
     }
     expect(await w.contentRow(id)).toMatchObject({ status: 'awaiting_approval' });
     expect(await knex()('client_threads').where({ content_id: id })).toHaveLength(0);
+  });
+
+  // The contract stops everything the database stops, so the second barrier is reached only by a note the contract lets through: here, one the database is made to refuse.
+  it('names the refusal of the database as the note of the approval, not as a comment, and leaves the content awaiting approval', async () => {
+    const client = await freshClient('note-second-barrier');
+    const id = await waiting(client, 'Segunda barreira');
+    const original = (await knex().raw<{ rows: Array<{ definition: string }> }>("select pg_get_functiondef('app_private.approval_note_is_valid(text)'::regprocedure) as definition")).rows[0]!.definition;
+    await knex().raw("create or replace function app_private.approval_note_is_valid(p_note text) returns boolean language sql immutable set search_path = '' as $$ select p_note is null or p_note <> 'Recusado pelo banco' $$");
+    try {
+      const reply = await post('portalOne', approveUrl(client, id), { revision: 1, note: 'Recusado pelo banco' });
+
+      expect(reply.statusCode).toBe(400);
+      expect(errorOf(reply).code).toBe('CONTENT_APPROVAL_NOTE_INVALID');
+      expect(await w.contentRow(id)).toMatchObject({ status: 'awaiting_approval' });
+      expect(await knex()('client_threads').where({ content_id: id })).toHaveLength(0);
+    } finally {
+      await knex().raw(original);
+    }
   });
 
   it('refuses an unknown field in the body, as before, and the note of the request of changes is still its comment', async () => {
