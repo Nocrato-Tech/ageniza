@@ -7,6 +7,8 @@ import {
   CommentListResponseSchema,
   CommentSchema,
   CreateThreadResponseSchema,
+  MATERIAL_REQUEST_TITLE_MAX_LENGTH,
+  MaterialRequestTitleSchema,
   ThreadListResponseSchema,
   ThreadSchema,
   type ConversationSide,
@@ -14,7 +16,7 @@ import {
   type Thread,
   type ThreadComment
 } from '@ageniza/contracts';
-import { Avatar, Button, DatePicker, Field, FieldMessage, invalidDayMessage, LateBadge, Modal, Pill, Skeleton, Stage3D, Textarea, useFormErrors } from '@ageniza/ui';
+import { Avatar, Button, DatePicker, Field, FieldMessage, invalidDayMessage, LateBadge, Modal, Pill, Skeleton, Stage3D, Textarea, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { addDays, dayMonthLabel, todayInSaoPaulo } from './content-dates.js';
@@ -189,11 +191,24 @@ const refusedPaths = (details: unknown): readonly string[] => {
   return issues.map((issue) => (issue as { path?: unknown } | null)?.path).filter((path): path is string => typeof path === 'string');
 };
 
-/** What a refused request for material says: a deadline out of range is the field's, the rest is the form's. */
-const materialRequestError = (error: unknown): { readonly field: 'dueOn' | undefined; readonly message: string } => {
+const MATERIAL_TITLE_REQUIRED = 'Informe o título do pedido.';
+const MATERIAL_TITLE_TOO_LONG = `O título passa de ${MATERIAL_REQUEST_TITLE_MAX_LENGTH} caracteres.`;
+const MATERIAL_TITLE_INVALID = 'O título tem caracteres que não são aceitos.';
+
+const titleLength = (value: string): number => Array.from(value.trim()).length;
+
+const titleProblem = (title: string): string | undefined => {
+  if (MaterialRequestTitleSchema.safeParse(title).success) return undefined;
+  if (title.trim() === '') return MATERIAL_TITLE_REQUIRED;
+  return titleLength(title) > MATERIAL_REQUEST_TITLE_MAX_LENGTH ? MATERIAL_TITLE_TOO_LONG : MATERIAL_TITLE_INVALID;
+};
+
+/** What a refused request for material says: a title or a deadline out of range is the field's, the rest is the form's. */
+const materialRequestError = (error: unknown): { readonly field: 'title' | 'dueOn' | undefined; readonly message: string } => {
   const form = (message: string) => ({ field: undefined, message });
   if (!(error instanceof HttpClientError)) return form('Não foi possível enviar o pedido. Tente de novo.');
   if (error.code === 'CLIENT_ARCHIVED') return form('Cliente arquivado: não é possível pedir material.');
+  if (error.status === 400 && refusedPaths(error.details).includes('title')) return { field: 'title', message: MATERIAL_TITLE_INVALID };
   if (error.status === 400 && refusedPaths(error.details).includes('dueOn')) return { field: 'dueOn', message: MATERIAL_DUE_RANGE };
   if (error.status === 400) return form('Revise o texto e tente de novo.');
   if (error.status === 403) return form('Você não tem permissão para pedir material a este cliente.');
@@ -400,23 +415,26 @@ function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; o
   const { scope, onWritten } = props;
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
+  const titleId = useId();
   const bodyId = useId();
   const formId = useId();
   const { formRef, summary } = useFormErrors();
+  const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [dueOn, setDueOn] = useState('');
   // Text that is not a day also leaves `dueOn` empty: it must not go as "no deadline".
   const [dueInvalid, setDueInvalid] = useState(false);
+  const [titleIssue, setTitleIssue] = useState<string | undefined>();
   const [bodyIssue, setBodyIssue] = useState<string | undefined>();
   const [dueIssue, setDueIssue] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
   const today = todayInSaoPaulo();
 
   const open = useMutation({
-    mutationFn: (request: { body: string; dueOn: string }) => httpClient.request({
+    mutationFn: (request: { title: string; body: string; dueOn: string }) => httpClient.request({
       path: routesOf(scope).threads,
       method: 'POST',
-      body: { subject: { materialRequest: true }, body: request.body, ...(request.dueOn === '' ? {} : { dueOn: request.dueOn }) },
+      body: { subject: { materialRequest: true }, title: request.title, body: request.body, ...(request.dueOn === '' ? {} : { dueOn: request.dueOn }) },
       response: CreateThreadResponseSchema
     }),
     onSuccess: () => {
@@ -426,7 +444,8 @@ function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; o
     },
     onError: (failure: unknown) => {
       const refusal = materialRequestError(failure);
-      if (refusal.field === 'dueOn') setDueIssue(refusal.message);
+      if (refusal.field === 'title') setTitleIssue(refusal.message);
+      else if (refusal.field === 'dueOn') setDueIssue(refusal.message);
       else setError(refusal.message);
     }
   });
@@ -434,13 +453,15 @@ function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; o
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     const now = todayInSaoPaulo();
+    const titleFound = titleProblem(title);
     const bodyFound = bodyProblem(body);
     const dueFound = dueInvalid ? invalidDayMessage : dueOn !== '' && (dueOn < now || dueOn > addDays(now, MATERIAL_DUE_WINDOW_DAYS)) ? MATERIAL_DUE_RANGE : undefined;
+    setTitleIssue(titleFound);
     setBodyIssue(bodyFound);
     setDueIssue(dueFound);
     setError(undefined);
-    if (bodyFound !== undefined || dueFound !== undefined) return;
-    open.mutate({ body: body.trim(), dueOn });
+    if (titleFound !== undefined || bodyFound !== undefined || dueFound !== undefined) return;
+    open.mutate({ title: title.trim(), body: body.trim(), dueOn });
   };
 
   return <Modal
@@ -448,11 +469,22 @@ function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; o
     closeLabel="Fechar pedido de material"
     description="A mensagem abre uma conversa com o cliente. O prazo é opcional."
     onClose={onClose}
-    confirmDiscard={{ dirty: (body.trim() !== '' || dueOn !== '' || dueInvalid) && !open.isPending }}
+    confirmDiscard={{ dirty: (title.trim() !== '' || body.trim() !== '' || dueOn !== '' || dueInvalid) && !open.isPending }}
     actions={<Button type="submit" form={formId} loading={open.isPending}>{error === undefined ? 'Enviar pedido' : 'Tentar de novo'}</Button>}
   >
     <form id={formId} ref={formRef} className="conversation__composer" onSubmit={submit} noValidate>
       {summary}
+      <Field label="Título do pedido" id={titleId} counter={{ count: titleLength(title), max: MATERIAL_REQUEST_TITLE_MAX_LENGTH }} error={titleIssue}>
+        {(control) => (
+          <TextInput
+            {...control}
+            value={title}
+            placeholder="Ex.: Fotos da equipe"
+            readOnly={open.isPending}
+            onChange={(event) => { setTitle(event.target.value); setTitleIssue(undefined); setError(undefined); }}
+          />
+        )}
+      </Field>
       <Field label="O que você precisa do cliente" id={bodyId} error={bodyIssue}>
         {(control) => (
           <Textarea

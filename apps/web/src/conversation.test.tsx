@@ -985,7 +985,13 @@ describe('request for material (decision 2026-11-10)', () => {
     fireEvent.click(await within(region).findByRole('button', { name: 'Pedir material' }));
     return await screen.findByRole('dialog', { name: 'Pedir material' });
   };
-  const write = (dialog: HTMLElement, text: string): void => {
+  const TITLE = 'Fotos da equipe';
+  const writeTitle = (dialog: HTMLElement, title: string): void => {
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Título do pedido' }), { target: { value: title } });
+  };
+  /** The text of the request; the title every request must have goes with it unless the test names another. */
+  const write = (dialog: HTMLElement, text: string, title = TITLE): void => {
+    writeTitle(dialog, title);
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }), { target: { value: text } });
   };
   const pickDay = (dialog: HTMLElement, typed: string): void => {
@@ -1050,11 +1056,96 @@ describe('request for material (decision 2026-11-10)', () => {
     send(dialog);
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(api.bodies).toStrictEqual([{ subject: { materialRequest: true }, body: 'Envie 3 fotos da equipe' }]);
+    expect(api.bodies).toStrictEqual([{ subject: { materialRequest: true }, title: TITLE, body: 'Envie 3 fotos da equipe' }]);
     await within(region).findByText('Envie 3 fotos da equipe');
     expect(within(region).getByRole('heading', { name: 'Pedidos de material (1)' })).toBeTruthy();
     expect(onWritten).toHaveBeenCalledTimes(1);
     expect(api.calls).toContain(`POST /agencies/${AGENCY_ID}/clients/${CLIENT_ID}/threads`);
+  });
+
+  it('asks for the title above the text, counts it trimmed and sends it trimmed', async () => {
+    const { api } = mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    const titleField = within(dialog).getByRole('textbox', { name: 'Título do pedido' });
+    const bodyField = within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' });
+    expect(titleField.compareDocumentPosition(bodyField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(dialog).getByText('0/80')).toBeTruthy();
+
+    write(dialog, 'Envie 3 fotos da equipe', `  ${TITLE}  `);
+    expect(within(dialog).getByText('15/80')).toBeTruthy();
+    send(dialog);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.bodies).toStrictEqual([{ subject: { materialRequest: true }, title: TITLE, body: 'Envie 3 fotos da equipe' }]);
+    expect(api.threads[0]?.title).toBe(TITLE);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['made of spaces', '   ']
+  ])('refuses a title that is %s without sending, on its own field, and sends once it is filled', async (_name, typed) => {
+    const { api } = mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    write(dialog, 'Envie 3 fotos da equipe', typed);
+    send(dialog);
+
+    await within(dialog).findByText('Informe o título do pedido.');
+    expect(within(dialog).getByRole('textbox', { name: 'Título do pedido' }).getAttribute('aria-invalid')).toBe('true');
+    expect(within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }).getAttribute('aria-invalid')).toBeNull();
+    expect((within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }) as HTMLTextAreaElement).value).toBe('Envie 3 fotos da equipe');
+    expect(screen.getByRole('dialog', { name: 'Pedir material' })).toBeTruthy();
+    expect(api.bodies).toHaveLength(0);
+
+    writeTitle(dialog, TITLE);
+    expect(within(dialog).queryByText('Informe o título do pedido.')).toBeNull();
+    send(dialog);
+    await waitFor(() => expect(api.bodies).toHaveLength(1));
+  });
+
+  it('refuses a title over 80 characters and one with invisible characters before sending', async () => {
+    const { api } = mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    write(dialog, 'Envie 3 fotos da equipe', 'a'.repeat(81));
+    expect(within(dialog).getByText('81/80')).toBeTruthy();
+    send(dialog);
+    await within(dialog).findByText('O título passa de 80 caracteres.');
+    expect(api.bodies).toHaveLength(0);
+
+    // 80 characters including an invisible one: refused for it, not for the length.
+    writeTitle(dialog, `${'a'.repeat(79)}${String.fromCharCode(0x200b)}`);
+    send(dialog);
+    await within(dialog).findByText('O título tem caracteres que não são aceitos.');
+    expect(within(dialog).queryByText('O título passa de 80 caracteres.')).toBeNull();
+    expect(api.bodies).toHaveLength(0);
+
+    writeTitle(dialog, 'a'.repeat(80));
+    send(dialog);
+    await waitFor(() => expect(api.bodies).toHaveLength(1));
+  });
+
+  it('puts the refusal of the server about the title on its field and keeps everything typed', async () => {
+    const { api } = mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    write(dialog, 'Envie 3 fotos da equipe');
+    api.failNextWrite(() => new Response(JSON.stringify({ error: {
+      code: 'VALIDATION_ERROR', message: 'Request validation failed',
+      details: { issues: [{ path: 'title', code: 'custom', message: 'a request for material needs a title' }] }
+    } }), { status: 400, headers: { 'content-type': 'application/json' } }));
+    send(dialog);
+
+    await within(dialog).findByText('O título tem caracteres que não são aceitos.');
+    expect(within(dialog).getByRole('textbox', { name: 'Título do pedido' }).getAttribute('aria-invalid')).toBe('true');
+    expect((within(dialog).getByRole('textbox', { name: 'Título do pedido' }) as HTMLInputElement).value).toBe(TITLE);
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(api.threads).toHaveLength(0);
+  });
+
+  it('counts a title typed alone for the discard guard', async () => {
+    mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    writeTitle(dialog, 'Fotos');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar pedido de material' }));
+    await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' });
   });
 
   it('opens a request with a deadline typed or picked, sent as the São Paulo day', async () => {
@@ -1065,7 +1156,7 @@ describe('request for material (decision 2026-11-10)', () => {
     pickDay(dialog, '20/11/2026');
     send(dialog);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(api.bodies).toStrictEqual([{ subject: { materialRequest: true }, body: 'Envie 3 fotos da equipe', dueOn: '2026-11-20' }]);
+    expect(api.bodies).toStrictEqual([{ subject: { materialRequest: true }, title: TITLE, body: 'Envie 3 fotos da equipe', dueOn: '2026-11-20' }]);
     await within(region).findByText(/Entregar até 20\/11/);
   });
 
@@ -1110,7 +1201,7 @@ describe('request for material (decision 2026-11-10)', () => {
     pickDay(dialog, '');
     send(dialog);
     await waitFor(() => expect(api.bodies).toHaveLength(1));
-    expect(api.bodies[0]).toStrictEqual({ subject: { materialRequest: true }, body: 'Envie 3 fotos da equipe' });
+    expect(api.bodies[0]).toStrictEqual({ subject: { materialRequest: true }, title: TITLE, body: 'Envie 3 fotos da equipe' });
   });
 
   it('accepts the deadline from today to 90 days ahead on the São Paulo day, and refuses the days outside it before sending', async () => {

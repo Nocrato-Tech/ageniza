@@ -540,6 +540,7 @@ describe('client detail (#136)', () => {
       const section = await sectionOf();
       fireEvent.click(await within(section).findByRole('button', { name: 'Pedir material' }));
       const dialog = await screen.findByRole('dialog', { name: 'Pedir material' });
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Título do pedido' }), { target: { value: 'Logotipo' } });
       fireEvent.change(within(dialog).getByRole('textbox', { name: 'O que você precisa do cliente' }), { target: { value: 'Envie o logotipo' } });
       fireEvent.change(within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }), { target: { value: '31/12/2099' } });
       fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar pedido' }));
@@ -550,7 +551,7 @@ describe('client detail (#136)', () => {
       fireEvent.change(within(dialog).getByRole('textbox', { name: 'Prazo (opcional)' }), { target: { value: '' } });
       fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar pedido' }));
       await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Pedir material' })).toBeNull());
-      expect(posted).toStrictEqual([{ subject: { materialRequest: true }, body: 'Envie o logotipo' }]);
+      expect(posted).toStrictEqual([{ subject: { materialRequest: true }, title: 'Logotipo', body: 'Envie o logotipo' }]);
     });
   });
 
