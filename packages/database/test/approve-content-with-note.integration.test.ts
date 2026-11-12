@@ -210,16 +210,47 @@ describe('approve_content with a note', () => {
   });
 
   describe('a content that is already approved', () => {
-    it('keeps the first person who approved and the first note, and a second click with another note adds none', async () => {
+    // Decision 2026-11-11 "recado em conteúdo já aprovado": a note that would be dropped is refused (A0123), never written and never lost in silence.
+    it('refuses a note with A0123, from the same person and from another, and keeps the first person who approved and the first note', async () => {
       const content = await waiting();
       await approveAs(ids.portalA1, content, 'Primeira nota');
       const revision = await revisionOf(content);
 
-      await expect(approveAs(ids.portalA1, content, 'Primeira nota', revision)).resolves.toBeDefined();
-      await expect(approveAs(ids.portalA1Second, content, 'Outra nota', revision)).resolves.toBeDefined();
+      await expect(approveAs(ids.portalA1, content, 'Primeira nota', revision)).rejects.toMatchObject({ code: 'A0123' });
+      await expect(approveAs(ids.portalA1Second, content, 'Outra nota', revision)).rejects.toMatchObject({ code: 'A0123' });
 
       expect(await statusOf(content)).toBe('approved');
       expect((await commentsOf(content)).map((comment) => [comment.author_user_id, comment.body])).toEqual([[ids.portalA1, 'Primeira nota']]);
+    });
+
+    it('keeps a call with no note on an approved content a quiet success that writes nothing, the way it was', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, null);
+      const revision = await revisionOf(content);
+
+      await expect(approveAs(ids.portalA1Second, content, null, revision)).resolves.toBeDefined();
+      await expect(w.asUser(ids.portalA1Second, (t) => t.raw('select app_private.approve_content(?::uuid, ?::integer)', [content, revision]))).resolves.toBeDefined();
+
+      expect(await statusOf(content)).toBe('approved');
+      expect(await commentsOf(content)).toEqual([]);
+      expect(await threadsOf(content)).toEqual([]);
+    });
+
+    it('refuses a note on a content approved outside the platform with A0123 too, and opens no conversation', async () => {
+      const content = await waiting();
+      const revision = await revisionOf(content);
+      await w.asUser(ids.managerA, (t) => t.raw('select app_private.approve_content_by_agency(?::uuid, ?::integer, ?::text)', [content, revision, 'O cliente aprovou por telefone']));
+
+      await expect(approveAs(ids.portalA1, content, 'Tarde demais')).rejects.toMatchObject({ code: 'A0123' });
+      expect(await threadsOf(content)).toEqual([]);
+    });
+
+    it('does not tell a person with no door that the content is approved: A0060 comes first, and the note is judged after it', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, null);
+
+      await expect(approveAs(ids.portalB, content, 'Recado')).rejects.toMatchObject({ code: 'A0060' });
+      await expect(approveAs(ids.portalA1Second, content, 'a'.repeat(501))).rejects.toMatchObject({ code: 'A0068' });
     });
 
     it('does not write the comment of a call that is refused by its note even when the content is already approved', async () => {
@@ -231,7 +262,8 @@ describe('approve_content with a note', () => {
   });
 
   describe('two people approve at the same moment', () => {
-    it('lets the first approve with its note and the second find it approved: one state change, one comment', async () => {
+    // The one who loses the race is told, after the lock, that their note was not written: a read of the state before the call would not tell them.
+    it('lets the first approve with its note and tells the second, who waited for the lock, that the note was not written: one state change, one comment', async () => {
       const content = await waiting();
       const revision = await revisionOf(content);
 
@@ -246,10 +278,30 @@ describe('approve_content with a note', () => {
         await first.commit();
       }
 
-      expect(await second).toBe('done');
+      expect(await second).toMatchObject({ code: 'A0123' });
       expect(await statusOf(content)).toBe('approved');
       expect((await commentsOf(content)).map((comment) => [comment.author_user_id, comment.body])).toEqual([[ids.portalA1, 'Nota da primeira']]);
       expect(await threadsOf(content)).toHaveLength(1);
+    });
+
+    it('lets the second, who has no note, find it approved and succeed: one state change, no comment', async () => {
+      const content = await waiting();
+      const revision = await revisionOf(content);
+
+      const first = await w.openTransactionAs(ids.portalA1);
+      const firstPid = await backendPid(first);
+      let second: Promise<unknown> | undefined;
+      try {
+        await first.raw('select app_private.approve_content(?::uuid, ?::integer, ?::text)', [content, revision, null]);
+        second = approveAs(ids.portalA1Second, content, null, revision).then(() => 'done', (error: unknown) => error);
+        await waitForBackendsBlockedBy(owner(), firstPid);
+      } finally {
+        await first.commit();
+      }
+
+      expect(await second).toBe('done');
+      expect(await statusOf(content)).toBe('approved');
+      expect(await commentsOf(content)).toEqual([]);
     });
 
     it('lets the second find the conversation the first opened, when the agency and the portal open it together', async () => {

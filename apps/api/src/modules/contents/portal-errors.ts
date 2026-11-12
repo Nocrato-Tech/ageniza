@@ -17,6 +17,8 @@ import { revisionChanged } from './transition-errors.js';
  * - `A0063`: the content changed since the revision the person read: 409;
  * - `A0068`: the comment of a request for changes, or the note of an approval, is blank or too long: 400 (the schema stops it first; the
  *   function is the second barrier), each with its own code;
+ * - `A0123`: the person approved with a note a content that is already approved, so the note would be lost: 409, and the answer says so
+ *   (an approval with no note on an approved content stays a quiet success);
  * - `40P01` and `40001`: a lost race, "try again".
  */
 
@@ -34,6 +36,12 @@ export const notAwaitingApproval = (action: PortalContentAction): HttpError => n
   message: STATE_MESSAGES[action]
 });
 
+export const alreadyApprovedWithNote = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'CONTENT_ALREADY_APPROVED',
+  message: 'Este conteúdo já foi aprovado. Seu recado não foi enviado.'
+});
+
 export const commentInvalid = (): HttpError => new HttpError({
   statusCode: 400,
   code: 'CONTENT_COMMENT_INVALID',
@@ -49,6 +57,9 @@ export const approvalNoteInvalid = (): HttpError => new HttpError({
 
 // Absent, another content's, not open to the portal, removed and not yet confirmed are one answer.
 export const mediaNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Media asset not found.' });
+
+// The photo of the sender of a round: no content, no round, no sender, no photo and a storage that does not answer are one answer.
+export const senderPhotoNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Photo not found.' });
 
 export const variantNotReady = (): HttpError => new HttpError({ statusCode: 409, code: 'VARIANT_NOT_READY', message: 'This variant has not been generated yet.' });
 
@@ -68,6 +79,7 @@ export const translatePortalError = (error: unknown, action: PortalContentAction
     case 'A0061': return clientNotFound();
     case 'A0062': return notAwaitingApproval(action);
     case 'A0063': return revisionChanged();
+    case 'A0123': return alreadyApprovedWithNote();
     case 'A0068': return action === 'approve' && options.withNote === true ? approvalNoteInvalid() : commentInvalid();
     default: return undefined;
   }

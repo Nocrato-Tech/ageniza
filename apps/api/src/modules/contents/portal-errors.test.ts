@@ -17,6 +17,7 @@ describe('the refusals of the database the portal answers by name (issue #257)',
     ['A0062', 409, 'CONTENT_NOT_AWAITING_APPROVAL'],
     ['A0063', 409, 'CONTENT_REVISION_CHANGED'],
     ['A0068', 400, 'CONTENT_APPROVAL_NOTE_INVALID'],
+    ['A0123', 409, 'CONTENT_ALREADY_APPROVED'],
     ['40P01', 409, 'TRY_AGAIN'],
     ['40001', 409, 'TRY_AGAIN']
   ])('answers %s with %i %s', (code, status, name) => {
@@ -46,10 +47,14 @@ describe('the refusals of the database the portal answers by name (issue #257)',
   });
 
   it('never carries the detail of the database', () => {
-    for (const code of ['A0060', 'A0061', 'A0020', 'A0062', 'A0063', 'A0068', '40P01', '40001']) {
+    for (const code of ['A0060', 'A0061', 'A0020', 'A0062', 'A0063', 'A0068', 'A0123', '40P01', '40001']) {
       expect(JSON.stringify(translatePortalError(failure(code), 'approve'))).not.toMatch(/database detail/);
-      expect(translatePortalError(failure(code), 'approve')?.message).not.toMatch(/A00\d\d|40P01|40001|database/);
+      expect(translatePortalError(failure(code), 'approve')?.message).not.toMatch(/A0\d{3}|40P01|40001|database/);
     }
+  });
+
+  it('tells the person that the note of an approval was not sent when the content was already approved', () => {
+    expect(translatePortalError(failure('A0123'), 'approve', { withNote: true })?.message).toBe('Este conteúdo já foi aprovado. Seu recado não foi enviado.');
   });
 
   it('tells the note of an approval apart from the comment of a request for changes: the same database code, two answers', () => {
