@@ -19,6 +19,7 @@ export * from './media-folders.js';
 export * from './media-library.js';
 export * from './media.js';
 export * from './google.js';
+export * from './notifications.js';
 export * from './pagination.js';
 export * from './params.js';
 export * from './portal-approval.js';
