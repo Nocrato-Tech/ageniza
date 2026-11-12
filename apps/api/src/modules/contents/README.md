@@ -11,6 +11,7 @@ ao cliente, senão o mesmo `404`.
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/feed?cursor=` | `conteudo.visualizar` |
 | `GET` | `/agencies/:agencyId/contents/activation` | `conteudo.visualizar` |
 | `GET` | `/agencies/:agencyId/contents/awaiting-client` | `conteudo.visualizar` |
+| `GET` | `/agencies/:agencyId/contents/summary` | `conteudo.visualizar` |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents` | `conteudo.operar` e `conteudo.visualizar` |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/submit` | `conteudo.operar` e `conteudo.visualizar` |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | `conteudo.visualizar` |
@@ -93,7 +94,7 @@ cliente depois da espera, então a rota **não decide** estado, arquivamento nem
 aprovou, quando publicou e quando cancelou são do gatilho, nunca do corpo (`.strict()`).
 
 - **Corpo.** `unpublish` e `cancel` não levam campo: aceitam `{}` ou nada, e um campo qualquer é
-  `400 VALIDATION_ERROR` sem chamar o banco (#563); `submit` leva `{ dueOn?, note? }` (ver "A rodada de aprovação"; `{}` e nada
+  `400 VALIDATION_ERROR` sem chamar o banco (#563); `submit` leva `{ dueAt?, dueOn?, note? }` (ver "A rodada de aprovação"; `{}` e nada
   continuam valendo, e outro campo é `400`); `approve-by-agency` leva `{ revision, reason }`
   (`revision` é a que a pessoa leu: `409 CONTENT_REVISION_CHANGED` se a legenda, a capa, o formato ou a
   mídia mudou; o motivo segue a regra única de texto livre e tem até 5000 bytes); `publish` leva
@@ -138,34 +139,68 @@ Os 4 dos 18 testes que continuam verdes sem a trava da função são a janela "e
 "confirmada antes" de `reschedule`: cada um é coberto também pela trava 2 (`submit`, `publish`) ou pela 3 (`reschedule`). Sem as três
 juntas, os 18 ficam vermelhos. Os 4 casos são proteção em dobro, não teste vazio.
 
-## A rodada de aprovação e o envio em lote (escopo `telas-melhorias`, S4)
+## A rodada de aprovação e o envio em lote (escopo `telas-melhorias`, S4; o prazo com hora, escopo `redesign-igual`, A2)
 
-Decisões `2026-11-10-estrutural-a-rodada-de-aprovacao-tem-prazo-e-recado` e `2026-11-10-estrutural-lembretes-de-aprovacao-vence-amanha-e-venceu`.
-O banco decide (migration `20261110000100`: `submit_content(uuid, date, text)`, `submit_contents(uuid[], date, text)`, a tabela
-`content_approval_rounds`); a rota entrega o corpo e traduz.
+Decisões `2026-11-10-estrutural-a-rodada-de-aprovacao-tem-prazo-e-recado`, `2026-11-10-estrutural-lembretes-de-aprovacao-vence-amanha-e-venceu`,
+`2026-11-11-estrutural-o-prazo-de-aprovacao-tem-hora-e-padrao-de-48-horas` e
+`2026-11-11-estrutural-a-rodada-de-aprovacao-mostra-ao-cliente-quem-enviou-e-aceita-recado-ao-aprovar`.
+O banco decide (migrations `20261110000100` e `20261111000200`: `submit_content(uuid, timestamptz, text)`,
+`submit_contents(uuid[], timestamptz, text)`, a tabela `content_approval_rounds`); a rota entrega o corpo e traduz.
 
-- **Envio individual.** `POST .../contents/:contentId/submit` leva `{ dueOn?, note? }` (`SubmitContentRequestSchema`, que é só dele:
-  `ContentMoveRequestSchema` segue sem campo para `cancel` e `unpublish`). O contrato confere só o formato do dia e o texto do recado
-  (1 a 500 caracteres, sem invisível, aparado); que o dia vá de hoje a 90 dias à frente em São Paulo é do banco (`A0120` ->
-  `400 CONTENT_APPROVAL_DUE_INVALID`). `A0068` num `submit` é a nota (`400 CONTENT_APPROVAL_NOTE_INVALID`), e em `approve-by-agency` é o motivo:
+- **Envio individual.** `POST .../contents/:contentId/submit` leva `{ dueAt?, dueOn?, note? }` (`SubmitContentRequestSchema`, que é só dele:
+  `ContentMoveRequestSchema` segue sem campo para `cancel` e `unpublish`). `dueAt` é o prazo como instante, com fuso
+  (`2026-11-12T18:00:00-03:00`); `dueOn` continua valendo, e é o fim desse dia em São Paulo (23:59); os dois juntos são `400`. O banco
+  guarda `due_at` e deriva `due_on`, o dia de São Paulo dele, que os lembretes e os e-mails seguem lendo. O contrato confere o formato do
+  instante e o devolve **em UTC** (`ApprovalDueAtSchema`: o mesmo instante escrito com `+16:00` ou `-23:59`, que o banco não lê, chega à função
+  em UTC; um deslocamento que nenhum relógio tem, como `+99:99`, e um instante fora dos anos 0001 a 9999 são `400 VALIDATION_ERROR`, nunca `500`)
+  e o texto do recado (1 a 500 caracteres, sem invisível, aparado); que o prazo esteja entre agora (exclusive) e 90 dias à frente é do
+  banco (`A0120` -> `400 CONTENT_APPROVAL_DUE_INVALID`). O padrão de 48 horas é da tela: a API aceita o envio sem prazo.
+  `A0068` num `submit` é a nota (`400 CONTENT_APPROVAL_NOTE_INVALID`), e em `approve-by-agency` é o motivo:
   `translateTransitionError` diz qual pelo movimento. `A0062` também cobre "já aguarda com outro prazo ou recado" (`409 CONTENT_STATE`).
-- **Lote.** `POST .../clients/:clientId/contents/submit` leva `{ contentIds, dueOn?, note? }` (1 a 30 ids distintos). A rota lê cada
+- **Lote.** `POST .../clients/:clientId/contents/submit` leva `{ contentIds, dueAt?, dueOn?, note? }` (1 a 30 ids distintos). A rota lê cada
   conteúdo como **deste cliente** antes da função (`countClientContents`): um de outro cliente da mesma agência, de outra agência ou
   inexistente é `404 NOT_FOUND`, igual ao envio individual e sem dizer qual; sem isso um lote de um cliente só, mas o de outro, passaria,
   porque a função só recusa um lote que mistura clientes (`A0122` -> `400 CONTENT_BATCH_MIXED_CLIENTS`, que a rota só vê numa corrida). Mais de 30 ou
   repetido é `A0121` (`400 CONTENT_BATCH_INVALID`), mas o contrato o recusa antes (`400 VALIDATION_ERROR`). Tudo ou nada: um conteúdo recusado
   desfaz o lote com o código do envio individual. A resposta é `{ data: { batchId, contents } }`, com os conteúdos lidos como o calendário os lê.
-- **`approval`** no item e no detalhe do conteúdo da agência: `{ sentAt, dueOn, note }` da rodada mais recente **enquanto o conteúdo aguarda
+- **`approval`** no item e no detalhe do conteúdo da agência: `{ sentAt, dueAt, dueOn, note }` da rodada mais recente **enquanto o conteúdo aguarda
   aprovação**, senão `null` (também para o que aguardava antes das rodadas). É a junção `APPROVAL_JOIN` de `service.ts`, que a lista, o
   feed, o detalhe e o lote compartilham.
-- **O portal e o link** devolvem só `approval: { dueOn, note }` (`portalApprovalOf`, uma só cópia, que `portal-routes.ts` exporta e
-  `approval-links/service.ts` importa por essa porta), vindo de `portal_contents` e `portal_approval_contents`; a data de envio, quem enviou e o lote não saem do banco para eles.
+- **O portal** devolve `approval: { dueAt, dueOn, note, sentAt, sentBy }` (`portalApprovalOf`, uma só cópia, que `portal-routes.ts` exporta e
+  `approval-links/service.ts` importa por essa porta), vindo de `portal_contents`. `sentBy` é `{ name, photoUrl }` de quem da agência enviou
+  (ver `portal.md`); o lote não sai do banco. `photoUrl` é o **caminho** `/clients/:clientId/contents/:contentId/sender-photo`, uma rota do
+  portal sob a mesma guarda do cliente que responde os bytes da imagem (`404` único sem foto, sem acesso ou com o armazenamento fora do ar;
+  `Cache-Control: private`, `nosniff`, limite por pessoa): nenhum endereço assinado, que levaria a chave do objeto e com ela o id da conta de
+  quem enviou. Só uma chave de avatar (`users/<id>/avatar/...`) é lida do armazenamento, pelo `IdentityStorageClient.readImage`.
+- **Recado em conteúdo já aprovado.** `approve` com `note` num conteúdo que já está aprovado é `A0123` -> `409 CONTENT_ALREADY_APPROVED`
+  ("Este conteúdo já foi aprovado. Seu recado não foi enviado."), decidido depois da trava do conteúdo na função do banco (uma só cópia da regra,
+  porque é lá que duas pessoas aprovando juntas se separam); sem recado, o conteúdo já aprovado segue um `200` que não escreve nada. **O link de aprovação** do e-mail continua com o dia e o recado: o `dueAt`, o `sentAt` e o
+  `sentBy` dele são `null` (vem de `portal_approval_contents`, que esta entrega não mexe).
 - **Parado no cliente.** `GET /agencies/:agencyId/contents/awaiting-client` (`awaiting-routes.ts`, `awaiting-service.ts`): o que aguarda
-  aprovação, até 50 (`meta.truncated` quando havia mais), do mais urgente ao menos (prazo mais próximo, depois quem espera há mais tempo,
-  depois o sem rodada), agrupado por cliente na ordem do primeiro item de cada um. Os dias (`daysToDue`, `daysWaiting`) são do dia de São Paulo
-  (`app_private.sao_paulo_date`) de um só instante, o `now` da dependência ou o relógio do banco. Quem vê é o que a política de `contents` dá a
-  quem tem `conteudo.visualizar`, a mesma do calendário e do feed (guarda da rota + política da tabela, sem cópia da regra); cliente arquivado não entra.
-  Não há restrição de carteira por colaborador no modelo (`ClientAssignment` não existe): a visibilidade é a permissão na agência.
+  aprovação, até 50 (`meta.truncated` quando havia mais), de quem espera há mais tempo ao mais novo (`sentAt`; o sem rodada vem por último,
+  pelo dia da publicação; o prazo não ordena, é um dado a mais em cada linha), agrupado por cliente na ordem do primeiro item de cada um; o teto
+  corta o mais novo. Cada item leva `thumbnailAssetId` (a capa, `THUMBNAIL_JOIN` de `service.ts`, a mesma da lista), `dueAt`, `dueOn` e
+  `daysLate` (dias desde o dia da publicação, só depois que ele passou). Os dias (`daysToDue`, `daysWaiting`, `daysLate`) são do dia de São
+  Paulo (`app_private.sao_paulo_date`) de um só instante, o `now` da dependência ou o relógio do banco. `approvers` de cada cliente são os nomes
+  (só nome: sem e-mail, id ou papel) das pessoas ativas do portal que já entraram, na ordem em que receberam o acesso, até 50
+  (`portal-people.ts`); só quem tem `cliente.convidar_usuario` na agência os recebe, e para os outros `approvers` é `null` (a tabela de acessos
+  também é lida por quem remove pessoas, então a permissão é perguntada à parte, não deixada à política). Quem vê a lista é o que a política de
+  `contents` dá a quem tem `conteudo.visualizar`, a mesma do calendário e do feed (guarda da rota + política da tabela, sem cópia da regra);
+  cliente arquivado não entra. Não há restrição de carteira por colaborador no modelo (`ClientAssignment` não existe): a visibilidade é a
+  permissão na agência.
+- **Contadores.** `GET /agencies/:agencyId/contents/summary` (`summary-routes.ts`, `summary-service.ts`): "Esperando" (`awaitingClient`),
+  "Atrasados" (`overdueAwaitingClient`: aguardando cujo dia de publicação, em São Paulo, passou), "Aprovados no mês" e o do mês anterior
+  (`approvedThisMonth`, `approvedLastMonth`: aprovados e publicados pelo dia de São Paulo da aprovação, a de fora da plataforma inclusive; é a
+  contagem de hoje de cada mês, não um histórico) e "Agendados" (`scheduled.count` e `lastPublishOn`: aprovados com hora cujo instante ainda
+  não passou, `contentIsScheduled` do contrato, que `deadline-sql.ts` repete em SQL e um teste confere). Um instante só (`clock-sql.ts`) dá o dia,
+  os meses e a hora do dia, então os números de uma resposta concordam. Mesma permissão e mesma política das outras leituras do Início; só
+  clientes ativos.
+- **Passos da ativação.** `GET .../contents/activation` devolve, além dos quatro fatos, `steps` (`activation-service.ts`): data e nome do primeiro
+  cliente, do primeiro conteúdo, do primeiro envio (a primeira pessoa ativa do portal que entrou, com "e mais N" em `others`; sem
+  `cliente.convidar_usuario` ou sem pessoa, o nome do cliente e `others: 0`) e da primeira aprovação (quem aprovou, como o detalhe o nomeia;
+  o nome do cliente se a conta não for conhecida). Um passo é `null` quando não foi dado ou quando nada o data (o que aguardava antes das rodadas
+  não tem data de envio).
+- **Roteiros do período.** Cada roteiro leva `sceneCount`, o número de cenas.
 
 ## As subtarefas (issue #255)
 
@@ -219,8 +254,14 @@ legenda com quebras), que recusam caractere de controle e invisível.
 - `contents-approval-rounds.integration.test.ts` (S4): o envio individual e em lote com prazo e recado (as duas pontas dos 90 dias, o recado
   de 500 e 501 caracteres, o lote de 30 e 31, o conteúdo de outro cliente, o tudo ou nada, a matriz de papéis, o cliente arquivado), o
   `approval` onde o conteúdo é lido e cada código do banco traduzido, nunca um 500.
-- `contents-awaiting-client.integration.test.ts` (S4): "Parado no cliente" a 01:30Z (ainda a noite anterior em São Paulo), a ordem, o
-  agrupamento, o teto de 50, o que fica de fora, e quem vê (a permissão, o isolamento entre agências e a pessoa de duas agências).
+- `contents-awaiting-client.integration.test.ts` (S4, A2): "Parado no cliente" a 01:30Z (ainda a noite anterior em São Paulo), a ordem por
+  envio, a capa, o prazo com hora, `daysLate`, os aprovadores (e quem os recebe), o agrupamento, o teto de 50, o que fica de fora, e quem vê (a
+  permissão, o isolamento entre agências e a pessoa de duas agências).
+- `contents-summary.integration.test.ts` (A2): os contadores, as bordas do mês, do dia e da hora de São Paulo com o relógio injetado, o
+  "Agendado" igual ao do contrato, e quem vê.
+- `contents-activation.integration.test.ts`: os fatos e, em A2, os passos com data e nome.
+- `portal-home.integration.test.ts` (A2): o progresso do mês do portal, "O que precisa de você" na ordem do prazo com hora, o remetente da
+  rodada (nome e foto, nunca e-mail ou id) e aprovar com recado.
 - `contents-owner-link.integration.test.ts` (#552, #566): o responsável por vínculo, na resposta e no corpo: nenhum id de usuário
   (de qualquer pessoa do cenário, a do portal e as das fixtures inclusive), vínculo removido, de outra agência, do portal,
   inexistente ou de quem não vê Conteúdo (recusado pela rota antes de escrever, e a matriz que a compara com `agency_user_can`),

@@ -312,27 +312,31 @@ describe('GET /portal-approval/batch', () => {
     expect(byId.get(link.contents[0]!)).toMatchObject({ status: 'awaiting_approval', canDecide: true });
   });
 
-  it('carries the deadline and the note of the round, and only those: not the day it was sent, not who sent it, not the batch', async () => {
+  it('carries the day of the deadline and the note of the round, and only those: not the hour, the day it was sent, who sent it, nor the batch', async () => {
     const link = await withSession({ count: 3 });
     const [withBoth, withNeither, legacy] = link.contents as [string, string, string];
     const insertRound = (contentId: string, dueOn: string | null, note: string | null) => owner()('content_approval_rounds').insert({
-      batch_id: randomUUID(), client_id: link.clientId, content_id: contentId, sequence: 1, due_on: dueOn, note, sent_by: people.manager.id
+      batch_id: randomUUID(), client_id: link.clientId, content_id: contentId, sequence: 1, note, sent_by: people.manager.id,
+      due_on: dueOn, due_at: dueOn === null ? null : owner().raw('app_private.sao_paulo_end_of_day(?::date)', [dueOn])
     });
     await insertRound(withBoth, '2026-10-30', 'Preciso da resposta até sexta.');
     await insertRound(withNeither, null, null);
 
     const reply = await batch(link);
 
+    // The link of the e-mail is the door that asks nothing of the person, so it answers the day and the note; the hour, the sender and the
+    // send date are what the portal of an account reads, and here they are null.
+    const day = { dueAt: null, sentAt: null, sentBy: null };
     const byId = new Map(reply.json<{ contents: Row[] }>().contents.map((content) => [content.id as string, content]));
-    expect(byId.get(withBoth)?.approval).toEqual({ dueOn: '2026-10-30', note: 'Preciso da resposta até sexta.' });
-    expect(byId.get(withNeither)?.approval).toEqual({ dueOn: null, note: null });
+    expect(byId.get(withBoth)?.approval).toEqual({ ...day, dueOn: '2026-10-30', note: 'Preciso da resposta até sexta.' });
+    expect(byId.get(withNeither)?.approval).toEqual({ ...day, dueOn: null, note: null });
     expect(byId.get(legacy)?.approval).toBeNull();
-    for (const secret of [people.manager.id, 'sentAt', 'sent_at', 'batch', 'sentBy']) expect(reply.body).not.toContain(secret);
+    for (const secret of [people.manager.id, 'Pessoa manager', 'sent_at', 'batch', '2026-10-31T02:59']) expect(reply.body).not.toContain(secret);
 
     // The answer to a decision is the same content, with the same round: what the person decided on is what the agency asked.
     const approved = await approve(link, withBoth);
     expect(approved.statusCode).toBe(200);
-    expect(approved.json()).toMatchObject({ id: withBoth, status: 'approved', approval: { dueOn: '2026-10-30', note: 'Preciso da resposta até sexta.' } });
+    expect(approved.json()).toMatchObject({ id: withBoth, status: 'approved', approval: { ...day, dueOn: '2026-10-30', note: 'Preciso da resposta até sexta.' } });
   });
 
   it('does not answer without the cookie, with a malformed one, with an unknown one, or with the cookie of an account', async () => {

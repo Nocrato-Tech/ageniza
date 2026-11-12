@@ -68,7 +68,7 @@ export const reasonInvalid = (): HttpError => new HttpError({
 export const approvalDueInvalid = (): HttpError => new HttpError({
   statusCode: 400,
   code: 'CONTENT_APPROVAL_DUE_INVALID',
-  message: 'O prazo de aprovação vai de hoje até 90 dias à frente, no dia de São Paulo.'
+  message: 'O prazo de aprovação é um momento entre agora e 90 dias à frente.'
 });
 
 export const approvalNoteInvalid = (): HttpError => new HttpError({

@@ -178,7 +178,7 @@ export const registerContentTransitionRoutes = (app: FastifyInstance, dependenci
 
   register('submit', submitDocs, 'submit', {
     body: (request) => bodyOrEmpty(submitDocs, request),
-    run: (transaction, { contentId, body }) => submitContent(transaction, contentId, { dueOn: body.dueOn, note: body.note })
+    run: (transaction, { contentId, body }) => submitContent(transaction, contentId, { dueAt: body.dueAt, dueOn: body.dueOn, note: body.note })
   });
 
   // One batch is one client's: the route reads each content as THIS client's before the function runs (another client's of the same
@@ -193,7 +193,7 @@ export const registerContentTransitionRoutes = (app: FastifyInstance, dependenci
     const result = await write(request, scope, body.contentIds, 'submit', async (transaction) => {
       if (await loadClientStatus(transaction, scope) === undefined) throw clientNotFound();
       if (await countClientContents(transaction, { clientId, contentIds: body.contentIds }) !== body.contentIds.length) throw contentNotFound();
-      const batchId = await submitContents(transaction, { contentIds: body.contentIds, dueOn: body.dueOn, note: body.note });
+      const batchId = await submitContents(transaction, { contentIds: body.contentIds, dueAt: body.dueAt, dueOn: body.dueOn, note: body.note });
       return { batchId, contents: await listBatchContents(transaction, { clientId, batchId }) };
     });
     return reply.send(routeResponse(submitBatchDocs, request, { data: result }));

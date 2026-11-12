@@ -274,17 +274,25 @@ const FORBIDDEN_KEYS = /task|assignee|owner|responsible|due|deadline|reason|appr
 const INTERNAL_VALUES = ['Subtarefa', 'Pessoa production', 'Pessoa admin', 'Aprovado fora da plataforma'];
 
 /**
- * `approval` is the one object of the agency's work the client is meant to read: the deadline and the note of the round it was sent in.
- * It is allowed by name and only with exactly those two keys, so the date it was sent, who sent it or the batch still fail the check.
+ * `approval` is the one object of the agency's work the client is meant to read (decisions 2026-11-10 and 2026-11-11): the deadline, the
+ * note, the instant it was sent and who sent it (the name and the photo: nothing else of the person). It is allowed by name and only with
+ * exactly those keys, so the batch, the e-mail, the role or the id of the sender still fail the check.
  */
+const APPROVAL_KEYS = 'dueAt,dueOn,note,sentAt,sentBy';
+const SENDER_KEYS = 'name,photoUrl';
 const keysOf = (value: unknown): string[] => {
   if (Array.isArray(value)) return value.flatMap(keysOf);
   if (typeof value === 'object' && value !== null) {
     return Object.entries(value).flatMap(([key, child]) => {
       if (key !== 'approval') return [key, ...keysOf(child)];
       if (child === null) return [];
-      const inside = Object.keys(child as object).sort();
-      return inside.join() === 'dueOn,note' ? [] : inside.map((name) => `approval.${name}`);
+      const approval = child as Record<string, unknown>;
+      const inside = Object.keys(approval).sort();
+      if (inside.join() !== APPROVAL_KEYS) return inside.map((name) => `approval.${name}`);
+      const sender = approval.sentBy;
+      if (sender === null) return [];
+      const senderKeys = Object.keys(sender as object).sort();
+      return senderKeys.join() === SENDER_KEYS ? [] : senderKeys.map((name) => `approval.sentBy.${name}`);
     });
   }
   return [];
@@ -1339,7 +1347,8 @@ describe('what the database answers is never a 500', () => {
         w.clearHook();
       }
       expect(reply.statusCode).toBe(status);
-      expect(errorOf(reply).code).toBe(apiCode);
+      // A0068 is the text refused: the note of an approval and the comment of a request are not the same field.
+      expect(errorOf(reply).code).toBe(code === 'A0068' && _action === 'approve' ? 'CONTENT_APPROVAL_NOTE_INVALID' : apiCode);
       expect(JSON.stringify(reply.json())).not.toMatch(/A00\d\d|40P01|40001|database|pg_|relation/);
     });
 
@@ -1431,10 +1440,17 @@ describe('the deadline and the note of the round the agency sent the content in'
   const PEOPLE = ['portalOne', ...DUAL_PEOPLE] as const;
   const NOTE = 'Preciso da resposta até sexta para publicar na segunda.';
 
-  const seedRound = (contentId: string, clientId: string, round: { dueOn: string | null; note: string | null; sequence?: number }): Promise<unknown> =>
+  const SENT_AT = '2026-10-25T14:00:00.000Z';
+  // The deadline is the instant the agency chose (here the end of a day in São Paulo, 02:59Z of the next); the day the portal shows is that
+  // instant's day in São Paulo, so a person in another time zone reads the same day.
+  const END_OF_30TH = '2026-10-31T02:59:00.000Z';
+  const sender = { name: 'Pessoa manager', photoUrl: null };
+
+  const seedRound = (contentId: string, clientId: string, round: { dueAt: string | null; note: string | null; sequence?: number; sentAt?: string }): Promise<unknown> =>
     w.getOwner().knex('content_approval_rounds').insert({
       batch_id: randomUUID(), client_id: clientId, content_id: contentId, sequence: round.sequence ?? 1,
-      due_on: round.dueOn, note: round.note, sent_by: people.manager.id
+      due_at: round.dueAt, due_on: round.dueAt === null ? null : w.getOwner().knex.raw('app_private.sao_paulo_date(?::timestamptz)', [round.dueAt]),
+      note: round.note, sent_by: people.manager.id, sent_at: round.sentAt ?? SENT_AT
     });
 
   const approvalOf = (reply: Reply, id: string): unknown => {
@@ -1449,17 +1465,17 @@ describe('the deadline and the note of the round the agency sent the content in'
     const withRound = await seedOpen(clientId, 'awaiting_approval', { publishOn: '2026-10-21' });
     const withEmptyRound = await seedOpen(clientId, 'awaiting_approval', { publishOn: '2026-10-22' });
     const legacy = await seedOpen(clientId, 'awaiting_approval', { publishOn: '2026-10-23' });
-    await seedRound(withRound, clientId, { dueOn: '2026-10-30', note: NOTE });
-    await seedRound(withEmptyRound, clientId, { dueOn: null, note: null });
+    await seedRound(withRound, clientId, { dueAt: END_OF_30TH, note: NOTE });
+    await seedRound(withEmptyRound, clientId, { dueAt: null, note: null });
 
     for (const reply of [await get(person, listUrl(clientId, '?from=2026-10-01&to=2026-10-31')), await get(person, awaitingUrl(clientId))]) {
-      expect(approvalOf(reply, withRound)).toEqual({ dueOn: '2026-10-30', note: NOTE });
-      expect(approvalOf(reply, withEmptyRound)).toEqual({ dueOn: null, note: null });
+      expect(approvalOf(reply, withRound)).toEqual({ dueAt: END_OF_30TH, dueOn: '2026-10-30', note: NOTE, sentAt: SENT_AT, sentBy: sender });
+      expect(approvalOf(reply, withEmptyRound)).toEqual({ dueAt: null, dueOn: null, note: null, sentAt: SENT_AT, sentBy: sender });
       expect(approvalOf(reply, legacy)).toBeNull();
       expectNoInternal(reply);
     }
     const one = await get(person, oneUrl(clientId, withRound));
-    expect(approvalOf(one, withRound)).toEqual({ dueOn: '2026-10-30', note: NOTE });
+    expect(approvalOf(one, withRound)).toEqual({ dueAt: END_OF_30TH, dueOn: '2026-10-30', note: NOTE, sentAt: SENT_AT, sentBy: sender });
     expectNoInternal(one);
     expect(approvalOf(await get(person, oneUrl(clientId, legacy)), legacy)).toBeNull();
   });
@@ -1467,27 +1483,28 @@ describe('the deadline and the note of the round the agency sent the content in'
   it.each(PEOPLE)('keeps the round of the latest send, and returns it with the answer of the approval and of the withdrawal, for %s', async (person) => {
     const clientId = await freshClient(`round-move-${person}`, [person]);
     const id = await seedOpen(clientId, 'awaiting_approval');
-    await seedRound(id, clientId, { dueOn: '2026-10-24', note: 'Primeira rodada', sequence: 1 });
-    await seedRound(id, clientId, { dueOn: '2026-10-30', note: NOTE, sequence: 2 });
-    expect(approvalOf(await get(person, oneUrl(clientId, id)), id)).toEqual({ dueOn: '2026-10-30', note: NOTE });
+    await seedRound(id, clientId, { dueAt: '2026-10-25T02:59:00.000Z', note: 'Primeira rodada', sequence: 1, sentAt: '2026-10-20T12:00:00.000Z' });
+    await seedRound(id, clientId, { dueAt: END_OF_30TH, note: NOTE, sequence: 2 });
+    const latest = { dueAt: END_OF_30TH, dueOn: '2026-10-30', note: NOTE, sentAt: SENT_AT, sentBy: sender };
+    expect(approvalOf(await get(person, oneUrl(clientId, id)), id)).toEqual(latest);
 
     const approved = await post(person, approveUrl(clientId, id), { revision: 1 });
     expect(approved.statusCode).toBe(200);
-    expect(approved.json()).toMatchObject({ status: 'approved', approval: { dueOn: '2026-10-30', note: NOTE } });
+    expect(approved.json()).toMatchObject({ status: 'approved', approval: latest });
     expectNoInternal(approved);
 
     const folderId = (await w.contentRow(id)).folder_id as string;
     await w.attach(id, [await w.seedAsset(clientId, folderId, { category: 'video' })]);
     const withdrawn = await post(person, withdrawUrl(clientId, id), { revision: 1 });
     expect(withdrawn.statusCode).toBe(200);
-    expect(withdrawn.json()).toMatchObject({ status: 'awaiting_approval', approval: { dueOn: '2026-10-30', note: NOTE } });
+    expect(withdrawn.json()).toMatchObject({ status: 'awaiting_approval', approval: latest });
     expectNoInternal(withdrawn);
   });
 
   it('shows no round for a content in production, even when it has one from an earlier send', async () => {
     const clientId = await freshClient('round-production');
     const id = await w.seedContent(clientId, { status: 'in_production' });
-    await seedRound(id, clientId, { dueOn: '2026-10-30', note: NOTE });
+    await seedRound(id, clientId, { dueAt: END_OF_30TH, note: NOTE });
 
     const reply = await get('portalOne', oneUrl(clientId, id));
 
@@ -1498,7 +1515,7 @@ describe('the deadline and the note of the round the agency sent the content in'
     const mine = await freshClient('round-mine', PEOPLE);
     const theirs = await freshClient('round-theirs', ['portalOther']);
     const foreign = await seedOpen(theirs, 'awaiting_approval');
-    await seedRound(foreign, theirs, { dueOn: '2026-10-30', note: NOTE });
+    await seedRound(foreign, theirs, { dueAt: END_OF_30TH, note: NOTE });
 
     for (const person of PEOPLE) {
       const reply = await get(person, oneUrl(mine, foreign));

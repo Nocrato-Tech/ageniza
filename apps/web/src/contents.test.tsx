@@ -1072,7 +1072,7 @@ describe('moving a content to another day (drag)', () => {
 
   it('lands on a day that already has a story script, and the script and its mark stay where they were', async () => {
     const traveller = contentFixture({ title: 'Viajante', publishOn: '2026-10-14' });
-    const script = { id: '5c5c5c5c-5555-4555-8555-555555555555', scriptOn: '2026-10-20', status: 'draft' };
+    const script = { id: '5c5c5c5c-5555-4555-8555-555555555555', scriptOn: '2026-10-20', status: 'draft', sceneCount: 2 };
     const { patches } = open([traveller], {
       period: (_client, from, to) => {
         const rows = [traveller].filter((row) => row.publishOn >= from && row.publishOn <= to);

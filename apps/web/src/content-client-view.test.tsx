@@ -24,7 +24,7 @@ const withAgencyData = (row: Stored): Scenario => ({
 /** The round the content was sent in: until when the client decides and what the agency wrote. */
 const withRound = (row: Stored, round: { dueOn: string | null; note: string | null }): Scenario => ({
   override: (call) => (call.method === 'GET' && call.path === contentPath(row.id)
-    ? json({ ...detailOf(row), approval: { sentAt: '2026-10-09T15:00:00.000Z', ...round } })
+    ? json({ ...detailOf(row), approval: { sentAt: '2026-10-09T15:00:00.000Z', dueAt: null, ...round } })
     : undefined)
 });
 

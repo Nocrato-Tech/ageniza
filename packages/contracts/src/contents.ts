@@ -174,6 +174,10 @@ export const contentPeriodIssue = (query: z.infer<typeof ContentPeriodQuerySchem
 export const APPROVAL_NOTE_MAX_CHARACTERS = 500;
 /** One batch sends up to 30 contents of one client. */
 export const APPROVAL_BATCH_MAX_CONTENTS = 30;
+/** The deadline the send dialog proposes: 48 hours after the send. It is the screen's default; the API accepts a send without a deadline. */
+export const APPROVAL_DEFAULT_DEADLINE_HOURS = 48;
+/** A deadline lies after now and up to 90 days ahead; the database refuses any other (A0120). */
+export const APPROVAL_DEADLINE_MAX_DAYS = 90;
 
 /**
  * The note that goes with a content sent for approval: the one rule of free text (no control, bidi or invisible character, no lone
@@ -185,15 +189,37 @@ export const ApprovalNoteSchema = visibleText()
     .min(1, 'must not be empty')
     .refine((value) => characterCount(value) <= APPROVAL_NOTE_MAX_CHARACTERS, `must be at most ${APPROVAL_NOTE_MAX_CHARACTERS} characters`));
 
+const DATABASE_YEARS = { first: 1, last: 9999 } as const;
+
 /**
- * Body of `POST .../contents/:contentId/submit`: the deadline and the note of the round are optional, and `{}` stays valid. Only the
- * format of the day is checked here; that it lies between today and 90 days ahead (São Paulo) is the database's rule (A0120).
- * `ContentMoveRequestSchema` is not this one: cancel and unpublish still take no field.
+ * The deadline of a round as an instant, with its offset (`2026-11-12T18:00:00-03:00`, or the same moment in UTC). What leaves this schema is
+ * that instant in UTC, the only form the database is given: it refuses an offset past 15:59 (`22009`) and the years it does not hold, and
+ * the refusal of the database would be a 500 instead of the 400 of a bad field. So the instant must be one `Date` reads (`+99:99` is not),
+ * and its year in UTC must lie in the database's range, 0001 to 9999.
+ */
+export const ApprovalDueAtSchema = z.string().datetime({ offset: true })
+  .refine((value) => {
+    const instant = new Date(value);
+    const year = instant.getUTCFullYear();
+    return !Number.isNaN(instant.getTime()) && year >= DATABASE_YEARS.first && year <= DATABASE_YEARS.last;
+  }, `must be a real instant, in the years ${DATABASE_YEARS.first} to ${DATABASE_YEARS.last} in UTC`)
+  .transform((value) => new Date(value).toISOString());
+
+const oneDeadline = (value: { readonly dueAt?: string | undefined; readonly dueOn?: string | undefined }): boolean =>
+  value.dueAt === undefined || value.dueOn === undefined;
+const ONE_DEADLINE_ISSUE = { message: 'give the deadline as dueAt, or as dueOn (the end of that day in São Paulo), not both', path: ['dueAt'] };
+
+/**
+ * Body of `POST .../contents/:contentId/submit`: the deadline and the note of the round are optional, and `{}` stays valid. The deadline is
+ * `dueAt`, an instant (decision 2026-11-11: data e hora); `dueOn`, the day the screens used to send, stays until they migrate and means
+ * the end of that day in São Paulo (23:59). Only the format is checked here; that the deadline lies after now and up to 90 days ahead is
+ * the database's rule (A0120). `ContentMoveRequestSchema` is not this one: cancel and unpublish still take no field.
  */
 export const SubmitContentRequestSchema = z.object({
+  dueAt: ApprovalDueAtSchema.optional(),
   dueOn: CalendarDaySchema.optional(),
   note: ApprovalNoteSchema.optional()
-}).strict();
+}).strict().refine(oneDeadline, ONE_DEADLINE_ISSUE);
 
 /** Body of `POST .../clients/:clientId/contents/submit`: 1 to 30 distinct contents of one client, sent together as one batch, all or none. */
 export const SubmitContentsBatchRequestSchema = z.object({
@@ -201,16 +227,19 @@ export const SubmitContentsBatchRequestSchema = z.object({
     .min(1, 'at least one content must be provided')
     .max(APPROVAL_BATCH_MAX_CONTENTS, `at most ${APPROVAL_BATCH_MAX_CONTENTS} contents`)
     .refine((ids) => new Set(ids.map((id) => id.toLowerCase())).size === ids.length, 'must not repeat a content'),
+  dueAt: ApprovalDueAtSchema.optional(),
   dueOn: CalendarDaySchema.optional(),
   note: ApprovalNoteSchema.optional()
-}).strict();
+}).strict().refine(oneDeadline, ONE_DEADLINE_ISSUE);
 
 /**
  * The round a content was sent in, as the agency reads it: when, until when and the note. `null` for a content with no round (still in
- * production, or sent before the rounds existed, which have neither date nor note); inside an object, `dueOn` and `note` are `null` when none was given.
+ * production, or sent before the rounds existed, which have neither date nor note); inside an object, `dueAt`, `dueOn` and `note` are `null` when
+ * none was given. `dueAt` is the deadline (an instant); `dueOn` is the São Paulo day of that instant.
  */
 export const ContentApprovalSchema = z.object({
   sentAt: z.string().datetime(),
+  dueAt: z.string().datetime().nullable(),
   dueOn: z.string().nullable(),
   note: z.string().nullable()
 }).strict();
@@ -289,40 +318,93 @@ export const ContentFeedResponseSchema = z.object({
   meta: z.object({ count: z.number().int().nonnegative() }).strict()
 }).strict();
 
-/** What the agency's Início reads to show the activation path: three facts, no content and no count. */
+/** When a step of the path was taken and the name that goes with it, as the Início says "Feito, <name>, <date>". The screen turns the instant into a São Paulo day, or "agora" within the hour. */
+export const ActivationStepSchema = z.object({
+  at: z.string().datetime(),
+  name: z.string()
+}).strict();
+
+/**
+ * What the agency's Início reads to show the activation path: the four facts and, for each step already taken, its date and a name
+ * (decision 2026-11-11). Each step is `null` when it was not taken, or when the data that would date it does not exist (a content sent
+ * before the rounds existed has no send date) or may not be read by this person. `firstSent.name` is the first active person of the
+ * client's portal, read only with `cliente.convidar_usuario`, and the name of the client otherwise; `firstSent.others` counts the
+ * other active people ("e mais N"; 0 when the person may not read them).
+ */
 export const ContentActivationResponseSchema = z.object({
   data: z.object({
     hasContent: z.boolean(),
     sentForApproval: z.boolean(),
     approvedByClient: z.boolean(),
-    published: z.boolean()
+    published: z.boolean(),
+    steps: z.object({
+      firstClient: ActivationStepSchema.nullable(),
+      firstContent: ActivationStepSchema.nullable(),
+      firstSent: ActivationStepSchema.extend({ others: z.number().int().nonnegative() }).strict().nullable(),
+      firstApproved: ActivationStepSchema.nullable()
+    }).strict()
+  }).strict()
+}).strict();
+
+/**
+ * The counters of the agency's Início: "Esperando", "Atrasados", "Aprovados no mês" with the month before, and "Agendados" with the day of
+ * the last one (decisions 2026-11-11). Over the contents the person reads (`conteudo.visualizar`) of the agency's active clients.
+ * "Atrasados" are the ones awaiting the client whose publication day (São Paulo) passed. "Aprovados no mês" counts the approved and
+ * published contents by the São Paulo day of the approval, in the month of today and in the month before (today's count of each: not a
+ * history). "Agendados" are approved contents with an hour whose publication instant has not passed (`contentIsScheduled`).
+ */
+export const ContentSummaryResponseSchema = z.object({
+  data: z.object({
+    awaitingClient: z.number().int().nonnegative(),
+    overdueAwaitingClient: z.number().int().nonnegative(),
+    approvedThisMonth: z.number().int().nonnegative(),
+    approvedLastMonth: z.number().int().nonnegative(),
+    scheduled: z.object({
+      count: z.number().int().nonnegative(),
+      /** The publication day of the last scheduled content; `null` when there is none. */
+      lastPublishOn: z.string().nullable()
+    }).strict()
   }).strict()
 }).strict();
 
 /** The summary of "Parado no cliente" holds at most 50 contents in all, and says it was cut (`meta.truncated`) when there were more. */
 export const AWAITING_CLIENT_MAX_CONTENTS = 50;
 
+/** The most people of a client's portal the summary names: past that, the screen has no use for another name. */
+export const AWAITING_CLIENT_MAX_APPROVERS = 50;
+
 /**
- * A content that waits for the client, as the Início of the agency lists it. `daysWaiting` (since `sentAt`) and `daysToDue` (until `dueOn`,
- * negative once it passed) are days in São Paulo, counted by the server; each is `null` when its date is (a content sent before the rounds
- * has neither). `dueOn` is the deadline of the approval, not the day of the publication.
+ * A content that waits for the client, as the Início of the agency lists it. `daysWaiting` (since `sentAt`), `daysToDue` (until `dueOn`, the
+ * São Paulo day of the deadline, negative once it passed) and `daysLate` (since the publication day, when that day passed) are days in São
+ * Paulo, counted by the server; each is `null` when its date is, and `daysLate` also when the publication day has not passed. A content
+ * sent before the rounds has neither a send date nor a deadline. `dueAt` is the deadline of the approval as an instant, not the day of the
+ * publication. `thumbnailAssetId` is the file that serves as its cover.
  */
 export const AwaitingClientContentSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
   format: ContentFormatSchema,
   publishOn: z.string(),
+  thumbnailAssetId: z.string().uuid().nullable(),
   sentAt: z.string().datetime().nullable(),
+  dueAt: z.string().datetime().nullable(),
   dueOn: z.string().nullable(),
   daysWaiting: z.number().int().nonnegative().nullable(),
-  daysToDue: z.number().int().nullable()
+  daysToDue: z.number().int().nullable(),
+  daysLate: z.number().int().positive().nullable()
 }).strict();
 
-/** `GET /agencies/:agencyId/contents/awaiting-client`: a summary block grouped by client, no pagination, no query. */
+/**
+ * `GET /agencies/:agencyId/contents/awaiting-client`: a summary block grouped by client, no pagination, no query, from the content sent
+ * longest ago to the newest (`sentAt`; one with no send date comes last, by its publication day). The clients follow the order of the first
+ * content of each. `approvers` names, in the order they were given the access, the active people of the client's portal who have entered it
+ * (names only: no e-mail, id or role); it is `null` for a person without `cliente.convidar_usuario`, who sees the client alone.
+ */
 export const AwaitingClientResponseSchema = z.object({
   data: z.array(z.object({
     clientId: z.string().uuid(),
     clientName: z.string(),
+    approvers: z.array(z.string()).max(AWAITING_CLIENT_MAX_APPROVERS).nullable(),
     contents: z.array(AwaitingClientContentSchema).min(1).max(AWAITING_CLIENT_MAX_CONTENTS)
   }).strict()),
   meta: z.object({ truncated: z.boolean() }).strict()
@@ -336,10 +418,12 @@ export const SubmitContentsBatchResponseSchema = z.object({
   }).strict()
 }).strict();
 
+/** A script in the calendar: its day, its state (`recorded` is "gravado") and how many scenes it has. */
 export const StoryScriptListItemSchema = z.object({
   id: z.string().uuid(),
   scriptOn: z.string(),
-  status: StoryScriptStatusSchema
+  status: StoryScriptStatusSchema,
+  sceneCount: z.number().int().nonnegative()
 }).strict();
 
 export const ContentPeriodResponseSchema = z.object({
@@ -472,6 +556,7 @@ export type ContentListItem = z.infer<typeof ContentListItemSchema>;
 export type StoryScriptListItem = z.infer<typeof StoryScriptListItemSchema>;
 export type ContentFeedResponse = z.infer<typeof ContentFeedResponseSchema>;
 export type ContentActivationResponse = z.infer<typeof ContentActivationResponseSchema>;
+export type ContentSummaryResponse = z.infer<typeof ContentSummaryResponseSchema>;
 export type ContentPeriodResponse = z.infer<typeof ContentPeriodResponseSchema>;
 export type Content = z.infer<typeof ContentSchema>;
 export type ContentDetail = z.infer<typeof ContentDetailSchema>;

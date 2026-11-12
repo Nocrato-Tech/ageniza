@@ -98,8 +98,20 @@ const plantStrangerRound = async (): Promise<void> => {
   await waitingContent(clientId, 1);
 };
 
-/** A content that waits for approval, in a round that is due `dueInDays` from today in São Paulo (negative: it was due), sent `sentDaysAgo` days ago. */
-const waitingContent = async (clientId: string, dueInDays: number | null, sentDaysAgo = 5): Promise<{ contentId: string; roundId: string }> => {
+// The deadline of a round is an instant with an hour; the reminders count by the day of São Paulo it falls on. These are the three places of
+// a day a deadline can sit at: its first minute, noon and its last minute (the one a deadline that was only a day has).
+type DeadlineHour = 'first minute' | 'noon' | 'last minute';
+const DEADLINE_SQL: Record<DeadlineHour, string> = {
+  'first minute': "app_private.sao_paulo_end_of_day(app_private.sao_paulo_date(now()) + ?::integer - 1) + interval '1 minute'",
+  noon: "app_private.sao_paulo_end_of_day(app_private.sao_paulo_date(now()) + ?::integer - 1) + interval '12 hours 1 minute'",
+  'last minute': 'app_private.sao_paulo_end_of_day(app_private.sao_paulo_date(now()) + ?::integer)'
+};
+
+/**
+ * A content that waits for approval, in a round that is due `dueInDays` from today in São Paulo (negative: it was due), at `hour` of that day,
+ * sent `sentDaysAgo` days ago.
+ */
+const waitingContent = async (clientId: string, dueInDays: number | null, sentDaysAgo = 5, hour: DeadlineHour = 'last minute'): Promise<{ contentId: string; roundId: string }> => {
   const contentId = id();
   contents.push(contentId);
   await knex()('contents').insert({
@@ -110,7 +122,8 @@ const waitingContent = async (clientId: string, dueInDays: number | null, sentDa
   const roundId = id();
   await knex()('content_approval_rounds').insert({
     id: roundId, batch_id: id(), client_id: clientId, content_id: contentId, sequence: 1, sent_by: ids.actor, note: 'Preciso do seu OK.',
-    due_on: dueInDays === null ? null : knex().raw('app_private.sao_paulo_date(now()) + ?::integer', [dueInDays]),
+    due_at: dueInDays === null ? null : knex().raw(DEADLINE_SQL[hour], [dueInDays]),
+    due_on: dueInDays === null ? null : knex().raw(`app_private.sao_paulo_date(${DEADLINE_SQL[hour]})`, [dueInDays]),
     sent_at: knex().raw("now() - (?::integer * interval '1 day')", [sentDaysAgo])
   });
   return { contentId, roundId };
@@ -201,6 +214,21 @@ describe('approvals.enqueue-reminders against the database', () => {
     expect(items.every((item) => item.type === 'content_approval_overdue' && item.content_id === overdue.contentId && item.approval_round_id === overdue.roundId)).toBe(true);
     expect((await stampsOf(overdue.roundId)).reminded_overdue_at).not.toBeNull();
     expect(await enqueuedOf(logs)).toBeGreaterThanOrEqual(2);
+  });
+
+  it.each(['first minute', 'noon', 'last minute'] as const)('reminds by the São Paulo day of a deadline with an hour: one at its %s is told the day before and the day after', async (hour) => {
+    const client = await freshClient();
+    const tomorrow = await waitingContent(client, 1, 5, hour);
+    const yesterday = await waitingContent(client, -1, 5, hour);
+    // The same hour, one day further each way: not the day of any reminder.
+    for (const days of [-2, 0, 2]) await waitingContent(client, days, 5, hour);
+
+    await runJob();
+
+    const items = await queued();
+    expect(items).toHaveLength(4);
+    expect(items.filter((item) => item.type === 'content_approval_due_soon').every((item) => item.approval_round_id === tomorrow.roundId)).toBe(true);
+    expect(items.filter((item) => item.type === 'content_approval_overdue').every((item) => item.approval_round_id === yesterday.roundId)).toBe(true);
   });
 
   it('enqueues each reminder once per round: a second run, and a third, enqueue nothing new', async () => {

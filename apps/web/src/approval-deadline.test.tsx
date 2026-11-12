@@ -6,6 +6,9 @@ import { AwaitingState, ApprovalRound, deadlineWording, dueDayLabel, waitingWord
 
 afterEach(cleanup);
 
+// The wording reads only the day and the note; the hour, the sending date and the sender are not its concern.
+const round = (dueOn: string | null, note: string | null) => ({ dueAt: null, dueOn, note, sentAt: null, sentBy: null });
+
 describe('the words of an approval deadline (telas-melhorias S8)', () => {
   it.each([
     [0, 'vence hoje'],
@@ -44,19 +47,19 @@ describe('the words of an approval deadline (telas-melhorias S8)', () => {
   });
 
   it('draws nothing for a round with no usable deadline and no note, and ignores a deadline that is not a day', () => {
-    const { container, rerender } = render(<ApprovalRound approval={{ dueOn: null, note: null }} today="2026-10-11" />);
+    const { container, rerender } = render(<ApprovalRound approval={round(null, null)} today="2026-10-11" />);
     expect(container.textContent).toBe('');
-    rerender(<ApprovalRound approval={{ dueOn: '14/10/2026', note: null }} today="2026-10-11" />);
+    rerender(<ApprovalRound approval={round('14/10/2026', null)} today="2026-10-11" />);
     expect(container.textContent).toBe('');
-    rerender(<ApprovalRound approval={{ dueOn: '14/10/2026', note: 'Oi' }} agencyName="Agência Um" today="2026-10-11" />);
+    rerender(<ApprovalRound approval={round('14/10/2026', 'Oi')} agencyName="Agência Um" today="2026-10-11" />);
     expect(screen.queryByText(/Aprovar até/)).toBeNull();
     expect(screen.getByText('Recado de Agência Um')).toBeTruthy();
   });
 
   it('signs the note as the agency when no name is given, and hides it where it is not shown', () => {
-    const { container, rerender } = render(<ApprovalRound approval={{ dueOn: null, note: 'Oi' }} today="2026-10-11" />);
+    const { container, rerender } = render(<ApprovalRound approval={round(null, 'Oi')} today="2026-10-11" />);
     expect(screen.getByText('Recado da agência')).toBeTruthy();
-    rerender(<ApprovalRound approval={{ dueOn: null, note: 'Oi' }} showNote={false} today="2026-10-11" />);
+    rerender(<ApprovalRound approval={round(null, 'Oi')} showNote={false} today="2026-10-11" />);
     expect(container.textContent).toBe('');
   });
 });

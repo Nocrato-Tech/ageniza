@@ -135,8 +135,9 @@ describe('what ageniza_app may write on the three tables (issue #249)', () => {
   });
 
   it('opens to ageniza_app only the functions the API calls, and none of them to PUBLIC', async () => {
+    // One row per overload: `approve_content` is there twice, with the note of the client and without it.
     const callable = [
-      'approve_content', 'approve_content_by_agency', 'approve_content_task', 'cancel_content', 'content_open_to_client',
+      'approve_content', 'approve_content', 'approve_content_by_agency', 'approve_content_task', 'cancel_content', 'content_open_to_client',
       'deliver_content_task', 'portal_content_media', 'portal_contents', 'publish_content', 'reschedule_content',
       'return_content_task', 'sao_paulo_date', 'set_content_media', 'submit_content', 'unpublish_content'
     ];

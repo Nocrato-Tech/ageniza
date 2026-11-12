@@ -244,6 +244,7 @@ describe('the period query (issue #254)', () => {
     const dayAfter = await w.seedContent(periodClient, { publishOn: day('2026-11-01'), title: 'Depois' });
     const scriptFirst = await w.seedScript(periodClient, '2026-10-01', 'draft');
     const scriptLast = await w.seedScript(periodClient, '2026-10-31', 'recorded');
+    await w.getOwner().knex('story_script_scenes').insert([1, 2, 3].map((position) => ({ script_id: scriptFirst, client_id: periodClient, position, text: `Cena ${position}` })));
     await w.seedScript(periodClient, '2026-09-30');
     await w.seedScript(periodClient, '2026-11-01');
 
@@ -255,8 +256,8 @@ describe('the period query (issue #254)', () => {
     expect(body.data.contents.map((item: { id: string }) => item.id)).not.toContain(dayBefore);
     expect(body.data.contents.map((item: { id: string }) => item.id)).not.toContain(dayAfter);
     expect(body.data.storyScripts).toEqual([
-      { id: scriptFirst, scriptOn: '2026-10-01', status: 'draft' },
-      { id: scriptLast, scriptOn: '2026-10-31', status: 'recorded' }
+      { id: scriptFirst, scriptOn: '2026-10-01', status: 'draft', sceneCount: 3 },
+      { id: scriptLast, scriptOn: '2026-10-31', status: 'recorded', sceneCount: 0 }
     ]);
     expect(body.meta).toEqual({ from: '2026-10-01', to: '2026-10-31', count: 7 });
     expect(Object.keys(body)).toEqual(['data', 'meta']);

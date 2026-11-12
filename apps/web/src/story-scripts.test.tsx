@@ -127,7 +127,7 @@ const makeFetch = (scenario: Scenario = {}) => {
       const to = url.searchParams.get('to')!;
       const scripts = store
         .filter((script) => script.clientId === period[1] && script.scriptOn >= from && script.scriptOn <= to)
-        .map((script) => ({ id: script.id, scriptOn: script.scriptOn, status: script.status }));
+        .map((script) => ({ id: script.id, scriptOn: script.scriptOn, status: script.status, sceneCount: script.scenes.length }));
       return json({ data: { contents: [], storyScripts: scripts }, meta: { from, to, count: scripts.length } });
     }
     const detail = /\/agencies\/[^/]+\/clients\/([^/]+)$/.exec(url.pathname);

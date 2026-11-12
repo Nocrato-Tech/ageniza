@@ -317,7 +317,13 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     database,
     auth,
     requireClientAccess,
-    ...(media === undefined ? {} : { media: { storage: media.storage, downloadUrlExpirySeconds: media.config.downloadUrlExpirySeconds } })
+    ...(media === undefined ? {} : { media: { storage: media.storage, downloadUrlExpirySeconds: media.config.downloadUrlExpirySeconds } }),
+    ...(config.identityStorage === undefined ? {} : {
+      senderPhoto: {
+        identityStorage: (options.wrapIdentityStorage ?? ((storage) => storage))(createIdentityStorageClient(config.identityStorage))
+      }
+    }),
+    ...(options.contentsClock === undefined ? {} : { now: options.contentsClock })
   };
   const approvalLinks: ApprovalLinkModuleDependencies = {
     database,
