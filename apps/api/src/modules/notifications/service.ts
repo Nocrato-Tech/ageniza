@@ -49,15 +49,15 @@ export const notificationFromRow = (row: NotificationRow): Notification => ({
   destination: destinationOf(row)
 });
 
-const NOTIFICATIONS_OF_AGENCY = `
+const NOTIFICATIONS_OF_PERSON = `
   from public.notifications notification
-  where notification.agency_id = ?::uuid`;
+  where notification.agency_id = ?::uuid
+    and notification.recipient_user_id = app_private.current_user_id()`;
 
 /**
  * One page of the notifications of the person in one agency, the latest first, the id breaking a tie so a page boundary is stable.
- * No filter by person here: the policy of `public.notifications` shows the rows the bound person may read (their own, with the
- * link and the permission of the subject still held) and nothing else, and no route widens it. `count(*) over ()` rides the
- * page's own snapshot.
+ * The person is in the query as well as in the policy: the policy decides what may be read, the predicate lets the recipient index
+ * narrow the scan, and neither depends on the other. `count(*) over ()` rides the page's own snapshot.
  */
 export const listNotifications = async (
   transaction: NotificationTransaction,
@@ -69,7 +69,7 @@ export const listNotifications = async (
   const result = await raw<RawRows<NotificationRow & { readonly total: string | number }>>(transaction, `
     select notification.id, notification.kind, notification.summary, notification.content_id, notification.thread_id,
       notification.client_id, notification.created_at, notification.read_at, count(*) over () as total
-    ${NOTIFICATIONS_OF_AGENCY}${unread}
+    ${NOTIFICATIONS_OF_PERSON}${unread}
     order by notification.created_at desc, notification.id desc
     limit ? offset ?
   `, [agencyId, pagination.pageSize, pagination.offset]);
@@ -79,7 +79,7 @@ export const listNotifications = async (
 
   const count = await raw<RawRows<{ total: string | number }>>(
     transaction,
-    `select count(*) as total ${NOTIFICATIONS_OF_AGENCY}${unread}`,
+    `select count(*) as total ${NOTIFICATIONS_OF_PERSON}${unread}`,
     [agencyId]
   );
   return { items: [], totalItems: Number(count.rows[0]?.total ?? 0) };
@@ -88,7 +88,7 @@ export const listNotifications = async (
 export const countUnreadNotifications = async (transaction: NotificationTransaction, agencyId: string): Promise<number> => {
   const result = await raw<RawRows<{ total: string | number }>>(
     transaction,
-    `select count(*) as total ${NOTIFICATIONS_OF_AGENCY}\n    and notification.read_at is null`,
+    `select count(*) as total ${NOTIFICATIONS_OF_PERSON}\n    and notification.read_at is null`,
     [agencyId]
   );
   return Number(result.rows[0]?.total ?? 0);

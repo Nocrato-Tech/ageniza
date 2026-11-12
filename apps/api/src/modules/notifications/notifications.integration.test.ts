@@ -19,6 +19,8 @@ import {
 // Every refusal is checked by the state left in the database, because RLS answers an empty result and the route answers a status.
 const origin = { origin: TEST_APP_PUBLIC_URL };
 const NO_DATABASE_DETAIL = /A00\d\d|deadlock|40P01|40001|42501|22P02|pg_|relation|app_private|injected/i;
+// The request id is a random uuid, whose hex can spell an `A00nn`: only the error is searched for a leak.
+const errorOf = (reply: { json(): { error?: unknown } }): string => JSON.stringify(reply.json().error);
 
 let owner: DatabaseClient;
 let app: TestApp;
@@ -463,7 +465,7 @@ describe('reading one notification', () => {
     expectNotFound(missing, 'Notification not found.');
     expect(missing.json().error).toEqual(another.json().error);
     expect(await unreadOf(users.rita!.id)).toBe(before);
-    expect(missing.body).not.toMatch(NO_DATABASE_DETAIL);
+    expect(errorOf(missing)).not.toMatch(NO_DATABASE_DETAIL);
   });
 
   it.each(['not-a-uuid', '123', 'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz', '%27%3Bselect%201', '00000000-0000-0000-0000-00000000000g'])(
@@ -475,7 +477,7 @@ describe('reading one notification', () => {
 
       expect(reply.statusCode).toBe(400);
       expect(reply.json().error.code).toBe('VALIDATION_ERROR');
-      expect(reply.body).not.toMatch(NO_DATABASE_DETAIL);
+      expect(errorOf(reply)).not.toMatch(NO_DATABASE_DETAIL);
       expect(await unreadOf(users.rita!.id)).toBe(4);
       expect(await readAtOf(ids.approved)).toBeNull();
     }
@@ -614,7 +616,7 @@ describe('the pages of the list', () => {
 
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error.code).toBe('VALIDATION_ERROR');
-    expect(reply.body).not.toMatch(NO_DATABASE_DETAIL);
+    expect(errorOf(reply)).not.toMatch(NO_DATABASE_DETAIL);
   });
 });
 
@@ -673,7 +675,7 @@ describe('what the database raises under the routes', () => {
           ['read-all', await call('POST', readAllUrl(agencyA), 'rita')]
         ] as const) {
           expect({ name, status: reply.statusCode, code: reply.json().error.code }).toEqual({ name, status, code: errorCode });
-          expect(reply.body).not.toMatch(NO_DATABASE_DETAIL);
+          expect(errorOf(reply)).not.toMatch(NO_DATABASE_DETAIL);
         }
       });
       expect(await unreadOf(users.rita!.id)).toBe(4);
@@ -691,5 +693,47 @@ describe('the unread count', () => {
     expect((await call('GET', countUrl(agencyA), 'rita')).json()).toEqual({ data: { count: 3 } });
     await call('POST', readAllUrl(agencyA), 'rita');
     expect((await call('GET', countUrl(agencyA), 'rita')).json()).toEqual({ data: { count: 0 } });
+  });
+});
+
+describe('the person in the query, apart from the policy', () => {
+  // The policy is made as permissive as the agency alone: whatever the routes return now, their own predicate decided it.
+  const withPolicyOpenedToTheAgency = async (run: () => Promise<void>): Promise<void> => {
+    const policy = (await owner.knex.raw(
+      `select qual from pg_policies where schemaname = 'public' and tablename = 'notifications' and policyname = 'notifications_select'`
+    )).rows[0]?.qual as string | undefined;
+    expect(policy).toContain('notification_is_readable');
+    await owner.knex.raw('alter policy notifications_select on public.notifications using (true)');
+    try {
+      await run();
+    } finally {
+      await owner.knex.raw(`alter policy notifications_select on public.notifications using (${policy!})`);
+    }
+  };
+
+  it('still gives Tom only his own, in the list, in the total past the last page and in the unread count, though the policy would show him the whole agency', async () => {
+    const { ids, tom } = await seedTheTeam();
+
+    await withPolicyOpenedToTheAgency(async () => {
+      expect(await owner.knex('notifications').where({ agency_id: agencyA }).count<{ count: string }[]>('id as count')).toEqual([{ count: '6' }]);
+
+      const list = await call('GET', listUrl(agencyA), 'tom');
+      expect({ ids: idsOf(list), meta: list.json().meta }).toEqual({ ids: [tom], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } });
+      const unreadList = await call('GET', listUrl(agencyA, '?unread=true'), 'tom');
+      expect({ ids: idsOf(unreadList), meta: unreadList.json().meta }).toEqual({ ids: [tom], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } });
+
+      expect((await call('GET', listUrl(agencyA, '?page=2'), 'tom')).json()).toEqual({ data: [], meta: { page: 2, pageSize: 20, totalItems: 1, totalPages: 1 } });
+      expect((await call('GET', listUrl(agencyA, '?page=2&unread=true'), 'tom')).json()).toEqual({ data: [], meta: { page: 2, pageSize: 20, totalItems: 1, totalPages: 1 } });
+
+      expect((await call('GET', countUrl(agencyA), 'tom')).json()).toEqual({ data: { count: 1 } });
+
+      for (const as of ['owner', 'admin']) {
+        expect({ as, ids: idsOf(await call('GET', listUrl(agencyA), as)) }).toEqual({ as, ids: [] });
+        expect({ as, count: (await call('GET', countUrl(agencyA), as)).json() }).toEqual({ as, count: { data: { count: 0 } } });
+      }
+      expect(idsOf(await call('GET', listUrl(agencyA), 'rita'))).toEqual([ids.deadline, ids.invitation, ids.material, ids.changes, ids.approved]);
+    });
+
+    expect((await call('GET', listUrl(agencyA), 'owner')).json().data).toEqual([]);
   });
 });

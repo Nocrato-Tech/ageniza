@@ -19,8 +19,10 @@ Todas sob `requireSession` e `requireAgencyAccess`, sem permissão própria: bas
 ## Onde cada regra mora
 
 - **Quem lê o quê é da policy.** A lista e a contagem são `SELECT` em `public.notifications` sob a policy, que confere a cada leitura o
-  destinatário, o vínculo ativo e a permissão do assunto. A rota filtra só a agência da URL (a policy deixaria a pessoa de duas agências
-  ver as linhas de ambas) e não repete o filtro da pessoa. Quem só tem vínculo com um cliente, ou é de outra agência, não passa do guard
+  destinatário, o vínculo ativo e a permissão do assunto. A rota filtra a agência da URL (a policy deixaria a pessoa de duas agências
+  ver as linhas de ambas) **e** a pessoa (`recipient_user_id = app_private.current_user_id()`), nas três consultas: sem ela o plano
+  varre as notificações da agência inteira, deixa os índices por destinatário sem uso, e a rota passa a depender só da policy. Os dois
+  filtros ficam, cada um com o seu teste. Quem só tem vínculo com um cliente, ou é de outra agência, não passa do guard
   (`404 Agency not found.`); Owner e Admin leem as próprias, nunca as dos outros.
 - **Marcar é do banco.** `app_private.read_notification` devolve `false` para o que não é da pessoa (`404`) e `read_all_notifications`
   devolve quantas marcou. A rota decide pelo que a função devolveu, nunca por uma leitura antes dela. O instante da leitura é do banco
