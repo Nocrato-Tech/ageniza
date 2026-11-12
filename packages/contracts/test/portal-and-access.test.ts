@@ -20,21 +20,29 @@ const portalClient = {
   legalName: null,
   taxId: null,
   segment: null,
+  city: null,
   website: null,
   instagramHandle: null,
   contactName: null,
   contactPhone: null,
   contactEmail: null,
   closingDate: null,
+  createdAt: '2026-03-10T12:00:00.000Z',
   archivedAt: null,
   agencyName: 'Agência Exemplo',
   onboardingSeenAt: null,
   agencyReadOnly: false,
-  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0, contentsAwaitingApproval: 0 }
+  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0, contentsAwaitingApproval: 0, materialRequestsOpen: 0 }
 };
 
+const without = (value: object, key: string): object => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
+
 const section = { key: 'branding', body: null, colors: null, archetype: null, updatedAt: null };
-const persona = { id, name: 'Dona Maria', description: null, pains: null, desires: null, objections: null, status: 'active', updatedAt: '2026-10-07T12:00:00.000Z' };
+const persona = {
+  id, name: 'Dona Maria', description: null, pains: null, desires: null, objections: null,
+  age: null, occupation: null, location: null, traits: [], whereTheyAre: null, toneThatWorks: null,
+  status: 'active', updatedAt: '2026-10-07T12:00:00.000Z'
+};
 
 describe('PortalClientResponseSchema (issue #129)', () => {
   it('serves an active client and refuses one that is archived or carries an extra field', () => {
@@ -43,11 +51,23 @@ describe('PortalClientResponseSchema (issue #129)', () => {
       { ...portalClient, status: 'archived' },
       { ...portalClient, archivedAt: '2026-10-07T12:00:00.000Z' },
       { ...portalClient, updatedBy: id },
-      { ...portalClient, home: { threadsAnsweredByAgency: -1, brandStudyFilled: 0, contentsAwaitingApproval: 0 } },
-      { ...portalClient, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0, contentsAwaitingApproval: -1 } },
+      { ...portalClient, home: { ...portalClient.home, threadsAnsweredByAgency: -1 } },
+      { ...portalClient, home: { ...portalClient.home, contentsAwaitingApproval: -1 } },
       { ...portalClient, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0 } },
-      { ...portalClient, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 8, contentsAwaitingApproval: 0 } }
+      { ...portalClient, home: { ...portalClient.home, brandStudyFilled: 8 } },
+      { ...portalClient, home: { ...portalClient.home, materialRequestsOpen: -1 } },
+      { ...portalClient, home: { ...portalClient.home, materialRequestsOpen: 1.5 } },
+      { ...portalClient, home: without(portalClient.home, 'materialRequestsOpen') }
     ]) {
+      expect(PortalClientResponseSchema.safeParse(response).success, JSON.stringify(response).slice(0, 80)).toBe(false);
+    }
+  });
+
+  it('carries the city and "cliente desde", and the count of open requests for material of the own client', () => {
+    expect(PortalClientResponseSchema.parse({ ...portalClient, city: 'Campinas', home: { ...portalClient.home, materialRequestsOpen: 3 } })).toMatchObject({
+      city: 'Campinas', createdAt: '2026-03-10T12:00:00.000Z', home: { materialRequestsOpen: 3 }
+    });
+    for (const response of [without(portalClient, 'city'), without(portalClient, 'createdAt'), { ...portalClient, createdAt: 'março' }]) {
       expect(PortalClientResponseSchema.safeParse(response).success, JSON.stringify(response).slice(0, 80)).toBe(false);
     }
   });

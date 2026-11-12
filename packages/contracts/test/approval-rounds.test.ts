@@ -12,6 +12,7 @@ import {
   ContentSchema,
   CreateThreadRequestSchema,
   MaterialRequestListResponseSchema,
+  isMaterialRequestOverdue,
   PortalContentOpenDetailSchema,
   PortalContentOpenListItemSchema,
   PortalCreateThreadRequestSchema,
@@ -286,9 +287,34 @@ describe('the last entrance of a person of the portal, as the agency reads it', 
 describe('the request for material as a subject of the conversation of the client', () => {
   const material = { materialRequest: true };
 
-  it('opens with materialRequest alone, with or without a deadline', () => {
-    expect(CreateThreadRequestSchema.parse({ subject: material, body: 'Envie 3 fotos da equipe' })).toEqual({ subject: material, body: 'Envie 3 fotos da equipe' });
-    expect(CreateThreadRequestSchema.parse({ subject: material, body: 'x', dueOn: '2026-11-20' })).toEqual({ subject: material, body: 'x', dueOn: '2026-11-20' });
+  it('opens with materialRequest alone and a title, with or without a deadline', () => {
+    expect(CreateThreadRequestSchema.parse({ subject: material, title: 'Fotos da equipe', body: 'Envie 3 fotos da equipe' }))
+      .toEqual({ subject: material, title: 'Fotos da equipe', body: 'Envie 3 fotos da equipe' });
+    expect(CreateThreadRequestSchema.parse({ subject: material, title: 'Fotos', body: 'x', dueOn: '2026-11-20' }))
+      .toEqual({ subject: material, title: 'Fotos', body: 'x', dueOn: '2026-11-20' });
+  });
+
+  it('needs a title for a request, and takes it as one trimmed visible line of up to 80 characters', () => {
+    const body = { subject: material, body: 'x' };
+    const missing = CreateThreadRequestSchema.safeParse(body);
+    expect(missing.success).toBe(false);
+    if (!missing.success) expect(missing.error.issues.map((issue) => issue.path)).toEqual([['title']]);
+
+    expect(CreateThreadRequestSchema.parse({ ...body, title: '  Logo da marca  ' }).title).toBe('Logo da marca');
+    expect(CreateThreadRequestSchema.parse({ ...body, title: 'a'.repeat(80) }).title).toHaveLength(80);
+    expect(CreateThreadRequestSchema.parse({ ...body, title: 'ç'.repeat(80) }).title).toHaveLength(80);
+    for (const title of [null, '', '   ', 5, ['Fotos'], 'a'.repeat(81), 'a'.repeat(501), 'Duas\nlinhas', 'Com\ttab', text(0x41, 0x07), text(0x41, 0x00), text(0x41, 0x85), text(0x41, 0x200b), text(0x41, 0x202e), '!!!']) {
+      expect(CreateThreadRequestSchema.safeParse({ ...body, title }).success, JSON.stringify(title)).toBe(false);
+    }
+  });
+
+  it('refuses a title for any other subject, and a title on its own is not a request', () => {
+    for (const subject of [{ sectionKey: 'branding' }, { personaId }, { contentId }]) {
+      const result = CreateThreadRequestSchema.safeParse({ subject, body: 'x', title: 'Fotos' });
+      expect(result.success, JSON.stringify(subject)).toBe(false);
+      if (!result.success) expect(result.error.issues[0]?.path).toEqual(['title']);
+    }
+    expect(PortalCreateThreadRequestSchema.safeParse({ subject: { contentId }, body: 'x', title: 'Fotos' }).success).toBe(false);
   });
 
   it('is exactly one subject: it never joins another one, and is never false', () => {
@@ -301,7 +327,7 @@ describe('the request for material as a subject of the conversation of the clien
       { materialRequest: 1 },
       { materialRequest: true, extra: true }
     ]) {
-      expect(CreateThreadRequestSchema.safeParse({ subject, body: 'x' }).success, JSON.stringify(subject)).toBe(false);
+      expect(CreateThreadRequestSchema.safeParse({ subject, title: 'Fotos', body: 'x' }).success, JSON.stringify(subject)).toBe(false);
     }
   });
 
@@ -348,23 +374,40 @@ describe('the request for material as a subject of the conversation of the clien
     commentCount: 1,
     resolvedBy: null,
     resolvedAt: null,
-    dueOn: '2026-11-20'
+    dueOn: '2026-11-20',
+    title: 'Fotos da equipe'
   };
 
-  it('is read in a thread with its deadline, which every thread carries as a day or null', () => {
+  it('is read in a thread with its deadline and its title, each a value or null on every thread', () => {
     expect(ThreadSchema.safeParse(thread).success).toBe(true);
     expect(ThreadSchema.safeParse({ ...thread, dueOn: null }).success).toBe(true);
+    expect(ThreadSchema.safeParse({ ...thread, title: null }).success).toBe(true);
     expect(ThreadSchema.safeParse(without(thread, 'dueOn')).success).toBe(false);
+    expect(ThreadSchema.safeParse(without(thread, 'title')).success).toBe(false);
+    expect(ThreadSchema.safeParse({ ...thread, title: 5 }).success).toBe(false);
     expect(ThreadSchema.safeParse({ ...thread, subject: { materialRequest: true, contentId } }).success).toBe(false);
   });
 
-  it('lists the open requests of the client in the standard envelope', () => {
-    const request = { threadId: uuid(1), body: 'Envie 3 fotos da equipe', dueOn: '2026-11-20', createdAt: SENT_AT, state: 'open' };
+  it('lists the open requests of the client in the standard envelope, with the title that may be null for an old one', () => {
+    const request = { threadId: uuid(1), title: 'Fotos da equipe', body: 'Envie 3 fotos da equipe', dueOn: '2026-11-20', createdAt: SENT_AT, state: 'open' };
     const meta = { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 };
     expect(MaterialRequestListResponseSchema.safeParse({ data: [request], meta }).success).toBe(true);
     expect(MaterialRequestListResponseSchema.safeParse({ data: [{ ...request, dueOn: null }], meta }).success).toBe(true);
-    for (const item of [{ ...request, state: 'closed' }, { ...request, createdAt: 'ontem' }, { ...request, openedBy: 'Ana' }, { threadId: request.threadId }]) {
+    expect(MaterialRequestListResponseSchema.safeParse({ data: [{ ...request, title: null }], meta }).success).toBe(true);
+    for (const item of [
+      { ...request, state: 'closed' }, { ...request, createdAt: 'ontem' }, { ...request, openedBy: 'Ana' }, { threadId: request.threadId },
+      without(request, 'title'), { ...request, title: 5 }
+    ]) {
       expect(MaterialRequestListResponseSchema.safeParse({ data: [item], meta }).success, JSON.stringify(item)).toBe(false);
     }
+  });
+
+  it('is overdue when the day of its deadline passed and nobody resolved it, and never without a deadline', () => {
+    expect(isMaterialRequestOverdue({ dueOn: '2026-11-10', state: 'open' }, '2026-11-11')).toBe(true);
+    expect(isMaterialRequestOverdue({ dueOn: '2026-11-11', state: 'open' }, '2026-11-11')).toBe(false);
+    expect(isMaterialRequestOverdue({ dueOn: '2026-11-12', state: 'open' }, '2026-11-11')).toBe(false);
+    expect(isMaterialRequestOverdue({ dueOn: '2026-11-10', state: 'resolved' }, '2026-11-11')).toBe(false);
+    expect(isMaterialRequestOverdue({ dueOn: null, state: 'open' }, '2026-11-11')).toBe(false);
+    expect(isMaterialRequestOverdue({ dueOn: '2025-12-31', state: 'open' }, '2026-01-01')).toBe(true);
   });
 });

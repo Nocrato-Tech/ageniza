@@ -2,9 +2,11 @@ import { z } from 'zod';
 
 import { AuthEmailSchema } from './auth.js';
 import { createDisplayNameSchema } from './display-name.js';
+import { hasInvisibleCharacters } from './invisible-characters.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
 import { PROFILE_PHOTO_MAX_BASE64_LENGTH } from './profile.js';
 import { SearchTextSchema } from './search.js';
+import { hasHiddenStoryCharacters } from './story-scripts.js';
 
 /**
  * Client (specs/clientes.md section 3). `name` is the only required field and the only one a POST
@@ -67,6 +69,37 @@ const nullableDisplayText = (maxChars: number, maxBytes: number) =>
       z.null(),
       createDisplayNameSchema(maxChars).refine((value) => utf8ByteLength(value) <= maxBytes, `must be at most ${maxBytes} bytes`)
     ]))
+    .nullable();
+
+/**
+ * One line of free text a person reads (a city, an occupation, a trait, the title of a request): the display-name rule with the emoji
+ * sequences whole, and none of the invisible characters of `hasInvisibleCharacters`, the one rule of every free text of the product.
+ */
+export const createVisibleLineSchema = (maxChars: number) =>
+  createDisplayNameSchema(maxChars, { emojiSequences: true })
+    .refine((value) => !hasInvisibleCharacters(value), 'must not contain control or invisible characters');
+
+/** A nullable visible line: empty or whitespace-only is `null`, never `''`. */
+const nullableVisibleLine = (maxChars: number) =>
+  z.string()
+    .transform((value) => value.trim())
+    .transform((value) => (value === '' ? null : value))
+    .pipe(z.union([z.null(), createVisibleLineSchema(maxChars)]))
+    .nullable();
+
+/** Counted in characters (code points), which is what the column check counts; a surrogate pair is one. */
+const characterCount = (value: string): number => Array.from(value).length;
+
+/**
+ * A nullable short text that may break lines: the same rule of hidden characters as the comments and the story scripts (a line break
+ * stays), trimmed, empty is `null`, at most `maxChars` characters.
+ */
+const nullableVisibleText = (maxChars: number) =>
+  z.string()
+    .refine((value) => !hasHiddenStoryCharacters(value), 'must not contain control or invisible characters')
+    .transform((value) => value.trim())
+    .transform((value) => (value === '' ? null : value))
+    .pipe(z.union([z.null(), z.string().refine((value) => characterCount(value) <= maxChars, `must be at most ${maxChars} characters`)]))
     .nullable();
 
 /** ZWJ/ZWNJ between two Latin letters (marks allowed before the joiner) only forge a lookalike of another name. */
@@ -148,9 +181,13 @@ export const ClientContactEmailSchema = AuthEmailSchema.refine(
 
 export const ClientStatusSchema = z.enum(['active', 'archived']);
 
-/** Body of `POST /agencies/:agencyId/clients`: the name, and nothing else. */
+/** The city of the registration (decision 2026-11-11): one visible line of up to 80 characters, `null` or empty to clear. */
+export const ClientCitySchema = nullableVisibleLine(80);
+
+/** Body of `POST /agencies/:agencyId/clients`: the name, and the city when the agency already has it. */
 export const CreateClientRequestSchema = z.object({
-  name: ClientNameSchema
+  name: ClientNameSchema,
+  city: ClientCitySchema.optional()
 }).strict();
 
 /**
@@ -162,6 +199,7 @@ export const UpdateClientRequestSchema = z.object({
   legalName: nullableDisplayText(256, 256).optional(),
   taxId: ClientTaxIdSchema.nullable().optional(),
   segment: nullableTrimmedText(120).optional(),
+  city: ClientCitySchema.optional(),
   website: ClientWebsiteSchema.nullable().optional(),
   instagramHandle: ClientInstagramHandleSchema.nullable().optional(),
   contactName: nullableDisplayText(256, 256).optional(),
@@ -200,12 +238,15 @@ export const ClientSchema = z.object({
   legalName: z.string().nullable(),
   taxId: z.string().nullable(),
   segment: z.string().nullable(),
+  city: z.string().nullable(),
   website: z.string().nullable(),
   instagramHandle: z.string().nullable(),
   contactName: z.string().nullable(),
   contactPhone: z.string().nullable(),
   contactEmail: z.string().nullable(),
   closingDate: z.string().nullable(),
+  /** When the registration was created: "cliente desde <mês e ano>" (decision 2026-11-11). It is not the start of the contract. */
+  createdAt: z.string().datetime(),
   archivedAt: z.string().nullable()
 }).strict();
 
@@ -222,13 +263,39 @@ export const UploadClientPhotoResponseSchema = z.object({
   photoUrl: z.string().url()
 }).strict();
 
-/** The General tab summary (specs/clientes.md section 6). */
+/**
+ * A person who works on the client, as the avatar row of the profile shows them (decision 2026-11-11): the link to the agency (the only id
+ * of a collaborator the API gives, as in Conteúdo), the name and the photo. Never an e-mail, a phone or a user id.
+ */
+export const ClientWorkerSchema = z.object({
+  membershipId: z.string().uuid(),
+  name: z.string(),
+  photoUrl: z.string().nullable()
+}).strict();
+
+/**
+ * The General tab summary (specs/clientes.md section 6) and the counts the tabs of the profile carry.
+ *
+ * `contentsThisMonth`, `mediaFiles`, `mediaFolders`, `workers` and `workersMore` are Conteúdo's rows, so they exist only for a caller who
+ * holds `conteudo.visualizar`: they are **omitted, never zeroed**, for one who does not, because a zero would tell the screen that nothing
+ * is there (issues #125 and #261). `activePortalMembers` is the count of the Acessos tab, as it was.
+ */
 export const ClientSummarySchema = z.object({
   /** Filled brand-study sections, 0..7; `personas` counts when at least one persona is active. */
   brandStudyFilled: z.number().int().min(0).max(7),
   threadsAwaitingAgency: z.number().int().nonnegative(),
   threadsAnsweredByAgency: z.number().int().nonnegative(),
-  activePortalMembers: z.number().int().nonnegative()
+  activePortalMembers: z.number().int().nonnegative(),
+  /** Contents of the client planned in the current month (day of São Paulo), cancelled ones left out. */
+  contentsThisMonth: z.number().int().nonnegative().optional(),
+  /** Files in the client's media library: confirmed and not removed. */
+  mediaFiles: z.number().int().nonnegative().optional(),
+  /** Folders of the client's media library, the default ones included. */
+  mediaFolders: z.number().int().nonnegative().optional(),
+  /** "Quem trabalha neste cliente": the people in charge of the client's open contents, the one with most contents first. */
+  workers: z.array(ClientWorkerSchema).optional(),
+  /** The "+N" of the avatar row: people in charge beyond the ones in `workers`. */
+  workersMore: z.number().int().nonnegative().optional()
 }).strict();
 
 /** `GET` detail: the full registration plus the General tab summary. */
@@ -371,12 +438,38 @@ export const PersonaNameSchema = z.string()
   .transform((value) => value.trim())
   .pipe(z.string().min(1, 'must not be empty').refine((value) => utf8ByteLength(value) <= 120, 'must be at most 120 bytes'));
 
+/**
+ * The profile of a persona (decision 2026-11-11): all of it optional, and a persona without it is as valid as before. The age is a
+ * whole number from 1 to 120; the occupation and the place are one line of up to 80 characters; "onde está" and "tom que funciona" are
+ * up to 280 characters and may break lines; the traits are up to 5 chips of up to 24 characters. These are text about an audience, not data
+ * of a person: the form tells the agency not to type a real person's data.
+ */
+export const PersonaAgeSchema = z.number().int().min(1).max(120);
+export const PERSONA_TRAITS_MAX = 5;
+export const PERSONA_TRAIT_MAX_LENGTH = 24;
+
+export const PersonaTraitSchema = createVisibleLineSchema(PERSONA_TRAIT_MAX_LENGTH)
+  .refine((value) => !hasLoneSurrogate(value), 'must not contain a lone surrogate');
+
+/** An empty list clears the traits. */
+export const PersonaTraitsSchema = z.array(PersonaTraitSchema).max(PERSONA_TRAITS_MAX);
+
+const personaProfileFields = {
+  age: PersonaAgeSchema.nullable().optional(),
+  occupation: nullableVisibleLine(80).optional(),
+  location: nullableVisibleLine(80).optional(),
+  traits: PersonaTraitsSchema.optional(),
+  whereTheyAre: nullableVisibleText(280).optional(),
+  toneThatWorks: nullableVisibleText(280).optional()
+};
+
 export const CreatePersonaRequestSchema = z.object({
   name: PersonaNameSchema,
   description: boundedMultilineText(5000).nullable().optional(),
   pains: boundedMultilineText(5000).nullable().optional(),
   desires: boundedMultilineText(5000).nullable().optional(),
-  objections: boundedMultilineText(5000).nullable().optional()
+  objections: boundedMultilineText(5000).nullable().optional(),
+  ...personaProfileFields
 }).strict();
 
 /** A PATCH with no field would only touch `updated_by`; an empty body is refused instead. */
@@ -385,7 +478,8 @@ export const UpdatePersonaRequestSchema = z.object({
   description: boundedMultilineText(5000).nullable().optional(),
   pains: boundedMultilineText(5000).nullable().optional(),
   desires: boundedMultilineText(5000).nullable().optional(),
-  objections: boundedMultilineText(5000).nullable().optional()
+  objections: boundedMultilineText(5000).nullable().optional(),
+  ...personaProfileFields
 }).strict().refine((value) => Object.keys(value).length > 0, 'at least one field must be provided');
 
 /** Who last saved a section or persona, resolved through the agency membership, never `auth."user"` alone. */
@@ -411,6 +505,13 @@ export const PersonaSchema = z.object({
   pains: z.string().nullable(),
   desires: z.string().nullable(),
   objections: z.string().nullable(),
+  age: z.number().int().nullable(),
+  occupation: z.string().nullable(),
+  location: z.string().nullable(),
+  /** Always a list: a persona with no traits has an empty one. */
+  traits: z.array(z.string()),
+  whereTheyAre: z.string().nullable(),
+  toneThatWorks: z.string().nullable(),
   status: z.enum(['active', 'archived']),
   updatedBy: BrandStudyUpdatedBySchema.nullable(),
   updatedAt: z.string().nullable()
@@ -433,6 +534,8 @@ export const PortalHomeSchema = z.object({
   contentsAwaitingApproval: z.number().int().nonnegative(),
   /** Open threads whose latest comment is the agency's, on subjects the portal can read. */
   threadsAnsweredByAgency: z.number().int().nonnegative(),
+  /** Requests for material the agency opened and nobody resolved: the count of "Pedidos da agência" in the portal navigation. */
+  materialRequestsOpen: z.number().int().nonnegative(),
   brandStudyFilled: z.number().int().min(0).max(7)
 }).strict();
 

@@ -22,8 +22,12 @@ de RLS da tabela também exige:
 
 As quatro rotas de encerrar, arquivar e reativar o cliente têm a sua seção, abaixo.
 
-O `POST` aceita só `{ name }`. O `PATCH` aceita qualquer subconjunto dos campos de cadastro da
+O `POST` aceita `{ name }` e, opcional, `city`. O `PATCH` aceita qualquer subconjunto dos campos de cadastro da
 seção 3 da SPEC, e `null` limpa um campo. Contratos em `packages/contracts/src/clients.ts`.
+
+`city` (decisão `2026-11-11`) é uma linha de até 80 caracteres, aparada, sem quebra de linha nem caractere
+invisível; vazio vira `null`. O limite e a regra de texto estão também no banco (`clients_city_check`,
+`app_private.display_text_valid`), e `created_at` sai no detalhe como "cliente desde".
 
 Nome, razão social e contatos usam a regra compartilhada de nome de exibição
 (`createDisplayNameSchema`, issue #200): recusam caractere de controle, invisível de formato e
@@ -47,6 +51,17 @@ texto em branco vira `null` em vez de string vazia.
 `GET` devolve o cadastro completo mais o resumo da aba Geral: `brandStudyFilled` (0 a 7, com
 `personas` contando quando há ao menos uma ativa), `threadsAwaitingAgency`, `threadsAnsweredByAgency`
 e `activePortalMembers`.
+
+Para quem é Owner ou tem `conteudo.visualizar` o resumo traz também as abas e "quem trabalha neste cliente"
+(decisão `2026-11-11`); para os demais os campos são **omitidos, não zerados**, e nada disso é consultado:
+
+- `contentsThisMonth`: conteúdos do cliente com `publish_on` no mês corrente de America/Sao_Paulo, sem os cancelados.
+  `mediaFiles`: arquivos confirmados e não removidos. `mediaFolders`: as pastas do cliente, as padrão inclusive.
+  Tudo por SQL daqui (`loadClientTabCounts`): o módulo não importa os de mídia e de conteúdo.
+- `workers`/`workersMore`: as pessoas responsáveis pelos conteúdos **abertos** do cliente (os estados da definição única de
+  conteúdo aberto), a com mais conteúdos primeiro e depois por nome, no máximo cinco, e `workersMore` diz quantas ficaram
+  de fora. Derivado do dono do conteúdo, nunca atribuído. Cada uma vem como `membershipId` (o vínculo ativo com **esta**
+  agência), nome e foto assinada; nunca o e-mail nem o id da conta. Dono sem vínculo não aparece.
 
 A definição de thread aberta, "aguardando a agência" e "com resposta da agência" vive **uma vez só**
 em `thread-state.ts`, exportada: é o mesmo critério que a listagem (#125), o portal (#129) e as
@@ -135,6 +150,10 @@ inglês no contrato e é gravado com o rótulo em português, como o banco exige
   `auth."user"` solto; a RLS ainda fixa `updated_by` no usuário da sessão no `INSERT` e no `UPDATE`.
 - O `filled` (0 a 7) vem da mesma consulta do resumo do detalhe: `personas` conta quando há ao menos
   uma ativa, e o portal verá só as ativas — a agência vê as arquivadas também.
+- A persona tem ainda o perfil (decisão `2026-11-11`), todo opcional no `POST` e no `PATCH`: `age` (inteiro de 1 a 120),
+  `occupation` e `location` (uma linha, até 80), `traits` (até 5 de até 24, cada uma uma linha visível; `[]` limpa),
+  `whereTheyAre` e `toneThatWorks` (até 280, podem quebrar linha). Texto vazio vira `null`. Os limites estão também nas
+  CHECK da tabela, e o gatilho que trava a persona arquivada lista as seis colunas novas.
 - Persona de outro cliente — da mesma agência ou não — é o mesmo `404`, e todo `:personaId`
   malformado também; o `PATCH`/`archive`/`unarchive` filtram por `client_id`.
 - Cliente arquivado responde `409` em toda escrita, inclusive quando o arquivamento acontece entre
@@ -223,7 +242,8 @@ As mesmas rotas aceitam `contentId` como assunto (`{ subject: { contentId }, bod
 
 ### O pedido de material (decisão `2026-11-10-estrutural-pedido-de-material-e-assunto-proprio-da-conversa-do-cliente`)
 
-Um assunto a mais da conversa do cliente, `{ materialRequest: true }`, com prazo opcional (`dueOn`). Não há rota de
+Um assunto a mais da conversa do cliente, `{ materialRequest: true }`, com **título** obrigatório (`title`, uma linha de até
+80 caracteres, aparada) e prazo opcional (`dueOn`). Não há rota de
 abertura própria: é a mesma `POST …/threads`, porque o pedido é uma conversa (primeiro comentário, estado derivado,
 resolver, reabrir por comentário) e uma rota paralela repetiria essas regras.
 
@@ -234,13 +254,21 @@ resolver, reabrir por comentário) e uma rota paralela repetiria essas regras.
   `client_threads_due_on_check` (`400` no campo `dueOn`), e quem recusa a data fora de hoje a 90 dias em São Paulo é a
   função `A0120` (`400` no campo `dueOn`). `materialRequestDatabaseRefusal` lê os três erros; o schema do corpo só
   antecipa os dois primeiros.
+- **O título** vai no `INSERT` e é só do pedido: `title` em outro assunto é `400`, e `title` ausente ou em branco num pedido
+  também (`client_threads_title_request_check` e `client_threads_title_check` no banco; o `INSERT` é a única escrita, a
+  coluna não tem `UPDATE`). A conversa antiga e a de outro assunto têm `title` `null`.
+- **O portal não sabe quem da agência abriu ou respondeu** (decisão `2026-11-11`, item 4): num pedido de material, o
+  `openedBy.name` e o `resolvedBy.name` voltam `null` e o comentário da agência vem com `author: null`, na leitura e na
+  resposta do `POST`. A agência vê os nomes de sempre.
 - **Permissão**: a do estudo de marca (`cliente.visualizar` para ler, `cliente.operar` para abrir, comentar e resolver).
   A guarda da rota ainda deixa passar quem tem `conteudo.*`; o serviço (`agencyPermissions`) e a RLS seguram o resto.
 - **`GET /clients/:clientId/material-requests`** (portal): os pedidos **abertos** do cliente da rota, com o primeiro
   comentário (`body`), `dueOn` e `createdAt`, o prazo mais próximo primeiro. O filtro por `client_id` está no SQL
   (`listOpenMaterialRequests`) porque a policy deixa a pessoa com vários vínculos, e a colaboradora com vínculo, ler os
   pedidos de todos os clientes. "Aberto" é o estado derivado de sempre (`openThreadSql`): o pedido resolvido sai da lista
-  e um comentário do cliente o traz de volta.
+  e um comentário do cliente o traz de volta. A lista e a contagem do item "Pedidos da agência" do portal
+  (`home.materialRequestsOpen`) saem da mesma definição (`OPEN_MATERIAL_REQUESTS_FROM`, em `thread-state.ts`), para o
+  número e a página dizerem o mesmo.
 - **Decisão de 2026-11-07 intacta**: o pedido não tem conteúdo, então nada que o portal lê aqui é a conversa de um
   conteúdo em produção; o filtro de `loadThreadContext` para conteúdo segue valendo nas rotas de comentário.
 
@@ -255,7 +283,7 @@ resolver, reabrir por comentário) e uma rota paralela repetiria essas regras.
 `portal-service.ts`. O cliente é sempre o que a guarda provou (`request.clientContext`), nunca um valor
 da requisição, e nenhuma consulta daqui lê `auth."user"`: o portal não mostra pessoa nestas rotas.
 
-- **Cadastro**: os mesmos campos do detalhe da agência, somente leitura, com a foto assinada do mesmo
+- **Cadastro**: os mesmos campos do detalhe da agência (a cidade e o "cliente desde" inclusive), somente leitura, com a foto assinada do mesmo
   jeito, o `agencyName` do cabeçalho do portal e `onboardingSeenAt` **do vínculo de quem chama**, lido
   por id de vínculo (outra pessoa do mesmo cliente tem outro valor). `status` e `archivedAt` são
   fixados em `active` e `null` pelo contrato.
@@ -304,14 +332,19 @@ conta com aquele e-mail verificado carrega os contextos (`app_private.link_clien
 
 - **Pessoas**: 20 por página, por nome (o e-mail, enquanto a pessoa não entrou) sem diferenciar maiúsculas nem acento,
   comparado byte a byte (`collate "C"`) com o id do acesso de desempate; `status=active` (padrão) ou `removed`. Item:
-  `accessId`, `name` (nulo até a conta entrar no portal **daquele cliente**), `email` (como foi gravado), `status`, `entered` ("ainda não entrou com a conta"
+  `accessId`, `name` (o nome que a agência digitou, ou nulo, até a conta entrar no portal **daquele cliente**; depois, o nome da conta; a mesma expressão
+  decide o nome mostrado e a ordem), `email` (como foi gravado), `status`, `entered` ("ainda não entrou com a conta"
   quando `false`; só vira `true` na primeira entrada no portal do cliente, e não no vínculo), `lastEnteredAt` e `since`.
   `lastEnteredAt` é `last_entered_at` (decisão `2026-11-10-estrutural-ultimo-acesso-ao-portal-por-cliente`), lido pela mesma
   policy da lista e gravado só pelo banco; ele **pode vir preenchido com `entered: false`**, para quem só abriu o link de
   aprovação (decisão `2026-11-10-quem-so-abriu-o-link-de-aprovacao-ainda-nao-entrou-com-a-conta`), e `entered` continua sendo
   o que libera o reenvio. A consulta parte de `client_portal_accesses` filtrado pelo cliente e pela agência e chega em
-  `auth."user"` só pelo `user_id` do acesso, num `LEFT JOIN`. **Nada na lista diz se um e-mail tem conta.**
-- **Adicionar pessoa**: só o e-mail. Dá o acesso na hora, sem conta e sem aceite, e manda o e-mail de boas-vindas
+  `auth."user"` só pelo `user_id` do acesso, num `LEFT JOIN`. **Nada na lista diz se um e-mail tem conta**: o nome digitado
+  vale até a primeira entrada, a conta existir ou não, e depois da entrada a conta já é conhecida de quem convidou
+  (decisão `2026-11-11`, que revisa a de `2026-10-27` sobre o nome nunca vir da conta antes da entrada).
+- **Adicionar pessoa**: o e-mail e, opcional, `name`, o nome que a agência digita para reconhecer a pessoa (uma linha de até
+  120 caracteres, aparada; vazio é sem nome). O nome fica **no acesso**, nunca na conta: reativar um acesso removido o troca
+  quando um nome vem (sem nome o antigo fica) e um acesso já ativo não grava nada. Dá o acesso na hora, sem conta e sem aceite, e manda o e-mail de boas-vindas
   ("Entrar no portal"). O mesmo e-mail de novo reativa a mesma linha (`409 ACCESS_EXISTS` se já estava ativo). Se a conta
   que tinha o endereço já trocou de e-mail, ela é solta e as sessões dela terminam
   (`2026-10-27-adicionar-pessoa-de-novo-solta-a-conta-que-trocou-de-e-mail`). O e-mail de boas-vindas conta no limite diário

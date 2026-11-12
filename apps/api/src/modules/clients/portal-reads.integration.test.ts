@@ -97,7 +97,7 @@ const sectionOf = (body: { sections: { key: string }[] }, key: string): Record<s
 
 const iso = (value: unknown): string => new Date(value as string).toISOString();
 
-const home = async (cookie: string, clientId = clientHome): Promise<{ threadsAnsweredByAgency: number; brandStudyFilled: number; contentsAwaitingApproval: number }> => {
+const home = async (cookie: string, clientId = clientHome): Promise<{ threadsAnsweredByAgency: number; brandStudyFilled: number; contentsAwaitingApproval: number; materialRequestsOpen: number }> => {
   const response = await call('GET', portalClient(clientId), cookie);
   expect(response.statusCode).toBe(200);
   return response.json().home;
@@ -156,6 +156,7 @@ describe('CLIENTS portal reads (#129)', () => {
         agency_id: agencyA,
         name: `Portal A1 ${clientA1}`,
         legal_name: 'Padaria Central Ltda',
+        city: 'Campinas',
         tax_id: '12345678000190',
         segment: 'Alimentação',
         website: 'https://padariacentral.exemplo.test',
@@ -264,10 +265,12 @@ describe('CLIENTS portal reads (#129)', () => {
         archivedAt: null,
         agencyName: AGENCY_A_NAME,
         onboardingSeenAt: null,
-        home: { threadsAnsweredByAgency: 0, brandStudyFilled: 4 }
+        city: 'Campinas',
+        createdAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT.*Z$/),
+        home: { threadsAnsweredByAgency: 0, brandStudyFilled: 4, materialRequestsOpen: 0 }
       });
       expect(Object.keys(body).sort()).toEqual([
-        'agencyName', 'agencyReadOnly', 'archivedAt', 'closingDate', 'contactEmail', 'contactName', 'contactPhone', 'home', 'id',
+        'agencyName', 'agencyReadOnly', 'archivedAt', 'city', 'closingDate', 'contactEmail', 'contactName', 'contactPhone', 'createdAt', 'home', 'id',
         'instagramHandle', 'legalName', 'name', 'onboardingSeenAt', 'photoUrl', 'segment', 'status', 'taxId', 'website'
       ]);
     });
@@ -377,7 +380,7 @@ describe('CLIENTS portal reads (#129)', () => {
       const threadsOf = (clientId: string): Promise<{ id: string }[]> => owner.knex('client_threads').where({ client_id: clientId }).select('id');
 
       it('counts the open threads the agency answered last, rises on an agency reply and falls on a client comment', async () => {
-        for (const key of ['portalOne', 'dual', 'dualBare']) expect(await home(cookies[key]!), key).toEqual({ threadsAnsweredByAgency: 0, brandStudyFilled: 2, contentsAwaitingApproval: 0 });
+        for (const key of ['portalOne', 'dual', 'dualBare']) expect(await home(cookies[key]!), key).toEqual({ threadsAnsweredByAgency: 0, brandStudyFilled: 2, contentsAwaitingApproval: 0, materialRequestsOpen: 0 });
 
         const opened = await call('POST', `${portalClient(clientHome)}/threads`, cookies.portalOne!, { subject: { sectionKey: 'branding' }, body: 'Posso sugerir algo?' });
         expect(opened.statusCode).toBe(201);
@@ -581,6 +584,12 @@ describe('CLIENTS portal reads (#129)', () => {
         pains: 'Pouco tempo.',
         desires: 'Reconhecimento.',
         objections: 'Preço.',
+        age: null,
+        occupation: null,
+        location: null,
+        traits: [],
+        whereTheyAre: null,
+        toneThatWorks: null,
         status: 'active',
         updatedAt: expect.any(String)
       }]);

@@ -62,8 +62,10 @@ const requestsOf = (clientId: string): string => `/clients/${clientId}/material-
 
 const MATERIAL = { materialRequest: true };
 
-const openRequest = (cookie: string, clientId: string, body = 'Envie 3 fotos da equipe', dueOn?: string, target: FastifyInstance = app.app, agencyId = agencyA): Promise<Reply> =>
-  injectOn(target, 'POST', agencyThreads(agencyId, clientId), cookie, { subject: MATERIAL, body, ...(dueOn === undefined ? {} : { dueOn }) });
+const TITLE = 'Fotos da equipe';
+
+const openRequest = (cookie: string, clientId: string, body = 'Envie 3 fotos da equipe', dueOn?: string, target: FastifyInstance = app.app, agencyId = agencyA, title: unknown = TITLE): Promise<Reply> =>
+  injectOn(target, 'POST', agencyThreads(agencyId, clientId), cookie, { subject: MATERIAL, title, body, ...(dueOn === undefined ? {} : { dueOn }) });
 
 const portalComment = (cookie: string, clientId: string, threadId: string, body = 'Segue o material'): Promise<Reply> =>
   call('POST', `${portalThreads(clientId)}/${threadId}/comments`, cookie, { body });
@@ -293,8 +295,9 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
     it('refuses a deadline that is not a day, or that comes with another subject, before the database is asked', async () => {
       const before = await countThreads(clientA1);
       for (const dueOn of ['2026-02-30', '20261201', 'amanhã', '', 5]) {
-        const refused = await call('POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject: MATERIAL, body: 'x', dueOn });
+        const refused = await call('POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject: MATERIAL, title: TITLE, body: 'x', dueOn });
         expect(refused.statusCode, String(dueOn)).toBe(400);
+        expect(errorOf(refused).details?.issues?.[0]?.path, String(dueOn)).toBe('dueOn');
       }
       for (const subject of [{ sectionKey: 'branding' }, { personaId: randomUUID() }, { contentId: randomUUID() }]) {
         const refused = await call('POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject, body: 'x', dueOn: saoPauloDay(3) });
@@ -306,6 +309,70 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
         expect((await call('POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject, body: 'x' })).statusCode, JSON.stringify(subject)).toBe(400);
       }
       expect(await countThreads(clientA1)).toBe(before);
+    });
+
+    it('keeps the title as one trimmed line, shows it on the thread and on the listing, and is the same title the portal reads', async () => {
+      const client = await newClient('titulo', ['portalOne']);
+      const opened = await openRequest(cookies.admin!, client, 'Envie o logo', undefined, app.app, agencyA, '  Logo da marca  ');
+      expect(opened.statusCode).toBe(201);
+      expect(opened.json().thread).toMatchObject({ subject: MATERIAL, title: 'Logo da marca' });
+      expect(await threadRow(opened.json().thread.id)).toMatchObject({ title: 'Logo da marca', is_material_request: true });
+      const listed = await call('GET', `${agencyThreads(agencyA, client)}?materialRequest=true`, cookies.admin!);
+      expect(listed.json().data).toEqual([expect.objectContaining({ id: opened.json().thread.id, title: 'Logo da marca' })]);
+      expect((await call('GET', requestsOf(client), cookies.portalOne!)).json().data).toEqual([expect.objectContaining({ title: 'Logo da marca', body: 'Envie o logo' })]);
+    });
+
+    it('accepts a title of 80 characters, counted as characters and not as bytes', async () => {
+      const client = await newClient('titulo-limite');
+      for (const title of ['a'.repeat(80), 'ç'.repeat(80), `a${'😀'.repeat(39)}`]) {
+        expect((await openRequest(cookies.admin!, client, 'x', undefined, app.app, agencyA, title)).statusCode, title.slice(0, 4)).toBe(201);
+      }
+      expect(await countThreads(client)).toBe(3);
+    });
+
+    it('refuses a title that is missing, empty, long, in several lines or with a hidden character, with a 400 that names the field and writes nothing', async () => {
+      const before = { threads: await countThreads(clientA1), comments: await countComments(clientA1) };
+      for (const title of [undefined, null, '', '   ', 5, ['Fotos'], 'a'.repeat(81), 'a'.repeat(501), 'ç'.repeat(81), 'Linha um\nlinha dois', 'Tab\taqui', 'Sino\u0007aqui', 'Nulo\u0000aqui', 'Oculto​aqui', 'Controle\u0085aqui']) {
+        const refused = await call('POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject: MATERIAL, body: 'x', ...(title === undefined ? {} : { title }) });
+        expect(refused.statusCode, JSON.stringify(title)?.slice(0, 30)).toBe(400);
+        expect(errorOf(refused).code, JSON.stringify(title)?.slice(0, 30)).toBe('VALIDATION_ERROR');
+        expect(new Set(errorOf(refused).details?.issues?.map((issue) => issue.path)), JSON.stringify(title)?.slice(0, 30)).toEqual(new Set(['title']));
+        expect(JSON.stringify(refused.json())).not.toMatch(NO_DATABASE_DETAIL);
+      }
+      expect({ threads: await countThreads(clientA1), comments: await countComments(clientA1) }).toEqual(before);
+    });
+
+    it('refuses a title on any other subject, because only a request for material has one', async () => {
+      const before = await countThreads(clientA1);
+      for (const subject of [{ sectionKey: 'branding' }, { personaId: randomUUID() }, { contentId: randomUUID() }]) {
+        const refused = await call('POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject, body: 'x', title: TITLE });
+        expect(refused.statusCode, JSON.stringify(subject)).toBe(400);
+        expect(errorOf(refused).details?.issues?.[0]?.path).toBe('title');
+      }
+      expect(await countThreads(clientA1)).toBe(before);
+    });
+
+    it('answers a refusal of the database about the title with the same 400, and never a 500, whatever the route let through', async () => {
+      const before = { threads: await countThreads(clientA1), comments: await countComments(clientA1) };
+
+      const tooLong = await withRewrittenThreadInsert(
+        (bindings) => Object.assign([...bindings], { 5: 'a'.repeat(501) }),
+        (proxied) => injectOn(proxied, 'POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject: MATERIAL, title: TITLE, body: 'x' })
+      );
+      const controlled = await withRewrittenThreadInsert(
+        (bindings) => Object.assign([...bindings], { 5: 'Duas\nlinhas' }),
+        (proxied) => injectOn(proxied, 'POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject: MATERIAL, title: TITLE, body: 'x' })
+      );
+      const onAnotherSubject = await withRewrittenThreadInsert(
+        (bindings) => Object.assign([...bindings], { 5: 'Título solto' }),
+        (proxied) => injectOn(proxied, 'POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject: { sectionKey: 'observations' }, body: 'Uma observação' })
+      );
+      for (const reply of [tooLong, controlled, onAnotherSubject]) {
+        expect(reply.statusCode).toBe(400);
+        expect(errorOf(reply)).toMatchObject({ code: 'VALIDATION_ERROR', details: { issues: [{ path: 'title' }] } });
+        expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+      }
+      expect({ threads: await countThreads(clientA1), comments: await countComments(clientA1) }).toEqual(before);
     });
 
     it('answers a refusal of the database with the same 4xx and never a 500, whatever the route let through', async () => {
@@ -429,7 +496,9 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
       const before = { threads: await countThreads(clientA1), comments: await countComments(clientA1) };
       for (const payload of [
         { subject: MATERIAL, body: 'Eu peço' },
-        { subject: MATERIAL, body: 'Eu peço', dueOn: saoPauloDay(5) },
+        { subject: MATERIAL, title: TITLE, body: 'Eu peço' },
+        { subject: MATERIAL, title: TITLE, body: 'Eu peço', dueOn: saoPauloDay(5) },
+        { subject: { sectionKey: 'observations' }, title: TITLE, body: 'Uma sugestão' },
         { subject: { sectionKey: 'observations' }, body: 'Uma sugestão', dueOn: saoPauloDay(5) }
       ]) {
         const refused = await call('POST', portalThreads(clientA1), cookies[who]!, payload);
@@ -456,7 +525,7 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
       const listFirst = await call('GET', requestsOf(first), cookies.portalMulti!);
       expect(listFirst.statusCode).toBe(200);
       expect(listFirst.json().data).toEqual([{
-        threadId: inFirst, body: 'Pedido do primeiro cliente', dueOn: saoPauloDay(6), createdAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT.*Z$/), state: 'open'
+        threadId: inFirst, title: TITLE, body: 'Pedido do primeiro cliente', dueOn: saoPauloDay(6), createdAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT.*Z$/), state: 'open'
       }]);
       expect(listFirst.json().meta).toEqual({ page: 1, pageSize: 20, totalItems: 1, totalPages: 1 });
       expect(idsOf(await call('GET', requestsOf(second), cookies.portalMulti!))).toEqual([inSecond]);
@@ -565,6 +634,35 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
       }
     });
 
+    it('counts on the home the open requests of that client alone, for whoever reaches it, and the count is the total of the list', async () => {
+      const client = await newClient('contagem-no-inicio', ['portalOne', 'dual']);
+      const other = await newClient('contagem-de-outro', ['dual']);
+      const countOf = async (who: string): Promise<number> => (await call('GET', `/clients/${client}`, cookies[who]!)).json().home.materialRequestsOpen;
+      const listedOf = async (who: string): Promise<number> => (await call('GET', requestsOf(client), cookies[who]!)).json().meta.totalItems;
+      expect(await countOf('portalOne')).toBe(0);
+
+      const first = (await openRequest(cookies.admin!, client, 'Primeiro pedido')).json().thread.id as string;
+      await openRequest(cookies.admin!, client, 'Segundo pedido', saoPauloDay(5));
+      await openRequest(cookies.admin!, other, 'Pedido de outro cliente');
+      const study = randomUUID();
+      await owner.knex('client_threads').insert({ id: study, client_id: client, section_key: 'branding', opened_by: users.admin!.id, opened_side: 'agency' });
+      await owner.knex('client_thread_comments').insert({ thread_id: study, client_id: client, author_user_id: users.admin!.id, author_side: 'agency', body: 'Sugestão do estudo' });
+      for (const who of ['portalOne', 'dual']) {
+        expect(await countOf(who), who).toBe(2);
+        expect(await listedOf(who), who).toBe(2);
+      }
+
+      expect((await resolveAs(cookies.admin!, client, first)).statusCode).toBe(200);
+      for (const who of ['portalOne', 'dual']) expect(await countOf(who), who).toBe(1);
+      expect((await portalComment(cookies.portalOne!, client, first, 'Esqueci uma foto')).statusCode).toBe(201);
+      for (const who of ['portalOne', 'dual']) {
+        expect(await countOf(who), who).toBe(2);
+        expect(await listedOf(who), who).toBe(2);
+      }
+      expect((await call('GET', `/clients/${other}`, cookies.portalOne!)).statusCode).toBe(404);
+      expect((await call('GET', `/clients/${other}`, cookies.dual!)).json().home.materialRequestsOpen).toBe(1);
+    });
+
     it('lists the requests of its own client through the thread listing too, resolved ones included, and never the ones of another client', async () => {
       const own = await newClient('listagem-do-portal', ['portalMulti']);
       const other = await newClient('listagem-de-outro', ['portalMulti']);
@@ -602,6 +700,35 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
       const comments = await call('GET', `${portalThreads(clientA1)}/${request}/comments`, cookies[who]!);
       expect(comments.statusCode).toBe(200);
       expect(comments.json().data.map((item: { side: string }) => item.side)).toEqual(['agency', 'client']);
+    });
+
+    it('never tells the portal who on the agency opened, answered or resolved a request, and tells the agency, with a content thread as the control', async () => {
+      const client = await newClient('sem-nome-da-agencia', ['portalOne']);
+      const request = (await openRequest(cookies.manager!, client, 'Envie o manual da marca')).json().thread.id as string;
+      expect((await call('POST', `${agencyThreads(agencyA, client)}/${request}/comments`, cookies.admin!, { body: 'Pode ser em PDF' })).statusCode).toBe(201);
+      expect((await resolveAs(cookies.admin!, client, request)).statusCode).toBe(200);
+      const answered = await portalComment(cookies.portalOne!, client, request, 'Segue o manual');
+      expect(answered.statusCode).toBe(201);
+      expect(answered.json()).toMatchObject({ side: 'client', author: { name: users.portalOne!.name } });
+
+      const asked = await call('GET', `${portalThreads(client)}?materialRequest=true`, cookies.portalOne!);
+      expect(asked.json().data).toEqual([expect.objectContaining({ id: request, openedBy: { name: null, side: 'agency' }, state: 'open' })]);
+      await resolveAs(cookies.admin!, client, request);
+      const resolved = await call('GET', `${portalThreads(client)}?materialRequest=true`, cookies.portalOne!);
+      expect(resolved.json().data).toEqual([expect.objectContaining({ id: request, openedBy: { name: null, side: 'agency' }, state: 'resolved', resolvedBy: { name: null } })]);
+      const comments = await call('GET', `${portalThreads(client)}/${request}/comments`, cookies.portalOne!);
+      expect(comments.json().data.map((item: { side: string; author: { name: string } | null }) => [item.side, item.author?.name ?? null]))
+        .toEqual([['agency', null], ['agency', null], ['client', users.portalOne!.name]]);
+      const everything = [asked, resolved, comments, answered, await call('GET', requestsOf(client), cookies.portalOne!)].map((reply) => JSON.stringify(reply.json())).join('');
+      expect(everything).not.toMatch(/Marta Gestora|Adriana Admin/);
+
+      const agency = await call('GET', `${agencyThreads(agencyA, client)}?materialRequest=true`, cookies.admin!);
+      expect(agency.json().data[0]).toMatchObject({ openedBy: { name: 'Marta Gestora', side: 'agency' } });
+      expect((await call('GET', `${agencyThreads(agencyA, client)}/${request}/comments`, cookies.admin!)).json().data[0]).toMatchObject({ author: { name: 'Marta Gestora' } });
+
+      const contentId = await seedContent(client, 'awaiting_approval');
+      const content = (await call('POST', agencyThreads(agencyA, client), cookies.manager!, { subject: { contentId }, body: 'Revise a legenda' })).json().thread.id as string;
+      expect((await call('GET', `${portalThreads(client)}/${content}/comments`, cookies.portalOne!)).json().data[0]).toMatchObject({ author: { name: 'Marta Gestora' } });
     });
 
     it('never reaches the request of another client, through the id of the thread, for anybody with a link elsewhere', async () => {

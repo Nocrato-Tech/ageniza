@@ -34,12 +34,14 @@ export interface ClientRow {
   readonly legal_name: string | null;
   readonly tax_id: string | null;
   readonly segment: string | null;
+  readonly city: string | null;
   readonly website: string | null;
   readonly instagram_handle: string | null;
   readonly contact_name: string | null;
   readonly contact_phone: string | null;
   readonly contact_email: string | null;
   readonly closing_date: string | null;
+  readonly created_at: Date;
   readonly archived_at: Date | null;
 }
 
@@ -55,8 +57,8 @@ interface RawRows<TResult> {
 }
 
 const CLIENT_COLUMNS = `
-  id, agency_id, name, status, photo_key, legal_name, tax_id, segment, website, instagram_handle,
-  contact_name, contact_phone, contact_email, closing_date::text as closing_date, archived_at
+  id, agency_id, name, status, photo_key, legal_name, tax_id, segment, city, website, instagram_handle,
+  contact_name, contact_phone, contact_email, closing_date::text as closing_date, created_at, archived_at
 `;
 
 /** Body field -> column, the only columns a PATCH may write. Order fixes the bind order. */
@@ -65,6 +67,7 @@ const UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof UpdateClientRequest, stri
   ['legalName', 'legal_name'],
   ['taxId', 'tax_id'],
   ['segment', 'segment'],
+  ['city', 'city'],
   ['website', 'website'],
   ['instagramHandle', 'instagram_handle'],
   ['contactName', 'contact_name'],
@@ -85,13 +88,13 @@ export const isActiveClientNameConflict = (error: unknown): boolean =>
 
 export const createClient = async (
   transaction: ClientTransaction,
-  input: { readonly agencyId: string; readonly name: string }
+  input: { readonly agencyId: string; readonly name: string; readonly city?: string | null }
 ): Promise<ClientRow> => {
   const result = await raw<RawRows<ClientRow>>(transaction, `
-    insert into public.clients (agency_id, name)
-    values (?::uuid, ?)
+    insert into public.clients (agency_id, name, city)
+    values (?::uuid, ?, ?)
     returning ${CLIENT_COLUMNS}
-  `, [input.agencyId, input.name]);
+  `, [input.agencyId, input.name, input.city ?? null]);
   const row = result.rows[0];
   if (row === undefined) throw new Error('Client insert did not return a row.');
   return row;
@@ -258,6 +261,105 @@ export const loadClientSummary = async (transaction: ClientTransaction, clientId
     threadsAwaitingAgency: Number(row.threads_awaiting_agency),
     threadsAnsweredByAgency: Number(row.threads_answered_by_agency),
     activePortalMembers: Number(row.active_portal_members)
+  };
+};
+
+export interface ClientTabCounts {
+  readonly contentsThisMonth: number;
+  readonly mediaFiles: number;
+  readonly mediaFolders: number;
+}
+
+/**
+ * The counts of the tabs Conteúdos and Mídias, read by SQL here and not through the modules that own those tables (the agency summary
+ * is the client's, and a module imports another only through what it exports). Contents of the month: planned in the current month of
+ * America/Sao_Paulo at `asOf`, cancelled ones left out. Files: confirmed and not removed. Folders: all of the client's, the default
+ * ones included. The policies of `contents`, `media_assets` and `media_folders` answer `conteudo.visualizar` alone, so the route calls
+ * this only for a caller who holds it and omits the fields for one who does not.
+ */
+export const loadClientTabCounts = async (
+  transaction: ClientTransaction,
+  input: { readonly agencyId: string; readonly clientId: string; readonly asOf: Date }
+): Promise<ClientTabCounts> => {
+  const result = await raw<RawRows<{ contents_this_month: string | number; media_files: string | number; media_folders: string | number }>>(transaction, `
+    with month as (
+      select date_trunc('month', app_private.sao_paulo_date(?::timestamptz)::timestamp)::date as first_day
+    )
+    select
+      (
+        select count(*) from public.contents content
+        where content.client_id = ?::uuid
+          and content.status <> 'cancelled'
+          and content.publish_on >= (select first_day from month)
+          and content.publish_on < ((select first_day from month)::timestamp + interval '1 month')::date
+      ) as contents_this_month,
+      (
+        select count(*) from public.media_assets asset
+        join public.clients client on client.id = asset.client_id
+        where asset.client_id = ?::uuid and client.agency_id = ?::uuid
+          and asset.status = 'confirmed' and asset.removed_at is null
+      ) as media_files,
+      (
+        select count(*) from public.media_folders folder
+        join public.clients client on client.id = folder.client_id
+        where folder.client_id = ?::uuid and client.agency_id = ?::uuid
+      ) as media_folders
+  `, [input.asOf.toISOString(), input.clientId, input.clientId, input.agencyId, input.clientId, input.agencyId]);
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('Client tab counts query returned no row.');
+  return {
+    contentsThisMonth: Number(row.contents_this_month),
+    mediaFiles: Number(row.media_files),
+    mediaFolders: Number(row.media_folders)
+  };
+};
+
+/** How many people the avatar row of "quem trabalha neste cliente" shows before the "+N". */
+export const CLIENT_WORKERS_SHOWN = 5;
+
+export interface ClientWorkerRow {
+  readonly membership_id: string;
+  readonly name: string;
+  readonly photo_key: string | null;
+}
+
+export interface ClientWorkers {
+  readonly shown: readonly ClientWorkerRow[];
+  /** The people in charge beyond the ones shown. */
+  readonly more: number;
+}
+
+const OPEN_CONTENT_STATUSES = contentDeadlineSql('current_date').openStatuses;
+
+/**
+ * "Quem trabalha neste cliente" (decision 2026-11-11): derived, never assigned (there is no assignment of a client to a person). They are
+ * the people in charge of the client's open contents (the statuses of the one definition of an open content), the one with most contents
+ * first, then by name. The person is read through the agency link, active, and nothing but the link, the name and the photo key leaves the
+ * query: `auth."user"` has no row-level security, so the link to the client's own agency is what keeps another tenant's name out, and the
+ * e-mail is never selected. An Owner with no link is not named, as in Conteúdo (`ContentPerson`).
+ */
+export const loadClientWorkers = async (
+  transaction: ClientTransaction,
+  input: { readonly agencyId: string; readonly clientId: string }
+): Promise<ClientWorkers> => {
+  const result = await raw<RawRows<ClientWorkerRow & { readonly total: string | number }>>(transaction, `
+    select link.id as membership_id, account.name as name, account.image as photo_key, count(*) over () as total
+    from (
+      select content.owner_user_id, count(*) as owned
+      from public.contents content
+      join public.clients client on client.id = content.client_id
+      where content.client_id = ?::uuid and client.agency_id = ?::uuid and content.status in (${OPEN_CONTENT_STATUSES})
+      group by content.owner_user_id
+    ) owners
+    join public.agency_memberships link on link.agency_id = ?::uuid and link.user_id = owners.owner_user_id and link.status = 'active'
+    join auth."user" account on account.id = link.user_id
+    order by owners.owned desc, ${foldTextSql('account.name')} collate "C" asc, link.id asc
+    limit ?
+  `, [input.clientId, input.agencyId, input.agencyId, CLIENT_WORKERS_SHOWN]);
+  const total = Number(result.rows[0]?.total ?? 0);
+  return {
+    shown: result.rows.map((row) => ({ membership_id: row.membership_id, name: row.name, photo_key: row.photo_key })),
+    more: Math.max(0, total - result.rows.length)
   };
 };
 
@@ -533,6 +635,13 @@ export interface PersonaRow {
   readonly pains: string | null;
   readonly desires: string | null;
   readonly objections: string | null;
+  readonly age: number | null;
+  readonly occupation: string | null;
+  readonly location: string | null;
+  /** A `jsonb` array of strings, or null for none: the driver already parsed it. */
+  readonly traits: readonly string[] | null;
+  readonly where_they_are: string | null;
+  readonly tone_that_works: string | null;
   readonly status: 'active' | 'archived';
   readonly updated_by: string | null;
   readonly updated_by_name: string | null;
@@ -546,6 +655,7 @@ const BRAND_SECTION_COLUMNS = `
 
 const PERSONA_COLUMNS = `
   persona.id, persona.name, persona.description, persona.pains, persona.desires, persona.objections,
+  persona.age, persona.occupation, persona.location, persona.traits, persona.where_they_are, persona.tone_that_works,
   persona.status, persona.updated_by,
   ${updaterNameSql('persona.updated_by', 'client.agency_id')} as updated_by_name, persona.updated_at
 `;
@@ -649,23 +759,36 @@ export const createPersona = async (
   input: { readonly clientId: string; readonly actorUserId: string; readonly body: CreatePersonaRequest }
 ): Promise<string | undefined> => {
   const result = await raw<RawRows<{ id: string }>>(transaction, `
-    insert into public.client_personas (client_id, name, description, pains, desires, objections, updated_by)
-    values (?::uuid, ?, ?, ?, ?, ?, ?::uuid)
+    insert into public.client_personas (
+      client_id, name, description, pains, desires, objections, age, occupation, location, traits, where_they_are, tone_that_works, updated_by
+    )
+    values (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?::uuid)
     returning id
   `, [
     input.clientId, input.body.name,
     input.body.description ?? null, input.body.pains ?? null, input.body.desires ?? null, input.body.objections ?? null,
+    input.body.age ?? null, input.body.occupation ?? null, input.body.location ?? null, traitsBinding(input.body.traits),
+    input.body.whereTheyAre ?? null, input.body.toneThatWorks ?? null,
     input.actorUserId
   ]);
   return result.rows[0]?.id;
 };
 
-const PERSONA_UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof UpdatePersonaRequest, string]> = [
+/** The traits as the `jsonb` column takes them: an empty list is stored as no traits, and the text is bound, never built into the SQL. */
+const traitsBinding = (traits: readonly string[] | undefined): string | null =>
+  traits === undefined || traits.length === 0 ? null : JSON.stringify(traits);
+
+const PERSONA_UPDATABLE_COLUMNS: ReadonlyArray<readonly [Exclude<keyof UpdatePersonaRequest, 'traits'>, string]> = [
   ['name', 'name'],
   ['description', 'description'],
   ['pains', 'pains'],
   ['desires', 'desires'],
-  ['objections', 'objections']
+  ['objections', 'objections'],
+  ['age', 'age'],
+  ['occupation', 'occupation'],
+  ['location', 'location'],
+  ['whereTheyAre', 'where_they_are'],
+  ['toneThatWorks', 'tone_that_works']
 ];
 
 /** A persona PATCH; false means the persona does not belong to this client (or is not there). */
@@ -686,6 +809,10 @@ export const updatePersona = async (
       assignments.push(`${column} = ?`);
       bindings.push(value);
     }
+  }
+  if (input.changes.traits !== undefined) {
+    assignments.push('traits = ?::jsonb');
+    bindings.push(traitsBinding(input.changes.traits));
   }
   bindings.push(input.personaId, input.clientId);
   const result = await raw<RawRows<{ id: string }>>(transaction, `
@@ -740,6 +867,12 @@ export const personaFromRow = (row: PersonaRow): Persona => ({
   pains: row.pains,
   desires: row.desires,
   objections: row.objections,
+  age: row.age,
+  occupation: row.occupation,
+  location: row.location,
+  traits: row.traits === null ? [] : [...row.traits],
+  whereTheyAre: row.where_they_are,
+  toneThatWorks: row.tone_that_works,
   status: row.status,
   updatedBy: updatedByFromRow(row),
   updatedAt: new Date(row.updated_at).toISOString()
@@ -764,11 +897,13 @@ export const clientFromRow = (row: ClientRow, photoUrl: string | null): Client =
   legalName: row.legal_name,
   taxId: row.tax_id,
   segment: row.segment,
+  city: row.city,
   website: row.website,
   instagramHandle: row.instagram_handle,
   contactName: row.contact_name,
   contactPhone: row.contact_phone,
   contactEmail: row.contact_email,
   closingDate: row.closing_date,
+  createdAt: new Date(row.created_at).toISOString(),
   archivedAt: row.archived_at === null ? null : new Date(row.archived_at).toISOString()
 });

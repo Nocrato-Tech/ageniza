@@ -1070,7 +1070,7 @@ describe('a portal invitation that was pending is accepted into the access (#711
 
 describe('the functions that write the access', () => {
   const SIGNATURES = [
-    'add_client_portal_access(uuid, text)',
+    'add_client_portal_access(uuid, text, text)',
     'remove_client_portal_access(uuid)',
     'reactivate_client_portal_access(uuid)',
     'link_client_portal_accesses()',
@@ -1533,5 +1533,122 @@ describe('the migrations of this change run after the ones that patch the functi
     for (const name of ['20261027080100_client_portal_accesses.mjs', '20261027080200_portal_access_authorship_and_queue.mjs', '20261027080300_portal_access_functions.mjs']) {
       expect(names.indexOf(name)).toBeGreaterThan(added);
     }
+  });
+});
+
+// ---- the name the agency types for the address (decision 2026-11-11) -------------------------------------------------------------
+
+describe('the name the agency types for the address (decision 2026-11-11)', () => {
+  const addNamed = async (user: string, clientId: string, email: string, name: string | null): Promise<AddResult> =>
+    (await call<AddResult>(user, 'select * from app_private.add_client_portal_access(?::uuid, ?, ?)', clientId, email, name))[0]!;
+  const invitedNameOf = async (clientId: string, email: string): Promise<string | null | undefined> =>
+    (await owner()('client_portal_accesses').where({ client_id: clientId, email }).first('invited_name'))?.invited_name as string | null | undefined;
+
+  it('is a column nobody of the application writes: the table keeps no INSERT or UPDATE grant on it, and the function is what records it', async () => {
+    expect(await w.columnsWithPrivilege('client_portal_accesses', 'insert')).not.toContain('invited_name');
+    expect(await w.columnsWithPrivilege('client_portal_accesses', 'update')).not.toContain('invited_name');
+    await expect(w.asUser(ids.adminA, async (t) => {
+      await t('client_portal_accesses').where({ client_id: ids.clientA1 }).update({ invited_name: 'Escrito direto' });
+    })).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('records the name of a new address, trimmed, and none when it is absent or blank', async () => {
+    const client = await freshClient();
+    const [typed, bare, blank, twoArguments] = [freshEmail(), freshEmail(), freshEmail(), freshEmail()];
+    await addNamed(ids.adminA, client, typed, '  Débora Lima  ');
+    await addNamed(ids.adminA, client, bare, null);
+    await addNamed(ids.adminA, client, blank, '   ');
+    await addAs(ids.adminA, client, twoArguments);
+
+    expect(await invitedNameOf(client, typed)).toBe('Débora Lima');
+    expect(await invitedNameOf(client, bare)).toBeNull();
+    expect(await invitedNameOf(client, blank)).toBeNull();
+    expect(await invitedNameOf(client, twoArguments)).toBeNull();
+  });
+
+  it('is a value of the access and never comes from the account, whatever the account is called', async () => {
+    const client = await freshClient();
+    const account = await newUser({ verified: true });
+    await owner()('auth.user').where({ id: account.id }).update({ name: 'Nome Real da Conta' });
+
+    await addNamed(ids.adminA, client, account.email, null);
+    expect(await invitedNameOf(client, account.email)).toBeNull();
+    const other = await freshClient();
+    await addNamed(ids.adminA, other, account.email, 'Digitado');
+    expect(await invitedNameOf(other, account.email)).toBe('Digitado');
+    // Not even the link at the login copies the account's name into the access.
+    await owner()('client_memberships').insert({ client_id: ids.clientA2, user_id: account.id });
+    await linkAs(account.id);
+    expect(await invitedNameOf(client, account.email)).toBeNull();
+    expect(await invitedNameOf(other, account.email)).toBe('Digitado');
+  });
+
+  it('is kept per access: the same address in another client of the agency, or of another agency, has its own', async () => {
+    const [first, second] = [await freshClient(), await freshClient()];
+    const email = freshEmail();
+    await addNamed(ids.adminA, first, email, 'Do Primeiro');
+    await addAs(ids.adminA, second, email);
+    await addNamed(ids.adminB, ids.clientB, email, 'Da Outra Agência');
+
+    expect(await invitedNameOf(first, email)).toBe('Do Primeiro');
+    expect(await invitedNameOf(second, email)).toBeNull();
+    expect(await invitedNameOf(ids.clientB, email)).toBe('Da Outra Agência');
+  });
+
+  it('is updated when a removed address is added again, kept when none is typed, and left alone on an access that is active', async () => {
+    const client = await freshClient();
+    const email = freshEmail();
+    const first = await addNamed(ids.adminA, client, email, 'Primeiro');
+    expect(await addNamed(ids.adminA, client, email, 'Terceiro')).toMatchObject({ access_id: first.access_id, outcome: 'already_active' });
+    expect(await invitedNameOf(client, email)).toBe('Primeiro');
+
+    await removeAs(ids.adminA, first.access_id);
+    expect(await addNamed(ids.adminA, client, email, 'Segundo')).toMatchObject({ access_id: first.access_id, outcome: 'reactivated' });
+    expect(await invitedNameOf(client, email)).toBe('Segundo');
+
+    await removeAs(ids.adminA, first.access_id);
+    expect(await addNamed(ids.adminA, client, email, null)).toMatchObject({ outcome: 'reactivated' });
+    expect(await invitedNameOf(client, email)).toBe('Segundo');
+    expect(await addNamed(ids.adminA, client, email, 'Quarto')).toMatchObject({ outcome: 'already_active' });
+    expect(await invitedNameOf(client, email)).toBe('Segundo');
+  });
+
+  it('takes one line of up to 120 characters, and refuses the rest with its CHECK, leaving no access behind', async () => {
+    const client = await freshClient();
+    const accepted = freshEmail();
+    await addNamed(ids.adminA, client, accepted, 'a'.repeat(120));
+    expect(await invitedNameOf(client, accepted)).toHaveLength(120);
+
+    const before = await countAccesses(client);
+    for (const name of ['a'.repeat(121), 'Duas\nlinhas', 'Com\ttab', 'Sino\u0007', 'Next\u0085', 'Del\u007f']) {
+      await expect(addNamed(ids.adminA, client, freshEmail(), name), JSON.stringify(name)).rejects.toMatchObject({
+        code: '23514', constraint: 'client_portal_accesses_invited_name_check'
+      });
+    }
+    expect(await countAccesses(client)).toBe(before);
+  });
+
+  it('is read only by who reads the accesses of the agency of the client, and by nobody who holds a link or another agency', async () => {
+    const client = await freshClient();
+    const email = freshEmail();
+    await owner()('client_memberships').insert([{ client_id: client, user_id: ids.portalA1 }, { client_id: client, user_id: ids.dualFull }, { client_id: client, user_id: ids.crossDual }]);
+    await addNamed(ids.adminA, client, email, 'Só da Agência');
+    const read = (user: string) => w.asUser(user, (t) => t('client_portal_accesses').where({ client_id: client, email }).select('invited_name'));
+    const onlyConvidar = await w.personWith('cliente.convidar_usuario');
+
+    expect(await read(ids.adminA)).toEqual([{ invited_name: 'Só da Agência' }]);
+    expect(await read(onlyConvidar)).toEqual([{ invited_name: 'Só da Agência' }]);
+    for (const user of [ids.portalA1, ids.dualFull, ids.crossDual, ids.adminB, ids.productionA, ids.salesA, ids.portalB]) expect(await read(user), user).toEqual([]);
+  });
+
+  it('is written by who may add people and by nobody else, and an address added by the wrong person leaves no row', async () => {
+    const client = await freshClient();
+    const onlyRemover = await w.personWith('cliente.remover_usuario');
+    for (const user of [ids.portalA1, ids.adminB, ids.productionA, ids.salesA, onlyRemover]) {
+      await expect(addNamed(user, client, freshEmail(), 'Sem permissão'), user).rejects.toMatchObject(REFUSED);
+    }
+    expect(await countAccesses(client)).toBe(0);
+    const onlyConvidar = await w.personWith('cliente.convidar_usuario');
+    expect((await addNamed(onlyConvidar, client, freshEmail(), 'Permitida')).outcome).toBe('created');
   });
 });

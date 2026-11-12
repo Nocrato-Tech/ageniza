@@ -115,7 +115,7 @@ const LINK_ONLY = [PORTAL_OF_A1[0], PORTAL_OF_A1[1], PORTAL_OF_A1[4]] as const;
 describe('the subject and the deadline in the table of conversations', () => {
   it('lets the application insert the two new columns and still change nothing but the resolution afterwards', async () => {
     expect(await w.columnsWithPrivilege('client_threads', 'insert')).toEqual([
-      'client_id', 'content_id', 'due_on', 'id', 'is_material_request', 'opened_by', 'opened_side', 'persona_id', 'section_key'
+      'client_id', 'content_id', 'due_on', 'id', 'is_material_request', 'opened_by', 'opened_side', 'persona_id', 'section_key', 'title'
     ]);
     expect(await w.columnsWithPrivilege('client_threads', 'update')).toEqual(['resolved_at', 'resolved_by']);
     expect(await w.tablePrivileges('client_threads')).toEqual({ can_select: true, table_insert: false, table_update: false, can_delete: false, can_truncate: false });
@@ -171,6 +171,67 @@ describe('the subject and the deadline in the table of conversations', () => {
       await expect(openRequest(user(), { opened_side: 'client' }), label).rejects.toMatchObject(check);
     }
     expect(await requestCount()).toBe(before);
+  });
+});
+
+// ---- the title ---------------------------------------------------------------------------------------------------------------------
+
+describe('the title of the request (decision 2026-11-11)', () => {
+  const titleOf = async (id: string): Promise<string | null> => (await threadRow(id)).title as string | null;
+
+  it('is born null, for a request opened without it and for every other conversation, and the application never changes it afterwards', async () => {
+    const without = await openRequest(ids.adminA);
+    const section = randomUUID();
+    await owner()('client_threads').insert({ id: section, client_id: ids.clientA1, section_key: 'branding', opened_by: ids.adminA, opened_side: 'agency' });
+    expect(await titleOf(without)).toBeNull();
+    expect(await titleOf(section)).toBeNull();
+
+    expect(await w.columnsWithPrivilege('client_threads', 'update')).not.toContain('title');
+    await expect(w.asUser(ids.adminA, (t) => t('client_threads').where({ id: without }).update({ title: 'Mudou depois' }))).rejects.toMatchObject({ code: '42501' });
+    expect(await titleOf(without)).toBeNull();
+  });
+
+  it.each([
+    ['an Admin', () => ids.adminA],
+    ['the Account Manager', () => ids.managerA],
+    ['a role with only cliente.operar and cliente.visualizar', () => onlyClienteOperar]
+  ] as const)('is written by %s with the request, up to 80 characters of one line, counted as characters', async (_label, user) => {
+    for (const title of ['Fotos da equipe', 'a', 'a'.repeat(80), 'ç'.repeat(80), '😀'.repeat(80)]) {
+      const id = await openRequest(user(), { title });
+      expect(await titleOf(id), title.slice(0, 8)).toBe(title);
+    }
+  });
+
+  it('is refused on any other subject, because only a request for material has one, for the application and for the owner alike', async () => {
+    const persona = await seedPersona();
+    const content = await w.seedContent(ids.clientA1, { status: 'awaiting_approval' });
+    const base = { client_id: ids.clientA1, opened_by: ids.adminA, opened_side: 'agency', title: 'Título solto' };
+    const check = { constraint: 'client_threads_title_request_check', code: '23514' };
+
+    for (const subject of [{ section_key: 'branding' }, { content_id: content }, { persona_id: persona }]) {
+      await expect(owner()('client_threads').insert({ ...base, ...subject }), JSON.stringify(subject)).rejects.toMatchObject(check);
+      await expect(w.asUser(ids.adminA, (t) => t('client_threads').insert({ ...base, ...subject })), JSON.stringify(subject)).rejects.toMatchObject(check);
+    }
+    await owner()('client_threads').insert({ ...base, is_material_request: true });
+  });
+
+  it('is refused when it is empty, blank, long, in several lines or with a control character, and leaves no request behind', async () => {
+    const before = await requestCount();
+    const check = { constraint: 'client_threads_title_check', code: '23514' };
+    for (const title of ['', '   ', ' ', 'a'.repeat(81), 'Duas\nlinhas', 'Com\ttab', 'Sino\u0007', 'Next\u0085', 'Del\u007f']) {
+      await expect(openRequest(ids.adminA, { title }), JSON.stringify(title)).rejects.toMatchObject(check);
+      await expect(owner()('client_threads').insert({ client_id: ids.clientA1, is_material_request: true, opened_by: ids.adminA, opened_side: 'agency', title }), JSON.stringify(title)).rejects.toMatchObject(check);
+    }
+    expect(await requestCount()).toBe(before);
+  });
+
+  it('is read together with the request by the people who read it, and by nobody who does not', async () => {
+    const request = await openRequest(ids.adminA, { title: 'Só de quem lê o pedido' });
+    const readFor = (user: string) => w.asUser(user, (t) => t('client_threads').where({ id: request }).select('title'));
+
+    for (const [label, user] of LINK_ONLY) expect(await readFor(user()), label).toEqual([{ title: 'Só de quem lê o pedido' }]);
+    expect(await readFor(ids.adminA)).toEqual([{ title: 'Só de quem lê o pedido' }]);
+    for (const user of [ids.portalA2, ids.portalB, ids.adminB]) expect(await readFor(user), user).toEqual([]);
   });
 });
 
