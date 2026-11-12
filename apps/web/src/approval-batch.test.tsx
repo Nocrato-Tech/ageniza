@@ -8,6 +8,7 @@ import { SubmitContentsBatchRequestSchema } from '@ageniza/contracts';
 import { invalidDayMessage } from '@ageniza/ui';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -111,7 +112,7 @@ const makeFetch = (scenario: Scenario) => {
     if (path === `/agencies/${AGENCY}/me`) return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions });
     if (path === `/agencies/${AGENCY}/clients` && method === 'GET') return json({ data: [client], meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } });
     if (path === `/agencies/${AGENCY}/clients/${CLIENT}` && method === 'GET') {
-      return json({ id: client.id, name: client.name, status: client.status, photoUrl: null, instagramHandle: client.instagramHandle, legalName: null, taxId: null, segment: null, website: null, contactName: null, contactPhone: null, contactEmail: null, closingDate: null, archivedAt: null, summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 } });
+      return json({ id: client.id, name: client.name, status: client.status, photoUrl: null, instagramHandle: client.instagramHandle, legalName: null, taxId: null, segment: null, website: null, contactName: null, contactPhone: null, contactEmail: null, closingDate: null, archivedAt: null, ...clientRegistrationExtras, summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 } });
     }
     if (path === `/agencies/${AGENCY}/clients/${CLIENT}/contents` && method === 'GET') {
       periodCalls.push(url.search);

@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { PortalClientResponse } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient, HttpClientError } from './http.js';
 import { recordRefusal } from './portal-story-scripts.js';
 import { createQueryClient } from './query.js';
@@ -83,9 +84,10 @@ const portalClient = (overrides: Partial<PortalClientResponse> = {}): Record<str
   contactEmail: null,
   closingDate: null,
   archivedAt: null,
+  ...clientRegistrationExtras,
   agencyName: 'Agência Um',
   onboardingSeenAt: '2026-10-01T12:00:00.000Z', agencyReadOnly: false,
-  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0 },
+  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0, materialRequestsOpen: 0 },
   ...overrides
 });
 
@@ -287,13 +289,13 @@ describe('client portal shell (#141)', () => {
     expect(first.probe.pathname).toBe(portalUrl('marca'));
     cleanup();
 
-    const many = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 2, brandStudyFilled: 5, contentsAwaitingApproval: 0 } })) });
+    const many = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 2, brandStudyFilled: 5, contentsAwaitingApproval: 0, materialRequestsOpen: 0 } })) });
     renderPortal(many.impl);
     const action = await screen.findByRole('link', { name: /A agência respondeu 2 sugestões suas/ });
     expect(action.getAttribute('href')).toBe(portalUrl('marca'));
     cleanup();
 
-    const one = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 1, brandStudyFilled: 5, contentsAwaitingApproval: 0 } })) });
+    const one = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 1, brandStudyFilled: 5, contentsAwaitingApproval: 0, materialRequestsOpen: 0 } })) });
     renderPortal(one.impl);
     expect(await screen.findByText('A agência respondeu 1 sugestão sua')).toBeTruthy();
     expect(screen.queryByText('A agência respondeu 2 sugestões suas')).toBeNull();
@@ -379,7 +381,7 @@ describe('client portal shell (#141)', () => {
   });
 
   it('never shows an internal term in the client portal', async () => {
-    const { impl } = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 2, brandStudyFilled: 5, contentsAwaitingApproval: 0 } })) });
+    const { impl } = makeFetch({ portal: () => json(portalClient({ home: { threadsAnsweredByAgency: 2, brandStudyFilled: 5, contentsAwaitingApproval: 0, materialRequestsOpen: 0 } })) });
     const { container } = renderPortal(impl);
     await screen.findByRole('heading', { name: 'Olá, Maria' });
     clickTab('Conteúdos');
@@ -630,7 +632,7 @@ describe('the Início: approvals and the script of today (#271)', () => {
   });
   afterEach(() => { vi.useRealTimers(); });
 
-  const withHome = (home: Partial<PortalClientResponse['home']>) => json(portalClient({ home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0, ...home } }));
+  const withHome = (home: Partial<PortalClientResponse['home']>) => json(portalClient({ home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0, materialRequestsOpen: 0, ...home } }));
   const scriptsApi = () => createPortalScriptsApi(CLIENT_ID, () => new Date());
   const block = (): HTMLElement => screen.getByRole('region', { name: 'Roteiro de hoje' });
   const todayCalls = (api: ReturnType<typeof scriptsApi>): string[] => api.calls.filter((call) => call.startsWith('GET'));
@@ -867,7 +869,7 @@ describe('the Início: approvals and the script of today (#271)', () => {
     it('while the agency is read-only, "Já gravei" is blocked with the neutral reason and nothing on screen speaks of the plan (decision 2026-11-06)', async () => {
       const api = scriptsApi();
       api.seed({ scriptOn: TODAY });
-      renderPortal(makeFetch({ scripts: api, portal: () => json(portalClient({ agencyReadOnly: true, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0 } })) }).impl);
+      renderPortal(makeFetch({ scripts: api, portal: () => json(portalClient({ agencyReadOnly: true, home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0, materialRequestsOpen: 0 } })) }).impl);
       const button = await screen.findByRole('button', { name: 'Já gravei' });
 
       expect(button.getAttribute('aria-disabled')).toBe('true');

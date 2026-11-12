@@ -3,7 +3,7 @@ import { databaseErrorCode, raw, type SqlBinding } from '@ageniza/database';
 
 import { THREAD_EXCERPT_LENGTH } from './policy.js';
 import { loadClient, sectionFilledSql, type ClientTransaction } from './service.js';
-import { latestCommentSideSql, openThreadSql } from './thread-state.js';
+import { OPEN_MATERIAL_REQUESTS_FROM, latestCommentSideSql, openThreadSql } from './thread-state.js';
 
 /**
  * The conversation between an agency and a client (specs/clientes.md sections 3, 4 and 6), written
@@ -86,6 +86,8 @@ export interface ThreadRow {
   readonly is_material_request: boolean;
   /** The deadline of a request for material as `YYYY-MM-DD`; a `date` has no instant to shift with a time zone. */
   readonly due_on: string | null;
+  /** The title of a request for material; null for every other subject and for a request opened before the title existed. */
+  readonly title: string | null;
   /** An account, or null when the conversation was opened by the access of an approval link (exactly one of the two). */
   readonly opened_by: string | null;
   readonly opened_by_portal_access_id: string | null;
@@ -156,10 +158,19 @@ export const loadAuthors = async (transaction: ClientTransaction, threadIds: rea
   ]));
 };
 
+/** The portal reads a request for material without the names of the agency, so the comments need to know the thread is one. */
+export const isMaterialRequestThread = async (transaction: ClientTransaction, threadId: string): Promise<boolean> => {
+  const result = await raw<RawRows<{ readonly is_material_request: boolean }>>(transaction, `
+    select is_material_request from public.client_threads where id = ?::uuid
+  `, [threadId]);
+  return result.rows[0]?.is_material_request === true;
+};
+
 // `openThreadSql` and `latestCommentSideSql` are the single definition of the derived state; the
 // statistics below only add what a thread item shows.
 const THREAD_COLUMNS = `
-  thread.id, thread.section_key, thread.persona_id, thread.content_id, thread.is_material_request, thread.due_on::text as due_on, thread.opened_by, thread.opened_by_portal_access_id, thread.opened_side,
+  thread.id, thread.section_key, thread.persona_id, thread.content_id, thread.is_material_request, thread.due_on::text as due_on, thread.title,
+  thread.opened_by, thread.opened_by_portal_access_id, thread.opened_side,
   thread.resolved_at, thread.resolved_by,
   stats.comment_count, stats.last_comment_at,
   ${latestCommentSideSql('thread')} as last_side,
@@ -190,21 +201,30 @@ const subjectOfRow = (row: ThreadRow): ConversationSubject => {
   return { personaId: row.persona_id ?? '' };
 };
 
-export const threadFromRow = (row: ThreadRow, authors: ConversationAuthors): Thread => {
+/**
+ * `side` is who is reading. The portal never learns who on the agency opened (or resolved) a request for material ("A agência
+ * pediu", decision 2026-11-11): the request says only that the agency asked, so the names are `null` there and the side stays.
+ */
+export const threadFromRow = (row: ThreadRow, authors: ConversationAuthors, reader: { readonly side: ConversationSide }): Thread => {
   const state: ThreadState = row.is_open ? 'open' : 'resolved';
   const resolved = state === 'resolved' && row.resolved_at !== null && row.resolved_by !== null;
+  const openerHidden = reader.side === 'client' && row.is_material_request;
   return {
     id: row.id,
     subject: subjectOfRow(row),
     state,
-    openedBy: { name: authorOf(authors, row.id, row.opened_side, row.opened_by, row.opened_by_portal_access_id)?.name ?? null, side: row.opened_side },
+    openedBy: {
+      name: openerHidden ? null : authorOf(authors, row.id, row.opened_side, row.opened_by, row.opened_by_portal_access_id)?.name ?? null,
+      side: row.opened_side
+    },
     lastComment: { side: row.last_side, at: new Date(row.last_comment_at).toISOString(), excerpt: row.excerpt },
     commentCount: Number(row.comment_count),
     // A thread that a later comment reopened keeps its old stamps in the row, but it is not resolved
     // anymore: showing who resolved it and when would describe a state the thread is no longer in.
-    resolvedBy: resolved ? { name: authorOf(authors, row.id, 'agency', row.resolved_by ?? '')?.name ?? null } : null,
+    resolvedBy: resolved ? { name: openerHidden ? null : authorOf(authors, row.id, 'agency', row.resolved_by ?? '')?.name ?? null } : null,
     resolvedAt: resolved ? new Date(row.resolved_at ?? 0).toISOString() : null,
-    dueOn: row.due_on
+    dueOn: row.due_on,
+    title: row.title
   };
 };
 
@@ -381,7 +401,7 @@ const openContentThread = async (
 export const openThread = async (
   transaction: ClientTransaction,
   scope: ConversationScope,
-  input: { readonly subject: ConversationSubject; readonly body: string; readonly dueOn?: string }
+  input: { readonly subject: ConversationSubject; readonly body: string; readonly dueOn?: string; readonly title?: string }
 ): Promise<OpenThreadResult> => {
   const permissionRefusal = subjectPermissionRefusal(scope, input.subject, 'write');
   if (permissionRefusal !== undefined) return { kind: permissionRefusal };
@@ -395,8 +415,8 @@ export const openThread = async (
   }
 
   const opened = await raw<RawRows<{ id: string }>>(transaction, `
-    insert into public.client_threads (client_id, section_key, persona_id, is_material_request, due_on, opened_by, opened_side)
-    values (?::uuid, ?, ?::uuid, ?, ?::date, ?::uuid, ?)
+    insert into public.client_threads (client_id, section_key, persona_id, is_material_request, due_on, title, opened_by, opened_side)
+    values (?::uuid, ?, ?::uuid, ?, ?::date, ?, ?::uuid, ?)
     returning id
   `, [
     scope.clientId,
@@ -404,6 +424,7 @@ export const openThread = async (
     'personaId' in input.subject ? input.subject.personaId : null,
     'materialRequest' in input.subject,
     input.dueOn ?? null,
+    input.title ?? null,
     scope.userId,
     scope.side
   ]);
@@ -604,6 +625,8 @@ export const listThreads = async (
 
 export interface MaterialRequestRow {
   readonly thread_id: string;
+  /** Null for a request opened before the title existed. */
+  readonly title: string | null;
   readonly body: string;
   readonly due_on: string | null;
   readonly created_at: Date;
@@ -614,23 +637,9 @@ export interface MaterialRequestPage {
   readonly totalItems: number;
 }
 
-const OPEN_MATERIAL_REQUESTS_FROM = `
-  from public.client_threads thread
-  cross join lateral (
-    select comment.body
-    from public.client_thread_comments comment
-    where comment.thread_id = thread.id
-    order by comment.created_at asc, comment.id asc
-    limit 1
-  ) asked
-  where thread.client_id = ?::uuid
-    and thread.is_material_request
-    and ${openThreadSql('thread')}
-`;
-
 /**
- * The requests for material the client still owes, for the Início of the portal: the first comment of each thread (what the agency
- * asked), its deadline and when it was opened, the nearest deadline first and the ones with no deadline last. The client is the one the
+ * The requests for material the client still owes, for the Início and for "Pedidos da agência" of the portal: the title, the first comment
+ * of each thread (what the agency asked), its deadline and when it was opened, the nearest deadline first and the ones with no deadline last. The client is the one the
  * guard proved and is filtered here: a person with a link to several clients reads every one of them through the policy, and each
  * Início is the list of its own client. The state is the one definition of the conversations, so a request the agency resolved leaves
  * the list and a comment of the client on it brings it back, as in every thread.
@@ -641,7 +650,7 @@ export const listOpenMaterialRequests = async (
   pagination: { readonly pageSize: number; readonly offset: number }
 ): Promise<MaterialRequestPage> => {
   const result = await raw<RawRows<MaterialRequestRow & { readonly total: string | number }>>(transaction, `
-    select thread.id as thread_id, asked.body, thread.due_on::text as due_on, thread.created_at, count(*) over () as total
+    select thread.id as thread_id, thread.title, asked.body, thread.due_on::text as due_on, thread.created_at, count(*) over () as total
     ${OPEN_MATERIAL_REQUESTS_FROM}
     order by thread.due_on asc nulls last, thread.created_at asc, thread.id asc
     limit ? offset ?
@@ -655,20 +664,29 @@ export const listOpenMaterialRequests = async (
 };
 
 /** What the database refuses about a request for material, whatever the route let through. */
-export type MaterialRequestDatabaseRefusal = 'due-on-out-of-range' | 'due-on-without-request' | 'portal-cannot-request';
+export type MaterialRequestDatabaseRefusal =
+  | 'due-on-out-of-range'
+  | 'due-on-without-request'
+  | 'title-without-request'
+  | 'title-invalid'
+  | 'portal-cannot-request';
 
 /**
- * Reads a refusal of the database about a request for material: a deadline outside today to 90 days in São Paulo (A0120), a deadline
- * on any other subject, and a request opened from the portal. The routes refuse the last two before the database, so these are the
- * barrier behind them and the first one is the only that a valid-looking body can reach.
+ * Reads a refusal of the database about a request for material: a deadline outside today to 90 days in São Paulo (A0120), a deadline or a
+ * title on any other subject, a title the database refuses, and a request opened from the portal. The routes refuse all but the first
+ * before the database, so these are the barrier behind them and the first one is the only that a valid-looking body can reach.
  */
 export const materialRequestDatabaseRefusal = (error: unknown): MaterialRequestDatabaseRefusal | undefined => {
   const code = databaseErrorCode(error);
   if (code === 'A0120') return 'due-on-out-of-range';
   if (code !== '23514') return undefined;
-  const constraint = (error as { constraint?: unknown }).constraint;
-  if (constraint === 'client_threads_due_on_check') return 'due-on-without-request';
-  return constraint === 'client_threads_material_request_agency_check' ? 'portal-cannot-request' : undefined;
+  switch ((error as { constraint?: unknown }).constraint) {
+    case 'client_threads_due_on_check': return 'due-on-without-request';
+    case 'client_threads_title_request_check': return 'title-without-request';
+    case 'client_threads_title_check': return 'title-invalid';
+    case 'client_threads_material_request_agency_check': return 'portal-cannot-request';
+    default: return undefined;
+  }
 };
 
 export interface CommentPage {

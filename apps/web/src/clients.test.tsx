@@ -5,6 +5,7 @@ import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -116,7 +117,8 @@ const createdClient = {
   contactPhone: null,
   contactEmail: null,
   closingDate: null,
-  archivedAt: null
+  archivedAt: null,
+  ...clientRegistrationExtras
 };
 
 /** The detail answer of `GET .../clients/:clientId` for the fixtures (SPEC section 6). */
@@ -130,6 +132,7 @@ const detailOf = (listItem: Record<string, unknown>): Record<string, unknown> =>
   contactPhone: null,
   contactEmail: null,
   archivedAt: null,
+  ...clientRegistrationExtras,
   summary: { brandStudyFilled: 0, threadsAwaitingAgency: 2, threadsAnsweredByAgency: 0, activePortalMembers: 0 }
 });
 

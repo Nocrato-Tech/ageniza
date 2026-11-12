@@ -38,6 +38,7 @@ import {
   addComment,
   authorOf,
   diagnoseConversationRefusal,
+  isMaterialRequestThread,
   listComments,
   listOpenMaterialRequests,
   listThreads,
@@ -95,18 +96,20 @@ const refusalError = (refusal: ConversationRefusal): HttpError => {
   }
 };
 
-const dueOnRefused = (message: string): HttpError => new HttpError({
+const fieldRefused = (path: 'dueOn' | 'title', message: string): HttpError => new HttpError({
   statusCode: 400,
   code: 'VALIDATION_ERROR',
   message: 'Request validation failed',
-  details: { issues: [{ path: 'dueOn', code: 'custom', message }] }
+  details: { issues: [{ path, code: 'custom', message }] }
 });
 
-/** The refusals of the database about a request for material, as the errors the person can act on: 400 for the date, 403 for the portal. */
+/** The refusals of the database about a request for material, as the errors the person can act on: 400 for the date and the title, 403 for the portal. */
 const materialRequestError = (refusal: MaterialRequestDatabaseRefusal): HttpError => {
   switch (refusal) {
-    case 'due-on-out-of-range': return dueOnRefused('the deadline is from today to 90 days ahead');
-    case 'due-on-without-request': return dueOnRefused('only a request for material has a deadline');
+    case 'due-on-out-of-range': return fieldRefused('dueOn', 'the deadline is from today to 90 days ahead');
+    case 'due-on-without-request': return fieldRefused('dueOn', 'only a request for material has a deadline');
+    case 'title-without-request': return fieldRefused('title', 'only a request for material has a title');
+    case 'title-invalid': return fieldRefused('title', 'the title must be one visible line of up to 80 characters');
     case 'portal-cannot-request': return forbidden();
   }
 };
@@ -153,8 +156,11 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     message: 'Could not sign a comment author photo URL; returning null'
   });
 
-  const commentFrom = async (request: FastifyRequest, row: CommentRow, threadId: string, authors: ConversationAuthors): Promise<ThreadComment> => {
-    const author = authorOf(authors, threadId, row.author_side, row.author_user_id, row.author_portal_access_id);
+  /** `agencyHidden`: the portal reading a request for material, where the agency has no name (decision 2026-11-11). */
+  const commentFrom = async (request: FastifyRequest, row: CommentRow, threadId: string, authors: ConversationAuthors, agencyHidden = false): Promise<ThreadComment> => {
+    const author = agencyHidden && row.author_side === 'agency'
+      ? undefined
+      : authorOf(authors, threadId, row.author_side, row.author_user_id, row.author_portal_access_id);
     return {
       id: row.id,
       body: row.body,
@@ -254,7 +260,7 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     if (outcome.kind !== 'ok') throw refusalError(outcome.kind);
 
     return reply.send(routeResponse(docs, request, {
-      data: outcome.page.items.map((row) => threadFromRow(row, outcome.authors)),
+      data: outcome.page.items.map((row) => threadFromRow(row, outcome.authors, { side: scope.side })),
       meta: buildPaginationMetadata(pagination, outcome.page.totalItems)
     }));
   };
@@ -284,7 +290,7 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     if (outcome.kind !== 'ok') throw refusalError(outcome.kind);
 
     return reply.status(201).send(routeResponse(docs, request, {
-      thread: threadFromRow(outcome.thread, outcome.authors),
+      thread: threadFromRow(outcome.thread, outcome.authors, { side: scope.side }),
       comment: await commentFrom(request, outcome.comment, outcome.thread.id, outcome.authors)
     }));
   };
@@ -301,12 +307,17 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     const outcome = await read(request, async (transaction) => {
       const result = await listComments(transaction, scope, threadId, pagination);
       if (result.kind !== 'ok') return result;
-      return { kind: 'ok' as const, page: result.page, authors: await loadAuthors(transaction, [threadId]) };
+      return {
+        kind: 'ok' as const,
+        page: result.page,
+        authors: await loadAuthors(transaction, [threadId]),
+        agencyHidden: scope.side === 'client' && await isMaterialRequestThread(transaction, threadId)
+      };
     });
     if (outcome.kind !== 'ok') throw refusalError(outcome.kind);
 
     return reply.send(routeResponse(docs, request, {
-      data: await Promise.all(outcome.page.items.map((row) => commentFrom(request, row, threadId, outcome.authors))),
+      data: await Promise.all(outcome.page.items.map((row) => commentFrom(request, row, threadId, outcome.authors, outcome.agencyHidden))),
       meta: buildPaginationMetadata(pagination, outcome.page.totalItems)
     }));
   };
@@ -380,7 +391,7 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     });
     if (outcome.kind !== 'ok') throw refusalError(outcome.kind);
 
-    return reply.send(routeResponse(agencyResolveDocs, request, threadFromRow(outcome.thread, outcome.authors)));
+    return reply.send(routeResponse(agencyResolveDocs, request, threadFromRow(outcome.thread, outcome.authors, { side: 'agency' })));
   });
 
   // --- The portal side (#130): the same service, the side fixed to `client`, and no resolve -----
@@ -428,6 +439,7 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     return reply.send(routeResponse(portalListMaterialRequestsDocs, request, {
       data: page.items.map((row) => ({
         threadId: row.thread_id,
+        title: row.title,
         body: row.body,
         dueOn: row.due_on,
         createdAt: isoOf(row.created_at),
