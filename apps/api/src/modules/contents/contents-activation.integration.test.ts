@@ -214,6 +214,30 @@ describe('the date and the name of each step already taken', () => {
     expect(inB.firstApproved).toBeNull();
     expect(JSON.stringify(inB)).not.toContain('Ana Aprovadora');
   });
+
+  // The policy lets a person who works in both agencies read both: here only the filter of the query tells them apart (mutation: drop the agency filter of the first approval).
+  describe('a person who works in both agencies reads the first approval of the agency of the path', () => {
+    const approvedInB = (at: string): Promise<string> => w.seedContent(clientB, { status: 'approved', ownerUserId: people.adminB.id, approval: { by: people.adminB.id, at } });
+
+    beforeAll(async () => {
+      const owner = w.getOwner().knex;
+      const adminRole = await owner('roles').whereNull('agency_id').where({ key: 'admin' }).first<{ id: string }>('id');
+      await owner('agency_memberships').insert({ agency_id: w.agencyB, user_id: people.admin.id, role_id: adminRole.id }).onConflict(['agency_id', 'user_id']).ignore();
+    });
+
+    it('in B, where the only approval is later than the first one of A: the one of A, which the policy shows too, is not B\'s', async () => {
+      await approvedInB('2026-06-01T10:00:00.000Z');
+
+      expect((await steps(people.admin.cookie, w.agencyB)).firstApproved).toEqual({ at: '2026-06-01T10:00:00.000Z', name: await clientName(clientB) });
+    });
+
+    it('in A, where B approved before every approval of A: the one of B is not A\'s', async () => {
+      await approvedInB('2025-12-05T09:00:00.000Z');
+
+      expect((await steps(people.admin.cookie, w.agencyA)).firstApproved).toEqual({ at: '2026-01-03T07:00:00.000Z', name: invitedEmail });
+      expect((await steps(people.admin.cookie, w.agencyB)).firstApproved).toEqual({ at: '2025-12-05T09:00:00.000Z', name: await clientName(clientB) });
+    });
+  });
 });
 
 describe('authorization', () => {

@@ -554,6 +554,27 @@ describe('the window of the deadline, at an instant the check is given', () => {
     }
   });
 
+  // The four zones above keep their clocks for the 90 days after NOW. Here the clock changes inside the window, so an interval of calendar days
+  // (`interval '90 days'`) is not 2160 hours: New York goes forward on 2027-03-14 (89 days and 23 hours), Sydney goes back on 2027-04-04 (90 days and 1 hour).
+  it.each([
+    ['America/New_York', 'forward: the calendar window is an hour shorter'],
+    ['Australia/Sydney', 'back: the calendar window is an hour longer']
+  ])('holds the edge to the second in %s, where the clock changes inside the window (%s)', async (zone) => {
+    const instant = '2027-01-15T15:00:00Z';
+    await owner().transaction(async (transaction) => {
+      await transaction.raw(`set local time zone '${zone}'`);
+      const calendar = await transaction.raw<{ rows: Array<{ seconds: string }> }>(
+        "select extract(epoch from (?::timestamptz + interval '90 days') - ?::timestamptz)::text as seconds", [instant, instant]
+      );
+      // The premise of the test: in this zone, 90 calendar days are not 2160 hours.
+      expect(Number(calendar.rows[0]!.seconds)).not.toBe(NINETY_DAYS);
+
+      await expect(transaction.raw('select app_private.check_approval_round_deadline(?::timestamptz, null, ?::timestamptz)', [shifted(instant, NINETY_DAYS), instant]), zone).resolves.toBeDefined();
+      const past = await transaction.raw('select app_private.check_approval_round_deadline(?::timestamptz, null, ?::timestamptz)', [shifted(instant, NINETY_DAYS + 1), instant]).then(() => 'accepted', (error: { code: string }) => error.code);
+      expect(past, zone).toBe('A0120');
+    });
+  });
+
   it('refuses a missing instant, which would turn the range into a comparison with null that refuses nothing', async () => {
     await expect(checkAt('2031-01-01T00:00:00Z', null)).rejects.toMatchObject({ code: '22023' });
   });
