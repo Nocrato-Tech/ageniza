@@ -16,6 +16,7 @@ export * from './jobs.js';
 export * from './legal.js';
 export * from './invisible-characters.js';
 export * from './media-folders.js';
+export * from './media-library.js';
 export * from './media.js';
 export * from './google.js';
 export * from './pagination.js';

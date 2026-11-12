@@ -31,6 +31,22 @@ export const mediaInUse = (): HttpError => new HttpError({
   message: 'Esta mídia está em um conteúdo enviado para aprovação, aprovado ou publicado e não pode ser removida.'
 });
 
+export const folderNotEmpty = (reason: 'files' | 'subfolders' | 'contents'): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'FOLDER_NOT_EMPTY',
+  message: {
+    files: 'Esta pasta tem arquivos. Mova ou exclua os arquivos antes.',
+    subfolders: 'Esta pasta tem subpastas. Mova ou exclua as subpastas antes.',
+    contents: 'Esta pasta tem conteúdos. Mova ou exclua os conteúdos antes.'
+  }[reason]
+});
+
+export const defaultFolderNotDeletable = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'DEFAULT_FOLDER_IMMUTABLE',
+  message: 'As pastas padrão não podem ser excluídas.'
+});
+
 export const parentNotFirstLevel = (): HttpError => new HttpError({
   statusCode: 400,
   code: 'VALIDATION_ERROR',
@@ -50,6 +66,10 @@ export const translateClientMediaError = (error: unknown): HttpError | undefined
     case 'not-found': return notFound('Folder not found.');
     case 'client-archived': return clientArchived();
     case 'in-use': return mediaInUse();
+    case 'folder-has-files': return folderNotEmpty('files');
+    case 'folder-has-subfolders': return folderNotEmpty('subfolders');
+    case 'folder-has-contents': return folderNotEmpty('contents');
+    case 'folder-is-default': return defaultFolderNotDeletable();
     default: return undefined;
   }
 };

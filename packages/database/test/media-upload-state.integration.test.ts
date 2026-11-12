@@ -31,14 +31,14 @@ const deniedByGrant = { code: '42501', message: expect.stringContaining('permiss
 // Literal on purpose: the catalog is compared with this list in both directions, so a column added
 // to the grant later, or one dropped from it, turns the test red.
 const INSERTABLE = [
-  'agency_id', 'category', 'client_id', 'declared_content_type', 'declared_size_bytes', 'extension', 'folder_id',
+  'agency_id', 'category', 'client_id', 'declared_content_type', 'declared_size_bytes', 'extension', 'file_name', 'folder_id',
   'id', 'object_key', 'upload_object_key'
 ];
 const UPDATABLE = [
-  'confirmed_content_type', 'confirmed_size_bytes', 'multipart_upload_id', 'preview_object_key',
+  'alt_text', 'confirmed_content_type', 'confirmed_size_bytes', 'file_name', 'height', 'multipart_upload_id', 'preview_object_key',
   'rejected_reason', 'status', 'thumbnail_object_key', 'updated_at', 'video_duration_seconds',
   'video_preview_size_bytes', 'video_processed_at', 'video_processing_error', 'video_processing_status',
-  'video_thumbnail_size_bytes'
+  'video_thumbnail_size_bytes', 'width'
 ];
 
 let owner: DatabaseClient | undefined;

@@ -16,9 +16,10 @@ neither the file nor a proxy passes through the VPS.
    distinct from the canonical `.../original.<ext>` key stored in `media_assets.object_key`.
 4. `POST .../uploads/:assetId/complete` completes the multipart upload (if any), then calls
    `HeadObject` -- the only point where the real size and content type exist, because R2 does not
-   support a presigned-POST size policy. If the object doesn't match the declared category's
-   limits or the tenant's quota, the object is deleted from the bucket and the asset is marked
-   `rejected`; otherwise the API copies the validated staging object to the canonical key and
+   support a presigned-POST size policy -- and then reads the first bytes of the object
+   (`upload-inspection.ts`, see "What a file is" below). If the object doesn't match the declared
+   category's limits, isn't the type it declared or doesn't fit the tenant's quota, the object is
+   deleted from the bucket and the asset is marked `rejected`; otherwise the API copies the validated staging object to the canonical key and
    marks it `confirmed`. Reusing an unexpired upload URL can only mutate staging, never the
    confirmed original. Quota decisions take a transaction-scoped advisory lock keyed by
    `media-quota:<canonical agency UUID>`, so concurrent confirmations cannot consume the same
@@ -135,6 +136,69 @@ so that window belongs to a trigger of the database (issue #532, second half). A
 (`Default_Ignorable_Code_Point` and U+2800), except U+FE0F right after a pictograph. A page past the end of either list answers the
 real total, counted on its own.
 
+## What a file is, and what a library can do with it (decisions of 2026-11-11)
+
+The list of types is in code (`policy.ts`), never in the request: the five categories of `media_assets.category` are `image`
+(PNG, JPEG, WebP, GIF), `video` (MP4, MOV, WebM), `pdf`, `audio` (MP3, M4A, WAV, WebM, Ogg) and `logo`. A logo is a PNG, JPEG or WebP the
+agency marks with `asLogo: true`, or an SVG (accepted **only** as a logo); a GIF, a video, a PDF and an audio are never one. A PDF, an audio
+and a logo belong to a client's library, so `clientId` and `folderId` are mandatory for them (415 without), and the content screens, which
+pick only images and videos, never list them (`set_content_media` and the folder listing are restricted to those two).
+
+**The confirmation reads the bytes.** After `HeadObject`, `upload-inspection.ts` refuses (reason on the row, object deleted, 422
+`UPLOAD_REJECTED` with `details.reason`): `content_type_mismatch` (the stored type is not the declared one, or the first bytes are not
+that type's signature: `content-sniff.ts`), `too_large` (above the category ceiling), `empty_object`, `invalid_dimensions` (an image
+header giving 0 or more than 100000 pixels), `svg_rejected`, `object_not_found`, `quota_exceeded`. Image dimensions are read from the header
+(`width`, `height`, written with the confirmation and never again; no EXIF orientation is applied to a photo), a video's by the worker with
+`ffprobe` (as displayed, with the rotation applied), and a PDF, an audio and an SVG have none.
+
+**An SVG is read whole and parsed strictly** (`svg-guard.ts`): at most 256 KiB, UTF-8, an `<svg>` root, no script, `foreignObject`,
+iframe/embed/object/html, no `on*` attribute, no `xml:base`, no reference that is not a `#fragment` (no `href`, `src`, `url()` or `@import`
+out), no entity declaration, no animation that sets a link or a handler. What it does not recognise it refuses. Defence in depth: **an SVG,
+a PDF and an audio are never served inline.** `download-url` signs the GET with `response-content-type` (the type the server confirmed,
+never the stored one) and `response-content-disposition: attachment; filename="..."` (name built to be unable to close its own quotes), both
+part of what the URL signs: whoever holds the URL cannot drop or change either, and the browser downloads the file as the type the server
+confirmed instead of guessing one and opening it. That signed pair is the whole compensation for `X-Content-Type-Options: nosniff`, which
+cannot be added to a presigned S3/R2 GET and is not asked of the bucket's edge (decision 2026-11-11 on PDF, audio and SVG, rule 3).
+
+**Defensive limits** that no decision gave a number for (so they are the code's, not a product rule): SVG 256 KiB; PDF up to the smaller of
+100 MiB and the video ceiling; audio the smaller of 200 MiB and the video ceiling; dimensions 1 to 100000; a name is one line of at most 255
+characters without `/`, `\`, control, bidi or invisible characters (the line and paragraph separators U+2028 and U+2029 and the Arabic letter
+mark U+061C included, in the contract and in the CHECK of the column), and is a **label**: the object key is only the agency, the asset and the
+fixed extension of the type; the alternative text is one line of at most 500 characters.
+
+### The library routes (`library-routes.ts`)
+
+Under `/agencies/:agencyId/clients/:clientId`, guarded like the folders (reads `conteudo.visualizar`, writes `conteudo.operar` **and**
+`conteudo.visualizar`; a client, a file or a folder of someone else and a malformed id are the same 404; an archived client is 409
+`CLIENT_ARCHIVED`, a read-only agency 409 `AGENCY_READ_ONLY`):
+
+- `GET /media`: the client's confirmed files across folders, newest first (`q` by name ignoring case and accents with `%` and `_` as plain
+  characters, `category`, `folderId`, page of 48).
+- `GET /media/:assetId`, `PATCH /media/:assetId` (`name`, `altText`; one `media.renamed` / `media.alt_text_changed` event for each thing that
+  changed) and `GET /media/:assetId/usage` (the contents that hold it as a media or as the cover, with their state).
+- `POST /media/:assetId/move` into another folder of the same client (`app_private.move_media_asset`, `media.moved`). A file that **any**
+  content holds (a draft too) is 409 `MEDIA_IN_USE`: the content is tied to the folder of its media by foreign keys.
+- `GET /media-folders/summary`: each folder with the count by type, the total size, the last change (its creation, or a confirmed file written
+  or removed in it), who uploaded the newest file and `inUseNow`; `PATCH /media-folders/:folderId` renames a folder the agency made (a default
+  one is 409 `DEFAULT_FOLDER_IMMUTABLE`). The uploader is `null` for a person with no link to the agency (the portal).
+- `DELETE /media-folders/:folderId` (204, `media.folder_deleted` with target type `media_folder`) deletes a folder that is not a default one and is
+  empty, through `app_private.delete_media_folder`, which holds the rule and the locks (the client `for share`, then the folder `for update`, then
+  the media of the folder `for update` in the order of their id, before they are counted; a move and an upload start lock the same folder, so
+  neither can land in it while it goes). Refused with 409: a default folder (`A0086`,
+  `DEFAULT_FOLDER_IMMUTABLE`), and a folder with files, subfolders or contents (`A0083`/`A0084`/`A0085`, `FOLDER_NOT_EMPTY`, each with its own
+  message). A file counts when it is confirmed and not removed, or an upload still pending that was touched in the last 24 hours (a defensive limit, so an
+  abandoned upload cannot keep a folder for ever); the removed, the rejected and the abandoned rows stay for the audit and are detached from the
+  folder (`folder_id` null), the abandoned ones closed as rejected with the reason `folder_deleted`. The media lock is what makes the confirmation
+  of an abandoned upload safe: one that is running keeps its file (the delete waits, reads it as confirmed and refuses), and one that comes after
+  finds the upload rejected, so a confirmed file is never left with no folder. Each statement that lets a file go names its state (rejected or
+  removed), and a file that is confirmed and not removed is never one of them: if one is left, the delete is refused with `A0083`.
+- `inUseNow` is true for at most one folder of the client: the one that is not a default one whose confirmed, not removed file was filed last
+  (`media_assets.filed_at`), within `MEDIA_FOLDER_IN_USE_WINDOW_DAYS` (30). A file is filed by the confirmation of its upload, its rename and its
+  move into the folder, and by nothing else: the alternative text and the processing of a video write the row (`updated_at`) and do not file it.
+  `filed_at` is stamped by a trigger of the database from the transition of the row, the way `confirmed_at` is, and the application has no grant on
+  it. It is computed over all the folders of the client, not over the page asked for. Creating or renaming the folder does not count: no column
+  keeps it.
+
 ## Environment variables
 
 See `.env.example` (local defaults) and `infra/vps/runtime.env.example` (production). Local
@@ -160,7 +224,8 @@ the host) -- see the `StorageConfig` doc comment in `packages/config/src/server.
   that same window (their DB row stays as a rejected/expired record; nothing here auto-deletes a
   `pending` row, only a `complete` call's own validation does). Configure this in the R2 dashboard.
 - **Never make the bucket or any object public.** Every object is fetched only through a signed
-  URL issued by this module.
+  URL issued by this module. There is no public host to put a header rule on: the forced type and the
+  `attachment` disposition signed into each URL are what keep a file from opening as a page.
 
 ## What could not be verified locally
 
