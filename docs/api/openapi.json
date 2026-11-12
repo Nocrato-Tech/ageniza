@@ -7250,6 +7250,9 @@
                     "name"
                   ],
                   "additionalProperties": false
+                },
+                "inUseNow": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -7262,7 +7265,8 @@
                 "assetCount",
                 "totalSizeBytes",
                 "lastChangedAt",
-                "lastUploadedBy"
+                "lastUploadedBy",
+                "inUseNow"
               ],
               "additionalProperties": false
             }
@@ -27054,7 +27058,7 @@
       "get": {
         "operationId": "listClientMediaFolderSummaries",
         "summary": "Lista as pastas de mídia com o que cada uma guarda",
-        "description": "As mesmas pastas e a mesma ordem de `GET .../media-folders`, cada uma com a quantidade de arquivos por tipo (`counts`), o\ntamanho total, a última alteração (a criação da pasta ou um arquivo gravado ou removido nela) e quem enviou o arquivo mais novo\n(`lastUploadedBy`). É leitura derivada dos arquivos; nenhuma coluna da pasta guarda isso. Cliente arquivado continua legível;\ncliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "description": "As mesmas pastas e a mesma ordem de `GET .../media-folders`, cada uma com a quantidade de arquivos por tipo (`counts`), o\ntamanho total, a última alteração (a criação da pasta ou um arquivo gravado ou removido nela) e quem enviou o arquivo mais novo\n(`lastUploadedBy`). `inUseNow` é `true` em no máximo uma pasta: a que não é padrão e teve arquivo gravado mais recentemente\n(um envio, uma renomeação ou um arquivo movido para ela), se foi nos últimos 30 dias; sem pasta assim, todas vêm `false` e a\ntela omite o bloco \"em uso agora\". É leitura derivada dos arquivos; nenhuma coluna da pasta guarda isso. Cliente arquivado\ncontinua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
         "tags": [
           "media"
         ],
@@ -27130,7 +27134,8 @@
                       "lastUploadedBy": {
                         "membershipId": "22222222-2222-4222-8222-222222222222",
                         "name": "Ana Souza"
-                      }
+                      },
+                      "inUseNow": false
                     }
                   ],
                   "meta": {
@@ -27416,6 +27421,163 @@
                   "error": {
                     "code": "PAYLOAD_TOO_LARGE",
                     "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteClientMediaFolder",
+        "summary": "Exclui uma pasta de mídia vazia do cliente",
+        "description": "Só a pasta que não é padrão e está vazia: as quatro pastas padrão não se excluem (409 `DEFAULT_FOLDER_IMMUTABLE`). Pasta com\narquivo (ou com um envio que começou há menos de um dia) é recusada com 409 `FOLDER_NOT_EMPTY` e a mensagem \"Mova ou exclua os\narquivos antes\"; pasta com subpasta ou com conteúdo ligado a ela também é 409 `FOLDER_NOT_EMPTY`, com a mensagem própria. Os\narquivos já removidos e os envios rejeitados ou abandonados que ainda apontavam para a pasta ficam sem pasta, com a linha\nguardada. Mesma permissão de renomear a pasta: exige `conteudo.operar` e também `conteudo.visualizar`; cliente arquivado\ndevolve 409 `CLIENT_ARCHIVED`. Cliente de outra agência, pasta de outro cliente, pasta inexistente e id inválido devolvem o\nmesmo 404. Grava o evento de auditoria `media.folder_deleted`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.operar`.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": "conteudo.operar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "folderId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Pasta excluída."
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Client not found. | NOT_FOUND: Folder not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Client not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | DEFAULT_FOLDER_IMMUTABLE: | FOLDER_NOT_EMPTY: | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CLIENT_ARCHIVED",
+                    "message": "Cliente arquivado não pode ser editado."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

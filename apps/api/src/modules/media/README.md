@@ -177,10 +177,18 @@ Under `/agencies/:agencyId/clients/:clientId`, guarded like the folders (reads `
 - `POST /media/:assetId/move` into another folder of the same client (`app_private.move_media_asset`, `media.moved`). A file that **any**
   content holds (a draft too) is 409 `MEDIA_IN_USE`: the content is tied to the folder of its media by foreign keys.
 - `GET /media-folders/summary`: each folder with the count by type, the total size, the last change (its creation, or a confirmed file written
-  or removed in it) and who uploaded the newest file; `PATCH /media-folders/:folderId` renames a folder the agency made (a default one is 409
-  `DEFAULT_FOLDER_IMMUTABLE`). The uploader is `null` for a person with no link to the agency (the portal).
-
-Not built, because no decision gives the rule: the deletion of a folder, and "em uso agora" (what a file in use now means).
+  or removed in it), who uploaded the newest file and `inUseNow`; `PATCH /media-folders/:folderId` renames a folder the agency made (a default
+  one is 409 `DEFAULT_FOLDER_IMMUTABLE`). The uploader is `null` for a person with no link to the agency (the portal).
+- `DELETE /media-folders/:folderId` (204, `media.folder_deleted` with target type `media_folder`) deletes a folder that is not a default one and is
+  empty, through `app_private.delete_media_folder`, which holds the rule and the locks (the client `for share`, then the folder `for update`; a move
+  and an upload start lock the same folder, so neither can land in it while it goes). Refused with 409: a default folder (`A0086`,
+  `DEFAULT_FOLDER_IMMUTABLE`), and a folder with files, subfolders or contents (`A0083`/`A0084`/`A0085`, `FOLDER_NOT_EMPTY`, each with its own
+  message). A file counts when it is confirmed and not removed, or an upload still pending that was touched in the last 24 hours (a defensive limit, so an
+  abandoned upload cannot keep a folder for ever); the removed, the rejected and the abandoned rows stay for the audit and are detached from the
+  folder (`folder_id` null), the abandoned ones closed as rejected with the reason `folder_deleted`.
+- `inUseNow` is true for at most one folder of the client: the one that is not a default one whose confirmed, not removed file was written last
+  (`media_assets.updated_at`: confirmation, rename, move), within `MEDIA_FOLDER_IN_USE_WINDOW_DAYS` (30). It is computed over all the folders of
+  the client, not over the page asked for. Creating or renaming the folder does not count: no column keeps it.
 
 ## Environment variables
 

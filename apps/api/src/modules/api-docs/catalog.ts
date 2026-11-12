@@ -4016,8 +4016,10 @@ path: '/agencies/:agencyId/roles',
     description: [
       'As mesmas pastas e a mesma ordem de `GET .../media-folders`, cada uma com a quantidade de arquivos por tipo (`counts`), o',
       'tamanho total, a última alteração (a criação da pasta ou um arquivo gravado ou removido nela) e quem enviou o arquivo mais novo',
-      '(`lastUploadedBy`). É leitura derivada dos arquivos; nenhuma coluna da pasta guarda isso. Cliente arquivado continua legível;',
-      'cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
+      '(`lastUploadedBy`). `inUseNow` é `true` em no máximo uma pasta: a que não é padrão e teve arquivo gravado mais recentemente',
+      '(um envio, uma renomeação ou um arquivo movido para ela), se foi nos últimos 30 dias; sem pasta assim, todas vêm `false` e a',
+      'tela omite o bloco "em uso agora". É leitura derivada dos arquivos; nenhuma coluna da pasta guarda isso. Cliente arquivado',
+      'continua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'conteudo.visualizar',
@@ -4039,7 +4041,8 @@ path: '/agencies/:agencyId/roles',
           assetCount: 106,
           totalSizeBytes: 482_344_960,
           lastChangedAt: '2026-11-11T12:00:00.000Z',
-          lastUploadedBy: { membershipId, name: 'Ana Souza' }
+          lastUploadedBy: { membershipId, name: 'Ana Souza' },
+          inUseNow: false
         }],
         meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 }
       }
@@ -4085,6 +4088,39 @@ path: '/agencies/:agencyId/roles',
       { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
       { status: 409, code: 'DEFAULT_FOLDER_IMMUTABLE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'delete',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders/:folderId',
+    operationId: 'deleteClientMediaFolder',
+    module: 'media',
+    summary: 'Exclui uma pasta de mídia vazia do cliente',
+    description: [
+      'Só a pasta que não é padrão e está vazia: as quatro pastas padrão não se excluem (409 `DEFAULT_FOLDER_IMMUTABLE`). Pasta com',
+      'arquivo (ou com um envio que começou há menos de um dia) é recusada com 409 `FOLDER_NOT_EMPTY` e a mensagem "Mova ou exclua os',
+      'arquivos antes"; pasta com subpasta ou com conteúdo ligado a ela também é 409 `FOLDER_NOT_EMPTY`, com a mensagem própria. Os',
+      'arquivos já removidos e os envios rejeitados ou abandonados que ainda apontavam para a pasta ficam sem pasta, com a linha',
+      'guardada. Mesma permissão de renomear a pasta: exige `conteudo.operar` e também `conteudo.visualizar`; cliente arquivado',
+      'devolve 409 `CLIENT_ARCHIVED`. Cliente de outra agência, pasta de outro cliente, pasta inexistente e id inválido devolvem o',
+      'mesmo 404. Grava o evento de auditoria `media.folder_deleted`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientMediaFolderPathParamsSchema,
+    responses: [{ status: 204, description: 'Pasta excluída.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'DEFAULT_FOLDER_IMMUTABLE' },
+      { status: 409, code: 'FOLDER_NOT_EMPTY' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },

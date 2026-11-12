@@ -414,22 +414,28 @@ stateDiagram-v2
 | `POST` | `…/clients/:clientId/media-folders` | `conteudo.operar` | cria uma pasta |
 | `GET` | `…/clients/:clientId/media-folders/:folderId/assets` | `conteudo.visualizar` | mídias da pasta |
 | `POST` | `…/clients/:clientId/media-folders/:folderId/assets/:assetId/remove` | `conteudo.operar` | remove da pasta |
-| `PATCH` | `…/media/:assetId` | `conteudo.operar` | renomeia (`name`) e edita o texto alternativo (`altText`, até 500 caracteres) (*proposta*) |
-| `POST` | `…/media/:assetId/move` | `conteudo.operar` | move para outra pasta **do mesmo cliente** (`folderId`); `409` se em uso (*proposta*) |
-| `GET` | `…/media/:assetId/usage` | `conteudo.visualizar` | os conteúdos que usam o arquivo, com título e estado (*proposta*) |
-| `GET` | `…/clients/:clientId/media?q=` | `conteudo.visualizar` | os arquivos do cliente por ordem de envio, com filtro pelo nome (*proposta*) |
+| `GET` | `…/clients/:clientId/media` | `conteudo.visualizar` | os arquivos do cliente, dos mais novos para os mais antigos, com os filtros `q` (nome), `category` e `folderId` e a paginação de sempre |
+| `GET` | `…/clients/:clientId/media/:assetId` | `conteudo.visualizar` | um arquivo, com nome, tipo, tamanho, largura e altura, texto alternativo e quem enviou |
+| `PATCH` | `…/clients/:clientId/media/:assetId` | `conteudo.operar` **e** `conteudo.visualizar` | renomeia (`name`) e edita o texto alternativo (`altText`, até 500 caracteres); devolve o arquivo |
+| `POST` | `…/clients/:clientId/media/:assetId/move` | `conteudo.operar` **e** `conteudo.visualizar` | move para outra pasta **do mesmo cliente** (`folderId`); `409 MEDIA_IN_USE` se o arquivo está em uso; devolve o arquivo |
+| `GET` | `…/clients/:clientId/media/:assetId/usage` | `conteudo.visualizar` | os conteúdos que usam o arquivo, com título e estado, e se é mídia, capa ou os dois |
+| `GET` | `…/clients/:clientId/media-folders/summary` | `conteudo.visualizar` | as pastas com a contagem por tipo, o tamanho, a última alteração, quem enviou o mais novo e `inUseNow` (a pasta em uso) |
+| `PATCH` | `…/clients/:clientId/media-folders/:folderId` | `conteudo.operar` **e** `conteudo.visualizar` | renomeia uma pasta (`name`); a pasta padrão responde `409 DEFAULT_FOLDER_IMMUTABLE` |
+| `DELETE` | `…/clients/:clientId/media-folders/:folderId` | `conteudo.operar` **e** `conteudo.visualizar` | exclui uma pasta que não é padrão e está vazia; responde `204` sem corpo |
 
 **A biblioteca na web (2026-11-11)**, decisões de [metadados, renomear e mover](../../business/decisions/2026-11-11-estrutural-a-midia-ganha-nome-dimensoes-texto-alternativo-renomear-e-mover.md), de [tipos](../../business/decisions/2026-11-11-estrutural-a-midia-aceita-pdf-audio-e-svg-como-logo.md) e de [uso](../../business/decisions/2026-11-11-estrutural-a-midia-mostra-onde-e-usada-e-pode-abrir-um-conteudo.md):
 
 - Cada arquivo tem **nome** (o que a pessoa deu ao enviar, só rótulo: a chave no armazenamento não muda), **largura e altura** (gravadas no processamento; em branco para PDF e áudio e enquanto não termina), **texto alternativo** opcional, "Enviada por <nome> · em <dia>" e o tipo. A mídia anterior fica sem nome, dimensões e texto (a tela mostra "Imagem" ou "Vídeo"). **Não há aba "Atividade"** no painel do arquivo.
 - **Cinco tipos:** Foto, Vídeo, PDF, Áudio e Logo. A lista de pastas mostra a quantidade por tipo ("96 fotos", "9 PDFs"), o tamanho e a última atualização. "Buscar nesta biblioteca" filtra pelo nome; "Enviados recentemente" lista por ordem de envio.
 - **Renomear e mover** (`conteudo.operar`): mover não muda o arquivo nem o conteúdo que já o usa; mover um arquivo em uso por conteúdo aguardando, aprovado ou publicado é recusado (a regra da remoção). Cliente arquivado e agência somente leitura recusam.
+- **Excluir pasta** (`conteudo.operar` e `conteudo.visualizar`, as mesmas de renomear): só a pasta que **não é padrão** e está **vazia**. A pasta padrão responde `409 DEFAULT_FOLDER_IMMUTABLE` ("As pastas padrão não podem ser excluídas."); a pasta com arquivo responde `409 FOLDER_NOT_EMPTY` com "Esta pasta tem arquivos. Mova ou exclua os arquivos antes." (com subpasta ou conteúdo, a mensagem diz "subpastas" ou "conteúdos"); mostre a mensagem do erro como veio. Cliente arquivado responde `409 CLIENT_ARCHIVED`, agência somente leitura `409 AGENCY_READ_ONLY`, e uma pasta que não é do cliente é `404`. Pede confirmação antes; a exclusão fica na auditoria.
+- **Pasta em uso agora:** `GET …/media-folders/summary` marca com `inUseNow: true` a pasta que **não é padrão** com a mudança de arquivo mais recente (envio, renomear ou mover para ela) nos **últimos 30 dias**; no máximo uma. Se nenhuma pasta vem marcada, **omita o bloco** do acesso rápido. Só conta o arquivo que continua na pasta; criar ou renomear a própria pasta não conta.
 - **Onde é usada:** "Usado em N posts", com o título e o estado de cada um (como mídia e como capa); o que a pessoa não pode ler não aparece. **"Usar em um conteúdo"** abre o formulário de conteúdo novo do cliente **com o arquivo já escolhido** na pasta dele: não cria nada sozinho, não põe o arquivo num conteúdo existente e só vale para **foto e vídeo** (PDF, áudio e logo não entram num conteúdo). O modal do conteúdo continua sendo onde a mídia se escolhe e se troca.
 - **Enviados pelo cliente:** a pasta de sistema "Enviados pelo cliente" (criada na primeira vez) recebe as fotos e os áudios que o cliente enviou a um pedido de material, com "Enviada por <nome do cliente>". Só a agência remove, renomeia ou move.
 
 **Fluxo de upload**
 
-1. `POST …/media/uploads` com `fileName`, `contentType` e `declaredSizeBytes`.
+1. `POST …/media/uploads` com `fileName`, `contentType` e `declaredSizeBytes`; para um arquivo do cliente, `clientId` e `folderId`, e `asLogo: true` quando a imagem é um logo. A resposta traz a `category` (`image`, `video`, `pdf`, `audio` ou `logo`).
 2. O campo `upload.type` da resposta diz como enviar:
    - `single`: faça `PUT` do arquivo direto na `upload.url`. Ele vai ao armazenamento, não à API;
    - `multipart`: peça as URLs das partes em `…/parts` e envie cada parte.
@@ -609,6 +615,8 @@ O upload mobile permite interromper preparação/envio real e repetir com o mesm
 ### Mídias e capa no editor mobile
 
 A sequência da publicação e a capa têm seleções separadas. Enviar imagem de capa não a acrescenta à sequência de um vídeo. A capa personalizada é uma imagem da mesma pasta e cliente; vídeos podem usar quadro automático. A interface informa tipo e quantidade esperados pelo formato e mantém rascunhos incompletos em produção. A criação envia `mediaAssetIds` explicitamente, na ordem escolhida, no mesmo POST do conteúdo; não usa a seleção implícita de toda a pasta. Erros aparecem junto da revisão com retorno à seleção sem perder o rascunho. Navegação e etapas usam transições curtas, canceláveis e compatíveis com movimento reduzido.
+
+O app só mostra foto e vídeo. Os tipos novos da biblioteca (PDF, áudio e logo) não entram num conteúdo: o envio feito pelo app registra como vídeo o que o servidor confirma como `video` e como foto todo o resto.
 
 
 ## Estudo de marca visual no mobile

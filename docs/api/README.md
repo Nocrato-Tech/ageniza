@@ -4024,6 +4024,7 @@ Lista os papéis atribuíveis na agência.
 | `GET` | `/agencies/:agencyId/clients/:clientId/media/:assetId/usage` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista os conteúdos que usam um arquivo |
 | `GET` | `/agencies/:agencyId/clients/:clientId/media-folders/summary` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as pastas de mídia com o que cada uma guarda |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId` | Sessão + vínculo com a agência | `conteudo.operar` | Renomeia uma pasta de mídia do cliente |
+| `DELETE` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId` | Sessão + vínculo com a agência | `conteudo.operar` | Exclui uma pasta de mídia vazia do cliente |
 
 #### `POST /agencies/:agencyId/media/uploads`
 
@@ -4526,7 +4527,8 @@ Lista as pastas de mídia com o que cada uma guarda.
       "lastUploadedBy": {
         "membershipId": "22222222-2222-4222-8222-222222222222",
         "name": "Ana Souza"
-      }
+      },
+      "inUseNow": false
     }
   ],
   "meta": {
@@ -4568,6 +4570,17 @@ Renomeia uma pasta de mídia do cliente.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 DEFAULT_FOLDER_IMMUTABLE` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `DELETE /agencies/:agencyId/clients/:clientId/media-folders/:folderId`
+
+Exclui uma pasta de mídia vazia do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Resposta `204`** — Pasta excluída.
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 DEFAULT_FOLDER_IMMUTABLE` · `409 FOLDER_NOT_EMPTY` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 ### profile — Edição do próprio nome e da própria foto de perfil.
 
