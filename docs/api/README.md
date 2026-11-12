@@ -847,12 +847,14 @@ Cadastra um cliente.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null
 }
 ```
@@ -877,18 +879,31 @@ Lê o detalhe do cliente com o resumo da aba Geral.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null,
   "summary": {
     "brandStudyFilled": 3,
     "threadsAwaitingAgency": 1,
     "threadsAnsweredByAgency": 2,
-    "activePortalMembers": 3
+    "activePortalMembers": 3,
+    "contentsThisMonth": 4,
+    "mediaFiles": 38,
+    "mediaFolders": 5,
+    "workers": [
+      {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Dono da Agência",
+        "photoUrl": null
+      }
+    ],
+    "workersMore": 0
   }
 }
 ```
@@ -922,12 +937,14 @@ Edita o cadastro do cliente.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null
 }
 ```
@@ -996,12 +1013,14 @@ Agenda o encerramento do contrato do cliente.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": "2026-12-31",
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null
 }
 ```
@@ -1026,12 +1045,14 @@ Desmarca o encerramento agendado do cliente.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null
 }
 ```
@@ -1056,12 +1077,14 @@ Arquiva o cliente agora.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": "2026-10-07T12:00:00.000Z"
 }
 ```
@@ -1086,12 +1109,14 @@ Reativa um cliente arquivado.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null
 }
 ```
@@ -1187,6 +1212,15 @@ Lê o estudo de marca com as sete seções e as personas.
       "pains": "Pouco tempo para pesquisar.",
       "desires": "Reconhecimento da comunidade.",
       "objections": "Preço acima do esperado.",
+      "age": 58,
+      "occupation": "Dona de casa",
+      "location": "Campinas, SP",
+      "traits": [
+        "Prática",
+        "Desconfiada"
+      ],
+      "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+      "toneThatWorks": "Próximo, direto e sem jargão.",
       "status": "active",
       "updatedBy": {
         "id": "55555555-5555-4555-8555-555555555555",
@@ -1264,6 +1298,15 @@ Cria uma persona do cliente.
   "pains": "Pouco tempo para pesquisar.",
   "desires": "Reconhecimento da comunidade.",
   "objections": "Preço acima do esperado.",
+  "age": 58,
+  "occupation": "Dona de casa",
+  "location": "Campinas, SP",
+  "traits": [
+    "Prática",
+    "Desconfiada"
+  ],
+  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+  "toneThatWorks": "Próximo, direto e sem jargão.",
   "status": "active",
   "updatedBy": {
     "id": "55555555-5555-4555-8555-555555555555",
@@ -1301,6 +1344,15 @@ Edita uma persona.
   "pains": "Pouco tempo para pesquisar.",
   "desires": "Reconhecimento da comunidade.",
   "objections": "Preço acima do esperado.",
+  "age": 58,
+  "occupation": "Dona de casa",
+  "location": "Campinas, SP",
+  "traits": [
+    "Prática",
+    "Desconfiada"
+  ],
+  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+  "toneThatWorks": "Próximo, direto e sem jargão.",
   "status": "active",
   "updatedBy": {
     "id": "55555555-5555-4555-8555-555555555555",
@@ -1329,6 +1381,15 @@ Arquiva uma persona.
   "pains": "Pouco tempo para pesquisar.",
   "desires": "Reconhecimento da comunidade.",
   "objections": "Preço acima do esperado.",
+  "age": 58,
+  "occupation": "Dona de casa",
+  "location": "Campinas, SP",
+  "traits": [
+    "Prática",
+    "Desconfiada"
+  ],
+  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+  "toneThatWorks": "Próximo, direto e sem jargão.",
   "status": "archived",
   "updatedBy": {
     "id": "55555555-5555-4555-8555-555555555555",
@@ -1357,6 +1418,15 @@ Desarquiva uma persona.
   "pains": "Pouco tempo para pesquisar.",
   "desires": "Reconhecimento da comunidade.",
   "objections": "Preço acima do esperado.",
+  "age": 58,
+  "occupation": "Dona de casa",
+  "location": "Campinas, SP",
+  "traits": [
+    "Prática",
+    "Desconfiada"
+  ],
+  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+  "toneThatWorks": "Próximo, direto e sem jargão.",
   "status": "active",
   "updatedBy": {
     "id": "55555555-5555-4555-8555-555555555555",
@@ -1407,7 +1477,8 @@ Lista as conversas de um assunto do cliente.
       "commentCount": 1,
       "resolvedBy": null,
       "resolvedAt": null,
-      "dueOn": null
+      "dueOn": null,
+      "title": null
     }
   ],
   "meta": {
@@ -1461,7 +1532,8 @@ Abre uma conversa pela agência, com o primeiro comentário.
     "commentCount": 1,
     "resolvedBy": null,
     "resolvedAt": null,
-    "dueOn": null
+    "dueOn": null,
+    "title": null
   },
   "comment": {
     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -1582,7 +1654,8 @@ Resolve uma conversa.
     "name": "Dono da Agência"
   },
   "resolvedAt": "2026-10-07T13:00:00.000Z",
-  "dueOn": null
+  "dueOn": null,
+  "title": null
 }
 ```
 
@@ -1845,7 +1918,8 @@ Lista as conversas de um assunto, no portal.
       "commentCount": 1,
       "resolvedBy": null,
       "resolvedAt": null,
-      "dueOn": null
+      "dueOn": null,
+      "title": null
     }
   ],
   "meta": {
@@ -1899,7 +1973,8 @@ Abre uma conversa pelo portal, com o primeiro comentário.
     "commentCount": 1,
     "resolvedBy": null,
     "resolvedAt": null,
-    "dueOn": null
+    "dueOn": null,
+    "title": null
   },
   "comment": {
     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -2012,6 +2087,7 @@ Lista os pedidos de material abertos do cliente, no portal.
   "data": [
     {
       "threadId": "99999999-9999-4999-8999-999999999999",
+      "title": "Fotos da equipe",
       "body": "Envie 3 fotos da equipe",
       "dueOn": "2026-10-20",
       "createdAt": "2026-10-07T12:00:00.000Z",
@@ -2047,19 +2123,22 @@ Lê o cadastro do próprio cliente e o resumo do Início, no portal.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null,
   "agencyName": "Agência Exemplo",
   "onboardingSeenAt": "2026-10-01T12:00:00.000Z",
   "home": {
     "threadsAnsweredByAgency": 2,
     "brandStudyFilled": 3,
-    "contentsAwaitingApproval": 2
+    "contentsAwaitingApproval": 2,
+    "materialRequestsOpen": 1
   },
   "agencyReadOnly": false
 }
@@ -2143,6 +2222,15 @@ Lê o estudo de marca, no portal.
       "pains": "Pouco tempo para pesquisar.",
       "desires": "Reconhecimento da comunidade.",
       "objections": "Preço acima do esperado.",
+      "age": 58,
+      "occupation": "Dona de casa",
+      "location": "Campinas, SP",
+      "traits": [
+        "Prática",
+        "Desconfiada"
+      ],
+      "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+      "toneThatWorks": "Próximo, direto e sem jargão.",
       "status": "active",
       "updatedAt": "2026-09-30T12:00:00.000Z"
     }

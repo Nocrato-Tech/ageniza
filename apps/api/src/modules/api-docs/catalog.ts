@@ -540,13 +540,24 @@ const clientExample = {
   legalName: 'Padaria Central Ltda',
   taxId: '12345678000190',
   segment: 'Alimentação',
+  city: 'Campinas',
   website: 'https://padariacentral.exemplo.test',
   instagramHandle: 'padariacentral',
   contactName: 'Maria Souza',
   contactPhone: '+55 11 90000-0000',
   contactEmail: 'maria@padariacentral.exemplo.test',
   closingDate: null,
+  createdAt: '2026-09-02T12:00:00.000Z',
   archivedAt: null
+} as const;
+
+const personaProfileExample = {
+  age: 58,
+  occupation: 'Dona de casa',
+  location: 'Campinas, SP',
+  traits: ['Prática', 'Desconfiada'],
+  whereTheyAre: 'Instagram e grupos de bairro no WhatsApp.',
+  toneThatWorks: 'Próximo, direto e sem jargão.'
 } as const;
 
 const personaExample = {
@@ -556,6 +567,7 @@ const personaExample = {
   pains: 'Pouco tempo para pesquisar.',
   desires: 'Reconhecimento da comunidade.',
   objections: 'Preço acima do esperado.',
+  ...personaProfileExample,
   status: 'active',
   updatedBy: { id: userId, name: 'Dono da Agência' },
   updatedAt: '2026-09-30T12:00:00.000Z'
@@ -578,11 +590,13 @@ const threadExample = {
   commentCount: 1,
   resolvedBy: null,
   resolvedAt: null,
-  dueOn: null
+  dueOn: null,
+  title: null
 } as const;
 
 const materialRequestExample = {
   threadId,
+  title: 'Fotos da equipe',
   body: 'Envie 3 fotos da equipe',
   dueOn: '2026-10-20',
   createdAt: '2026-10-07T12:00:00.000Z',
@@ -656,6 +670,7 @@ const portalBrandStudyExample = {
     pains: 'Pouco tempo para pesquisar.',
     desires: 'Reconhecimento da comunidade.',
     objections: 'Preço acima do esperado.',
+    ...personaProfileExample,
     status: 'active',
     updatedAt: '2026-09-30T12:00:00.000Z'
   }]
@@ -2536,7 +2551,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'createClient',
     module: 'clients',
     summary: 'Cadastra um cliente',
-    description: 'Só o nome. O nome é aparado, exige ao menos uma letra ou número e recusa caracteres de controle, invisíveis e overrides bidi (a regra compartilhada de nome de exibição). Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.',
+    description: 'O nome e, se a agência já a tem, a cidade (uma linha visível de até 80 caracteres). O nome é aparado, exige ao menos uma letra ou número e recusa caracteres de controle, invisíveis e overrides bidi (a regra compartilhada de nome de exibição). Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.',
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.cadastrar',
     params: AgencyPathParamsSchema,
@@ -2562,7 +2577,10 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404. O resumo',
       'conta o estudo preenchido (0 a 7, com personas só quando ativas) e as conversas aguardando',
-      'resposta, pela mesma definição que a listagem e o portal usam.'
+      'resposta, pela mesma definição que a listagem e o portal usam.',
+      'As abas do perfil trazem os conteúdos do mês (dia de São Paulo, cancelados fora), os arquivos e as pastas de mídia e quem trabalha',
+      'no cliente (`workers`, até cinco pessoas que respondem por conteúdos abertos, e `workersMore`, as que passam disso; só nome e foto).',
+      'Esses cinco campos são do Conteúdo: sem `conteudo.visualizar` eles não vêm, em vez de vir zerados.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.visualizar',
@@ -2573,7 +2591,17 @@ path: '/agencies/:agencyId/roles',
       schema: ClientDetailResponseSchema,
       example: {
         ...clientExample,
-        summary: { brandStudyFilled: 3, threadsAwaitingAgency: 1, threadsAnsweredByAgency: 2, activePortalMembers: 3 }
+        summary: {
+          brandStudyFilled: 3,
+          threadsAwaitingAgency: 1,
+          threadsAnsweredByAgency: 2,
+          activePortalMembers: 3,
+          contentsThisMonth: 4,
+          mediaFiles: 38,
+          mediaFolders: 5,
+          workers: [{ membershipId, name: 'Dono da Agência', photoUrl: null }],
+          workersMore: 0
+        }
       }
     }],
     errors: [
@@ -2846,7 +2874,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'createPersona',
     module: 'clients',
     summary: 'Cria uma persona do cliente',
-    description: 'A persona nasce ativa; `updated_by` é o usuário da sessão. Cliente arquivado responde 409.',
+    description: 'A persona nasce ativa; `updated_by` é o usuário da sessão. Idade (1 a 120), ocupação, local, até cinco traços, onde está e o tom que funciona são opcionais, com os limites do schema. Cliente arquivado responde 409.',
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.operar',
     params: AgencyClientPathParamsSchema,
@@ -2940,7 +2968,7 @@ path: '/agencies/:agencyId/roles',
       'enquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa',
       'de persona arquivada continua legível para a agência.',
       'Com `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.',
-      'Com `materialRequest=true` o assunto são os pedidos de material do cliente, em qualquer estado, e a permissão é `cliente.visualizar`; cada item traz `subject: { materialRequest: true }` e `dueOn`, o prazo (`YYYY-MM-DD`) ou `null`.'
+      'Com `materialRequest=true` o assunto são os pedidos de material do cliente, em qualquer estado, e a permissão é `cliente.visualizar`; cada item traz `subject: { materialRequest: true }`, `dueOn`, o prazo (`YYYY-MM-DD`) ou `null`, e `title`, o título do pedido (`null` nos pedidos abertos antes de ele existir).'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: CONVERSATION_READ_PERMISSIONS,
@@ -2973,7 +3001,7 @@ path: '/agencies/:agencyId/roles',
       'bytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`',
       'e persona de outro cliente 404.',
       'Com `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.',
-      'Com `{ materialRequest: true }` a conversa é um pedido de material ao cliente (decisão 2026-11-10): um assunto do próprio cliente, nunca dentro da conversa de um conteúdo, e cada chamada abre um pedido novo. Pede `cliente.operar`, como as conversas do cliente. `dueOn` (`YYYY-MM-DD`) é o prazo opcional, de hoje a 90 dias, no fuso de São Paulo; fora disso é 400 `VALIDATION_ERROR` com o campo `dueOn`. `dueOn` com outro assunto também é 400, e o portal nunca abre um pedido.'
+      'Com `{ materialRequest: true }` a conversa é um pedido de material ao cliente (decisão 2026-11-10): um assunto do próprio cliente, nunca dentro da conversa de um conteúdo, e cada chamada abre um pedido novo. Pede `cliente.operar`, como as conversas do cliente. `title` é obrigatório no pedido novo (uma linha visível de até 80 caracteres) e com outro assunto é 400 `VALIDATION_ERROR` com o campo `title`. `dueOn` (`YYYY-MM-DD`) é o prazo opcional, de hoje a 90 dias, no fuso de São Paulo; fora disso é 400 `VALIDATION_ERROR` com o campo `dueOn`. `dueOn` com outro assunto também é 400, e o portal nunca abre um pedido.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: CONVERSATION_WRITE_PERMISSIONS,
@@ -3103,11 +3131,12 @@ path: '/agencies/:agencyId/roles',
     module: 'clients',
     summary: 'Lista as pessoas com acesso ao portal de um cliente',
     description: [
-      'Vinte por página, por nome (o e-mail, enquanto a pessoa não entrou), sem diferenciar maiúsculas nem acento.',
+      'Vinte por página, por nome (o e-mail, quando não há nome), sem diferenciar maiúsculas nem acento.',
       '`status` é `active` (padrão) ou `removed`. Cada pessoa é um acesso dado a um e-mail, com conta ou sem ela:',
       '`accessId` é o id que as rotas de Remover e Reativar usam, `email` é o endereço como foi gravado e `entered` é',
-      '`false` ("ainda não entrou com a conta") até uma conta com aquele e-mail verificado entrar. `name` é o da conta e só vem',
-      'depois disso. A lista nunca diz se um e-mail tem conta no Ageniza.',
+      '`false` ("ainda não entrou com a conta") até uma conta com aquele e-mail verificado entrar. `name` é o que a agência digitou ao',
+      'adicionar a pessoa (ou `null`) até ela entrar, e o nome da conta depois disso; o nome da conta nunca aparece antes. A lista nunca',
+      'diz se um e-mail tem conta no Ageniza.',
       '`lastEnteredAt` é o último acesso daquele cliente: a última vez que a pessoa entrou no portal com a conta ou abriu o link de aprovação do e-mail, ou `null` se nunca. Pode vir preenchido com `entered: false`: quem só abriu o link ainda não entrou com a conta, e o reenvio das boas-vindas continua valendo para essa pessoa. Só quem já lê esta lista o recebe.',
       'Cliente arquivado continua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
     ].join('\n'),
@@ -3137,7 +3166,7 @@ path: '/agencies/:agencyId/roles',
     module: 'clients',
     summary: 'Adiciona uma pessoa ao portal do cliente',
     description: [
-      'Só o e-mail. O acesso vale na hora, sem conta e sem aceite, e a pessoa recebe um e-mail de boas-vindas com',
+      'O e-mail e, se a agência quiser, o nome da pessoa (uma linha visível de até 120 caracteres): é o nome que a lista mostra até ela entrar, e nunca vem da conta. O acesso vale na hora, sem conta e sem aceite, e a pessoa recebe um e-mail de boas-vindas com',
       '"Entrar no portal". Ter um endereço com conta no Ageniza não muda nada aqui: o acesso passa à conta no login,',
       'quando uma conta com aquele e-mail verificado entra, e nunca nesta rota. Adicionar de novo um e-mail removido',
       'reativa a mesma linha (a geração dos links de aprovação continua onde a remoção a deixou). Se a conta que',
@@ -3347,7 +3376,7 @@ path: '/agencies/:agencyId/roles',
       'Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada',
       'não é assunto válido no portal: responde 404 como se não existisse.',
       'Com `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.',
-      'Com `materialRequest=true`, os pedidos de material do próprio cliente, em qualquer estado, com `dueOn`; os pedidos abertos, para o Início, vêm da rota própria `/clients/:clientId/material-requests`.'
+      'Com `materialRequest=true`, os pedidos de material do próprio cliente, em qualquer estado, com `dueOn`; os pedidos abertos, para o Início, vêm da rota própria `/clients/:clientId/material-requests`. Nesses pedidos o portal não sabe quem da agência abriu, respondeu ou resolveu: `openedBy.name`, `resolvedBy.name` e o autor dos comentários da agência vêm `null`.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -3459,7 +3488,7 @@ path: '/agencies/:agencyId/roles',
     module: 'clients',
     summary: 'Lista os pedidos de material abertos do cliente, no portal',
     description: [
-      'Os pedidos que a agência fez ao cliente e ainda não resolveu (decisão 2026-11-10), para o Início do portal: `threadId` (o id da conversa, para responder pela rota de comentários), `body` (o primeiro comentário, o que a agência pediu),',
+      'Os pedidos que a agência fez ao cliente e ainda não resolveu (decisão 2026-11-10), para o Início do portal: `threadId` (o id da conversa, para responder pela rota de comentários), `title` (o título, ou `null` no pedido aberto antes de ele existir), `body` (o primeiro comentário, o que a agência pediu),',
       '`dueOn` (o prazo, ou `null`), `createdAt` e `state`, sempre `open`. O prazo mais próximo vem primeiro e os sem prazo por último. Vinte por página.',
       'A lista é só do cliente da rota, mesmo para quem tem vínculo com vários clientes. O estado é o de toda conversa: quando a agência resolve, o pedido sai da lista, e um comentário do cliente o traz de volta.',
       'Só a conversa de pedido entra aqui: a conversa de um conteúdo em produção nunca chega ao portal por esta rota. Outro cliente, cliente arquivado, agência suspensa e vínculo removido devolvem o mesmo 404.'
@@ -3493,7 +3522,8 @@ path: '/agencies/:agencyId/roles',
       'vínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com',
       'resposta da agência, só as que o portal enxerga, o preenchimento do estudo e `contentsAwaitingApproval`,',
       'os conteúdos do próprio cliente em "aguardando aprovação". A conversa de um conteúdo não entra em',
-      '`threadsAnsweredByAgency`, nem o pedido de material. Outro cliente, cliente arquivado, agência suspensa, vínculo removido e',
+      '`threadsAnsweredByAgency`, nem o pedido de material, que tem a contagem própria `materialRequestsOpen` (os pedidos abertos, o número de',
+      '"Pedidos da agência" no menu). Outro cliente, cliente arquivado, agência suspensa, vínculo removido e',
       'colaborador sem vínculo de cliente (Owner inclusive) devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
@@ -3508,7 +3538,7 @@ path: '/agencies/:agencyId/roles',
         ...clientExample,
         agencyName: 'Agência Exemplo',
         onboardingSeenAt: '2026-10-01T12:00:00.000Z',
-        home: { threadsAnsweredByAgency: 2, brandStudyFilled: 3, contentsAwaitingApproval: 2 },
+        home: { threadsAnsweredByAgency: 2, brandStudyFilled: 3, contentsAwaitingApproval: 2, materialRequestsOpen: 1 },
         agencyReadOnly: false
       }
     }],
