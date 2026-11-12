@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { AuthEmailSchema } from './auth.js';
+import { createDisplayNameSchema, DISPLAY_NAME_MAX_LENGTH } from './display-name.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
 
 /**
@@ -16,14 +17,28 @@ export const ClientMemberListQuerySchema = PaginationInputSchema.extend({
   status: ClientMemberStatusSchema.optional()
 }).strict();
 
-/** Body of "Adicionar pessoa": only the address. The access is given on the spot, with no invitation and no acceptance. */
+/**
+ * The name the agency types for the person (decision 2026-11-11): optional, with the limit of the profile name, counted in characters
+ * as its column does (`display_text_valid`). Empty or whitespace-only is "no name", so a form that always sends the field works. It is
+ * what the agency wrote and nothing else: it is never read from an account.
+ */
+export const ClientMemberNameSchema = z.string()
+  .transform((value) => value.trim())
+  .pipe(z.union([z.literal('').transform(() => undefined), createDisplayNameSchema(DISPLAY_NAME_MAX_LENGTH, { countCharacters: true })]));
+
+/** Body of "Adicionar pessoa": the address and, when the agency has it, the name. The access is given on the spot, with no invitation and no acceptance. */
 export const ClientMemberAddRequestSchema = z.object({
-  email: AuthEmailSchema
+  email: AuthEmailSchema,
+  name: ClientMemberNameSchema.optional()
 }).strict();
 
 export const ClientMemberSchema = z.object({
   accessId: z.string().uuid(),
-  /** The name of the account once the person has entered this portal with it (`first_entered_at`); `null` before, so the list is no oracle of which addresses have an account. */
+  /**
+   * The name the agency sees: the account's own once the person has entered this portal with it (`first_entered_at`), the one the agency
+   * typed before that, and `null` when it typed none. Never the name of an account that has not entered, so the list is no oracle of
+   * which addresses have an account.
+   */
   name: z.string().nullable(),
   /** The address as it was recorded. */
   email: z.string(),

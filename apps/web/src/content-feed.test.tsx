@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { CONTENT_FEED_PAGE_SIZE, type ContentListItem } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { feedItems } from './content-feed.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
@@ -53,7 +54,7 @@ const ROSTER = [padaria, confeitaria];
 const detailOf = (client: typeof padaria) => ({
   id: client.id, name: client.name, status: client.status, photoUrl: client.photoUrl, instagramHandle: client.instagramHandle,
   legalName: null, taxId: null, segment: null, website: null, contactName: null, contactPhone: null, contactEmail: null,
-  closingDate: null, archivedAt: null,
+  closingDate: null, archivedAt: null, ...clientRegistrationExtras,
   summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 }
 });
 

@@ -4355,6 +4355,12 @@
               "null"
             ]
           },
+          "city": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "website": {
             "type": [
               "string",
@@ -4391,6 +4397,10 @@
               "null"
             ]
           },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "archivedAt": {
             "type": [
               "string",
@@ -4406,12 +4416,14 @@
           "legalName",
           "taxId",
           "segment",
+          "city",
           "website",
           "instagramHandle",
           "contactName",
           "contactPhone",
           "contactEmail",
           "closingDate",
+          "createdAt",
           "archivedAt"
         ],
         "additionalProperties": false
@@ -4423,6 +4435,12 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 256
+          },
+          "city": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4471,6 +4489,12 @@
               "null"
             ]
           },
+          "city": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "website": {
             "type": [
               "string",
@@ -4507,6 +4531,10 @@
               "null"
             ]
           },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "archivedAt": {
             "type": [
               "string",
@@ -4532,6 +4560,49 @@
               "activePortalMembers": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "contentsThisMonth": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mediaFiles": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mediaFolders": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "workers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "membershipId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "photoUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "membershipId",
+                    "name",
+                    "photoUrl"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "workersMore": {
+                "type": "integer",
+                "minimum": 0
               }
             },
             "required": [
@@ -4551,12 +4622,14 @@
           "legalName",
           "taxId",
           "segment",
+          "city",
           "website",
           "instagramHandle",
           "contactName",
           "contactPhone",
           "contactEmail",
           "closingDate",
+          "createdAt",
           "archivedAt",
           "summary"
         ],
@@ -4583,6 +4656,12 @@
             ]
           },
           "segment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "city": {
             "type": [
               "string",
               "null"
@@ -4811,6 +4890,42 @@
                     "null"
                   ]
                 },
+                "age": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "occupation": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "location": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "traits": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "whereTheyAre": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "toneThatWorks": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "status": {
                   "type": "string",
                   "enum": [
@@ -4852,6 +4967,12 @@
                 "pains",
                 "desires",
                 "objections",
+                "age",
+                "occupation",
+                "location",
+                "traits",
+                "whereTheyAre",
+                "toneThatWorks",
                 "status",
                 "updatedBy",
                 "updatedAt"
@@ -5074,6 +5195,42 @@
               "null"
             ]
           },
+          "age": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "occupation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "traits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "whereTheyAre": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "toneThatWorks": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -5115,6 +5272,12 @@
           "pains",
           "desires",
           "objections",
+          "age",
+          "occupation",
+          "location",
+          "traits",
+          "whereTheyAre",
+          "toneThatWorks",
           "status",
           "updatedBy",
           "updatedAt"
@@ -5146,6 +5309,46 @@
             ]
           },
           "objections": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "age": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 120
+          },
+          "occupation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "traits": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 5
+          },
+          "whereTheyAre": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "toneThatWorks": {
             "type": [
               "string",
               "null"
@@ -5182,6 +5385,46 @@
             ]
           },
           "objections": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "age": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 120
+          },
+          "occupation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "traits": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 5
+          },
+          "whereTheyAre": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "toneThatWorks": {
             "type": [
               "string",
               "null"
@@ -5355,6 +5598,12 @@
                     "string",
                     "null"
                   ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -5366,7 +5615,8 @@
                 "commentCount",
                 "resolvedBy",
                 "resolvedAt",
-                "dueOn"
+                "dueOn",
+                "title"
               ],
               "additionalProperties": false
             }
@@ -5569,6 +5819,12 @@
                   "string",
                   "null"
                 ]
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -5580,7 +5836,8 @@
               "commentCount",
               "resolvedBy",
               "resolvedAt",
-              "dueOn"
+              "dueOn",
+              "title"
             ],
             "additionalProperties": false
           },
@@ -5714,6 +5971,10 @@
           },
           "body": {
             "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
           },
           "dueOn": {
             "type": "string"
@@ -6042,6 +6303,12 @@
               "string",
               "null"
             ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -6053,7 +6320,8 @@
           "commentCount",
           "resolvedBy",
           "resolvedAt",
-          "dueOn"
+          "dueOn",
+          "title"
         ],
         "additionalProperties": false
       },
@@ -6201,6 +6469,9 @@
             "type": "string",
             "maxLength": 320,
             "format": "email"
+          },
+          "name": {
+            "type": "string"
           }
         },
         "required": [
@@ -6346,6 +6617,12 @@
                   "type": "string",
                   "format": "uuid"
                 },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "body": {
                   "type": "string"
                 },
@@ -6369,6 +6646,7 @@
               },
               "required": [
                 "threadId",
+                "title",
                 "body",
                 "dueOn",
                 "createdAt",
@@ -6452,6 +6730,12 @@
               "null"
             ]
           },
+          "city": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "website": {
             "type": [
               "string",
@@ -6488,6 +6772,10 @@
               "null"
             ]
           },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "archivedAt": {
             "type": "null"
           },
@@ -6511,6 +6799,10 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "materialRequestsOpen": {
+                "type": "integer",
+                "minimum": 0
+              },
               "brandStudyFilled": {
                 "type": "integer",
                 "minimum": 0,
@@ -6520,6 +6812,7 @@
             "required": [
               "contentsAwaitingApproval",
               "threadsAnsweredByAgency",
+              "materialRequestsOpen",
               "brandStudyFilled"
             ],
             "additionalProperties": false
@@ -6536,12 +6829,14 @@
           "legalName",
           "taxId",
           "segment",
+          "city",
           "website",
           "instagramHandle",
           "contactName",
           "contactPhone",
           "contactEmail",
           "closingDate",
+          "createdAt",
           "archivedAt",
           "agencyName",
           "onboardingSeenAt",
@@ -6677,6 +6972,42 @@
                     "null"
                   ]
                 },
+                "age": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "occupation": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "location": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "traits": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "whereTheyAre": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "toneThatWorks": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "status": {
                   "type": "string",
                   "enum": [
@@ -6697,6 +7028,12 @@
                 "pains",
                 "desires",
                 "objections",
+                "age",
+                "occupation",
+                "location",
+                "traits",
+                "whereTheyAre",
+                "toneThatWorks",
                 "status",
                 "updatedAt"
               ],
@@ -18593,7 +18930,7 @@
       "post": {
         "operationId": "createClient",
         "summary": "Cadastra um cliente",
-        "description": "Só o nome. O nome é aparado, exige ao menos uma letra ou número e recusa caracteres de controle, invisíveis e overrides bidi (a regra compartilhada de nome de exibição). Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.cadastrar`.",
+        "description": "O nome e, se a agência já a tem, a cidade (uma linha visível de até 80 caracteres). O nome é aparado, exige ao menos uma letra ou número e recusa caracteres de controle, invisíveis e overrides bidi (a regra compartilhada de nome de exibição). Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.cadastrar`.",
         "tags": [
           "clients"
         ],
@@ -18638,12 +18975,14 @@
                   "legalName": "Padaria Central Ltda",
                   "taxId": "12345678000190",
                   "segment": "Alimentação",
+                  "city": "Campinas",
                   "website": "https://padariacentral.exemplo.test",
                   "instagramHandle": "padariacentral",
                   "contactName": "Maria Souza",
                   "contactPhone": "+55 11 90000-0000",
                   "contactEmail": "maria@padariacentral.exemplo.test",
                   "closingDate": null,
+                  "createdAt": "2026-09-02T12:00:00.000Z",
                   "archivedAt": null
                 }
               }
@@ -18770,7 +19109,7 @@
       "get": {
         "operationId": "getClient",
         "summary": "Lê o detalhe do cliente com o resumo da aba Geral",
-        "description": "Cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404. O resumo\nconta o estudo preenchido (0 a 7, com personas só quando ativas) e as conversas aguardando\nresposta, pela mesma definição que a listagem e o portal usam.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
+        "description": "Cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404. O resumo\nconta o estudo preenchido (0 a 7, com personas só quando ativas) e as conversas aguardando\nresposta, pela mesma definição que a listagem e o portal usam.\nAs abas do perfil trazem os conteúdos do mês (dia de São Paulo, cancelados fora), os arquivos e as pastas de mídia e quem trabalha\nno cliente (`workers`, até cinco pessoas que respondem por conteúdos abertos, e `workersMore`, as que passam disso; só nome e foto).\nEsses cinco campos são do Conteúdo: sem `conteudo.visualizar` eles não vêm, em vez de vir zerados.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar`.",
         "tags": [
           "clients"
         ],
@@ -18811,18 +19150,31 @@
                   "legalName": "Padaria Central Ltda",
                   "taxId": "12345678000190",
                   "segment": "Alimentação",
+                  "city": "Campinas",
                   "website": "https://padariacentral.exemplo.test",
                   "instagramHandle": "padariacentral",
                   "contactName": "Maria Souza",
                   "contactPhone": "+55 11 90000-0000",
                   "contactEmail": "maria@padariacentral.exemplo.test",
                   "closingDate": null,
+                  "createdAt": "2026-09-02T12:00:00.000Z",
                   "archivedAt": null,
                   "summary": {
                     "brandStudyFilled": 3,
                     "threadsAwaitingAgency": 1,
                     "threadsAnsweredByAgency": 2,
-                    "activePortalMembers": 3
+                    "activePortalMembers": 3,
+                    "contentsThisMonth": 4,
+                    "mediaFiles": 38,
+                    "mediaFolders": 5,
+                    "workers": [
+                      {
+                        "membershipId": "22222222-2222-4222-8222-222222222222",
+                        "name": "Dono da Agência",
+                        "photoUrl": null
+                      }
+                    ],
+                    "workersMore": 0
                   }
                 }
               }
@@ -18983,12 +19335,14 @@
                   "legalName": "Padaria Central Ltda",
                   "taxId": "12345678000190",
                   "segment": "Alimentação",
+                  "city": "Campinas",
                   "website": "https://padariacentral.exemplo.test",
                   "instagramHandle": "padariacentral",
                   "contactName": "Maria Souza",
                   "contactPhone": "+55 11 90000-0000",
                   "contactEmail": "maria@padariacentral.exemplo.test",
                   "closingDate": null,
+                  "createdAt": "2026-09-02T12:00:00.000Z",
                   "archivedAt": null
                 }
               }
@@ -19528,12 +19882,14 @@
                   "legalName": "Padaria Central Ltda",
                   "taxId": "12345678000190",
                   "segment": "Alimentação",
+                  "city": "Campinas",
                   "website": "https://padariacentral.exemplo.test",
                   "instagramHandle": "padariacentral",
                   "contactName": "Maria Souza",
                   "contactPhone": "+55 11 90000-0000",
                   "contactEmail": "maria@padariacentral.exemplo.test",
                   "closingDate": "2026-12-31",
+                  "createdAt": "2026-09-02T12:00:00.000Z",
                   "archivedAt": null
                 }
               }
@@ -19699,12 +20055,14 @@
                   "legalName": "Padaria Central Ltda",
                   "taxId": "12345678000190",
                   "segment": "Alimentação",
+                  "city": "Campinas",
                   "website": "https://padariacentral.exemplo.test",
                   "instagramHandle": "padariacentral",
                   "contactName": "Maria Souza",
                   "contactPhone": "+55 11 90000-0000",
                   "contactEmail": "maria@padariacentral.exemplo.test",
                   "closingDate": null,
+                  "createdAt": "2026-09-02T12:00:00.000Z",
                   "archivedAt": null
                 }
               }
@@ -19853,12 +20211,14 @@
                   "legalName": "Padaria Central Ltda",
                   "taxId": "12345678000190",
                   "segment": "Alimentação",
+                  "city": "Campinas",
                   "website": "https://padariacentral.exemplo.test",
                   "instagramHandle": "padariacentral",
                   "contactName": "Maria Souza",
                   "contactPhone": "+55 11 90000-0000",
                   "contactEmail": "maria@padariacentral.exemplo.test",
                   "closingDate": null,
+                  "createdAt": "2026-09-02T12:00:00.000Z",
                   "archivedAt": "2026-10-07T12:00:00.000Z"
                 }
               }
@@ -20007,12 +20367,14 @@
                   "legalName": "Padaria Central Ltda",
                   "taxId": "12345678000190",
                   "segment": "Alimentação",
+                  "city": "Campinas",
                   "website": "https://padariacentral.exemplo.test",
                   "instagramHandle": "padariacentral",
                   "contactName": "Maria Souza",
                   "contactPhone": "+55 11 90000-0000",
                   "contactEmail": "maria@padariacentral.exemplo.test",
                   "closingDate": null,
+                  "createdAt": "2026-09-02T12:00:00.000Z",
                   "archivedAt": null
                 }
               }
@@ -20232,6 +20594,15 @@
                       "pains": "Pouco tempo para pesquisar.",
                       "desires": "Reconhecimento da comunidade.",
                       "objections": "Preço acima do esperado.",
+                      "age": 58,
+                      "occupation": "Dona de casa",
+                      "location": "Campinas, SP",
+                      "traits": [
+                        "Prática",
+                        "Desconfiada"
+                      ],
+                      "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+                      "toneThatWorks": "Próximo, direto e sem jargão.",
                       "status": "active",
                       "updatedBy": {
                         "id": "55555555-5555-4555-8555-555555555555",
@@ -20548,7 +20919,7 @@
       "post": {
         "operationId": "createPersona",
         "summary": "Cria uma persona do cliente",
-        "description": "A persona nasce ativa; `updated_by` é o usuário da sessão. Cliente arquivado responde 409.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "A persona nasce ativa; `updated_by` é o usuário da sessão. Idade (1 a 120), ocupação e local (uma linha de até 80 caracteres), até cinco traços (uma linha de até 24 caracteres cada), onde está e o tom que funciona (até 280 caracteres) são opcionais. Os limites contam caracteres, não unidades UTF-16: um emoji vale um. Cliente arquivado responde 409.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
         "tags": [
           "clients"
         ],
@@ -20602,6 +20973,15 @@
                   "pains": "Pouco tempo para pesquisar.",
                   "desires": "Reconhecimento da comunidade.",
                   "objections": "Preço acima do esperado.",
+                  "age": 58,
+                  "occupation": "Dona de casa",
+                  "location": "Campinas, SP",
+                  "traits": [
+                    "Prática",
+                    "Desconfiada"
+                  ],
+                  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+                  "toneThatWorks": "Próximo, direto e sem jargão.",
                   "status": "active",
                   "updatedBy": {
                     "id": "55555555-5555-4555-8555-555555555555",
@@ -20796,6 +21176,15 @@
                   "pains": "Pouco tempo para pesquisar.",
                   "desires": "Reconhecimento da comunidade.",
                   "objections": "Preço acima do esperado.",
+                  "age": 58,
+                  "occupation": "Dona de casa",
+                  "location": "Campinas, SP",
+                  "traits": [
+                    "Prática",
+                    "Desconfiada"
+                  ],
+                  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+                  "toneThatWorks": "Próximo, direto e sem jargão.",
                   "status": "active",
                   "updatedBy": {
                     "id": "55555555-5555-4555-8555-555555555555",
@@ -20976,6 +21365,15 @@
                   "pains": "Pouco tempo para pesquisar.",
                   "desires": "Reconhecimento da comunidade.",
                   "objections": "Preço acima do esperado.",
+                  "age": 58,
+                  "occupation": "Dona de casa",
+                  "location": "Campinas, SP",
+                  "traits": [
+                    "Prática",
+                    "Desconfiada"
+                  ],
+                  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+                  "toneThatWorks": "Próximo, direto e sem jargão.",
                   "status": "archived",
                   "updatedBy": {
                     "id": "55555555-5555-4555-8555-555555555555",
@@ -21137,6 +21535,15 @@
                   "pains": "Pouco tempo para pesquisar.",
                   "desires": "Reconhecimento da comunidade.",
                   "objections": "Preço acima do esperado.",
+                  "age": 58,
+                  "occupation": "Dona de casa",
+                  "location": "Campinas, SP",
+                  "traits": [
+                    "Prática",
+                    "Desconfiada"
+                  ],
+                  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+                  "toneThatWorks": "Próximo, direto e sem jargão.",
                   "status": "active",
                   "updatedBy": {
                     "id": "55555555-5555-4555-8555-555555555555",
@@ -21249,7 +21656,7 @@
       "get": {
         "operationId": "listAgencyThreads",
         "summary": "Lista as conversas de um assunto do cliente",
-        "description": "O assunto é obrigatório e é exatamente um: `sectionKey` (uma das sete seções) ou `personaId`; os dois\njuntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por\npágina, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só\nenquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa\nde persona arquivada continua legível para a agência.\nCom `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.\nCom `materialRequest=true` o assunto são os pedidos de material do cliente, em qualquer estado, e a permissão é `cliente.visualizar`; cada item traz `subject: { materialRequest: true }` e `dueOn`, o prazo (`YYYY-MM-DD`) ou `null`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar` ou `conteudo.visualizar`.",
+        "description": "O assunto é obrigatório e é exatamente um: `sectionKey` (uma das sete seções) ou `personaId`; os dois\njuntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por\npágina, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só\nenquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa\nde persona arquivada continua legível para a agência.\nCom `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.\nCom `materialRequest=true` o assunto são os pedidos de material do cliente, em qualquer estado, e a permissão é `cliente.visualizar`; cada item traz `subject: { materialRequest: true }`, `dueOn`, o prazo (`YYYY-MM-DD`) ou `null`, e `title`, o título do pedido (`null` nos pedidos abertos antes de ele existir).\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.visualizar` ou `conteudo.visualizar`.",
         "tags": [
           "clients"
         ],
@@ -21385,7 +21792,8 @@
                       "commentCount": 1,
                       "resolvedBy": null,
                       "resolvedAt": null,
-                      "dueOn": null
+                      "dueOn": null,
+                      "title": null
                     }
                   ],
                   "meta": {
@@ -21498,7 +21906,7 @@
       "post": {
         "operationId": "openAgencyThread",
         "summary": "Abre uma conversa pela agência, com o primeiro comentário",
-        "description": "Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem\ndo corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000\nbytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`\ne persona de outro cliente 404.\nCom `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.\nCom `{ materialRequest: true }` a conversa é um pedido de material ao cliente (decisão 2026-11-10): um assunto do próprio cliente, nunca dentro da conversa de um conteúdo, e cada chamada abre um pedido novo. Pede `cliente.operar`, como as conversas do cliente. `dueOn` (`YYYY-MM-DD`) é o prazo opcional, de hoje a 90 dias, no fuso de São Paulo; fora disso é 400 `VALIDATION_ERROR` com o campo `dueOn`. `dueOn` com outro assunto também é 400, e o portal nunca abre um pedido.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
+        "description": "Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem\ndo corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000\nbytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`\ne persona de outro cliente 404.\nCom `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.\nCom `{ materialRequest: true }` a conversa é um pedido de material ao cliente (decisão 2026-11-10): um assunto do próprio cliente, nunca dentro da conversa de um conteúdo, e cada chamada abre um pedido novo. Pede `cliente.operar`, como as conversas do cliente. `title` é obrigatório no pedido novo (uma linha visível de até 80 caracteres, contados como caracteres: um emoji vale um) e com outro assunto é 400 `VALIDATION_ERROR` com o campo `title`. `dueOn` (`YYYY-MM-DD`) é o prazo opcional, de hoje a 90 dias, no fuso de São Paulo; fora disso é 400 `VALIDATION_ERROR` com o campo `dueOn`. `dueOn` com outro assunto também é 400, e o portal nunca abre um pedido.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar` ou `conteudo.operar`.",
         "tags": [
           "clients"
         ],
@@ -21569,7 +21977,8 @@
                     "commentCount": 1,
                     "resolvedBy": null,
                     "resolvedAt": null,
-                    "dueOn": null
+                    "dueOn": null,
+                    "title": null
                   },
                   "comment": {
                     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -22153,7 +22562,8 @@
                     "name": "Dono da Agência"
                   },
                   "resolvedAt": "2026-10-07T13:00:00.000Z",
-                  "dueOn": null
+                  "dueOn": null,
+                  "title": null
                 }
               }
             }
@@ -22260,7 +22670,7 @@
       "get": {
         "operationId": "listClientMembers",
         "summary": "Lista as pessoas com acesso ao portal de um cliente",
-        "description": "Vinte por página, por nome (o e-mail, enquanto a pessoa não entrou), sem diferenciar maiúsculas nem acento.\n`status` é `active` (padrão) ou `removed`. Cada pessoa é um acesso dado a um e-mail, com conta ou sem ela:\n`accessId` é o id que as rotas de Remover e Reativar usam, `email` é o endereço como foi gravado e `entered` é\n`false` (\"ainda não entrou com a conta\") até uma conta com aquele e-mail verificado entrar. `name` é o da conta e só vem\ndepois disso. A lista nunca diz se um e-mail tem conta no Ageniza.\n`lastEnteredAt` é o último acesso daquele cliente: a última vez que a pessoa entrou no portal com a conta ou abriu o link de aprovação do e-mail, ou `null` se nunca. Pode vir preenchido com `entered: false`: quem só abriu o link ainda não entrou com a conta, e o reenvio das boas-vindas continua valendo para essa pessoa. Só quem já lê esta lista o recebe.\nCliente arquivado continua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
+        "description": "Vinte por página, por nome (o e-mail, quando não há nome), sem diferenciar maiúsculas nem acento.\n`status` é `active` (padrão) ou `removed`. Cada pessoa é um acesso dado a um e-mail, com conta ou sem ela:\n`accessId` é o id que as rotas de Remover e Reativar usam, `email` é o endereço como foi gravado e `entered` é\n`false` (\"ainda não entrou com a conta\") até uma conta com aquele e-mail verificado entrar. `name` é o que a agência digitou ao\nadicionar a pessoa (ou `null`) até ela entrar, e o nome da conta depois disso; o nome da conta nunca aparece antes. A lista nunca\ndiz se um e-mail tem conta no Ageniza.\n`lastEnteredAt` é o último acesso daquele cliente: a última vez que a pessoa entrou no portal com a conta ou abriu o link de aprovação do e-mail, ou `null` se nunca. Pode vir preenchido com `entered: false`: quem só abriu o link ainda não entrou com a conta, e o reenvio das boas-vindas continua valendo para essa pessoa. Só quem já lê esta lista o recebe.\nCliente arquivado continua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
         "tags": [
           "clients"
         ],
@@ -22467,7 +22877,7 @@
       "post": {
         "operationId": "addClientMember",
         "summary": "Adiciona uma pessoa ao portal do cliente",
-        "description": "Só o e-mail. O acesso vale na hora, sem conta e sem aceite, e a pessoa recebe um e-mail de boas-vindas com\n\"Entrar no portal\". Ter um endereço com conta no Ageniza não muda nada aqui: o acesso passa à conta no login,\nquando uma conta com aquele e-mail verificado entra, e nunca nesta rota. Adicionar de novo um e-mail removido\nreativa a mesma linha (a geração dos links de aprovação continua onde a remoção a deixou). Se a conta que\ntinha aquele endereço já trocou de e-mail, ela perde o acesso e as sessões dela são encerradas. Um endereço que\njá tem acesso ativo responde 409 `ACCESS_EXISTS`. O e-mail de boas-vindas conta no limite diário de e-mails da agência,\njunto com os convites: passado o limite, 429 `DAILY_EMAIL_LIMIT` e nada é gravado. Agência em somente leitura responde\n409 `AGENCY_READ_ONLY`. Cliente arquivado responde 409; cliente de outra agência ou inexistente, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
+        "description": "O e-mail e, se a agência quiser, o nome da pessoa (uma linha visível de até 120 caracteres): é o nome que a lista mostra até ela entrar, e nunca vem da conta. O acesso vale na hora, sem conta e sem aceite, e a pessoa recebe um e-mail de boas-vindas com\n\"Entrar no portal\". Ter um endereço com conta no Ageniza não muda nada aqui: o acesso passa à conta no login,\nquando uma conta com aquele e-mail verificado entra, e nunca nesta rota. Adicionar de novo um e-mail removido\nreativa a mesma linha (a geração dos links de aprovação continua onde a remoção a deixou). Se a conta que\ntinha aquele endereço já trocou de e-mail, ela perde o acesso e as sessões dela são encerradas. Um endereço que\njá tem acesso ativo responde 409 `ACCESS_EXISTS`. O e-mail de boas-vindas conta no limite diário de e-mails da agência,\njunto com os convites: passado o limite, 429 `DAILY_EMAIL_LIMIT` e nada é gravado. Agência em somente leitura responde\n409 `AGENCY_READ_ONLY`. Cliente arquivado responde 409; cliente de outra agência ou inexistente, 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.convidar_usuario`.",
         "tags": [
           "clients"
         ],
@@ -23563,7 +23973,7 @@
       "get": {
         "operationId": "listPortalThreads",
         "summary": "Lista as conversas de um assunto, no portal",
-        "description": "Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada\nnão é assunto válido no portal: responde 404 como se não existisse.\nCom `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.\nCom `materialRequest=true`, os pedidos de material do próprio cliente, em qualquer estado, com `dueOn`; os pedidos abertos, para o Início, vêm da rota própria `/clients/:clientId/material-requests`.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada\nnão é assunto válido no portal: responde 404 como se não existisse.\nCom `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.\nCom `materialRequest=true`, os pedidos de material do próprio cliente, em qualquer estado, com `dueOn`; os pedidos abertos, para o Início, vêm da rota própria `/clients/:clientId/material-requests`. Nesses pedidos o portal não sabe quem da agência abriu, respondeu ou resolveu: `openedBy.name`, `resolvedBy.name` e o autor dos comentários da agência vêm `null`.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -23687,7 +24097,8 @@
                       "commentCount": 1,
                       "resolvedBy": null,
                       "resolvedAt": null,
-                      "dueOn": null
+                      "dueOn": null,
+                      "title": null
                     }
                   ],
                   "meta": {
@@ -23859,7 +24270,8 @@
                     "commentCount": 1,
                     "resolvedBy": null,
                     "resolvedAt": null,
-                    "dueOn": null
+                    "dueOn": null,
+                    "title": null
                   },
                   "comment": {
                     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -24354,7 +24766,7 @@
       "get": {
         "operationId": "listPortalMaterialRequests",
         "summary": "Lista os pedidos de material abertos do cliente, no portal",
-        "description": "Os pedidos que a agência fez ao cliente e ainda não resolveu (decisão 2026-11-10), para o Início do portal: `threadId` (o id da conversa, para responder pela rota de comentários), `body` (o primeiro comentário, o que a agência pediu),\n`dueOn` (o prazo, ou `null`), `createdAt` e `state`, sempre `open`. O prazo mais próximo vem primeiro e os sem prazo por último. Vinte por página.\nA lista é só do cliente da rota, mesmo para quem tem vínculo com vários clientes. O estado é o de toda conversa: quando a agência resolve, o pedido sai da lista, e um comentário do cliente o traz de volta.\nSó a conversa de pedido entra aqui: a conversa de um conteúdo em produção nunca chega ao portal por esta rota. Outro cliente, cliente arquivado, agência suspensa e vínculo removido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Os pedidos que a agência fez ao cliente e ainda não resolveu (decisão 2026-11-10), para o Início do portal: `threadId` (o id da conversa, para responder pela rota de comentários), `title` (o título, ou `null` no pedido aberto antes de ele existir), `body` (o primeiro comentário, o que a agência pediu),\n`dueOn` (o prazo, ou `null`), `createdAt` e `state`, sempre `open`. O prazo mais próximo vem primeiro e os sem prazo por último. Vinte por página.\nA lista é só do cliente da rota, mesmo para quem tem vínculo com vários clientes. O estado é o de toda conversa: quando a agência resolve, o pedido sai da lista, e um comentário do cliente o traz de volta.\nSó a conversa de pedido entra aqui: a conversa de um conteúdo em produção nunca chega ao portal por esta rota. Outro cliente, cliente arquivado, agência suspensa e vínculo removido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -24404,6 +24816,7 @@
                   "data": [
                     {
                       "threadId": "99999999-9999-4999-8999-999999999999",
+                      "title": "Fotos da equipe",
                       "body": "Envie 3 fotos da equipe",
                       "dueOn": "2026-10-20",
                       "createdAt": "2026-10-07T12:00:00.000Z",
@@ -24522,7 +24935,7 @@
       "get": {
         "operationId": "getPortalClient",
         "summary": "Lê o cadastro do próprio cliente e o resumo do Início, no portal",
-        "description": "Somente leitura. Traz o cadastro inteiro, a foto assinada, o nome da agência, `onboardingSeenAt` do\nvínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com\nresposta da agência, só as que o portal enxerga, o preenchimento do estudo e `contentsAwaitingApproval`,\nos conteúdos do próprio cliente em \"aguardando aprovação\". A conversa de um conteúdo não entra em\n`threadsAnsweredByAgency`, nem o pedido de material. Outro cliente, cliente arquivado, agência suspensa, vínculo removido e\ncolaborador sem vínculo de cliente (Owner inclusive) devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Somente leitura. Traz o cadastro inteiro, a foto assinada, o nome da agência, `onboardingSeenAt` do\nvínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com\nresposta da agência, só as que o portal enxerga, o preenchimento do estudo e `contentsAwaitingApproval`,\nos conteúdos do próprio cliente em \"aguardando aprovação\". A conversa de um conteúdo não entra em\n`threadsAnsweredByAgency`, nem o pedido de material, que tem a contagem própria `materialRequestsOpen` (os pedidos abertos, o número de\n\"Pedidos da agência\" no menu). Outro cliente, cliente arquivado, agência suspensa, vínculo removido e\ncolaborador sem vínculo de cliente (Owner inclusive) devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "clients"
         ],
@@ -24554,19 +24967,22 @@
                   "legalName": "Padaria Central Ltda",
                   "taxId": "12345678000190",
                   "segment": "Alimentação",
+                  "city": "Campinas",
                   "website": "https://padariacentral.exemplo.test",
                   "instagramHandle": "padariacentral",
                   "contactName": "Maria Souza",
                   "contactPhone": "+55 11 90000-0000",
                   "contactEmail": "maria@padariacentral.exemplo.test",
                   "closingDate": null,
+                  "createdAt": "2026-09-02T12:00:00.000Z",
                   "archivedAt": null,
                   "agencyName": "Agência Exemplo",
                   "onboardingSeenAt": "2026-10-01T12:00:00.000Z",
                   "home": {
                     "threadsAnsweredByAgency": 2,
                     "brandStudyFilled": 3,
-                    "contentsAwaitingApproval": 2
+                    "contentsAwaitingApproval": 2,
+                    "materialRequestsOpen": 1
                   },
                   "agencyReadOnly": false
                 }
@@ -24765,6 +25181,15 @@
                       "pains": "Pouco tempo para pesquisar.",
                       "desires": "Reconhecimento da comunidade.",
                       "objections": "Preço acima do esperado.",
+                      "age": 58,
+                      "occupation": "Dona de casa",
+                      "location": "Campinas, SP",
+                      "traits": [
+                        "Prática",
+                        "Desconfiada"
+                      ],
+                      "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+                      "toneThatWorks": "Próximo, direto e sem jargão.",
                       "status": "active",
                       "updatedAt": "2026-09-30T12:00:00.000Z"
                     }

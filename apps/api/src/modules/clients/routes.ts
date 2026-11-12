@@ -32,6 +32,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthInstance } from '../auth/better-auth.js';
 import type { EmailService } from '../auth/email-service.js';
 import { createRequireSession } from '../auth/session-guard.js';
+import { tenantHolds } from '../tenancy/guards.js';
 import { registerAccessRoutes } from './access-routes.js';
 import { registerConversationRoutes } from './conversation-routes.js';
 import { registerLifecycleRoutes } from './lifecycle-routes.js';
@@ -43,7 +44,7 @@ import {
   type IdentityStorageClient,
   type UploadedIdentityImage
 } from '../identity-storage/storage-client.js';
-import { createClientPhotoUrlSigner } from './photo-url.js';
+import { createClientPhotoUrlSigner, createPhotoUrlSigner } from './photo-url.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { CLIENT_PHOTO_RATE_LIMIT, clientPhotoBodyLimitBytes } from './policy.js';
@@ -61,6 +62,8 @@ import {
   loadBrandSections,
   loadClient,
   loadClientSummary,
+  loadClientTabCounts,
+  loadClientWorkers,
   loadPersona,
   loadPersonas,
   lockActiveClientPhoto,
@@ -126,7 +129,7 @@ const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth'
 };
 
 // The agency guard already rejected a missing tenant; this keeps the handler total and indistinct.
-const requireTenant = (request: FastifyRequest): { readonly agencyId: string } => {
+const requireTenant = (request: FastifyRequest): NonNullable<FastifyRequest['tenant']> => {
   const tenant = request.tenant;
   if (tenant === undefined) throw clientNotFound();
   return tenant;
@@ -186,6 +189,10 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
   const signPhotoUrl = createClientPhotoUrlSigner(dependencies, {
     code: 'CLIENT_PHOTO_URL_FAILED',
     message: 'Could not sign the client photo URL; returning null'
+  });
+  const signWorkerPhoto = createPhotoUrlSigner(dependencies, {
+    code: 'CLIENT_WORKER_PHOTO_URL_FAILED',
+    message: 'Could not sign the photo URL of a person who works on the client; returning null'
   });
 
   const authenticated = (docs: DocumentedRouteConfig & { permission: string }) => ({
@@ -287,7 +294,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     let row;
     try {
       row = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
-        createClient(transaction, { agencyId: tenant.agencyId, name: body.name }));
+        createClient(transaction, { agencyId: tenant.agencyId, name: body.name, city: body.city }));
     } catch (error) {
       if (isActiveClientNameConflict(error)) throw clientNameInUse();
       throw error;
@@ -300,19 +307,34 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     const tenant = requireTenant(request);
     const clientId = clientIdFromRoute(request);
 
+    // Conteúdo's counts and the people who work on the client are its rows: omitted, never zeroed, without `conteudo.visualizar`.
+    const readsContent = tenantHolds(tenant, 'conteudo.visualizar');
     const result = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
       const row = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
       if (row === undefined) return undefined;
       const summary = await loadClientSummary(transaction, clientId);
-      return { row, summary };
+      if (!readsContent) return { row, summary, content: undefined };
+      const counts = await loadClientTabCounts(transaction, { clientId, asOf: new Date() });
+      const workers = await loadClientWorkers(transaction, { agencyId: tenant.agencyId, clientId });
+      return { row, summary, content: { counts, workers } };
     });
     if (result === undefined) throw clientNotFound();
 
     const photoUrl = await signPhotoUrl(request, { agencyId: result.row.agency_id, clientId: result.row.id }, result.row.photo_key);
-    return reply.send(routeResponse(detailDocs, request, {
-      ...clientFromRow(result.row, photoUrl),
-      summary: result.summary
-    }));
+    const content = result.content;
+    const summary = content === undefined
+      ? result.summary
+      : {
+          ...result.summary,
+          ...content.counts,
+          workers: await Promise.all(content.workers.shown.map(async (worker) => ({
+            membershipId: worker.membership_id,
+            name: worker.name,
+            photoUrl: await signWorkerPhoto(request, worker.photo_key)
+          }))),
+          workersMore: content.workers.more
+        };
+    return reply.send(routeResponse(detailDocs, request, { ...clientFromRow(result.row, photoUrl), summary }));
   });
 
   app.patch('/agencies/:agencyId/clients/:clientId', authenticated(updateDocs), async (request, reply) => {

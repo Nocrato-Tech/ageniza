@@ -23,3 +23,21 @@ export const openThreadSql = (threadAlias: string): string =>
  */
 export const brandStudyThreadSql = (threadAlias: string): string =>
   `(${threadAlias}.content_id is null and not ${threadAlias}.is_material_request)`;
+
+/**
+ * The open requests for material of one client, aliased `thread`, each with the first comment (`asked`, what the agency wrote). One
+ * placeholder: the client id. The list of the portal and the count of its navigation are both built on this, so the two cannot differ.
+ */
+export const OPEN_MATERIAL_REQUESTS_FROM = `
+  from public.client_threads thread
+  cross join lateral (
+    select comment.body
+    from public.client_thread_comments comment
+    where comment.thread_id = thread.id
+    order by comment.created_at asc, comment.id asc
+    limit 1
+  ) asked
+  where thread.client_id = ?::uuid
+    and thread.is_material_request
+    and ${openThreadSql('thread')}
+`;

@@ -15,7 +15,7 @@ import {
   type ClientRow,
   type ClientTransaction
 } from './service.js';
-import { brandStudyThreadSql, latestCommentSideSql, openThreadSql } from './thread-state.js';
+import { OPEN_MATERIAL_REQUESTS_FROM, brandStudyThreadSql, latestCommentSideSql, openThreadSql } from './thread-state.js';
 
 /**
  * The portal's reads of its own client (specs/clientes.md sections 2, 6 and 7).
@@ -52,8 +52,8 @@ export const loadPortalClient = async (
   const result = await raw<RawRows<PortalClientRow>>(transaction, `
     select
       client.id, client.name, client.status, client.photo_key, client.legal_name, client.tax_id,
-      client.segment, client.website, client.instagram_handle, client.contact_name, client.contact_phone,
-      client.contact_email, client.closing_date::text as closing_date, client.archived_at,
+      client.segment, client.city, client.website, client.instagram_handle, client.contact_name, client.contact_phone,
+      client.contact_email, client.closing_date::text as closing_date, client.created_at, client.archived_at,
       client.agency_id, agency.name as agency_name,
       membership.onboarding_seen_at,
       (agency.plan = 'trial' and agency.trial_ends_at <= now()) as agency_read_only
@@ -74,6 +74,7 @@ interface PortalHomeRow {
   readonly brand_study_filled: string | number;
   readonly threads_answered_by_agency: string | number;
   readonly contents_awaiting_approval: string | number;
+  readonly material_requests_open: string | number;
 }
 
 /**
@@ -87,7 +88,8 @@ interface PortalHomeRow {
  * is the portal-only rule: it asks for an active link to `p_client_id` and never answers a draft.
  *
  * The conversation of a content is not a brand study suggestion, and the card leads to the study (#259); a request for material
- * is not a reply of the agency either, and the portal reads it on its own list.
+ * is not a reply of the agency either, and the portal reads it on its own list. `materialRequestsOpen` is the size of that list
+ * (the one definition, `OPEN_MATERIAL_REQUESTS_FROM`), so the count of "Pedidos da agência" and the page it opens say the same.
  */
 export const loadPortalHome = async (transaction: ClientTransaction, clientId: string): Promise<PortalHome> => {
   const result = await raw<RawRows<PortalHomeRow>>(transaction, `
@@ -109,14 +111,18 @@ export const loadPortalHome = async (transaction: ClientTransaction, clientId: s
       ) as threads_answered_by_agency,
       (
         select count(*) from app_private.portal_contents(?::uuid, null, null, array['awaiting_approval']::text[])
-      ) as contents_awaiting_approval
-  `, [clientId, clientId, clientId, clientId]);
+      ) as contents_awaiting_approval,
+      (
+        select count(*) ${OPEN_MATERIAL_REQUESTS_FROM}
+      ) as material_requests_open
+  `, [clientId, clientId, clientId, clientId, clientId]);
   const row = result.rows[0];
   if (row === undefined) throw new Error('Portal home query returned no row.');
   return {
     brandStudyFilled: Number(row.brand_study_filled),
     threadsAnsweredByAgency: Number(row.threads_answered_by_agency),
-    contentsAwaitingApproval: Number(row.contents_awaiting_approval)
+    contentsAwaitingApproval: Number(row.contents_awaiting_approval),
+    materialRequestsOpen: Number(row.material_requests_open)
   };
 };
 
@@ -135,6 +141,12 @@ interface PortalPersonaRow {
   readonly pains: string | null;
   readonly desires: string | null;
   readonly objections: string | null;
+  readonly age: number | null;
+  readonly occupation: string | null;
+  readonly location: string | null;
+  readonly traits: readonly string[] | null;
+  readonly where_they_are: string | null;
+  readonly tone_that_works: string | null;
   readonly updated_at: Date;
 }
 
@@ -156,6 +168,12 @@ const portalPersonaFromRow = (row: PortalPersonaRow): PortalPersona => ({
   pains: row.pains,
   desires: row.desires,
   objections: row.objections,
+  age: row.age,
+  occupation: row.occupation,
+  location: row.location,
+  traits: row.traits === null ? [] : [...row.traits],
+  whereTheyAre: row.where_they_are,
+  toneThatWorks: row.tone_that_works,
   status: 'active',
   updatedAt: new Date(row.updated_at).toISOString()
 });
@@ -176,7 +194,8 @@ export const loadPortalBrandStudy = async (transaction: ClientTransaction, clien
     where section.client_id = ?::uuid
   `, [clientId]);
   const personas = await raw<RawRows<PortalPersonaRow>>(transaction, `
-    select persona.id, persona.name, persona.description, persona.pains, persona.desires, persona.objections, persona.updated_at
+    select persona.id, persona.name, persona.description, persona.pains, persona.desires, persona.objections,
+      persona.age, persona.occupation, persona.location, persona.traits, persona.where_they_are, persona.tone_that_works, persona.updated_at
     from public.client_personas persona
     where persona.client_id = ?::uuid and persona.status = 'active'
     order by persona.created_at asc, persona.id asc

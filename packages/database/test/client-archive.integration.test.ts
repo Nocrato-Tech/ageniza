@@ -784,6 +784,8 @@ describe('every other child of the client is edited under the lock of its client
 
   interface Child {
     readonly table: string;
+    /** The name of the case when one table has more than one: each column of the persona profile is its own edit. */
+    readonly label?: string;
     readonly key: (id: string) => Record<string, string>;
     readonly seed: (clientId: string) => Promise<string>;
     readonly edit: (id: string) => (t: Knex.Transaction) => Promise<number>;
@@ -827,6 +829,26 @@ describe('every other child of the client is edited under the lock of its client
       edit: (id) => (t) => t('client_personas').where({ id }).update({ name: 'Persona renomeada', updated_by: ids.adminA }),
       afterCommit: 'no row'
     },
+    // The profile of the persona (decision 2026-11-11): each new column alone, so a column missing from the trigger is a case that fails.
+    ...([
+      ['age', 41],
+      ['occupation', 'Padeira'],
+      ['location', 'Campinas'],
+      ['traits', JSON.stringify(['Prática'])],
+      ['where_they_are', 'Instagram'],
+      ['tone_that_works', 'Direto']
+    ] as const).map(([column, value]): Child => ({
+      table: 'client_personas',
+      label: `client_personas.${column}`,
+      key: (id) => ({ id }),
+      seed: async (clientId) => {
+        const id = randomUUID();
+        await w.getOwner().knex('client_personas').insert({ id, client_id: clientId, name: 'Persona', updated_by: ids.adminA });
+        return id;
+      },
+      edit: (id) => (t) => t('client_personas').where({ id }).update({ [column]: value, updated_by: ids.adminA }),
+      afterCommit: 'no row'
+    })),
     {
       table: 'client_brand_sections',
       key: (clientId) => ({ client_id: clientId, section_key: 'branding' }),
@@ -858,7 +880,7 @@ describe('every other child of the client is edited under the lock of its client
     }
   ];
 
-  describe.each(children.map((child) => [child.table, child] as const))('%s', (_table, child) => {
+  describe.each(children.map((child) => [child.label ?? child.table, child] as const))('%s', (_table, child) => {
     it('an edit written while the archive is uncommitted is refused as A0020 and the row is as it was', async () => {
       const client = await newClient();
       const id = await child.seed(client);

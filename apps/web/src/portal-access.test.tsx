@@ -5,6 +5,7 @@ import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -59,6 +60,7 @@ const padaria = {
   contactEmail: null,
   closingDate: null,
   archivedAt: null,
+  ...clientRegistrationExtras,
   summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 3 }
 };
 

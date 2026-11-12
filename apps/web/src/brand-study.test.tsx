@@ -5,6 +5,7 @@ import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras, emptyPersonaProfile, type PersonaProfileFixture } from './client-registration-fixture.js';
 import { createConversationApi } from './conversation-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
@@ -56,6 +57,7 @@ const padaria = {
   contactEmail: null,
   closingDate: null,
   archivedAt: null,
+  ...clientRegistrationExtras,
   summary: { brandStudyFilled: 5, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 }
 };
 
@@ -72,7 +74,7 @@ const sectionOf = (key: string, over: Partial<SectionFixture> = {}): SectionFixt
   key, body: null, colors: null, archetype: null, updatedBy: null, updatedAt: null, ...over
 });
 
-interface PersonaFixture {
+interface PersonaFixture extends PersonaProfileFixture {
   id: string;
   name: string;
   description: string | null;
@@ -91,6 +93,7 @@ const donaMaria: PersonaFixture = {
   pains: 'Pouco tempo',
   desires: 'Clientes fiéis',
   objections: 'Preço',
+  ...emptyPersonaProfile(),
   status: 'active',
   updatedBy: null,
   updatedAt: null
