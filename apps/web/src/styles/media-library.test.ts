@@ -9,8 +9,8 @@ const motionOn = css.replace(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]
 
 describe('the media library in the redesign', () => {
   it('lifts a folder card on hover, and keeps it still for whoever asked for less motion', () => {
-    expect(declarationsFor(motionOn, '.content-folder:hover').get('transform')).toBe('translateY(-2px)');
-    expect(declarationsFor(reducedMotion, '.content-folder:hover').get('transform')).toBe('none');
+    expect(declarationsFor(motionOn, '.folder:hover').get('transform')).toBe('translateY(-2px)');
+    expect(declarationsFor(reducedMotion, '.folder:hover').get('transform')).toBe('none');
   });
 
   it('draws the shadow of the preview from a token, never from a fixed colour', () => {
