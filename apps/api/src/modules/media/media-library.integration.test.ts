@@ -335,6 +335,7 @@ describe('the library of a client, across its folders', () => {
     expect(await search('_')).toEqual(['a_b.png', 'relatorio_final.pdf']);
     expect(await search('a_b')).toEqual(['a_b.png']);
     expect(await search('\\')).toEqual([]);
+    expect(await search('\\a')).toEqual([]);
     expect(await search("' or 1=1 --")).toEqual([]);
     expect(await search('zzz')).toEqual([]);
     // A blank search is no search, and a file with no name is only in the list that is not searched.
@@ -621,6 +622,33 @@ describe('the folder in use now: the one of the client, not a default one, with 
     expect(await inUse(client)).toEqual(['Destino']);
   });
 
+  it('does not follow the alternative text, a name written as it was, or any other write of the row: only the upload, the rename and the move file a file', async () => {
+    const client = await freshClient();
+    const folder = await customFolder(client, 'Antiga');
+    const asset = await seedAsset({ clientId: client, folderId: folder, name: 'fixo.png', at: daysAgo(40) });
+
+    expect((await call('PATCH', assetUrl(client, asset), 'opVis', { altText: 'Texto novo' })).statusCode).toBe(200);
+    expect((await call('PATCH', assetUrl(client, asset), 'opVis', { altText: null })).statusCode).toBe(200);
+    expect((await call('PATCH', assetUrl(client, asset), 'opVis', { name: 'fixo.png' })).statusCode).toBe(200);
+    // What the processing of a video does to the row: it writes it, and files nothing.
+    await owner.knex('media_assets').where({ id: asset }).update({ updated_at: new Date() });
+    expect(await inUse(client)).toEqual([]);
+
+    expect((await call('PATCH', assetUrl(client, asset), 'opVis', { name: 'novo.png' })).statusCode).toBe(200);
+    expect(await inUse(client)).toEqual(['Antiga']);
+  });
+
+  it('is the folder of a file that was confirmed a moment ago, since the upload is what files it', async () => {
+    const client = await freshClient();
+    const folder = await customFolder(client, 'Enviada agora');
+    const asset = await seedAsset({ clientId: client, folderId: folder, status: 'pending', at: daysAgo(40) });
+    expect(await inUse(client)).toEqual([]);
+
+    await owner.knex('media_assets').where({ id: asset }).update({ status: 'confirmed', confirmed_size_bytes: 1_000, confirmed_content_type: 'image/png', confirmed_at: new Date() });
+
+    expect(await inUse(client)).toEqual(['Enviada agora']);
+  });
+
   it('holds only the folders of the client asked for', async () => {
     const busy = await freshClient();
     const quiet = await freshClient();
@@ -848,14 +876,14 @@ describe('editing a file: its name and its alternative text', () => {
 
     const names: unknown[] = [
       '../../etc/passwd', 'a/b.png', 'a\\b.png', '/abs.png', '..', '.', '...', '', '   ', 'a\u0000b', 'a\nb', 'a\r\nX-Injected: 1', 'a\tb', 'a\u001bb',
-      'a‮b', 'a​b', 'a﻿b', 'a⁦b', 123, null, true, ['a'], { name: 'a' }
+      'a‮b', 'a​b', 'a﻿b', 'a⁦b', 'a\u061cb', 'a\u2028b', 'a\u2029b', 123, null, true, ['a'], { name: 'a' }
     ];
     for (const name of names) {
       const reply = await call('PATCH', assetUrl(client, asset), 'opVis', { name });
       expect({ name, status: reply.statusCode }).toEqual({ name, status: 400 });
       expect(reply.json().error.code).toBe('VALIDATION_ERROR');
     }
-    for (const altText of ['linha\noutra', 'a\u0000b', 'a‮b', 'x'.repeat(501), 5, ['a']]) {
+    for (const altText of ['linha\noutra', 'a\u0000b', 'a‮b', 'a\u061cb', 'linha\u2028outra', 'linha\u2029outra', 'x'.repeat(501), 5, ['a']]) {
       expect({ altText, status: (await call('PATCH', assetUrl(client, asset), 'opVis', { altText })).statusCode }).toEqual({ altText, status: 400 });
     }
     expect(await snapshot(asset)).toBe(before);

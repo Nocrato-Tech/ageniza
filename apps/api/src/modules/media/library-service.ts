@@ -284,7 +284,8 @@ export const folderSummaryFrom = (row: FolderSummaryRow): MediaFolderSummary => 
  * The folders of a client in the order of the folder list, each with what it holds: the confirmed files by type, their size, the
  * last change (the folder's own creation, or a confirmed file written or removed in it) and who uploaded the newest one. At most one
  * folder is "in use now": the one that is not a default folder whose files, the ones still in it, were written most recently, if that
- * was within `MEDIA_FOLDER_IN_USE_WINDOW_DAYS`; a file is written by its upload, its rename and its move into the folder.
+ * was within `MEDIA_FOLDER_IN_USE_WINDOW_DAYS`. A file is written, for this, by the confirmation of its upload, its rename and its move
+ * into the folder, which is what `filed_at` holds: the alternative text and the processing of a video do not move it.
  */
 export const listFolderSummaries = async (
   transaction: Transaction,
@@ -296,7 +297,7 @@ export const listFolderSummaries = async (
       select folder.id
       from public.media_folders folder
       cross join lateral (
-        select max(asset.updated_at) as written_at
+        select max(asset.filed_at) as written_at
         from public.media_assets asset
         where asset.folder_id = folder.id and ${confirmedOf}
       ) live

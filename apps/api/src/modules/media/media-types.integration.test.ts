@@ -456,7 +456,7 @@ describe('who may send these files, and where', () => {
 
   it('refuses a name that is a path, a control character or too long, and a name of 255 characters is kept', async () => {
     const before = await rowCount(clientA);
-    for (const fileName of ['../../etc/passwd', 'a/b.pdf', 'a\\b.pdf', '..', '', 'a\u0000b.pdf', 'a\nb.pdf', 'a‮b.pdf', 'x'.repeat(256), 'é'.repeat(256)]) {
+    for (const fileName of ['../../etc/passwd', 'a/b.pdf', 'a\\b.pdf', '..', '', 'a\u0000b.pdf', 'a\nb.pdf', 'a‮b.pdf', 'a\u061cb.pdf', 'a\u2028b.pdf', 'a\u2029b.pdf', 'x'.repeat(256), 'é'.repeat(256)]) {
       const { created } = await upload({ fileName, contentType: 'application/pdf', bytes: pdfBytes() });
       expect({ fileName, status: created.statusCode }).toEqual({ fileName, status: 400 });
     }

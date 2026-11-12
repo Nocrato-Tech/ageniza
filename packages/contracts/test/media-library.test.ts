@@ -51,6 +51,9 @@ describe('the name of a media file', () => {
     ['a bidi isolate', `foto${char(0x2066)}.png`],
     ['a zero-width space', `foto${char(0x200b)}.png`],
     ['a byte order mark', `foto${char(0xfeff)}.png`],
+    ['an Arabic letter mark', `foto${char(0x61c)}.png`],
+    ['a line separator', `foto${char(0x2028)}.png`],
+    ['a paragraph separator', `foto${char(0x2029)}.png`],
     ['a lone surrogate', `foto${String.fromCharCode(0xd800)}.png`]
   ])('refuses %s', (_label, name) => {
     expect(MediaFileNameSchema.safeParse(name).success).toBe(false);
@@ -78,7 +81,10 @@ describe('the alternative text of a media file', () => {
     ['a line break', 'duas\nlinhas'],
     ['a NUL', `a${char(0)}b`],
     ['a right-to-left override', `a${char(0x202e)}b`],
-    ['a zero-width space', `a${char(0x200b)}b`]
+    ['a zero-width space', `a${char(0x200b)}b`],
+    ['an Arabic letter mark', `a${char(0x61c)}b`],
+    ['a line separator', `a${char(0x2028)}b`],
+    ['a paragraph separator', `a${char(0x2029)}b`]
   ])('refuses %s', (_label, text) => {
     expect(MediaAltTextSchema.safeParse(text).success).toBe(false);
   });

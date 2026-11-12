@@ -527,6 +527,11 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
     expect(completed.statusCode).toBe(200);
     expect(completed.json()).toMatchObject({ assetId, status: 'confirmed', sizeBytes: smallPng.length });
     expect((await call('GET', assetsUrl(agencyA, clientA1, folder), 'opVis')).json().data.map((item: { id: string }) => item.id)).toEqual([assetId]);
+
+    // The folder is in use from the confirmation: the file was put in it then.
+    const filed = await owner.knex('media_assets').where({ id: assetId }).first('filed_at', 'confirmed_at');
+    expect(filed?.filed_at).toBeInstanceOf(Date);
+    expect(filed?.filed_at).toEqual(filed?.confirmed_at);
   });
 
   it('needs conteudo.operar AND conteudo.visualizar for a media of a client, and midia.enviar for one without', async () => {

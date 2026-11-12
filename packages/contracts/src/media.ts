@@ -18,8 +18,9 @@ export const MEDIA_ALT_TEXT_MAX_LENGTH = 500;
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 const characterCount = (value: string): number => Array.from(value).length;
+// The line and paragraph separators (U+2028, U+2029) are not controls, and they break a line as a line feed does.
 const isOneReadableLine = (value: string): boolean =>
-  !/\p{Cc}/u.test(value) && !hasInvisibleCharacters(value) && !LONE_SURROGATE.test(value);
+  !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(value) && !hasInvisibleCharacters(value) && !LONE_SURROGATE.test(value);
 
 /**
  * The name a person gives a file: a label, never a path and never part of the object key. One line of at most 255 characters, with no
