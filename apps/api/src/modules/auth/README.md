@@ -21,6 +21,9 @@ Origin/CSRF checking is global (see below); no route repeats it.
 | `POST /auth/logout-all` | — (session cookie) | `204`, revokes every session for the user; audits `auth.logout_all` | `401 UNAUTHENTICATED` |
 | `GET /auth/session` | — (session cookie) | `200 { user: { id, name, email }, session: { expiresAt } }` | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
 | `GET /auth/session/check` | — (session cookie) | the same `200`, but the session is read with `disableRefresh`: no renewal, no cookie (#411) | `401 UNAUTHENTICATED`; `401 SESSION_EXPIRED` |
+| `GET /auth/sessions` | — (session cookie) | `200 { sessions: [{ id, current, browser, os, city, lastUsedAt, createdAt }] }`, the active sessions of the account, newest first, at most 100 (#893) | `401 UNAUTHENTICATED`; `403 EMAIL_NOT_CONFIRMED`; `429 RATE_LIMITED` |
+| `DELETE /auth/sessions/:sessionId` | — (session cookie) | `204`, ends that session of the account (#893) | `404 SESSION_NOT_FOUND` (another account's, nonexistent, ended or malformed id: one answer); `409 USE_LOGOUT` (the current session); `401`; `403 EMAIL_NOT_CONFIRMED`; `429 RATE_LIMITED` |
+| `POST /auth/sessions/revoke-others` | — (session cookie) | `200 { revoked }`, ends every other session of the account and never the current one (#893) | `401`; `403 EMAIL_NOT_CONFIRMED`; `429 RATE_LIMITED` |
 | `POST /auth/password/forgot` | `{ email }` | always `202 {}` | `429 RATE_LIMITED` |
 | `POST /auth/password/reset` | `{ token, newPassword }` | `204`, no body and no cookie: the password changes, every session of the user is revoked and none is created; audits `auth.password_reset` | `400 INVALID_LINK`; `400 VALIDATION_ERROR` (a stray `inviteToken` too) |
 
@@ -143,6 +146,39 @@ session. `GET /auth/google/start?appRedirect=<deep link>` returns to that link, 
 the session to the redirect as `?cookie=`, and the callback forwards it only to a listed scheme (a refusal goes to
 `<deep link>?erro=google`, with no reason, and an unlisted scheme to the web failure screen).
 
+## Active sessions of the account (issue #893, `specs/auth.md` section 14)
+
+The person sees where the account is signed in and ends one session or all but this one. `session-routes.ts` holds the three
+routes, `sessions.ts` the queries, and every statement names the account of the session the request holds (`request.auth.userId`),
+never one the request chose.
+
+- **The list** answers `{ id, current, browser, os, city, lastUsedAt, createdAt }`, newest first (`createdAt`), at most 100, only
+  sessions still open (`expiresAt > now()`). `browser` and `os` come from a closed list (`user-agent.ts`: Chrome, Edge, Firefox,
+  Safari, Opera, Samsung Internet; Windows, macOS, iOS, Android, Linux, ChromeOS) and are `null` when the agent says none of them
+  (the app's own agent included). The address, the token and the text of the `userAgent` are never read into the answer.
+  `lastUsedAt` is the session's `updatedAt`: Better Auth renews it at most once a day, so it is "last renewed", not a heartbeat.
+- **Ending one** is one `delete ... where id = ? and "userId" = ? and id <> <current>` statement: a session of another account,
+  one that does not exist, one that already ended and an id that is not a UUID all answer the same `404 SESSION_NOT_FOUND`. The
+  current session answers `409 USE_LOGOUT` (the person leaves with `/auth/logout`, which also clears the cookie); the route checks
+  it, and the statement refuses it as well.
+- **Ending the others** reuses `revokeUserSessions` (`session-revocation.ts`), the same function that ends every session when a
+  collaborator or a portal access is removed, with the current session kept. It answers the number of sessions that were still
+  open; ended ones it finds are deleted but not counted. The SPEC's table says `204` for this route and its text asks for the
+  number, so it answers `200 { revoked }`.
+- **A revoked session** is refused (`401`) on its next request: the cookie cache is off, so the guard reads the row every time.
+- The account of an invitation that has not confirmed its e-mail opens none of the three (`403 EMAIL_NOT_CONFIRMED`, the plain
+  guard, decision 2026-10-27); once confirmed, the single session of its acceptance is listed as the current one.
+- The routes are limited per account, not per address (`AUTH_RATE_LIMITS.sessions`): the list 120 / 15 min, ending 30 / 15 min.
+  The limiter runs after the guard, so a request refused for having no session counts for nobody.
+
+**The city.** `auth."session".city` (migration `20261112000100`) is written once, when the session is created, from the `cf-ipcity`
+header (`session-city.ts`, called by the `databaseHooks.session.create.before` hook in `better-auth.ts`): Node hands the header
+over as Latin-1, so the UTF-8 the edge sends is decoded back, then trimmed; a value with a control character, a bidirectional
+or invisible character, a broken UTF-8 sequence or more than 80 characters is dropped whole and the sign-in goes on without a city.
+The column keeps the same rule as a `CHECK`, and the application role has no `UPDATE` on it, so a renewal never rewrites it.
+It is informational: nothing decides on it. **`cf-ipcity` only reaches the API when the Cloudflare rule "Add visitor location
+headers" is on, which is the owner's action in the dashboard**; without it every session has no city and the screen omits it.
+
 
 ## Composition
 
@@ -150,14 +186,18 @@ the session to the redirect as `?cookie=`, and the callback forwards it only to 
   dependencies (a `pg.Pool`, `ApiConfig`, an `EmailService`, a logger, an `AuthAuditRecorder`).
   Nothing is a module-level singleton.
 - `bridge.ts` is the only place that turns a Fastify request into the `Headers` Better Auth reads
-  (`cookie`, `origin`, `user-agent`, and `x-ageniza-client-ip` always set from `request.ip`,
-  discarding anything the client sent under that name) and that copies `set-cookie` back onto the
+  (`cookie`, `origin`, `user-agent`, the `cf-ipcity` of the edge when there is one, and `x-ageniza-client-ip` always set from
+  `request.ip`, discarding anything the client sent under that name) and that copies `set-cookie` back onto the
   Fastify reply. It also converts a Better Auth `APIError` into the module's public error contract
   without ever leaking Better Auth's own message or code.
 - `session-guard.ts` (`createRequireSession`) is the `preHandler` every module needing an
   authenticated request reuses (20B and 20C included). It calls `auth.api.getSession`, then enforces
   the 30-day absolute session lifetime described below, and attaches `request.auth`.
 - `routes.ts` wires the six routes above to `auth.api.*`, the rate limiter, and the audit recorder.
+- `session-routes.ts` and `sessions.ts` are the three routes of the active sessions and their queries; `session-city.ts` cleans
+  the city header, `user-agent.ts` turns a `User-Agent` into a browser and a system from a closed list, and
+  `session-revocation.ts` is the one function that ends the sessions of an account (`revokeUserSessions`, with the rule of what is
+  active, `ACTIVE_SESSION_SQL`, shared with the list).
 - `google.ts` (the id token and admission rules) and `google-routes.ts` (providers, start, callback) are the Google
   sign-in; `per-ip-rate-limit.ts` holds the per-address limiter `routes.ts` and `google-routes.ts` share.
 - `server.ts` (the process entry point) owns the Better Auth pool's lifetime and closes it during
@@ -196,6 +236,9 @@ Three independent dimensions, matching issue #31 exactly. Every limit exceeded r
 | `POST /auth/email/verification/resend` | 30 / 15 min | 3 / 15 min | 10 / 1 h |
 | `POST /auth/email/verify` | 100 / 15 min | the login's counters, keyed by the link's e-mail | the login's |
 | `POST /auth/password/reset` | 30 / 15 min | — | — |
+
+The three session routes (`GET /auth/sessions`, `DELETE /auth/sessions/:sessionId`, `POST /auth/sessions/revoke-others`) are
+limited per signed-in account, not per address: 120 / 15 min for the list and 30 / 15 min for the two that end sessions.
 
 - **Per IP** uses the already-registered `@fastify/rate-limit` plugin (`config: { rateLimit: {...} }`
   on the route), keyed by `request.ip` (which is real once `API_TRUSTED_PROXY_CIDRS` is configured

@@ -11,6 +11,7 @@ import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { EmailService } from './email-service.js';
 import { createGoogleUserInfo } from './google.js';
 import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
+import { cleanSessionCity, SESSION_CITY_HEADER } from './session-city.js';
 
 export interface CreateAuthDependencies {
   readonly pool: Pool;
@@ -61,7 +62,10 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
-      cookieCache: { enabled: false }
+      cookieCache: { enabled: false },
+      // The approximate city of the sign-in (specs/auth.md section 14), written when the session is created and never changed
+      // (the column cannot be updated by the application role). Informational: nothing decides on it.
+      additionalFields: { city: { type: 'string', required: false, input: false } }
     },
     user: {
       // The day the credential of the account was last replaced (a reset, Google taking an account over): a session
@@ -102,6 +106,13 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
         }
       },
       session: {
+        create: {
+          // The city comes from the one header the edge sets, cleaned here and nowhere else; a header that is not a city is no city,
+          // and the sign-in never fails for it.
+          before: async (_session, context) => ({
+            data: { city: cleanSessionCity((context?.headers ?? context?.request?.headers)?.get(SESSION_CITY_HEADER)) }
+          })
+        },
         update: {
           // B8: the absolute session lifetime must not depend solely on `session-guard.ts`
           // rejecting an over-age session at request time. This clamps every renewal (including

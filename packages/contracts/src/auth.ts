@@ -43,6 +43,48 @@ export const AuthSessionResponseSchema = z.object({
   session: z.object({ expiresAt: z.string().datetime({ offset: true }) }).strict()
 }).strict();
 
+/**
+ * The browsers and the systems the API names from the user agent of a session (specs/auth.md section 14). A closed list: what the
+ * server cannot place is `null`, and no text of the header, the address or the token ever reaches a response.
+ */
+export const AUTH_SESSION_BROWSERS = ['Chrome', 'Edge', 'Firefox', 'Safari', 'Opera', 'Samsung Internet'] as const;
+export const AUTH_SESSION_SYSTEMS = ['Windows', 'macOS', 'iOS', 'Android', 'Linux', 'ChromeOS'] as const;
+
+/** The most sessions the list shows, the most recent ones: a defensive ceiling, far above what a person has. */
+export const AUTH_SESSION_LIST_MAX = 100;
+
+/**
+ * One active session of the account (`GET /auth/sessions`). `id` is the identifier of the session row, made to name it in
+ * `DELETE /auth/sessions/:sessionId`; it is never the token. `lastUsedAt` is the last renewal of the session, at most once
+ * a day of use, so it is only as exact as a day. `city` is the approximate place the session was created from, when the edge
+ * said one; it is informative and nothing decides on it.
+ */
+export const AuthActiveSessionSchema = z.object({
+  id: z.string().uuid(),
+  current: z.boolean(),
+  browser: z.enum(AUTH_SESSION_BROWSERS).nullable(),
+  os: z.enum(AUTH_SESSION_SYSTEMS).nullable(),
+  city: z.string().min(1).max(80).nullable(),
+  lastUsedAt: z.string().datetime({ offset: true }),
+  createdAt: z.string().datetime({ offset: true })
+}).strict();
+
+/** The active sessions of the account, the most recently created first. */
+export const AuthSessionListResponseSchema = z.object({
+  sessions: z.array(AuthActiveSessionSchema).max(AUTH_SESSION_LIST_MAX)
+}).strict();
+
+/**
+ * A plain string, not `.uuid()`: a malformed id answers the same 404 as one that is another account's or does not exist, never a
+ * 400 that would tell them apart (the route checks the UUID itself).
+ */
+export const AuthSessionPathParamsSchema = z.object({ sessionId: z.string().min(1).max(100) }).strict();
+
+export const AuthRevokeSessionRequestSchema = AuthNoBodySchema;
+export const AuthRevokeOtherSessionsRequestSchema = AuthNoBodySchema;
+/** How many sessions of the account, other than the current one, were ended. */
+export const AuthRevokeOtherSessionsResponseSchema = z.object({ revoked: z.number().int().nonnegative() }).strict();
+
 export const AuthPasswordForgotRequestSchema = z.object({
   email: AuthEmailSchema,
   inviteToken: AuthInvitationTokenSchema.optional()
@@ -84,6 +126,12 @@ export type AuthLogoutRequest = z.infer<typeof AuthLogoutRequestSchema>;
 export type AuthLogoutAllRequest = z.infer<typeof AuthLogoutAllRequestSchema>;
 export type AuthLogoutResponse = z.infer<typeof AuthLogoutResponseSchema>;
 export type AuthLogoutAllResponse = z.infer<typeof AuthLogoutAllResponseSchema>;
+export type AuthSessionBrowser = (typeof AUTH_SESSION_BROWSERS)[number];
+export type AuthSessionSystem = (typeof AUTH_SESSION_SYSTEMS)[number];
+export type AuthActiveSession = z.infer<typeof AuthActiveSessionSchema>;
+export type AuthSessionListResponse = z.infer<typeof AuthSessionListResponseSchema>;
+export type AuthSessionPathParams = z.infer<typeof AuthSessionPathParamsSchema>;
+export type AuthRevokeOtherSessionsResponse = z.infer<typeof AuthRevokeOtherSessionsResponseSchema>;
 export type AuthPasswordForgotRequest = z.infer<typeof AuthPasswordForgotRequestSchema>;
 export type AuthPasswordForgotResponse = z.infer<typeof AuthPasswordForgotResponseSchema>;
 export type AuthPasswordResetRequest = z.infer<typeof AuthPasswordResetRequestSchema>;

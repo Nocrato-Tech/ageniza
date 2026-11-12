@@ -83,7 +83,7 @@ Verifica se a API está pronta para receber tráfego.
 
 **Erros:** `503 NOT_READY`
 
-### auth — Cadastro e confirmação do e-mail, login, sessão, logout e recuperação de senha.
+### auth — Cadastro e confirmação do e-mail, login, sessão, logout, as sessões ativas da conta e recuperação de senha.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
@@ -98,6 +98,9 @@ Verifica se a API está pronta para receber tráfego.
 | `POST` | `/auth/logout-all` | Sessão | — | Encerra todas as sessões da conta |
 | `GET` | `/auth/session` | Sessão | — | Devolve a sessão e a pessoa autenticada |
 | `GET` | `/auth/session/check` | Sessão | — | Confere se a sessão continua válida, sem renová-la |
+| `GET` | `/auth/sessions` | Sessão | — | Lista as sessões ativas da conta |
+| `DELETE` | `/auth/sessions/:sessionId` | Sessão | — | Encerra uma das outras sessões da conta |
+| `POST` | `/auth/sessions/revoke-others` | Sessão | — | Encerra todas as sessões da conta, menos a atual |
 | `POST` | `/auth/password/forgot` | Público | — | Pede o link de recuperação de senha |
 | `POST` | `/auth/password/reset` | Público | — | Redefine a senha |
 
@@ -320,6 +323,70 @@ Confere se a sessão continua válida, sem renová-la.
 ```
 
 **Erros:** `401 SESSION_EXPIRED` · `401 UNAUTHENTICATED` · `500 INTERNAL_ERROR`
+
+#### `GET /auth/sessions`
+
+Lista as sessões ativas da conta.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Resposta `200`** — As sessões ativas da conta.
+
+```json
+{
+  "sessions": [
+    {
+      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "current": true,
+      "browser": "Chrome",
+      "os": "Windows",
+      "city": "São Paulo",
+      "lastUsedAt": "2026-11-12T12:00:00.000Z",
+      "createdAt": "2026-11-10T08:30:00.000Z"
+    },
+    {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "current": false,
+      "browser": "Safari",
+      "os": "iOS",
+      "city": null,
+      "lastUsedAt": "2026-11-09T21:15:00.000Z",
+      "createdAt": "2026-11-05T19:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Erros:** `401 SESSION_EXPIRED` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `DELETE /auth/sessions/:sessionId`
+
+Encerra uma das outras sessões da conta.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Resposta `204`** — Sessão encerrada.
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `404 SESSION_NOT_FOUND` · `409 USE_LOGOUT` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `POST /auth/sessions/revoke-others`
+
+Encerra todas as sessões da conta, menos a atual.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Resposta `200`** — Quantas sessões foram encerradas.
+
+```json
+{
+  "revoked": 2
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /auth/password/forgot`
 
@@ -5092,6 +5159,8 @@ Avança o relógio da assinatura simulada (só fora de produção).
 | `VALIDATION_ERROR` | Request validation failed |
 | `UNAUTHENTICATED` | Authentication is required. |
 | `SESSION_EXPIRED` | Session has expired. |
+| `SESSION_NOT_FOUND` | Sessão não encontrada. |
+| `USE_LOGOUT` | Esta é a sessão deste aparelho. Para sair dela, use "Sair". |
 | `INVALID_CREDENTIALS` | Credenciais inválidas. |
 | `FORBIDDEN` | You do not have permission to perform this action. |
 | `NO_CONTEXT_ACCESS` | Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite. |

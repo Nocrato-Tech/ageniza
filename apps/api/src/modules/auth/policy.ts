@@ -44,6 +44,12 @@ export const AUTH_RATE_LIMITS = {
   invitation: {
     authenticatedIp: { max: 30, windowMs: FIFTEEN_MINUTES_MS },
     publicIp: { max: 20, windowMs: FIFTEEN_MINUTES_MS }
+  },
+  // The person's own sessions, per account (specs/auth.md section 14). The list is read by the account menu, so it is the
+  // generous one; ending one or the others is rare.
+  sessions: {
+    list: { max: 120, windowMs: FIFTEEN_MINUTES_MS },
+    revoke: { max: 30, windowMs: FIFTEEN_MINUTES_MS }
   }
 } as const satisfies Readonly<Record<string, Readonly<Record<string, AuthRateLimitWindow>>>>;
 

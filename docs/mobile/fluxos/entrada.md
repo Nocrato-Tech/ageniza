@@ -17,9 +17,9 @@ Este fluxo cobre cadastro, confirmação do e-mail, login, recuperação de senh
 | `GET` | `/auth/session/check` | sessão | confere a sessão sem renovar |
 | `POST` | `/auth/logout` | sessão | sai deste aparelho |
 | `POST` | `/auth/logout-all` | sessão | sai de todos os aparelhos |
-| `GET` | `/auth/sessions` | sessão | lista as sessões ativas **da própria conta** (*proposta*, #893) |
-| `DELETE` | `/auth/sessions/:sessionId` | sessão | sai de **uma** sessão da conta que não é a atual (*proposta*) |
-| `POST` | `/auth/sessions/revoke-others` | sessão | sai de **todas menos a atual** (*proposta*) |
+| `GET` | `/auth/sessions` | sessão | lista as sessões ativas **da própria conta** (#893) |
+| `DELETE` | `/auth/sessions/:sessionId` | sessão | sai de **uma** sessão da conta que não é a atual |
+| `POST` | `/auth/sessions/revoke-others` | sessão | sai de **todas menos a atual** |
 | `POST` | `/auth/password/forgot` | público | pede o link de recuperação de senha |
 | `POST` | `/auth/password/reset` | público, com o token do link | define a senha nova |
 | `GET` | `/me/contexts/resolve` | sessão | decide em qual contexto entrar |
@@ -92,10 +92,12 @@ sequenceDiagram
 
 Decisão de 2026-11-11 ([sessões ativas na conta, #893](../../business/decisions/2026-11-11-estrutural-sessoes-ativas-na-conta-com-cidade-do-cabecalho-do-cloudflare.md), pendente de validação do dono; SPEC em `specs/auth.md`, seção 14). A sessão é **global**, não de agência: a lista é a mesma em qualquer contexto, agência ou portal.
 
-1. `GET /auth/sessions` devolve as sessões da **própria conta**, da mais recente à mais antiga: `{ id, current, browser, os, city, lastUsedAt, createdAt }`. O navegador e o sistema vêm do agente do navegador; a `city` só existe quando a borda informou (sem o cabeçalho, **não mostre cidade**); `current` marca "Este aparelho". Nunca há IP, token nem dado de sessão de outra pessoa.
-2. Em cada outra sessão, "Sair deste aparelho" chama `DELETE /auth/sessions/:sessionId` (`204`). A sessão atual é `409 USE_LOGOUT` (ela sai por "Sair"), e a sessão de outra conta ou inexistente é `404`.
-3. "Sair de todas as outras" chama `POST /auth/sessions/revoke-others` (`204`; encerra todas menos a atual).
-4. A cidade é informativa e vem do cabeçalho de localização que a borda do Cloudflare põe (`cf-ipcity`), guardada só como o nome da cidade; não há serviço externo de geolocalização, e nenhuma decisão de segurança depende dela. "Usando agora" é a sessão atual; nas outras, o dia do último uso, que vem da renovação da sessão (no máximo a cada 24 horas de uso), portanto não é um relógio exato.
+1. `GET /auth/sessions` devolve as sessões **abertas da própria conta**, da mais recente à mais antiga (até 100): `{ sessions: [{ id, current, browser, os, city, lastUsedAt, createdAt }] }`. O navegador (Chrome, Edge, Firefox, Safari, Opera, Samsung Internet) e o sistema (Windows, macOS, iOS, Android, Linux, ChromeOS) vêm do agente do navegador; quando o agente não é reconhecido (o próprio app, por exemplo), `browser` e `os` são `null` e a tela mostra um rótulo genérico, como "Aparelho". A `city` só existe quando a borda informou (sem o cabeçalho, `city` é `null` e **a tela não mostra cidade**); `current` marca "Este aparelho". Nunca há IP, token, texto do agente nem dado de sessão de outra pessoa. A resposta não é guardada em cache (`Cache-Control: no-store`), e a rota aceita 120 chamadas a cada 15 minutos por conta.
+2. Em cada outra sessão, "Sair deste aparelho" chama `DELETE /auth/sessions/:sessionId` (`204`, sem corpo). A sessão atual é `409 USE_LOGOUT` (ela sai por "Sair"); a sessão de outra conta, uma que não existe, uma que já acabou e um id que não é um UUID respondem todos o mesmo `404 SESSION_NOT_FOUND`. Depois do `204`, atualize a lista.
+3. "Sair de todas as outras" chama `POST /auth/sessions/revoke-others`, que responde **`200 { revoked }`** (a SPEC diz `204` na tabela e pede o número no texto; vale o número): `revoked` é quantas sessões abertas foram encerradas e a atual nunca entra. Com `revoked: 0` a lista já estava só com a atual. As duas rotas que encerram aceitam 30 chamadas a cada 15 minutos por conta (`429 RATE_LIMITED` depois).
+   - Nenhuma das três tem corpo, e todas pedem o mesmo cabeçalho de origem das demais escritas.
+   - A conta de convite que ainda não confirmou o e-mail recebe `403 EMAIL_NOT_CONFIRMED` nas três; depois de confirmar, a lista mostra a única sessão do aceite como a atual.
+4. A cidade é informativa e vem do cabeçalho de localização que a borda do Cloudflare põe (`cf-ipcity`, que só chega com a regra "Add visitor location headers" ligada no Cloudflare, ação do dono), guardada só como o nome da cidade, na hora em que a sessão é criada e sem nunca mudar depois (um cabeçalho com caractere de controle, invisível ou de mais de 80 caracteres vira "sem cidade", e o login segue); não há serviço externo de geolocalização, e nenhuma decisão de segurança depende dela. "Usando agora" é a sessão atual; nas outras, o dia do último uso, que vem da renovação da sessão (no máximo a cada 24 horas de uso), portanto não é um relógio exato.
 5. Quem perde a sessão recebe `401` na próxima chamada e vai ao login, como sempre.
 
 ## Esqueci a senha

@@ -38,6 +38,11 @@ import {
   AuthPasswordForgotRequestSchema,
   AuthPasswordForgotResponseSchema,
   AuthPasswordResetRequestSchema,
+  AuthRevokeOtherSessionsRequestSchema,
+  AuthRevokeOtherSessionsResponseSchema,
+  AuthRevokeSessionRequestSchema,
+  AuthSessionListResponseSchema,
+  AuthSessionPathParamsSchema,
   AuthSessionResponseSchema,
   AuthSignUpRequestSchema,
   AuthSignUpResponseSchema,
@@ -261,7 +266,7 @@ export const API_DOCUMENT_INFO = {
 
 export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   system: 'Saúde e prontidão do processo.',
-  auth: 'Cadastro e confirmação do e-mail, login, sessão, logout e recuperação de senha.',
+  auth: 'Cadastro e confirmação do e-mail, login, sessão, logout, as sessões ativas da conta e recuperação de senha.',
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
@@ -281,6 +286,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   VALIDATION_ERROR: 'Request validation failed',
   UNAUTHENTICATED: 'Authentication is required.',
   SESSION_EXPIRED: 'Session has expired.',
+  SESSION_NOT_FOUND: 'Sessão não encontrada.',
+  USE_LOGOUT: 'Esta é a sessão deste aparelho. Para sair dela, use "Sair".',
   INVALID_CREDENTIALS: 'Credenciais inválidas.',
   FORBIDDEN: 'You do not have permission to perform this action.',
   NO_CONTEXT_ACCESS: 'Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite.',
@@ -369,6 +376,7 @@ const commentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const folderId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const storyScriptId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const storySceneId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const sessionId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 
 const storyScriptExample = {
   id: storyScriptId,
@@ -938,6 +946,91 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       }
     }],
     errors: [COMMON_ERRORS.internal, { status: 401, code: 'UNAUTHENTICATED' }, { status: 401, code: 'SESSION_EXPIRED' }]
+  },
+  {
+    method: 'get',
+    path: '/auth/sessions',
+    operationId: 'getAuthSessions',
+    module: 'auth',
+    summary: 'Lista as sessões ativas da conta',
+    description: [
+      'As sessões ativas **da própria conta**, da criada há menos tempo para a mais antiga (no máximo 100); a expirada não entra.',
+      '`id` identifica a sessão em `DELETE /auth/sessions/:sessionId` e nunca é o token; `current` marca a sessão do cookie da requisição.',
+      '`browser` e `os` são lidos do `User-Agent` no servidor, de uma lista fechada, e são `null` quando ele não diz.',
+      '`city` é a cidade aproximada que o cabeçalho de localização do Cloudflare (`cf-ipcity`) trouxe **na criação da sessão**, ou `null`;',
+      'só informa, nenhuma decisão de segurança depende dela. O IP, o token e o `User-Agent` bruto nunca saem da API.',
+      '`lastUsedAt` é a última renovação da sessão (no máximo a cada 24 horas de uso): vale como o dia, não como a hora.',
+      'A resposta não é guardada em cache (`Cache-Control: no-store`).'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    responses: [{
+      status: 200,
+      description: 'As sessões ativas da conta.',
+      schema: AuthSessionListResponseSchema,
+      example: {
+        sessions: [
+          { id: sessionId, current: true, browser: 'Chrome', os: 'Windows', city: 'São Paulo', lastUsedAt: '2026-11-12T12:00:00.000Z', createdAt: '2026-11-10T08:30:00.000Z' },
+          { id: userId, current: false, browser: 'Safari', os: 'iOS', city: null, lastUsedAt: '2026-11-09T21:15:00.000Z', createdAt: '2026-11-05T19:00:00.000Z' }
+        ]
+      }
+    }],
+    errors: [COMMON_ERRORS.internal, { status: 401, code: 'UNAUTHENTICATED' }, { status: 401, code: 'SESSION_EXPIRED' }, { status: 429, code: 'RATE_LIMITED' }]
+  },
+  {
+    method: 'delete',
+    path: '/auth/sessions/:sessionId',
+    operationId: 'deleteAuthSession',
+    module: 'auth',
+    summary: 'Encerra uma das outras sessões da conta',
+    description: [
+      'Encerra uma sessão ativa **da própria conta** que não é a atual: a próxima chamada do cookie dela responde 401.',
+      'A sessão atual responde 409 `USE_LOGOUT` (ela sai por `POST /auth/logout`). A sessão de outra conta, uma que não existe,',
+      'uma que já expirou e um identificador malformado respondem o mesmo 404 `SESSION_NOT_FOUND`, sem dizer qual dos quatro.',
+      'Não aceita corpo.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    params: AuthSessionPathParamsSchema,
+    body: AuthRevokeSessionRequestSchema,
+    responses: [{ status: 204, description: 'Sessão encerrada.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'SESSION_NOT_FOUND' },
+      { status: 409, code: 'USE_LOGOUT' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/auth/sessions/revoke-others',
+    operationId: 'postAuthSessionsRevokeOthers',
+    module: 'auth',
+    summary: 'Encerra todas as sessões da conta, menos a atual',
+    description: [
+      'Encerra toda sessão da conta que não é a do cookie da requisição, que **nunca** é encerrada; a próxima chamada de cada uma responde 401.',
+      'Responde 200 com o número de sessões ativas encerradas, e zero é uma resposta válida. A SPEC (seção 14) pede 204 "e devolve o número":',
+      'um 204 não tem corpo, então a resposta é 200 com `{ revoked }`. Não aceita corpo.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    body: AuthRevokeOtherSessionsRequestSchema,
+    responses: [{
+      status: 200,
+      description: 'Quantas sessões foram encerradas.',
+      schema: AuthRevokeOtherSessionsResponseSchema,
+      example: { revoked: 2 }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
   },
   {
     method: 'post',
