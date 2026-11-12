@@ -5550,6 +5550,112 @@ Avança o relógio da assinatura simulada (só fora de produção).
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 SUBSCRIPTION_NOT_AVAILABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
+### notifications — As notificações da pessoa dentro do app: a lista paginada, a contagem de não lidas para o sino e marcar como lida, uma ou todas. Cada pessoa lê só as próprias; quem as cria é o banco, junto do evento.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `GET` | `/agencies/:agencyId/notifications` | Sessão + vínculo com a agência | — | Lista as notificações da pessoa na agência |
+| `GET` | `/agencies/:agencyId/notifications/unread-count` | Sessão + vínculo com a agência | — | Conta as notificações não lidas da pessoa |
+| `POST` | `/agencies/:agencyId/notifications/:notificationId/read` | Sessão + vínculo com a agência | — | Marca uma notificação como lida |
+| `POST` | `/agencies/:agencyId/notifications/read-all` | Sessão + vínculo com a agência | — | Marca como lidas todas as notificações da pessoa na agência |
+
+#### `GET /agencies/:agencyId/notifications`
+
+Lista as notificações da pessoa na agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1,
+  "pageSize": 20,
+  "unread": "true"
+}
+```
+
+**Resposta `200`** — Página das notificações da pessoa.
+
+```json
+{
+  "data": [
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "kind": "content_approved",
+      "summary": "Rosana aprovou \"Promoção de pães\"",
+      "createdAt": "2026-11-12T14:00:00.000Z",
+      "readAt": null,
+      "destination": {
+        "type": "content",
+        "clientId": "77777777-7777-4777-8777-777777777777",
+        "contentId": "ffffffff-ffff-4fff-8fff-ffffffffffff"
+      }
+    },
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "kind": "invitation_accepted",
+      "summary": "Ana aceitou o seu convite",
+      "createdAt": "2026-11-10T12:00:00.000Z",
+      "readAt": "2026-11-10T13:00:00.000Z",
+      "destination": {
+        "type": "collaborators"
+      }
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 2,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/notifications/unread-count`
+
+Conta as notificações não lidas da pessoa.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: —.
+
+**Resposta `200`** — A contagem.
+
+```json
+{
+  "data": {
+    "count": 3
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/notifications/:notificationId/read`
+
+Marca uma notificação como lida.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: —.
+
+**Resposta `204`** — Notificação marcada como lida.
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/notifications/read-all`
+
+Marca como lidas todas as notificações da pessoa na agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: —.
+
+**Resposta `204`** — Notificações marcadas como lidas.
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
 ## Catálogo de códigos de erro
 
 | código | mensagem padrão |
