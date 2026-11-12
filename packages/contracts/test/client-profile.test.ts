@@ -20,7 +20,16 @@ const text = (...codePoints: readonly number[]): string => String.fromCodePoint(
 const id = '77777777-7777-4777-8777-777777777777';
 const without = (value: object, key: string): object => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
 
-const HIDDEN_OR_MULTILINE = ['Duas\nlinhas', 'Com\ttab', text(0x41, 0x07), text(0x41, 0x00), text(0x41, 0x7f), text(0x41, 0x85), text(0x41, 0x200b), text(0x41, 0x202e)];
+// The last five are invisible without being a control or a format character: the one rule of every free text refuses them (checklist 23).
+const HIDDEN_OR_MULTILINE = [
+  'Duas\nlinhas', 'Com\ttab', text(0x41, 0x07), text(0x41, 0x00), text(0x41, 0x7f), text(0x41, 0x85), text(0x41, 0x200b), text(0x41, 0x202e),
+  text(0x41, 0x034f), text(0x41, 0x3164), text(0x41, 0x2800), text(0x41, 0xfe0f), text(0x41, 0x1d159)
+];
+const FAMILY = text(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
+const KEYCAP = text(0x31, 0xfe0f, 0x20e3);
+const FLAG_OF_ENGLAND = text(0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f);
+const RED_HEART = text(0x2764, 0xfe0f);
+const THUMB_WITH_TONE = text(0x1f44d, 0x1f3fd);
 
 describe('the city of the client', () => {
   it('is one trimmed line of up to 80 characters, on create and on edit, and empty clears it', () => {
@@ -32,6 +41,15 @@ describe('the city of the client', () => {
     expect(UpdateClientRequestSchema.parse({ city: '' })).toEqual({ city: null });
     expect(UpdateClientRequestSchema.parse({ city: 'a'.repeat(80) }).city).toHaveLength(80);
     expect(UpdateClientRequestSchema.parse({ city: 'ç'.repeat(80) }).city).toHaveLength(80);
+  });
+
+  it('takes an emoji sequence whole, and not the pieces of one', () => {
+    for (const city of [`Casa ${FAMILY} Alegre`, `Rua ${KEYCAP} Norte`, `Vila ${FLAG_OF_ENGLAND}`, `Amor ${RED_HEART}`, `Bom ${THUMB_WITH_TONE}`]) {
+      expect(UpdateClientRequestSchema.parse({ city }).city, city).toBe(city);
+    }
+    for (const city of [`Casa ${text(0x200d)} Alegre`, `Rua ${text(0x1f3fb)} Norte`, `Vila ${text(0xe0067)}`, `Amor ${text(0xfe0f)}`]) {
+      expect(UpdateClientRequestSchema.safeParse({ city }).success, JSON.stringify(city)).toBe(false);
+    }
   });
 
   it('refuses a city that is long, in several lines, hidden or not text, and an edit that carries nothing', () => {
@@ -119,6 +137,8 @@ describe('the profile of the persona (decision 2026-11-11)', () => {
     for (const field of ['whereTheyAre', 'toneThatWorks'] as const) {
       expect(UpdatePersonaRequestSchema.parse({ [field]: '  Linha um\nLinha dois  ' })[field]).toBe('Linha um\nLinha dois');
       expect(UpdatePersonaRequestSchema.parse({ [field]: 'a'.repeat(280) })[field]).toHaveLength(280);
+      expect(UpdatePersonaRequestSchema.parse({ [field]: text(0x1f600).repeat(280) })[field], `${field} of 280 emoji`).toHaveLength(560);
+      expect(UpdatePersonaRequestSchema.safeParse({ [field]: text(0x1f600).repeat(281) }).success, `${field} of 281 emoji`).toBe(false);
       expect(UpdatePersonaRequestSchema.parse({ [field]: '' })[field]).toBeNull();
       expect(UpdatePersonaRequestSchema.parse({ [field]: null })[field]).toBeNull();
       for (const value of ['a'.repeat(281), 'ç'.repeat(281), text(0x41, 0x07), text(0x41, 0x00), text(0x41, 0x200b), text(0x41, 0x202e), 5]) {
@@ -153,6 +173,7 @@ describe('the profile of the persona (decision 2026-11-11)', () => {
       expect(PersonaSchema.safeParse(without(persona, key)).success, key).toBe(false);
     }
     expect(PersonaSchema.safeParse({ ...persona, traits: null }).success).toBe(false);
+    expect(PersonaSchema.safeParse({ ...persona, age: 34.5 }).success).toBe(false);
   });
 });
 

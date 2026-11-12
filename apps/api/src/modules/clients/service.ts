@@ -279,7 +279,7 @@ export interface ClientTabCounts {
  */
 export const loadClientTabCounts = async (
   transaction: ClientTransaction,
-  input: { readonly agencyId: string; readonly clientId: string; readonly asOf: Date }
+  input: { readonly clientId: string; readonly asOf: Date }
 ): Promise<ClientTabCounts> => {
   const result = await raw<RawRows<{ contents_this_month: string | number; media_files: string | number; media_folders: string | number }>>(transaction, `
     with month as (
@@ -295,16 +295,12 @@ export const loadClientTabCounts = async (
       ) as contents_this_month,
       (
         select count(*) from public.media_assets asset
-        join public.clients client on client.id = asset.client_id
-        where asset.client_id = ?::uuid and client.agency_id = ?::uuid
-          and asset.status = 'confirmed' and asset.removed_at is null
+        where asset.client_id = ?::uuid and asset.status = 'confirmed' and asset.removed_at is null
       ) as media_files,
       (
-        select count(*) from public.media_folders folder
-        join public.clients client on client.id = folder.client_id
-        where folder.client_id = ?::uuid and client.agency_id = ?::uuid
+        select count(*) from public.media_folders folder where folder.client_id = ?::uuid
       ) as media_folders
-  `, [input.asOf.toISOString(), input.clientId, input.clientId, input.agencyId, input.clientId, input.agencyId]);
+  `, [input.asOf.toISOString(), input.clientId, input.clientId, input.clientId]);
   const row = result.rows[0];
   if (row === undefined) throw new Error('Client tab counts query returned no row.');
   return {
@@ -347,15 +343,14 @@ export const loadClientWorkers = async (
     from (
       select content.owner_user_id, count(*) as owned
       from public.contents content
-      join public.clients client on client.id = content.client_id
-      where content.client_id = ?::uuid and client.agency_id = ?::uuid and content.status in (${OPEN_CONTENT_STATUSES})
+      where content.client_id = ?::uuid and content.status in (${OPEN_CONTENT_STATUSES})
       group by content.owner_user_id
     ) owners
     join public.agency_memberships link on link.agency_id = ?::uuid and link.user_id = owners.owner_user_id and link.status = 'active'
     join auth."user" account on account.id = link.user_id
     order by owners.owned desc, ${foldTextSql('account.name')} collate "C" asc, link.id asc
     limit ?
-  `, [input.clientId, input.agencyId, input.agencyId, CLIENT_WORKERS_SHOWN]);
+  `, [input.clientId, input.agencyId, CLIENT_WORKERS_SHOWN]);
   const total = Number(result.rows[0]?.total ?? 0);
   return {
     shown: result.rows.map((row) => ({ membership_id: row.membership_id, name: row.name, photo_key: row.photo_key })),

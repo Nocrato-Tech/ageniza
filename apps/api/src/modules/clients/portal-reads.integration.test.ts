@@ -199,7 +199,11 @@ describe('CLIENTS portal reads (#129)', () => {
     ]);
 
     await owner.knex('client_personas').insert([
-      { id: personaActive, client_id: clientA1, name: 'Persona ativa', description: 'Dona de casa.', pains: 'Pouco tempo.', desires: 'Reconhecimento.', objections: 'Preço.', updated_by: users.admin!.id },
+      {
+        id: personaActive, client_id: clientA1, name: 'Persona ativa', description: 'Dona de casa.', pains: 'Pouco tempo.', desires: 'Reconhecimento.', objections: 'Preço.',
+        age: 34, occupation: 'Dona de padaria', location: 'Campinas, SP', traits: JSON.stringify(['Prática', 'Ocupada']),
+        where_they_are: 'Instagram e grupos de bairro.', tone_that_works: 'Próximo e direto.', updated_by: users.admin!.id
+      },
       { id: personaArchived, client_id: clientA1, name: 'Persona arquivada', updated_by: users.admin!.id },
       { id: personaOfA2, client_id: clientA2, name: 'Persona do A2', updated_by: users.admin!.id },
       { id: personaHomeActive, client_id: clientHome, name: 'Persona do Início', updated_by: users.admin!.id },
@@ -584,12 +588,12 @@ describe('CLIENTS portal reads (#129)', () => {
         pains: 'Pouco tempo.',
         desires: 'Reconhecimento.',
         objections: 'Preço.',
-        age: null,
-        occupation: null,
-        location: null,
-        traits: [],
-        whereTheyAre: null,
-        toneThatWorks: null,
+        age: 34,
+        occupation: 'Dona de padaria',
+        location: 'Campinas, SP',
+        traits: ['Prática', 'Ocupada'],
+        whereTheyAre: 'Instagram e grupos de bairro.',
+        toneThatWorks: 'Próximo e direto.',
         status: 'active',
         updatedAt: expect.any(String)
       }]);
@@ -616,6 +620,9 @@ describe('CLIENTS portal reads (#129)', () => {
         for (const key of ['portalOne', 'dual', 'dualBare']) {
           const body = (await call('GET', portalStudy(clientA1), cookies[key]!)).json();
           expect(body.personas.map((persona: { id: string }) => persona.id).sort(), key).toEqual([personaActive, personaArchived].sort());
+          expect(body.personas.find((persona: { id: string }) => persona.id === personaArchived), key).toMatchObject({
+            age: null, occupation: null, location: null, traits: [], whereTheyAre: null, toneThatWorks: null
+          });
         }
       } finally {
         await owner.knex('client_personas').where({ id: personaArchived }).update({ status: 'archived' });

@@ -32,6 +32,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthInstance } from '../auth/better-auth.js';
 import type { EmailService } from '../auth/email-service.js';
 import { createRequireSession } from '../auth/session-guard.js';
+import { tenantHolds } from '../tenancy/guards.js';
 import { registerAccessRoutes } from './access-routes.js';
 import { registerConversationRoutes } from './conversation-routes.js';
 import { registerLifecycleRoutes } from './lifecycle-routes.js';
@@ -307,13 +308,13 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     const clientId = clientIdFromRoute(request);
 
     // Conteúdo's counts and the people who work on the client are its rows: omitted, never zeroed, without `conteudo.visualizar`.
-    const readsContent = tenant.isOwner || tenant.permissions.has('conteudo.visualizar');
+    const readsContent = tenantHolds(tenant, 'conteudo.visualizar');
     const result = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
       const row = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
       if (row === undefined) return undefined;
       const summary = await loadClientSummary(transaction, clientId);
       if (!readsContent) return { row, summary, content: undefined };
-      const counts = await loadClientTabCounts(transaction, { agencyId: tenant.agencyId, clientId, asOf: new Date() });
+      const counts = await loadClientTabCounts(transaction, { clientId, asOf: new Date() });
       const workers = await loadClientWorkers(transaction, { agencyId: tenant.agencyId, clientId });
       return { row, summary, content: { counts, workers } };
     });

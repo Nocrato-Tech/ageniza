@@ -336,11 +336,11 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
       const comment = await loadComment(transaction, { clientId: scope.clientId, threadId, commentId: added.commentId });
       const authors = await loadAuthors(transaction, [threadId]);
       if (comment === undefined) throw new Error('The comment that was just written could not be read back.');
-      return { kind: 'ok' as const, comment, authors, agencyHidden: scope.side === 'client' && await isMaterialRequestThread(transaction, threadId) };
+      return { kind: 'ok' as const, comment, authors };
     });
     if (outcome.kind !== 'ok') throw refusalError(outcome.kind);
 
-    return reply.status(201).send(routeResponse(docs, request, await commentFrom(request, outcome.comment, threadId, outcome.authors, outcome.agencyHidden)));
+    return reply.status(201).send(routeResponse(docs, request, await commentFrom(request, outcome.comment, threadId, outcome.authors)));
   };
 
   // --- The agency side (#128) ----------------------------------------------------------------

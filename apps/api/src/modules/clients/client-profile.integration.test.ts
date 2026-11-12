@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { DatabaseClient } from '@ageniza/database';
+import { createVerifiedUserClaims, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -12,6 +12,7 @@ import {
   type TestApp,
   type TestUserFixture
 } from '../auth/test-support/harness.js';
+import { loadClientTabCounts } from './service.js';
 
 // Decisions 2026-11-11 (the client gains a city and "quem trabalha neste cliente" is derived; the persona gains age, occupation, location,
 // traits, where they are and the tone that works). Every scenario of isolation uses a person who belongs to more than one tenant, so a
@@ -68,6 +69,14 @@ const makeUser = async (key: string, name: string): Promise<TestUserFixture> => 
   users[key] = user;
   return user;
 };
+
+const loginAs = async (user: TestUserFixture): Promise<string> => {
+  const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: user.email, password: user.password } });
+  expect(login.statusCode, user.email).toBe(200);
+  return sessionCookie(login.cookies);
+};
+
+const systemRoleId = async (key: string): Promise<string> => (await owner.knex('roles').whereNull('agency_id').where({ key }).first('id'))!.id as string;
 
 const sao = async (sql: string): Promise<string> =>
   ((await owner.knex.raw(sql)).rows[0] as { day: string }).day;
@@ -166,11 +175,7 @@ describe('CLIENTES city, tab counts, workers and persona profile (decisions 2026
       ...(['w1', 'w2', 'w3', 'w4', 'w5', 'w6', 'w7', 'w8'] as const).map((key) => ({ agency_id: agencyA, user_id: users[key]!.id, role_id: roleId('production') }))
     ]);
 
-    for (const key of Object.keys(users)) {
-      const login = await app.app.inject({ method: 'POST', url: '/auth/login', headers: origin, payload: { email: users[key]!.email, password: users[key]!.password } });
-      expect(login.statusCode, key).toBe(200);
-      cookies[key] = sessionCookie(login.cookies);
-    }
+    for (const key of Object.keys(users)) cookies[key] = await loginAs(users[key]!);
   });
 
   afterAll(async () => {
@@ -198,7 +203,10 @@ describe('CLIENTES city, tab counts, workers and persona profile (decisions 2026
       const created = await call('POST', clientsOf(agencyA), cookies.admin, { name: `Com cidade ${randomUUID()}`, city: '  São José do Rio Preto  ' });
       expect(created.statusCode).toBe(201);
       expect(created.json()).toMatchObject({ city: 'São José do Rio Preto', createdAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT.*Z$/) });
-      expect(await clientRow(created.json().id)).toMatchObject({ city: 'São José do Rio Preto' });
+      const stored = await clientRow(created.json().id);
+      expect(stored).toMatchObject({ city: 'São José do Rio Preto' });
+      expect(created.json().createdAt).toBe((stored!.created_at as Date).toISOString());
+      expect((await call('GET', `${clientsOf(agencyA)}/${created.json().id}`, cookies.admin)).json().createdAt).toBe((stored!.created_at as Date).toISOString());
 
       const without = await call('POST', clientsOf(agencyA), cookies.admin, { name: `Sem cidade ${randomUUID()}` });
       expect(without.statusCode).toBe(201);
@@ -301,6 +309,18 @@ describe('CLIENTES city, tab counts, workers and persona profile (decisions 2026
       expect((await detail('admin', await newClient('conteudos-nenhum'))).json().summary).toMatchObject({ contentsThisMonth: 0 });
     });
 
+    it('takes the month from São Paulo and not from UTC at the turn of the month, with the first and the last day inside it', async () => {
+      const client = await newClient('virada-do-mes');
+      for (const day of ['2031-03-31', '2031-04-01', '2031-04-30', '2031-05-01']) await seedContent(client, users.admin!.id, 'in_production', day);
+      const countAt = async (asOf: string): Promise<number> => (await withAuthenticatedUserTransaction(app.database, createVerifiedUserClaims({ userId: users.admin!.id }), (transaction) =>
+        loadClientTabCounts(transaction, { clientId: client, asOf: new Date(asOf) }))).contentsThisMonth;
+
+      expect(await countAt('2031-04-01T02:59:59Z')).toBe(1);
+      expect(await countAt('2031-04-01T03:00:00Z')).toBe(2);
+      expect(await countAt('2031-05-01T02:59:59Z')).toBe(2);
+      expect(await countAt('2031-05-01T03:00:00Z')).toBe(1);
+    });
+
     it('counts the confirmed files that were not removed and every folder of the client, and no other client', async () => {
       const client = await newClient('midias');
       const other = await newClient('midias-de-outro');
@@ -378,6 +398,35 @@ describe('CLIENTES city, tab counts, workers and persona profile (decisions 2026
 
       const empty = (await detail('admin', await newClient('quem-trabalha-ninguem'))).json().summary;
       expect(empty).toMatchObject({ workers: [], workersMore: 0 });
+    });
+
+    it('breaks a tie of the same name and the same contents by the link, so the five shown are always the same ones', async () => {
+      const client = await newClient('quem-trabalha-gemeos');
+      const role = await systemRoleId('production');
+      const twins: Array<{ linkId: string; userId: string }> = [];
+      for (let index = 1; index <= 6; index += 1) twins.push({ linkId: randomUUID(), userId: (await makeUser(`twin${index}`, 'Gêmeo Idêntico')).id });
+      // Inserted from the largest link id to the smallest, so a read that does not sort by it cannot return them in order by chance.
+      for (const twin of [...twins].sort((left, right) => (left.linkId < right.linkId ? 1 : -1))) {
+        await owner.knex('agency_memberships').insert({ id: twin.linkId, agency_id: agencyA, user_id: twin.userId, role_id: role });
+        await seedContent(client, twin.userId, 'in_production', await today());
+      }
+
+      const summary = (await detail('admin', client)).json().summary as { workers: Array<{ membershipId: string }>; workersMore: number };
+      expect(summary.workers.map((worker) => worker.membershipId)).toEqual(twins.map((twin) => twin.linkId).sort().slice(0, 5));
+      expect(summary.workersMore).toBe(1);
+    });
+
+    it('names the link of the agency of the client for a person of two agencies even when the reader belongs to both', async () => {
+      const reader = await makeUser('readerOfBoth', 'Leitora das Duas');
+      const admin = await systemRoleId('admin');
+      for (const agencyId of [agencyA, agencyB]) await owner.knex('agency_memberships').insert({ agency_id: agencyId, user_id: reader.id, role_id: admin });
+      const client = await newClient('leitora-das-duas');
+      await seedContent(client, users.dual!.id, 'in_production', await today());
+      const linkA = (await owner.knex('agency_memberships').where({ agency_id: agencyA, user_id: users.dual!.id }).first('id'))!.id as string;
+
+      const read = await call('GET', `${clientsOf(agencyA)}/${client}`, await loginAs(reader));
+      expect(read.statusCode).toBe(200);
+      expect(read.json().summary).toMatchObject({ workers: [expect.objectContaining({ membershipId: linkA, name: 'Pessoa Dupla' })], workersMore: 0 });
     });
 
     it('names, for a person of two agencies, the link of the agency of the client and no other, and no agency reads the client of another', async () => {

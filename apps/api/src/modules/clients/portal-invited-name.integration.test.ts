@@ -303,6 +303,44 @@ describe('CLIENTES the name the agency types for a person of the portal (decisio
       expect(await accessOf(client, account.email)).toMatchObject({ invited_name: 'Zzz Digitado' });
     });
 
+    it('orders by the account name once the person entered, and by the typed name of the ones who did not', async () => {
+      const client = await newClient('ordem-apos-entrada');
+      const account = await verified('orderEntered', 'Aaa Conta Que Entrou');
+      const other = freshEmail('outra-pessoa');
+      await call('POST', membersUrl(agencyA, client), cookies.admin, { email: account.email, name: 'Zzz Digitado' });
+      await call('POST', membersUrl(agencyA, client), cookies.admin, { email: other, name: 'Mmm Digitado' });
+      expect((await listOf('admin', client)).map((item) => item.email)).toEqual([other, account.email]);
+
+      const cookie = await login(account);
+      await call('GET', '/me/contexts', cookie);
+      expect((await call('GET', `/clients/${client}`, cookie)).statusCode).toBe(200);
+      expect((await listOf('admin', client)).map((item) => item.email)).toEqual([account.email, other]);
+    });
+
+    it('keeps the typed name when the account of a person who entered no longer exists, and shows no name when none was typed', async () => {
+      const client = await newClient('conta-apagada');
+      const typed = await verified('deletedTyped', 'Conta Apagada Digitada');
+      const bare = await verified('deletedBare', 'Conta Apagada Sem Nome');
+      await call('POST', membersUrl(agencyA, client), cookies.admin, { email: typed.email, name: 'Nome Digitado Que Fica' });
+      await call('POST', membersUrl(agencyA, client), cookies.admin, { email: bare.email });
+      for (const user of [typed, bare]) {
+        const cookie = await login(user);
+        await call('GET', '/me/contexts', cookie);
+        expect((await call('GET', `/clients/${client}`, cookie)).statusCode).toBe(200);
+      }
+      expect((await listOf('admin', client)).map((item) => item.name)).toEqual(['Conta Apagada Digitada', 'Conta Apagada Sem Nome']);
+
+      for (const user of [typed, bare]) {
+        await owner.knex('user_context_preferences').where({ user_id: user.id }).delete();
+        await owner.knex('client_memberships').where({ user_id: user.id }).delete();
+        await app.pool.query('delete from auth."user" where id = $1', [user.id]);
+      }
+      expect(await accessOf(client, typed.email)).toMatchObject({ user_id: null, invited_name: 'Nome Digitado Que Fica' });
+      const listed = await listOf('admin', client);
+      expect(listed.find((item) => item.email === typed.email)).toMatchObject({ name: 'Nome Digitado Que Fica', entered: false });
+      expect(listed.find((item) => item.email === bare.email)).toMatchObject({ name: null, entered: false });
+    });
+
     it('is a value of the access: the same address in another client of the agency, or of another agency, has its own name', async () => {
       const first = await newClient('mesmo-endereco-um');
       const second = await newClient('mesmo-endereco-dois');

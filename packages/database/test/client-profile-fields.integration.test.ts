@@ -89,6 +89,43 @@ describe('the validators the checks use', () => {
     expect(await valid('app_private.multiline_text_valid(?::text, 280)', [repeat('a', 280)])).toBe(true);
   });
 
+  // The edges of every range of the two rules, by code point so the invisible ones stay readable: the first and the last of each range of
+  // controls are refused, and the character just outside each one is taken.
+  const text = (...points: number[]): string => points.map((point) => String.fromCodePoint(point)).join('');
+  const LINE_CONTROLS = [0x01, 0x02, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x1e, 0x1f, 0x7f, 0x80, 0x85, 0x9e, 0x9f];
+  const MULTILINE_CONTROLS = [0x01, 0x02, 0x07, 0x08, 0x0b, 0x0c, 0x0e, 0x1e, 0x1f, 0x7f, 0x80, 0x85, 0x9e, 0x9f];
+  const SPACES = [0x20, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0xa0, 0x1680, 0x2000, 0x2001, 0x2005, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000];
+
+  it('refuse each control character of the line and take its neighbours, and the same for the multiline rule with its three line-break controls', async () => {
+    for (const point of LINE_CONTROLS) {
+      expect(await valid('app_private.display_text_valid(?::text, 80)', [text(0x61, point, 0x62)]), `line U+${point.toString(16)}`).toBe(false);
+    }
+    for (const point of MULTILINE_CONTROLS) {
+      expect(await valid('app_private.multiline_text_valid(?::text, 280)', [text(0x61, point, 0x62)]), `multiline U+${point.toString(16)}`).toBe(false);
+    }
+    for (const point of [0x09, 0x0a, 0x0d]) {
+      expect(await valid('app_private.multiline_text_valid(?::text, 280)', [text(0x61, point, 0x62)]), `multiline U+${point.toString(16)}`).toBe(true);
+    }
+    for (const point of [0x20, 0x7e, 0xa0, 0xa1, 0x2028, 0x3000]) {
+      expect(await valid('app_private.display_text_valid(?::text, 80)', [text(0x61, point, 0x62)]), `line neighbour U+${point.toString(16)}`).toBe(true);
+      expect(await valid('app_private.multiline_text_valid(?::text, 280)', [text(0x61, point, 0x62)]), `multiline neighbour U+${point.toString(16)}`).toBe(true);
+    }
+  });
+
+  it('need one visible character: a value of nothing but spaces of any kind is refused by both rules, and a space beside a letter is taken', async () => {
+    for (const point of SPACES) {
+      for (const value of [text(point), text(point, point, point)]) {
+        expect(await valid('app_private.display_text_valid(?::text, 80)', [value]), `line U+${point.toString(16)}`).toBe(false);
+        expect(await valid('app_private.multiline_text_valid(?::text, 280)', [value]), `multiline U+${point.toString(16)}`).toBe(false);
+      }
+    }
+    expect(await valid('app_private.display_text_valid(?::text, 80)', [text(0xa0, 0x3000, 0x20, 0x1680)])).toBe(false);
+    for (const point of [0x1fff, 0x200b, 0x2010, 0x2027, 0x202a, 0x202e, 0x2060, 0x205e, 0x167f, 0x1681, 0x3001, 0xff]) {
+      expect(await valid('app_private.display_text_valid(?::text, 80)', [text(point)]), `alone U+${point.toString(16)}`).toBe(true);
+      expect(await valid('app_private.multiline_text_valid(?::text, 280)', [text(point)]), `multiline alone U+${point.toString(16)}`).toBe(true);
+    }
+  });
+
   it('take at most five traits, each one a line of up to 24 characters, and nothing that is not a list of texts', async () => {
     const accepted = [[], ['a'], ['a', 'b', 'c', 'd', 'e'], [repeat('a', 24)], [repeat('😀', 24)]];
     const refused: unknown[] = [['a', 'b', 'c', 'd', 'e', 'f'], [repeat('a', 25)], [''], ['   '], ['a\nb'], ['a\u0007'], [5], [null], [['a']], [{ x: 1 }], 'texto', 5, {}, null];
@@ -150,8 +187,10 @@ describe('the profile of the persona', () => {
       expect(inserts, column).toContain(column);
       expect(updates, column).toContain(column);
     }
-    expect(updates).not.toContain('client_id');
-    expect(updates).not.toContain('id');
+    expect([...updates].sort()).toEqual([
+      'age', 'description', 'desires', 'location', 'name', 'objections', 'occupation', 'pains', 'status', 'tone_that_works', 'traits',
+      'updated_at', 'updated_by', 'where_they_are'
+    ]);
   });
 
   it('starts empty, and is written by who edits the client with the values at the limit', async () => {
@@ -160,7 +199,7 @@ describe('the profile of the persona', () => {
 
     const full = {
       age: 120, occupation: repeat('o', 80), location: repeat('😀', 80), traits: [repeat('a', 24), 'b', 'c', 'd', 'e'],
-      where_they_are: `Linha um\nLinha dois\t${repeat('x', 250)}`, tone_that_works: repeat('t', 280)
+      where_they_are: `Linha um\nLinha dois\t${repeat('x', 260)}`, tone_that_works: `Linha um\r\n${repeat('t', 270)}`
     };
     expect(await editPersona(ids.adminA, empty, { ...full, traits: JSON.stringify(full.traits) })).toBe(1);
     expect(await personaRow(empty)).toMatchObject(full);
@@ -185,6 +224,7 @@ describe('the profile of the persona', () => {
     ['an occupation with a line break', 'client_personas_occupation_check', { occupation: 'duas\nlinhas' }],
     ['a location of 81 characters', 'client_personas_location_check', { location: repeat('a', 81) }],
     ['a location with a control character', 'client_personas_location_check', { location: 'sino\u0007' }],
+    ['a location with a line break', 'client_personas_location_check', { location: 'duas\nlinhas' }],
     ['six traits', 'client_personas_traits_check', { traits: JSON.stringify(['a', 'b', 'c', 'd', 'e', 'f']) }],
     ['a trait of 25 characters', 'client_personas_traits_check', { traits: JSON.stringify([repeat('a', 25)]) }],
     ['a trait with a line break', 'client_personas_traits_check', { traits: JSON.stringify(['a\nb']) }],

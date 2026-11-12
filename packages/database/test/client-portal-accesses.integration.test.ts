@@ -1571,7 +1571,11 @@ describe('the name the agency types for the address (decision 2026-11-11)', () =
     const account = await newUser({ verified: true });
     await owner()('auth.user').where({ id: account.id }).update({ name: 'Nome Real da Conta' });
 
-    await addNamed(ids.adminA, client, account.email, null);
+    const added = await addNamed(ids.adminA, client, account.email, null);
+    expect(await invitedNameOf(client, account.email)).toBeNull();
+    // Nor when the address is added again after a removal, which is the other place the function writes the name.
+    await removeAs(ids.adminA, added.access_id);
+    expect(await addNamed(ids.adminA, client, account.email, null)).toMatchObject({ access_id: added.access_id, outcome: 'reactivated' });
     expect(await invitedNameOf(client, account.email)).toBeNull();
     const other = await freshClient();
     await addNamed(ids.adminA, other, account.email, 'Digitado');

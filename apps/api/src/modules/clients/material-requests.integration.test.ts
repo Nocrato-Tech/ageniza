@@ -632,6 +632,10 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
         expect(listed.json().meta.totalItems, who).toBe(1);
         expect(JSON.stringify(listed.json()), who).not.toMatch(/NOTA INTERNA|SUGESTAO|resolvido/);
       }
+
+      // A page past the end has no rows to carry the total, and the total is still the one of the open requests, not of every thread.
+      const beyond = await call('GET', `${requestsOf(client)}?page=99`, cookies.portalOne!);
+      expect(beyond.json()).toMatchObject({ data: [], meta: { page: 99, totalItems: 1 } });
     });
 
     it('counts on the home the open requests of that client alone, for whoever reaches it, and the count is the total of the list', async () => {
@@ -729,6 +733,9 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
       const contentId = await seedContent(client, 'awaiting_approval');
       const content = (await call('POST', agencyThreads(agencyA, client), cookies.manager!, { subject: { contentId }, body: 'Revise a legenda' })).json().thread.id as string;
       expect((await call('GET', `${portalThreads(client)}/${content}/comments`, cookies.portalOne!)).json().data[0]).toMatchObject({ author: { name: 'Marta Gestora' } });
+      const ofContent = await call('GET', `${portalThreads(client)}?contentId=${contentId}`, cookies.portalOne!);
+      expect(ofContent.statusCode).toBe(200);
+      expect(ofContent.json().data).toEqual([expect.objectContaining({ id: content, openedBy: { name: 'Marta Gestora', side: 'agency' } })]);
     });
 
     it('never reaches the request of another client, through the id of the thread, for anybody with a link elsewhere', async () => {

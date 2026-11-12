@@ -15,8 +15,9 @@
 
 export async function up(knex) {
   await knex.raw(String.raw`
-    -- Length in characters, a bound in bytes that keeps a multibyte value from being a very large one, one visible character, and none of
-    -- the C0 and C1 controls (a NUL cannot be stored anyway). Null is valid: the column is optional.
+    -- Length in characters, one visible character (a value of nothing but white space is refused: the class lists every White_Space code
+    -- point itself, so the rule does not depend on the locale of the database), and none of the C0 and C1 controls (a NUL cannot be stored
+    -- anyway). Null is valid: the column is optional.
     create function app_private.display_text_valid(p_value text, p_max_chars integer)
     returns boolean
     language sql
@@ -27,9 +28,8 @@ export async function up(knex) {
       select case
         when p_value is null then true
         else pg_catalog.char_length(p_value) <= p_max_chars
-          and pg_catalog.octet_length(p_value) <= p_max_chars * 4
           and p_value !~ '[\u0001-\u001f\u007f-\u009f]'
-          and p_value ~ '[^[:space:]   -   　]'
+          and p_value ~ '[^\u0009-\u000d\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]'
       end
     $function$;
     revoke all on function app_private.display_text_valid(text, integer) from public;
@@ -46,9 +46,8 @@ export async function up(knex) {
       select case
         when p_value is null then true
         else pg_catalog.char_length(p_value) <= p_max_chars
-          and pg_catalog.octet_length(p_value) <= p_max_chars * 4
           and p_value !~ '[\u0001-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]'
-          and p_value ~ '[^[:space:]   -   　]'
+          and p_value ~ '[^\u0009-\u000d\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]'
       end
     $function$;
     revoke all on function app_private.multiline_text_valid(text, integer) from public;
