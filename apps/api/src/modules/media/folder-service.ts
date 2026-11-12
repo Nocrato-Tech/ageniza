@@ -102,7 +102,11 @@ export const insertFolder = async (
   return row;
 };
 
-/** Confirmed and not removed: a pending or rejected upload is not yet a media of the folder. */
+/**
+ * Confirmed and not removed: a pending or rejected upload is not yet a media of the folder. Only a photo and a video are listed (the
+ * ones a content takes, and what the picker of the content modal reads); the PDFs, audios and logos of the folder are in the library
+ * listing of the client.
+ */
 export const listFolderAssets = async (
   transaction: Transaction,
   folderId: string,
@@ -112,7 +116,7 @@ export const listFolderAssets = async (
     select id, category, confirmed_content_type, confirmed_size_bytes, video_processing_status, created_at,
       count(*) over () as total
     from public.media_assets
-    where folder_id = ?::uuid and status = 'confirmed' and removed_at is null
+    where folder_id = ?::uuid and status = 'confirmed' and removed_at is null and category in ('image', 'video')
     order by created_at desc, id desc
     limit ? offset ?
   `, [folderId, page.limit, page.offset]);
@@ -121,7 +125,7 @@ export const listFolderAssets = async (
   // A page past the end carries no row, and "no total" would read as an empty folder.
   const count = await raw<RawRows<{ total: string | number }>>(transaction, `
     select count(*) as total from public.media_assets
-    where folder_id = ?::uuid and status = 'confirmed' and removed_at is null
+    where folder_id = ?::uuid and status = 'confirmed' and removed_at is null and category in ('image', 'video')
   `, [folderId]);
   return { rows: [], total: Number(count.rows[0]?.total ?? 0) };
 };

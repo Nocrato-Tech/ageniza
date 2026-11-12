@@ -13,23 +13,20 @@ import {
   resolvePagination,
   type MediaFolder
 } from '@ageniza/contracts';
-import { HttpError } from '@ageniza/core';
-import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 
-import type { AuthInstance } from '../auth/better-auth.js';
-import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
-import { isInsufficientPrivilegeError } from '../tenancy/guards.js';
+import { explainRefusedClientWrite, notFound, parentNotFirstLevel } from './client-media-errors.js';
 import {
-  clientArchived,
-  explainRefusedClientWrite,
-  forbidden,
-  notFound,
-  parentNotFirstLevel,
-  translateClientMediaError
-} from './client-media-errors.js';
+  createClientMediaRouteKit,
+  idFromRoute,
+  requireAuth,
+  requireReadableClient,
+  requireTenant,
+  requireWritableClient,
+  type ClientMediaRouteDependencies
+} from './client-route-support.js';
 import {
   clientScopeOf,
   folderFunctionRefusal,
@@ -39,43 +36,14 @@ import {
   loadFolder,
   lockFolder,
   removeAsset,
-  type ClientScope,
   type FolderRow
 } from './folder-service.js';
 import { MEDIA_FOLDER_ASSET_DEFAULT_PAGE_SIZE, MEDIA_FOLDER_DEFAULT_PAGE_SIZE } from './policy.js';
 import { auditMediaEvent } from './service.js';
 
-type PreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
+export type MediaFolderRouteDependencies = ClientMediaRouteDependencies;
 
-export interface MediaFolderRouteDependencies {
-  readonly database: DatabaseClient;
-  readonly auth: AuthInstance;
-  readonly requireAgencyAccess: PreHandler;
-  readonly requirePermission: (key: string) => PreHandler;
-}
-
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth']> => {
-  const auth = request.auth;
-  if (auth === undefined) throw new HttpError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' });
-  return auth;
-};
-
-const requireTenant = (request: FastifyRequest): NonNullable<FastifyRequest['tenant']> => {
-  const tenant = request.tenant;
-  if (tenant === undefined) throw notFound('Agency not found.');
-  return tenant;
-};
-
-/** A malformed id is the same 404 as an absent one, never a 400 that confirms the route exists. */
-const idFromRoute = (request: FastifyRequest, name: string, message: string): string => {
-  const value = (request.params as Record<string, unknown>)[name];
-  if (typeof value !== 'string' || !uuidPattern.test(value)) throw notFound(message);
-  return value;
-};
-
-const folderFrom = (row: FolderRow): MediaFolder => ({
+export const folderFrom = (row: FolderRow): MediaFolder => ({
   id: row.id,
   parentId: row.parent_id,
   name: row.name,
@@ -90,16 +58,7 @@ const folderFrom = (row: FolderRow): MediaFolder => ({
  * `conteudo.visualizar`: with the first alone the role would write what it cannot read back.
  */
 export const registerMediaFolderRoutes = (app: FastifyInstance, dependencies: MediaFolderRouteDependencies): void => {
-  const requireSession = createRequireSession({ auth: dependencies.auth });
-  const guarded = (docs: DocumentedRouteConfig & { permission: string }, alsoReads = false) => ({
-    preHandler: [
-      requireSession,
-      dependencies.requireAgencyAccess,
-      dependencies.requirePermission(docs.permission),
-      ...(alsoReads ? [dependencies.requirePermission('conteudo.visualizar')] : [])
-    ],
-    config: { permission: docs.permission, responseStatus: docs.responseStatus, schemas: docs.schemas }
-  });
+  const { guarded, inTransaction } = createClientMediaRouteKit(dependencies);
 
   const listDocs = {
     permission: 'conteudo.visualizar',
@@ -121,34 +80,6 @@ export const registerMediaFolderRoutes = (app: FastifyInstance, dependencies: Me
     responseStatus: 200,
     schemas: { params: AgencyClientMediaFolderAssetPathParamsSchema, response: RemoveMediaAssetResponseSchema }
   } satisfies DocumentedRouteConfig;
-
-  const requireReadableClient = (scope: ClientScope): void => {
-    if (scope === 'not-found') throw notFound('Client not found.');
-  };
-  const requireWritableClient = (scope: ClientScope): void => {
-    requireReadableClient(scope);
-    if (scope === 'archived') throw clientArchived();
-  };
-
-  /**
-   * Runs the work in the caller's transaction and answers what the database refused. A refusal by the row-level
-   * security means the route read the client as open and the archive of the client committed before the statement,
-   * so a write of the client says which of the two it was (`whenRefusedByRls`); anything else it refuses is the 403.
-   */
-  const inTransaction = async <T>(
-    request: FastifyRequest,
-    work: Parameters<typeof withAuthenticatedUserTransaction<T>>[2],
-    whenRefusedByRls?: () => Promise<HttpError>
-  ): Promise<T> => {
-    try {
-      return await withAuthenticatedUserTransaction(dependencies.database, requireAuth(request).claims, work);
-    } catch (error) {
-      const translated = translateClientMediaError(error);
-      if (translated !== undefined) throw translated;
-      if (isInsufficientPrivilegeError(error)) throw whenRefusedByRls === undefined ? forbidden() : await whenRefusedByRls();
-      throw error;
-    }
-  };
 
   app.get('/agencies/:agencyId/clients/:clientId/media-folders', guarded(listDocs), async (request, reply) => {
     const tenant = requireTenant(request);

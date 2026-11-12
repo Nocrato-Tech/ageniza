@@ -13,6 +13,7 @@ import {
   type TestUserFixture
 } from '../auth/test-support/harness.js';
 import { waitForQueueBehind } from '../auth/test-support/lock-queue.js';
+import { pngBytes } from './test-support/files.js';
 
 // Issue #253: the client's media library. Every permission is held alone by a custom role, because the Owner
 // passes every guard and hides one written with the wrong key; every refusal is checked by the state left in the
@@ -503,7 +504,7 @@ describe('removing a media from its folder (issue #253, rule 12)', () => {
 });
 
 describe('uploading a media into a folder of a client (issue #253)', () => {
-  const smallPng = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const smallPng = pngBytes();
   const uploadUrl = (agency: string): string => `/agencies/${agency}/media/uploads`;
   const body = (clientId?: string, folderId?: string) => ({
     fileName: 'foto.png', contentType: 'image/png', declaredSizeBytes: smallPng.length, ...(clientId === undefined ? {} : { clientId }), ...(folderId === undefined ? {} : { folderId })
@@ -595,7 +596,7 @@ describe('uploading a media into a folder of a client (issue #253)', () => {
   // been archived in between. The window where the archive is still running (A0020 of a trigger on the UPDATE) is the
   // database's and is mapped below with an injected failure; here the archive has committed and the route reads it.
   describe('confirming an upload of a client that was archived since it began (issue #532)', () => {
-    const smallPng = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    const smallPng = pngBytes();
 
     const startedUpload = async (clientId: string): Promise<{ assetId: string; objectKey: string }> => {
       const folder = await defaultFolder(clientId);
@@ -1111,7 +1112,7 @@ describe('what the database raises inside the writes is never a 500 the route kn
       expect(created.statusCode).toBe(201);
       const assetId = created.json().assetId as string;
       assetIds.push(assetId);
-      const put = await fetch(created.json().upload.url as string, { method: 'PUT', body: new Uint8Array(10), headers: { 'content-type': 'image/png' } });
+      const put = await fetch(created.json().upload.url as string, { method: 'PUT', body: pngBytes(), headers: { 'content-type': 'image/png' } });
       expect(put.ok).toBe(true);
 
       await withFailing('media_assets', 'update', `new.id = '${assetId}'::uuid and new.status = 'confirmed'`, errcode, async () => {

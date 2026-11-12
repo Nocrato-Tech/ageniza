@@ -59,4 +59,30 @@ describe('media storage client presigned URLs (#292, #306)', () => {
     expect(checksumParameters(url)).toEqual([]);
     expect(new URL(url).searchParams.get('X-Amz-Expires')).toBe('300');
   });
+
+  it('adds no response override to a GET that asks for none', async () => {
+    const client = createMediaStorageClient(config);
+
+    const parameters = new URL(await client.presignGetObject({ key: 'agencies/a/media/original', expiresInSeconds: 300 })).searchParams;
+
+    expect([...parameters.keys()].filter((name) => name.startsWith('response-'))).toEqual([]);
+  });
+
+  // A file that must never open as a page (an SVG, a PDF) is served with the type the server confirmed and as a download: both are
+  // part of what the URL signs, so the holder of the URL cannot ask for another.
+  it('signs the response type and the disposition into a GET', async () => {
+    const client = createMediaStorageClient(config);
+
+    const url = await client.presignGetObject({
+      key: 'agencies/a/media/original',
+      expiresInSeconds: 300,
+      responseContentType: 'image/svg+xml',
+      responseContentDisposition: 'attachment; filename="logo.svg"'
+    });
+
+    const parameters = new URL(url).searchParams;
+    expect(parameters.get('response-content-type')).toBe('image/svg+xml');
+    expect(parameters.get('response-content-disposition')).toBe('attachment; filename="logo.svg"');
+    expect(parameters.get('X-Amz-Signature')).toMatch(/^[0-9a-f]{64}$/);
+  });
 });

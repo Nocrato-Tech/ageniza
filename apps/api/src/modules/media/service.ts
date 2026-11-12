@@ -1,6 +1,6 @@
 import { raw } from '@ageniza/database';
 
-import type { MediaCategory } from '@ageniza/contracts';
+import type { MediaLibraryCategory } from '@ageniza/contracts';
 
 type Transaction = Parameters<typeof raw>[0];
 
@@ -69,9 +69,11 @@ export const lockAgencyStorageQuota = async (transaction: Transaction, agencyId:
 export interface PendingAssetInput {
   readonly id: string;
   readonly agencyId: string;
-  readonly category: MediaCategory;
+  readonly category: MediaLibraryCategory;
   readonly declaredContentType: string;
   readonly extension: string;
+  /** What the person calls the file: a label for the library, never part of the object key. */
+  readonly fileName?: string;
   readonly objectKey: string;
   readonly uploadObjectKey: string;
   readonly declaredSizeBytes: number;
@@ -84,10 +86,10 @@ export interface PendingAssetInput {
 export const insertPendingAsset = async (transaction: Transaction, input: PendingAssetInput): Promise<void> => {
   await raw(transaction, `
     insert into public.media_assets
-      (id, agency_id, category, declared_content_type, extension, object_key, upload_object_key, declared_size_bytes, client_id, folder_id)
-    values (?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid)
+      (id, agency_id, category, declared_content_type, extension, file_name, object_key, upload_object_key, declared_size_bytes, client_id, folder_id)
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid)
   `, [
-    input.id, input.agencyId, input.category, input.declaredContentType, input.extension,
+    input.id, input.agencyId, input.category, input.declaredContentType, input.extension, input.fileName ?? null,
     input.objectKey, input.uploadObjectKey, input.declaredSizeBytes, input.clientId ?? null, input.folderId ?? null
   ]);
 };
@@ -109,7 +111,8 @@ export interface MediaAssetRow {
   readonly id: string;
   readonly agency_id: string;
   readonly client_id: string | null;
-  readonly category: MediaCategory;
+  readonly category: MediaLibraryCategory;
+  readonly declared_content_type: string;
   readonly object_key: string;
   readonly upload_object_key: string;
   readonly status: 'pending' | 'confirmed' | 'rejected';
@@ -120,7 +123,7 @@ export interface MediaAssetRow {
 /** Locks the row so two concurrent confirm/complete calls for the same asset cannot race. */
 export const lockAssetForCompletion = async (transaction: Transaction, assetId: string, agencyId: string): Promise<MediaAssetRow | undefined> => {
   const result = await raw<RawRows<MediaAssetRow>>(transaction, `
-    select id, agency_id, client_id, category, object_key, upload_object_key, status, declared_size_bytes, multipart_upload_id
+    select id, agency_id, client_id, category, declared_content_type, object_key, upload_object_key, status, declared_size_bytes, multipart_upload_id
     from public.media_assets
     where id = ?::uuid and agency_id = ?::uuid
     for update
@@ -136,7 +139,8 @@ export const markAssetConfirmed = async (
   assetId: string,
   sizeBytes: number,
   contentType: string,
-  category: MediaCategory
+  category: MediaLibraryCategory,
+  dimensions?: { readonly width: number; readonly height: number }
 ): Promise<void> => {
   await raw(transaction, `
     update public.media_assets
@@ -144,10 +148,12 @@ export const markAssetConfirmed = async (
       status = 'confirmed',
       confirmed_size_bytes = ?,
       confirmed_content_type = ?,
+      width = ?::integer,
+      height = ?::integer,
       updated_at = now(),
       video_processing_status = case when ? = 'video' then 'pending' else video_processing_status end
     where id = ?::uuid
-  `, [sizeBytes, contentType, category, assetId]);
+  `, [sizeBytes, contentType, dimensions?.width ?? null, dimensions?.height ?? null, category, assetId]);
 };
 
 export const markAssetRejected = async (transaction: Transaction, assetId: string, reason: string): Promise<void> => {
@@ -157,8 +163,12 @@ export const markAssetRejected = async (transaction: Transaction, assetId: strin
 };
 
 export interface ConfirmedAssetVariants {
-  readonly category: MediaCategory;
+  readonly category: MediaLibraryCategory;
   readonly objectKey: string;
+  /** The type the server confirmed from the bytes, and the name and extension the download of a file that is not shown is called by. */
+  readonly confirmedContentType: string | null;
+  readonly fileName: string | null;
+  readonly extension: string;
   readonly thumbnailObjectKey: string | null;
   readonly previewObjectKey: string | null;
   readonly videoProcessingStatus: 'not_applicable' | 'pending' | 'processing' | 'ready' | 'failed';
@@ -173,14 +183,17 @@ export const findConfirmedAssetWithVariants = async (
   agencyId: string
 ): Promise<ConfirmedAssetVariants | undefined> => {
   const result = await raw<RawRows<{
-    category: MediaCategory;
+    category: MediaLibraryCategory;
     object_key: string;
+    confirmed_content_type: string | null;
+    file_name: string | null;
+    extension: string;
     thumbnail_object_key: string | null;
     preview_object_key: string | null;
     video_processing_status: ConfirmedAssetVariants['videoProcessingStatus'];
     video_processing_error: string | null;
   }>>(transaction, `
-    select category, object_key, thumbnail_object_key, preview_object_key,
+    select category, object_key, confirmed_content_type, file_name, extension, thumbnail_object_key, preview_object_key,
       video_processing_status, video_processing_error
     from public.media_assets where id = ?::uuid and agency_id = ?::uuid and status = 'confirmed' and removed_at is null
   `, [assetId, agencyId]);
@@ -189,6 +202,9 @@ export const findConfirmedAssetWithVariants = async (
   return {
     category: row.category,
     objectKey: row.object_key,
+    confirmedContentType: row.confirmed_content_type,
+    fileName: row.file_name,
+    extension: row.extension,
     thumbnailObjectKey: row.thumbnail_object_key,
     previewObjectKey: row.preview_object_key,
     videoProcessingStatus: row.video_processing_status,
