@@ -98,14 +98,17 @@ export const MediaFolderTypeCountsSchema = z.object({
 /**
  * A folder with what it holds (decision 2026-11-11): the files by type, their total size, the last time something changed in it
  * (the folder's own creation or a file written in it) and who uploaded the newest file. A read derived from the files; no column of
- * the folder holds it.
+ * the folder holds it. `inUseNow` is true for at most one folder of the client, the one the "em uso agora" block of the screen shows: the
+ * folder that is not a default one whose files were written most recently (an upload, a rename, a move into it), when that was in the last
+ * 30 days. No folder is in use when none qualifies, and the screen leaves the block out.
  */
 export const MediaFolderSummarySchema = MediaFolderSchema.extend({
   counts: MediaFolderTypeCountsSchema,
   assetCount: z.number().int().nonnegative(),
   totalSizeBytes: z.number().int().nonnegative(),
   lastChangedAt: z.string().datetime(),
-  lastUploadedBy: ContentPersonSchema.nullable()
+  lastUploadedBy: ContentPersonSchema.nullable(),
+  inUseNow: z.boolean()
 }).strict();
 
 export const MediaFolderSummaryListQuerySchema = PaginationInputSchema;

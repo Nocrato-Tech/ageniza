@@ -37,10 +37,11 @@ const cookieOf = (response: { cookies: readonly { name: string; value: string }[
 
 interface Reply {
   readonly statusCode: number;
+  readonly body: string;
   json<T = any>(): T; // eslint-disable-line @typescript-eslint/no-explicit-any -- test helper over untyped JSON
 }
 
-const call = async (method: 'GET' | 'POST' | 'PATCH', url: string, as?: string, payload?: unknown): Promise<Reply> =>
+const call = async (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, as?: string, payload?: unknown): Promise<Reply> =>
   (await app.app.inject({
     method,
     url,
@@ -541,6 +542,242 @@ describe('the folders with what they hold', () => {
     const second = await call('GET', `${summaryUrl(client)}?page=2&pageSize=3`, 'opVis');
     expect(second.json().data.map((folder: { name: string }) => folder.name)).toEqual(['Vídeos']);
     expect(second.json().meta).toEqual({ page: 2, pageSize: 3, totalItems: 4, totalPages: 2 });
+  });
+});
+
+describe('the folder in use now: the one of the client, not a default one, with the file written most recently, in the last 30 days', () => {
+  const daysAgo = (days: number): Date => new Date(Date.now() - days * 86_400_000);
+  const inUse = async (client: string, as = 'opVis'): Promise<string[]> => {
+    const response = await call('GET', summaryUrl(client), as);
+    expect(response.statusCode).toBe(200);
+    return response.json().data.filter((folder: { inUseNow: boolean }) => folder.inUseNow).map((folder: { name: string }) => folder.name);
+  };
+
+  it('is the folder the agency made whose files changed last, and only that one', async () => {
+    const client = await freshClient();
+    const older = await customFolder(client, 'Campanha antiga');
+    const newer = await customFolder(client, 'Campanha de agora');
+    await seedAsset({ clientId: client, folderId: older, at: daysAgo(10) });
+    await seedAsset({ clientId: client, folderId: newer, at: daysAgo(2) });
+    await seedAsset({ clientId: client, folderId: newer, at: daysAgo(20) });
+
+    expect(await inUse(client)).toEqual(['Campanha de agora']);
+  });
+
+  it('is never a default folder, however recent its files are', async () => {
+    const client = await freshClient();
+    await seedAsset({ clientId: client, folder: 'Imagens', at: new Date() });
+    await seedAsset({ clientId: client, folder: 'Vídeos', category: 'video', at: daysAgo(1) });
+    const custom = await customFolder(client, 'Campanha');
+    await seedAsset({ clientId: client, folderId: custom, at: daysAgo(25) });
+
+    expect(await inUse(client)).toEqual(['Campanha']);
+  });
+
+  it('is none when nothing was written in the last 30 days, and the whole day counts either side of the limit', async () => {
+    const client = await freshClient();
+    const inside = await customFolder(client, 'Dentro');
+    const outside = await customFolder(client, 'Fora');
+    await seedAsset({ clientId: client, folderId: outside, at: new Date(Date.now() - 30 * 86_400_000 - 3_600_000) });
+    expect(await inUse(client)).toEqual([]);
+
+    await seedAsset({ clientId: client, folderId: inside, at: new Date(Date.now() - 30 * 86_400_000 + 3_600_000) });
+    expect(await inUse(client)).toEqual(['Dentro']);
+  });
+
+  it('is none for a client with no folder of its own, and for one that only has files in the default ones', async () => {
+    const bare = await freshClient();
+    expect(await inUse(bare)).toEqual([]);
+    const defaults = await freshClient();
+    await seedAsset({ clientId: defaults, at: new Date() });
+    expect(await inUse(defaults)).toEqual([]);
+  });
+
+  it('counts the files that are still in the folder: a removed file, an upload that is pending and one that was rejected do not', async () => {
+    const client = await freshClient();
+    const folder = await customFolder(client, 'Só histórico');
+    await seedAsset({ clientId: client, folderId: folder, at: daysAgo(1), removedAt: daysAgo(1) });
+    await seedAsset({ clientId: client, folderId: folder, at: daysAgo(1), status: 'pending' });
+    await seedAsset({ clientId: client, folderId: folder, at: daysAgo(1), status: 'rejected' });
+    expect(await inUse(client)).toEqual([]);
+
+    await seedAsset({ clientId: client, folderId: folder, at: daysAgo(3) });
+    expect(await inUse(client)).toEqual(['Só histórico']);
+  });
+
+  it('follows a rename of a file and the move of a file into the folder', async () => {
+    const client = await freshClient();
+    const renamed = await customFolder(client, 'Renomeada');
+    const target = await customFolder(client, 'Destino');
+    const old = await seedAsset({ clientId: client, folderId: renamed, at: daysAgo(40) });
+    const stale = await seedAsset({ clientId: client, folderId: await folderOf(client, 'Imagens'), at: daysAgo(50) });
+    await seedAsset({ clientId: client, folderId: target, at: daysAgo(45) });
+    expect(await inUse(client)).toEqual([]);
+
+    expect((await call('PATCH', assetUrl(client, old), 'opVis', { name: 'Novo nome.png' })).statusCode).toBe(200);
+    expect(await inUse(client)).toEqual(['Renomeada']);
+
+    expect((await call('POST', `${assetUrl(client, stale)}/move`, 'opVis', { folderId: target })).statusCode).toBe(200);
+    expect(await inUse(client)).toEqual(['Destino']);
+  });
+
+  it('holds only the folders of the client asked for', async () => {
+    const busy = await freshClient();
+    const quiet = await freshClient();
+    await seedAsset({ clientId: busy, folderId: await customFolder(busy, 'Movimentada'), at: new Date() });
+    await customFolder(quiet, 'Parada');
+    await seedAsset({ clientId: clientB, folderId: await customFolder(clientB, 'De outra agência'), at: new Date() });
+
+    expect(await inUse(busy)).toEqual(['Movimentada']);
+    expect(await inUse(quiet)).toEqual([]);
+  });
+
+  it('is the same for who reads Conteúdo, whichever the role', async () => {
+    const client = await freshClient();
+    await seedAsset({ clientId: client, folderId: await customFolder(client, 'Campanha'), at: new Date() });
+    expect(await inUse(client, 'onlyVisualizar')).toEqual(['Campanha']);
+    expect(await inUse(client, 'owner')).toEqual(['Campanha']);
+  });
+});
+
+describe('deleting a folder: one that is not a default one and is empty', () => {
+  const folderCount = async (folderId: string): Promise<number> =>
+    Number((await owner.knex('media_folders').where({ id: folderId }).count<{ count: string }[]>('id as count'))[0]?.count);
+  const FILES_MESSAGE = 'Esta pasta tem arquivos. Mova ou exclua os arquivos antes.';
+
+  it('deletes an empty folder the agency made, answering 204 with nothing, and records who did it', async () => {
+    const client = await freshClient();
+    const folder = await customFolder(client, 'Campanhas');
+    const neighbour = await customFolder(client, 'Outra');
+
+    const response = await call('DELETE', folderUrl(client, folder), 'opVis');
+
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe('');
+    expect(await folderCount(folder)).toBe(0);
+    expect(await folderCount(neighbour)).toBe(1);
+    expect(await owner.knex('audit.events').where({ action: 'media.folder_deleted', target_id: folder }).select('actor_user_id', 'agency_id', 'target_type'))
+      .toEqual([{ actor_user_id: users.opVis!.id, agency_id: agencyA, target_type: 'media_folder' }]);
+    expect((await call('GET', `${clientUrl(agencyA, client)}/media-folders`, 'opVis')).json().data.map((item: { id: string }) => item.id)).not.toContain(folder);
+  });
+
+  it('lets the Admin of the agency delete it too, and a folder inside another', async () => {
+    const client = await freshClient();
+    const parent = await customFolder(client, 'Pai');
+    const child = await customFolder(client, 'Filha', parent);
+
+    expect((await call('DELETE', folderUrl(client, child), 'owner')).statusCode).toBe(204);
+    expect((await call('DELETE', folderUrl(client, parent), 'owner')).statusCode).toBe(204);
+    expect(await folderCount(parent)).toBe(0);
+  });
+
+  it('refuses a default folder with a 409, however empty it is, and writes nothing', async () => {
+    const client = await freshClient();
+    const imagens = await folderOf(client, 'Imagens');
+    const before = await folderSnapshot(imagens);
+
+    expectError(await call('DELETE', folderUrl(client, imagens), 'opVis'), 409, 'DEFAULT_FOLDER_IMMUTABLE', 'As pastas padrão não podem ser excluídas.');
+    expectError(await call('DELETE', folderUrl(client, imagens), 'owner'), 409, 'DEFAULT_FOLDER_IMMUTABLE');
+    expect(await folderSnapshot(imagens)).toBe(before);
+    expect(await auditCount('media.folder_deleted', imagens)).toBe(0);
+  });
+
+  it.each(['image', 'video', 'pdf', 'audio', 'logo'] as const)('refuses a folder that holds a %s, saying to move or delete the files first, and writes nothing', async (category) => {
+    const client = await freshClient();
+    const folder = await customFolder(client, 'Com arquivo');
+    const asset = await seedAsset({ clientId: client, folderId: folder, category });
+    const before = [await folderSnapshot(folder), await snapshot(asset)];
+
+    expectError(await call('DELETE', folderUrl(client, folder), 'opVis'), 409, 'FOLDER_NOT_EMPTY', FILES_MESSAGE);
+    expect([await folderSnapshot(folder), await snapshot(asset)]).toEqual(before);
+    expect(await auditCount('media.folder_deleted', folder)).toBe(0);
+  });
+
+  it('refuses a folder with an upload on its way, and goes ahead when only history is left in it', async () => {
+    const client = await freshClient();
+    const folder = await customFolder(client, 'Em envio');
+    await seedAsset({ clientId: client, folderId: folder, status: 'pending' });
+    expectError(await call('DELETE', folderUrl(client, folder), 'opVis'), 409, 'FOLDER_NOT_EMPTY', FILES_MESSAGE);
+
+    const history = await customFolder(client, 'Só histórico');
+    const removed = await seedAsset({ clientId: client, folderId: history, removedAt: new Date() });
+    const rejected = await seedAsset({ clientId: client, folderId: history, status: 'rejected' });
+    expect((await call('DELETE', folderUrl(client, history), 'opVis')).statusCode).toBe(204);
+    expect(await owner.knex('media_assets').whereIn('id', [removed, rejected]).select('folder_id', 'client_id')).toEqual([
+      { folder_id: null, client_id: client }, { folder_id: null, client_id: client }
+    ]);
+  });
+
+  it('refuses a folder with a subfolder and one that a content is tied to, each with its own message', async () => {
+    const client = await freshClient();
+    const parent = await customFolder(client, 'Pai');
+    await customFolder(client, 'Filha', parent);
+    expectError(await call('DELETE', folderUrl(client, parent), 'opVis'), 409, 'FOLDER_NOT_EMPTY', 'Esta pasta tem subpastas. Mova ou exclua as subpastas antes.');
+
+    const tied = await customFolder(client, 'Com conteúdo');
+    const content = randomUUID();
+    contentIds.push(content);
+    await owner.knex('contents').insert({
+      id: content, client_id: client, title: 'Sem arquivo', platform: 'instagram', format: 'image', publish_on: '2026-10-20', folder_id: tied,
+      owner_user_id: users.opVis!.id, status: 'in_production'
+    });
+    expectError(await call('DELETE', folderUrl(client, tied), 'opVis'), 409, 'FOLDER_NOT_EMPTY', 'Esta pasta tem conteúdos. Mova ou exclua os conteúdos antes.');
+    expect(await folderCount(parent)).toBe(1);
+    expect(await folderCount(tied)).toBe(1);
+  });
+
+  it('deletes the folder once its file was moved away, the file keeping living in the other one', async () => {
+    const client = await freshClient();
+    const from = await customFolder(client, 'Origem');
+    const to = await customFolder(client, 'Destino');
+    const asset = await seedAsset({ clientId: client, folderId: from });
+
+    expectError(await call('DELETE', folderUrl(client, from), 'opVis'), 409, 'FOLDER_NOT_EMPTY');
+    expect((await call('POST', `${assetUrl(client, asset)}/move`, 'opVis', { folderId: to })).statusCode).toBe(200);
+    expect((await call('DELETE', folderUrl(client, from), 'opVis')).statusCode).toBe(204);
+    expect((await call('GET', assetUrl(client, asset), 'opVis')).json()).toMatchObject({ id: asset, folderId: to });
+  });
+
+  it('answers the same 404 for a folder of another client, of another agency, an absent one and a malformed id, and for a second delete', async () => {
+    const ofOtherClient = await customFolder(clientA2, 'De outro cliente');
+    const ofOtherAgency = await customFolder(clientB, 'De outra agência');
+    const before = [await folderSnapshot(ofOtherClient), await folderSnapshot(ofOtherAgency)];
+
+    for (const folder of [ofOtherClient, ofOtherAgency, randomUUID(), 'not-a-uuid']) {
+      expectNotFound(await call('DELETE', folderUrl(clientA1, folder), 'opVis'), 'Folder not found.');
+    }
+    expectNotFound(await call('DELETE', folderUrl(clientB, ofOtherAgency), 'both'), 'Client not found.');
+    expect([await folderSnapshot(ofOtherClient), await folderSnapshot(ofOtherAgency)]).toEqual(before);
+    expect(await auditCount('media.folder_deleted', ofOtherClient)).toBe(0);
+
+    const client = await freshClient();
+    const folder = await customFolder(client, 'Uma vez só');
+    expect((await call('DELETE', folderUrl(client, folder), 'opVis')).statusCode).toBe(204);
+    expectNotFound(await call('DELETE', folderUrl(client, folder), 'opVis'), 'Folder not found.');
+    expect(await auditCount('media.folder_deleted', folder)).toBe(1);
+  });
+
+  it('needs conteudo.operar AND conteudo.visualizar: one of them alone, another role or no session deletes nothing', async () => {
+    const client = await freshClient();
+    const folder = await customFolder(client, 'Campanhas');
+    const before = await folderSnapshot(folder);
+
+    for (const as of ['onlyOperar', 'onlyVisualizar', 'onlyMidia', 'sales']) {
+      expect({ as, status: (await call('DELETE', folderUrl(client, folder), as)).statusCode }).toEqual({ as, status: 403 });
+    }
+    expect((await call('DELETE', folderUrl(client, folder), undefined)).statusCode).toBe(401);
+    expect(await folderSnapshot(folder)).toBe(before);
+    expect(await auditCount('media.folder_deleted', folder)).toBe(0);
+  });
+
+  it('answers 409 for a client that was archived and 409 for an agency that is read-only, without deleting', async () => {
+    const archived = await customFolder(clientArchived, 'Arquivada');
+    const readOnly = await customFolder(clientD, 'Leitura');
+    const before = [await folderSnapshot(archived), await folderSnapshot(readOnly)];
+
+    expectError(await call('DELETE', folderUrl(clientArchived, archived), 'opVis'), 409, 'CLIENT_ARCHIVED');
+    expectError(await call('DELETE', folderUrl(clientD, readOnly, agencyD), 'ownerD'), 409, 'AGENCY_READ_ONLY');
+    expect([await folderSnapshot(archived), await folderSnapshot(readOnly)]).toEqual(before);
   });
 });
 

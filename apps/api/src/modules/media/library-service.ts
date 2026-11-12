@@ -3,6 +3,7 @@ import { raw, type SqlBinding } from '@ageniza/database';
 import type { ContentStatus, MediaLibraryCategory, MediaLibraryAsset, MediaFolderSummary, MediaUsage } from '@ageniza/contracts';
 
 import { foldTextSql } from '../../plugins/infra/sql-text.js';
+import { MEDIA_FOLDER_IN_USE_WINDOW_DAYS } from './policy.js';
 
 type Transaction = Parameters<typeof raw>[0];
 
@@ -253,6 +254,7 @@ interface FolderSummaryRow {
   readonly last_changed_at: Date;
   readonly uploader_membership_id: string | null;
   readonly uploader_name: string | null;
+  readonly in_use_now: boolean;
 }
 
 export const folderSummaryFrom = (row: FolderSummaryRow): MediaFolderSummary => {
@@ -273,13 +275,16 @@ export const folderSummaryFrom = (row: FolderSummaryRow): MediaFolderSummary => 
     assetCount: counts.image + counts.video + counts.pdf + counts.audio + counts.logo,
     totalSizeBytes: Number(row.total_size_bytes),
     lastChangedAt: new Date(row.last_changed_at).toISOString(),
-    lastUploadedBy: personFrom(row.uploader_membership_id, row.uploader_name)
+    lastUploadedBy: personFrom(row.uploader_membership_id, row.uploader_name),
+    inUseNow: row.in_use_now
   };
 };
 
 /**
  * The folders of a client in the order of the folder list, each with what it holds: the confirmed files by type, their size, the
- * last change (the folder's own creation, or a confirmed file written or removed in it) and who uploaded the newest one.
+ * last change (the folder's own creation, or a confirmed file written or removed in it) and who uploaded the newest one. At most one
+ * folder is "in use now": the one that is not a default folder whose files, the ones still in it, were written most recently, if that
+ * was within `MEDIA_FOLDER_IN_USE_WINDOW_DAYS`; a file is written by its upload, its rename and its move into the folder.
  */
 export const listFolderSummaries = async (
   transaction: Transaction,
@@ -287,10 +292,24 @@ export const listFolderSummaries = async (
   page: Page
 ): Promise<Paged<FolderSummaryRow & { readonly total: string | number }>> => {
   const result = await raw<RawRows<FolderSummaryRow & { total: string | number }>>(transaction, `
+    with in_use as (
+      select folder.id
+      from public.media_folders folder
+      cross join lateral (
+        select max(asset.updated_at) as written_at
+        from public.media_assets asset
+        where asset.folder_id = folder.id and ${confirmedOf}
+      ) live
+      where folder.client_id = ?::uuid and not folder.is_default
+        and live.written_at >= pg_catalog.now() - (?::integer * interval '1 day')
+      order by live.written_at desc, folder.id
+      limit 1
+    )
     select folder.id, folder.parent_id, folder.name, folder.is_default, folder.created_at,
       stats.image_count, stats.video_count, stats.pdf_count, stats.audio_count, stats.logo_count, stats.total_size_bytes,
       greatest(folder.created_at, stats.last_written_at) as last_changed_at,
       newest.membership_id as uploader_membership_id, newest.name as uploader_name,
+      folder.id in (select id from in_use) as in_use_now,
       count(*) over () as total
     from public.media_folders folder
     cross join lateral (
@@ -316,7 +335,7 @@ export const listFolderSummaries = async (
     where folder.client_id = ?::uuid
     order by folder.depth, folder.is_default desc, ${foldTextSql('folder.name')} collate "C", folder.id
     limit ? offset ?
-  `, [clientId, page.limit, page.offset]);
+  `, [clientId, MEDIA_FOLDER_IN_USE_WINDOW_DAYS, clientId, page.limit, page.offset]);
   if (result.rows.length > 0 || page.offset === 0) return { rows: result.rows, total: Number(result.rows[0]?.total ?? 0) };
 
   const count = await raw<RawRows<{ total: string | number }>>(transaction, `

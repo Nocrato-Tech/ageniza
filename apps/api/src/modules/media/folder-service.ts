@@ -153,13 +153,26 @@ const databaseCode = (error: unknown): string | undefined =>
     ? (error as { code: string }).code
     : undefined;
 
-/** What the functions of 20261007001500 and the gate on the client raise, as the API's refusals. */
-export const folderFunctionRefusal = (error: unknown): 'not-found' | 'client-archived' | 'in-use' | undefined => {
+/** `app_private.delete_media_folder`: raises when the folder is a default one, holds files, has subfolders or is tied to contents. */
+export const deleteFolder = async (transaction: Transaction, folderId: string): Promise<void> => {
+  await raw(transaction, 'select app_private.delete_media_folder(?::uuid)', [folderId]);
+};
+
+export type FolderFunctionRefusal =
+  | 'not-found' | 'client-archived' | 'in-use'
+  | 'folder-has-files' | 'folder-has-subfolders' | 'folder-has-contents' | 'folder-is-default';
+
+/** What the functions of 20261007001500 and 20261111000101 and the gate on the client raise, as the API's refusals. */
+export const folderFunctionRefusal = (error: unknown): FolderFunctionRefusal | undefined => {
   switch (databaseCode(error)) {
     case 'A0080': return 'not-found';
     case 'A0020':
     case 'A0081': return 'client-archived';
     case 'A0082': return 'in-use';
+    case 'A0083': return 'folder-has-files';
+    case 'A0084': return 'folder-has-subfolders';
+    case 'A0085': return 'folder-has-contents';
+    case 'A0086': return 'folder-is-default';
     default: return undefined;
   }
 };

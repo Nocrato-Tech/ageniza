@@ -173,9 +173,21 @@ describe('what the library answers', () => {
       assetCount: 106,
       totalSizeBytes: 1_000,
       lastChangedAt: '2026-11-11T12:00:00.000Z',
-      lastUploadedBy: null
+      lastUploadedBy: null,
+      inUseNow: false
     };
     expect(MediaFolderSummarySchema.safeParse(folder).success).toBe(true);
     expect(MediaFolderSummarySchema.safeParse({ ...folder, counts: { image: 1 } }).success).toBe(false);
+  });
+
+  it('says whether a folder is the one in use now, as a yes or a no and never as something missing', () => {
+    const folder = {
+      id: '22222222-2222-4222-8222-222222222222', parentId: null, name: 'Campanhas', isDefault: false, createdAt: '2026-11-11T12:00:00.000Z',
+      counts: { image: 1, video: 0, pdf: 0, audio: 0, logo: 0 }, assetCount: 1, totalSizeBytes: 1_000, lastChangedAt: '2026-11-11T12:00:00.000Z', lastUploadedBy: null
+    };
+    expect(MediaFolderSummarySchema.safeParse({ ...folder, inUseNow: true }).success).toBe(true);
+    expect(MediaFolderSummarySchema.safeParse(folder).success).toBe(false);
+    expect(MediaFolderSummarySchema.safeParse({ ...folder, inUseNow: null }).success).toBe(false);
+    expect(MediaFolderSummarySchema.safeParse({ ...folder, inUseNow: 'true' }).success).toBe(false);
   });
 });

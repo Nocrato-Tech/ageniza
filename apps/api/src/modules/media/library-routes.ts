@@ -21,7 +21,7 @@ import type { FastifyInstance } from 'fastify';
 
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
-import { notFound } from './client-media-errors.js';
+import { defaultFolderNotDeletable, notFound } from './client-media-errors.js';
 import {
   createClientMediaRouteKit,
   idFromRoute,
@@ -31,7 +31,7 @@ import {
   requireWritableClient,
   type ClientMediaRouteDependencies
 } from './client-route-support.js';
-import { clientScopeOf, folderFunctionRefusal, loadFolder } from './folder-service.js';
+import { clientScopeOf, deleteFolder, folderFunctionRefusal, loadFolder } from './folder-service.js';
 import { folderFrom } from './folder-routes.js';
 import {
   editAsset,
@@ -66,7 +66,7 @@ const mediaInUseForMove = (): HttpError => new HttpError({
  * The client's media library, read and edited as a whole (decisions 2026-11-11 "a mídia ganha nome, dimensões, texto alternativo,
  * renomear e mover" and "a mídia mostra onde é usada"): the files of the client across folders, one file with where it is used, the
  * edit of its name and alternative text, its move to another folder of the same client, the folders with what they hold, and the
- * rename of a folder. The routes name the agency and the client like those of the folders; a client of another agency, a file or a
+ * rename and the deletion of a folder. The routes name the agency and the client like those of the folders; a client of another agency, a file or a
  * folder of another client and a malformed id are the same 404, and a role without the permission never reaches the handler.
  */
 export const registerMediaLibraryRoutes = (app: FastifyInstance, dependencies: ClientMediaRouteDependencies): void => {
@@ -106,6 +106,11 @@ export const registerMediaLibraryRoutes = (app: FastifyInstance, dependencies: C
     permission: 'conteudo.operar',
     responseStatus: 200,
     schemas: { params: AgencyClientMediaFolderPathParamsSchema, body: RenameMediaFolderRequestSchema, response: MediaFolderSchema }
+  } satisfies DocumentedRouteConfig;
+  const deleteFolderDocs = {
+    permission: 'conteudo.operar',
+    responseStatus: 204,
+    schemas: { params: AgencyClientMediaFolderPathParamsSchema }
   } satisfies DocumentedRouteConfig;
 
   app.get('/agencies/:agencyId/clients/:clientId/media', guarded(listDocs), async (request, reply) => {
@@ -165,6 +170,29 @@ export const registerMediaLibraryRoutes = (app: FastifyInstance, dependencies: C
     });
 
     return reply.send(routeResponse(renameFolderDocs, request, folderFrom(folder)));
+  });
+
+  // A folder that is not a default one and is empty (decision 2026-11-11, rule 9). The function holds the rule and the locks;
+  // the route reads the folder through the client of the path first, so a folder of another client is the same 404 as an absent one.
+  app.delete('/agencies/:agencyId/clients/:clientId/media-folders/:folderId', guarded(deleteFolderDocs, true), async (request, reply) => {
+    const auth = requireAuth(request);
+    const tenant = requireTenant(request);
+    const clientId = idFromRoute(request, 'clientId', 'Client not found.');
+    const folderId = idFromRoute(request, 'folderId', 'Folder not found.');
+    routeParams(deleteFolderDocs, request);
+
+    await inTransaction(request, async (transaction) => {
+      requireWritableClient(await clientScopeOf(transaction, tenant.agencyId, clientId));
+      const current = await loadFolder(transaction, clientId, folderId);
+      if (current === undefined) throw notFound('Folder not found.');
+      if (current.is_default) throw defaultFolderNotDeletable();
+      await deleteFolder(transaction, folderId);
+      await auditMediaEvent(transaction, {
+        action: 'media.folder_deleted', actorUserId: auth.userId, agencyId: tenant.agencyId, targetId: folderId, targetType: 'media_folder'
+      });
+    });
+
+    return reply.status(204).send();
   });
 
   app.get('/agencies/:agencyId/clients/:clientId/media/:assetId', guarded(detailDocs), async (request, reply) => {

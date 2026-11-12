@@ -164,6 +164,8 @@ export const multipartPlan = (sizeBytes: number, configuredPartBytes: number): {
 
 /** The folders of a client are few and the screen needs them all at once: the page is the ceiling. */
 export const MEDIA_FOLDER_DEFAULT_PAGE_SIZE = 100;
+/** A folder is "in use now" while its files were written within this many days (decision 2026-11-11, rule 10). */
+export const MEDIA_FOLDER_IN_USE_WINDOW_DAYS = 30;
 export const MEDIA_FOLDER_ASSET_DEFAULT_PAGE_SIZE = 48;
 export const MEDIA_LIBRARY_DEFAULT_PAGE_SIZE = 48;
 /** The contents that use one file are few: the screen lists them all at once. */

@@ -267,6 +267,29 @@ describe('a file the library accepts, confirmed by its bytes', () => {
     expect(await row(assetId!)).toMatchObject({ category: 'video', width: null, height: null });
     await owner.knex.raw("delete from pgboss.job where name = 'media.process-video' and data->>'assetId' = ?", [assetId]);
   });
+
+  it('makes the folder the file went into the one in use now, which a rejected upload does not', async () => {
+    const folder = async (name: string): Promise<string> => {
+      const id = randomUUID();
+      await owner.knex('media_folders').insert({ id, client_id: clientA2, parent_id: null, name, is_default: false });
+      return id;
+    };
+    const inUseNow = async (): Promise<string[]> => {
+      const summary = await call('GET', `/agencies/${agencyA}/clients/${clientA2}/media-folders/summary`, 'opVis');
+      expect(summary.statusCode).toBe(200);
+      return summary.json().data.filter((item: { inUseNow: boolean }) => item.inUseNow).map((item: { name: string }) => item.name);
+    };
+    const rejected = await folder('Rejeitada');
+    const accepted = await folder('Aceita');
+
+    const refused = await upload({ clientId: clientA2, folderId: rejected, contentType: 'image/png', bytes: textBytes('<script>alert(1)</script>') });
+    expect(refused.completed?.statusCode).toBe(422);
+    expect(await inUseNow()).toEqual([]);
+
+    const sent = await upload({ clientId: clientA2, folderId: accepted, contentType: 'image/png', bytes: pngBytes(40, 30) });
+    expect(sent.completed?.statusCode).toBe(200);
+    expect(await inUseNow()).toEqual(['Aceita']);
+  });
 });
 
 describe('a type the library does not accept, or accepts only as something else', () => {

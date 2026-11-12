@@ -12,6 +12,13 @@ describe('what the media functions and the client gate raise', () => {
     expect(folderFunctionRefusal(failure('A0082'))).toBe('in-use');
   });
 
+  it('maps what keeps a folder from being deleted: its files, its subfolders, its contents and being a default one', () => {
+    expect(folderFunctionRefusal(failure('A0083'))).toBe('folder-has-files');
+    expect(folderFunctionRefusal(failure('A0084'))).toBe('folder-has-subfolders');
+    expect(folderFunctionRefusal(failure('A0085'))).toBe('folder-has-contents');
+    expect(folderFunctionRefusal(failure('A0086'))).toBe('folder-is-default');
+  });
+
   it('leaves every other error alone, so it stays a 500 instead of passing for a refusal', () => {
     for (const code of ['42501', '23503', 'A0060', 'A0021', '40P01']) expect(folderFunctionRefusal(failure(code))).toBeUndefined();
     expect(folderFunctionRefusal(new Error('no code'))).toBeUndefined();

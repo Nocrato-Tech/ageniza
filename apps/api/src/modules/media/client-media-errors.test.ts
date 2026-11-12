@@ -18,6 +18,13 @@ describe('what the writes of the client media library answer when the database r
     expect(answer(failure('A0082')).statusCode).toBe(409);
   });
 
+  it('says why a folder is not deleted, in Portuguese and as a 409, and never as a 500', () => {
+    expect(answer(failure('A0083'))).toEqual({ statusCode: 409, code: 'FOLDER_NOT_EMPTY', message: 'Esta pasta tem arquivos. Mova ou exclua os arquivos antes.' });
+    expect(answer(failure('A0084'))).toEqual({ statusCode: 409, code: 'FOLDER_NOT_EMPTY', message: 'Esta pasta tem subpastas. Mova ou exclua as subpastas antes.' });
+    expect(answer(failure('A0085'))).toEqual({ statusCode: 409, code: 'FOLDER_NOT_EMPTY', message: 'Esta pasta tem conteúdos. Mova ou exclua os conteúdos antes.' });
+    expect(answer(failure('A0086'))).toEqual({ statusCode: 409, code: 'DEFAULT_FOLDER_IMMUTABLE', message: 'As pastas padrão não podem ser excluídas.' });
+  });
+
   it('answers a deadlock and a serialization failure as "try again", never as a 500', () => {
     for (const raised of ['40P01', '40001']) {
       expect({ raised, ...answer(failure(raised)) })

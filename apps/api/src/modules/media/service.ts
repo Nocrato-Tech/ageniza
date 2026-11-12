@@ -214,10 +214,16 @@ export const findConfirmedAssetWithVariants = async (
 
 export const auditMediaEvent = async (
   transaction: Transaction,
-  event: { readonly action: string; readonly actorUserId: string; readonly agencyId: string; readonly targetId: string }
+  event: {
+    readonly action: string;
+    readonly actorUserId: string;
+    readonly agencyId: string;
+    readonly targetId: string;
+    readonly targetType?: 'media_asset' | 'media_folder';
+  }
 ): Promise<void> => {
   await raw(transaction, `
     insert into audit.events (action, actor_user_id, agency_id, target_type, target_id)
-    values (?, ?, ?, 'media_asset', ?)
-  `, [event.action, event.actorUserId, event.agencyId, event.targetId]);
+    values (?, ?, ?, ?, ?)
+  `, [event.action, event.actorUserId, event.agencyId, event.targetType ?? 'media_asset', event.targetId]);
 };
