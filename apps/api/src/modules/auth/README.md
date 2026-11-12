@@ -129,7 +129,8 @@ way to the name of the Google profile); a confirmed account just gains the
 second way in (`accountLinking` is on, `trustedProviders` empty, and `requireLocalEmailVerified` is why the takeover is
 our code). The account is the `sub` (`auth.account.accountId`, unique per provider and one Google per user). No Google
 token is stored (`databaseHooks.account.create.before`), and no other provider can be linked. `session-guard.ts`
-refuses a session created at or before the user's `passwordChangedAt`. A Google-only account has no password: the
+refuses a session created at or before the greater of the user's and the credential's `passwordChangedAt`: the rule is written once
+(`session-validity.ts`, SQL) and the list of sessions applies the same one. A Google-only account has no password: the
 e-mail change asks for a Google sign-in of the last 5 minutes (`GOOGLE_REAUTH_WINDOW_MS`, `403 REAUTH_REQUIRED`, and
 `intent=reauth` sends `prompt=login`), its credential fingerprint is the `sub`, and "Esqueci a senha" creates a
 password. An account with Google and without both acceptances is `required` on `GET /me/legal-acceptances`, has no
@@ -153,7 +154,8 @@ routes, `sessions.ts` the queries, and every statement names the account of the 
 never one the request chose.
 
 - **The list** answers `{ id, current, browser, os, city, lastUsedAt, createdAt }`, newest first (`createdAt`), at most 100 (the session that asked
-  plus the 99 newest others, so it is always there), only sessions still open (`expiresAt > now()`). `browser` and `os` come from a closed list (`user-agent.ts`: Chrome, Edge, Firefox,
+  plus the 99 newest others, so it is always there), only sessions still open: not past `expiresAt` and not made at or before the last
+  replacement of the credential (`ACTIVE_SESSION_SQL`, the rule the guard applies). `browser` and `os` come from a closed list (`user-agent.ts`: Chrome, Edge, Firefox,
   Safari, Opera, Samsung Internet; Windows, macOS, iOS, Android, Linux, ChromeOS) and are `null` when the agent says none of them
   (the app's own agent included). The address, the token and the text of the `userAgent` are never read into the answer.
   `lastUsedAt` is the session's `updatedAt`: Better Auth renews it at most once a day, so it is "last renewed", not a heartbeat.
@@ -163,7 +165,7 @@ never one the request chose.
   it, and the statement refuses it as well.
 - **Ending the others** reuses `revokeUserSessions` (`session-revocation.ts`), the same function that ends every session when a
   collaborator or a portal access is removed, with the current session kept. It answers the number of sessions that were still
-  open; ended ones it finds are deleted but not counted. The SPEC's table says `204` for this route and its text asks for the
+  open; ended ones it finds, and the ones the guard already refuses, are deleted but not counted. The SPEC's table says `204` for this route and its text asks for the
   number, so it answers `200 { revoked }`.
 - **A revoked session** is refused (`401`) on its next request: the cookie cache is off, so the guard reads the row every time.
 - The account of an invitation that has not confirmed its e-mail opens none of the three (`403 EMAIL_NOT_CONFIRMED`, the plain
@@ -174,7 +176,7 @@ never one the request chose.
 **The city.** `auth."session".city` (migration `20261112000100`) is written once, when the session is created, from the `cf-ipcity`
 header (`session-city.ts`, called by the `databaseHooks.session.create.before` hook in `better-auth.ts`): Node hands the header
 over as Latin-1, so the UTF-8 the edge sends is decoded back, then trimmed; a value with a control character, a bidirectional
-or invisible character, a broken UTF-8 sequence or more than 80 characters is dropped whole and the sign-in goes on without a city.
+or invisible character, a broken UTF-8 sequence or more than 80 characters (code points, as the column and the response contract count them: `AUTH_SESSION_CITY_MAX_CHARACTERS`) is dropped whole and the sign-in goes on without a city.
 The column keeps the same rule as a `CHECK`, and the application role has no `UPDATE` on it, so a renewal never rewrites it.
 It is informational: nothing decides on it. **`cf-ipcity` only reaches the API when the Cloudflare rule "Add visitor location
 headers" is on, which is the owner's action in the dashboard**; without it every session has no city and the screen omits it.

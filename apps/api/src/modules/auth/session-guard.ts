@@ -3,7 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { HttpError } from '@ageniza/core';
 import { createVerifiedUserClaims, type VerifiedUserClaims } from '@ageniza/database';
 
-import { unconfirmedAccountMayHoldSession, type AuthInstance } from './better-auth.js';
+import { sessionPredatesCredentialChange, unconfirmedAccountMayHoldSession, type AuthInstance } from './better-auth.js';
 import { applyAuthCookies, toAuthHeaders, toPublicAuthError } from './bridge.js';
 import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
 
@@ -40,15 +40,6 @@ export interface SessionGuardOptions {
    */
   readonly allowUnconfirmed?: boolean;
 }
-
-/** The latest instant the credential of the account was replaced, from the user row and from its credential rows. */
-const passwordChangedAtOf = async (auth: AuthInstance, user: { readonly id: string; readonly passwordChangedAt?: Date | string | null }): Promise<number | undefined> => {
-  const accounts = await (await auth.$context).internalAdapter.findAccounts(user.id);
-  const instants = [user.passwordChangedAt, ...accounts.map((account) => (account as { passwordChangedAt?: Date | string | null }).passwordChangedAt)]
-    .filter((instant): instant is Date | string => instant != null)
-    .map((instant) => new Date(instant).getTime());
-  return instants.length === 0 ? undefined : Math.max(...instants);
-};
 
 const unauthenticatedFallback = { statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.' } as const;
 
@@ -100,9 +91,8 @@ export const createRequireSession = (dependencies: SessionGuardDependencies, opt
     const { session, user } = result;
     // A session older than the last time the account's credential was replaced under the person (a reset, Google taking
     // the account over) is not theirs, even if its row survived the deletion that came with the replacement (issue #719).
-    // The date is the greater of the user's and the credential's own: the reset stamps the latter, in its own statement.
-    const changedAt = await passwordChangedAtOf(dependencies.auth, user);
-    if (changedAt !== undefined && new Date(session.createdAt).getTime() <= changedAt) {
+    // The rule is the one the list of sessions applies, written once in `session-validity.ts`.
+    if (await sessionPredatesCredentialChange(dependencies.auth, session.id)) {
       await dependencies.auth.api.revokeSession({ body: { token: session.token }, headers }).catch(() => undefined);
       throw unauthenticated();
     }

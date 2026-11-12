@@ -140,6 +140,22 @@ const expectQuarterOfAnHour = (retryAfter: unknown): void => {
 
 const cityOf = async (id: string): Promise<string | null> => ((await rowOf(id)) as { city: string | null }).city;
 
+/** A password change as the database sees it: the trigger stamps the date of the credential at that instant (migration 20261027120000). */
+const changePassword = async (userId: string): Promise<void> => {
+  const hash = await (await app.auth.$context).password.hash(`changed-${randomUUID()}`);
+  await owner.knex.raw(`update auth.account set password = ? where "userId" = ? and "providerId" = 'credential'`, [hash, userId]);
+};
+
+/** The two rows that keep the date of the last replacement of the credential, which the guard reads as the greater of them. */
+const setCredentialDate = async (row: 'user' | 'credential', userId: string, instantSql: string, bindings: unknown[] = []): Promise<void> => {
+  await owner.knex.raw(
+    row === 'user'
+      ? `update auth."user" set "passwordChangedAt" = ${instantSql} where id = ?`
+      : `update auth.account set "passwordChangedAt" = ${instantSql} where "userId" = ?`,
+    [...bindings, userId]
+  );
+};
+
 beforeAll(async () => {
   owner = ownerClient();
   app = await buildTestApp();
@@ -241,6 +257,77 @@ describe('GET /auth/sessions', () => {
     expect(ids).not.toContain(long.id);
     // Listing never deletes: the row of a session that ended is for the cleanup, not for a read.
     expect(await idsOf(user.id)).toEqual(sorted(alive.id, ended.id, long.id, current.id));
+  });
+
+  // The rule of the guard (issue #719): a session made at or before the last replacement of the credential is not the person's, even if
+  // its row survived the deletion that came with the change (a sign-in with the old password that was still running).
+  it('leaves out a session made before the last change of the password, which the guard refuses, and keeps the others', async () => {
+    const user = await makeUser('list-race');
+    const raced = await seed(user.id, { createdAfter: 0 });
+    await changePassword(user.id);
+    const other = await seed(user.id, { createdAfter: 2 });
+    const current = await seed(user.id, { createdAfter: 3 });
+
+    expect((await listed(current.cookie)).map((session) => session.id)).toEqual([current.id, other.id]);
+    expect(await idsOf(user.id)).toContain(raced.id);
+    expect((await revoke(current.cookie, raced.id)).statusCode).toBe(404);
+    expect(await idsOf(user.id)).toContain(raced.id);
+    expect(await statusWith(raced.cookie)).toBe(401);
+    expect(await idsOf(user.id)).toEqual(sorted(other.id, current.id));
+  });
+
+  it.each([['the user', 'user'], ['the credential', 'credential']] as const)('reads the date of %s: a session made before it is not listed', async (_label, row) => {
+    const user = await makeUser(`list-date-${row}`);
+    const before = await seed(user.id, { createdAfter: 0 });
+    await setCredentialDate(row, user.id, 'clock_timestamp()');
+    const current = await seed(user.id, { createdAfter: 2 });
+
+    expect((await listed(current.cookie)).map((session) => session.id)).toEqual([current.id]);
+    expect(await statusWith(before.cookie)).toBe(401);
+  });
+
+  it('reads the greater of the two dates, whichever row holds it', async () => {
+    const user = await makeUser('list-date-greater');
+    const first = await seed(user.id, { createdAfter: 0 });
+    await setCredentialDate('credential', user.id, 'clock_timestamp()');
+    const second = await seed(user.id, { createdAfter: 1 });
+    await setCredentialDate('user', user.id, `now() + interval '2 seconds'`);
+    const third = await seed(user.id, { createdAfter: 3 });
+
+    expect((await listed(third.cookie)).map((session) => session.id)).toEqual([third.id]);
+    expect(await statusWith(second.cookie)).toBe(401);
+    expect(await statusWith(first.cookie)).toBe(401);
+  });
+
+  it('lists the sessions of an account that has no date of a change at all, as the guard lets them through', async () => {
+    const user = await makeUser('list-no-date');
+    // The credential of an account older than the date: nothing was ever replaced, so nothing refuses a session.
+    await setCredentialDate('credential', user.id, 'null');
+    const dates = await owner.knex.raw<{ rows: { user_date: Date | null; credential_date: Date | null }[] }>(
+      `select person."passwordChangedAt" as user_date, (select max(credential."passwordChangedAt") from auth.account credential where credential."userId" = person.id) as credential_date
+       from auth."user" person where person.id = ?`,
+      [user.id]
+    );
+    expect(dates.rows).toEqual([{ user_date: null, credential_date: null }]);
+    const other = await seed(user.id, { createdAfter: 1 });
+    const current = await seed(user.id, { createdAfter: 2 });
+
+    expect((await listed(current.cookie)).map((session) => session.id)).toEqual([current.id, other.id]);
+    expect(await statusWith(other.cookie)).toBe(200);
+  });
+
+  it.each([
+    ['at the same instant', 0, false],
+    ['1 ms after', 1, false],
+    ['1 ms before', -1, true]
+  ] as const)('lists a session the credential changed %s it was made only when the change is before it, as the guard decides', async (_when, offsetMs, listedToo) => {
+    const user = await makeUser(`list-boundary-${offsetMs}`);
+    const probe = await seed(user.id, { createdAfter: 0 });
+    const current = await seed(user.id, { createdAfter: 3 });
+    await setCredentialDate('user', user.id, `(select "createdAt" from auth."session" where id = ?::uuid) + (?::int * interval '1 millisecond')`, [probe.id, offsetMs]);
+
+    expect((await listed(current.cookie)).some((session) => session.id === probe.id)).toBe(listedToo);
+    expect(await statusWith(probe.cookie)).toBe(listedToo ? 200 : 401);
   });
 
   it('never shows a session of another account, and the other account sees none of these', async () => {
@@ -583,6 +670,30 @@ describe('POST /auth/sessions/revoke-others', () => {
 
     expect((await revokeOthers(current.cookie)).json()).toEqual({ revoked: 2 });
     expect(await idsOf(user.id)).toEqual([current.id]);
+  });
+
+  it('does not count a session made before the last change of the password, which the guard refuses, and clears its row', async () => {
+    const user = await makeUser('others-raced');
+    await seed(user.id, { createdAfter: 0 });
+    await changePassword(user.id);
+    const other = await seed(user.id, { createdAfter: 2 });
+    const current = await seed(user.id, { createdAfter: 3 });
+
+    expect((await revokeOthers(current.cookie)).json()).toEqual({ revoked: 1 });
+    expect(await idsOf(user.id)).toEqual([current.id]);
+    expect(await statusWith(other.cookie)).toBe(401);
+  });
+
+  it('answers 0 for a person whose only other session is one the guard refuses', async () => {
+    const user = await makeUser('others-raced-alone');
+    const raced = await seed(user.id, { createdAfter: 0 });
+    await changePassword(user.id);
+    const current = await seed(user.id, { createdAfter: 2 });
+
+    expect((await listed(current.cookie)).map((session) => session.id)).toEqual([current.id]);
+    expect((await revokeOthers(current.cookie)).json()).toEqual({ revoked: 0 });
+    expect(await idsOf(user.id)).toEqual([current.id]);
+    expect(await rowOf(raced.id)).toBeUndefined();
   });
 
   it('refuses a body, another origin and no origin, and ends nothing', async () => {

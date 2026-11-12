@@ -12,6 +12,7 @@ import type { EmailService } from './email-service.js';
 import { createGoogleUserInfo } from './google.js';
 import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
 import { cleanSessionCity, SESSION_CITY_HEADER } from './session-city.js';
+import { SESSION_AFTER_CREDENTIAL_SQL } from './session-validity.js';
 
 export interface CreateAuthDependencies {
   readonly pool: Pool;
@@ -201,6 +202,21 @@ export const createAuth = (dependencies: CreateAuthDependencies): AuthInstance =
   const auth = buildAuth(dependencies);
   poolsByAuth.set(auth, dependencies.pool);
   return auth;
+};
+
+/**
+ * Whether the session was made at or before the last time the credential of its account was replaced (issue #719), by the same rule
+ * the list of sessions applies (`session-validity.ts`). A failure is thrown, never answered: the guard must not let a request through
+ * on a rule it could not read.
+ */
+export const sessionPredatesCredentialChange = async (auth: AuthInstance, sessionId: string): Promise<boolean> => {
+  const pool = poolsByAuth.get(auth);
+  if (pool === undefined) throw new Error('The session guard needs an auth instance made by createAuth.');
+  const result = await pool.query<{ outdated: boolean }>(
+    `select not (${SESSION_AFTER_CREDENTIAL_SQL}) as outdated from auth."session" as "session" where "session".id = $1::uuid`,
+    [sessionId]
+  );
+  return result.rows[0]?.outdated === true;
 };
 
 /**

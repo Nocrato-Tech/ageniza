@@ -954,10 +954,10 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     module: 'auth',
     summary: 'Lista as sessões ativas da conta',
     description: [
-      'As sessões ativas **da própria conta**, da criada há menos tempo para a mais antiga (no máximo 100: a sessão da requisição, que sempre aparece, e as 99 mais recentes das outras); a expirada não entra.',
+      'As sessões ativas **da própria conta**, da criada há menos tempo para a mais antiga (no máximo 100: a sessão da requisição, que sempre aparece, e as 99 mais recentes das outras); não entra a sessão expirada nem a criada antes da última troca da senha, que a requisição dela já recusa com 401.',
       '`id` identifica a sessão em `DELETE /auth/sessions/:sessionId` e nunca é o token; `current` marca a sessão do cookie da requisição.',
       '`browser` e `os` são lidos do `User-Agent` no servidor, de uma lista fechada, e são `null` quando ele não diz.',
-      '`city` é a cidade aproximada que o cabeçalho de localização do Cloudflare (`cf-ipcity`) trouxe **na criação da sessão**, ou `null`;',
+      '`city` é a cidade aproximada que o cabeçalho de localização do Cloudflare (`cf-ipcity`) trouxe **na criação da sessão** (de 1 a 80 caracteres, contados por ponto de código), ou `null`;',
       'só informa, nenhuma decisão de segurança depende dela. O IP, o token e o `User-Agent` bruto nunca saem da API.',
       'O cabeçalho `cf-ipcity` só chega com a regra "Add visitor location headers" ligada no Cloudflare (ação do dono); desligada, `city` é sempre `null`.',
       '`lastUsedAt` é a última renovação da sessão (no máximo a cada 24 horas de uso): vale como o dia, não como a hora.',

@@ -1,7 +1,7 @@
 import { AUTH_SESSION_LIST_MAX, type AuthActiveSession } from '@ageniza/contracts';
 import { raw, type DatabaseClient } from '@ageniza/database';
 
-import { ACTIVE_SESSION_SQL } from './session-revocation.js';
+import { ACTIVE_SESSION_SQL } from './session-validity.js';
 import { describeUserAgent } from './user-agent.js';
 
 type SessionExecutor = DatabaseClient['knex'];
