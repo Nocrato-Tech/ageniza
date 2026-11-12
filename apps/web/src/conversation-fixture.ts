@@ -84,7 +84,8 @@ export const createConversationApi = (options: ConversationApiOptions) => {
     commentCount: thread.comments.length,
     resolvedBy: stateOf(thread) === 'resolved' ? thread.resolvedBy : null,
     resolvedAt: stateOf(thread) === 'resolved' ? thread.resolvedAt : null,
-    dueOn: thread.dueOn
+    dueOn: thread.dueOn,
+    title: null
   });
 
   const commentOf = (side: ConversationSide, body: string, createdAt: string): ThreadComment => ({
