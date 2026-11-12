@@ -20,4 +20,4 @@
 
 **Origem.** O dono, em 2026-11-06, pedido direto (sem issue), com a mudança de escopo da celebração no mesmo dia.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

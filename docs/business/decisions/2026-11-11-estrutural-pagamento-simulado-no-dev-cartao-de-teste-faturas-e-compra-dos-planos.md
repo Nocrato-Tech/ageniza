@@ -26,4 +26,4 @@
 
 **Origem.** Resposta do dono do produto em 2026-11-11 (pagamento todo simulado em dev, cartão salvo de teste, faturas das cobranças e tela de compra que vende valor) e decisão do maestro sobre o que o cartão guarda (risco 1 do inventário).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

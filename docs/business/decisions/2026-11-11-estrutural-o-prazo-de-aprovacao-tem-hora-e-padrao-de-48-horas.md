@@ -28,4 +28,4 @@
 
 **Origem.** Pedido do dono do produto em 2026-11-11 ("quero exatamente tudo igual ao proposto no quadro; se precisar mexer no backend, sem problemas") e decisão do maestro de que o prazo tem hora e padrão de 48 horas.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

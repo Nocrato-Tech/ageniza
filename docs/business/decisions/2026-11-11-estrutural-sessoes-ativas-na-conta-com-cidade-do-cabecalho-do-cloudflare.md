@@ -27,4 +27,4 @@
 
 **Origem.** Resposta do dono do produto em 2026-11-11 (issue #893) e decisão do maestro de que a cidade vem do cabeçalho do Cloudflare, sem serviço externo (risco 12 do inventário).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

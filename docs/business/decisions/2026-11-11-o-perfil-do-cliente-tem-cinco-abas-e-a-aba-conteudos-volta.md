@@ -26,4 +26,4 @@
 
 **Origem.** Pedido do dono do produto em 2026-11-11 (tudo igual ao quadro) e decisão do maestro de tirar os esqueletos (riscos 6 e 7 do inventário).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

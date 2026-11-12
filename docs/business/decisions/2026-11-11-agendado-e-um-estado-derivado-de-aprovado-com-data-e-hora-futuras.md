@@ -27,4 +27,4 @@
 
 **Origem.** Pedido do dono do produto em 2026-11-11 ("quero exatamente tudo igual ao proposto no quadro") e resposta dele de que Agendado é um conteúdo aprovado com data e hora de publicação futuras, sem publicação automática.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

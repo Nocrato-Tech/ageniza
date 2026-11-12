@@ -26,4 +26,4 @@
 
 **Origem.** Pedido do dono do produto em 2026-11-11 e decisão do maestro de mostrar o remetente e aceitar recado ao aprovar (riscos 15 e 16 do inventário do redesenho).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

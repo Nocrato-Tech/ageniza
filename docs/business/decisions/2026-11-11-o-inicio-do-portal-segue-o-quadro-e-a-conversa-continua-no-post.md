@@ -26,4 +26,4 @@
 
 **Origem.** Pedido do dono do produto em 2026-11-11 ("quero exatamente tudo igual ao quadro"), resposta dele de que a conversa continua no post e decisão do maestro sobre a "Boa notícia" (riscos 15 e 18 do inventário).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

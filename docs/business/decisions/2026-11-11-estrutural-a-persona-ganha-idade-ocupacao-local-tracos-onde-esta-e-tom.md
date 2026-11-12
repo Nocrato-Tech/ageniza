@@ -22,4 +22,4 @@
 
 **Origem.** Pedido do dono do produto em 2026-11-11 e decisão do maestro de manter "Objeções" e acrescentar os campos do quadro.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

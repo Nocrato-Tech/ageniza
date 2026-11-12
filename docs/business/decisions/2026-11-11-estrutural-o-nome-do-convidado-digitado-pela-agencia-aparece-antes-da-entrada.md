@@ -22,4 +22,4 @@
 
 **Origem.** Pedido do dono do produto em 2026-11-11 e decisão do maestro de que só o nome digitado pela agência aparece (risco 14 do inventário).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

@@ -20,4 +20,4 @@
 
 **Origem.** O maestro, a partir da revisão de segurança da onda 2 do escopo `telas-melhorias`.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

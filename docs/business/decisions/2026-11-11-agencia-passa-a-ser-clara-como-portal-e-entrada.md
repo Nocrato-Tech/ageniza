@@ -18,4 +18,4 @@
 
 **Origem.** O dono do produto, ao aprovar o redesenho interno em 2026-11-11.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

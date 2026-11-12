@@ -32,4 +32,4 @@
 
 **Origem.** Pedido do dono do produto em 2026-11-11 e decisões do maestro sobre cada divergência do quadro (riscos 8, 9, 10, 13 e 17 do inventário).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

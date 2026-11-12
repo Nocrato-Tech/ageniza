@@ -26,4 +26,4 @@
 
 **Origem.** Resposta do dono do produto em 2026-11-11 (upload pelo cliente no portal, ligado ao pedido de material, risco Alto) e decisão do maestro sobre a pasta, os tipos e a cota (risco 11 do inventário).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

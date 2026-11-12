@@ -32,4 +32,4 @@
 
 **Origem.** Resposta do dono do produto em 2026-11-11 (notificações só dentro do app, com lida e não lida, para os cinco eventos) e decisão do maestro sobre quem recebe e sobre as ações de compartilhar.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

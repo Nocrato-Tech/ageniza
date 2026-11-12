@@ -22,4 +22,4 @@
 
 **Origem.** Revisão de segurança da subtarefa A2 do escopo redesign-igual (rodada 1, achado 2) e decisão do maestro de recusar com `409` em vez de descartar o recado.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

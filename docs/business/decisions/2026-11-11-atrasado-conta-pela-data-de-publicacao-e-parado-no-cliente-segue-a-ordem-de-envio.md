@@ -24,4 +24,4 @@
 
 **Origem.** Pedido do dono do produto em 2026-11-11 e decisão do maestro de que o atraso é pela data de publicação e a ordem é a de envio.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

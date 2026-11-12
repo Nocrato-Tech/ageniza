@@ -15,4 +15,4 @@
 
 **Origem.** O maestro, a partir da revisão da onda 5 do escopo telas-melhorias, aplicando a decisão de 2026-11-10 sobre os três tipos de estado vazio.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.

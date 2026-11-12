@@ -2,7 +2,7 @@
 
 **Data.** 2026-11-06
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.
 
 ## Contexto
 

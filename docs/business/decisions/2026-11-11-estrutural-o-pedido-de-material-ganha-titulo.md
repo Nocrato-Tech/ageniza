@@ -22,4 +22,4 @@
 
 **Origem.** Pedido do dono do produto em 2026-11-11 e decisão do maestro de dar título ao pedido.
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-12.
