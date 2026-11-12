@@ -156,12 +156,14 @@ iframe/embed/object/html, no `on*` attribute, no `xml:base`, no reference that i
 out), no entity declaration, no animation that sets a link or a handler. What it does not recognise it refuses. Defence in depth: **an SVG,
 a PDF and an audio are never served inline.** `download-url` signs the GET with `response-content-type` (the type the server confirmed,
 never the stored one) and `response-content-disposition: attachment; filename="..."` (name built to be unable to close its own quotes), both
-part of what the URL signs. `X-Content-Type-Options: nosniff` cannot be added to a presigned S3/R2 GET: it must be a response header rule of
-the bucket's edge or CDN, which is infrastructure to configure by hand (see below).
+part of what the URL signs: whoever holds the URL cannot drop or change either, and the browser downloads the file as the type the server
+confirmed instead of guessing one and opening it. That signed pair is the whole compensation for `X-Content-Type-Options: nosniff`, which
+cannot be added to a presigned S3/R2 GET and is not asked of the bucket's edge (decision 2026-11-11 on PDF, audio and SVG, rule 3).
 
 **Defensive limits** that no decision gave a number for (so they are the code's, not a product rule): SVG 256 KiB; PDF up to the smaller of
 100 MiB and the video ceiling; audio the smaller of 200 MiB and the video ceiling; dimensions 1 to 100000; a name is one line of at most 255
-characters without `/`, `\`, control, bidi or invisible characters, and is a **label**: the object key is only the agency, the asset and the
+characters without `/`, `\`, control, bidi or invisible characters (the line and paragraph separators U+2028 and U+2029 and the Arabic letter
+mark U+061C included, in the contract and in the CHECK of the column), and is a **label**: the object key is only the agency, the asset and the
 fixed extension of the type; the alternative text is one line of at most 500 characters.
 
 ### The library routes (`library-routes.ts`)
@@ -180,15 +182,22 @@ Under `/agencies/:agencyId/clients/:clientId`, guarded like the folders (reads `
   or removed in it), who uploaded the newest file and `inUseNow`; `PATCH /media-folders/:folderId` renames a folder the agency made (a default
   one is 409 `DEFAULT_FOLDER_IMMUTABLE`). The uploader is `null` for a person with no link to the agency (the portal).
 - `DELETE /media-folders/:folderId` (204, `media.folder_deleted` with target type `media_folder`) deletes a folder that is not a default one and is
-  empty, through `app_private.delete_media_folder`, which holds the rule and the locks (the client `for share`, then the folder `for update`; a move
-  and an upload start lock the same folder, so neither can land in it while it goes). Refused with 409: a default folder (`A0086`,
+  empty, through `app_private.delete_media_folder`, which holds the rule and the locks (the client `for share`, then the folder `for update`, then
+  the media of the folder `for update` in the order of their id, before they are counted; a move and an upload start lock the same folder, so
+  neither can land in it while it goes). Refused with 409: a default folder (`A0086`,
   `DEFAULT_FOLDER_IMMUTABLE`), and a folder with files, subfolders or contents (`A0083`/`A0084`/`A0085`, `FOLDER_NOT_EMPTY`, each with its own
   message). A file counts when it is confirmed and not removed, or an upload still pending that was touched in the last 24 hours (a defensive limit, so an
   abandoned upload cannot keep a folder for ever); the removed, the rejected and the abandoned rows stay for the audit and are detached from the
-  folder (`folder_id` null), the abandoned ones closed as rejected with the reason `folder_deleted`.
-- `inUseNow` is true for at most one folder of the client: the one that is not a default one whose confirmed, not removed file was written last
-  (`media_assets.updated_at`: confirmation, rename, move), within `MEDIA_FOLDER_IN_USE_WINDOW_DAYS` (30). It is computed over all the folders of
-  the client, not over the page asked for. Creating or renaming the folder does not count: no column keeps it.
+  folder (`folder_id` null), the abandoned ones closed as rejected with the reason `folder_deleted`. The media lock is what makes the confirmation
+  of an abandoned upload safe: one that is running keeps its file (the delete waits, reads it as confirmed and refuses), and one that comes after
+  finds the upload rejected, so a confirmed file is never left with no folder. Each statement that lets a file go names its state (rejected or
+  removed), and a file that is confirmed and not removed is never one of them: if one is left, the delete is refused with `A0083`.
+- `inUseNow` is true for at most one folder of the client: the one that is not a default one whose confirmed, not removed file was filed last
+  (`media_assets.filed_at`), within `MEDIA_FOLDER_IN_USE_WINDOW_DAYS` (30). A file is filed by the confirmation of its upload, its rename and its
+  move into the folder, and by nothing else: the alternative text and the processing of a video write the row (`updated_at`) and do not file it.
+  `filed_at` is stamped by a trigger of the database from the transition of the row, the way `confirmed_at` is, and the application has no grant on
+  it. It is computed over all the folders of the client, not over the page asked for. Creating or renaming the folder does not count: no column
+  keeps it.
 
 ## Environment variables
 
@@ -215,10 +224,8 @@ the host) -- see the `StorageConfig` doc comment in `packages/config/src/server.
   that same window (their DB row stays as a rejected/expired record; nothing here auto-deletes a
   `pending` row, only a `complete` call's own validation does). Configure this in the R2 dashboard.
 - **Never make the bucket or any object public.** Every object is fetched only through a signed
-  URL issued by this module.
-- **`X-Content-Type-Options: nosniff` on every response of the bucket's public host** (a Cloudflare
-  Transform Rule on the R2 custom domain). The module forces the type and a download for what must
-  never open as a page, but a header on the object itself is the only way to ask the browser not to guess.
+  URL issued by this module. There is no public host to put a header rule on: the forced type and the
+  `attachment` disposition signed into each URL are what keep a file from opening as a page.
 
 ## What could not be verified locally
 
