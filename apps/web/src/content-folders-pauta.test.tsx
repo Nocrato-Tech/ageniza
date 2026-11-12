@@ -2,10 +2,10 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { apiError, assetFixture, folderFixture, foldersUrl, idOf, makeFetch, makeWorld, renderFolders, type World } from './content-folders-fixture.js';
+import { apiError, assetFixture, foldersUrl, idOf, makeFetch, makeWorld, renderFolders, type World } from './content-folders-fixture.js';
 import { readGlobalCss } from './styles/read-css';
 import { declarationsFor, readStyles } from './styles/theme-colors';
 
@@ -15,7 +15,6 @@ const READ_ONLY = ['conteudo.visualizar', 'cliente.visualizar'];
 const css = readStyles('globals.css');
 const source = (name: string): string => readFileSync(fileURLToPath(new URL(name, import.meta.url)), 'utf8');
 
-/** Sends nothing anywhere: the storage is down, which is how an upload ends in "Tentar de novo". */
 class DownXhr {
   public upload = { onprogress: null };
   public onerror: (() => void) | null = null;
@@ -49,46 +48,34 @@ afterEach(() => {
 });
 
 const open = (world: World, search = '') => renderFolders(makeFetch(world), foldersUrl(search));
-const view = (): HTMLElement => screen.getByRole('region', { name: 'Pastas do cliente' });
+const view = (): HTMLElement => screen.getByRole('region', { name: 'Biblioteca de mídia' });
 const inputOf = (): HTMLInputElement => screen.getByLabelText('Enviar mídia');
 const photo = () => new File([new Uint8Array(2_000)], 'foto.jpg', { type: 'image/jpeg' });
-const watchPicker = (): { opened: () => number } => {
-  let opened = 0;
-  inputOf().addEventListener('click', (event) => { opened += 1; event.preventDefault(); });
-  return { opened: () => opened };
+const block = (selector: string): string => {
+  const text = css.replace(/\r\n/g, '\n');
+  const from = text.indexOf(`${selector} {`);
+  return from < 0 ? '' : text.slice(from, text.indexOf('}', from));
 };
 
-describe('the Pastas view in the Pauta: one place to act in each state', () => {
-  it('offers the picker as a button next to the title of a folder that has media, and not twice', async () => {
-    open(makeWorld({ assets: [assetFixture(1, VIDEOS)] }), `&pasta=${VIDEOS}`);
-    await screen.findByRole('list', { name: 'Mídias da pasta' });
+describe('the library: one place to act in each state', () => {
+  it('opens the picker from the one "Escolher arquivo" of an empty folder, and from no other button', async () => {
+    open(makeWorld(), `&pasta=${VIDEOS}`);
+    const empty = (await screen.findByText('Nenhum arquivo nesta pasta ainda.')).closest('.ui-empty-state') as HTMLElement;
 
-    const buttons = screen.getAllByRole('button', { name: 'Enviar mídia' });
+    const buttons = within(view()).getAllByRole('button', { name: 'Escolher arquivo' });
     expect(buttons).toHaveLength(1);
-    const picker = watchPicker();
+    expect(empty.contains(buttons[0]!)).toBe(true);
+    let opened = 0;
+    inputOf().addEventListener('click', (event) => { opened += 1; event.preventDefault(); });
     fireEvent.click(buttons[0]!);
-    expect(picker.opened()).toBe(1);
+    expect(opened).toBe(1);
     expect(inputOf().getAttribute('aria-hidden')).toBe('true');
     expect(inputOf().tabIndex).toBe(-1);
   });
 
-  it('puts the picker in the empty state of a folder with no media, in place of the button beside the title', async () => {
-    open(makeWorld(), `&pasta=${VIDEOS}`);
-    const empty = (await screen.findByText('Nenhuma mídia nesta pasta ainda.')).closest('.ui-empty-state') as HTMLElement;
-
-    expect(empty.querySelector('h4')?.textContent).toBe('Nenhuma mídia nesta pasta ainda.');
-    expect(within(empty).getByText('Envie imagens ou vídeos para esta pasta.')).toBeTruthy();
-    const buttons = screen.getAllByRole('button', { name: 'Enviar mídia' });
-    expect(buttons).toHaveLength(1);
-    expect(empty.contains(buttons[0]!)).toBe(true);
-    const picker = watchPicker();
-    fireEvent.click(buttons[0]!);
-    expect(picker.opened()).toBe(1);
-  });
-
   it('keeps the chosen file on screen while the folder is empty', async () => {
     open(makeWorld(), `&pasta=${VIDEOS}`);
-    await screen.findByText('Nenhuma mídia nesta pasta ainda.');
+    await screen.findByText('Nenhum arquivo nesta pasta ainda.');
 
     fireEvent.change(inputOf(), { target: { files: [photo()] } });
 
@@ -98,11 +85,12 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
 
   it('asks nothing of whoever cannot operate: no picker, no description, no button in the empty state', async () => {
     open(makeWorld({ permissions: READ_ONLY }), `&pasta=${VIDEOS}`);
-    const empty = (await screen.findByText('Nenhuma mídia nesta pasta ainda.')).closest('.ui-empty-state') as HTMLElement;
+    const empty = (await screen.findByText('Nenhum arquivo nesta pasta ainda.')).closest('.ui-empty-state') as HTMLElement;
 
     expect(within(empty).queryByRole('button')).toBeNull();
     expect(empty.querySelector('.ui-empty-state__description')).toBeNull();
     expect(screen.queryByLabelText('Enviar mídia')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Enviar arquivos' })).toBeNull();
   });
 
   it('has one "Nova pasta", inside the empty state, when the client has no folder', async () => {
@@ -112,122 +100,62 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
     const buttons = screen.getAllByRole('button', { name: 'Nova pasta' });
     expect(buttons).toHaveLength(1);
     expect(empty.contains(buttons[0]!)).toBe(true);
-    expect(within(empty).getByText('As pastas guardam as mídias deste cliente.')).toBeTruthy();
     fireEvent.click(buttons[0]!);
     expect(screen.getByRole('dialog', { name: 'Nova pasta' })).toBeTruthy();
   });
 
-  it('has one "Nova pasta de trabalho", inside the empty state, and beside the title once there is a work folder', async () => {
-    open(makeWorld({ folders: [folderFixture(1, 'Vídeos', { isDefault: true })] }), `&pasta=${VIDEOS}`);
-    const empty = (await screen.findByText('Nenhuma pasta de trabalho nesta pasta.')).closest('.ui-empty-state') as HTMLElement;
-
-    const buttons = screen.getAllByRole('button', { name: 'Nova pasta de trabalho' });
-    expect(buttons).toHaveLength(1);
-    expect(empty.contains(buttons[0]!)).toBe(true);
-    cleanup();
-
-    open(makeWorld(), `&pasta=${VIDEOS}`);
-    await screen.findByRole('link', { name: 'Gravação de outubro' });
-    const beside = screen.getAllByRole('button', { name: 'Nova pasta de trabalho' });
-    expect(beside).toHaveLength(1);
-    expect(beside[0]!.closest('.content-folders__heading')).not.toBeNull();
-  });
-
-  it('answers a folder that does not exist with the way back, as a link', async () => {
+  it('answers a folder that does not exist with the way back, as a secondary link', async () => {
     open(makeWorld(), `&pasta=${idOf('9', 1)}`);
     const empty = (await screen.findByText('Pasta não encontrada.')).closest('.ui-empty-state') as HTMLElement;
 
     const back = within(empty).getByRole('link', { name: 'Voltar às pastas' });
     expect(back.getAttribute('href')).toMatch(/\/clientes\/[^/]+\/midias$/);
-    expect(empty.querySelector('h3')?.textContent).toBe('Pasta não encontrada.');
-    expect(back.classList.contains('ui-button')).toBe(true);
-    expect(back.closest('.ui-empty-state__action')).not.toBeNull();
     expect(back.classList.contains('ui-button--secondary')).toBe(true);
     expect(empty.querySelectorAll('.ui-button--primary')).toHaveLength(0);
   });
 
-  it('shows no mascot in any empty state of the view: the screen of work has none', async () => {
+  it('puts the serious owl only in the failure states, never in an empty one', async () => {
     open(makeWorld({ folders: [] }));
     await screen.findByText('Nenhuma pasta ainda. Crie a primeira.');
-    expect(view().querySelectorAll('.ui-empty-state--mascot, .ui-mascot')).toHaveLength(0);
+    expect(view().querySelectorAll('.ui-empty-state--serious, .ui-mascot')).toHaveLength(0);
     cleanup();
 
-    open(makeWorld({ folders: [folderFixture(1, 'Vídeos', { isDefault: true })] }), `&pasta=${VIDEOS}`);
-    await screen.findByText('Nenhuma pasta de trabalho nesta pasta.');
-    await screen.findByText('Nenhuma mídia nesta pasta ainda.');
-    expect(screen.getAllByRole('heading', { level: 4 }).filter((title) => title.closest('.ui-empty-state') !== null)).toHaveLength(2);
-    expect(view().querySelectorAll('.ui-empty-state--mascot, .ui-mascot')).toHaveLength(0);
-    cleanup();
+    open(makeWorld({ override: (method, path) => (method === 'GET' && path.endsWith('/media-folders/summary') ? apiError(500, 'INTERNAL_ERROR', 'boom') : undefined) }));
+    await screen.findByText('Não foi possível carregar as pastas. Tente de novo.', undefined, { timeout: 5000 });
+    expect(document.querySelectorAll('.ui-empty-state--serious')).toHaveLength(1);
+  }, 15_000);
 
-    open(makeWorld(), `&pasta=${idOf('9', 1)}`);
-    await screen.findByText('Pasta não encontrada.');
-    expect(document.querySelectorAll('.ui-empty-state--mascot, .ui-mascot')).toHaveLength(0);
-    cleanup();
-
-    open(makeWorld({ assets: [assetFixture(1, VIDEOS)] }), `&pasta=${VIDEOS}&pagina=9`);
-    const pastEnd = (await screen.findByText('Esta página não tem mídias.')).closest('.ui-empty-state');
-    expect(pastEnd).not.toBeNull();
-    expect(view().querySelectorAll('.ui-empty-state--mascot, .ui-mascot')).toHaveLength(0);
-  });
-
-  it('asks nothing of whoever cannot operate in the empty states of the folders either', async () => {
-    open(makeWorld({ folders: [], permissions: READ_ONLY }));
-    const none = (await screen.findByText('Nenhuma pasta ainda.')).closest('.ui-empty-state') as HTMLElement;
-    expect(within(none).queryByRole('button')).toBeNull();
-    expect(none.querySelector('.ui-empty-state__description')).toBeNull();
-    cleanup();
-
-    open(makeWorld({ folders: [folderFixture(1, 'Vídeos', { isDefault: true })], permissions: READ_ONLY }), `&pasta=${VIDEOS}`);
-    const work = (await screen.findByText('Nenhuma pasta de trabalho nesta pasta.')).closest('.ui-empty-state') as HTMLElement;
-    expect(within(work).queryByRole('button')).toBeNull();
-    expect(work.querySelector('.ui-empty-state__description')).toBeNull();
-    expect(screen.queryByRole('button', { name: /nova pasta/i })).toBeNull();
-  });
-
-  it('draws the Padrão mark as a Pill and the folder as a 3D icon on its stage, with no character in its place', async () => {
-    open(makeWorld());
-    const link = await screen.findByRole('link', { name: 'Imagens Padrão' });
-
-    expect(link.querySelector('.ui-pill')?.textContent).toBe('Padrão');
-    expect(link.querySelector('.ui-stage img')?.getAttribute('src')).toBe('/3d/fav-folder.png');
-    expect(link.querySelector('.ui-stage')?.textContent).toBe('');
-    expect(screen.getByRole('link', { name: 'Campanha de Natal' }).querySelector('.ui-stage img')?.getAttribute('src')).toBe('/3d/folder.png');
-    expect(screen.getByRole('link', { name: 'Campanha de Natal' }).querySelector('.ui-pill')).toBeNull();
-  });
-
-  it('marks a video that is processing with an icon and the words, and a failed one with an icon and the words', async () => {
-    const world = makeWorld({
+  it('marks a video that is processing and a failed one with the words, in the type column', async () => {
+    open(makeWorld({
       assets: [
         assetFixture(1, IMAGES),
-        assetFixture(2, IMAGES, { category: 'video', contentType: 'video/mp4', videoProcessingStatus: 'processing' }),
-        assetFixture(3, IMAGES, { category: 'video', contentType: 'video/mp4', videoProcessingStatus: 'failed' })
+        assetFixture(2, IMAGES, { category: 'video', contentType: 'video/mp4', name: 'a.mp4', videoProcessingStatus: 'processing' }),
+        assetFixture(3, IMAGES, { category: 'video', contentType: 'video/mp4', name: 'b.mp4', videoProcessingStatus: 'failed' })
       ]
-    });
-    open(world, `&pasta=${IMAGES}`);
+    }), `&pasta=${IMAGES}`);
 
-    const processing = (await screen.findByText('Processando vídeo')).closest('.ui-pill') as HTMLElement;
-    expect(processing.querySelector('svg')).not.toBeNull();
-    const failed = screen.getByText('Falha no processamento do vídeo');
-    expect(failed.className).toBe('folder-media__failure');
-    expect(failed.querySelector('svg')).not.toBeNull();
-    expect(screen.getAllByText('Processando vídeo')).toHaveLength(1);
+    await screen.findByRole('table', { name: 'Arquivos' });
+    const rowOf = (name: string) => screen.getByRole('button', { name }).closest('[role="row"]') as HTMLElement;
+    expect(within(rowOf('a.mp4')).getByText('Processando')).toBeTruthy();
+    expect(within(rowOf('b.mp4')).getByText('Falhou')).toBeTruthy();
+    expect(within(rowOf('arquivo-1.jpg')).queryByText(/Processando|Falhou/)).toBeNull();
   });
 
-  it('shows no full indigo action inside the view in any state: the page keeps the only one', async () => {
+  it('keeps the toolbar as the only primary of the screen, in every state of the view', async () => {
     const world = makeWorld({ assets: [assetFixture(1, IMAGES)] });
     open(world);
-    await screen.findByRole('link', { name: 'Imagens Padrão' });
-    expect(view().querySelectorAll('.ui-button--primary')).toHaveLength(0);
+    await screen.findByRole('link', { name: /^Imagens/ });
+    expect(view().querySelectorAll('.ui-button--primary')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Enviar arquivos' }).classList.contains('ui-button--primary')).toBe(true);
     cleanup();
 
     open(world, `&pasta=${IMAGES}`);
-    await screen.findByRole('list', { name: 'Mídias da pasta' });
+    await screen.findByRole('table', { name: 'Arquivos' });
     fireEvent.change(inputOf(), { target: { files: [photo()] } });
-    expect(view().querySelectorAll('.ui-button--primary')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
 
     expect(await screen.findByRole('button', { name: 'Tentar de novo' })).toBeTruthy();
-    expect(view().querySelectorAll('.ui-button--primary')).toHaveLength(0);
+    expect(view().querySelectorAll('.ui-button--primary')).toHaveLength(1);
     expect(screen.getByRole('alert').textContent).toBe('A conexão caiu durante o envio. Tente de novo.');
   });
 
@@ -235,154 +163,126 @@ describe('the Pastas view in the Pauta: one place to act in each state', () => {
     class PendingXhr extends DownXhr { public override send(): void { /* the storage never answers */ } }
     vi.stubGlobal('XMLHttpRequest', PendingXhr);
     open(makeWorld({ assets: [assetFixture(1, IMAGES)] }), `&pasta=${IMAGES}`);
-    await screen.findByRole('list', { name: 'Mídias da pasta' });
+    await screen.findByRole('table', { name: 'Arquivos' });
     fireEvent.change(inputOf(), { target: { files: [photo()] } });
     fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
 
-    const bar = await screen.findByRole('progressbar', { name: 'Enviando foto.jpg' });
-    expect(bar).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Enviar mídia' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(await screen.findByRole('progressbar', { name: 'Enviando foto.jpg' })).toBeTruthy();
+    expect(inputOf().disabled).toBe(true);
     expect(view().querySelector('.media-uploader__percent')?.getAttribute('aria-hidden')).toBe('true');
     expect(screen.getByRole('button', { name: 'Cancelar envio' }).classList.contains('ui-button--secondary')).toBe(true);
   });
 
-  it('keeps the picker on screen after a file the retry cannot fix, so the person picks another', async () => {
-    open(makeWorld({ assets: [assetFixture(1, IMAGES)] }), `&pasta=${IMAGES}`);
-    await screen.findByRole('list', { name: 'Mídias da pasta' });
-    fireEvent.change(inputOf(), { target: { files: [new File([new Uint8Array(10)], 'x.bin', { type: '' })] } });
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
-
-    expect((await screen.findByRole('alert')).textContent).toBe('Este formato de arquivo não é aceito.');
-    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Enviar' })).toBeNull();
-    expect(screen.getAllByRole('button', { name: 'Enviar mídia' })).toHaveLength(1);
-  });
-
   it.each([
-    ['folders', '', 'Não foi possível carregar as pastas. Tente de novo.', '/media-folders'],
-    ['media', `&pasta=${IMAGES}`, 'Não foi possível carregar as mídias. Tente de novo.', '/assets']
-  ])('answers the %s that did not load with an icon, the words and a secondary "Tentar de novo"', async (_what, search, message, suffix) => {
+    ['folders', '', 'Não foi possível carregar as pastas. Tente de novo.', '/media-folders/summary'],
+    ['files', `&pasta=${IMAGES}`, 'Não foi possível carregar os arquivos. Tente de novo.', '/media']
+  ])('answers the %s that did not load with the owl, the words and the one "Tentar de novo" of its block', async (_what, search, message, suffix) => {
     const world = makeWorld({ override: (method, path) => (method === 'GET' && path.endsWith(suffix) ? apiError(500, 'INTERNAL_ERROR', 'boom') : undefined) });
     open(world, search);
 
     expect(await screen.findByText(message, undefined, { timeout: 5000 })).toBeTruthy();
-    const alert = screen.getByRole('alert');
-    expect(alert.querySelector('svg')).not.toBeNull();
-    const retry = within(alert).getByRole('button', { name: 'Tentar de novo' });
-    expect(retry.classList.contains('ui-button--secondary')).toBe(true);
-    expect(alert.querySelectorAll('.ui-button--primary')).toHaveLength(0);
+    const failure = document.querySelector('.ui-empty-state--serious') as HTMLElement;
+    expect(failure).not.toBeNull();
+    const retry = within(failure).getByRole('button', { name: 'Tentar de novo' });
+    expect(retry.classList.contains('ui-button--primary')).toBe(true);
+    expect(failure.querySelectorAll('.ui-button--primary')).toHaveLength(1);
   }, 15_000);
 
-  it('draws an icon on the path between folders and on the download and removal of each media', async () => {
+  it('draws an icon on the path between folders and on every action of the row menu', async () => {
     open(makeWorld({ assets: [assetFixture(1, VIDEOS)] }), `&pasta=${VIDEOS}`);
-    await screen.findByRole('list', { name: 'Mídias da pasta' });
+    await screen.findByRole('table', { name: 'Arquivos' });
 
-    for (const control of [screen.getByRole('button', { name: /^Baixar/ }), screen.getByRole('button', { name: /^Remover/ })]) {
-      expect(control.querySelector('svg')).not.toBeNull();
+    expect(screen.getByRole('navigation', { name: 'Caminho da pasta' }).querySelectorAll('svg').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Ações de arquivo-1.jpg' }));
+    for (const item of within(screen.getByRole('menu')).getAllByRole('menuitem')) expect(item.querySelector('svg'), item.textContent ?? '').not.toBeNull();
+  });
+});
+
+describe('the library on a phone (390 px)', () => {
+  it('keeps every control of the table reachable: the name, the type and the menu stay, only "Quando" gives way', () => {
+    const text = source('media-library-table.tsx');
+    expect(text).toContain('keepOnPhone');
+    expect(text).toContain('actionsLabel="Ações do arquivo"');
+    expect(css).toContain('@media (max-width: 40rem)');
+  });
+
+  it('puts the folders two by two, the featured block on its own row and the toolbar search at full width', () => {
+    const phone = css.replace(/\r\n/g, '\n').split('@media (max-width: 40rem)').slice(1).join('\n');
+    expect(phone).toMatch(/\.folders \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+    expect(phone).toMatch(/\.quick__feature \{[^}]*grid-column: auto/);
+    expect(phone).toMatch(/\.media-toolbar__search \{[^}]*max-width: none/);
+    expect(phone).toMatch(/\.media-detail__actions \.ui-button/);
+  });
+
+  it('keeps the grids and the card of the view from growing past their column', () => {
+    for (const selector of ['.content-folders,\n.content-folders__section,\n.media-layout__main', '.media-uploader']) {
+      expect(block(selector), selector).toContain('grid-template-columns: minmax(0, 1fr)');
     }
-    expect(screen.getByRole('navigation', { name: 'Caminho da pasta' }).querySelectorAll('svg')).toHaveLength(1);
-    expect(screen.getByText('Imagem').querySelector('svg')).not.toBeNull();
+    expect(declarationsFor(css, '.media-layout').get('min-width')).toBe('0');
+    expect(declarationsFor(css, '.media-detail').get('min-width')).toBe('0');
+    expect(declarationsFor(css, '.media-table__name').get('min-width')).toBe('0');
+    expect(declarationsFor(css, '.media-table__label').get('overflow-wrap')).toBe('anywhere');
+    expect(declarationsFor(css, '.quick__file').get('min-width')).toBe('0');
+    expect(css).toContain('repeat(auto-fill, minmax(min(100%, 11.5rem), 1fr))');
   });
 
-  it('gives the buttons of a media the touch size on a phone, two columns to the folders and one to the media', () => {
-    expect(declarationsFor(css, '.folder-media__actions .ui-button--sm').get('min-height')).toBe('2.75rem');
-    expect(declarationsFor(css, '.content-folders__list').get('grid-template-columns')).toBe('repeat(2, minmax(0, 1fr))');
-    expect(declarationsFor(css, '.folder-media__grid').get('grid-template-columns')).toBe('minmax(0, 1fr)');
+  it('shows the side panel beside the list only on a wide screen, and under it otherwise', () => {
+    const text = css.replace(/\r\n/g, '\n');
+    const wide = text.slice(text.indexOf('@media (min-width: 80rem)'));
+    expect(wide).toMatch(/\.media-layout--detail \{[^}]*grid-template-columns/);
+    expect(text.slice(0, text.indexOf('@media (min-width: 80rem)'))).not.toMatch(/\.media-layout--detail \{[^}]*position: sticky/);
   });
+});
 
+describe('what the screen draws', () => {
   it('shows the progress as a bar and a number, and never as the indigo of the action', () => {
     expect(declarationsFor(css, '.media-uploader__progress::-webkit-progress-value').get('background')).toBe('var(--text-primary)');
     expect(declarationsFor(css, '.media-uploader__progress::-moz-progress-bar').get('background')).toBe('var(--text-primary)');
     expect(declarationsFor(css, '.media-uploader__percent').get('font-variant-numeric')).toBe('tabular-nums');
-    expect(declarationsFor(css, '.media-uploader__percent').get('font')).toBe('var(--caption)');
   });
 
-  it('draws icons with lucide and not with characters in the three files of the view', () => {
-    for (const file of ['content-folders.tsx', 'media-uploader.tsx', 'media-thumbnail.tsx']) {
+  it('draws icons with lucide and not with characters in the files of the view', () => {
+    for (const file of ['content-folders.tsx', 'media-uploader.tsx', 'media-thumbnail.tsx', 'media-library-table.tsx', 'media-library-folders.tsx', 'media-library-detail.tsx']) {
       expect(source(file), file).not.toMatch(/[▤▣▶›‹]/u);
     }
     expect(readGlobalCss()).not.toContain("content: '›'");
   });
 
-  it('keeps the grids and the card of the view from growing past their column', () => {
-    for (const selector of ['.content-folders,\n.content-folders__section', '.media-uploader', '.media-layout', '.media-detail']) {
-      const block = css.replace(/\r\n/g, '\n').slice(css.replace(/\r\n/g, '\n').indexOf(`${selector} {`));
-      expect(block.slice(0, block.indexOf('}')), selector).toContain('grid-template-columns: minmax(0, 1fr)');
+  it('turns a phone photo upright from its EXIF orientation, on every thumbnail', () => {
+    expect(declarationsFor(css, '.media-thumbnail img').get('image-orientation')).toBe('from-image');
+  });
+
+  it('uses no raw color or font in the sheets of the library: tokens only', () => {
+    for (const file of ['styles/screens/media-library.css', 'styles/screens/content-folders.css']) {
+      const text = source(file);
+      expect(text, file).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+      expect(text, file).not.toMatch(/rgba?\(/);
     }
-    // The row of a media has a column that gives way (`minmax(0, 1fr)`), so a long name never pushes the actions out.
-    expect(declarationsFor(css, '.folder-media').get('grid-template-columns')).toContain('minmax(0, 1fr)');
-    expect(css).toContain('repeat(auto-fill, minmax(min(100%, 11.5rem), 1fr))');
   });
 });
 
-describe('the detail panel of a media', () => {
+describe('the detail panel takes the focus when it opens out of sight', () => {
   const matchMedia = (wide: boolean) => vi.stubGlobal('matchMedia', () => ({ matches: wide, addEventListener: () => undefined, removeEventListener: () => undefined }));
-  const rows = async () => (await screen.findAllByRole('button', { name: /^Ver detalhes de/ }));
 
-  it('opens from the row with what the API tells, keeps the actions of the row, and closes by the same button or by "Fechar detalhes"', async () => {
-    matchMedia(true);
-    open(makeWorld({ assets: [assetFixture(1, VIDEOS, { category: 'video', contentType: 'video/mp4', sizeBytes: 1536, videoProcessingStatus: 'ready' }), assetFixture(2, VIDEOS, { createdAt: '2026-10-10T15:00:00.000Z' })] }), `&pasta=${VIDEOS}`);
-    expect(screen.queryByRole('complementary', { name: 'Detalhe da mídia' })).toBeNull();
-
-    const [video] = await rows();
-    expect(video!.getAttribute('aria-pressed')).toBe('false');
-    fireEvent.click(video!);
-
-    const panel = screen.getByRole('complementary', { name: 'Detalhe da mídia' });
-    expect(video!.getAttribute('aria-pressed')).toBe('true');
-    const info = within(panel).getByText('Informações').nextElementSibling as HTMLElement;
-    expect(info.textContent).toBe('PastaVídeosFormatovideo/mp4Tamanho1,5 KBEnviada em11/10/2026, 22:30ProcessamentoPronto');
-    expect(within(panel).getByRole('button', { name: /^Baixar Vídeo/ })).toBeTruthy();
-    expect(within(panel).getByRole('button', { name: /^Remover Vídeo/ })).toBeTruthy();
-
-    fireEvent.click(within(panel).getByRole('button', { name: 'Fechar detalhes' }));
-    expect(screen.queryByRole('complementary', { name: 'Detalhe da mídia' })).toBeNull();
-
-    fireEvent.click(video!);
-    expect(screen.getByRole('complementary', { name: 'Detalhe da mídia' })).toBeTruthy();
-    fireEvent.click(video!);
-    expect(screen.queryByRole('complementary', { name: 'Detalhe da mídia' })).toBeNull();
-  });
-
-  it('follows the media that was chosen last, and closes when that media is removed', async () => {
-    matchMedia(true);
-    const world = makeWorld({ assets: [assetFixture(1, VIDEOS, { createdAt: '2026-10-12T01:30:00.000Z' }), assetFixture(2, VIDEOS, { createdAt: '2026-10-11T01:30:00.000Z' })] });
-    open(world, `&pasta=${VIDEOS}`);
-
-    const [first, second] = await rows();
-    fireEvent.click(first!);
-    expect(within(screen.getByRole('complementary', { name: 'Detalhe da mídia' })).getByText('11/10/2026, 22:30')).toBeTruthy();
-    fireEvent.click(second!);
-    const panel = screen.getByRole('complementary', { name: 'Detalhe da mídia' });
-    expect(within(panel).getByText('10/10/2026, 22:30')).toBeTruthy();
-    expect(first!.getAttribute('aria-pressed')).toBe('false');
-
-    fireEvent.click(within(panel).getByRole('button', { name: /^Remover/ }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Remover mídia?' })).getByRole('button', { name: 'Remover' }));
-    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Detalhe da mídia' })).toBeNull());
-    expect(await rows()).toHaveLength(1);
-  });
-
-  it('asks nothing to remove of whoever cannot operate, and still offers the download', async () => {
-    matchMedia(true);
-    open(makeWorld({ assets: [assetFixture(1, VIDEOS)], permissions: READ_ONLY }), `&pasta=${VIDEOS}`);
-
-    fireEvent.click((await rows())[0]!);
-    const panel = screen.getByRole('complementary', { name: 'Detalhe da mídia' });
-    expect(within(panel).getByRole('button', { name: /^Baixar/ })).toBeTruthy();
-    expect(within(panel).queryByRole('button', { name: /^Remover/ })).toBeNull();
-  });
-
-  it('takes the focus when it opens under the list, where it would be out of sight', async () => {
+  it('scrolls to it and focuses it when it opens under the list, and leaves the focus alone beside the list', async () => {
     matchMedia(false);
     const scroll = vi.fn();
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scroll });
     try {
       open(makeWorld({ assets: [assetFixture(1, VIDEOS)] }), `&pasta=${VIDEOS}`);
-      fireEvent.click((await rows())[0]!);
+      await screen.findByRole('table', { name: 'Arquivos' });
+      fireEvent.click(screen.getByRole('button', { name: 'arquivo-1.jpg' }));
 
-      expect(document.activeElement).toBe(screen.getByRole('complementary', { name: 'Detalhe da mídia' }));
+      expect(document.activeElement).toBe(document.querySelector('aside.media-detail'));
       expect(scroll).toHaveBeenCalledTimes(1);
+      cleanup();
+
+      matchMedia(true);
+      scroll.mockClear();
+      open(makeWorld({ assets: [assetFixture(1, VIDEOS)] }), `&pasta=${VIDEOS}`);
+      await screen.findByRole('table', { name: 'Arquivos' });
+      fireEvent.click(screen.getByRole('button', { name: 'arquivo-1.jpg' }));
+      expect(scroll).not.toHaveBeenCalled();
     } finally {
       Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
     }

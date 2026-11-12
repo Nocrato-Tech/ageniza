@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   apiError, assetFixture, deferred, foldersUrl, idOf, makeFetch, makeWorld, padaria, renderFolders, UPLOAD_PART_BYTES, type World
@@ -50,6 +50,15 @@ class FakeXhr {
   }
 }
 
+beforeAll(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value(this: HTMLDialogElement) { this.open = true; } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value(this: HTMLDialogElement) { this.open = false; } });
+});
+afterAll(() => {
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'close');
+});
+
 beforeEach(() => {
   FakeXhr.all = [];
   FakeXhr.handler = () => ({ status: 200, eTag: '"etag"' });
@@ -98,8 +107,7 @@ describe('uploading media into a folder', () => {
     expect(FakeXhr.all[0]?.headers['content-type']).toBe('image/jpeg');
     expect(FakeXhr.all[0]?.body?.size).toBe(2_000);
     expect(sent(world, '/complete')).toEqual({});
-    expect(await screen.findByRole('list', { name: 'Mídias da pasta' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Baixar Imagem de 11/10/2026, 2 KB' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'foto.jpg' })).toBeTruthy();
     expect(input.value).toBe('');
     expect(screen.queryByText('foto.jpg · 2 KB')).toBeNull();
   });
@@ -348,7 +356,7 @@ describe('a failed upload keeps the file the person chose', () => {
   });
 
   it.each([
-    ['a type the API does not accept', 'application/pdf', 'doc.pdf', 2_000, 'Este formato de arquivo não é aceito.'],
+    ['a type the API does not accept', 'application/zip', 'pacote.zip', 2_000, 'Este formato de arquivo não é aceito.'],
     ['a file over the limit', 'image/jpeg', 'enorme.jpg', 101 * MIB, 'O arquivo é maior que o limite aceito.']
   ])('says in its own words that %s is refused, and asks to pick another file', async (_case, type, name, bytes, text) => {
     open(makeWorld());
@@ -439,15 +447,17 @@ describe('who can upload', () => {
   it('offers no upload to someone who only reads', async () => {
     open(makeWorld({ permissions: READ_ONLY, assets: [assetFixture(1, IMAGES)] }));
 
-    expect(await screen.findByRole('list', { name: 'Mídias da pasta' })).toBeTruthy();
+    expect(await screen.findByRole('table', { name: 'Arquivos' })).toBeTruthy();
     expect(screen.queryByLabelText('Enviar mídia')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Enviar arquivos' })).toBeNull();
   });
 
   it('offers no upload for an archived client', async () => {
     open(makeWorld({ clientStatus: 'archived' }));
 
-    await screen.findByRole('heading', { name: 'Mídias', level: 3 });
+    await screen.findByRole('heading', { name: 'Imagens' });
     expect(screen.queryByLabelText('Enviar mídia')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Enviar arquivos' })).toBeNull();
   });
 });
 
@@ -463,5 +473,82 @@ describe('the file belongs to the folder it was chosen in', () => {
     await waitFor(() => { expect(screen.queryByText('foto.jpg · 2 KB')).toBeNull(); });
     expect(screen.queryByRole('button', { name: 'Enviar' })).toBeNull();
     expect(uploadsOf(world)).toEqual([]);
+  });
+});
+
+describe('the library takes a PDF, an audio and a logo', () => {
+  it.each([
+    ['a PDF', 'cardapio.pdf', 'application/pdf', 'pdf'],
+    ['an audio', 'jingle.mp3', 'audio/mpeg', 'audio']
+  ])('sends %s into the open folder as an asset of its own kind', async (_case, name, type, category) => {
+    const world = makeWorld();
+    open(world);
+    await choose(new File([new Uint8Array(2_000)], name, { type }));
+    send();
+
+    await screen.findByText('Mídia enviada.');
+    expect(sent(world, '/media/uploads')).toEqual({ fileName: name, contentType: type, declaredSizeBytes: 2_000, clientId: padaria.id, folderId: IMAGES });
+    expect(world.assets.map((asset) => asset.category)).toEqual([category]);
+    expect(await screen.findByRole('button', { name })).toBeTruthy();
+  });
+
+  it('sends a picture as the client logo only when the person asks, and a plain one as a photo', async () => {
+    const world = makeWorld();
+    open(world);
+    await choose(picture('marca.png'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Enviar como logo do cliente' }));
+    send();
+    await screen.findByText('Mídia enviada.');
+    expect(sent(world, '/media/uploads')).toMatchObject({ fileName: 'marca.png', asLogo: true });
+
+    await choose(picture('foto.jpg'));
+    expect((screen.getByRole('checkbox', { name: 'Enviar como logo do cliente' }) as HTMLInputElement).checked).toBe(false);
+    send();
+    await waitFor(() => { expect(world.bodies.filter((entry) => entry.path.endsWith('/media/uploads'))).toHaveLength(2); });
+    expect(world.bodies.filter((entry) => entry.path.endsWith('/media/uploads'))[1]?.body).not.toHaveProperty('asLogo');
+    expect(world.assets.map((asset) => asset.category)).toEqual(['logo', 'image']);
+  });
+
+  it('takes an SVG only as a logo, says so, and offers no checkbox', async () => {
+    const world = makeWorld();
+    open(world);
+    await choose(new File([new Uint8Array(500)], 'marca.svg', { type: 'image/svg+xml' }));
+
+    expect(screen.getByText('Um SVG é enviado como logo do cliente.')).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: 'Enviar como logo do cliente' })).toBeNull();
+    send();
+    await screen.findByText('Mídia enviada.');
+    expect(sent(world, '/media/uploads')).toMatchObject({ fileName: 'marca.svg', contentType: 'image/svg+xml', asLogo: true });
+    expect(world.assets.map((asset) => asset.category)).toEqual(['logo']);
+  });
+});
+
+describe('"Enviar arquivos" at the root of the library', () => {
+  it('opens a dialog with the folder to send to, sends there and closes on success', async () => {
+    const world = makeWorld();
+    open(world, '');
+    fireEvent.click(await screen.findByRole('button', { name: 'Enviar arquivos' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Enviar arquivos' });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Enviar para a pasta' }), { target: { value: VIDEOS } });
+    fireEvent.change(within(dialog).getByLabelText('Enviar mídia'), { target: { files: [picture('foto.jpg')] } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar' }));
+
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: 'Enviar arquivos' })).toBeNull(); });
+    expect(sent(world, '/media/uploads')).toMatchObject({ fileName: 'foto.jpg', folderId: VIDEOS });
+    expect(await screen.findByRole('button', { name: 'foto.jpg' })).toBeTruthy();
+  });
+
+  it('keeps the dialog and the chosen file when the storage refuses', async () => {
+    FakeXhr.handler = () => ({ status: 500 });
+    open(makeWorld(), '');
+    fireEvent.click(await screen.findByRole('button', { name: 'Enviar arquivos' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Enviar arquivos' });
+    fireEvent.change(within(dialog).getByLabelText('Enviar mídia'), { target: { files: [picture('foto.jpg')] } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar' }));
+
+    expect((await within(dialog).findByRole('alert')).textContent).toBe('O envio do arquivo falhou. Tente de novo.');
+    expect(within(dialog).getByText('foto.jpg · 2 KB')).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Enviar arquivos' })).toBeTruthy();
   });
 });

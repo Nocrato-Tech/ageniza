@@ -1,9 +1,15 @@
 .content-folders,
-.content-folders__section {
+.content-folders__section,
+.media-layout__main {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   min-width: 0;
+}
+
+.media-layout__main {
+  gap: var(--space-8);
+  align-content: start;
 }
 
 .content-folders__heading {
@@ -12,6 +18,33 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
+}
+
+.content-folders__sub {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.content-folders__feature-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The search and the one primary of the library, in one row: the search takes what the button leaves. */
+.media-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.media-toolbar__search {
+  flex: 1 1 14rem;
+  max-width: 24rem;
 }
 
 /* The folder in use: a tint block with its mark leaving through the top edge, as the summary blocks of the client do. */
@@ -39,15 +72,15 @@
   text-transform: uppercase;
 }
 
-.content-folders h3,
-.content-folders h4 {
+.content-folders h2,
+.content-folders h3 {
   margin: 0;
-  font: var(--heading-md);
+  font: var(--heading-lg);
   overflow-wrap: anywhere;
 }
 
-.content-folders h4 {
-  font: var(--label-md);
+.content-folders h3 {
+  font: var(--heading-md);
 }
 
 .content-folders__glyph {
@@ -80,9 +113,154 @@
   gap: var(--space-2);
 }
 
-.content-folders__list,
-.folder-media__grid,
-.content-folders__skeleton {
+/* Quick access: the folder in use, then up to two files that a content holds. */
+.quick {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: var(--space-4);
+  padding-top: var(--space-5);
+}
+
+.quick__feature {
+  position: relative;
+  display: grid;
+  grid-column: span 2;
+  gap: var(--space-5);
+  align-content: space-between;
+  min-height: 11rem;
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--bg-tint);
+  color: var(--block-indigo-fg);
+  text-decoration: none;
+  transition:
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
+}
+
+.quick__feature:hover {
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
+}
+
+.quick__feature:focus-visible,
+.quick__file:focus-visible,
+.folder__link:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.quick__feature > .quick__stage {
+  --ui-stage-bg: var(--bg-tint);
+  position: absolute;
+  top: -1.25rem;
+  right: var(--space-4);
+}
+
+.quick__feature-text {
+  display: grid;
+  gap: var(--space-1);
+  padding-right: 5.5rem;
+}
+
+.quick__eyebrow {
+  font: var(--caption);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.quick__feature-name {
+  font: var(--heading-lg);
+  overflow-wrap: anywhere;
+}
+
+.quick__feature-meta {
+  font: var(--body-md);
+}
+
+.quick__feature-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.quick__feature-foot .ui-avatar-group .ui-avatar {
+  box-shadow: 0 0 0 2px var(--bg-tint);
+}
+
+.quick__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-link);
+  font: var(--label-md);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.quick__cta > svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.quick__file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-4);
+  align-content: start;
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
+}
+
+.quick__file:hover {
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
+}
+
+.quick__thumb {
+  width: 3.25rem;
+}
+
+.quick__file-text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.quick__file-name {
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.quick__file-size,
+.quick__file-usage {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.quick__file-meta {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+
+/* The folders: a card is the stage, the name and what the folder holds; the whole card opens it, the menu stays above. */
+.folders {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 11.5rem), 1fr));
   gap: var(--space-4);
@@ -91,90 +269,112 @@
   list-style: none;
 }
 
-.content-folders__list > li {
+.folders > li {
   display: grid;
   min-width: 0;
 }
 
-/* A folder card: the folder on its small stage, its name, the Padrão mark; the arrow says it opens. */
-.content-folder {
+.folder {
   position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  align-items: center;
-  gap: var(--space-3) var(--space-2);
-  min-height: 8.5rem;
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
   padding: var(--space-4);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
   color: var(--text-primary);
-  text-decoration: none;
   transition:
     border-color var(--motion-fast),
     box-shadow var(--motion-base) var(--motion-easing-standard),
     transform var(--motion-base) var(--motion-easing-standard);
 }
 
-.content-folder:hover {
+.folder:hover,
+.folder:focus-within {
   border-color: var(--color-indigo-200);
   box-shadow: var(--shadow-raised);
   transform: translateY(-2px);
 }
 
-.content-folder:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 2px;
+.folder__top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
 }
 
-/* The right margin takes the whole row, so the name and the mark always start the next line under the stage. */
-.content-folder > .content-folder__stage {
-  margin: calc(var(--space-1) * -1) 100% 0 calc(var(--space-1) * -1);
+.folder__top > .folder__stage {
+  margin: calc(var(--space-1) * -1) 0 calc(var(--space-1) * -1) calc(var(--space-1) * -1);
 }
 
-.content-folder__chevron {
+.folder__link {
+  display: grid;
+  gap: var(--space-1);
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The press area is the whole card; the menu above it keeps its own click. */
+.folder__link::after {
+  content: '';
   position: absolute;
-  top: var(--space-4);
-  right: var(--space-4);
-  display: inline-flex;
-  color: var(--text-secondary);
+  inset: 0;
+  border-radius: var(--radius-lg);
 }
 
-.content-folder__chevron > svg {
-  width: 1.25rem;
-  height: 1.25rem;
-  stroke-width: 1.75;
+.folder__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.content-folder__name {
-  min-width: 0;
+.folder__name {
   font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
+.folder__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
 /* "Nova pasta" is a card too, dashed: a button that takes the card's place in the grid. */
-.content-folders .content-folder--new.ui-button {
-  flex-direction: column;
-  justify-content: center;
+.folder--new {
+  place-items: center;
   align-content: center;
   gap: var(--space-2);
-  min-height: 8.5rem;
-  height: auto;
+  min-height: 10.5rem;
   border: 1.5px dashed var(--color-indigo-200);
   background: transparent;
   color: var(--text-link);
   font: var(--label-md);
   font-weight: 600;
+  cursor: pointer;
 }
 
-.content-folders .content-folder--new.ui-button:hover {
+.folder--new:hover:not(:disabled) {
   background: var(--bg-hover);
   box-shadow: none;
   transform: none;
 }
 
-.content-folders .content-folder--new .ui-icon {
+.folder--new:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.folder--new:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.folder--new .plus {
   display: grid;
   place-items: center;
   width: 2.75rem;
@@ -184,7 +384,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .content-folder:hover {
+  .folder:hover,
+  .folder:focus-within,
+  .quick__feature:hover,
+  .quick__file:hover {
     transform: none;
   }
 }
@@ -214,9 +417,26 @@
   font: var(--body-md);
 }
 
+.content-folders__skeleton,
+.media-files__skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11.5rem), 1fr));
+  gap: var(--space-4);
+}
+
+.media-files__skeleton {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
 .content-folders__skeleton > .ui-skeleton {
   height: 8.5rem;
   border-radius: var(--radius-lg);
+}
+
+.media-files__skeleton > .ui-skeleton {
+  height: 3.75rem;
+  border-radius: var(--radius-md);
 }
 
 /* An empty state with its folder on the stage: the dashed block is the wrapper's, the sentence inside it is bare. */
@@ -236,3 +456,33 @@
   background: none;
 }
 
+/* On a phone the feature takes the row, the folders go two by two and the card keeps what it needs. */
+@media (max-width: 40rem) {
+  .quick__feature {
+    grid-column: auto;
+    padding: var(--space-5);
+  }
+
+  .folders {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+
+  .folder {
+    padding: var(--space-3);
+  }
+
+  .folder__meta {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .content-folders__feature {
+    padding: var(--space-5);
+    padding-right: 6rem;
+  }
+
+  .media-toolbar__search {
+    max-width: none;
+  }
+}
