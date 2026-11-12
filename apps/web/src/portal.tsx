@@ -11,7 +11,8 @@ import { Avatar, Button, Logo, Skeleton, Stage3D, type Stage3DTone } from '@agen
 import { apiPath } from './api-path.js';
 import { useAuthSession, useAuthSessionStore } from './auth.js';
 import { useDocumentTitle } from './document-title.js';
-import { HelpMenu, ShellTopbar } from './help-menu.js';
+import { HelpMenu } from './help-menu.js';
+import { ShellTopbar } from './shell-topbar.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { usePhone } from './use-phone.js';
 import { InvitationNotice } from './invitation-notice.js';

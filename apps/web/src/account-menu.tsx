@@ -11,7 +11,7 @@ import {
   type AuthUser,
   type Context
 } from '@ageniza/contracts';
-import { Avatar, Button, ConfirmDialog, IconButton, Menu, MenuItem, MenuSeparator, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, Menu, MenuItem, MenuSeparator, Skeleton } from '@ageniza/ui';
 
 import { useAuthSession, useOptionalAuthSessionStore, type AuthSessionStore } from './auth.js';
 import { contextDestination, targetFromDestination, type ContextTarget } from './context-destination.js';
@@ -55,7 +55,7 @@ export interface AccountMenuProps {
   /** Offered only where a tour exists to review (the client portal); it reopens the tour and calls nothing. */
   onReviewTour?: () => void;
   user?: AuthUser | null;
-  /** `sidebar` is the foot of the agency navigation: the person as the trigger and Sair beside it. `compact` is the avatar alone, in a phone's top bar. */
+  /** `sidebar` is the foot of the agency navigation: the person as the trigger. `compact` is the avatar alone, in a phone's top bar. */
   variant?: 'header' | 'sidebar' | 'compact';
   /** What the person is in this context, under the name: the Owner is not a role, so it carries its own mark. */
   role?: { label: string; owner?: boolean };
@@ -250,15 +250,6 @@ export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', on
           )}
         </>}
       </Menu>
-      {sidebar && (
-        <IconButton
-          className='account-menu__leave'
-          label='Sair'
-          icon={<LogOut />}
-          loading={pendingAction === 'logout'}
-          onClick={() => { void startLogout('logout'); }}
-        />
-      )}
       {failedAction !== null && (
         <div className='account-menu__error' role='alert'>
           <span>{failedMessage}</span>

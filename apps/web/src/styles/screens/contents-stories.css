@@ -82,10 +82,16 @@
   display: flex;
   gap: var(--space-4);
   margin: 0;
-  padding: var(--space-1) var(--space-1) var(--space-2);
+  padding: var(--space-1) var(--space-4) var(--space-2) var(--space-1);
   overflow-x: auto;
   list-style: none;
   scrollbar-width: thin;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: var(--space-1);
+}
+
+.story-list__items > li {
+  scroll-snap-align: start;
 }
 
 .story-list__open {

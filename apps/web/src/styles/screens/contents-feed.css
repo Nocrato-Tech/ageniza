@@ -184,7 +184,7 @@
   width: 0.875rem;
   height: 0.875rem;
   color: var(--color-white);
-  filter: drop-shadow(0 0 2px rgb(0 0 0 / 0.6));
+  filter: drop-shadow(0 0 2px var(--scrim)) drop-shadow(0 0 1px var(--scrim));
 }
 
 .content-feed__state {

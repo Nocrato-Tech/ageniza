@@ -8,7 +8,7 @@ import { useContentsAddress } from './content-address.js';
 import { ContentHoverCard } from './content-card-extras.js';
 import { ContentCover, FORMAT_ICONS } from './content-cover.js';
 import { addDays, dayOfMonthLabel, fullDayLabel, saoPauloClock, WEEKDAY_HEADERS, weekdayShortLabel, type CalendarView } from './content-dates.js';
-import { deadlineAlert, DEADLINE_LABELS, DISPLAY_LABELS, DISPLAY_TAGS, displayState, FORMAT_LABELS, FORMAT_TONES, isClosed, type DisplayState } from './content-labels.js';
+import { DEADLINE_LABELS, CARD_FORMAT_LABELS, DISPLAY_LABELS, DISPLAY_TAGS, displayState, FORMAT_TONES, isClosed, type DisplayState } from './content-labels.js';
 
 /**
  * Where the hover card opens, so it faces the inside of the grid: the last two columns (sexta and sábado) open to the
@@ -40,7 +40,6 @@ export function ContentCard({ content, clientId, today, now, placement = 'bottom
   onDragStart?: (event: DragEvent<HTMLElement>) => void;
   onDragEnd?: () => void;
 }) {
-  const alert = deadlineAlert(content, today);
   const state: DisplayState = displayState(content, now ?? saoPauloClock());
   const address = useContentsAddress(clientId);
   const location = useLocation();
@@ -61,7 +60,6 @@ export function ContentCard({ content, clientId, today, now, placement = 'bottom
       data-status={content.status}
       data-state={state}
       data-format={FORMAT_TONES[content.format]}
-      data-late={alert === 'overdue' || undefined}
       draggable={draggable}
       aria-busy={busy || undefined}
       onDragStart={draggable ? (event) => { setGrabbed(true); onDragStart?.(event); } : undefined}
@@ -88,7 +86,7 @@ export function ContentCard({ content, clientId, today, now, placement = 'bottom
       >
         <ContentCover assetId={content.thumbnailAssetId} format={content.format} className="content-card__cover" />
         <span className="content-card__body">
-          <span className="content-card__support"><FormatIcon aria-hidden="true" />{content.publishAtTime === null ? FORMAT_LABELS[content.format] : `${FORMAT_LABELS[content.format]} · ${content.publishAtTime}`}</span>
+          <span className="content-card__support"><FormatIcon aria-hidden="true" />{content.publishAtTime === null ? CARD_FORMAT_LABELS[content.format] : `${CARD_FORMAT_LABELS[content.format]} · ${content.publishAtTime}`}</span>
           <span className="content-card__title">{content.title}</span>
         </span>
         <span className="content-card__foot">
@@ -143,8 +141,9 @@ export function ContentCalendar({ clientId, view, layout = 'grid', anchor, today
   const byDay = groupByDay(contents);
 
   if (layout === 'agenda') {
-    // A phone has no neighbours' days to show, and no drag: the date of a content is changed in its own detail.
-    const shown = days.filter((day) => view === 'week' || day.slice(0, 7) === anchor.slice(0, 7));
+    // A phone has no neighbours' days to show, and no drag: the date of a content is changed in its own detail. The month lists only
+    // the days that have a content, as the board does; the week keeps its seven days, each one a place to add to.
+    const shown = days.filter((day) => view === 'week' ? true : day.slice(0, 7) === anchor.slice(0, 7) && byDay.has(day));
     return <ol className="content-agenda" data-view={view}>
       {shown.map((day) => {
         const items = byDay.get(day) ?? [];

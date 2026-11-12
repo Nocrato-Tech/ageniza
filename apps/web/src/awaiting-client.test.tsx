@@ -186,7 +186,7 @@ describe('the list', () => {
   it('says the late one by the day it should have gone out, and the others by how long ago they were sent', async () => {
     await mount({ groups: TWO_CLIENTS });
     const block = within(await section());
-    expect(await block.findByText('Imagem · deveria ter saído em 9 de novembro')).toBeTruthy();
+    expect(await block.findByText('Estático · deveria ter saído em 9 de novembro')).toBeTruthy();
     expect(block.getByText('Atrasado 2 dias', { selector: '.ui-late-badge' })).toBeTruthy();
     expect(block.getByText('Carrossel · enviado há 1 dia')).toBeTruthy();
     expect(block.getByText('Reels · enviado hoje')).toBeTruthy();
@@ -287,7 +287,7 @@ describe('the links', () => {
   it('names each link with what is seen: the title, the format and the day it should have gone out, and the state', async () => {
     await mount({ groups: TWO_CLIENTS });
     const block = within(await section());
-    expect(await block.findByRole('link', { name: '5 sinais de check-up Imagem · deveria ter saído em 9 de novembro Atrasado 2 dias' })).toBeTruthy();
+    expect(await block.findByRole('link', { name: '5 sinais de check-up Estático · deveria ter saído em 9 de novembro Atrasado 2 dias' })).toBeTruthy();
     expect(block.getByRole('link', { name: 'Pão de sábado Reels · enviado hoje Aguardando aprovação' })).toBeTruthy();
   });
 });
@@ -432,17 +432,20 @@ describe('the four blocks of the week', () => {
   it('leads "Aprovados" and "Agendados" to the calendar, carrying the state of the carteira', async () => {
     const { probe } = await mount({ groups: TWO_CLIENTS });
     await screen.findByRole('list', { name: SUMMARY });
-    expect(blockOf(/^Aprovados/).getAttribute('href')).toBe(`/agencia/${AGENCY}/conteudos`);
+    expect(blockOf(/^Aprovados/).getAttribute('href')).toBe(`/agencia/${AGENCY}/conteudos?estado=aprovado`);
     fireEvent.click(blockOf(/^Aprovados/));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY}/conteudos`));
+    expect(probe.search).toBe('?estado=aprovado');
     expect(probe.state).toEqual(STATE);
   });
 
   it('opens the calendar from "Agendados" too', async () => {
     const { probe } = await mount({ groups: TWO_CLIENTS });
     await screen.findByRole('list', { name: SUMMARY });
+    expect(blockOf(/^Agendados/).getAttribute('href')).toBe(`/agencia/${AGENCY}/conteudos?estado=agendado`);
     fireEvent.click(blockOf(/^Agendados/));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY}/conteudos`));
+    expect(probe.search).toBe('?estado=agendado');
     expect(probe.state).toEqual(STATE);
   });
 

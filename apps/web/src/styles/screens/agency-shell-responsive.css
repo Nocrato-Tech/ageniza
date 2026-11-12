@@ -88,9 +88,8 @@
     padding: 0 0 var(--space-2);
   }
 
-  /* Blocks with a focusable control leave the tab order: the context and Sair stay in the account menu. */
-  .agency-sidebar[data-collapsed='true'] .agency-sidebar__context,
-  .agency-sidebar[data-collapsed='true'] .account-menu__leave {
+  /* A block with a focusable control leaves the tab order: the context stays in the account menu. */
+  .agency-sidebar[data-collapsed='true'] .agency-sidebar__context {
     display: none;
   }
 

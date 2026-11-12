@@ -283,7 +283,7 @@ describe('client portal shell (#141)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Ajuda' }));
     expect(within(await screen.findByRole('menu', { name: 'Ajuda' })).queryByRole('menuitem', { name: 'Rever o tour' })).toBeNull();
-    fireEvent.click(within(await screen.findByRole('menu', { name: 'Ajuda' })).getByRole('menuitem', { name: 'Status do sistema' }));
+    fireEvent.click(within(await screen.findByRole('menu', { name: 'Ajuda' })).getByRole('menuitem', { name: 'Status do serviço' }));
     await waitFor(() => expect(probe.pathname).toBe('/status'));
   });
 
@@ -502,6 +502,7 @@ describe('client portal shell (#141)', () => {
     const menu = await screen.findByRole('menu');
     expect(within(menu).getByText('maria@example.test')).toBeTruthy();
     expect(within(menu).getByRole('menuitem', { name: 'Sair' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Sair' })).toBeNull();
     // No client is proven for this address, so none is named as the active context.
     expect(within(menu).queryByText('Contexto ativo')).toBeNull();
     expect(within(menu).queryByText('Padaria Central')).toBeNull();

@@ -10,7 +10,7 @@ import { Button, Logo, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { useDocumentTitle } from './document-title.js';
-import { ShellTopbar } from './help-menu.js';
+import { ShellTopbar } from './shell-topbar.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';

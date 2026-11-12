@@ -72,11 +72,6 @@
     white-space: nowrap;
   }
 
-  /* Sair is in the account menu, where the avatar opens it. */
-  .portal-header .account-menu__leave {
-    display: none;
-  }
-
   .portal-header__identity {
     flex: 1;
   }

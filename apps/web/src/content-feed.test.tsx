@@ -248,10 +248,10 @@ describe('the feed view: the profile on the phone of the board', () => {
     expect(within(feedRegion()).getByText('@padariacentral')).toBeTruthy();
     expect(within(feedRegion()).getByText('Padaria Central')).toBeTruthy();
     expect(tileTexts()).toEqual([
-      'Último do mês · Imagem · 28/10 · planejado',
+      'Último do mês · Estático · 28/10 · planejado',
       'Reels do meio · Reels · 14/10 · planejado',
       'Carrossel do meio · Carrossel · 14/10 · planejado',
-      'Primeiro do mês · Imagem · 11/10'
+      'Primeiro do mês · Estático · 11/10'
     ]);
     expect(feedRegion().querySelector('.content-phone__island')).not.toBeNull();
     expect(feedRegion().querySelector('.content-phone__home')).not.toBeNull();
@@ -406,7 +406,7 @@ describe('the feed view: the profile on the phone of the board', () => {
     await ready();
 
     expect(feedRegion().querySelector('img[src="x"]')).toBeNull();
-    expect(tileTexts()).toEqual(['<img src=x onerror=alert(1)> · Imagem · 13/10 · planejado']);
+    expect(tileTexts()).toEqual(['<img src=x onerror=alert(1)> · Estático · 13/10 · planejado']);
   });
 });
 

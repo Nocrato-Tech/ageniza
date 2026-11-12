@@ -1,12 +1,12 @@
 import { contentDeadline, contentIsScheduled, type ContentDeadline, type ContentFormat, type ContentListItem, type ContentStatus } from '@ageniza/contracts';
 import type { FormatTagFormat, StatusTagStatus } from '@ageniza/ui';
 
-/** In the agency, "aprovado" reads "Pronto para publicar" (specs/conteudo.md section 4). */
+/** "Aprovado" is "Aprovado" in the agency as well (owner's decision, 2026-11-12), as on the board. */
 export const STATUS_LABELS: Readonly<Record<ContentStatus, string>> = {
   in_production: 'Em produção',
   awaiting_approval: 'Aguardando aprovação',
   adjusting: 'Em ajuste',
-  approved: 'Pronto para publicar',
+  approved: 'Aprovado',
   published: 'Publicado',
   cancelled: 'Cancelado'
 };
@@ -18,6 +18,9 @@ export const FORMAT_LABELS: Readonly<Record<ContentFormat, string>> = {
   long_video: 'Vídeo longo',
   vsl: 'VSL'
 };
+
+/** The board names the plain image "Estático" on cards, in the feed and in the lists; the form that creates a content keeps "Imagem". */
+export const CARD_FORMAT_LABELS: Readonly<Record<ContentFormat, string>> = { ...FORMAT_LABELS, image: 'Estático' };
 
 export const PLATFORM_LABELS: Readonly<Record<ContentListItem['platform'], string>> = { instagram: 'Instagram' };
 
@@ -65,7 +68,7 @@ export const displayState = (
   return contentIsScheduled(content, now) ? 'scheduled' : content.status;
 };
 
-/** The words of the calendar's chips and cards: the agency's "Pronto para publicar" is "Aprovado" here, as on the board. */
+/** The words of the calendar's chips and cards, as on the board; "Aguardando" is the short form of the flow's "Aguardando aprovação". */
 export const DISPLAY_LABELS: Readonly<Record<DisplayState, string>> = {
   in_production: 'Em produção',
   awaiting_approval: 'Aguardando',
