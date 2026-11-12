@@ -116,12 +116,14 @@ interface VideoProcessingRow {
   readonly video_thumbnail_size_bytes: string | null;
   readonly video_preview_size_bytes: string | null;
   readonly video_processing_error: string | null;
+  readonly width: number | null;
+  readonly height: number | null;
 }
 
 const videoProcessingRow = async (assetId: string): Promise<VideoProcessingRow> => {
   const result = await raw<{ rows: VideoProcessingRow[] }>(owner.knex, `
     select video_processing_status, thumbnail_object_key, preview_object_key, video_duration_seconds,
-      video_thumbnail_size_bytes, video_preview_size_bytes, video_processing_error
+      video_thumbnail_size_bytes, video_preview_size_bytes, video_processing_error, width, height
     from public.media_assets where id = ?::uuid
   `, [assetId]);
   const row = result.rows[0];
@@ -208,11 +210,23 @@ describe('media video processing job (real PostgreSQL + LocalStack, real ffmpeg)
     expect(Number(row.video_duration_seconds)).toBeGreaterThan(1);
     expect(Number(row.video_thumbnail_size_bytes)).toBeGreaterThan(0);
     expect(Number(row.video_preview_size_bytes)).toBeGreaterThan(0);
+    // The library shows the size of the video: the worker is who reads it, the row is where it lands.
+    expect(row.width).toBe(320);
+    expect(row.height).toBe(240);
 
     const thumbnailHead = await s3.send(new HeadObjectCommand({ Bucket: storageConfig.bucket, Key: row.thumbnail_object_key! }));
     expect(thumbnailHead.ContentLength).toBeGreaterThan(0);
     const previewHead = await s3.send(new HeadObjectCommand({ Bucket: storageConfig.bucket, Key: row.preview_object_key! }));
     expect(previewHead.ContentLength).toBeGreaterThan(0);
+  }, 60_000);
+
+  it('records no size for a video whose processing fails', async () => {
+    const { userId, agencyId } = await insertOwnerAndAgency('no-size');
+    const { assetId } = await insertConfirmedVideoAsset({ agencyId, userId, body: Buffer.from('not a real video file') });
+
+    await expect(runJob(mediaProcessingConfig, { assetId, agencyId, actorUserId: userId })).rejects.toThrow();
+
+    await expect(videoProcessingRow(assetId)).resolves.toMatchObject({ video_processing_status: 'failed', width: null, height: null });
   }, 60_000);
 
   it('leaves no temporary file behind and records an explicit failure when the original is not a valid video', async () => {
