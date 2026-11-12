@@ -121,6 +121,9 @@ const approvalOf = (row: ApprovalColumns): ContentApproval | null =>
         note: row.approval_note
       };
 
+/** The name of who approved: the account behind the approval, or the label of the portal access that approved through a link. */
+export const APPROVER_NAME = `coalesce(approver_account.name, app_private.portal_access_label(content.approved_by_portal_access_id, content.client_id))`;
+
 // Dates are read as text and the time as HH:MM: the driver would turn a `date` into an instant in the server's zone.
 const CONTENT_COLUMNS = `
   content.id, content.client_id, content.title, content.platform, content.format,
@@ -128,7 +131,7 @@ const CONTENT_COLUMNS = `
   content.caption, content.folder_id, content.cover_asset_id, content.owner_user_id, owner_link.id as owner_membership_id,
   owner_account.name as owner_name, content.status, content.revision,
   case when content.approved_by is null and content.approved_by_portal_access_id is null then null when content.approved_by_agency_reason is not null then 'agency' else 'client' end as approver_side,
-  coalesce(approver_account.name, app_private.portal_access_label(content.approved_by_portal_access_id, content.client_id)) as approver_name,
+  ${APPROVER_NAME} as approver_name,
   (content.approved_by_portal_access_id is not null) as approved_via_link, content.approved_at, content.approved_by_agency_reason,
   content.published_on::text as published_on, content.cancelled_at, content.created_at, ${APPROVAL_COLUMNS}
 `;
@@ -153,12 +156,13 @@ const agencyTie = (person: string, agency: string): string => `(
 /**
  * Who approved is named without an id, by the link of the side they approved from: a collaborator of the agency for an approval outside
  * the platform, a person of the client's portal for the approval of the client. The side is how it was approved (the reason is written
- * only by the approval outside the platform), so a person who is both is named by the side they used.
+ * only by the approval outside the platform), so a person who is both is named by the side they used. `clientAgency` is the agency of the
+ * content's client, as the query names it.
  */
-const APPROVER_JOIN = `
+export const approverJoin = (clientAgency: string): string => `
   left join auth."user" approver_account on approver_account.id = content.approved_by and (
     case when content.approved_by_agency_reason is not null
-      then ${agencyTie('content.approved_by', 'owner_client.agency_id')}
+      then ${agencyTie('content.approved_by', clientAgency)}
       else exists (
         select 1 from public.client_memberships portal_link
         where portal_link.client_id = content.client_id and portal_link.user_id = content.approved_by
@@ -166,6 +170,8 @@ const APPROVER_JOIN = `
     end
   )
 `;
+
+const APPROVER_JOIN = approverJoin('owner_client.agency_id');
 
 const ownerOf = (row: { readonly owner_membership_id: string | null; readonly owner_name: string | null }): Content['owner'] =>
   row.owner_membership_id === null || row.owner_name === null ? null : { membershipId: row.owner_membership_id, name: row.owner_name };

@@ -2,7 +2,7 @@ import type { ContentActivationResponse } from '@ageniza/contracts';
 import { raw } from '@ageniza/database';
 
 import { canReadPortalPeople, loadPortalPeople } from './portal-people.js';
-import type { ContentTransaction } from './service.js';
+import { APPROVER_NAME, approverJoin, type ContentTransaction } from './service.js';
 
 type Steps = ContentActivationResponse['data']['steps'];
 
@@ -75,14 +75,10 @@ const loadSteps = async (transaction: ContentTransaction, agencyId: string): Pro
   `, [agencyId]);
 
   const approved = await raw<RawRows<{ approved_at: Date; client_name: string; approver_name: string | null }>>(transaction, `
-    select content.approved_at, client.name as client_name,
-      coalesce(approver_account.name, app_private.portal_access_label(content.approved_by_portal_access_id, content.client_id)) as approver_name
+    select content.approved_at, client.name as client_name, ${APPROVER_NAME} as approver_name
     from public.contents content
     join public.clients client on client.id = content.client_id
-    left join auth."user" approver_account on approver_account.id = content.approved_by and exists (
-      select 1 from public.client_memberships portal_link
-      where portal_link.client_id = content.client_id and portal_link.user_id = content.approved_by
-    )
+    ${approverJoin('client.agency_id')}
     where client.agency_id = ?::uuid and content.approved_at is not null and content.approved_by_agency_reason is null
       and (content.approved_by is not null or content.approved_by_portal_access_id is not null)
     order by content.approved_at, content.id
