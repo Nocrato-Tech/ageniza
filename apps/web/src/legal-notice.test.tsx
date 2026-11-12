@@ -163,7 +163,7 @@ describe('legal notice in the agency shell (issue #81)', () => {
     const { impl, calls } = makeFetch({ account });
     renderApp(impl, `/agencia/${AGENCY}`);
 
-    await screen.findByRole('heading', { name: 'Agência Um' });
+    await screen.findByRole('heading', { level: 1, name: /, Pessoa$/ });
     await waitFor(() => expect(calls).toContain('GET /me/legal-acceptances'));
     expect(queryNotice()).toBeNull();
   });
@@ -213,7 +213,7 @@ describe('legal notice in the agency shell (issue #81)', () => {
     const { impl } = makeFetch({ account: outdatedAccount(), failRead: true });
     renderApp(impl, `/agencia/${AGENCY}`);
 
-    await screen.findByRole('heading', { name: 'Agência Um' });
+    await screen.findByRole('heading', { level: 1, name: /, Pessoa$/ });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(queryNotice()).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
