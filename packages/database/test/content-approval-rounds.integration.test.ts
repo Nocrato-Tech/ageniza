@@ -1068,6 +1068,25 @@ describe('what the portal reads of the current round', () => {
     expect(await portalRows(ids.crossDual, ids.clientA1, content)).toHaveLength(1);
   });
 
+  it('reads nothing of a cancelled content, which does not exist for the portal', async () => {
+    const cancelled = await w.seedContent(ids.clientA1, { status: 'cancelled' });
+
+    expect(await portalRows(ids.portalA1, ids.clientA1, cancelled)).toEqual([]);
+    expect((await portalRows(ids.portalA1, ids.clientA1)).map((row) => row.id)).not.toContain(cancelled);
+  });
+
+  it('reads only the contents of the client it is asked for, though the person reads the contents of that client', async () => {
+    const ofA1 = await f.readyContent();
+    const ofA2 = await f.readyContent(ids.clientA2);
+    await submitAs(ids.productionA, ofA1, null, 'Do cliente A1');
+    await submitAs(ids.productionA, ofA2, null, 'Do cliente A2');
+
+    const read = (await portalRows(ids.portalA1, ids.clientA1)).map((row) => row.id);
+
+    expect(read).toContain(ofA1);
+    expect(read).not.toContain(ofA2);
+  });
+
   it('returns the deadline as the instant the sender gave, and the day it falls on in São Paulo', async () => {
     const content = await f.readyContent();
     const tomorrow = await f.day(1);
