@@ -905,11 +905,15 @@ describe('deleting a folder: one that is not a default one and is empty', () => 
   it('refuses a folder that an upload started a moment ago is on its way into, and lets go of one abandoned for more than a day', async () => {
     const folder = await newFolder(ids.clientA1);
     const recent = await seed({ folderId: folder, status: 'pending' });
+    await expect(deleteFolder(ids.adminA, folder)).rejects.toMatchObject(HAS_FILES);
+    expect(await rowOf(recent)).toMatchObject({ folder_id: folder, status: 'pending' });
+
+    await w.getOwner().knex('media_assets').where({ id: recent }).delete();
     const almostADay = await seed({ folderId: folder, status: 'pending', updatedAt: new Date(Date.now() - 23 * 3_600_000) });
     await expect(deleteFolder(ids.adminA, folder)).rejects.toMatchObject(HAS_FILES);
     expect(await rowOf(almostADay)).toMatchObject({ folder_id: folder, status: 'pending' });
 
-    await w.getOwner().knex('media_assets').whereIn('id', [recent, almostADay]).delete();
+    await w.getOwner().knex('media_assets').where({ id: almostADay }).delete();
     const abandoned = await seed({ folderId: folder, status: 'pending', updatedAt: new Date(Date.now() - 25 * 3_600_000) });
     await deleteFolder(ids.adminA, folder);
 
@@ -1034,6 +1038,24 @@ describe('deleting a folder: one that is not a default one and is empty', () => 
     }
     expect(await folderCount(empty)).toBe(0);
     expect((await rowOf(asset)).folder_id).toBe(target);
+  });
+
+  it('serializes two deletes of the same folder: the one behind finds the folder gone, never a second delete that answers as done', async () => {
+    const folder = await newFolder(ids.clientA1);
+    const first = await w.openTransactionAs(ids.adminA);
+    let released = false;
+    try {
+      await first.raw('select app_private.delete_media_folder(?::uuid)', [folder]);
+      const holderPid = await backendPid(first);
+      const outcome = deleteFolder(ids.adminA, folder).then(() => 'deleted', (error: { code?: string }) => error.code);
+      await waitForBackendsBlockedBy(w.getOwner().knex, holderPid);
+      await first.commit();
+      released = true;
+      expect(await outcome).toBe('A0080');
+    } finally {
+      if (!released) await first.rollback();
+    }
+    expect(await folderCount(folder)).toBe(0);
   });
 
   it('waits for a subfolder being created and then refuses, as the upload and the subfolder lock the folder the same way', async () => {
