@@ -63,6 +63,10 @@
   min-width: 13.5rem;
 }
 
+.help-menu__status {
+  margin-inline-start: auto;
+}
+
 .protected-header {
   display: flex;
   align-items: center;

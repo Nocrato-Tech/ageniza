@@ -376,19 +376,6 @@
   width: 100%;
 }
 
-/* Relatórios, still empty: the owl, what is missing and no control. */
-.portal-skeleton {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.portal-skeleton h1 {
-  margin: 0;
-  font: var(--display-lg);
-  letter-spacing: -0.02em;
-}
-
 .portal-empty {
   flex-direction: column;
   align-items: center;

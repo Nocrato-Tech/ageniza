@@ -30,7 +30,7 @@ describe('the tags under the title', () => {
     ['in_production', 'Em produção', 'production'],
     ['awaiting_approval', 'Aguardando aprovação', 'waiting'],
     ['adjusting', 'Em ajuste', 'adjust'],
-    ['approved', 'Pronto para publicar', 'ready'],
+    ['approved', 'Aprovado', 'ready'],
     ['published', 'Publicado', 'published'],
     ['cancelled', 'Cancelado', 'production']
   ] as const)('a %s content wears the outlined tag "%s" with the %s icon', async (status, label, tone) => {

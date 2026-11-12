@@ -1,28 +1,27 @@
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Activity, CircleHelp, Route } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import { Menu, MenuItem } from '@ageniza/ui';
+import { Menu, MenuItem, StatusTag } from '@ageniza/ui';
 
-import { usePhone } from './use-phone.js';
+import { getHealth } from './health.js';
+import { useApiClient } from './http.js';
 
 /** There is no help centre (decisions/2026-10-14): Ajuda is the tour, where there is one to review, and the service status. */
 export function HelpMenu({ onReviewTour }: { onReviewTour?: () => void }) {
   const navigate = useNavigate();
+  const httpClient = useApiClient();
+  const [open, setOpen] = useState(false);
+  // The same query as the /status page; it is read when the menu opens, and no label is shown until it has answered.
+  const health = useQuery({ queryKey: ['health'], queryFn: () => getHealth(httpClient), enabled: open });
   return <div className="help-menu">
-    <Menu label="Ajuda" triggerLabel="Ajuda" trigger={<CircleHelp aria-hidden="true" />}>
+    <Menu label="Ajuda" triggerLabel="Ajuda" trigger={<CircleHelp aria-hidden="true" />} onOpenChange={setOpen}>
       {onReviewTour !== undefined && <MenuItem icon={<Route />} onClick={onReviewTour}>Rever o tour</MenuItem>}
-      <MenuItem icon={<Activity />} onClick={() => { navigate('/status'); }}>Status do sistema</MenuItem>
+      <MenuItem icon={<Activity />} onClick={() => { navigate('/status'); }}>
+        Status do serviço
+        {health.data?.status === 'ok' && <StatusTag status="ready" className="help-menu__status">Normal</StatusTag>}
+      </MenuItem>
     </Menu>
-  </div>;
-}
-
-/** The top bar of the wide shells. The search and the bell have their own subtasks: their place is kept, with no control in it. */
-export function ShellTopbar({ onReviewTour }: { onReviewTour?: () => void }) {
-  // On a phone Ajuda lives in the shell's own top bar.
-  if (usePhone()) return null;
-  return <div className="shell-topbar">
-    <span className="shell-topbar__search-slot" aria-hidden="true" />
-    <span className="shell-topbar__bell-slot" aria-hidden="true" />
-    <HelpMenu onReviewTour={onReviewTour} />
   </div>;
 }

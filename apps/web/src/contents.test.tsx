@@ -361,6 +361,19 @@ const shapeOf = (cover: Element | null | undefined): string | null => {
 };
 
 describe('the Calendário Editorial item and the guard', () => {
+  it('carries the filter of the address (`estado`) from the picker to the calendar of the client chosen', async () => {
+    const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS] });
+    const { probe } = render_(impl, { pathname: `/agencia/${AGENCY_A}/conteudos`, search: '?estado=aprovado', state: { clientListUrl: '/agencia/x/clientes' } });
+
+    const link = await screen.findByRole('link', { name: /Padaria Central/ });
+    expect(link.getAttribute('href')).toBe(`/agencia/${AGENCY_A}/conteudos/${padaria.id}?estado=aprovado`);
+    fireEvent.click(link);
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/conteudos/${padaria.id}`));
+    expect(probe.search).toBe('?estado=aprovado');
+    expect(probe.state).toEqual({ clientListUrl: '/agencia/x/clientes' });
+    expect(await screen.findByRole('button', { name: /Aprovado/, pressed: true })).toBeTruthy();
+  });
+
   it('gives the item to whoever has conteudo.visualizar, linked to the selector', async () => {
     const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS] });
     render_(impl, `/agencia/${AGENCY_A}`);
@@ -721,7 +734,7 @@ describe('the month calendar', () => {
     expect(within(launch).getByText('Aguardando')).toBeTruthy();
     expect(within(launch).queryByText(/subtarefas/)).toBeNull();
     const behind = within(day).getByText('Bastidores').closest('article')!;
-    expect(within(behind).getByText('Imagem')).toBeTruthy();
+    expect(within(behind).getByText('Estático')).toBeTruthy();
     expect(within(behind).queryByText(/·/)).toBeNull();
     expect(within(behind).getByText('Em ajuste')).toBeTruthy();
     // No subtasks: no percentage at all, not "0%".
@@ -2052,11 +2065,32 @@ describe('the header and the grid of the calendar', () => {
     expect(screen.queryByRole('button', { name: 'Novo conteúdo' })).toBeNull();
   });
 
+  describe('the list of days of a phone', () => {
+    afterEach(() => { vi.unstubAllGlobals(); });
+
+    it('lists in the month only the days that have a content, and keeps the seven days of the week', async () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }));
+      const { impl } = makeFetch({ permissions: [VISUALIZE, READ_CLIENTS, 'conteudo.operar'], contents: { [padaria.id]: [
+        contentFixture({ title: 'Um', publishOn: '2026-10-14' }),
+        contentFixture({ title: 'Dois', publishOn: '2026-10-20' })
+      ] } });
+      render_(impl, contentsUrl(padaria.id));
+      await screen.findByText('Um');
+
+      expect([...document.querySelectorAll('.content-agenda__day')].map((day) => day.getAttribute('data-day'))).toEqual(['2026-10-14', '2026-10-20']);
+      expect(document.querySelector('.content-agenda__day--empty')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Novo conteúdo' })).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Semana' }));
+      await waitFor(() => expect(document.querySelectorAll('.content-agenda__day')).toHaveLength(7));
+    });
+  });
+
   describe('the card of a post', () => {
     const cardTitled = (title: string): HTMLElement => screen.getByText(title).closest('article')!;
 
     it.each([
-      ['carousel', 'carousel', 'Carrossel'], ['reels', 'reels', 'Reels'], ['image', 'static', 'Imagem'], ['long_video', 'static', 'Vídeo longo'], ['vsl', 'static', 'VSL']
+      ['carousel', 'carousel', 'Carrossel'], ['reels', 'reels', 'Reels'], ['image', 'static', 'Estático'], ['long_video', 'static', 'Vídeo longo'], ['vsl', 'static', 'VSL']
     ] as const)('names a %s card by its icon and short name in front of the title, and keeps its tone %s', async (format, tone, label) => {
       const { impl } = makeFetch({ contents: { [padaria.id]: [contentFixture({ title: 'Um post', publishOn: '2026-10-20', format })] } });
       render_(impl, contentsUrl(padaria.id));
@@ -2082,7 +2116,7 @@ describe('the header and the grid of the calendar', () => {
       expect(tag?.querySelector('svg')).not.toBeNull();
     });
 
-    it('puts the solid "Atrasado" block, and the red edge, only on a late card, in place of its state tag (one tag a card)', async () => {
+    it('puts the solid "Atrasado" block, with no red outline, only on a late card, in place of its state tag (one tag a card)', async () => {
       const { impl } = makeFetch({
         contents: { [padaria.id]: [
           contentFixture({ title: 'Passou', publishOn: '2026-10-10', status: 'approved' }),
@@ -2095,12 +2129,11 @@ describe('the header and the grid of the calendar', () => {
       await screen.findByText('Passou');
 
       const late = cardTitled('Passou');
-      expect(late.getAttribute('data-late')).toBe('true');
       expect(late.querySelector('.ui-late-badge')?.textContent).toBe('Atrasado');
       expect(late.querySelector('.ui-status-tag')).toBeNull();
       expect(late.getAttribute('data-state')).toBe('late');
       for (const title of ['Em dia', 'Publicado antigo', 'Quase lá']) {
-        expect(cardTitled(title).getAttribute('data-late')).toBeNull();
+        expect(cardTitled(title).getAttribute('data-state')).not.toBe('late');
         expect(cardTitled(title).querySelector('.ui-late-badge')).toBeNull();
       }
     });
@@ -2138,7 +2171,7 @@ describe('the header and the grid of the calendar', () => {
       expect(stateOf('Amanhã')).toEqual(['scheduled', 'Agendado']);
       expect(stateOf('Hoje cedo')).toEqual(['approved', 'Aprovado']);
       expect(stateOf('Amanhã sem hora')).toEqual(['approved', 'Aprovado']);
-      expect(cardTitled('Hoje à noite').getAttribute('data-late')).toBeNull();
+      expect(cardTitled('Hoje à noite').getAttribute('data-state')).not.toBe('late');
     });
 
     it('shows the time of a post on the support line after the format, and nothing when it has none', async () => {
@@ -2180,13 +2213,13 @@ describe('the header and the grid of the calendar', () => {
       expect(body('.content-calendar__days')).toMatch(/grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);/);
     });
 
-    it('tints the card by its format (the state is the tag at its foot), and outlines it in the red of the state when it is late', () => {
-      expect(body('.content-card')).toMatch(/border:\s*1px solid var\(--content-card-tone\);/);
+    it('tints the card by its format (the state is the tag at its foot), and does not outline it, not even when it is late', () => {
+      expect(body('.content-card')).toMatch(/border:\s*1px solid transparent;/);
       for (const format of ['carousel', 'reels']) {
         expect(body(`.content-card[data-format='${format}']`)).toContain(`--content-card-bg: var(--format-${format}-bg);`);
       }
       expect(body('.content-card')).toContain('--content-card-bg: var(--format-static-bg);');
-      expect(body('.content-card[data-late]')).toContain('--content-card-tone: var(--status-late-fg);');
+      expect(css).not.toMatch(/\.content-card\[data-late\]|content-card-tone/);
       expect(body('.content-card')).not.toMatch(/gradient|backdrop-filter|box-shadow/);
     });
 
@@ -2213,6 +2246,19 @@ describe('the header and the grid of the calendar', () => {
     it('sets the state of a feed tile in the type scale, and gives the phone of the agency no shadow of its own', () => {
       expect(rules.filter((rule) => rule.selectors.includes('.content-feed__state .ui-status-tag')).map((rule) => rule.body).join('\n')).toMatch(/font:\s*var\(--caption\);/);
       expect(body('.content-feed-layout .content-phone')).not.toMatch(/box-shadow/);
+    });
+
+    it('scrolls the stories of the month inside their own strip, snapped, with room after the last one', () => {
+      const strip = body('.story-list__items');
+      expect(strip).toMatch(/overflow-x:\s*auto;/);
+      expect(strip).toMatch(/scroll-snap-type:\s*x proximity;/);
+      expect(strip).toMatch(/padding:\s*var\(--space-1\) var\(--space-4\) var\(--space-2\) var\(--space-1\);/);
+      expect(body('.story-list__items > li')).toMatch(/scroll-snap-align:\s*start;/);
+    });
+
+    it('draws the shadow of the format icon of a tile with a token of the design system, never a raw colour', () => {
+      expect(body('.content-feed__format')).toMatch(/drop-shadow\(0 0 2px var\(--scrim\)\)/);
+      expect(body('.content-feed__format')).not.toMatch(/rgb\(/);
     });
   });
 });

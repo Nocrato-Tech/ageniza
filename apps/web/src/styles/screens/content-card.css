@@ -1,13 +1,12 @@
 /* The card is a compact tile tinted by its format (carousel teal, reels violet, every other one neutral), as on the board: the cover and the
-   format say what it is, the state is the tag at its foot, and the late card trades the tint's edge for the red of the state. */
+   format say what it is, and the state is the tag at its foot: the late card has no outline, the "Atrasado" block is enough. */
 .content-card {
   --content-card-bg: var(--format-static-bg);
   --content-card-fg: var(--format-static-fg);
-  --content-card-tone: transparent;
 
   position: relative;
   min-width: 0;
-  border: 1px solid var(--content-card-tone);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: var(--content-card-bg);
   color: var(--text-primary);
@@ -22,10 +21,6 @@
 .content-card[data-format='reels'] {
   --content-card-bg: var(--format-reels-bg);
   --content-card-fg: var(--format-reels-fg);
-}
-
-.content-card[data-late] {
-  --content-card-tone: var(--status-late-fg);
 }
 
 .content-card:hover {

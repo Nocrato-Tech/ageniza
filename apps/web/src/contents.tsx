@@ -117,7 +117,7 @@ function ClientPicker({ stories }: { stories: StoryClients }) {
         {stories.data.data.map((client) => {
           const signals = signalsOf(client);
           return <li key={client.id}>
-            <Link className="content-clients__item" to={`/agencia/${agency.agencyId}/conteudos/${client.id}`} state={location.state}>
+            <Link className="content-clients__item" to={{ pathname: `/agencia/${agency.agencyId}/conteudos/${client.id}`, search: location.search }} state={location.state}>
               <Avatar name={client.name} photoUrl={client.photoUrl} size="md" />
               <span className="content-clients__name">{client.name}</span>
               {client.contentIndicators !== undefined && (signals.length === 0

@@ -11,7 +11,7 @@ import { dueDayLabel, waitingWording } from './approval-deadline.js';
 import { contentsAddress } from './content-address.js';
 import { ContentCover } from './content-cover.js';
 import { todayInSaoPaulo } from './content-dates.js';
-import { FORMAT_LABELS } from './content-labels.js';
+import { CARD_FORMAT_LABELS } from './content-labels.js';
 import { clockLabel, longDayLabel, previousMonthName } from './home-dates.js';
 import { useApiClient } from './http.js';
 import { portalEntryAddress, portalShareMessage, whatsappShareUrl } from './portal-access-share.js';
@@ -48,7 +48,7 @@ export const useContentSummary = (agencyId: string, enabled = true) => {
 
 /** "Estático · deveria ter saído em 9 de novembro", or "Carrossel · enviado há 2 dias", then the deadline of the approval with its hour. */
 const subtitleOf = (content: AwaitingClientContent): string => {
-  const parts: string[] = [FORMAT_LABELS[content.format]];
+  const parts: string[] = [CARD_FORMAT_LABELS[content.format]];
   if (content.daysLate !== null) parts.push(`deveria ter saído em ${longDayLabel(content.publishOn)}`);
   else if (content.daysWaiting !== null) parts.push(waitingWording(content.daysWaiting));
   if (content.dueAt !== null && content.dueOn !== null) {
@@ -185,7 +185,7 @@ export function AwaitingSummary({ agencyId }: { agencyId: string }) {
 
   const { awaitingClient, overdueAwaitingClient, approvedThisMonth, approvedLastMonth, scheduled } = summary.data.data;
   const month = previousMonthName(todayInSaoPaulo());
-  const calendar = `/agencia/${agencyId}/conteudos`;
+  const calendar = (estado: string) => ({ pathname: `/agencia/${agencyId}/conteudos`, search: `?estado=${estado}` });
 
   return <ul className="home-summary" aria-label="Resumo da semana">
     <li className="home-summary__item">
@@ -211,7 +211,7 @@ export function AwaitingSummary({ agencyId }: { agencyId: string }) {
       </a>
     </li>
     <li className="home-summary__item">
-      <Link className="home-summary__card home-summary__card--teal" to={calendar} state={location.state} data-stage-host>
+      <Link className="home-summary__card home-summary__card--teal" to={calendar('aprovado')} state={location.state} data-stage-host>
         <Stage3D src="/3d/thumb-up.png" tone="teal" size="lg" breakout />
         <span className="home-summary__label">Aprovados<span className="home-summary__label-rest"> no mês</span></span>
         <span className="home-summary__body">
@@ -222,7 +222,7 @@ export function AwaitingSummary({ agencyId }: { agencyId: string }) {
       </Link>
     </li>
     <li className="home-summary__item">
-      <Link className="home-summary__card home-summary__card--sky" to={calendar} state={location.state} data-stage-host>
+      <Link className="home-summary__card home-summary__card--sky" to={calendar('agendado')} state={location.state} data-stage-host>
         <Stage3D src="/3d/calender.png" tone="sky" size="lg" breakout />
         <span className="home-summary__label">Agendados</span>
         <span className="home-summary__body">

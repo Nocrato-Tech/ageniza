@@ -14,7 +14,8 @@ import { ApplicationRoutes } from './routes.js';
 import { readGlobalCss } from './styles/read-css';
 
 let meOverrides: Record<string, unknown> = {};
-afterEach(() => { cleanup(); meOverrides = {}; });
+let health: () => Response = () => json({ status: 'ok' });
+afterEach(() => { cleanup(); meOverrides = {}; health = () => json({ status: 'ok' }); });
 
 const AGENCY = '11111111-1111-4111-8111-111111111111';
 const CLIENT = '22222222-2222-4222-8222-222222222222';
@@ -34,6 +35,7 @@ const makeFetch = (permissions: readonly string[], gate?: Promise<void>, logoutG
     const method = init?.method ?? 'GET';
     calls.push(`${method} ${new URL(url).pathname}`);
     if (url.endsWith('/auth/session')) return json(sessionBody);
+    if (url.endsWith('/health')) return health();
     if (url.endsWith(`/agencies/${AGENCY}/me`)) {
       await gate;
       return json(agencyMe(permissions));
@@ -172,8 +174,20 @@ describe('agency side navigation (#628)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Ajuda' }));
     const menu = await screen.findByRole('menu', { name: 'Ajuda' });
     expect(within(menu).queryByRole('menuitem', { name: 'Rever o tour' })).toBeNull();
-    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Status do sistema' }));
+    fireEvent.click(await within(menu).findByRole('menuitem', { name: 'Status do serviço Normal' }));
     await waitFor(() => expect(probe.pathname).toBe('/status'));
+  });
+
+  it('names the status entry without a label when the status did not answer: never Normal without having read it', async () => {
+    health = () => json({ error: { code: 'INTERNAL_ERROR', message: 'down' } }, 503);
+    const { calls } = renderAt(`/agencia/${AGENCY}`);
+    await sidebar();
+    fireEvent.click(await screen.findByRole('button', { name: 'Ajuda' }));
+    const menu = await screen.findByRole('menu', { name: 'Ajuda' });
+    const entry = within(menu).getByRole('menuitem', { name: 'Status do serviço' });
+    await waitFor(() => expect(calls).toContain('GET /health'));
+    expect(within(entry).queryByText('Normal')).toBeNull();
+    expect(entry.textContent).toBe('Status do serviço');
   });
 
   it('keeps the places of the search and the bell empty: no control for what has no destination yet', async () => {
@@ -252,11 +266,12 @@ describe('agency side navigation (#628)', () => {
     expect(aside.getAttribute('data-collapsed')).toBe('false');
   });
 
-  it('puts the person and the way out at the foot, and Sair signs out', async () => {
+  it('puts the person at the foot with no Sair beside it: the way out is the account menu item', async () => {
     const { calls, probe } = renderAt(`/agencia/${AGENCY}/clientes`);
     const aside = await sidebar();
-    expect(await within(aside).findByRole('button', { name: /Pessoa/ })).toBeTruthy();
-    fireEvent.click(within(aside).getByRole('button', { name: 'Sair' }));
+    fireEvent.click(await within(aside).findByRole('button', { name: /Pessoa/ }));
+    expect(within(aside).queryByRole('button', { name: 'Sair' })).toBeNull();
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Sair' }));
     await waitFor(() => expect(probe.pathname).toBe('/entrar'));
     expect(calls.filter((call) => call === 'POST /auth/logout')).toHaveLength(1);
   });
@@ -273,24 +288,6 @@ describe('agency side navigation (#628)', () => {
   });
 });
 
-describe('Sair at the foot while the sign-out is in flight', () => {
-  it('keeps focus on the button and marks it busy instead of disabling it', async () => {
-    let release: () => void = () => undefined;
-    const { probe } = renderAt(`/agencia/${AGENCY}/clientes`, undefined, undefined, new Promise<void>((resolve) => { release = resolve; }));
-    const aside = await sidebar();
-    const leave = within(aside).getByRole('button', { name: 'Sair' });
-    leave.focus();
-    fireEvent.click(leave);
-
-    await waitFor(() => expect(leave.getAttribute('aria-disabled')).toBe('true'));
-    expect(leave.hasAttribute('disabled')).toBe(false);
-    expect(document.activeElement).toBe(leave);
-
-    release();
-    await waitFor(() => expect(probe.pathname).toBe('/entrar'));
-  });
-});
-
 describe('CSS contract of the rail and the bottom bar', () => {
   const css = readGlobalCss();
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
@@ -302,7 +299,7 @@ describe('CSS contract of the rail and the bottom bar', () => {
   const bar = (selector: string): string[] => rules.filter((rule) => rule.selectors.includes(selector)).map((rule) => rule.body);
 
   // Controls that take focus must leave the tab order when hidden: a clipped block is still tabbable (WCAG 2.4.7).
-  it.each(['.agency-sidebar__context', '.account-menu__leave'])('removes %s from the rail with display: none, never clip-path', (selector) => {
+  it.each(['.agency-sidebar__context'])('removes %s from the rail with display: none, never clip-path', (selector) => {
     const found = rail(selector);
     expect(found.length).toBeGreaterThan(0);
     for (const body of found) {
@@ -390,7 +387,7 @@ describe('the phone shell (390px)', () => {
     stubPhone();
     const { probe } = renderAt(`/agencia/${AGENCY}`, everything);
     fireEvent.click(await screen.findByRole('button', { name: 'Ajuda' }));
-    fireEvent.click(within(await screen.findByRole('menu', { name: 'Ajuda' })).getByRole('menuitem', { name: 'Status do sistema' }));
+    fireEvent.click(await within(await screen.findByRole('menu', { name: 'Ajuda' })).findByRole('menuitem', { name: 'Status do serviço Normal' }));
     await waitFor(() => expect(probe.pathname).toBe('/status'));
   });
 });

@@ -8,7 +8,7 @@ import type { ContentFormat, ContentListItem, StoryScriptListItem } from '@ageni
 import { useContentsAddress } from './content-address.js';
 import { ContentCover } from './content-cover.js';
 import { dayMonthLabel, shortDayLabel } from './content-dates.js';
-import { DISPLAY_TAGS, displayState, FORMAT_LABELS, type DisplayState } from './content-labels.js';
+import { DISPLAY_TAGS, displayState, CARD_FORMAT_LABELS, type DisplayState } from './content-labels.js';
 import { StoryScriptCircles } from './story-scripts.js';
 
 /** What the tile says about the state: shorter than the card's own words, and always in the tag of the state's colour. */
@@ -85,7 +85,7 @@ function FeedTile({ content, address, now }: { content: ContentListItem; address
           ? <LateBadge>{TILE_STATE_LABELS.late}</LateBadge>
           : <StatusTag status={DISPLAY_TAGS[state]}>{TILE_STATE_LABELS[state]}</StatusTag>}
       </span>
-      <span className="visually-hidden">{content.title} · {FORMAT_LABELS[content.format]} · {dayMonthLabel(content.publishOn)}{planned ? ' · planejado' : ''}</span>
+      <span className="visually-hidden">{content.title} · {CARD_FORMAT_LABELS[content.format]} · {dayMonthLabel(content.publishOn)}{planned ? ' · planejado' : ''}</span>
     </Link>
   </li>;
 }

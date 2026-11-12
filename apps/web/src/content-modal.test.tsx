@@ -199,7 +199,8 @@ describe('who may edit', () => {
 
   it('shows the state of the content, in the agency\'s words', async () => {
     await openContent(stored({ status: 'approved' }));
-    expect(within(dialog()).getByText('Pronto para publicar')).toBeTruthy();
+    expect(within(dialog()).getByText('Aprovado')).toBeTruthy();
+    expect(within(dialog()).queryByText('Pronto para publicar')).toBeNull();
   });
 });
 
