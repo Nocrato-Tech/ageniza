@@ -350,6 +350,10 @@ describe('who reads which notifications', () => {
     expect((await call('GET', countUrl(agencyA), 'twoAgencies')).json()).toEqual({ data: { count: 1 } });
     expect(idsOf(await call('GET', listUrl(agencyB), 'twoAgencies'))).toEqual([inBToo, inB]);
     expect((await call('GET', countUrl(agencyB), 'twoAgencies')).json()).toEqual({ data: { count: 2 } });
+    // Past the end the total is counted again, and it is counted in the agency of the route too, with and without the filter.
+    expect((await call('GET', listUrl(agencyA, '?page=2'), 'twoAgencies')).json()).toEqual({ data: [], meta: { page: 2, pageSize: 20, totalItems: 1, totalPages: 1 } });
+    expect((await call('GET', listUrl(agencyA, '?page=2&unread=true'), 'twoAgencies')).json().meta.totalItems).toBe(1);
+    expect((await call('GET', listUrl(agencyB, '?page=2&unread=true'), 'twoAgencies')).json().meta.totalItems).toBe(2);
   });
 });
 
