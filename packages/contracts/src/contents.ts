@@ -189,8 +189,11 @@ export const ApprovalNoteSchema = visibleText()
     .min(1, 'must not be empty')
     .refine((value) => characterCount(value) <= APPROVAL_NOTE_MAX_CHARACTERS, `must be at most ${APPROVAL_NOTE_MAX_CHARACTERS} characters`));
 
-/** The deadline of a round as an instant, with its offset (`2026-11-12T18:00:00-03:00`, or the same moment in UTC); the answers carry it in UTC. */
-export const ApprovalDueAtSchema = z.string().datetime({ offset: true });
+/**
+ * The deadline of a round as an instant, with its offset (`2026-11-12T18:00:00-03:00`, or the same moment in UTC); the answers carry it in
+ * UTC. The year zero is refused here because the database has none, and its refusal would be a 500 instead of the 400 of a bad field.
+ */
+export const ApprovalDueAtSchema = z.string().datetime({ offset: true }).refine((value) => !value.startsWith('0000'), 'the year 0000 does not exist');
 
 const oneDeadline = (value: { readonly dueAt?: string | undefined; readonly dueOn?: string | undefined }): boolean =>
   value.dueAt === undefined || value.dueOn === undefined;

@@ -113,7 +113,7 @@ describe('the body of the submit of one content', () => {
   });
 
   it('refuses an instant with no offset, a day, a date with a time that does not exist and a null', () => {
-    for (const dueAt of ['2026-11-12T18:00:00', '2026-11-12', '2026-11-12 18:00:00Z', '2026-11-12T25:00:00Z', '2026-02-30T10:00:00Z', 'amanhã', '', null, 1_794_000_000_000]) {
+    for (const dueAt of ['2026-11-12T18:00:00', '2026-11-12', '2026-11-12 18:00:00Z', '2026-11-12T25:00:00Z', '2026-02-30T10:00:00Z', '0000-01-01T00:00:00Z', 'amanhã', '', null, 1_794_000_000_000]) {
       expect(SubmitContentRequestSchema.safeParse({ dueAt }).success, JSON.stringify(dueAt)).toBe(false);
       expect(SubmitContentsBatchRequestSchema.safeParse({ contentIds: [uuid(1)], dueAt }).success, JSON.stringify(dueAt)).toBe(false);
     }
