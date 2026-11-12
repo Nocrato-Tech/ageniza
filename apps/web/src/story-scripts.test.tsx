@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { CreateStoryScriptRequestSchema, UpdateStoryScriptRequestSchema } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -60,7 +61,7 @@ const ROSTER = [padaria, academia, barbearia];
 const detailOf = (row: ReturnType<typeof client>) => ({
   id: row.id, name: row.name, status: row.status, photoUrl: row.photoUrl, instagramHandle: row.instagramHandle, closingDate: row.closingDate,
   legalName: null, taxId: null, segment: null, website: null, contactName: null, contactPhone: null, contactEmail: null,
-  archivedAt: row.status === 'archived' ? '2026-10-01T00:00:00.000Z' : null,
+  archivedAt: row.status === 'archived' ? '2026-10-01T00:00:00.000Z' : null, ...clientRegistrationExtras,
   summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 }
 });
 

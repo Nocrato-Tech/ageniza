@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { CONTENT_FEED_PAGE_SIZE, UpdateContentRequestSchema, type ContentListItem } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { feedItems } from './content-feed.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
@@ -87,6 +88,7 @@ const detailOf = (client: ReturnType<typeof clientFixture>) => ({
   contactEmail: null,
   closingDate: null,
   archivedAt: null,
+  ...clientRegistrationExtras,
   summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 }
 });
 
@@ -254,7 +256,7 @@ const makeFetch = (scenario: Scenario = {}) => {
       if (answer instanceof Response || answer instanceof Promise) return answer;
       const data = answer === undefined ? [] : [{
         id: 'c1c1c1c1-0000-4000-8000-000000000001', subject: { contentId }, state: 'open',
-        openedBy: { name: 'Pessoa', side: 'agency' }, lastComment: answer, commentCount: 3, resolvedBy: null, resolvedAt: null, dueOn: null
+        openedBy: { name: 'Pessoa', side: 'agency' }, lastComment: answer, commentCount: 3, resolvedBy: null, resolvedAt: null, dueOn: null, title: null
       }];
       return json({ data, meta: { page: 1, pageSize: 20, totalItems: data.length, totalPages: 1 } });
     }

@@ -5,6 +5,7 @@
  */
 export interface MaterialRequestRow {
   threadId: string;
+  title: string | null;
   body: string;
   dueOn: string | null;
   createdAt: string;
@@ -27,11 +28,12 @@ export const createPortalMaterialRequestsApi = (clientId: string, agencyPerson =
   let sequence = 0;
   const state: { failList: (() => Response) | null; failComments: (() => Response) | null; failPost: (() => Response) | null } = { failList: null, failComments: null, failPost: null };
 
-  const seed = (row: { body: string; dueOn?: string | null; createdAt?: string; state?: 'open' | 'resolved' }): MaterialRequestRow => {
+  const seed = (row: { title?: string | null; body: string; dueOn?: string | null; createdAt?: string; state?: 'open' | 'resolved' }): MaterialRequestRow => {
     sequence += 1;
     const createdAt = row.createdAt ?? '2026-10-07T12:00:00.000Z';
     const made: MaterialRequestRow = {
       threadId: `e1e1e1e1-0000-4000-8000-${String(sequence).padStart(12, '0')}`,
+      title: row.title ?? null,
       body: row.body,
       dueOn: row.dueOn ?? null,
       createdAt,
@@ -64,7 +66,7 @@ export const createPortalMaterialRequestsApi = (clientId: string, agencyPerson =
     if (list && method === 'GET') {
       if (state.failList !== null) return state.failList();
       const open = rows.filter((row) => row.state === 'open').sort(byDeadline);
-      return json(page(open.map((row) => ({ threadId: row.threadId, body: row.body, dueOn: row.dueOn, createdAt: row.createdAt, state: row.state })), url, LIST_PAGE_SIZE));
+      return json(page(open.map((row) => ({ threadId: row.threadId, title: row.title, body: row.body, dueOn: row.dueOn, createdAt: row.createdAt, state: row.state })), url, LIST_PAGE_SIZE));
     }
     if (comments !== null) {
       const row = rows.find((candidate) => candidate.threadId === comments[1]);

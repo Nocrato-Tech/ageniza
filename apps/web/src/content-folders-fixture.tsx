@@ -15,6 +15,7 @@ import {
 } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 import { createQueryClient } from './query.js';
@@ -139,7 +140,7 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
     return json({
       id: padaria.id, name: padaria.name, status: world.clientStatus, photoUrl: null, instagramHandle: padaria.instagramHandle,
       legalName: null, taxId: null, segment: null, website: null, contactName: null, contactPhone: null, contactEmail: null,
-      closingDate: null, archivedAt: null,
+      closingDate: null, archivedAt: null, ...clientRegistrationExtras,
       summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 }
     });
   }

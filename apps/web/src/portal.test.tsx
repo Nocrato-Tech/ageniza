@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { PortalClientResponse } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient, HttpClientError } from './http.js';
 import { recordRefusal } from './portal-story-scripts.js';
 import { createQueryClient } from './query.js';
@@ -76,15 +77,14 @@ const portalClient = (overrides: Partial<PortalClientResponse> = {}): Record<str
   legalName: null,
   taxId: null,
   segment: null,
-  city: null,
   website: null,
   instagramHandle: null,
   contactName: null,
   contactPhone: null,
   contactEmail: null,
   closingDate: null,
-  createdAt: '2026-09-02T12:00:00.000Z',
   archivedAt: null,
+  ...clientRegistrationExtras,
   agencyName: 'Agência Um',
   onboardingSeenAt: '2026-10-01T12:00:00.000Z', agencyReadOnly: false,
   home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0, materialRequestsOpen: 0 },

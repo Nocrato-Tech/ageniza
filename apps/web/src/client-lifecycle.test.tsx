@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { agencyToday } from './client-lifecycle.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -57,6 +58,7 @@ const padaria = {
   contactEmail: null,
   closingDate: null as string | null,
   archivedAt: null as string | null,
+  ...clientRegistrationExtras,
   summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 }
 };
 const archivedClient = { ...padaria, status: 'archived', archivedAt: ARCHIVED_AT };

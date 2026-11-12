@@ -8,6 +8,7 @@ import { PROFILE_PHOTO_MAX_BYTES } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { formatArchivedDay, formatDayMonth } from './client-detail.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -64,6 +65,7 @@ const padaria = {
   contactEmail: 'maria@padaria.example.test',
   closingDate: '2026-10-30',
   archivedAt: null,
+  ...clientRegistrationExtras,
   summary: { brandStudyFilled: 5, threadsAwaitingAgency: 2, threadsAnsweredByAgency: 1, activePortalMembers: 3 }
 };
 const academia = {
@@ -96,7 +98,7 @@ const drainedClient = {
 const registrationOf = (client: Record<string, unknown>): Record<string, unknown> =>
   Object.fromEntries(Object.entries(client).filter(([key]) => key !== 'summary'));
 
-const registrationKeys = new Set(['summary', 'legalName', 'taxId', 'segment', 'website', 'contactName', 'contactPhone', 'contactEmail', 'archivedAt']);
+const registrationKeys = new Set(['summary', 'legalName', 'taxId', 'segment', 'city', 'website', 'contactName', 'contactPhone', 'contactEmail', 'archivedAt', 'createdAt']);
 
 const listItemOf = (client: Record<string, unknown>): Record<string, unknown> => ({
   ...Object.fromEntries(Object.entries(client).filter(([key]) => !registrationKeys.has(key))),
@@ -481,6 +483,7 @@ describe('client detail (#136)', () => {
       resolvedBy: null,
       resolvedAt: null,
       dueOn: '2099-12-31',
+      title: null,
       ...overrides
     });
     const listOf = (...items: Record<string, unknown>[]): Response =>

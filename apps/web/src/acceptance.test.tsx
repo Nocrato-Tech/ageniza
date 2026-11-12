@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 import { createQueryClient } from './query.js';
@@ -21,9 +22,9 @@ const agencyMe = { agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true,
 const CLIENT_ID = '44444444-4444-4444-8444-444444444444';
 const portalClient = {
   id: CLIENT_ID, name: 'Padaria Central', status: 'active', photoUrl: null, legalName: null, taxId: null, segment: null, website: null,
-  instagramHandle: null, contactName: null, contactPhone: null, contactEmail: null, closingDate: null, archivedAt: null,
+  instagramHandle: null, contactName: null, contactPhone: null, contactEmail: null, closingDate: null, archivedAt: null, ...clientRegistrationExtras,
   agencyName: 'Agência Um', onboardingSeenAt: '2026-10-01T12:00:00.000Z', agencyReadOnly: false,
-  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0 }
+  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 5, contentsAwaitingApproval: 0, materialRequestsOpen: 0 }
 };
 const sessionBody = { user: { id: USER_ID, name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } };
 
