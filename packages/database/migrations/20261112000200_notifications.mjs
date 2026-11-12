@@ -358,7 +358,8 @@ export async function up(knex) {
 
   await knex.raw(`
     -- The work of the worker at the instant given: one notification to the responsible of every content that still waits for approval
-    -- and whose latest round has a deadline that passed. Only the owner runs it, for a test to fix the instant.
+    -- and whose latest round has a deadline that passed. Each notification it creates is audited, as the other scheduled work audits what
+    -- it did. Only the owner runs it, for a test to fix the instant.
     create function app_private.notify_approval_deadlines_passed_at(p_at timestamptz)
     returns integer
     language plpgsql
@@ -367,6 +368,7 @@ export async function up(knex) {
     as $function$
     declare
       v_candidate record;
+      v_notification uuid;
       v_created integer := 0;
     begin
       perform app_private.require_read_committed();
@@ -389,9 +391,10 @@ export async function up(knex) {
 
       -- A content told already is skipped before it is locked: the hourly job never queues behind an edit of it.
       for v_candidate in
-        select round.id as round_id, content.id as content_id
+        select round.id as round_id, content.id as content_id, client.agency_id
         from public.content_approval_rounds round
         join public.contents content on content.id = round.content_id and content.client_id = round.client_id
+        join public.clients client on client.id = content.client_id
         where round.due_at <= p_at
           and content.status = 'awaiting_approval'
           and round.sequence = (
@@ -407,7 +410,10 @@ export async function up(knex) {
         order by round.id
         for share of content
       loop
-        if app_private.notify_content_owner('approval_deadline_passed', v_candidate.content_id, v_candidate.round_id) is not null then
+        v_notification := app_private.notify_content_owner('approval_deadline_passed', v_candidate.content_id, v_candidate.round_id);
+        if v_notification is not null then
+          insert into audit.events (action, actor_user_id, agency_id, target_type, target_id, request_id)
+          values ('notification.approval_deadline_passed', null, v_candidate.agency_id, 'notification', v_notification, 'job:notifications.approval-deadline-passed');
           v_created := v_created + 1;
         end if;
       end loop;

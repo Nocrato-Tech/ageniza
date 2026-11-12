@@ -485,7 +485,17 @@ describe('read_all_notifications (acceptance d)', () => {
 });
 
 describe('two reads of the same notifications at the same moment (acceptance h)', () => {
-  const settle = (work: Promise<unknown>): Promise<unknown> => work.then(() => 'done', (error: unknown) => error);
+  // Keeps the value of the work (or its error): a call that waited is judged by what it returned, not by having finished.
+  const settle = (work: Promise<unknown>): Promise<unknown> => work.catch((error: unknown) => error);
+  const markAll = async (t: Knex | Knex.Transaction): Promise<number> =>
+    (await t.raw<{ rows: Array<{ marked: number }> }>('select app_private.read_all_notifications(?::uuid) as marked', [ids.agencyA])).rows[0]!.marked;
+  const instantOf = async (t: Knex.Transaction): Promise<number> =>
+    (await t.raw<{ rows: Array<{ instant: Date }> }>('select pg_catalog.now() as instant')).rows[0]!.instant.getTime();
+  // trx.commit() resolves even when the COMMIT fails at a deferred trigger; the failure only shows in executionPromise.
+  const commitChecked = async (t: Knex.Transaction): Promise<void> => {
+    await t.commit();
+    await t.executionPromise;
+  };
 
   it('two clicks on "mark all as read" wait for each other: the first marks, the second finds nothing left, and none deadlocks', async () => {
     const person = await w.personWith('conteudo.visualizar', 'cliente.visualizar');
@@ -497,40 +507,44 @@ describe('two reads of the same notifications at the same moment (acceptance h)'
 
     const first = await w.openTransactionAs(person);
     const firstPid = await backendPid(first);
+    let firstInstant = 0;
     let second: Promise<unknown> | undefined;
     try {
-      expect((await first.raw<{ rows: Array<{ marked: number }> }>('select app_private.read_all_notifications(?::uuid) as marked', [ids.agencyA])).rows[0]!.marked).toBe(3);
-      second = settle(w.asUser(person, async (t) => (await t.raw<{ rows: Array<{ marked: number }> }>('select app_private.read_all_notifications(?::uuid) as marked', [ids.agencyA])).rows[0]!.marked));
+      expect(await markAll(first)).toBe(3);
+      firstInstant = await instantOf(first);
+      second = settle(w.asUser(person, markAll));
       await waitForBackendsBlockedBy(owner(), firstPid);
     } finally {
-      await first.commit();
+      await commitChecked(first);
     }
 
-    expect(await second).toBe('done');
+    expect(await second).toBe(0);
     const stamps = await Promise.all(planted.map(async (id) => (await f.row(id)).read_at));
-    expect(stamps.every((stamp) => stamp !== null)).toBe(true);
-    expect(new Set(stamps.map((stamp) => stamp!.getTime())).size).toBe(1);
+    expect(stamps.map((stamp) => stamp?.getTime())).toEqual([firstInstant, firstInstant, firstInstant]);
   });
 
-  it('a click on one notification and a click on all of them at the same moment: every notification is read once, with one instant', async () => {
+  it('a click on one notification and a click on all of them at the same moment: the one is read once, at the instant of the first, and the all marks the other', async () => {
     const person = await w.personWith('conteudo.visualizar');
     const one = await f.seed({ kind: 'content_approved', recipient: person });
     const another = await f.seed({ kind: 'content_changes_requested', recipient: person });
 
     const first = await w.openTransactionAs(person);
     const firstPid = await backendPid(first);
+    let firstInstant = 0;
     let second: Promise<unknown> | undefined;
     try {
       await first.raw('select app_private.read_notification(?::uuid, ?::uuid)', [ids.agencyA, one]);
-      second = settle(w.asUser(person, (t) => t.raw('select app_private.read_all_notifications(?::uuid)', [ids.agencyA])));
+      firstInstant = await instantOf(first);
+      second = settle(w.asUser(person, markAll));
       await waitForBackendsBlockedBy(owner(), firstPid);
     } finally {
-      await first.commit();
+      await commitChecked(first);
     }
 
-    expect(await second).toBe('done');
+    expect(await second).toBe(1);
     const [readOne, readAnother] = await Promise.all([f.row(one), f.row(another)]);
-    expect(readOne.read_at).not.toBeNull();
+    expect(readOne.read_at?.getTime()).toBe(firstInstant);
     expect(readAnother.read_at).not.toBeNull();
+    expect(readAnother.read_at!.getTime()).toBeGreaterThan(firstInstant);
   });
 });

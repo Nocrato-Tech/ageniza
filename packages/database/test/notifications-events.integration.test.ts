@@ -64,7 +64,8 @@ const approveAs = async (user: string, content: string, note: string | null = nu
 const requestAs = async (user: string, content: string, body = 'Ajustar a legenda', revision?: number): Promise<unknown> =>
   w.asUser(user, async (t) => t.raw('select app_private.request_content_changes(?::uuid, ?::integer, ?::text)', [content, revision ?? await revisionOf(content), body]));
 
-const settle = (work: Promise<unknown>): Promise<unknown> => work.then(() => 'done', (error: unknown) => error);
+// Keeps the value of the work (or its error), so that a call that waited is judged by what it returned.
+const settle = (work: Promise<unknown>): Promise<unknown> => work.catch((error: unknown) => error);
 
 const INJECTED = { code: 'P0001', message: expect.stringContaining('injected after the notification') };
 
@@ -581,7 +582,7 @@ describe('who is not to be told, is not told, and the event goes on (acceptance 
       await archiving.commit();
     }
 
-    expect(await creating).toBe('done');
+    expect(await creating).toBeNull();
     expect(await f.rowsFor({ contentId: content })).toEqual([]);
   });
 });
@@ -763,7 +764,7 @@ describe('two transactions of the same event neither duplicate nor deadlock (acc
       await first.commit();
     }
 
-    expect(await second).toBe('done');
+    expect(await second).not.toBeInstanceOf(Error);
     expect(await f.rowsFor({ contentId: content })).toHaveLength(1);
   });
 
@@ -801,7 +802,7 @@ describe('two transactions of the same event neither duplicate nor deadlock (acc
       await first.commit();
     }
 
-    expect(await second).toBe('done');
+    expect(await second).not.toBeInstanceOf(Error);
     expect(await f.rowsFor({ contentId: content })).toHaveLength(1);
   });
 

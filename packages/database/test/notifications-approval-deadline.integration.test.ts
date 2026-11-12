@@ -17,6 +17,10 @@ const a = createApprovalFixtures(w);
 const { applicationUrl } = resolveIntegrationDatabaseUrls();
 const owner = (): Knex => w.getOwner().knex;
 
+const JOB = 'job:notifications.approval-deadline-passed';
+const jobEvents = (): Promise<Array<{ action: string; actor_user_id: string | null; agency_id: string | null; target_type: string | null; target_id: string; request_id: string }>> =>
+  owner()('audit.events').where({ request_id: JOB }).orderBy('id').select('action', 'actor_user_id', 'agency_id', 'target_type', 'target_id', 'request_id');
+
 let worker: DatabaseClient;
 
 beforeAll(async () => {
@@ -28,6 +32,7 @@ afterAll(async () => {
   try {
     await f.cleanUp();
     await a.cleanUp();
+    await owner()('audit.events').where({ request_id: JOB }).whereIn('agency_id', [ids.agencyA, ids.agencyB]).delete();
   } finally {
     await worker.close();
     await w.teardown();
@@ -211,6 +216,50 @@ describe('the deadline job tells the responsible of a content that is late (acce
   });
 });
 
+describe('the job is audited as the other scheduled work is (SPEC section 8)', () => {
+  it('records each notification it creates, with no actor, the agency, the notification and the job that made it', async () => {
+    const first = await overdue({ responsible: ids.managerA });
+    const second = await overdue();
+
+    await runNow();
+
+    const created = [...await f.rowsFor({ contentId: first.content }), ...await f.rowsFor({ contentId: second.content })];
+    expect(created).toHaveLength(2);
+    const events = (await jobEvents()).filter((event) => created.some((row) => row.id === event.target_id));
+    expect(events).toHaveLength(2);
+    for (const row of created) {
+      expect(events).toContainEqual({
+        action: 'notification.approval_deadline_passed', actor_user_id: null, agency_id: ids.agencyA, target_type: 'notification', target_id: row.id, request_id: JOB
+      });
+    }
+  });
+
+  it('records nothing for a run with nothing new: the second run creates no notification and no event', async () => {
+    await overdue();
+    const before = (await jobEvents()).length;
+
+    const created = await runNow();
+    const afterFirst = (await jobEvents()).length;
+    expect(created).toBeGreaterThanOrEqual(1);
+    expect(afterFirst - before).toBe(created);
+
+    expect(await runNow()).toBe(0);
+    expect((await jobEvents()).length).toBe(afterFirst);
+  });
+
+  it('records nothing for a late content it did not tell: the client was archived, so no notification was made', async () => {
+    const client = await a.freshClient([]);
+    const { content } = await overdue({ client });
+    await owner()('clients').where({ id: client }).update({ status: 'archived', archived_at: owner().raw('now()') });
+    const before = (await jobEvents()).length;
+
+    const created = await runNow();
+
+    expect(await f.rowsFor({ contentId: content })).toEqual([]);
+    expect((await jobEvents()).length - before).toBe(created);
+  });
+});
+
 describe('the function of the worker (acceptance f)', () => {
   it('tells with no one bound, as the application role, and the responsible reads it', async () => {
     const { content } = await overdue({ responsible: ids.managerA });
@@ -221,6 +270,9 @@ describe('the function of the worker (acceptance f)', () => {
     const [row] = await f.rowsFor({ contentId: content });
     expect(row!.recipient_user_id).toBe(ids.managerA);
     expect(await f.visibleTo(ids.managerA)).toContain(row!.id);
+    expect((await jobEvents()).filter((event) => event.target_id === row!.id)).toEqual([{
+      action: 'notification.approval_deadline_passed', actor_user_id: null, agency_id: ids.agencyA, target_type: 'notification', target_id: row!.id, request_id: JOB
+    }]);
   });
 
   it('does not tell what is not late yet: the worker runs at the instant it is called', async () => {
