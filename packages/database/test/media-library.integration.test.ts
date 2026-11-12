@@ -65,6 +65,7 @@ interface SeedAsset {
   readonly height?: number | null;
   readonly video?: VideoState;
   readonly updatedAt?: Date;
+  readonly confirmedAt?: Date;
 }
 
 const seed = async (extra: SeedAsset = {}): Promise<string> => {
@@ -90,7 +91,7 @@ const seed = async (extra: SeedAsset = {}): Promise<string> => {
     declared_size_bytes: 1_000,
     created_by_user_id: ids.adminA,
     status,
-    ...(status === 'confirmed' ? { confirmed_size_bytes: 1_000, confirmed_content_type: contentType, confirmed_at: new Date() } : {}),
+    ...(status === 'confirmed' ? { confirmed_size_bytes: 1_000, confirmed_content_type: contentType, confirmed_at: extra.confirmedAt ?? new Date() } : {}),
     ...(status === 'rejected' ? { rejected_reason: 'content_type_mismatch' } : {}),
     ...(extra.removed === true ? { removed_at: new Date() } : {}),
     ...(extra.fileName === undefined ? {} : { file_name: extra.fileName }),
@@ -141,6 +142,14 @@ const moveAs = async (user: string, assetId: string, folderId: string): Promise<
   return result.rows[0]!.moved;
 };
 
+const confirm = (user: string, id: string, extra: Record<string, unknown> = {}) =>
+  edit(user, id, { status: 'confirmed', confirmed_size_bytes: 1_000, confirmed_content_type: 'image/png', ...extra });
+
+const finish = (user: string, id: string, extra: Record<string, unknown> = {}) => edit(user, id, {
+  video_processing_status: 'ready', thumbnail_object_key: `${ids.agencyA}/${id}/thumbnail.jpg`, preview_object_key: `${ids.agencyA}/${id}/preview.mp4`,
+  video_duration_seconds: 12.5, video_thumbnail_size_bytes: 1_000, video_preview_size_bytes: 2_000, video_processed_at: new Date(), ...extra
+});
+
 describe('the category is one of five, and a logo is the only home of an SVG', () => {
   it.each(['image', 'video', 'pdf', 'audio', 'logo'] as const)('accepts %s', async (category) => {
     const id = await seed({ category });
@@ -179,6 +188,9 @@ describe('the name of a file is a label, never a path, and never more than 255 c
     ['a left-to-right mark', 'foto\u200E.png'],
     ['an isolate', 'foto\u2066.png'],
     ['a byte order mark', 'foto\uFEFF.png'],
+    ['an Arabic letter mark', 'foto\u061C.png'],
+    ['a line separator', 'foto\u2028.png'],
+    ['a paragraph separator', 'foto\u2029.png'],
     ['256 characters', 'a'.repeat(256)]
   ])('refuses %s', async (_label, fileName) => {
     await expect(seed({ fileName })).rejects.toMatchObject(check('media_assets_file_name_shape'));
@@ -206,7 +218,10 @@ describe('the alternative text is up to 500 characters of one line', () => {
     ['501 characters', 'a'.repeat(501)],
     ['a newline', 'linha\nquebrada'],
     ['a control character', 'texto\u0001'],
-    ['a right-to-left override', 'texto\u202Egnp']
+    ['a right-to-left override', 'texto\u202Egnp'],
+    ['an Arabic letter mark', 'texto\u061C'],
+    ['a line separator', 'linha\u2028quebrada'],
+    ['a paragraph separator', 'linha\u2029quebrada']
   ])('refuses %s', async (_label, altText) => {
     await expect(seed({ altText })).rejects.toMatchObject(check('media_assets_alt_text_shape'));
   });
@@ -251,7 +266,7 @@ describe('who writes the new columns (grants)', () => {
       declared_size_bytes: 1_000, ...extra
     }));
 
-    for (const extra of [{ alt_text: 'texto' }, { width: 10, height: 10 }, { width: 10 }]) {
+    for (const extra of [{ alt_text: 'texto' }, { width: 10, height: 10 }, { width: 10 }, { filed_at: new Date() }]) {
       await expect(insert(extra)).rejects.toMatchObject(deniedByGrant);
     }
 
@@ -386,14 +401,6 @@ describe('renaming a media and editing its alternative text', () => {
 });
 
 describe('the dimensions are written once, with the confirmation of an image or the end of the processing of a video', () => {
-  const confirm = (user: string, id: string, extra: Record<string, unknown> = {}) =>
-    edit(user, id, { status: 'confirmed', confirmed_size_bytes: 1_000, confirmed_content_type: 'image/png', ...extra });
-
-  const finish = (user: string, id: string, extra: Record<string, unknown> = {}) => edit(user, id, {
-    video_processing_status: 'ready', thumbnail_object_key: `${ids.agencyA}/${id}/thumbnail.jpg`, preview_object_key: `${ids.agencyA}/${id}/preview.mp4`,
-    video_duration_seconds: 12.5, video_thumbnail_size_bytes: 1_000, video_preview_size_bytes: 2_000, video_processed_at: new Date(), ...extra
-  });
-
   it.each(['image', 'logo'] as const)('takes the dimensions of a %s with its confirmation', async (category) => {
     const id = await seed({ category, status: 'pending' });
     expect(await confirm(operarAndVisualizar, id, { width: 3024, height: 4032 })).toBe(1);
@@ -848,6 +855,94 @@ describe('only a photo or a video enters a content', () => {
   });
 });
 
+// Decision rule 10: a folder is in use now by what a person put in it a moment ago, and that is the confirmation of an upload, the
+// rename of a file and its move into the folder; the alternative text and the processing of a video are not.
+describe('the instant a file was filed: its confirmation, its rename and its move, and nothing else', () => {
+  const FILED = new Date(Date.now() - 40 * 86_400_000);
+  const filedAt = async (id: string): Promise<number | null> => {
+    const value = (await rowOf(id)).filed_at as Date | null;
+    return value === null ? null : value.getTime();
+  };
+  const justNow = (instant: number | null): boolean => instant !== null && Math.abs(Date.now() - instant) < 120_000;
+
+  it('is the instant of the confirmation for a file the application confirms, and nothing for an upload that is pending or rejected', async () => {
+    const pending = await seed({ status: 'pending' });
+    const rejected = await seed({ status: 'pending' });
+    expect(await filedAt(pending)).toBeNull();
+
+    expect(await confirm(operarAndVisualizar, pending)).toBe(1);
+    expect(await edit(operarAndVisualizar, rejected, { status: 'rejected', rejected_reason: 'too_large' })).toBe(1);
+
+    const row = await rowOf(pending);
+    expect(row.filed_at).toEqual(row.confirmed_at);
+    expect(justNow(await filedAt(pending))).toBe(true);
+    expect(await filedAt(rejected)).toBeNull();
+  });
+
+  it('is the instant of the confirmation for a file that was inserted already confirmed, as the files that already existed', async () => {
+    const id = await seed({ confirmedAt: FILED });
+    expect(await filedAt(id)).toBe(FILED.getTime());
+  });
+
+  it('is moved by the rename of the file, and by the name given to one that had none', async () => {
+    const named = await seed({ confirmedAt: FILED, fileName: 'antes.png' });
+    const unnamed = await seed({ confirmedAt: FILED });
+
+    expect(await edit(ids.adminA, named, { file_name: 'depois.png' })).toBe(1);
+    expect(await edit(ids.adminA, unnamed, { file_name: 'nome.png' })).toBe(1);
+
+    expect(justNow(await filedAt(named))).toBe(true);
+    expect(justNow(await filedAt(unnamed))).toBe(true);
+  });
+
+  it('is moved by the move into another folder, and is not by a move to the folder the file is in', async () => {
+    const from = await newFolder(ids.clientA1);
+    const to = await newFolder(ids.clientA1);
+    const asset = await seed({ confirmedAt: FILED, folderId: from });
+
+    expect(await moveAs(ids.adminA, asset, from)).toBe(false);
+    expect(await filedAt(asset)).toBe(FILED.getTime());
+
+    expect(await moveAs(ids.adminA, asset, to)).toBe(true);
+    expect(justNow(await filedAt(asset))).toBe(true);
+  });
+
+  it('is not moved by the alternative text, by a name written again as it was, or by the dimensions and processing of a video', async () => {
+    const image = await seed({ confirmedAt: FILED, fileName: 'a.png', altText: 'antes' });
+    const video = await seed({ category: 'video', video: 'processing', confirmedAt: FILED });
+
+    expect(await edit(ids.adminA, image, { alt_text: 'depois' })).toBe(1);
+    expect(await edit(ids.adminA, image, { alt_text: null })).toBe(1);
+    expect(await edit(ids.adminA, image, { file_name: 'a.png' })).toBe(1);
+    expect(await finish(operarAndVisualizar, video, { width: 1920, height: 1080 })).toBe(1);
+
+    expect(await filedAt(image)).toBe(FILED.getTime());
+    expect(await filedAt(video)).toBe(FILED.getTime());
+  });
+
+  it('is not moved by the removal of the file, nor by the delete of the folder that lets go of a removed one', async () => {
+    const folder = await newFolder(ids.clientA1);
+    const removed = await seed({ confirmedAt: FILED, folderId: folder });
+    await w.getOwner().knex('media_assets').where({ id: removed }).update({ removed_at: new Date() });
+    expect(await filedAt(removed)).toBe(FILED.getTime());
+
+    await w.asUser(ids.adminA, (transaction) => transaction.raw('select app_private.delete_media_folder(?::uuid)', [folder]));
+
+    expect(await rowOf(removed)).toMatchObject({ folder_id: null });
+    expect(await filedAt(removed)).toBe(FILED.getTime());
+  });
+
+  it('is nobody\'s to write: the application has no grant on the column, and the state of the row refuses an instant that does not match it', async () => {
+    const confirmed = await seed({ confirmedAt: FILED });
+    const pending = await seed({ status: 'pending' });
+    await expect(edit(ids.adminA, confirmed, { filed_at: new Date() })).rejects.toMatchObject(deniedByGrant);
+    await expect(w.getOwner().knex('media_assets').where({ id: confirmed }).update({ filed_at: null })).rejects.toMatchObject(check('media_assets_filed_at_confirmed'));
+    await expect(w.getOwner().knex('media_assets').where({ id: pending }).update({ filed_at: new Date() })).rejects.toMatchObject(check('media_assets_filed_at_confirmed'));
+    expect(await filedAt(confirmed)).toBe(FILED.getTime());
+    expect(await filedAt(pending)).toBeNull();
+  });
+});
+
 describe('deleting a folder: one that is not a default one and is empty', () => {
   const HAS_FILES = { code: 'A0083' };
   const HAS_SUBFOLDERS = { code: 'A0084' };
@@ -1040,6 +1135,56 @@ describe('deleting a folder: one that is not a default one and is empty', () => 
     expect((await rowOf(asset)).folder_id).toBe(target);
   });
 
+  describe('an upload pending for more than a day, which the delete lets go of, and its confirmation', () => {
+    const abandoned = (folderId: string) => seed({ folderId, status: 'pending', updatedAt: new Date(Date.now() - 25 * 3_600_000) });
+
+    it('a confirmation that is running keeps the file in its folder: the delete waits for it, finds a confirmed file and refuses', async () => {
+      const folder = await newFolder(ids.clientA1);
+      const upload = await abandoned(folder);
+
+      const confirmer = await w.openTransactionAs(ids.adminA);
+      let released = false;
+      try {
+        await confirmer('media_assets').where({ id: upload }).update({ status: 'confirmed', confirmed_size_bytes: 1_000, confirmed_content_type: 'image/png' });
+        const holderPid = await backendPid(confirmer);
+        const outcome = deleteFolder(ids.adminA, folder).then(() => 'deleted', (error: { code?: string }) => error.code);
+        await waitForBackendsBlockedBy(w.getOwner().knex, holderPid);
+        await confirmer.commit();
+        released = true;
+        expect(await outcome).toBe('A0083');
+      } finally {
+        if (!released) await confirmer.rollback();
+      }
+
+      expect(await folderCount(folder)).toBe(1);
+      expect(await rowOf(upload)).toMatchObject({ status: 'confirmed', folder_id: folder, rejected_reason: null });
+    });
+
+    it('a confirmation behind the delete finds the upload rejected, and the file is never a confirmed one with no folder', async () => {
+      const folder = await newFolder(ids.clientA1);
+      const upload = await abandoned(folder);
+
+      const deleter = await w.openTransactionAs(ids.adminA);
+      let released = false;
+      try {
+        await deleter.raw('select app_private.delete_media_folder(?::uuid)', [folder]);
+        const holderPid = await backendPid(deleter);
+        const seen = w.asUser(ids.adminA, async (transaction) => (await transaction('media_assets').where({ id: upload }).forUpdate().first('status'))?.status as string | undefined);
+        await waitForBackendsBlockedBy(w.getOwner().knex, holderPid);
+        await deleter.commit();
+        released = true;
+        expect(await seen).toBe('rejected');
+      } finally {
+        if (!released) await deleter.rollback();
+      }
+
+      expect(await folderCount(folder)).toBe(0);
+      expect(await rowOf(upload)).toMatchObject({ status: 'rejected', folder_id: null, rejected_reason: 'folder_deleted' });
+      const orphans = await w.getOwner().knex('media_assets').where({ id: upload, status: 'confirmed' }).whereNull('folder_id').count<{ count: string }[]>('id as count');
+      expect(Number(orphans[0]?.count)).toBe(0);
+    });
+  });
+
   it('serializes two deletes of the same folder: the one behind finds the folder gone, never a second delete that answers as done', async () => {
     const folder = await newFolder(ids.clientA1);
     const first = await w.openTransactionAs(ids.adminA);
@@ -1140,6 +1285,19 @@ describe('what the catalog says about the new objects', () => {
       from pg_trigger t where t.tgrelid = 'public.media_assets'::regclass and t.tgname = 'media_assets_dimensions_written_once' and not t.tgisinternal
     `);
     expect(rows).toEqual([{ enabled: 'O', before_update_row: true }]);
+  });
+
+  it('the stamp of the instant a file was filed is a trigger function the application cannot call, and fires before every INSERT and UPDATE of a row, enabled', async () => {
+    const { rows } = await w.getOwner().knex.raw<{ rows: Array<Record<string, unknown>> }>(`
+      select coalesce((select bool_or(acl.grantee = 0) from aclexplode(p.proacl) acl), true) as public_execute,
+             has_function_privilege('ageniza_app', p.oid, 'execute') as app_execute,
+             p.prosecdef as definer, p.proconfig as config,
+             t.tgenabled as enabled, (t.tgtype & 1) = 1 and (t.tgtype & 2) = 2 and (t.tgtype & 4) = 4 and (t.tgtype & 16) = 16 as before_insert_and_update_row
+      from pg_proc p
+      join pg_trigger t on t.tgfoid = p.oid and t.tgrelid = 'public.media_assets'::regclass and t.tgname = 'media_assets_stamp_filed_at' and not t.tgisinternal
+      where p.oid = 'app_private.media_asset_stamps_filed_at()'::regprocedure
+    `);
+    expect(rows).toEqual([{ public_execute: false, app_execute: false, definer: false, config: ['search_path=""'], enabled: 'O', before_insert_and_update_row: true }]);
   });
 
   it('the edit lock covers exactly the two columns of the rename, and fires only when one of them changes', async () => {
