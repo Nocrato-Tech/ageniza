@@ -11,6 +11,7 @@ import { Button, ButtonLink, EmptyState, Logo, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { useDocumentTitle } from './document-title.js';
+import { ShellTopbar } from './help-menu.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { ActivationPath, useActivationFacts } from './activation-path.js';
 import { AwaitingClient, AwaitingSummary } from './awaiting-client.js';
@@ -122,8 +123,9 @@ export function AgencyAreaLayout() {
   return <AgencyAreaContext.Provider value={data}>
     <div className="app-shell agency-shell">
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-      <AgencySidebar agenciaId={agenciaId} agencyName={data.agencyName} permissions={data.permissions} />
+      <AgencySidebar agenciaId={agenciaId} agencyName={data.agencyName} permissions={data.permissions} isOwner={data.isOwner} roleName={data.role.name} />
       <div className="agency-body">
+        <ShellTopbar />
         <TrialNotice plan={data.plan} agencyId={data.agencyId} canSubscribe={data.permissions.includes('assinatura.gerenciar')} />
         <LegalNotice />
         <main className="agency-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/agencia/${data.agencyId}`}><Outlet /></NotFoundHomeContext.Provider></main>

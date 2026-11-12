@@ -230,7 +230,7 @@ describe('ContextSelectPage (/contextos)', () => {
       throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`);
     });
 
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Agência Um' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('link', { name: /Agência Um/ })).toBeTruthy());
     expect(putBodies).toEqual([{ type: 'agency', agencyId: AGENCY_A }]);
     expect(screen.queryByRole('heading', { name: 'Onde você quer entrar?' })).toBeNull();
   });

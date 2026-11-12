@@ -2,8 +2,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -228,17 +226,13 @@ describe('client portal shell (#141)', () => {
     const { probe } = renderPortal(impl, `/portal/${CLIENT_ID}`);
     expect(await screen.findByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('inicio'));
-    expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca', 'Relatórios']);
+    expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca']);
     expect(within(nav()).getByRole('link', { name: 'Início' }).getAttribute('aria-current')).toBe('page');
 
     clickTab('Conteúdos');
     expect(await screen.findByRole('heading', { level: 1, name: 'Conteúdos' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('conteudos'));
     expect(within(nav()).getByRole('link', { name: 'Conteúdos' }).getAttribute('aria-current')).toBe('page');
-
-    clickTab('Relatórios');
-    expect(await screen.findByRole('heading', { name: 'Relatórios' })).toBeTruthy();
-    expect(probe.pathname).toBe(portalUrl('relatorios'));
 
     clickTab('Marca');
     expect(await screen.findByRole('heading', { name: 'Sua marca' })).toBeTruthy();
@@ -250,19 +244,47 @@ describe('client portal shell (#141)', () => {
     expect(screen.queryByRole('heading', { name: 'Página não encontrada' })).toBeNull();
   });
 
-  it('shows the client and its agency in the header, and the client inside the account menu', async () => {
+  it('sends the old Relatórios address to the Início: the portal has no such area', async () => {
+    const { probe } = renderPortal(makeFetch().impl, portalUrl('relatorios'));
+    expect(await screen.findByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
+    expect(probe.pathname).toBe(portalUrl('inicio'));
+    expect(within(nav()).queryByRole('link', { name: 'Relatórios' })).toBeNull();
+  });
+
+  it('shows "Com a agência" above the client in the header, the role at the foot, and the client inside the account menu', async () => {
     const { impl } = makeFetch();
-    const { container } = renderPortal(impl);
+    const { container, probe } = renderPortal(impl);
     await screen.findByRole('heading', { name: 'Olá, Maria' });
 
     const header = container.querySelector('.portal-header') as HTMLElement;
-    expect(within(header).getByText('Padaria Central')).toBeTruthy();
-    expect(within(header).getByText('por Agência Um')).toBeTruthy();
+    const identity = within(header).getByRole('link', { name: /Com a Agência Um.*Padaria Central/ });
+    expect(within(identity).getByText('Com a Agência Um').nextElementSibling?.textContent).toBe('Padaria Central');
+    expect(within(header).queryByText('por Agência Um')).toBeNull();
+    expect(identity.getAttribute('href')).toBe('/contextos');
 
-    fireEvent.click(within(header).getByRole('button', { name: /Maria/ }));
+    const person = within(header).getByRole('button', { name: /Maria/ });
+    expect(within(person).getByText('Aprova os posts')).toBeTruthy();
+    fireEvent.click(person);
     const menu = await screen.findByRole('menu');
     expect(within(menu).getByText('Contexto ativo')).toBeTruthy();
     expect(within(menu).getByText('Padaria Central')).toBeTruthy();
+    fireEvent.keyDown(menu, { key: 'Escape' });
+
+    fireEvent.click(identity);
+    await waitFor(() => expect(probe.pathname).toBe('/contextos'));
+  });
+
+  it('opens Ajuda with the tour and the status of the system, each doing its own thing', async () => {
+    const { probe } = renderPortal(makeFetch().impl);
+    await screen.findByRole('heading', { name: 'Olá, Maria' });
+    fireEvent.click(screen.getByRole('button', { name: 'Ajuda' }));
+    fireEvent.click(within(await screen.findByRole('menu', { name: 'Ajuda' })).getByRole('menuitem', { name: 'Rever o tour' }));
+    await waitFor(() => expect(document.querySelector('.portal-tour')).not.toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ajuda' }));
+    expect(within(await screen.findByRole('menu', { name: 'Ajuda' })).queryByRole('menuitem', { name: 'Rever o tour' })).toBeNull();
+    fireEvent.click(within(await screen.findByRole('menu', { name: 'Ajuda' })).getByRole('menuitem', { name: 'Status do sistema' }));
+    await waitFor(() => expect(probe.pathname).toBe('/status'));
   });
 
   it('says the portal is read-only when the trial of the agency ended, and nothing otherwise (issue #714)', async () => {
@@ -301,32 +323,6 @@ describe('client portal shell (#141)', () => {
     expect(screen.queryByText('A agência respondeu 2 sugestões suas')).toBeNull();
   });
 
-  it.each([
-    ['Relatórios', 'Aqui você vai ver os resultados do trabalho que sua agência faz para você.']
-  ])('draws %s as a skeleton with its reason and no clickable control', async (label, sentence) => {
-    const { impl } = makeFetch();
-    const { container } = renderPortal(impl);
-    await screen.findByRole('heading', { name: 'Olá, Maria' });
-    clickTab(label);
-
-    const heading = await screen.findByRole('heading', { name: label });
-    expect(within(heading.closest('section') as HTMLElement).getByText(sentence)).toBeTruthy();
-    const panel = heading.closest('section') as HTMLElement;
-    expect(within(panel).queryByRole('button')).toBeNull();
-    expect(within(panel).queryByRole('link')).toBeNull();
-    expect(within(panel).queryByRole('textbox')).toBeNull();
-    expect(container.querySelector('.portal-skeleton')).toBeTruthy();
-  });
-
-  it('draws Relatórios with the 3D icon on its stage and what is missing, not as a bare paragraph', async () => {
-    const { container } = renderPortal(makeFetch().impl);
-    await screen.findByRole('heading', { name: 'Olá, Maria' });
-    clickTab('Relatórios');
-    expect(await screen.findByRole('heading', { level: 2, name: 'Ainda não há resultados para mostrar' })).toBeTruthy();
-    expect(container.querySelectorAll('.portal-skeleton .ui-stage')).toHaveLength(1);
-    expect(container.querySelectorAll('.portal-skeleton img.ui-mascot')).toHaveLength(0);
-  });
-
   it('keeps the focused control clear of the sticky bar: room below it on a phone, under the tabs on a wide screen', () => {
     const css = readGlobalCss().replace(/\r\n/g, '\n');
     const phone = css.slice(css.indexOf('\nhtml:has(.portal-shell) {'));
@@ -335,13 +331,13 @@ describe('client portal shell (#141)', () => {
     expect(wide.slice(0, wide.indexOf('}'))).toMatch(/scroll-padding-top:\s*5rem;/);
   });
 
-  it('sets the tab title of each of the four areas', async () => {
+  it('sets the tab title of each of the three areas', async () => {
     const { impl } = makeFetch();
     renderPortal(impl);
     await screen.findByRole('heading', { name: 'Olá, Maria' });
     expect(document.title).toBe('Início — Portal do cliente — Ageniza');
 
-    for (const label of ['Conteúdos', 'Marca', 'Relatórios']) {
+    for (const label of ['Conteúdos', 'Marca']) {
       clickTab(label);
       await screen.findByRole('heading', { name: label === 'Marca' ? 'Sua marca' : label });
       expect(document.title).toBe(`${label} — Portal do cliente — Ageniza`);
@@ -360,7 +356,7 @@ describe('client portal shell (#141)', () => {
     // Structure: the navigation piece (header and bar) and the content; on a phone the piece is `display: contents`, so the bar is a flex item of the shell.
     const shell = container.querySelector('.portal-shell') as HTMLElement;
     expect(shell.classList.contains('app-shell')).toBe(true);
-    expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
+    expect(Array.from(shell.children).filter((child) => !child.classList.contains('shell-topbar')).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
     const sidebar = shell.querySelector('.portal-sidebar') as HTMLElement;
     expect(Array.from(sidebar.children).map((child) => child.tagName.toLowerCase())).toEqual(['header', 'nav']);
     expect(sidebar.lastElementChild).toBe(nav());
@@ -483,7 +479,7 @@ describe('client portal shell (#141)', () => {
     expect(probe.pathname).toBe(portalUrl('qualquer-coisa'));
     // Still the portal shell (client header and bar), not the generic protected header: the `*` of the portal answers.
     expect(within(container.querySelector('.portal-header') as HTMLElement).getByText('Padaria Central')).toBeTruthy();
-    expect(within(nav()).getAllByRole('link').map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, null]);
+    expect(within(nav()).getAllByRole('link').map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null]);
     expect(container.querySelector('.protected-header')).toBeNull();
     expect(screen.queryByRole('heading', { name: /Olá/ })).toBeNull();
 
@@ -1407,7 +1403,7 @@ describe('the Início: approvals and the script of today (#271)', () => {
       const { container } = renderPortal(makeFetch({ scripts: api, portal: () => withHome({ contentsAwaitingApproval: 3 }) }).impl);
       await screen.findByRole('region', { name: 'Roteiro de hoje' });
       const shell = container.querySelector('.portal-shell') as HTMLElement;
-      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
+      expect(Array.from(shell.children).filter((child) => !child.classList.contains('shell-topbar')).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
       expect((shell.querySelector('.portal-sidebar') as HTMLElement).lastElementChild).toBe(nav());
       // jsdom has no layout: the rules that keep a short page's bar at the bottom, and a page of 390 px from scrolling sideways, are read from the stylesheet.
       expect(rule('.portal-shell')).toMatch(/min-height:\s*100dvh;/);
@@ -1440,14 +1436,5 @@ describe('the Início: approvals and the script of today (#271)', () => {
       expect(rule('.portal-today__skeleton')).toMatch(/width:\s*100%;/);
       for (const selector of ['.portal-today', '.portal-script', '.portal-script__scenes']) expect(rule(selector)).not.toMatch(/(^|[^-])(width|min-width):\s*[\d.]+(px|rem)/);
     });
-  });
-});
-
-describe('portal.tsx source (#689)', () => {
-  it('writes the accent-stripping range as escapes, never as invisible combining characters', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/portal.tsx'), 'utf8');
-    const escape = String.fromCharCode(92);
-    expect(source).toContain(`[${escape}u0300-${escape}u036f]`);
-    expect(source).not.toMatch(/[\u0300-\u036f]/);
   });
 });

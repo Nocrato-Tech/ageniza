@@ -108,7 +108,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', ['colaborador.visualizar', 'cliente.visualizar'])) } });
     renderAgency(impl, `/agencia/${AGENCY_A}`);
 
-    await screen.findByRole('link', { name: 'Agência Um' });
+    await screen.findByRole('link', { name: /Agência Um/ });
     expect(screen.getByText('Agência logada')).toBeTruthy();
     expect(screen.getByRole('button', { name: /Pessoa/ })).toBeTruthy();
     const nav = screen.getByRole('navigation', { name: 'Navegação da agência' });
@@ -123,7 +123,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', ['cliente.visualizar'])) } });
     const { probe } = renderAgency(impl, `/agencia/${AGENCY_A}`);
 
-    await screen.findByRole('link', { name: 'Agência Um' });
+    await screen.findByRole('link', { name: /Agência Um/ });
     const nav = screen.getByRole('navigation', { name: 'Navegação da agência' });
     expect(within(nav).queryByRole('link', { name: 'Equipe' })).toBeNull();
     expect(within(nav).getByRole('link', { name: 'Clientes' })).toBeTruthy();
@@ -158,14 +158,14 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     const { impl } = makeFetch({ me: responses });
     const { probe } = renderAgency(impl, `/agencia/${AGENCY_A}`);
 
-    await screen.findByRole('link', { name: 'Agência Um' });
+    await screen.findByRole('link', { name: /Agência Um/ });
 
     // The agency is suspended on the server; the next navigation revalidates the context.
     responses[AGENCY_A] = agencyNotFound;
     await navigate(probe, `/agencia/${AGENCY_A}/clientes`);
 
     expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Agência Um' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Agência Um/ })).toBeNull();
   });
 
   it('treats a malformed :agenciaId as a bad address, without issuing any request', async () => {
@@ -202,7 +202,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
       throw new Error(`unexpected ${url}`);
     };
     const { probe, container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
-    await within(container).findByRole('link', { name: 'Agência Um' });
+    await within(container).findByRole('link', { name: /Agência Um/ });
 
     await navigate(probe, `/agencia/${AGENCY_B}/colaboradores`);
 
@@ -212,15 +212,15 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     expect(container.querySelector('.agency-header__skeleton')).not.toBeNull();
     // The loading shell keeps the account menu too, so a slow or failing load never traps the person.
     expect(within(container).getByRole('button', { name: /Pessoa/ })).toBeTruthy();
-    expect(within(container).queryByRole('link', { name: 'Agência Um' })).toBeNull();
+    expect(within(container).queryByRole('link', { name: /Agência Um/ })).toBeNull();
     expect(within(container).queryByRole('link', { name: 'Equipe' })).toBeNull();
     expect(within(container).queryByRole('heading', { name: 'Colaboradores' })).toBeNull();
     expect(within(container).queryByRole('heading', { name: 'Página não encontrada' })).toBeNull();
-    expect(within(container).queryByRole('link', { name: 'Agência Dois' })).toBeNull();
+    expect(within(container).queryByRole('link', { name: /Agência Dois/ })).toBeNull();
 
     releaseAgencyB?.();
-    await within(container).findByRole('link', { name: 'Agência Dois' });
-    expect(within(container).queryByRole('link', { name: 'Agência Um' })).toBeNull();
+    await within(container).findByRole('link', { name: /Agência Dois/ });
+    expect(within(container).queryByRole('link', { name: /Agência Um/ })).toBeNull();
   });
 
   it('refuses an answer that belongs to another agency', async () => {
@@ -229,7 +229,7 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     renderAgency(impl, `/agencia/${AGENCY_A}`);
 
     expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Agência Dois' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Agência Dois/ })).toBeNull();
   });
 
   it('never renders the area without a session: 401 keeps the session gate', async () => {
@@ -256,8 +256,8 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     const tabA = renderAgency(first.impl, `/agencia/${AGENCY_A}`);
     const tabB = renderAgency(second.impl, `/agencia/${AGENCY_B}`);
 
-    await waitFor(() => expect(within(tabA.container).getByRole('link', { name: 'Agência Um' })).toBeTruthy());
-    await waitFor(() => expect(within(tabB.container).getByRole('link', { name: 'Agência Dois' })).toBeTruthy());
+    await waitFor(() => expect(within(tabA.container).getByRole('link', { name: /Agência Um/ })).toBeTruthy());
+    await waitFor(() => expect(within(tabB.container).getByRole('link', { name: /Agência Dois/ })).toBeTruthy());
     const navA = within(tabA.container).getByRole('navigation', { name: 'Navegação da agência' });
     const navB = within(tabB.container).getByRole('navigation', { name: 'Navegação da agência' });
     expect(within(navA).getByRole('link', { name: 'Equipe' })).toBeTruthy();
@@ -268,8 +268,8 @@ describe('agency area shell (/agencia/:agenciaId)', () => {
     // Switching the agency in the same tab switches the whole context: the other agency's cached
     // answer is not reused, and nothing of the previous one stays on screen.
     await navigate(tabA.probe, `/agencia/${AGENCY_B}`);
-    await waitFor(() => expect(within(tabA.container).getByRole('link', { name: 'Agência Dois' })).toBeTruthy());
-    expect(within(tabA.container).queryByRole('link', { name: 'Agência Um' })).toBeNull();
+    await waitFor(() => expect(within(tabA.container).getByRole('link', { name: /Agência Dois/ })).toBeTruthy());
+    expect(within(tabA.container).queryByRole('link', { name: /Agência Um/ })).toBeNull();
     expect(within(tabA.container).queryByRole('link', { name: 'Equipe' })).toBeNull();
     expect(within(tabA.container).getByRole('link', { name: 'Clientes' })).toBeTruthy();
   });
@@ -290,14 +290,14 @@ describe('agency shell landmarks (#193)', () => {
     const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', ['colaborador.visualizar', 'cliente.visualizar'])) } });
     const { container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
 
-    await screen.findByRole('link', { name: 'Agência Um' });
+    await screen.findByRole('link', { name: /Agência Um/ });
     expectSingleMain(container);
   });
 
   it('keeps one main when a module is not permitted (not-found inside the shell)', async () => {
     const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', ['cliente.visualizar'])) } });
     const { probe, container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
-    await screen.findByRole('link', { name: 'Agência Um' });
+    await screen.findByRole('link', { name: /Agência Um/ });
 
     await navigate(probe, `/agencia/${AGENCY_A}/colaboradores`);
     await screen.findByRole('heading', { name: 'Página não encontrada' });
@@ -331,7 +331,7 @@ describe('agency shell landmarks (#193)', () => {
   it('keeps one main for an unknown path inside the area (route `*`)', async () => {
     const { impl } = makeFetch({ me: { [AGENCY_A]: () => json(agencyMe(AGENCY_A, 'Agência Um', ['colaborador.visualizar'])) } });
     const { probe, container } = renderAgency(impl, `/agencia/${AGENCY_A}`);
-    await screen.findByRole('link', { name: 'Agência Um' });
+    await screen.findByRole('link', { name: /Agência Um/ });
 
     await navigate(probe, `/agencia/${AGENCY_A}/caminho-inexistente`);
     await screen.findByRole('heading', { name: 'Página não encontrada' });

@@ -2,6 +2,16 @@
   position: relative;
 }
 
+/* The avatar alone, in a phone's top bar: the menu opens down from it. */
+.account-menu--compact .ui-menu__trigger {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-radius: var(--radius-full);
+}
+
 .account-menu__skeleton {
   width: 8rem;
   height: 2.75rem;

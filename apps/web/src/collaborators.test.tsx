@@ -426,7 +426,7 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     const { impl } = makeFetch({ collaborators: () => new Promise<Response>(() => undefined) });
     const { container } = renderCollaborators(impl);
 
-    await screen.findByRole('link', { name: 'Agência Um' });
+    await screen.findByRole('link', { name: /Agência Um/ });
     expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(24);
   });
 
@@ -510,7 +510,7 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
 
     await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
 
-    await screen.findByRole('link', { name: 'Agência Dois' });
+    await screen.findByRole('link', { name: /Agência Dois/ });
     expect(screen.queryByText('Ana Prado')).toBeNull();
     expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(24);
   });
@@ -2380,7 +2380,7 @@ describe('self profile editing (#108)', () => {
       container.querySelector('.collaborators__grid .ui-badge-card__name')?.textContent;
     await waitFor(() => expect(badgeName()).toBe('Ana Prado Silva'));
     // The app header reads the name from the session, so it must be fresh too.
-    expect(await screen.findByRole('button', { name: 'Ana Prado Silva' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Ana Prado Silva/ })).toBeTruthy();
   });
 
   it('refuses a file outside the image allowlist without sending anything', async () => {
