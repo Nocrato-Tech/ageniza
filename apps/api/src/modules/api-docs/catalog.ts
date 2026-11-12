@@ -6,6 +6,7 @@ import { MEDIA_READ_PERMISSIONS, MEDIA_UPLOAD_PERMISSIONS } from '../media/polic
 import type { RoutePermission } from '../../plugins/infra/route-metadata.js';
 import {
   AcceptLegalDocumentRequestSchema,
+  AgencyClientMediaAssetPathParamsSchema,
   AgencyClientMediaFolderAssetPathParamsSchema,
   AgencyClientMediaFolderPathParamsSchema,
   AgencyClientInvitationPathParamsSchema,
@@ -119,7 +120,15 @@ import {
   MediaFolderListQuerySchema,
   MediaFolderListResponseSchema,
   MediaFolderSchema,
+  MediaFolderSummaryListQuerySchema,
+  MediaFolderSummaryListResponseSchema,
+  MediaLibraryAssetSchema,
+  MediaLibraryListQuerySchema,
+  MediaLibraryListResponseSchema,
+  MediaUsageListQuerySchema,
+  MediaUsageListResponseSchema,
   MediaDownloadUrlResponseSchema,
+  MoveMediaAssetRequestSchema,
   PaginationInputSchema,
   PortalApprovalApproveRequestSchema,
   PortalApprovalBatchSchema,
@@ -160,9 +169,11 @@ import {
   ThreadListResponseSchema,
   ThreadSchema,
   RemoveMediaAssetResponseSchema,
+  RenameMediaFolderRequestSchema,
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema,
   UpdateClientRequestSchema,
+  UpdateMediaAssetRequestSchema,
   ReactivateCollaboratorRequestSchema,
   UpdateCollaboratorRequestSchema,
   UpdateMyProfileRequestSchema,
@@ -531,6 +542,23 @@ const legalAcceptancesExample = {
 } as const;
 
 const signedStorageUrl ='https://storage.exemplo.test/arquivo.png?assinatura=ficticia';
+
+const libraryAssetExample = {
+  id: assetId,
+  folderId,
+  folderName: 'Imagens',
+  category: 'image',
+  contentType: 'image/jpeg',
+  sizeBytes: 4_404_019,
+  name: 'vitrine-outubro.jpg',
+  width: 3024,
+  height: 4032,
+  altText: 'Vitrine da padaria com pães recém-saídos do forno',
+  videoProcessingStatus: 'not_applicable',
+  uploadedBy: { membershipId, name: 'Ana Souza' },
+  createdAt: '2026-11-11T12:00:00.000Z',
+  usageCount: 2
+} as const;
 
 const clientExample = {
   id: clientId,
@@ -3554,7 +3582,12 @@ path: '/agencies/:agencyId/roles',
       'Devolve a URL assinada de PUT ou o plano de multipart; o tipo real é validado no fim, pelo conteúdo.',
       'Sem `clientId` e `folderId` a mídia é da agência e exige `midia.enviar`. Com os dois, é a mídia de uma pasta do',
       'cliente e exige `conteudo.operar` **e** `conteudo.visualizar`: o servidor confere que a pasta é do cliente e o',
-      'cliente é da agência (cliente de outra agência e pasta de outro cliente dão o mesmo 404), e a cota soma a agência inteira.'
+      'cliente é da agência (cliente de outra agência e pasta de outro cliente dão o mesmo 404), e a cota soma a agência inteira.',
+      'Tipos aceitos: foto (PNG, JPEG, WebP, GIF), vídeo (MP4, MOV, WebM), PDF, áudio (MP3, M4A, WAV, WebM, Ogg) e logo, que é',
+      'uma imagem PNG, JPEG ou WebP enviada com `asLogo: true` ou um SVG (que só é aceito como logo, com `asLogo: true`).',
+      'PDF, áudio e logo só entram na biblioteca de um cliente (com `clientId`); qualquer outra combinação é 415.',
+      '`fileName` é só o rótulo do arquivo (uma linha de até 255 caracteres, sem `/`, `\\` nem caracteres de controle): a chave do',
+      'objeto nunca vem dele. O teto do SVG é 256 KiB, o do PDF 100 MiB e o do áudio 200 MiB, e nenhum passa do teto do vídeo.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: MEDIA_UPLOAD_PERMISSIONS,
@@ -3622,7 +3655,13 @@ path: '/agencies/:agencyId/roles',
     operationId: 'completeMediaUpload',
     module: 'media',
     summary: 'Confirma o upload e valida o objeto',
-    description: 'Valida tipo e tamanho pelo conteúdo observado no armazenamento; rejeição vira 422 e fica registrada.',
+    description: [
+      'Valida tipo e tamanho pelo conteúdo observado no armazenamento; rejeição vira 422 e fica registrada, e o objeto é apagado.',
+      'O tipo do objeto tem de ser o declarado e os primeiros bytes têm de ser os desse tipo (`details.reason`: `content_type_mismatch`);',
+      'uma foto traz as dimensões do cabeçalho (`invalid_dimensions` quando passam de 100000). Um SVG é lido inteiro e é recusado',
+      '(`svg_rejected`) se tiver script, manipulador de evento (`on…`), `foreignObject`, referência externa, `data:`, `javascript:`,',
+      'entidade ou instrução de processamento. Outras razões: `too_large`, `empty_object`, `object_not_found` e `quota_exceeded`.'
+    ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: MEDIA_UPLOAD_PERMISSIONS,
     params: AgencyMediaAssetPathParamsSchema,
@@ -3653,7 +3692,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'getMediaDownloadUrl',
     module: 'media',
     summary: 'Emite uma URL assinada de leitura',
-    description: 'Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem devolve o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. Só o pedido do original grava a auditoria `media.download_url_issued`. Cada pessoa pede até 600 URLs a cada 5 minutos (qualquer agência, qualquer variante); o pedido seguinte é 429 `RATE_LIMITED` com `Retry-After`, e o limite de uma pessoa não conta para outra.',
+    description: 'Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem e o logo devolvem o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. O original de um PDF, de um áudio e de um SVG sai assinado com o tipo confirmado pelo servidor e `Content-Disposition: attachment` (nunca é aberto como página; um `<img>` carrega o SVG sem executar script). Só o pedido do original grava a auditoria `media.download_url_issued`. Cada pessoa pede até 600 URLs a cada 5 minutos (qualquer agência, qualquer variante); o pedido seguinte é 429 `RATE_LIMITED` com `Retry-After`, e o limite de uma pessoa não conta para outra.',
     access: 'Sessão + vínculo com a agência',
     permission: MEDIA_READ_PERMISSIONS,
     params: AgencyMediaAssetPathParamsSchema,
@@ -3750,7 +3789,8 @@ path: '/agencies/:agencyId/roles',
     module: 'media',
     summary: 'Lista as mídias de uma pasta',
     description: [
-      'Só a mídia confirmada e não removida, a mais recente primeiro; quarenta e oito por página. Nunca devolve chave de',
+      'Só a foto e o vídeo confirmados e não removidos (os que um conteúdo aceita; PDF, áudio e logo estão em `GET .../media`),',
+      'a mais recente primeiro; quarenta e oito por página. Nunca devolve chave de',
       'objeto. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -3804,6 +3844,247 @@ path: '/agencies/:agencyId/roles',
       { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
       { status: 409, code: 'MEDIA_IN_USE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media',
+    operationId: 'listClientMedia',
+    module: 'media',
+    summary: 'Lista a biblioteca de mídia de um cliente',
+    description: [
+      'Os arquivos confirmados e não removidos do cliente em todas as pastas, o mais recente primeiro (a tabela "enviados',
+      'recentemente"); quarenta e oito por página. `q` busca pelo nome, sem diferenciar maiúsculas nem acento (um `%` ou `_`',
+      'digitado vale como o próprio caractere; o arquivo enviado antes de o nome ser guardado não casa), `category` filtra por tipo',
+      '(`image`, `video`, `pdf`, `audio`, `logo`) e `folderId` por pasta. Cada item traz nome, dimensões, texto alternativo, quem',
+      'enviou (`uploadedBy`, `null` para quem não tem vínculo com a agência) e em quantos conteúdos é usado (`usageCount`, só os que a pessoa lê).',
+      'Nunca devolve chave de objeto. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientPathParamsSchema,
+    query: MediaLibraryListQuerySchema,
+    requestExample: { q: 'vitrine', category: 'image', page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de arquivos.',
+      schema: MediaLibraryListResponseSchema,
+      example: { data: [libraryAssetExample], meta: { page: 1, pageSize: 48, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media/:assetId',
+    operationId: 'getClientMedia',
+    module: 'media',
+    summary: 'Detalha um arquivo da biblioteca',
+    description: 'O arquivo confirmado e não removido do cliente, com nome, dimensões, texto alternativo, pasta, quem enviou e quando. Cliente de outra agência, arquivo de outro cliente, removido ou inexistente e id inválido devolvem o mesmo 404.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientMediaAssetPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'O arquivo.',
+      schema: MediaLibraryAssetSchema,
+      example: libraryAssetExample
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' }
+    ]
+  },
+  {
+    method: 'patch',
+    path: '/agencies/:agencyId/clients/:clientId/media/:assetId',
+    operationId: 'updateClientMedia',
+    module: 'media',
+    summary: 'Renomeia um arquivo ou edita o texto alternativo',
+    description: [
+      'Qualquer um dos dois campos. `name` é só o rótulo (a chave do objeto no armazenamento não muda): uma linha de até 255',
+      'caracteres, sem `/`, `\\`, caracteres de controle, bidi ou invisíveis, e não só pontos. `altText` tem até 500 caracteres numa linha;',
+      'vazio ou `null` apaga. Exige `conteudo.operar` e também `conteudo.visualizar`; cliente arquivado devolve 409 `CLIENT_ARCHIVED` e',
+      'agência somente leitura 409 `AGENCY_READ_ONLY`. Grava a auditoria `media.renamed` e `media.alt_text_changed` quando o valor muda.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientMediaAssetPathParamsSchema,
+    body: UpdateMediaAssetRequestSchema,
+    requestExample: { name: 'vitrine-outubro.jpg', altText: 'Vitrine da padaria com pães recém-saídos do forno' },
+    responses: [{
+      status: 200,
+      description: 'O arquivo com a edição.',
+      schema: MediaLibraryAssetSchema,
+      example: libraryAssetExample
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/media/:assetId/move',
+    operationId: 'moveClientMedia',
+    module: 'media',
+    summary: 'Move um arquivo para outra pasta do mesmo cliente',
+    description: [
+      'A pasta de destino tem de ser do mesmo cliente (a de outro cliente ou de outra agência é o mesmo 404 "Folder not found."), de',
+      'qualquer nível, inclusive uma pasta padrão. Mover para a pasta em que o arquivo já está não é erro. Recusa (409 `MEDIA_IN_USE`)',
+      'o arquivo que algum conteúdo usa, como mídia ou como capa, em qualquer estado: o conteúdo guarda a pasta do arquivo, que não muda sob ele.',
+      'Exige `conteudo.operar` e também `conteudo.visualizar`; cliente arquivado devolve 409 `CLIENT_ARCHIVED` e agência somente leitura',
+      '409 `AGENCY_READ_ONLY`. Grava a auditoria `media.moved` quando o arquivo mudou de pasta.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientMediaAssetPathParamsSchema,
+    body: MoveMediaAssetRequestSchema,
+    requestExample: { folderId },
+    responses: [{
+      status: 200,
+      description: 'O arquivo na pasta nova.',
+      schema: MediaLibraryAssetSchema,
+      example: libraryAssetExample
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'MEDIA_IN_USE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media/:assetId/usage',
+    operationId: 'listClientMediaUsage',
+    module: 'media',
+    summary: 'Lista os conteúdos que usam um arquivo',
+    description: 'Título e estado de cada conteúdo do cliente que tem o arquivo como mídia (`asMedia`) ou como capa (`asCover`), do dia de publicação mais recente ao mais antigo; só os que a pessoa lê (a regra de acesso de Conteúdo vale aqui). Cliente de outra agência, arquivo de outro cliente e id inválido devolvem o mesmo 404.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientMediaAssetPathParamsSchema,
+    query: MediaUsageListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de usos.',
+      schema: MediaUsageListResponseSchema,
+      example: {
+        data: [{ contentId, title: 'Lançamento da vitrine', status: 'approved', asMedia: true, asCover: false }],
+        meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders/summary',
+    operationId: 'listClientMediaFolderSummaries',
+    module: 'media',
+    summary: 'Lista as pastas de mídia com o que cada uma guarda',
+    description: [
+      'As mesmas pastas e a mesma ordem de `GET .../media-folders`, cada uma com a quantidade de arquivos por tipo (`counts`), o',
+      'tamanho total, a última alteração (a criação da pasta ou um arquivo gravado ou removido nela) e quem enviou o arquivo mais novo',
+      '(`lastUploadedBy`). É leitura derivada dos arquivos; nenhuma coluna da pasta guarda isso. Cliente arquivado continua legível;',
+      'cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientPathParamsSchema,
+    query: MediaFolderSummaryListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de pastas com o resumo.',
+      schema: MediaFolderSummaryListResponseSchema,
+      example: {
+        data: [{
+          id: folderId,
+          parentId: null,
+          name: 'Imagens',
+          isDefault: true,
+          createdAt: '2026-10-07T12:00:00.000Z',
+          counts: { image: 96, video: 0, pdf: 9, audio: 0, logo: 1 },
+          assetCount: 106,
+          totalSizeBytes: 482_344_960,
+          lastChangedAt: '2026-11-11T12:00:00.000Z',
+          lastUploadedBy: { membershipId, name: 'Ana Souza' }
+        }],
+        meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'patch',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders/:folderId',
+    operationId: 'renameClientMediaFolder',
+    module: 'media',
+    summary: 'Renomeia uma pasta de mídia do cliente',
+    description: [
+      'Só o nome, com as mesmas regras da criação (até 80 caracteres, sem controle nem invisíveis). As quatro pastas padrão não se',
+      'renomeiam (409 `DEFAULT_FOLDER_IMMUTABLE`). Exige `conteudo.operar` e também `conteudo.visualizar`; cliente arquivado devolve',
+      '409 `CLIENT_ARCHIVED`. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientMediaFolderPathParamsSchema,
+    body: RenameMediaFolderRequestSchema,
+    requestExample: { name: 'Lançamento de novembro' },
+    responses: [{
+      status: 200,
+      description: 'Pasta renomeada.',
+      schema: MediaFolderSchema,
+      example: { id: '12121212-1212-4121-8121-121212121212', parentId: folderId, name: 'Lançamento de novembro', isDefault: false, createdAt: '2026-10-07T12:00:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'DEFAULT_FOLDER_IMMUTABLE' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },

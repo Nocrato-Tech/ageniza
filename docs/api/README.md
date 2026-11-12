@@ -4017,6 +4017,13 @@ Lista os papéis atribuíveis na agência.
 | `POST` | `/agencies/:agencyId/clients/:clientId/media-folders` | Sessão + vínculo com a agência | `conteudo.operar` | Cria uma pasta de mídia do cliente |
 | `GET` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as mídias de uma pasta |
 | `POST` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets/:assetId/remove` | Sessão + vínculo com a agência | `conteudo.operar` | Remove uma mídia da pasta |
+| `GET` | `/agencies/:agencyId/clients/:clientId/media` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista a biblioteca de mídia de um cliente |
+| `GET` | `/agencies/:agencyId/clients/:clientId/media/:assetId` | Sessão + vínculo com a agência | `conteudo.visualizar` | Detalha um arquivo da biblioteca |
+| `PATCH` | `/agencies/:agencyId/clients/:clientId/media/:assetId` | Sessão + vínculo com a agência | `conteudo.operar` | Renomeia um arquivo ou edita o texto alternativo |
+| `POST` | `/agencies/:agencyId/clients/:clientId/media/:assetId/move` | Sessão + vínculo com a agência | `conteudo.operar` | Move um arquivo para outra pasta do mesmo cliente |
+| `GET` | `/agencies/:agencyId/clients/:clientId/media/:assetId/usage` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista os conteúdos que usam um arquivo |
+| `GET` | `/agencies/:agencyId/clients/:clientId/media-folders/summary` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as pastas de mídia com o que cada uma guarda |
+| `PATCH` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId` | Sessão + vínculo com a agência | `conteudo.operar` | Renomeia uma pasta de mídia do cliente |
 
 #### `POST /agencies/:agencyId/media/uploads`
 
@@ -4271,6 +4278,296 @@ Remove uma mídia da pasta.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 MEDIA_IN_USE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/media`
+
+Lista a biblioteca de mídia de um cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "q": "vitrine",
+  "category": "image",
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de arquivos.
+
+```json
+{
+  "data": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "folderName": "Imagens",
+      "category": "image",
+      "contentType": "image/jpeg",
+      "sizeBytes": 4404019,
+      "name": "vitrine-outubro.jpg",
+      "width": 3024,
+      "height": 4032,
+      "altText": "Vitrine da padaria com pães recém-saídos do forno",
+      "videoProcessingStatus": "not_applicable",
+      "uploadedBy": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
+      "createdAt": "2026-11-11T12:00:00.000Z",
+      "usageCount": 2
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 48,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/media/:assetId`
+
+Detalha um arquivo da biblioteca.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — O arquivo.
+
+```json
+{
+  "id": "44444444-4444-4444-8444-444444444444",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "folderName": "Imagens",
+  "category": "image",
+  "contentType": "image/jpeg",
+  "sizeBytes": 4404019,
+  "name": "vitrine-outubro.jpg",
+  "width": 3024,
+  "height": 4032,
+  "altText": "Vitrine da padaria com pães recém-saídos do forno",
+  "videoProcessingStatus": "not_applicable",
+  "uploadedBy": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
+  "createdAt": "2026-11-11T12:00:00.000Z",
+  "usageCount": 2
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `PATCH /agencies/:agencyId/clients/:clientId/media/:assetId`
+
+Renomeia um arquivo ou edita o texto alternativo.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "vitrine-outubro.jpg",
+  "altText": "Vitrine da padaria com pães recém-saídos do forno"
+}
+```
+
+**Resposta `200`** — O arquivo com a edição.
+
+```json
+{
+  "id": "44444444-4444-4444-8444-444444444444",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "folderName": "Imagens",
+  "category": "image",
+  "contentType": "image/jpeg",
+  "sizeBytes": 4404019,
+  "name": "vitrine-outubro.jpg",
+  "width": 3024,
+  "height": 4032,
+  "altText": "Vitrine da padaria com pães recém-saídos do forno",
+  "videoProcessingStatus": "not_applicable",
+  "uploadedBy": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
+  "createdAt": "2026-11-11T12:00:00.000Z",
+  "usageCount": 2
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/media/:assetId/move`
+
+Move um arquivo para outra pasta do mesmo cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+}
+```
+
+**Resposta `200`** — O arquivo na pasta nova.
+
+```json
+{
+  "id": "44444444-4444-4444-8444-444444444444",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "folderName": "Imagens",
+  "category": "image",
+  "contentType": "image/jpeg",
+  "sizeBytes": 4404019,
+  "name": "vitrine-outubro.jpg",
+  "width": 3024,
+  "height": 4032,
+  "altText": "Vitrine da padaria com pães recém-saídos do forno",
+  "videoProcessingStatus": "not_applicable",
+  "uploadedBy": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
+  "createdAt": "2026-11-11T12:00:00.000Z",
+  "usageCount": 2
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 MEDIA_IN_USE` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/media/:assetId/usage`
+
+Lista os conteúdos que usam um arquivo.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de usos.
+
+```json
+{
+  "data": [
+    {
+      "contentId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "title": "Lançamento da vitrine",
+      "status": "approved",
+      "asMedia": true,
+      "asCover": false
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 100,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/media-folders/summary`
+
+Lista as pastas de mídia com o que cada uma guarda.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de pastas com o resumo.
+
+```json
+{
+  "data": [
+    {
+      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "parentId": null,
+      "name": "Imagens",
+      "isDefault": true,
+      "createdAt": "2026-10-07T12:00:00.000Z",
+      "counts": {
+        "image": 96,
+        "video": 0,
+        "pdf": 9,
+        "audio": 0,
+        "logo": 1
+      },
+      "assetCount": 106,
+      "totalSizeBytes": 482344960,
+      "lastChangedAt": "2026-11-11T12:00:00.000Z",
+      "lastUploadedBy": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      }
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 100,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `PATCH /agencies/:agencyId/clients/:clientId/media-folders/:folderId`
+
+Renomeia uma pasta de mídia do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Lançamento de novembro"
+}
+```
+
+**Resposta `200`** — Pasta renomeada.
+
+```json
+{
+  "id": "12121212-1212-4121-8121-121212121212",
+  "parentId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "name": "Lançamento de novembro",
+  "isDefault": false,
+  "createdAt": "2026-10-07T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 DEFAULT_FOLDER_IMMUTABLE` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
 
 ### profile — Edição do próprio nome e da própria foto de perfil.
 
