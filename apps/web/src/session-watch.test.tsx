@@ -133,7 +133,7 @@ const tick = async (ms: number): Promise<void> => { await act(async () => { awai
 const focus = async (): Promise<void> => { await act(async () => { document.dispatchEvent(new Event('visibilitychange')); }); };
 
 const AREAS = [
-  { label: 'agency area', entry: `/agencia/${AGENCY_ID}`, ready: () => screen.findByRole('link', { name: 'Agência Um' }) },
+  { label: 'agency area', entry: `/agencia/${AGENCY_ID}`, ready: () => screen.findByRole('link', { name: /Agência Um/ }) },
   { label: 'portal', entry: `/portal/${CLIENT_ID}/inicio`, ready: () => screen.findByRole('heading', { name: 'Olá, Maria' }) },
   // The generic protected layout (the context chooser and the protected not-found).
   { label: 'protected layout', entry: '/rota-que-nao-existe', ready: () => screen.findByRole('heading', { name: 'Página não encontrada' }) }

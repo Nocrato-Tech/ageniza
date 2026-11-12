@@ -30,12 +30,36 @@
   left: 0;
 }
 
-.account-menu__name {
+.account-menu__text {
+  display: grid;
   flex: 1;
   min-width: 0;
+}
+
+.account-menu__name {
   overflow: hidden;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.account-menu__role {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.account-menu__role svg {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* The Owner's mark is the role's colour: indigo, as on the team's badge. */
+.account-menu__role--owner {
+  color: var(--color-indigo-800);
 }
 
 .account-menu__chevron {
@@ -73,6 +97,7 @@
   /* Text only, no focus: it still has to be read. */
   .agency-sidebar[data-collapsed='true'] .agency-nav__group-title,
   .agency-sidebar[data-collapsed='true'] .account-menu__name,
+  .agency-sidebar[data-collapsed='true'] .account-menu__role,
   .agency-sidebar[data-collapsed='true'] .account-menu__chevron {
     position: absolute;
     width: 1px;
@@ -133,114 +158,110 @@
   }
 }
 
+/* A phone: the top bar (the mark, Ajuda and the person) and the bottom bar are their own markup, not the side column reshaped. */
 @media (max-width: 47.99rem) {
   .agency-shell {
     flex-direction: column;
   }
 
   .agency-body > .agency-content {
-    padding: var(--space-6) var(--space-4) calc(var(--space-16) + var(--space-8));
+    padding: var(--space-4) var(--space-4) calc(var(--space-16) + var(--space-8));
   }
 
   .agency-body > .legal-notice,
   .agency-body > .trial-notice {
     margin-inline: var(--space-4);
   }
-
-  .agency-sidebar {
-    position: fixed;
-    inset: auto 0 0;
-    flex-direction: row;
-    align-items: center;
-    gap: var(--space-1);
-    width: 100%;
-    height: auto;
-    padding: var(--space-2) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom));
-    border-top: 1px solid var(--border-subtle);
-    border-right: 0;
-  }
-
-  .agency-sidebar__top,
-  .agency-sidebar__context,
-  .account-menu__leave {
-    display: none;
-  }
-
-  .agency-nav__group-title,
-  .account-menu__name,
-  .account-menu__chevron {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .agency-nav {
-    display: flex;
-    flex: 1;
-    overflow: visible;
-  }
-
-  /* The width goes by item, not by group: two groups of 3 and 1 items share the bar 3 to 1. */
-  .agency-nav__group {
-    display: flex;
-  }
-
-  .agency-nav__group[data-items='1'] {
-    flex: 1;
-  }
-
-  .agency-nav__group[data-items='2'] {
-    flex: 2;
-  }
-
-  .agency-nav__group[data-items='3'] {
-    flex: 3;
-  }
-
-  .agency-nav__group + .agency-nav__group {
-    border-left: 1px solid var(--border-subtle);
-  }
-
-  .agency-nav ul {
-    display: flex;
-    flex: 1;
-    justify-content: space-around;
-  }
-
-  .agency-nav li {
-    flex: 1;
-  }
-
-  .agency-nav a {
-    flex-direction: column;
-    justify-content: center;
-    gap: var(--space-1);
-    padding: var(--space-2) 0;
-    font: var(--label-sm);
-    text-align: center;
-  }
-
-  .agency-sidebar__foot {
-    padding-top: 0;
-    border-top: 0;
-  }
-
-  .account-menu--sidebar {
-    padding: 0;
-    border-color: transparent;
-    background: transparent;
-  }
-
-  .account-menu--sidebar .ui-menu__trigger {
-    padding: var(--space-2);
-  }
-
-  .account-menu--sidebar .ui-menu__content {
-    right: 0;
-    left: auto;
-  }
 }
 
+.agency-mbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-canvas);
+}
+
+.agency-mbar__ctx {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 2.75rem;
+  gap: var(--space-3);
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.agency-mbar__ctx > img {
+  flex: none;
+}
+
+.agency-mbar__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agency-mbar__end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The bell comes with its own subtask: its place is kept so the bar does not move when it arrives. */
+.agency-mbar__bell-slot {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.agency-bottomnav {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr));
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.agency-bottomnav a {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--space-1);
+  min-height: 3.25rem;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font: var(--label-sm);
+  text-align: center;
+  text-decoration: none;
+}
+
+.agency-bottomnav a svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.agency-bottomnav a:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.agency-bottomnav a[aria-current='page'] {
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+  font-weight: 700;
+}
+
+.agency-bottomnav a[aria-current='page'] svg {
+  color: var(--color-indigo-600);
+}

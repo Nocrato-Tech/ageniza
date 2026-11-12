@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronsUpDown, LogOut } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, ChevronsUpDown, Crown, LogOut, Mail, Plus, Route, WalletCards } from 'lucide-react';
 
 import {
   AuthLogoutAllResponseSchema,
@@ -55,8 +55,12 @@ export interface AccountMenuProps {
   /** Offered only where a tour exists to review (the client portal); it reopens the tour and calls nothing. */
   onReviewTour?: () => void;
   user?: AuthUser | null;
-  /** `sidebar` is the foot of the agency navigation: the person as the trigger and Sair beside it. */
-  variant?: 'header' | 'sidebar';
+  /** `sidebar` is the foot of the agency navigation: the person as the trigger and Sair beside it. `compact` is the avatar alone, in a phone's top bar. */
+  variant?: 'header' | 'sidebar' | 'compact';
+  /** What the person is in this context, under the name: the Owner is not a role, so it carries its own mark. */
+  role?: { label: string; owner?: boolean };
+  /** The phone's bottom bar has no room for Assinatura: the menu carries it. */
+  subscriptionTo?: string;
   /**
    * Whether this menu is the one that reopens the e-mail change when the person comes back from Google. The menus of the loading
    * skeletons say no: they are gone as soon as the area loads, and one that spent the mark would leave the real menu without it.
@@ -64,7 +68,7 @@ export interface AccountMenuProps {
   reopensEmailChange?: boolean;
 }
 
-export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', onReviewTour, user: userOverride, variant = 'header', reopensEmailChange = true }: AccountMenuProps) {
+export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', onReviewTour, user: userOverride, variant = 'header', role, subscriptionTo, reopensEmailChange = true }: AccountMenuProps) {
   const httpClient = useApiClient();
   const authStore = useOptionalAuthSessionStore();
   const session = useAuthSession(userOverride === undefined ? (authStore ?? fallbackAuthStore) : fallbackAuthStore);
@@ -153,20 +157,29 @@ export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', on
   const canSwitch = contexts.data !== undefined && contexts.data.contexts.length > 1;
 
   const sidebar = variant === 'sidebar';
+  const compact = variant === 'compact';
 
   return (
-    <div className={sidebar ? 'account-menu account-menu--sidebar' : 'account-menu'}>
+    <div className={sidebar ? 'account-menu account-menu--sidebar' : compact ? 'account-menu account-menu--compact' : 'account-menu'}>
       <Menu
         label='Menu da conta'
+        triggerLabel={compact ? `Conta de ${user.name}` : undefined}
         activePanel={panel}
         onOpenChange={(open) => { setMenuOpen(open); if (!open) setPanel('root'); }}
-        trigger={sidebar
-          ? <>
-              <Avatar name={user.name} size='sm' />
-              <span className='account-menu__name'>{user.name}</span>
-              <ChevronsUpDown className='account-menu__chevron' aria-hidden='true' />
-            </>
-          : <><span>{user.name}</span><ChevronDown className='account-menu__caret' aria-hidden='true' /></>}
+        trigger={compact
+          ? <Avatar name={user.name} size='sm' />
+          : sidebar
+            ? <>
+                <Avatar name={user.name} size='sm' />
+                <span className='account-menu__text'>
+                  <span className='account-menu__name'>{user.name}</span>
+                  {role !== undefined && <span className={role.owner === true ? 'account-menu__role account-menu__role--owner' : 'account-menu__role'}>
+                    {role.owner === true && <Crown aria-hidden='true' />}{role.label}
+                  </span>}
+                </span>
+                <ChevronsUpDown className='account-menu__chevron' aria-hidden='true' />
+              </>
+            : <><span>{user.name}</span><ChevronDown className='account-menu__caret' aria-hidden='true' /></>}
       >
         {panel === 'root' ? <>
           <div className='account-menu__identity' role='group' aria-label='Conta'>
@@ -187,19 +200,20 @@ export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', on
             </div>
           )}
           {canSwitch && (
-            <MenuItem onClick={(event) => { event.preventDefault(); setPanel('switch'); }}>
+            <MenuItem icon={<ArrowLeftRight />} onClick={(event) => { event.preventDefault(); setPanel('switch'); }}>
               {switchLabel} <span aria-hidden='true'>{'\u203A'}</span>
             </MenuItem>
           )}
           {contexts.data?.canCreateAgency === true && (
-            <MenuItem onClick={() => { setCreateAgencyOpen(true); }}>{CREATE_AGENCY_LABEL}</MenuItem>
+            <MenuItem icon={<Plus />} onClick={() => { setCreateAgencyOpen(true); }}>{CREATE_AGENCY_LABEL}</MenuItem>
           )}
-          {onReviewTour !== undefined && <MenuItem onClick={onReviewTour}>Rever o tour</MenuItem>}
-          <MenuItem onClick={() => { setEmailChangeOpen(true); }}>{emailChangeLabel}</MenuItem>
+          {subscriptionTo !== undefined && <MenuItem icon={<WalletCards />} onClick={() => { navigate(subscriptionTo); }}>Assinatura</MenuItem>}
+          {onReviewTour !== undefined && <MenuItem icon={<Route />} onClick={onReviewTour}>Rever o tour</MenuItem>}
+          <MenuItem icon={<Mail />} onClick={() => { setEmailChangeOpen(true); }}>{emailChangeLabel}</MenuItem>
           <MenuSeparator />
-          <MenuItem onClick={() => { void startLogout('logout'); }}>Sair</MenuItem>
+          <MenuItem icon={<LogOut />} onClick={() => { void startLogout('logout'); }}>Sair</MenuItem>
           <MenuSeparator />
-          <MenuItem variant='destructive' onClick={() => { setFailedAction(null); setConfirmOpen(true); }}>
+          <MenuItem variant='destructive' icon={<LogOut />} onClick={() => { setFailedAction(null); setConfirmOpen(true); }}>
             {logoutAllLabel}
           </MenuItem>
         </> : <>

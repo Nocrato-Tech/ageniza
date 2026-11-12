@@ -1,17 +1,19 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { ChartColumn, House, LayoutGrid, Palette, type LucideIcon } from 'lucide-react';
-import { NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
+import { ChevronsUpDown, House, LayoutGrid, Palette, type LucideIcon } from 'lucide-react';
+import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AuthNoContentResponseSchema, PortalClientResponseSchema, type PortalClientResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
 import { isTermsNotAccepted, TermsRedirect } from './acceptance.js';
-import { Avatar, Button, EmptyState, Logo, Skeleton, Stage3D, type Stage3DTone } from '@ageniza/ui';
+import { Avatar, Button, Logo, Skeleton, Stage3D, type Stage3DTone } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { useAuthSession, useAuthSessionStore } from './auth.js';
 import { useDocumentTitle } from './document-title.js';
+import { HelpMenu, ShellTopbar } from './help-menu.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { usePhone } from './use-phone.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
 import { PortalReadOnlyNotice } from './plan-notice.js';
@@ -40,9 +42,11 @@ export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9
 const PORTAL_TABS: readonly { slug: string; label: string; icon: LucideIcon }[] = [
   { slug: 'inicio', label: 'Início', icon: House },
   { slug: 'conteudos', label: 'Conteúdos', icon: LayoutGrid },
-  { slug: 'marca', label: 'Marca', icon: Palette },
-  { slug: 'relatorios', label: 'Relatórios', icon: ChartColumn }
+  { slug: 'marca', label: 'Marca', icon: Palette }
 ];
+
+/** Every access to the portal approves the posts, so the role under the person's name is fixed text. */
+const PORTAL_ROLE = { label: 'Aprova os posts' };
 
 const isNotFound = (error: unknown): boolean => error instanceof HttpClientError && error.status === 404;
 
@@ -123,6 +127,7 @@ export function PortalAreaLayout() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const session = useAuthSession(useAuthSessionStore());
+  const phone = usePhone();
   // The tour is per person and per client: what was closed here is remembered by client, and a
   // failed "seen" write is deliberately not remembered past this visit (specs/clientes.md §7).
   const [closedTours, setClosedTours] = useState<ReadonlySet<string>>(new Set());
@@ -165,6 +170,8 @@ export function PortalAreaLayout() {
     : data.onboardingSeenAt === null && !closedTours.has(clienteId) ? 'first'
       : null;
 
+  const reviewTour = tourMode === null ? () => { setReviewingClientId(clienteId); } : undefined;
+
   const closeTour = (): void => {
     if (tourMode === 'review') { setReviewingClientId(null); return; }
     setClosedTours((previous) => new Set(previous).add(clienteId));
@@ -184,15 +191,17 @@ export function PortalAreaLayout() {
       <div className="portal-sidebar">
         <header className="portal-header">
           <PortalBrand />
-          <div className="portal-header__identity">
+          <Link className="portal-header__identity" to="/contextos">
             <Avatar name={data.name} photoUrl={data.photoUrl} size="sm" />
-            <div className="portal-header__labels">
-              <p className="portal-header__name">{data.name}</p>
-              <p className="portal-header__agency">por {data.agencyName}</p>
-            </div>
-          </div>
+            <span className="portal-header__labels">
+              <span className="portal-header__agency">Com a {data.agencyName}</span>
+              <span className="portal-header__name">{data.name}</span>
+            </span>
+            <ChevronsUpDown className="portal-header__chevron" aria-hidden="true" />
+          </Link>
+          {phone && <HelpMenu onReviewTour={reviewTour} />}
           {/* The account menu (#70) lives here; the active context is the client this portal is. */}
-          <AccountMenu variant="sidebar" activeContext={data.name} onReviewTour={tourMode === null ? () => { setReviewingClientId(clienteId); } : undefined} />
+          <AccountMenu variant="sidebar" activeContext={data.name} role={PORTAL_ROLE} onReviewTour={reviewTour} />
         </header>
         {/* The card lives in the bar so it sits right above it, whatever the bar's height becomes. */}
         <PortalNav clienteId={clienteId} tourTarget={tourTarget}>
@@ -206,6 +215,7 @@ export function PortalAreaLayout() {
           />}
         </PortalNav>
       </div>
+      <ShellTopbar onReviewTour={reviewTour} />
       <main className="portal-content" id="main-content">
         <LegalNotice />
         {data.agencyReadOnly && <PortalReadOnlyNotice agencyName={data.agencyName} />}
@@ -214,19 +224,4 @@ export function PortalAreaLayout() {
       </main>
     </div>
   </PortalClientContext.Provider>;
-}
-
-/**
- * A reserved area of the portal shell (`docs/design-system.md` §23): it says what will come, in the
- * client's language, and offers no control and no fake data. Relatórios waits for its module.
- */
-export function PortalSkeletonPage({ title, description }: { title: string; description: string }) {
-  const titleId = `portal-${title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}-title`;
-  useDocumentTitle(`${title} — Portal do cliente — Ageniza`);
-  return <section className="portal-skeleton" aria-labelledby={titleId}>
-    <h1 id={titleId}>{title}</h1>
-    <PortalStageEmpty icon="notebook" tone="indigo">
-      <EmptyState className="portal-empty" title="Ainda não há resultados para mostrar" description={description} />
-    </PortalStageEmpty>
-  </section>;
 }

@@ -180,7 +180,7 @@ describe('the portal Conteúdos (#269)', () => {
       const world = makeWorld();
       const { probe } = renderPortal(world, [`/portal/${CLIENT_ID}/inicio`]);
       await screen.findByRole('heading', { name: 'Olá, Maria' });
-      expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca', 'Relatórios']);
+      expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca']);
       expect(within(nav()).queryByRole('link', { name: 'Calendário' })).toBeNull();
 
       fireEvent.click(within(nav()).getByRole('link', { name: 'Conteúdos' }));
@@ -1090,7 +1090,7 @@ describe('the portal Conteúdos (#269)', () => {
       await ready();
       await screen.findByText('Nenhum conteúdo planejado para este mês');
       const shell = container.querySelector('.portal-shell') as HTMLElement;
-      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
+      expect(Array.from(shell.children).filter((child) => !child.classList.contains('shell-topbar')).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
       expect((shell.querySelector('.portal-sidebar') as HTMLElement).lastElementChild).toBe(nav());
       // jsdom has no layout: the rules that put the bar at the bottom of a 360x780 phone with a short page are read from the stylesheet.
       expect(rule('.portal-shell')).toMatch(/min-height:\s*100dvh;/);

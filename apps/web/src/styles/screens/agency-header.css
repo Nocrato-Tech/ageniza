@@ -15,6 +15,54 @@
   height: 1.75rem;
 }
 
+/* The top bar of the wide shells: the search and the bell have their own subtasks, so their places are kept and empty. */
+.shell-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.agency-body > .shell-topbar {
+  padding: var(--space-5) var(--space-8) 0;
+}
+
+.shell-topbar__search-slot {
+  flex: 1;
+}
+
+.shell-topbar__bell-slot {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.help-menu .ui-menu__trigger {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-color: var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.help-menu .ui-menu__trigger:hover,
+.help-menu .ui-menu__trigger:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.help-menu .ui-menu__trigger svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.help-menu .ui-menu__content {
+  min-width: 13.5rem;
+}
+
 .protected-header {
   display: flex;
   align-items: center;
