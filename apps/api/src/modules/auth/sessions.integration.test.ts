@@ -951,3 +951,38 @@ describe('the account an invitation created', () => {
     expect(await idsOf(userId)).toEqual([only]);
   });
 });
+
+// The guard answers the rule of the credential (issue #719) by throwing when it cannot read it, never by "no": a failure turned into
+// "this session is not older than the change" would let a session made before a password change through. The database of this file is
+// its own, and the grant is given back whatever the assertions say.
+describe('the guard when the credential cannot be read', () => {
+  it('lets nothing through, the session older than the change of the password included, and carries on once it can be read again', async () => {
+    const user = await makeUser('guard-unreadable');
+    const raced = await seed(user.id, { createdAfter: 0 });
+    await changePassword(user.id);
+    const current = await seed(user.id, { createdAfter: 2 });
+
+    const get = async (url: string, cookie: string): Promise<number> => (await app.app.inject({ method: 'GET', url, headers: { cookie } })).statusCode;
+    const routes = ['/auth/session', '/auth/sessions', '/me/contexts'];
+    const canRead = async (): Promise<boolean> =>
+      (await owner.knex.raw<{ rows: { allowed: boolean }[] }>(`select has_table_privilege('ageniza_app', 'auth.account', 'select') as allowed`)).rows[0]?.allowed === true;
+
+    expect(await canRead()).toBe(true);
+    for (const route of routes) expect(await get(route, current.cookie), route).toBe(200);
+
+    await owner.knex.raw('revoke select on auth.account from ageniza_app');
+    try {
+      expect(await canRead()).toBe(false);
+      for (const cookie of [current.cookie, raced.cookie]) {
+        for (const route of routes) expect([401, 500], `${route} with ${cookie === current.cookie ? 'the current session' : 'the old session'}`).toContain(await get(route, cookie));
+      }
+    } finally {
+      await owner.knex.raw('grant select on auth.account to ageniza_app');
+    }
+
+    expect(await canRead()).toBe(true);
+    for (const route of routes) expect(await get(route, current.cookie), route).toBe(200);
+    // The old session was still there, and the rule refuses it again as soon as it can be read.
+    expect(await get('/auth/session', raced.cookie)).toBe(401);
+  });
+});
