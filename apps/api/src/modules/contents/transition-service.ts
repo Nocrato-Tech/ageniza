@@ -9,24 +9,34 @@ import type { ContentTransaction } from './service.js';
  * nothing the function decides: it passes the ids and what the body carries.
  */
 
-/** The deadline and the note are the round's: the function checks them (the day against "today to 90 days ahead" in São Paulo) and writes the round. */
-export const submitContent = async (
-  transaction: ContentTransaction,
-  contentId: string,
-  round: { readonly dueOn?: string | undefined; readonly note?: string | undefined } = {}
-): Promise<void> => {
-  await raw(transaction, 'select app_private.submit_content(?::uuid, ?::date, ?::text)', [contentId, round.dueOn ?? null, round.note ?? null]);
+type RoundInput = {
+  /** The deadline as an instant with its offset. */
+  readonly dueAt?: string | undefined;
+  /** The deadline as a day: the end of that day in São Paulo, by the one function of the database that turns a day into an instant. */
+  readonly dueOn?: string | undefined;
+  readonly note?: string | undefined;
+};
+
+// The contract holds the two apart; the database keeps the one instant and checks it (from now to 90 days ahead) with the note, and writes the round.
+const DEADLINE_SQL = 'coalesce(?::timestamptz, app_private.sao_paulo_end_of_day(?::date))';
+
+export const submitContent = async (transaction: ContentTransaction, contentId: string, round: RoundInput = {}): Promise<void> => {
+  await raw(
+    transaction,
+    `select app_private.submit_content(?::uuid, ${DEADLINE_SQL}, ?::text)`,
+    [contentId, round.dueAt ?? null, round.dueOn ?? null, round.note ?? null]
+  );
 };
 
 /** All or nothing, of one client, under one batch id the function returns; the ids are UUIDs the contract already checked. */
 export const submitContents = async (
   transaction: ContentTransaction,
-  input: { readonly contentIds: readonly string[]; readonly dueOn: string | undefined; readonly note: string | undefined }
+  input: RoundInput & { readonly contentIds: readonly string[] }
 ): Promise<string> => {
   const result = await raw<{ rows: Array<{ batch_id: string }> }>(
     transaction,
-    'select app_private.submit_contents(?::uuid[], ?::date, ?::text) as batch_id',
-    [`{${input.contentIds.join(',')}}`, input.dueOn ?? null, input.note ?? null]
+    `select app_private.submit_contents(?::uuid[], ${DEADLINE_SQL}, ?::text) as batch_id`,
+    [`{${input.contentIds.join(',')}}`, input.dueAt ?? null, input.dueOn ?? null, input.note ?? null]
   );
   const row = result.rows[0];
   if (row === undefined) throw new Error('The batch send returned no batch.');

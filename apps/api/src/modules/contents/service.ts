@@ -22,6 +22,7 @@ interface RawRows<TResult> {
 
 interface ApprovalColumns {
   readonly approval_sent_at: Date | null;
+  readonly approval_due_at: Date | null;
   readonly approval_due_on: string | null;
   readonly approval_note: string | null;
 }
@@ -74,6 +75,7 @@ interface ScriptRow {
   readonly id: string;
   readonly script_on: string;
   readonly status: StoryScriptListItem['status'];
+  readonly scene_count: string | number;
 }
 
 /**
@@ -82,17 +84,42 @@ interface ScriptRow {
  */
 export const APPROVAL_JOIN = `
   left join lateral (
-    select round.sent_at, round.due_on, round.note
+    select round.sent_at, round.due_at, round.due_on, round.note
     from public.content_approval_rounds round
     where round.content_id = content.id and content.status = 'awaiting_approval'
     order by round.sequence desc
     limit 1
   ) approval on true
 `;
-export const APPROVAL_COLUMNS = 'approval.sent_at as approval_sent_at, approval.due_on::text as approval_due_on, approval.note as approval_note';
+export const APPROVAL_COLUMNS = `
+  approval.sent_at as approval_sent_at, approval.due_at as approval_due_at, approval.due_on::text as approval_due_on, approval.note as approval_note
+`;
+
+/** The file that serves as the cover of a content: its own cover or its first confirmed media, as the list and "Parado no cliente" show it. */
+export const THUMBNAIL_JOIN = `
+  left join lateral (
+    select entry.asset_id
+    from (
+      select content.cover_asset_id as asset_id, 0 as item_position where content.cover_asset_id is not null
+      union all
+      select item.asset_id, item.position from public.content_media item where item.content_id = content.id
+    ) entry
+    join public.media_assets asset on asset.id = entry.asset_id
+    where asset.status = 'confirmed' and asset.removed_at is null
+    order by entry.item_position, entry.asset_id
+    limit 1
+  ) thumbnail on true
+`;
 
 const approvalOf = (row: ApprovalColumns): ContentApproval | null =>
-  row.approval_sent_at === null ? null : { sentAt: new Date(row.approval_sent_at).toISOString(), dueOn: row.approval_due_on, note: row.approval_note };
+  row.approval_sent_at === null
+    ? null
+    : {
+        sentAt: new Date(row.approval_sent_at).toISOString(),
+        dueAt: row.approval_due_at === null ? null : new Date(row.approval_due_at).toISOString(),
+        dueOn: row.approval_due_on,
+        note: row.approval_note
+      };
 
 // Dates are read as text and the time as HH:MM: the driver would turn a `date` into an instant in the server's zone.
 const CONTENT_COLUMNS = `
@@ -195,18 +222,7 @@ select
   tasks.total as tasks_total, tasks.approved as tasks_approved, ${APPROVAL_COLUMNS}
 from public.contents content
 ${OWNER_JOINS}
-left join lateral (
-  select entry.asset_id
-  from (
-    select content.cover_asset_id as asset_id, 0 as item_position where content.cover_asset_id is not null
-    union all
-    select item.asset_id, item.position from public.content_media item where item.content_id = content.id
-  ) entry
-  join public.media_assets asset on asset.id = entry.asset_id
-  where asset.status = 'confirmed' and asset.removed_at is null
-  order by entry.item_position, entry.asset_id
-  limit 1
-) thumbnail on true
+${THUMBNAIL_JOIN}
 left join lateral (
   select count(*) as total, count(*) filter (where task.status = 'approved') as approved
   from public.content_tasks task
@@ -293,8 +309,11 @@ export const listPeriod = async (
   `, [input.clientId, input.from, input.to, input.limit]);
 
   const scripts = await raw<RawRows<ScriptRow>>(transaction, `
-    select script.id, script.script_on::text as script_on, script.status
+    select script.id, script.script_on::text as script_on, script.status, scenes.total as scene_count
     from public.story_scripts script
+    left join lateral (
+      select count(*) as total from public.story_script_scenes scene where scene.script_id = script.id
+    ) scenes on true
     where script.client_id = ?::uuid and script.script_on between ?::date and ?::date
     order by script.script_on, script.id
     limit ?
@@ -302,7 +321,7 @@ export const listPeriod = async (
 
   return {
     contents: contents.rows.map(listItemOf),
-    storyScripts: scripts.rows.map((row) => ({ id: row.id, scriptOn: row.script_on, status: row.status }))
+    storyScripts: scripts.rows.map((row) => ({ id: row.id, scriptOn: row.script_on, status: row.status, sceneCount: Number(row.scene_count) }))
   };
 };
 

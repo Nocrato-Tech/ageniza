@@ -3,6 +3,7 @@ import {
   CONTENT_PERIOD_MAX_ITEMS,
   contentPeriodIssue,
   PortalApproveContentRequestSchema,
+  PortalApproveContentWithNoteRequestSchema,
   PortalContentAwaitingQuerySchema,
   PortalContentAwaitingResponseSchema,
   PortalContentDetailSchema,
@@ -12,6 +13,7 @@ import {
   PortalContentPathParamsSchema,
   PortalContentPeriodQuerySchema,
   PortalContentPeriodResponseSchema,
+  PortalContentProgressResponseSchema,
   PortalRequestContentChangesRequestSchema,
   resolvePagination,
   ClientPathParamsSchema,
@@ -28,6 +30,7 @@ import { sharedUserRateLimit } from '../../plugins/infra/rate-limit.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { MEDIA_RATE_LIMITS, MEDIA_READ_URL_BUCKET } from '../media/policy.js';
 import { auditMediaEvent } from '../media/service.js';
+import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import type { MediaStorageClient } from '../media/storage-client.js';
 import { isInsufficientPrivilegeError } from '../tenancy/guards.js';
 import { clientNotFound, contentNotFound, forbidden, periodTooLarge, unauthenticated } from './errors.js';
@@ -40,10 +43,13 @@ import {
   listPortalContents,
   loadPortalContent,
   loadPortalMediaAsset,
+  loadPortalProgress,
   openListItemFrom,
   portalAccessHolds,
   requestContentChanges,
-  withdrawContentApproval
+  senderPhotoKeysOf,
+  withdrawContentApproval,
+  type SenderPhotoUrls
 } from './portal-service.js';
 import type { ContentTransaction } from './service.js';
 
@@ -62,7 +68,17 @@ export interface ContentPortalModuleDependencies {
     readonly storage: Pick<MediaStorageClient, 'presignGetObject'>;
     readonly downloadUrlExpirySeconds: number;
   };
+  /** Undefined where identity storage is not configured: the photo of the person who sent a round is then `null`, and the name still shows. */
+  readonly senderPhoto?: {
+    readonly identityStorage: Pick<IdentityStorageClient, 'presignGetObject'>;
+    readonly downloadUrlExpirySeconds: number;
+  };
+  /** The instant "today" is read from for the progress of the month; only a test sets it, and without it the day is the database's own. */
+  readonly now?: () => Date;
 }
+
+/** The account stores the photo as a key of the identity bucket: `users/<id>/avatar/<version>.<ext>`. Anything else is data, not a key to sign. */
+const USER_AVATAR_KEY = /^users\/[0-9a-f-]{36}\/avatar\/[0-9a-f-]{36}\.[a-z0-9]+$/i;
 
 const AWAITING_DEFAULT_PAGE_SIZE = 20;
 
@@ -113,7 +129,18 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     responseStatus: 200,
     schemas: { params: PortalContentPathParamsSchema, response: PortalContentDetailSchema }
   } satisfies DocumentedRouteConfig;
+  const progressDocs = {
+    permission: null,
+    responseStatus: 200,
+    schemas: { params: ClientPathParamsSchema, response: PortalContentProgressResponseSchema }
+  } satisfies DocumentedRouteConfig;
   const approveDocs = {
+    permission: null,
+    responseStatus: 200,
+    schemas: { params: PortalContentPathParamsSchema, body: PortalApproveContentWithNoteRequestSchema, response: PortalContentDetailSchema }
+  } satisfies DocumentedRouteConfig;
+  // The withdrawal takes the revision alone: there is no note to leave when the approval is taken back.
+  const withdrawDocs = {
     permission: null,
     responseStatus: 200,
     schemas: { params: PortalContentPathParamsSchema, body: PortalApproveContentRequestSchema, response: PortalContentDetailSchema }
@@ -169,7 +196,7 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     } catch (error) {
       if (error instanceof HttpError) throw error;
       if (databaseErrorCode(error) === 'A0062') throw await explainState(claims, scope.clientId, scope.contentId, action);
-      const translated = translatePortalError(error, action);
+      const translated = translatePortalError(error, action, { withNote: action === 'approve' });
       if (translated !== undefined) throw translated;
       if (isInsufficientPrivilegeError(error)) throw await explainRefusal(claims, scope.clientId);
       throw error;
@@ -191,10 +218,37 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     if (row.status === 'in_production') throw notAwaitingApproval(action);
   };
 
-  const readBack = async (transaction: ContentTransaction, scope: { readonly clientId: string; readonly contentId: string }): Promise<PortalContentDetail> => {
+  /**
+   * The signed address of the photo of each person who sent the rounds of a page, by the key the account stores; `null` for a key that is
+   * not an avatar key, for a storage that is not configured and for one that refuses (the page still loads, the name is shown, and the
+   * log carries a code, never the key). Signing is a local computation, so it holds no connection of its own.
+   */
+  const signSenderPhotos = async (request: FastifyRequest, rows: Parameters<typeof senderPhotoKeysOf>[0]): Promise<SenderPhotoUrls> => {
+    const urls = new Map<string, string | null>();
+    const senderPhoto = dependencies.senderPhoto;
+    for (const key of senderPhotoKeysOf(rows)) {
+      if (senderPhoto === undefined || !USER_AVATAR_KEY.test(key)) {
+        urls.set(key, null);
+        continue;
+      }
+      try {
+        urls.set(key, await senderPhoto.identityStorage.presignGetObject({ key, expiresInSeconds: senderPhoto.downloadUrlExpirySeconds }));
+      } catch (error) {
+        request.log.warn({ error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'PORTAL_SENDER_PHOTO_URL_FAILED' } }, 'Could not sign the photo of the sender of a round; returning null');
+        urls.set(key, null);
+      }
+    }
+    return urls;
+  };
+
+  const readBack = async (
+    request: FastifyRequest,
+    transaction: ContentTransaction,
+    scope: { readonly clientId: string; readonly contentId: string }
+  ): Promise<PortalContentDetail> => {
     const row = await loadPortalContent(transaction, scope.clientId, scope.contentId);
     if (row === undefined) throw contentNotFound();
-    return detailFrom(transaction, row);
+    return detailFrom(transaction, row, await signSenderPhotos(request, [row]));
   };
 
   app.get('/clients/:clientId/contents', portalGuards(periodDocs), async (request, reply) => {
@@ -215,10 +269,21 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     const rows = await inTransaction(claims, (transaction) => listPortalContents(transaction, clientId, query, CONTENT_PERIOD_MAX_ITEMS + 1));
     if (rows.length > CONTENT_PERIOD_MAX_ITEMS) throw periodTooLarge();
 
+    const photos = await signSenderPhotos(request, rows);
     return reply.send(routeResponse(periodDocs, request, {
-      data: rows.map(listItemFrom),
+      data: rows.map((row) => listItemFrom(row, photos)),
       meta: { from: query.from, to: query.to, count: rows.length }
     }));
+  });
+
+  // The month of the Início, "Boa notícia": declared before the route of one content, so `progress` is never read as a content id.
+  app.get('/clients/:clientId/contents/progress', portalGuards(progressDocs), async (request, reply) => {
+    const { claims } = requireAuth(request);
+    const clientId = portalClientIdOf(request);
+    routeParams(progressDocs, request);
+
+    const progress = await inTransaction(claims, (transaction) => loadPortalProgress(transaction, { clientId, now: dependencies.now?.() }));
+    return reply.send(routeResponse(progressDocs, request, { data: progress }));
   });
 
   // Declared before the route of one content: the static segment is what `/awaiting-approval` is, never a content id.
@@ -229,9 +294,10 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     const resolved = resolvePagination(routeQuery(awaitingDocs, request), AWAITING_DEFAULT_PAGE_SIZE);
 
     const page = await inTransaction(claims, (transaction) => listAwaitingContents(transaction, clientId, resolved));
+    const photos = await signSenderPhotos(request, page.items);
 
     return reply.send(routeResponse(awaitingDocs, request, {
-      data: page.items.map((row) => openListItemFrom({ ...row, status: 'awaiting_approval' })),
+      data: page.items.map((row) => openListItemFrom({ ...row, status: 'awaiting_approval' }, photos)),
       meta: buildPaginationMetadata(resolved, page.totalItems)
     }));
   });
@@ -242,7 +308,7 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     const contentId = contentIdFromRoute(request);
     routeParams(readDocs, request);
 
-    const detail = await inTransaction(claims, (transaction) => readBack(transaction, { clientId, contentId }));
+    const detail = await inTransaction(claims, (transaction) => readBack(request, transaction, { clientId, contentId }));
 
     return reply.send(routeResponse(readDocs, request, detail));
   });
@@ -303,22 +369,22 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
 
     const detail = await portalMove(request, scope, 'approve', async (transaction) => {
       await readForMove(transaction, scope, 'approve');
-      await approveContent(transaction, { contentId, revision: body.revision });
-      return readBack(transaction, scope);
+      await approveContent(transaction, { contentId, revision: body.revision, note: body.note });
+      return readBack(request, transaction, scope);
     });
 
     return reply.send(routeResponse(approveDocs, request, detail));
   });
 
-  app.post('/clients/:clientId/contents/:contentId/withdraw-approval', portalGuards(approveDocs), async (request, reply) => {
+  app.post('/clients/:clientId/contents/:contentId/withdraw-approval', portalGuards(withdrawDocs), async (request, reply) => {
     const scope = { clientId: portalClientIdOf(request), contentId: contentIdFromRoute(request) };
-    const body = routeBody(approveDocs, request);
+    const body = routeBody(withdrawDocs, request);
     const result = await portalMove(request, scope, 'withdraw-approval', async (transaction) => {
       await readForMove(transaction, scope, 'withdraw-approval');
       await withdrawContentApproval(transaction, { contentId: scope.contentId, revision: body.revision });
-      return readBack(transaction, scope);
+      return readBack(request, transaction, scope);
     });
-    return reply.send(routeResponse(approveDocs, request, result));
+    return reply.send(routeResponse(withdrawDocs, request, result));
   });
 
   app.post('/clients/:clientId/contents/:contentId/request-changes', portalGuards(requestChangesDocs), async (request, reply) => {
@@ -331,7 +397,7 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     const detail = await portalMove(request, scope, 'request-changes', async (transaction) => {
       await readForMove(transaction, scope, 'request-changes');
       await requestContentChanges(transaction, { contentId, revision: body.revision, comment: body.comment });
-      return readBack(transaction, scope);
+      return readBack(request, transaction, scope);
     });
 
     return reply.send(routeResponse(requestChangesDocs, request, detail));

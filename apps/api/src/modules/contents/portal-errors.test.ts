@@ -4,8 +4,8 @@ import { translatePortalError, type PortalContentAction } from './portal-errors.
 
 const failure = (code: string): Error => Object.assign(new Error('database detail that never leaves'), { code });
 
-const answer = (code: string, action: PortalContentAction = 'approve') => {
-  const translated = translatePortalError(failure(code), action);
+const answer = (code: string, action: PortalContentAction = 'approve', options: { withNote?: boolean } = { withNote: true }) => {
+  const translated = translatePortalError(failure(code), action, options);
   return translated === undefined ? undefined : { status: translated.statusCode, code: translated.code };
 };
 
@@ -16,7 +16,7 @@ describe('the refusals of the database the portal answers by name (issue #257)',
     ['A0020', 404, 'NOT_FOUND'],
     ['A0062', 409, 'CONTENT_NOT_AWAITING_APPROVAL'],
     ['A0063', 409, 'CONTENT_REVISION_CHANGED'],
-    ['A0068', 400, 'CONTENT_COMMENT_INVALID'],
+    ['A0068', 400, 'CONTENT_APPROVAL_NOTE_INVALID'],
     ['40P01', 409, 'TRY_AGAIN'],
     ['40001', 409, 'TRY_AGAIN']
   ])('answers %s with %i %s', (code, status, name) => {
@@ -50,6 +50,18 @@ describe('the refusals of the database the portal answers by name (issue #257)',
       expect(JSON.stringify(translatePortalError(failure(code), 'approve'))).not.toMatch(/database detail/);
       expect(translatePortalError(failure(code), 'approve')?.message).not.toMatch(/A00\d\d|40P01|40001|database/);
     }
+  });
+
+  it('tells the note of an approval apart from the comment of a request for changes: the same database code, two answers', () => {
+    expect(answer('A0068', 'approve')).toEqual({ status: 400, code: 'CONTENT_APPROVAL_NOTE_INVALID' });
+    expect(answer('A0068', 'request-changes')).toEqual({ status: 400, code: 'CONTENT_COMMENT_INVALID' });
+    expect(answer('A0068', 'withdraw-approval')).toEqual({ status: 400, code: 'CONTENT_COMMENT_INVALID' });
+    expect(translatePortalError(failure('A0068'), 'approve', { withNote: true })?.message).toMatch(/500 caracteres/);
+  });
+
+  it('keeps the answer of the approval link, which takes no note: A0068 is the comment there, on both decisions', () => {
+    expect(answer('A0068', 'approve', {})).toEqual({ status: 400, code: 'CONTENT_COMMENT_INVALID' });
+    expect(translatePortalError(failure('A0068'), 'approve')?.code).toBe('CONTENT_COMMENT_INVALID');
   });
 
   it('reports a withdrawal conflict separately from a decision awaiting approval', () => {

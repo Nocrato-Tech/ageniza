@@ -55,6 +55,7 @@ import {
 import { idFromRoute } from './route-support.js';
 import { registerContentActivationRoute } from './activation-routes.js';
 import { registerAwaitingClientRoute } from './awaiting-routes.js';
+import { registerContentSummaryRoute } from './summary-routes.js';
 import { registerContentTaskRoutes } from './task-routes.js';
 import { registerContentTransitionRoutes } from './transition-routes.js';
 
@@ -318,5 +319,6 @@ export const registerContentModule = (app: FastifyInstance, dependencies: Conten
   registerContentTaskRoutes(app, dependencies);
   registerContentActivationRoute(app, dependencies);
   registerAwaitingClientRoute(app, dependencies);
+  registerContentSummaryRoute(app, dependencies);
 };
 

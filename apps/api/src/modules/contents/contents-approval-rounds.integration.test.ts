@@ -32,11 +32,22 @@ const submitBatch = (clientId: string, body: unknown, person: Person = 'manager'
 const knex = () => w.getOwner().knex;
 const statusOf = async (id: string): Promise<string> => (await w.contentRow(id)).status as string;
 const roundsOf = (id: string) => knex()('content_approval_rounds').where({ content_id: id }).orderBy('sequence').select(
-  'sequence', 'note', 'sent_by', 'batch_id', 'client_id', knex().raw('due_on::text as due_on')
+  'sequence', 'note', 'sent_by', 'batch_id', 'client_id', knex().raw('due_on::text as due_on'), knex().raw("to_char(due_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') as due_at")
 );
 
 const dayFrom = async (offset: number): Promise<string> =>
   (await knex().raw<{ rows: Array<{ day: string }> }>('select (app_private.sao_paulo_date(now()) + ?::int)::text as day', [offset])).rows[0]?.day as string;
+
+/** The instant the database gives a deadline given as a day: the end of that day in São Paulo, from the one function that converts days. */
+const endOfDay = async (day: string): Promise<string> =>
+  new Date((await knex().raw<{ rows: Array<{ at: Date }> }>('select app_private.sao_paulo_end_of_day(?::date) as at', [day])).rows[0]?.at as Date).toISOString();
+
+/** The São Paulo day of an instant, by the one function that converts days. */
+const dayOf = async (instant: string): Promise<string> =>
+  (await knex().raw<{ rows: Array<{ day: string }> }>('select app_private.sao_paulo_date(?::timestamptz)::text as day', [instant])).rows[0]?.day as string;
+
+/** An instant `hours` from the real clock: the routes read the database's `now()`, so the margins of these tests are minutes, never seconds. */
+const inHours = (hours: number): string => new Date(Date.now() + hours * 3_600_000).toISOString();
 
 const error = (reply: Reply, status: number, code: string): void => {
   expect(reply.statusCode).toBe(status);
@@ -73,10 +84,10 @@ describe('the individual send with a deadline and a note', () => {
 
     expect(reply.statusCode).toBe(200);
     expect(reply.json().status).toBe('awaiting_approval');
-    expect(reply.json().approval).toEqual({ sentAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/), dueOn, note: NOTE });
+    expect(reply.json().approval).toEqual({ sentAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/), dueAt: await endOfDay(dueOn), dueOn, note: NOTE });
     const [round, ...rest] = await roundsOf(id);
     expect(rest).toEqual([]);
-    expect(round).toMatchObject({ sequence: 1, note: NOTE, due_on: dueOn, sent_by: people.manager.id, client_id: clientA });
+    expect(round).toMatchObject({ sequence: 1, note: NOTE, due_on: dueOn, due_at: await endOfDay(dueOn), sent_by: people.manager.id, client_id: clientA });
 
     const approval = reply.json().approval;
     const detail = await w.call('GET', people.reader.cookie, `/agencies/${w.agencyA}/clients/${clientA}/contents/${id}`);
@@ -94,8 +105,109 @@ describe('the individual send with a deadline and a note', () => {
       const reply = await submit(id, body);
 
       expect(reply.statusCode).toBe(200);
-      expect(reply.json().approval).toEqual({ sentAt: expect.any(String), dueOn: null, note: null });
-      expect(await roundsOf(id)).toMatchObject([{ sequence: 1, note: null, due_on: null }]);
+      expect(reply.json().approval).toEqual({ sentAt: expect.any(String), dueAt: null, dueOn: null, note: null });
+      expect(await roundsOf(id)).toMatchObject([{ sequence: 1, note: null, due_on: null, due_at: null }]);
+    }
+  });
+
+  it('takes the deadline as an instant with its offset, keeps the hour, and tells the São Paulo day of that instant', async () => {
+    const dueAt = inHours(48);
+    const offsets = [dueAt, new Date(dueAt).toISOString().replace('Z', '+00:00'), inHours(30)];
+    for (const [index, instant] of offsets.entries()) {
+      const id = await sendable();
+
+      const reply = await submit(id, { dueAt: instant, note: NOTE });
+
+      expect(reply.statusCode, instant).toBe(200);
+      const expected = new Date(instant).toISOString();
+      expect(reply.json().approval, instant).toEqual({ sentAt: expect.any(String), dueAt: expected, dueOn: await dayOf(expected), note: NOTE });
+      expect(await roundsOf(id), String(index)).toMatchObject([{ sequence: 1, due_at: expected, due_on: await dayOf(expected) }]);
+    }
+  });
+
+  it('reads the same instant in the detail, in the period, in the feed and in "Parado no cliente", whatever offset it was sent with', async () => {
+    const id = await sendable(clientA, { publishOn: '2026-10-24' });
+    const instant = inHours(52);
+    const withOffset = `${new Date(new Date(instant).getTime() - 3 * 3_600_000).toISOString().slice(0, 19)}-03:00`;
+    expect((await submit(id, { dueAt: withOffset })).statusCode).toBe(200);
+    const expected = new Date(withOffset).toISOString();
+
+    const detail = await w.call('GET', people.reader.cookie, `/agencies/${w.agencyA}/clients/${clientA}/contents/${id}`);
+    const period = await w.call('GET', people.reader.cookie, `/agencies/${w.agencyA}/clients/${clientA}/contents?from=2026-10-01&to=2026-10-31`);
+    const feed = await w.call('GET', people.reader.cookie, `/agencies/${w.agencyA}/clients/${clientA}/contents/feed`);
+    const awaiting = await w.call('GET', people.reader.cookie, `/agencies/${w.agencyA}/contents/awaiting-client`);
+
+    expect(detail.json().approval.dueAt).toBe(expected);
+    expect(period.json().data.contents.find((item: { id: string }) => item.id === id)?.approval.dueAt).toBe(expected);
+    expect(feed.json().data.contents.find((item: { id: string }) => item.id === id)?.approval.dueAt).toBe(expected);
+    const waiting = awaiting.json().data.flatMap((group: { contents: Array<{ id: string; dueAt: string | null }> }) => group.contents).find((item: { id: string }) => item.id === id);
+    expect(waiting?.dueAt).toBe(expected);
+  });
+
+  it.each([
+    ['an instant with no offset', { dueAt: '2026-11-20T18:00:00' }],
+    ['a day as the instant', { dueAt: '2026-11-20' }],
+    ['a null instant', { dueAt: null }],
+    ['a number as the instant', { dueAt: 1_800_000_000_000 }],
+    ['the instant and the day together', { dueAt: '2026-11-20T18:00:00-03:00', dueOn: '2026-11-20' }]
+  ])('answers 400 VALIDATION_ERROR to %s, and the database is not asked', async (_name, body) => {
+    const id = await sendable();
+    w.statements.length = 0;
+
+    error(await submit(id, body), 400, 'VALIDATION_ERROR');
+
+    expect(w.statements.some((statement) => /app_private\.submit_content/.test(statement))).toBe(false);
+    expect(await statusOf(id)).toBe('in_production');
+  });
+
+  it('refuses an instant that has passed or that is more than 90 days ahead as a 400 that leaves the content in production, and accepts one minute from now and 89 days', async () => {
+    for (const [instant, accepted] of [
+      [inHours(1 / 60 + 4 / 60), true],
+      [inHours(89 * 24), true],
+      [inHours(-1 / 60), false],
+      [inHours(-48), false],
+      [inHours(91 * 24), false],
+      [inHours(90 * 24 + 1), false]
+    ] as const) {
+      const id = await sendable();
+
+      const reply = await submit(id, { dueAt: instant });
+
+      if (accepted) {
+        expect(reply.statusCode, instant).toBe(200);
+        expect(await statusOf(id)).toBe('awaiting_approval');
+      } else {
+        error(reply, 400, 'CONTENT_APPROVAL_DUE_INVALID');
+        expect(await statusOf(id)).toBe('in_production');
+        expect(await roundsOf(id)).toEqual([]);
+      }
+    }
+  });
+
+  it('refuses the year the database has no instant for as a 400 VALIDATION_ERROR and not a 500, and moves nothing', async () => {
+    const id = await sendable();
+
+    error(await submit(id, { dueAt: '0000-01-01T00:00:00Z' }), 400, 'VALIDATION_ERROR');
+    error(await submitBatch(clientA, { contentIds: [id], dueAt: '0000-06-15T12:00:00-03:00' }), 400, 'VALIDATION_ERROR');
+
+    expect(await statusOf(id)).toBe('in_production');
+  });
+
+  it('takes a deadline given as the day as the end of that day in São Paulo, and refuses the day 90 days ahead, whose end is past the 90 days from now', async () => {
+    for (const [offset, accepted] of [[1, true], [89, true], [-1, false], [90, false], [91, false]] as const) {
+      const id = await sendable();
+      const dueOn = await dayFrom(offset);
+
+      const reply = await submit(id, { dueOn });
+
+      if (accepted) {
+        expect(reply.statusCode, `day ${offset}`).toBe(200);
+        expect(reply.json().approval, `day ${offset}`).toMatchObject({ dueOn, dueAt: await endOfDay(dueOn) });
+      } else {
+        error(reply, 400, 'CONTENT_APPROVAL_DUE_INVALID');
+        expect(await statusOf(id)).toBe('in_production');
+        expect(await roundsOf(id)).toEqual([]);
+      }
     }
   });
 
@@ -108,30 +220,12 @@ describe('the individual send with a deadline and a note', () => {
     expect((await submit(onlyNote, { note: `  ${NOTE}  ` })).json().approval).toMatchObject({ dueOn: null, note: NOTE });
   });
 
-  it('accepts today and 90 days ahead, and refuses yesterday and 91 days ahead as a 400 that leaves the content in production', async () => {
-    for (const [offset, accepted] of [[0, true], [90, true], [-1, false], [91, false]] as const) {
-      const id = await sendable();
-
-      const reply = await submit(id, { dueOn: await dayFrom(offset) });
-
-      if (accepted) {
-        expect(reply.statusCode, `day ${offset}`).toBe(200);
-        expect(await statusOf(id)).toBe('awaiting_approval');
-      } else {
-        error(reply, 400, 'CONTENT_APPROVAL_DUE_INVALID');
-        expect(await statusOf(id)).toBe('in_production');
-        expect(await roundsOf(id)).toEqual([]);
-      }
-    }
-  });
-
   it('counts the day in São Paulo, not in UTC: the database day is the limit of both ends', async () => {
-    const today = await dayFrom(0);
     const id = await sendable();
 
     // The day the database calls "yesterday" is refused whatever the hour of the server is.
     error(await submit(id, { dueOn: await dayFrom(-1) }), 400, 'CONTENT_APPROVAL_DUE_INVALID');
-    expect((await submit(id, { dueOn: today })).statusCode).toBe(200);
+    expect((await submit(id, { dueOn: await dayFrom(1) })).statusCode).toBe(200);
   });
 
   it.each([
@@ -246,13 +340,35 @@ describe('the batch send', () => {
     expect(contents.map((item: { id: string }) => item.id)).toEqual([ids[1], ids[0], ids[2]]);
     for (const item of contents) {
       expect(item.status).toBe('awaiting_approval');
-      expect(item.approval).toEqual({ sentAt: expect.any(String), dueOn, note: NOTE });
+      expect(item.approval).toEqual({ sentAt: expect.any(String), dueAt: await endOfDay(dueOn), dueOn, note: NOTE });
     }
     for (const id of ids) {
       expect(await statusOf(id)).toBe('awaiting_approval');
-      expect(await roundsOf(id)).toMatchObject([{ sequence: 1, batch_id: batchId, note: NOTE, due_on: dueOn, sent_by: people.manager.id }]);
+      expect(await roundsOf(id)).toMatchObject([{ sequence: 1, batch_id: batchId, note: NOTE, due_on: dueOn, due_at: await endOfDay(dueOn), sent_by: people.manager.id }]);
     }
     expect(await statusOf(outsider)).toBe('in_production');
+  });
+
+  it('sends the batch with one instant, and every content of it keeps that hour to the second', async () => {
+    const ids = [await sendable(), await sendable()];
+    const dueAt = inHours(48);
+
+    const reply = await submitBatch(clientA, { contentIds: ids, dueAt, note: NOTE });
+
+    expect(reply.statusCode).toBe(200);
+    for (const item of reply.json().data.contents) expect(item.approval).toEqual({ sentAt: expect.any(String), dueAt, dueOn: await dayOf(dueAt), note: NOTE });
+    for (const id of ids) expect(await roundsOf(id)).toMatchObject([{ due_at: dueAt, due_on: await dayOf(dueAt) }]);
+  });
+
+  it('refuses the instant and the day together, an instant that passed and one beyond 90 days, and sends none', async () => {
+    const ids = [await sendable(), await sendable()];
+
+    error(await submitBatch(clientA, { contentIds: ids, dueAt: inHours(24), dueOn: await dayFrom(2) }), 400, 'VALIDATION_ERROR');
+    error(await submitBatch(clientA, { contentIds: ids, dueAt: inHours(-1) }), 400, 'CONTENT_APPROVAL_DUE_INVALID');
+    error(await submitBatch(clientA, { contentIds: ids, dueAt: inHours(91 * 24) }), 400, 'CONTENT_APPROVAL_DUE_INVALID');
+
+    expect(await Promise.all(ids.map(statusOf))).toEqual(['in_production', 'in_production']);
+    for (const id of ids) expect(await roundsOf(id)).toEqual([]);
   });
 
   it('sends with neither a deadline nor a note, and a batch of one', async () => {
@@ -262,7 +378,7 @@ describe('the batch send', () => {
 
     expect(reply.statusCode).toBe(200);
     expect(reply.json().data.contents).toHaveLength(1);
-    expect(reply.json().data.contents[0].approval).toEqual({ sentAt: expect.any(String), dueOn: null, note: null });
+    expect(reply.json().data.contents[0].approval).toEqual({ sentAt: expect.any(String), dueAt: null, dueOn: null, note: null });
   });
 
   it('accepts exactly 30 contents, and refuses 31 as a 400 that sends none', async () => {
@@ -339,11 +455,12 @@ describe('the batch send', () => {
 
     error(await submitBatch(clientA, { contentIds: ids, dueOn: await dayFrom(-1) }), 400, 'CONTENT_APPROVAL_DUE_INVALID');
     error(await submitBatch(clientA, { contentIds: ids, dueOn: await dayFrom(91) }), 400, 'CONTENT_APPROVAL_DUE_INVALID');
+    error(await submitBatch(clientA, { contentIds: ids, dueOn: await dayFrom(90) }), 400, 'CONTENT_APPROVAL_DUE_INVALID');
     error(await submitBatch(clientA, { contentIds: ids, note: 'a'.repeat(501) }), 400, 'VALIDATION_ERROR');
     error(await submitBatch(clientA, { contentIds: ids, note: '   ' }), 400, 'VALIDATION_ERROR');
 
     expect(await Promise.all(ids.map(statusOf))).toEqual(['in_production', 'in_production']);
-    for (const [offset] of [[0], [90]] as const) {
+    for (const [offset] of [[1], [89]] as const) {
       const id = await sendable();
       expect((await submitBatch(clientA, { contentIds: [id], dueOn: await dayFrom(offset) })).statusCode, `day ${offset}`).toBe(200);
     }
