@@ -792,42 +792,42 @@ describe('content modal', () => {
 });
 
 describe('the story scripts in the Pauta look (#635)', () => {
-  it.each(['light'] as const)('reads the chip of a day and the list with AA text on the canvas and the surface in %s', (theme) => {
-    const chip = rule('.content-day__script');
+  it.each(['light'] as const)('reads the strip, its legend and the scenes with AA text on the canvas and the surface in %s', (theme) => {
     const scene = rule('.story-script__scene');
 
-    expect(chip.get('background')).toBe('var(--bg-canvas)');
-    expect(contrastOf(theme, chip.get('color')!, chip.get('background')!)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastOf(theme, rule('.content-day__script:hover').get('color')!, 'var(--bg-canvas)')).toBeGreaterThanOrEqual(4.5);
     expect(rule('.story-list').get('background')).toBe('var(--bg-surface)');
     expect(scene.get('background')).toBe('var(--bg-canvas)');
+    expect(contrastOf(theme, rule('.story-list__open').get('color')!, 'var(--bg-surface)')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastOf(theme, rule('.story-list__open:hover').get('color')!, 'var(--bg-surface)')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastOf(theme, rule('.story-list__none').get('color')!, 'var(--bg-surface)')).toBeGreaterThanOrEqual(4.5);
     for (const text of ['var(--text-primary)', 'var(--text-secondary)']) {
       expect(contrastOf(theme, text, 'var(--bg-surface)'), text).toBeGreaterThanOrEqual(4.5);
       expect(contrastOf(theme, text, 'var(--bg-canvas)'), text).toBeGreaterThanOrEqual(4.5);
     }
   });
 
-  it('leaves the chip with no outline of its own for the state tag, which is already one', () => {
-    expect(rule('.content-day__script .ui-status-tag').get('border-color')).toBe('transparent');
-    expect(rule('.content-day__script').get('border')).toBe('1px solid var(--border-default)');
+  it('tells the three states by the edge of the ring, in flat colour of the scale (no gradient), and a dashed line for the draft', () => {
+    expect(rule(".story-ring[data-status='draft']").get('border')).toBe('2px dashed var(--color-slate-500)');
+    expect(rule(".story-ring[data-status='sent']").get('--story-ring')).toBe('var(--color-violet-600)');
+    expect(rule(".story-ring[data-status='recorded']").get('--story-ring')).toBe('var(--color-teal-700)');
+    expect(rule(".story-ring[data-status='new']").get('border')).toBe('2px solid var(--color-indigo-600)');
+    expect(rule('.story-ring').get('background')).toBe('var(--story-ring)');
   });
 
-  it('keeps the list and the scenes off the elevated surfaces, the indigo and the shadow', () => {
-    const blocks = [...css.matchAll(/(^|\n)(\.(?:story-list|story-script|content-day__script)[\w-]*[^{}]*)\{([^{}]*)\}/g)];
+  it('keeps the strip and the scenes off the elevated surfaces, the indigo, the gradient and the shadow, and the text off the hover surface', () => {
+    const blocks = [...css.matchAll(/(^|\n)(\.(?:story-list|story-script)[\w-]*[^{}]*)\{([^{}]*)\}/g)];
 
     expect(blocks.length).toBeGreaterThan(15);
-    for (const [, , selector, body] of blocks) expect(body, selector).not.toMatch(/bg-elevated|bg-hover|action-primary|indigo|shadow/);
+    for (const [, , selector, body] of blocks) expect(body, selector).not.toMatch(/bg-elevated|bg-hover|action-primary|indigo|shadow|gradient/);
   });
 
-  it('lets a script row and a scene shrink inside their grid instead of pushing it wide', () => {
+  it('lets a scene shrink inside its grid, and draws the strip as one row of circles that scrolls inside the card, each one a target of 44px', () => {
     for (const selector of ['.story-list', '.story-script__scenes', '.story-script__scene']) {
       expect(rule(selector).get('grid-template-columns'), selector).toBe('minmax(0, 1fr)');
     }
-    // The strip of the board: circles in one row that scrolls inside the card, each as wide as its circle, the whole item being the button.
     expect(rule('.story-list__items').get('display')).toBe('flex');
     expect(rule('.story-list__items').get('overflow-x')).toBe('auto');
-    expect(rule('.story-list__item').get('flex')).toBe('none');
-    expect(rule('.story-list .story-list__item > .ui-button').get('position')).toBe('absolute');
+    expect(rule('.story-list__open').get('min-height')).toBe('2.75rem');
     for (const selector of ['.story-script__text', '.story-script__guidance']) expect(rule(selector).get('overflow-wrap'), selector).toBe('anywhere');
   });
 
@@ -839,12 +839,9 @@ describe('the story scripts in the Pauta look (#635)', () => {
     expect(foot.get('justify-content')).toBe('flex-end');
   });
 
-  it('centres the text of the empty list together with its block, as the clients roster does', () => {
-    const empty = rule('.story-list__empty:not(.ui-empty-state--mascot) .ui-empty-state__body');
-    const roster = rule('.clients__empty:not(.ui-empty-state--mascot) .ui-empty-state__body');
-
-    for (const property of ['justify-items', 'text-align']) expect(empty.get(property), property).toBe(roster.get(property));
-    expect(empty.get('text-align')).toBe('center');
+  it('says there is no script in the small secondary text, never in a block of its own', () => {
+    expect(rule('.story-list__none').get('font')).toBe('var(--caption)');
+    expect(rule('.story-list__none').get('color')).toBe('var(--text-secondary)');
   });
 });
 

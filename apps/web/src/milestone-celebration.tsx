@@ -3,6 +3,8 @@ import { PartyPopper, X } from 'lucide-react';
 
 import { IconButton, MilestoneTrail, Stage3D, type MilestoneStep } from '@ageniza/ui';
 
+import type { ActivationSteps } from './activation-path.js';
+import { instantLabel } from './home-dates.js';
 import { MILESTONE_MESSAGES, takeMilestone, type MilestoneFacts, type MilestoneKey } from './milestones.js';
 
 /** The brand and the two warm tones of the celebration (docs/design-system.md, "Marco e recompensa"). */
@@ -89,13 +91,27 @@ const MILESTONE_TITLES: Readonly<Record<MilestoneKey, string>> = {
 
 const MILESTONE_STATUS_LABELS = { done: 'Conquistado', current: 'Passo atual', upcoming: 'A conquistar' } as const;
 
+/** "3 de novembro · Padaria Central": the day and the name that go with a milestone already reached. */
+const whenOf = (key: MilestoneKey, steps: ActivationSteps | undefined): string | undefined => {
+  if (steps === undefined) return undefined;
+  const step = { client: steps.firstClient, content: steps.firstContent, sent: steps.firstSent, approved: steps.firstApproved, published: null }[key];
+  return step === null ? undefined : `${instantLabel(step.at)} · ${step.name}`;
+};
+
 /**
- * "Marcos da agência": the five first achievements on the compact trail, in the order they come. It says nothing before the facts are
- * known and nothing before the first one is reached, since the journey above already shows the whole way to a new agency.
+ * "Marcos da agência": the five first achievements on the compact trail, in the order they come, each with its day and name. The approval,
+ * while missing, says whose answer is the only thing left. It says nothing before the facts are known and nothing
+ * before the first one is reached, since the journey above already shows the whole way to a new agency.
  */
-export function AgencyMilestones({ facts }: { facts: MilestoneFacts | undefined }) {
+export function AgencyMilestones({ facts, steps: stepFacts }: { facts: MilestoneFacts | undefined; steps?: ActivationSteps | undefined }) {
   if (facts === undefined || !MILESTONE_ORDER.some((key) => facts[key])) return null;
-  const steps: MilestoneStep[] = MILESTONE_ORDER.map((key) => ({ id: key, title: MILESTONE_TITLES[key], status: facts[key] ? 'done' : 'upcoming' }));
+  const steps: MilestoneStep[] = MILESTONE_ORDER.map((key) => ({
+    id: key,
+    title: MILESTONE_TITLES[key],
+    status: facts[key] ? 'done' : 'upcoming',
+    when: whenOf(key, stepFacts),
+    description: key === 'approved' && stepFacts?.firstSent != null ? `Falta só a resposta de ${stepFacts.firstSent.name}.` : undefined
+  }));
   return <section className="agency-milestones" aria-labelledby="agency-milestones-title" data-stage-host>
     <div className="agency-milestones__head">
       <h2 id="agency-milestones-title" className="agency-milestones__title">Marcos da agência</h2>

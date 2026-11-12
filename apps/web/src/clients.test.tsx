@@ -622,7 +622,7 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
 
     await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/clientes`); });
 
-    await screen.findByRole('link', { name: 'Agência Dois' });
+    await screen.findByRole('link', { name: /Agência Dois/ });
     expect(screen.queryByText('Padaria Central')).toBeNull();
     expect(container.querySelectorAll('.clients__card-skeleton')).toHaveLength(20);
   });

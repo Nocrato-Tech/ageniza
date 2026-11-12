@@ -1,39 +1,18 @@
-/* Conteúdos (agency): specs/conteudo.md section 7. The stories on top, the calendar on the left and
-   the room of the feed (#263) on the right. */
+/* Conteúdos (agency): specs/conteudo.md section 7. The header with the trail, the period and the views, the filters, the stories of
+   the month and the calendar or the feed, as the board draws them. */
 .contents {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-6);
+  gap: var(--space-4);
 }
 
 .contents h1 {
   margin: 0;
 }
 
-.content-stories {
-  display: flex;
-  gap: var(--space-4);
-  margin: 0;
-  padding: 0 0 var(--space-2);
-  overflow-x: auto;
-  list-style: none;
-}
-
-.content-stories__skeleton {
-  width: 4.5rem;
-  height: 5.5rem;
-}
-
-.content-stories__note,
-.content-stories__empty {
+.content-stories__note {
   margin: 0;
   color: var(--text-secondary);
-}
-
-.contents__workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-6);
 }
 
 .contents__main {
@@ -42,47 +21,167 @@
   min-width: 0;
 }
 
-.contents__client {
+.contents__client-skeleton {
+  width: 12rem;
+  height: 1.75rem;
+}
+
+/* The header: the trail and the period on the left, the three views and the actions on the right; one primary action, in its own block. */
+.contents__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.contents__lead {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.contents__crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.contents__crumbs a {
+  color: inherit;
+}
+
+.contents__crumbs a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.contents__crumbs > svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* The chip that changes the client: the same capsule as the filters, with the client's face and name. */
+.contents__crumbs .ui-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font: var(--label-md);
+  cursor: pointer;
+}
+
+.contents__crumbs .ui-menu__trigger:hover,
+.contents__crumbs .ui-menu__trigger[aria-expanded='true'] {
+  border-color: var(--color-indigo-200);
+  background: var(--bg-hover);
+}
+
+.contents__crumbs .ui-menu__trigger svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.contents__crumb-name {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.contents__crumbs .ui-menu__content {
+  min-width: 14rem;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.contents__crumb-signals {
+  display: block;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.contents__period {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.contents__title {
+  min-width: 12ch;
+  font: var(--heading-xl);
+  letter-spacing: -0.01em;
+}
+
+.contents__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
 
-.contents__switch {
-  margin-left: auto;
+/* The filters are chips, each with the tag of its state and its count; they wrap, so every one stays in reach at any width. */
+.contents__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
-.contents__client-name {
+.contents__filters .ui-chip {
+  min-height: 2.75rem;
+}
+
+.contents__skeleton {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.contents__empty {
   margin: 0;
   color: var(--text-secondary);
-  font: var(--title-md);
-  overflow-wrap: anywhere;
 }
 
-.contents__client-handle {
-  margin: 0;
-  color: var(--text-secondary);
-}
-
-.contents__client-skeleton {
-  width: 16rem;
-  height: 3rem;
-}
-
-/* The title is the screen's own and is drawn the same with or without a client; the client is a line below it. */
-.contents__head {
+/* The formats, with the colour that tints their card, and the sentence that tells the tint from the tag. */
+.contents__legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  list-style: none;
 }
 
-.contents__title {
-  margin: 0;
-  font: var(--heading-xl);
-  letter-spacing: -0.02em;
+.contents__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.contents__legend i {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--format-static-bg);
+  border: 1.5px solid var(--format-static-fg);
+}
+
+.contents__legend i[data-format='carousel'] {
+  background: var(--format-carousel-bg);
+  border: 1.5px solid var(--format-carousel-fg);
+}
+
+.contents__legend i[data-format='reels'] {
+  background: var(--format-reels-bg);
+  border: 1.5px solid var(--format-reels-fg);
 }
 
 /* The picker of the index: a link for each client, the avatar and name on the left, what asks for action under them. */
@@ -150,184 +249,33 @@
   font-weight: 600;
 }
 
-/* The counters of the month read like the board's filter row: a pill for each state, in the state's own family (violet waits, teal is
-   ready, red is late). They count, they do not filter, so they are plain items. The word is always there: colour is never the only signal. */
-.contents__summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.contents__count {
-  --count-bg: var(--status-production-bg);
-  --count-fg: var(--status-production-text);
-
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 2rem;
-  padding: 0 var(--space-3) 0 var(--space-1);
-  border-radius: var(--radius-full);
-  background: var(--bg-surface);
-  box-shadow: inset 0 0 0 1px var(--border-default);
-  color: var(--text-secondary);
-  font: var(--caption);
-}
-
-.contents__count[data-status='awaiting_approval'] {
-  --count-bg: var(--status-waiting-bg);
-  --count-fg: var(--status-waiting-text);
-}
-
-.contents__count[data-status='adjusting'] {
-  --count-bg: var(--status-adjust-bg);
-  --count-fg: var(--status-adjust-text);
-}
-
-.contents__count[data-status='approved'] {
-  --count-bg: var(--status-ready-bg);
-  --count-fg: var(--status-ready-text);
-}
-
-.contents__count[data-status='late'] {
-  --count-bg: var(--status-late-bg);
-  --count-fg: var(--status-late-text);
-}
-
-.contents__count-number {
-  display: inline-grid;
-  place-items: center;
-  min-width: 1.5rem;
-  height: 1.5rem;
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-full);
-  background: var(--count-bg);
-  color: var(--count-fg);
-  font: var(--label-md);
-  font-variant-numeric: tabular-nums;
-}
-
-.contents__count-label {
-  color: var(--text-primary);
-}
-
-.contents__count[data-empty] {
-  background: transparent;
-}
-
-.contents__count[data-empty] .contents__count-number {
-  background: var(--bg-hover);
-  color: var(--text-muted);
-}
-
-.contents__count[data-empty] .contents__count-label {
-  color: var(--text-secondary);
-}
-
-.contents__actions,
-.contents__period {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.contents__actions {
-  gap: var(--space-3);
-}
-
-/* The grid scrolls inside the panel: the track must be able to shrink below the grid's own width. */
-.contents__panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
-}
-
-.contents__panel-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-6) var(--space-6) var(--space-4);
-}
-
-.contents__period {
-  flex: 1 1 auto;
-}
-
-.contents__period-title {
-  min-width: 11rem;
-  margin: 0 auto 0 0;
-  font: var(--heading-xl);
-  letter-spacing: -0.01em;
-}
-
-.contents__skeleton {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.contents__empty {
-  margin: 0;
-  color: var(--text-secondary);
-}
-
-/* The aside holds the phone and nothing else: the device is the frame, so the aside has none of its own. */
-.contents__feed {
-  display: grid;
-  justify-items: center;
-  align-content: start;
-  min-width: 0;
-}
-
-/* The calendar takes the width the page has and the phone keeps its own, fixed at the right; below this the phone goes under the calendar. */
+/* The calendar takes the width the page has. */
 .agency-body > .agency-content:has(> .contents[data-screen]) {
   max-width: none;
 }
 
-.contents[data-view='feed'] .contents__panel {
-  justify-self: stretch;
+.contents__note,
+.contents__move-error {
+  margin: 0;
 }
 
+.contents__move-error {
+  color: var(--text-danger);
+}
+
+/* On a phone the period's title shrinks and the trail, the period and the actions each take their own line. */
 @media (max-width: 47.99rem) {
-  .contents__feed {
-    display: none;
+  .contents__title {
+    min-width: 0;
+    font-size: 1.5rem;
+    line-height: 1.875rem;
   }
 
-  /* On a phone the period's title takes a line, and its three controls and the views share the next ones. */
-  .contents__panel-head {
-    padding: var(--space-4);
+  .contents__actions {
+    width: 100%;
   }
 
-  .contents__period-title {
-    flex: 1 0 100%;
-    margin: 0;
-  }
-}
-
-@media (min-width: 80rem) {
-  .contents__workspace {
-    grid-template-columns: minmax(0, 1fr) 22rem;
-    gap: var(--space-8);
-    align-items: start;
-  }
-
-  .contents[data-view='feed'] .contents__workspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  /* The phone stays in view while the month scrolls, like the screen of a device held beside the calendar. */
-  .contents__feed {
-    position: sticky;
-    top: var(--space-6);
+  .contents__crumbs .ui-menu__content {
+    max-width: calc(100vw - var(--space-8));
   }
 }
-

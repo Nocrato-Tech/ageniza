@@ -219,19 +219,23 @@ describe('which button shows: the state AND the permission', () => {
 describe('Enviar para aprovação', () => {
   const EDITOR = [VISUALIZE, READ_CLIENTS, OPERATE];
 
-  it('asks for the deadline and the note first, sends nothing until it is confirmed, and an empty round goes as {}', async () => {
+  it('asks for the deadline and the note first, sends nothing until it is confirmed, and an untouched round goes with the 48 hours proposed', async () => {
     const row = complete();
     const { calls, contents } = await openContent(row, { permissions: EDITOR });
     const before = periodCalls(calls).length;
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
-    expect(within(submitDialog()).getByLabelText('Aprovar até')).toBeTruthy();
+    expect(within(submitDialog()).getByLabelText('Responder até')).toBeTruthy();
     expect(within(submitDialog()).getByLabelText('Recado para o cliente')).toBeTruthy();
+    // 22:30 of the 11th in São Paulo (01:30Z of the 12th), plus 48 hours.
+    expect((within(submitDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('13/10/2026');
+    expect((within(submitDialog()).getByLabelText('Hora do prazo') as HTMLInputElement).value).toBe('22:30');
+    expect(within(submitDialog()).getByText('Padrão: 48 horas')).toBeTruthy();
     expect(moves(calls)).toHaveLength(0);
     confirmSubmit();
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(moves(calls)).toEqual([{ method: 'POST', path: `${contentPath(row.id)}/submit`, body: {} }]);
+    expect(moves(calls)).toEqual([{ method: 'POST', path: `${contentPath(row.id)}/submit`, body: { dueAt: '2026-10-14T01:30:00.000Z' } }]);
     expect(status(contents, row.id)).toBe('awaiting_approval');
     await waitFor(() => expect(periodCalls(calls).length).toBeGreaterThan(before));
   });
@@ -241,40 +245,43 @@ describe('Enviar para aprovação', () => {
     const { calls } = await openContent(row, { permissions: EDITOR });
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
-    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: '14/10/2026' } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '14/10/2026' } });
     fireEvent.change(within(submitDialog()).getByLabelText('Recado para o cliente'), { target: { value: '  Preciso da resposta até sábado.  ' } });
     expect(within(submitDialog()).getByText('31/500')).toBeTruthy();
     confirmSubmit();
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(moves(calls)).toEqual([{ method: 'POST', path: `${contentPath(row.id)}/submit`, body: { dueOn: '2026-10-14', note: 'Preciso da resposta até sábado.' } }]);
+    expect(moves(calls)).toEqual([{ method: 'POST', path: `${contentPath(row.id)}/submit`, body: { dueAt: '2026-10-15T01:30:00.000Z', note: 'Preciso da resposta até sábado.' } }]);
   });
 
   it.each([
-    ['today, on the São Paulo day (01:30Z is still the 11th)', '11/10/2026', '2026-10-11'],
-    ['the 90th day ahead', '09/01/2027', '2027-01-09']
-  ])('accepts a deadline of %s', async (_name, typed, sent) => {
+    ['today, on the São Paulo day (01:30Z is still the 11th), at an hour that has not come', '11/10/2026', '23:00', '2026-10-12T02:00:00.000Z'],
+    ['the end of the 90 days, to the minute', '09/01/2027', '22:30', '2027-01-10T01:30:00.000Z']
+  ])('accepts a deadline of %s', async (_name, typed, hour, sent) => {
     const row = complete();
     const { calls } = await openContent(row, { permissions: EDITOR });
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
-    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: typed } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: typed } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Hora do prazo'), { target: { value: hour } });
     confirmSubmit();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(moves(calls)).toEqual([{ method: 'POST', path: `${contentPath(row.id)}/submit`, body: { dueOn: sent } }]);
+    expect(moves(calls)).toEqual([{ method: 'POST', path: `${contentPath(row.id)}/submit`, body: { dueAt: sent } }]);
   });
 
   it.each([
-    ['yesterday', '10/10/2026'],
-    ['more than 90 days ahead', '10/01/2027']
-  ])('refuses a deadline %s on the field and sends nothing', async (_name, typed) => {
+    ['yesterday', '10/10/2026', '22:30'],
+    ['today at an hour that has already passed', '11/10/2026', '22:00'],
+    ['more than 90 days ahead', '10/01/2027', '22:30']
+  ])('refuses a deadline %s on the field and sends nothing', async (_name, typed, hour) => {
     const { calls } = await openContent(complete(), { permissions: EDITOR });
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
-    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: typed } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: typed } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Hora do prazo'), { target: { value: hour } });
     confirmSubmit();
-    expect(await within(submitDialog()).findByText('Escolha um dia de hoje até 90 dias à frente.')).toBeTruthy();
-    expect(within(submitDialog()).getByLabelText('Aprovar até').getAttribute('aria-invalid')).toBe('true');
+    expect(await within(submitDialog()).findByText('Escolha um dia e uma hora de agora até 90 dias à frente.')).toBeTruthy();
+    expect(within(submitDialog()).getByLabelText('Responder até').getAttribute('aria-invalid')).toBe('true');
     expect(moves(calls)).toHaveLength(0);
   });
 
@@ -286,28 +293,28 @@ describe('Enviar para aprovação', () => {
     const { calls } = await openContent(complete(), { permissions: EDITOR });
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
-    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: typed } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: typed } });
     confirmSubmit();
     expect(await within(submitDialog()).findByText(invalidDayMessage)).toBeTruthy();
-    expect(within(submitDialog()).getByLabelText('Aprovar até').getAttribute('aria-invalid')).toBe('true');
-    expect((within(submitDialog()).getByLabelText('Aprovar até') as HTMLInputElement).value).toBe(shown);
+    expect(within(submitDialog()).getByLabelText('Responder até').getAttribute('aria-invalid')).toBe('true');
+    expect((within(submitDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe(shown);
     await stillOpen();
     expect(moves(calls)).toHaveLength(0);
 
-    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: '14102026' } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '14102026' } });
     expect(within(submitDialog()).queryByText(invalidDayMessage)).toBeNull();
     confirmSubmit();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(moves(calls)).toHaveLength(1);
-    expect(moves(calls)[0]!.body).toEqual({ dueOn: '2026-10-14' });
+    expect(moves(calls)[0]!.body).toEqual({ dueAt: '2026-10-15T01:30:00.000Z' });
   });
 
-  it('still sends no dueOn when the field was typed into and then emptied', async () => {
+  it('sends no deadline at all when the day was typed into and then emptied', async () => {
     const { calls } = await openContent(complete(), { permissions: EDITOR });
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
-    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: '14/10/26' } });
-    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: '' } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '14/10/26' } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '' } });
     confirmSubmit();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(moves(calls)[0]!.body).toEqual({});
@@ -346,11 +353,11 @@ describe('Enviar para aprovação', () => {
     const { calls } = await openContent(complete(), { permissions: EDITOR });
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
-    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: '14/10' } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '14/10' } });
     close();
     expect(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
-    expect((within(submitDialog()).getByLabelText('Aprovar até') as HTMLInputElement).value).toBe('14/10');
+    expect((within(submitDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('14/10');
     expect(moves(calls)).toHaveLength(0);
   });
 
@@ -361,12 +368,12 @@ describe('Enviar para aprovação', () => {
     });
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
-    fireEvent.change(within(submitDialog()).getByLabelText('Aprovar até'), { target: { value: '14/10/2026' } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '14/10/2026' } });
     fireEvent.change(within(submitDialog()).getByLabelText('Recado para o cliente'), { target: { value: 'Até sábado.' } });
     confirmSubmit();
-    expect(await within(submitDialog()).findByText('O prazo vai de hoje até 90 dias à frente. Escolha outro dia.')).toBeTruthy();
+    expect(await within(submitDialog()).findByText('O prazo vai de agora até 90 dias à frente. Escolha outro dia ou outra hora.')).toBeTruthy();
     expect((within(submitDialog()).getByLabelText('Recado para o cliente') as HTMLTextAreaElement).value).toBe('Até sábado.');
-    expect((within(submitDialog()).getByLabelText('Aprovar até') as HTMLInputElement).value).toBe('14/10/2026');
+    expect((within(submitDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('14/10/2026');
     expect(moves(calls)).toHaveLength(1);
     await stillOpen();
   });

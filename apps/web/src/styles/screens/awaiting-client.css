@@ -1,4 +1,4 @@
-/* Parado no cliente: what waits for a client, by client, in rounded rows; the state of the deadline is a tag with an icon and words, never only a colour. */
+/* Parado no cliente: what waits for a client, by client, in rounded rows with the cover; late and waiting are a tag with an icon and words, never only a colour. */
 .awaiting-client {
   display: grid;
   gap: var(--space-4);
@@ -7,6 +7,11 @@
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
+  scroll-margin-top: var(--space-6);
+}
+
+.awaiting-client:focus-visible {
+  outline-offset: 2px;
 }
 
 .awaiting-client__head {
@@ -20,6 +25,7 @@
 .awaiting-client__heading {
   display: grid;
   gap: var(--space-1);
+  min-width: 0;
 }
 
 .awaiting-client__title {
@@ -35,21 +41,7 @@
 }
 
 .awaiting-client__count {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
-  border-radius: var(--radius-full);
-  background: var(--status-waiting-bg);
-  color: var(--status-waiting-text);
-  font: var(--caption);
-  font-weight: 600;
-}
-
-.awaiting-client__count svg {
-  width: 0.875rem;
-  height: 0.875rem;
+  flex: none;
 }
 
 .awaiting-client__skeleton {
@@ -81,8 +73,9 @@
 
 .awaiting-client__who {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
   min-width: 0;
 }
 
@@ -98,11 +91,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+.awaiting-client__resend {
+  margin-left: auto;
+}
+
 .awaiting-client__item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-1) var(--space-3);
+  gap: var(--space-4);
   min-height: 2.75rem;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-default);
@@ -120,37 +117,66 @@
   box-shadow: var(--shadow-raised);
 }
 
+.awaiting-client__cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+.awaiting-client__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.awaiting-client__cover--placeholder {
+  --format-shape-size: 1.5rem;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.awaiting-client__item-main {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
 .awaiting-client__item-title {
   font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
 .awaiting-client__item-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  grid-column: 1;
   color: var(--text-secondary);
-  font: var(--caption);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
 }
 
-.awaiting-client__item .approval-state {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
-  border-radius: var(--radius-full);
-  background: var(--status-waiting-bg);
-  color: var(--status-waiting-text);
-  font-weight: 600;
+.awaiting-client__item-end {
+  display: flex;
+  align-items: center;
 }
 
-.awaiting-client__item .approval-state .ui-icon {
-  color: inherit;
-}
+@media (max-width: 47.99rem) {
+  .awaiting-client {
+    padding: var(--space-4);
+  }
 
-.awaiting-client__item .approval-state--expired {
-  background: var(--status-late-bg);
-  color: var(--status-late-text);
-}
+  .awaiting-client__item {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-3);
+  }
 
+  .awaiting-client__item-end {
+    grid-column: 1 / -1;
+  }
+
+  .awaiting-client__resend {
+    margin-left: 0;
+  }
+}

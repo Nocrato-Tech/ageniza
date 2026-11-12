@@ -6,7 +6,8 @@ import type { AuthSessionSnapshot } from './auth.js';
 import { AcceptanceGate, AcceptancePage } from './acceptance.js';
 import { AccountMenu } from './account-menu.js';
 import { ApprovalLinkPage } from './approval-link.js';
-import { AgencyAreaLayout, AgencyHomePage, AgencyPermissionRoute } from './agency.js';
+import { AgencyAreaLayout, AgencyPermissionRoute } from './agency.js';
+import { AgencyHomePage } from './agency-home.js';
 import { AuthLayout } from './auth-layout.js';
 import { CircleAlert, CircleCheck } from 'lucide-react';
 import { Button, LiveStatus, Logo } from '@ageniza/ui';
@@ -33,7 +34,7 @@ import { termsOfUse } from './legal/terms.js';
 import { LoginPage } from './login.js';
 import { NoAccessPage } from './no-access.js';
 import { ClientAccessTab } from './portal-access.js';
-import { PortalAreaLayout, PortalSkeletonPage } from './portal.js';
+import { PortalAreaLayout } from './portal.js';
 import { PortalHomePage } from './portal-home.js';
 import { PortalContentsPage } from './portal-contents.js';
 import { PortalBrandPage } from './portal-brand.js';
@@ -69,6 +70,12 @@ function PortalCalendarRedirect() {
   const { clienteId = '' } = useParams();
   const { search } = useLocation();
   return <Navigate to={{ pathname: `/portal/${encodeURIComponent(clienteId)}/conteudos`, search }} replace />;
+}
+
+/** The portal has no Relatórios (the board dropped it): the old address lands on the Início. */
+function PortalReportsRedirect() {
+  const { clienteId = '' } = useParams();
+  return <Navigate to={`/portal/${encodeURIComponent(clienteId)}/inicio`} replace />;
 }
 
 /**
@@ -210,7 +217,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="conteudos/:conteudoId" element={<PortalContentPage />} />
       <Route path="calendario" element={<PortalCalendarRedirect />} />
       <Route path="marca" element={<PortalBrandPage />} />
-      <Route path="relatorios" element={<PortalSkeletonPage title="Relatórios" description="Aqui você vai ver os resultados do trabalho que sua agência faz para você." />} />
+      <Route path="relatorios" element={<PortalReportsRedirect />} />
       <Route path="*" element={<NotFoundPage as="section" />} />
     </Route>
     {DesignSystemPage !== null && <Route path="design-system" element={<Suspense fallback={<LoadingPage />}><DesignSystemPage /></Suspense>} />}

@@ -259,7 +259,8 @@ describe('the send', () => {
     await openBatch();
     fireEvent.click(box(/Primeiro/));
     fireEvent.click(box(/Terceiro/));
-    fireEvent.change(within(batchDialog()).getByLabelText('Aprovar até'), { target: { value: '14/10/2026' } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '14/10/2026' } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Hora do prazo'), { target: { value: '18:00' } });
     fireEvent.change(within(batchDialog()).getByLabelText('Recado para o cliente'), { target: { value: ' Confira a legenda. ' } });
     const before = periodCalls.length;
     send('Enviar 2 para aprovação');
@@ -268,20 +269,24 @@ describe('the send', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(batches).toEqual([{
       path: `/agencies/${AGENCY}/clients/${CLIENT}/contents/submit`,
-      body: { contentIds: [rows[0]!.id, rows[2]!.id], dueOn: '2026-10-14', note: 'Confira a legenda.' }
+      body: { contentIds: [rows[0]!.id, rows[2]!.id], dueAt: '2026-10-14T21:00:00.000Z', note: 'Confira a legenda.' }
     }]);
     expect(rows.map((content) => content.status)).toEqual(['awaiting_approval', 'in_production', 'awaiting_approval']);
     await waitFor(() => expect(periodCalls.length).toBeGreaterThan(before));
   });
 
-  it('sends no deadline and no note when none was given, and says "1 conteúdo" in the singular', async () => {
+  it('proposes the deadline of 48 hours, with the hour, and sends it untouched with no note; says "1 conteúdo" in the singular', async () => {
     const rows = [row({ title: 'Único' })];
     const { batches } = await mount({ rows });
     await openBatch();
+    // 01:30Z of the 12th is 22:30 of the 11th in São Paulo: 48 hours later is 22:30 of the 13th.
+    expect((within(batchDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('13/10/2026');
+    expect((within(batchDialog()).getByLabelText('Hora do prazo') as HTMLInputElement).value).toBe('22:30');
+    expect(within(batchDialog()).getByText('Padrão: 48 horas')).toBeTruthy();
     fireEvent.click(box(/Único/));
     send('Enviar 1 para aprovação');
     expect(await screen.findByText('1 conteúdo enviado para aprovação.')).toBeTruthy();
-    expect(batches[0]!.body).toEqual({ contentIds: [rows[0]!.id] });
+    expect(batches[0]!.body).toEqual({ contentIds: [rows[0]!.id], dueAt: '2026-10-14T01:30:00.000Z' });
   });
 
   it('is of one client: the ids are the ones the screen of that client lists', async () => {
@@ -299,9 +304,9 @@ describe('the send', () => {
     const { batches } = await mount({ rows: [row({ title: 'Um' })] });
     await openBatch();
     fireEvent.click(box(/Um/));
-    fireEvent.change(within(batchDialog()).getByLabelText('Aprovar até'), { target: { value: '10/10/2026' } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '10/10/2026' } });
     send('Enviar 1 para aprovação');
-    expect(await within(batchDialog()).findByText('Escolha um dia de hoje até 90 dias à frente.')).toBeTruthy();
+    expect(await within(batchDialog()).findByText('Escolha um dia e uma hora de agora até 90 dias à frente.')).toBeTruthy();
     expect(batches).toHaveLength(0);
   });
 
@@ -313,23 +318,23 @@ describe('the send', () => {
     const { batches } = await mount({ rows: [row({ title: 'Um' })] });
     await openBatch();
     fireEvent.click(box(/Um/));
-    fireEvent.change(within(batchDialog()).getByLabelText('Aprovar até'), { target: { value: typed } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: typed } });
     fireEvent.change(within(batchDialog()).getByLabelText('Recado para o cliente'), { target: { value: 'Até sábado.' } });
     send('Enviar 1 para aprovação');
     expect(await within(batchDialog()).findByText(invalidDayMessage)).toBeTruthy();
-    expect(within(batchDialog()).getByLabelText('Aprovar até').getAttribute('aria-invalid')).toBe('true');
-    expect((within(batchDialog()).getByLabelText('Aprovar até') as HTMLInputElement).value).toBe(typed);
+    expect(within(batchDialog()).getByLabelText('Responder até').getAttribute('aria-invalid')).toBe('true');
+    expect((within(batchDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe(typed);
     expect((within(batchDialog()).getByLabelText('Recado para o cliente') as HTMLTextAreaElement).value).toBe('Até sábado.');
     expect(box(/Um/).checked).toBe(true);
     expect(batches).toHaveLength(0);
   });
 
-  it('still sends no dueOn when the field was typed into and then emptied', async () => {
+  it('sends no deadline at all when the day was typed into and then emptied', async () => {
     const { batches } = await mount({ rows: [row({ title: 'Um' })] });
     await openBatch();
     fireEvent.click(box(/Um/));
-    fireEvent.change(within(batchDialog()).getByLabelText('Aprovar até'), { target: { value: '14/10/26' } });
-    fireEvent.change(within(batchDialog()).getByLabelText('Aprovar até'), { target: { value: '' } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '14/10/26' } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '' } });
     send('Enviar 1 para aprovação');
     await waitFor(() => expect(batches).toHaveLength(1));
     expect(batches[0]!.body).toEqual({ contentIds: expect.any(Array) });
@@ -341,11 +346,11 @@ describe('the send', () => {
   ])('asks before %s discards a deadline that was only half typed, with nothing else chosen', async (_name, close) => {
     await mount({ rows: [row({ title: 'Um' })] });
     await openBatch();
-    fireEvent.change(within(batchDialog()).getByLabelText('Aprovar até'), { target: { value: '14/10' } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '14/10' } });
     close();
     expect(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
-    expect((within(batchDialog()).getByLabelText('Aprovar até') as HTMLInputElement).value).toBe('14/10');
+    expect((within(batchDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('14/10');
   });
 
   it('asks before it closes with something chosen, and closes at once with nothing', async () => {
@@ -451,7 +456,7 @@ describe('what the API refuses', () => {
   });
 
   it.each([
-    ['CONTENT_APPROVAL_DUE_INVALID', 'O prazo vai de hoje até 90 dias à frente. Escolha outro dia.'],
+    ['CONTENT_APPROVAL_DUE_INVALID', 'O prazo vai de agora até 90 dias à frente. Escolha outro dia ou outra hora.'],
     ['CONTENT_APPROVAL_NOTE_INVALID', 'O recado tem até 500 caracteres e não pode ter caracteres especiais. Deixe em branco para enviar sem recado.']
   ])('puts %s on its own field', async (code, text) => {
     await mount({ rows: [row({ title: 'Um' })], batch: () => failure(400, code) });

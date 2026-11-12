@@ -1,3 +1,22 @@
+/* The feed view: the phone of the board on the left and the guide on the right; below 64rem the guide goes under the phone. */
+.content-feed-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-8);
+  align-items: start;
+}
+
+@media (min-width: 64rem) {
+  .content-feed-layout {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
+
+  .content-feed-guide {
+    position: sticky;
+    top: var(--space-6);
+  }
+}
+
 .content-feed {
   display: grid;
   gap: var(--space-3);
@@ -11,11 +30,22 @@
   overflow-wrap: anywhere;
 }
 
+.content-feed-layout .content-feed__handle {
+  padding: 0;
+  font-weight: 700;
+}
+
 .content-feed__profile {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-3);
+  gap: var(--space-4);
+}
+
+.content-feed__name {
+  margin: 0;
+  font: var(--label-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .content-feed__counters {
@@ -35,12 +65,45 @@
 .content-feed__counters dd {
   margin: 0;
   color: var(--text-primary);
-  font: var(--label-md);
+  font: var(--heading-lg);
 }
 
 .content-feed__counters dt {
   color: var(--text-secondary);
   font: var(--caption);
+}
+
+/* The circles of the stories, where Instagram keeps the destaques: the day in the ring, the state in words below it. */
+.content-feed__stories {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0 0 var(--space-1);
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: none;
+}
+
+.content-feed__stories::-webkit-scrollbar {
+  display: none;
+}
+
+.content-feed__story {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  min-width: 3.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--caption);
+  cursor: pointer;
+}
+
+.content-feed__story .story-ring {
+  --story-size: 3.25rem;
 }
 
 .content-feed__grid {
@@ -52,11 +115,30 @@
   list-style: none;
 }
 
+.content-feed-layout .content-feed__grid {
+  gap: var(--space-1);
+}
+
 .content-feed__tile {
   position: relative;
   aspect-ratio: 1;
   overflow: hidden;
   background: var(--bg-hover);
+}
+
+.content-feed-layout .content-feed__tile {
+  aspect-ratio: 3 / 4;
+}
+
+/* On the portal a tile that is still planned says so in a pill. */
+.content-feed__planned {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--caption);
+  white-space: nowrap;
 }
 
 /* The tile is the link to its content: a press anywhere on it opens it. */
@@ -73,57 +155,129 @@
   outline-offset: -3px;
 }
 
-/* The feed on its own screen: the profile of the client on the page, a header and three columns, with no device around it. */
-.content-feed-full {
-  width: 100%;
-  max-width: 52rem;
-  margin: 0 auto;
-  padding: var(--space-6);
+/* What is still planned (a day ahead) is outlined with a dashed line inside the tile, so the grid reads as the finished profile and its plan. */
+.content-feed__tile[data-planned] .content-feed__link::after {
+  content: '';
+  position: absolute;
+  inset: 0.1875rem;
+  border: 1.5px dashed var(--color-white);
+  pointer-events: none;
 }
 
-.content-feed-full .content-feed {
-  gap: var(--space-6);
+.content-feed__date {
+  position: absolute;
+  top: var(--space-1);
+  left: var(--space-1);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.content-feed-full .content-feed__handle {
-  padding: 0;
+.content-feed__format {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--color-white);
+  filter: drop-shadow(0 0 2px rgb(0 0 0 / 0.6));
+}
+
+.content-feed__state {
+  position: absolute;
+  bottom: var(--space-1);
+  left: var(--space-1);
+  max-width: calc(100% - 2 * var(--space-1));
+}
+
+.content-feed__state .ui-status-tag,
+.content-feed__state .ui-late-badge {
+  min-height: 1.125rem;
+  padding: 0 var(--space-1);
+  font: var(--caption);
+}
+
+.content-feed__state .ui-status-tag {
+  border-color: transparent;
+  background: var(--bg-surface);
+}
+
+.content-feed__state svg {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
+.content-feed__empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) 0;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.content-feed__empty p {
+  margin: 0;
+}
+
+/* The panel that reads the feed: two cards on the surface, with the words of the board. */
+.content-feed-guide {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.content-feed-guide__card {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.content-feed-guide__card p {
+  margin: 0;
   color: var(--text-secondary);
 }
 
-.content-feed-full .content-feed__profile {
-  gap: var(--space-6);
-  padding: 0;
-}
-
-.content-feed__name {
+.content-feed-guide__title {
   margin: 0;
-  font: var(--heading-lg);
-  overflow-wrap: anywhere;
+  font: var(--title-md);
 }
 
-.content-feed-full .content-feed__counters {
-  flex: 0 1 24rem;
-  margin-left: auto;
+.content-feed-guide__legend {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.content-feed-full .content-feed__grid {
-  gap: var(--space-1);
+.content-feed-guide__legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-secondary);
 }
 
-@media (max-width: 47.99rem) {
-  .content-feed-full {
-    padding: var(--space-4);
-  }
+.content-feed-guide__legend .ui-status-tag {
+  flex: none;
+}
 
-  .content-feed-full .content-feed__profile {
-    flex-wrap: wrap;
-    gap: var(--space-3);
-  }
+.content-feed-guide__dashed {
+  flex: none;
+  width: 2.25rem;
+  height: 1.5rem;
+  border: 1.5px dashed var(--color-slate-500);
+  border-radius: var(--radius-sm);
+}
 
-  .content-feed-full .content-feed__counters {
-    flex-basis: 100%;
-    margin-left: 0;
-  }
+.content-feed-guide__card .content-feed-guide__note {
+  font: var(--caption);
 }
 
 .content-feed__cover {
@@ -241,125 +395,6 @@
   padding: 0;
   list-style: none;
 }
-
-.content-feed__skeleton {
-  height: 100%;
-}
-
-.content-feed__status {
-  position: absolute;
-  top: var(--space-1);
-  left: var(--space-1);
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 2px var(--space-1);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg-canvas) 82%, transparent);
-  color: var(--text-primary);
-  font: var(--caption);
-}
-
-.content-feed__dot {
-  flex: none;
-  width: 0.4375rem;
-  height: 0.4375rem;
-  border-radius: 50%;
-  background: var(--color-slate-400);
-}
-
-.content-feed__tile[data-status='approved'] .content-feed__dot {
-  background: var(--color-teal-500);
-}
-
-.content-feed__tile[data-status='awaiting_approval'] .content-feed__dot {
-  background: var(--status-waiting-fg);
-}
-
-.content-feed__tile[data-status='adjusting'] .content-feed__dot {
-  background: var(--status-adjust-fg);
-}
-
-.content-feed__tile[data-status='in_production'] .content-feed__dot {
-  width: 0.3125rem;
-  height: 0.3125rem;
-  border: 1.5px solid var(--color-slate-400);
-  background: transparent;
-}
-
-/* On the agency's screens the state pill of a tile takes the family of its state, as the tags of the calendar do. */
-.contents .content-feed__tile[data-status='awaiting_approval'] .content-feed__status {
-  background: var(--status-waiting-bg);
-  color: var(--status-waiting-text);
-}
-
-.contents .content-feed__tile[data-status='approved'] .content-feed__status {
-  background: var(--status-ready-bg);
-  color: var(--status-ready-text);
-}
-
-.contents .content-feed__tile[data-status='adjusting'] .content-feed__status {
-  background: var(--status-adjust-bg);
-  color: var(--status-adjust-text);
-}
-
-.content-feed__format {
-  position: absolute;
-  top: var(--space-1);
-  right: var(--space-1);
-  width: 0.875rem;
-  height: 0.875rem;
-  color: var(--color-white);
-  filter: drop-shadow(0 0 2px rgb(0 0 0 / 0.6));
-}
-
-.content-feed__tags {
-  position: absolute;
-  right: var(--space-1);
-  bottom: var(--space-1);
-  left: var(--space-1);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-1);
-}
-
-.content-feed__date {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  font: var(--caption);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.content-feed__planned {
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  font: var(--caption);
-  white-space: nowrap;
-}
-
-.content-feed__empty {
-  display: grid;
-  justify-items: center;
-  gap: var(--space-3);
-  padding: var(--space-8) 0;
-  color: var(--text-secondary);
-  text-align: center;
-}
-
-.content-feed__empty p {
-  margin: 0;
-}
-
-/* The phone the agency's feed is drawn on: an ink bezel, the camera island and the home bar around a screen with room.
-   Everything here is scoped to the phone: the portal draws its own feed with the same tile classes. */
 .content-phone {
   width: min(100%, 22rem);
   padding: var(--space-2);
@@ -371,7 +406,6 @@
 /* On the agency's calendar the device is the light one of the board; the portal's approval link keeps the ink bezel. */
 .contents .content-phone {
   background: var(--bg-surface);
-  box-shadow: var(--shadow-floating);
 }
 
 .content-phone__screen {
@@ -412,52 +446,15 @@
   transform: translateX(-50%);
 }
 
+
+/* The phone of the board: a bezel, the camera island and the home bar around a screen with room. The approval link of the portal draws its post on it too. */
+.content-feed-layout .content-phone {
+  width: min(100%, 23.5rem);
+  margin-inline: auto;
+}
+
 .content-phone .content-feed {
   gap: var(--space-4);
-}
-
-.content-phone .content-feed__handle {
-  padding: 0;
-  font: var(--label-md);
-}
-
-.content-phone .content-feed__profile {
-  gap: var(--space-4);
-  padding: 0;
-}
-
-.content-phone .content-feed__grid {
-  gap: var(--space-1);
-}
-
-.content-phone .content-feed__tile,
-.content-feed-full .content-feed__tile {
-  aspect-ratio: 3 / 4;
-  border-radius: var(--radius-sm);
-}
-
-/* The phone tiles are small: the state takes the whole width of the tile, so "Aguardando" is never cut, and the format icon moves to the bottom corner the "planned" tag leaves (true of every tile here, so it stays for the reader of the screen only). */
-.content-phone .content-feed__status {
-  max-width: calc(100% - 2 * var(--space-1));
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.content-phone .content-feed__format {
-  top: auto;
-  bottom: var(--space-1);
-}
-
-.content-phone .content-feed__planned {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  border: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 
 .content-feed__pager {
@@ -465,68 +462,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-}
-
-/* The phone beside the calendar has a screen of a fixed height and the grid scrolls inside it: wheel, touch and keyboard.
-   The bar is hidden (it would sit on the bezel), the region is still a stop of the keyboard and shows its focus. */
-.content-phone--fixed .content-phone__screen {
-  grid-template-rows: minmax(0, 1fr);
-  height: 42rem;
-  min-height: 0;
-  padding-bottom: var(--space-8);
-  overflow: hidden;
-}
-
-.content-feed--scroll {
-  grid-template-rows: minmax(0, 1fr) auto;
-  min-height: 0;
-}
-
-.content-feed__scroller {
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
-}
-
-.content-feed__scroller::-webkit-scrollbar {
-  display: none;
-}
-
-.content-feed__scroller:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.content-feed__scrolled {
-  display: grid;
-  gap: var(--space-4);
-  padding: 0 0 var(--space-2);
-}
-
-.content-feed__scrolled .content-feed__grid {
-  gap: var(--space-1);
-}
-
-.content-feed__error,
-.content-feed__loading {
-  display: grid;
-  justify-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  color: var(--text-secondary);
-  font: var(--caption);
-  text-align: center;
-}
-
-.content-feed__error p {
-  margin: 0;
-}
-
-/* The two arrows of the phone sit side by side at the middle of the foot of the screen. */
-.content-phone--fixed .content-feed__pager {
-  justify-content: center;
-  gap: var(--space-4);
 }
 
 .content-feed__range {
@@ -540,4 +475,3 @@
   cursor: not-allowed;
   opacity: 0.55;
 }
-

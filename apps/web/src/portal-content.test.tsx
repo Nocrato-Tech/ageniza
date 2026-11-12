@@ -1013,7 +1013,7 @@ describe('the post of the portal (#270)', () => {
       const { container } = await open({ state: 'in_production' });
       await title('Lançamento da primavera');
       const shell = container.querySelector('.portal-shell') as HTMLElement;
-      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
+      expect(Array.from(shell.children).filter((child) => !child.classList.contains('shell-topbar')).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
       const sidebar = shell.querySelector('.portal-sidebar') as HTMLElement;
       expect(sidebar.lastElementChild).toBe(screen.getByRole('navigation', { name: 'Navegação do portal' }));
       // jsdom has no layout: the rules that hold a short page's bar at the bottom of a 360 px phone are read from the stylesheet.

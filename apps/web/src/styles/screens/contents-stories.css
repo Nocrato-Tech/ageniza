@@ -1,6 +1,61 @@
-/* "Stories do mês": the scripts of the period as a strip of circles above the calendar. The day is the circle and the state is its ring
-   (dashed draft, violet sent, teal recorded) and the tag below it, so the state is never colour alone. The circle is drawn from the item's
-   data, not repeated in the markup, so the row still reads as "day, state, open" to a screen reader; the whole item is the button. */
+/* The ring of a story: the day (or the scenes, or the "+") in a circle whose edge tells the state: dashed for a draft, violet for a sent
+   script, teal for a recorded one. The word is always beside it, so the state is never colour alone. The ring is decoration; its button has the name. */
+.story-ring {
+  --story-ring: var(--color-slate-300);
+
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--story-size, 3.5rem);
+  height: var(--story-size, 3.5rem);
+  padding: 3px;
+  border-radius: var(--radius-full);
+  background: var(--story-ring);
+}
+
+.story-ring__in {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border: 2px solid var(--bg-surface);
+  border-radius: inherit;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.story-ring[data-status='draft'] {
+  background: transparent;
+  border: 2px dashed var(--color-slate-500);
+}
+
+.story-ring[data-status='sent'] {
+  --story-ring: var(--color-violet-600);
+}
+
+.story-ring[data-status='recorded'] {
+  --story-ring: var(--color-teal-700);
+}
+
+.story-ring[data-status='new'] {
+  background: transparent;
+  border: 2px solid var(--color-indigo-600);
+}
+
+.story-ring[data-status='new'] .story-ring__in {
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+}
+
+.story-ring svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* "Stories do mês": the scripts of the period as a strip of circles above the calendar, "Novo" first. */
 .story-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -12,23 +67,15 @@
   background: var(--bg-surface);
 }
 
-.story-list__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
 .story-list__title {
   margin: 0;
   font: var(--title-md);
 }
 
-/* The empty state of the list reads like the roster's: the block and its text centred together, never a centred block with left-aligned text. */
-.story-list__empty:not(.ui-empty-state--mascot) .ui-empty-state__body {
-  justify-items: center;
-  text-align: center;
+.story-list__none {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
 }
 
 .story-list__items {
@@ -41,89 +88,67 @@
   scrollbar-width: thin;
 }
 
-.story-list__item {
-  --story-ring: var(--status-production-fg);
-
-  position: relative;
+.story-list__open {
   display: grid;
-  flex: none;
   justify-items: center;
   align-content: start;
   gap: var(--space-1);
-  min-width: 5rem;
+  min-width: 4.5rem;
   min-height: 2.75rem;
   padding: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
   color: var(--text-secondary);
   font: var(--caption);
   text-align: center;
+  cursor: pointer;
 }
 
-.story-list__item[data-status='sent'] {
-  --story-ring: var(--status-waiting-fg);
-}
-
-.story-list__item[data-status='recorded'] {
-  --story-ring: var(--status-ready-fg);
-}
-
-.story-list__item::before {
-  content: attr(data-day);
-  display: grid;
-  place-items: center;
-  width: 3.5rem;
-  height: 3.5rem;
-  border: 3px solid var(--story-ring);
-  border-radius: var(--radius-full);
-  background: var(--bg-surface);
+.story-list__open:hover {
   color: var(--text-primary);
-  font: var(--label-md);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
 
-.story-list__item[data-status='draft']::before {
-  border-style: dashed;
-  border-width: 2px;
+.story-list__open:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
-.story-list__item::after {
-  content: attr(data-weekday) ' ' attr(data-day);
-  order: 1;
+.story-list__when {
   color: var(--text-primary);
   font-weight: 700;
-  text-transform: lowercase;
 }
 
-.story-list__item .ui-status-tag {
-  order: 2;
-}
-
-/* The full date is the item's name for who reads it aloud; the circle and its short label are what is seen. */
-.story-list__day {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-/* The button is the whole item, a press anywhere on the circle or its words opens the script. */
-.story-list .story-list__item > .ui-button {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
+.story-list__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
   padding: 0;
-  border-radius: var(--radius-lg);
-  background: transparent;
-  color: transparent;
-  font-size: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  list-style: none;
 }
 
-.story-list .story-list__item > .ui-button:hover {
-  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+.story-list__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.story-ring--legend {
+  --story-size: 1rem;
+
+  padding: 0;
+}
+
+.story-ring--legend[data-status='sent'],
+.story-ring--legend[data-status='recorded'] {
+  background: var(--story-ring);
+}
+
+.story-ring--legend[data-status='draft'] {
+  padding: 0;
 }
 
 .story-script__status {

@@ -50,25 +50,91 @@
     bottom: auto;
     left: auto;
   }
+
+  /* The person is an avatar in the top bar; the name stays readable to assistive technology. */
+  .portal-header .account-menu--sidebar {
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .portal-header .account-menu--sidebar .ui-menu__trigger {
+    padding: var(--space-2);
+  }
+
+  .portal-header .account-menu__text,
+  .portal-header .account-menu__chevron {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* Sair is in the account menu, where the avatar opens it. */
+  .portal-header .account-menu__leave {
+    display: none;
+  }
+
+  .portal-header__identity {
+    flex: 1;
+  }
+
+  .portal-header__chevron {
+    display: none;
+  }
+}
+
+/* The top bar floats over the content column; the content leaves room for it (the specificity beats portal-home.css, which comes later). */
+@media (min-width: 48rem) {
+  .portal-shell {
+    position: relative;
+  }
+
+  .portal-shell > .shell-topbar {
+    position: absolute;
+    top: var(--space-5);
+    right: var(--space-8);
+    z-index: 3;
+    margin: 0;
+  }
+
+  .portal-shell > .shell-topbar ~ .portal-content {
+    padding-top: calc(var(--space-5) + 2.75rem + var(--space-4));
+  }
+}
+
+a.portal-header__identity {
+  color: inherit;
+  text-decoration: none;
+}
+
+.portal-header__chevron {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-left: auto;
+  color: var(--text-secondary);
 }
 
 .portal-header__labels {
   display: grid;
+  flex: 1;
   min-width: 0;
   gap: 0;
 }
 
 .portal-header__name {
-  margin: 0;
   color: inherit;
   font: var(--body-md);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
+/* "Com a {agency}" sits above the client's name, as the context label does in the agency's column. */
 .portal-header__agency {
-  margin: 0;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: var(--caption);
 }
 
@@ -122,7 +188,7 @@ html:has(.portal-shell) {
 
 .portal-nav ul {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-1);
   margin: 0;
   padding: var(--space-1) var(--space-2);
