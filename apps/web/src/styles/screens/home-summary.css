@@ -1,11 +1,22 @@
-/* The summary cards above it: a colour family per card, the 3D icon on its stage leaving by the top, a number and the way forward. */
+/* The four blocks of the week: a colour family per block, the 3D icon on its stage leaving by the top, a number and the way forward. */
 .home-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-8) var(--space-4);
   margin: 0;
   padding: var(--space-4) 0 0;
   list-style: none;
+}
+
+@media (max-width: 80rem) {
+  .home-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.home-summary__item {
+  display: grid;
+  min-width: 0;
 }
 
 .home-summary__card {
@@ -14,13 +25,14 @@
   --ui-stage-bg: var(--b-bg);
   position: relative;
   display: grid;
-  grid-template-rows: auto auto auto 1fr;
-  gap: var(--space-1);
+  align-content: space-between;
+  gap: var(--space-4);
   min-height: 11.5rem;
   padding: var(--space-6);
   border-radius: var(--radius-xl);
   background: var(--b-bg);
   color: var(--b-fg);
+  text-decoration: none;
 }
 
 .home-summary__card--violet {
@@ -33,16 +45,26 @@
   --b-fg: var(--block-red-fg);
 }
 
-.home-summary__label,
-.home-summary__number,
-.home-summary__hint {
-  margin: 0;
+.home-summary__card--teal {
+  --b-bg: var(--block-teal-bg);
+  --b-fg: var(--block-teal-fg);
+}
+
+.home-summary__card--sky {
+  --b-bg: var(--block-sky-bg);
+  --b-fg: var(--block-sky-fg);
 }
 
 .home-summary__label {
   max-width: 62%;
   font: var(--label-md);
   font-weight: 600;
+}
+
+.home-summary__body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .home-summary__number {
@@ -52,6 +74,7 @@
 
 .home-summary__hint {
   font: var(--body-md);
+  overflow-wrap: anywhere;
 }
 
 .home-summary__action {
@@ -61,15 +84,13 @@
   justify-self: start;
   gap: var(--space-1);
   min-height: 2.75rem;
-  margin-top: var(--space-3);
-  color: inherit;
   font: var(--label-md);
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-.home-summary__action:hover {
+.home-summary__card:hover .home-summary__action {
   text-decoration-thickness: 2px;
 }
 
@@ -79,9 +100,12 @@
   height: 1rem;
 }
 
+.home-summary--loading > * {
+  min-height: 11.5rem;
+}
+
 @media (max-width: 47.99rem) {
   .home-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-8) var(--space-3);
   }
 
@@ -133,66 +157,3 @@
   width: 0.875rem;
   height: 0.875rem;
 }
-
-@media (max-width: 40rem) {
-  .awaiting-client__item {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .awaiting-client__item .approval-state {
-    grid-column: 1;
-    grid-row: auto;
-    justify-self: start;
-  }
-}
-
-.agency-shortcuts {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
-  gap: var(--space-4);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.agency-shortcut {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-4);
-  height: 100%;
-  box-sizing: border-box;
-  padding: var(--space-4) var(--space-6);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  text-decoration: none;
-}
-
-.agency-shortcut:hover {
-  border-color: var(--focus-ring);
-}
-
-.agency-shortcut__icon,
-.agency-shortcut__chevron {
-  width: 1.5rem;
-  height: 1.5rem;
-  color: var(--text-secondary);
-}
-
-.agency-shortcut__text {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.agency-shortcut__label {
-  font: var(--title-md);
-}
-
-.agency-shortcut__description {
-  color: var(--text-secondary);
-  font: var(--body-md);
-}
-
