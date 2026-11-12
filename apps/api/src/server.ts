@@ -124,7 +124,10 @@ export const startApi = async (): Promise<void> => {
     database,
     auth,
     requireClientAccess: createRequireClientAccess({ database }),
-    ...(mediaDependencies === undefined ? {} : { media: { storage: mediaDependencies.storage, downloadUrlExpirySeconds: mediaDependencies.config.downloadUrlExpirySeconds } })
+    ...(mediaDependencies === undefined ? {} : { media: { storage: mediaDependencies.storage, downloadUrlExpirySeconds: mediaDependencies.config.downloadUrlExpirySeconds } }),
+    ...(config.identityStorage === undefined ? {} : {
+      senderPhoto: { identityStorage: createIdentityStorageClient(config.identityStorage), downloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds }
+    })
   };
   const approvalLinkDependencies: ApprovalLinkModuleDependencies = {
     database,

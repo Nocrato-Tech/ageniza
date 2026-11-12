@@ -2160,6 +2160,7 @@ Lê o estudo de marca, no portal.
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/feed` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9 |
 | `GET` | `/agencies/:agencyId/contents/awaiting-client` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista o que está parado no cliente, para o Início da agência |
 | `GET` | `/agencies/:agencyId/contents/activation` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê os fatos do caminho de ativação da agência |
+| `GET` | `/agencies/:agencyId/contents/summary` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê os contadores do Início da agência |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents` | Sessão + vínculo com a agência | `conteudo.operar` | Cria um conteúdo em produção |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.operar` | Edita um conteúdo; mover de data é editar `publishOn` |
@@ -2177,6 +2178,7 @@ Lê o estudo de marca, no portal.
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/return` | Sessão + vínculo com a agência | `conteudo.visualizar` | Devolve uma subtarefa entregue, com comentário |
 | `GET` | `/clients/:clientId/contents` | Sessão + vínculo com o cliente | — | Lista os conteúdos de um período, no portal |
 | `GET` | `/clients/:clientId/contents/awaiting-approval` | Sessão + vínculo com o cliente | — | Lista o que espera a aprovação da pessoa, no portal |
+| `GET` | `/clients/:clientId/contents/progress` | Sessão + vínculo com o cliente | — | Lê o progresso do mês, no portal ("Boa notícia") |
 | `GET` | `/clients/:clientId/contents/:contentId` | Sessão + vínculo com o cliente | — | Lê um conteúdo, no portal |
 | `GET` | `/clients/:clientId/contents/:contentId/media/:assetId/url` | Sessão + vínculo com o cliente | — | Emite a URL assinada de uma mídia do conteúdo, no portal |
 | `POST` | `/clients/:clientId/contents/:contentId/withdraw-approval` | Sessão + vínculo com o cliente | — | Desfaz a aprovação de um conteúdo antes da publicação, no portal |
@@ -2230,7 +2232,8 @@ Consulta os conteúdos e os roteiros de stories de um período.
       {
         "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
         "scriptOn": "2026-10-21",
-        "status": "draft"
+        "status": "draft",
+        "sceneCount": 4
       }
     ]
   },
@@ -2308,16 +2311,22 @@ Lista o que está parado no cliente, para o Início da agência.
     {
       "clientId": "77777777-7777-4777-8777-777777777777",
       "clientName": "Padaria Central",
+      "approvers": [
+        "Rosana Teixeira"
+      ],
       "contents": [
         {
           "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
           "title": "Lançamento da coleção de outono",
           "format": "reels",
           "publishOn": "2026-10-20",
+          "thumbnailAssetId": "44444444-4444-4444-8444-444444444444",
           "sentAt": "2026-10-14T12:00:00.000Z",
+          "dueAt": "2026-10-18T21:00:00.000Z",
           "dueOn": "2026-10-18",
           "daysWaiting": 2,
-          "daysToDue": 2
+          "daysToDue": 2,
+          "daysLate": null
         }
       ]
     }
@@ -2337,7 +2346,7 @@ Lê os fatos do caminho de ativação da agência.
 - Acesso: Sessão + vínculo com a agência.
 - Permissão: `conteudo.visualizar`.
 
-**Resposta `200`** — Os fatos.
+**Resposta `200`** — Os fatos e os passos.
 
 ```json
 {
@@ -2345,7 +2354,49 @@ Lê os fatos do caminho de ativação da agência.
     "hasContent": true,
     "sentForApproval": true,
     "approvedByClient": false,
-    "published": false
+    "published": false,
+    "steps": {
+      "firstClient": {
+        "at": "2026-10-03T12:00:00.000Z",
+        "name": "Padaria Central"
+      },
+      "firstContent": {
+        "at": "2026-10-11T12:00:00.000Z",
+        "name": "Lançamento da coleção de outono"
+      },
+      "firstSent": {
+        "at": "2026-10-14T12:00:00.000Z",
+        "name": "Rosana Teixeira",
+        "others": 1
+      },
+      "firstApproved": null
+    }
+  }
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/contents/summary`
+
+Lê os contadores do Início da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — Os contadores.
+
+```json
+{
+  "data": {
+    "awaitingClient": 5,
+    "overdueAwaitingClient": 1,
+    "approvedThisMonth": 12,
+    "approvedLastMonth": 9,
+    "scheduled": {
+      "count": 6,
+      "lastPublishOn": "2026-10-30"
+    }
   }
 }
 ```
@@ -2582,7 +2633,7 @@ Envia o conteúdo para aprovação.
 
 ```json
 {
-  "dueOn": "2026-10-18",
+  "dueAt": "2026-10-18T18:00:00-03:00",
   "note": "Preciso da sua resposta até sábado para publicar na segunda."
 }
 ```
@@ -2615,6 +2666,7 @@ Envia o conteúdo para aprovação.
   "createdAt": "2026-10-11T12:00:00.000Z",
   "approval": {
     "sentAt": "2026-10-14T12:00:00.000Z",
+    "dueAt": "2026-10-18T21:00:00.000Z",
     "dueOn": "2026-10-18",
     "note": "Preciso da sua resposta até sábado para publicar na segunda."
   },
@@ -2664,7 +2716,7 @@ Envia vários conteúdos de um cliente para aprovação, de uma vez.
   "contentIds": [
     "ffffffff-ffff-4fff-8fff-ffffffffffff"
   ],
-  "dueOn": "2026-10-18",
+  "dueAt": "2026-10-18T18:00:00-03:00",
   "note": "Preciso da sua resposta até sábado para publicar na segunda."
 }
 ```
@@ -2696,6 +2748,7 @@ Envia vários conteúdos de um cliente para aprovação, de uma vez.
         "tasksApproved": 1,
         "approval": {
           "sentAt": "2026-10-14T12:00:00.000Z",
+          "dueAt": "2026-10-18T21:00:00.000Z",
           "dueOn": "2026-10-18",
           "note": "Preciso da sua resposta até sábado para publicar na segunda."
         }
@@ -3287,8 +3340,14 @@ Lista os conteúdos de um período, no portal.
       "coverAssetId": null,
       "publishedOn": null,
       "approval": {
+        "dueAt": "2026-10-18T21:00:00.000Z",
         "dueOn": "2026-10-18",
-        "note": "Preciso da sua resposta até sábado para publicar na segunda."
+        "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+        "sentAt": "2026-10-14T12:00:00.000Z",
+        "sentBy": {
+          "name": "João Pereira",
+          "photoUrl": null
+        }
       },
       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
     }
@@ -3335,8 +3394,14 @@ Lista o que espera a aprovação da pessoa, no portal.
       "coverAssetId": null,
       "publishedOn": null,
       "approval": {
+        "dueAt": "2026-10-18T21:00:00.000Z",
         "dueOn": "2026-10-18",
-        "note": "Preciso da sua resposta até sábado para publicar na segunda."
+        "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+        "sentAt": "2026-10-14T12:00:00.000Z",
+        "sentBy": {
+          "name": "João Pereira",
+          "photoUrl": null
+        }
       },
       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
     }
@@ -3351,6 +3416,33 @@ Lista o que espera a aprovação da pessoa, no portal.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/contents/progress`
+
+Lê o progresso do mês, no portal ("Boa notícia").
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Resposta `200`** — O progresso do mês.
+
+```json
+{
+  "data": {
+    "month": "2026-10",
+    "approved": 7,
+    "total": 10,
+    "next": {
+      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "title": "Lançamento da coleção de outono",
+      "publishOn": "2026-10-20",
+      "publishAtTime": "18:30"
+    }
+  }
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/contents/:contentId`
 
@@ -3373,8 +3465,14 @@ Lê um conteúdo, no portal.
   "coverAssetId": null,
   "publishedOn": null,
   "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
     "dueOn": "2026-10-18",
-    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": null
+    }
   },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
@@ -3445,8 +3543,14 @@ Desfaz a aprovação de um conteúdo antes da publicação, no portal.
   "coverAssetId": null,
   "publishedOn": null,
   "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
     "dueOn": "2026-10-18",
-    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": null
+    }
   },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
@@ -3473,7 +3577,8 @@ Aprova um conteúdo, no portal.
 
 ```json
 {
-  "revision": 1
+  "revision": 1,
+  "note": "Ficou ótimo, pode publicar!"
 }
 ```
 
@@ -3491,8 +3596,14 @@ Aprova um conteúdo, no portal.
   "coverAssetId": null,
   "publishedOn": null,
   "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
     "dueOn": "2026-10-18",
-    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": null
+    }
   },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
@@ -3506,7 +3617,7 @@ Aprova um conteúdo, no portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_APPROVAL_NOTE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /clients/:clientId/contents/:contentId/request-changes`
 
@@ -3538,8 +3649,14 @@ Pede ajuste de um conteúdo, no portal.
   "coverAssetId": null,
   "publishedOn": null,
   "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
     "dueOn": "2026-10-18",
-    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": null
+    }
   },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
@@ -3619,8 +3736,11 @@ Lê o lote do link de aprovação.
       "coverAssetId": null,
       "publishedOn": null,
       "approval": {
+        "dueAt": null,
         "dueOn": "2026-10-18",
-        "note": "Preciso da sua resposta até sábado para publicar na segunda."
+        "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+        "sentAt": null,
+        "sentBy": null
       },
       "caption": "Novidades de outono chegando!",
       "revision": 1,
@@ -3694,8 +3814,14 @@ Aprova um conteúdo do lote, pelo link.
   "coverAssetId": null,
   "publishedOn": null,
   "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
     "dueOn": "2026-10-18",
-    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": null
+    }
   },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
@@ -3742,8 +3868,14 @@ Pede ajuste de um conteúdo do lote, pelo link.
   "coverAssetId": null,
   "publishedOn": null,
   "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
     "dueOn": "2026-10-18",
-    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": null
+    }
   },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
