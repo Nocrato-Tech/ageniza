@@ -193,6 +193,51 @@ describe('the individual send with a deadline and a note', () => {
     expect(await statusOf(id)).toBe('in_production');
   });
 
+  // The database refuses an offset past 15:59 with its own error (22009); the contract answers it before, so it is never a 500 (security review, round 1).
+  const writtenAt = (instant: string, offset: string): string => {
+    const sign = offset.startsWith('-') ? -1 : 1;
+    const [hours, minutes] = offset.slice(1).split(':').map(Number) as [number, number];
+    return `${new Date(new Date(instant).getTime() + sign * (hours * 60 + minutes) * 60_000).toISOString().slice(0, 19)}${offset}`;
+  };
+
+  it.each(['+99:99', '+24:00', '+23:60', '-99:00', '-24:00'])('refuses the offset %s, which no clock has, as a 400 VALIDATION_ERROR and not a 500, in the individual send and in the batch', async (offset) => {
+    const id = await sendable();
+    const dueAt = `${new Date(inHours(48)).toISOString().slice(0, 19)}${offset}`;
+    w.statements.length = 0;
+
+    error(await submit(id, { dueAt }), 400, 'VALIDATION_ERROR');
+    error(await submitBatch(clientA, { contentIds: [id], dueAt }), 400, 'VALIDATION_ERROR');
+
+    expect(w.statements.some((statement) => /app_private\.submit_content/.test(statement))).toBe(false);
+    expect(await statusOf(id)).toBe('in_production');
+  });
+
+  it.each(['+16:00', '+23:59', '-16:00', '-23:59', '+15:59'])('takes the offset %s, which the database cannot read, as the same instant in UTC, in the individual send and in the batch', async (offset) => {
+    const written = writtenAt(inHours(48), offset);
+    const expected = new Date(written).toISOString();
+    const single = await sendable();
+    const first = await sendable();
+    const second = await sendable();
+
+    const reply = await submit(single, { dueAt: written, note: NOTE });
+    const batch = await submitBatch(clientA, { contentIds: [first, second], dueAt: written });
+
+    expect(reply.statusCode, written).toBe(200);
+    expect(reply.json().approval).toEqual({ sentAt: expect.any(String), dueAt: expected, dueOn: await dayOf(expected), note: NOTE });
+    expect(batch.statusCode, written).toBe(200);
+    for (const item of batch.json().data.contents) expect(item.approval, written).toMatchObject({ dueAt: expected, dueOn: await dayOf(expected) });
+    for (const id of [single, first, second]) expect(await roundsOf(id), written).toMatchObject([{ sequence: 1, due_at: expected }]);
+  });
+
+  it('judges the window by the instant and not by the writing: the same moment written with a far offset is as late as in UTC', async () => {
+    const id = await sendable();
+    const late = await sendable();
+
+    expect((await submit(id, { dueAt: writtenAt(inHours(89 * 24), '+23:59') })).statusCode).toBe(200);
+    error(await submit(late, { dueAt: writtenAt(inHours(91 * 24), '-23:59') }), 400, 'CONTENT_APPROVAL_DUE_INVALID');
+    expect(await statusOf(late)).toBe('in_production');
+  });
+
   it('takes a deadline given as the day as the end of that day in São Paulo, and refuses the day 90 days ahead, whose end is past the 90 days from now', async () => {
     for (const [offset, accepted] of [[1, true], [89, true], [-1, false], [90, false], [91, false]] as const) {
       const id = await sendable();

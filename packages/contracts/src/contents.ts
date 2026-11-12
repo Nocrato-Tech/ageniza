@@ -189,11 +189,21 @@ export const ApprovalNoteSchema = visibleText()
     .min(1, 'must not be empty')
     .refine((value) => characterCount(value) <= APPROVAL_NOTE_MAX_CHARACTERS, `must be at most ${APPROVAL_NOTE_MAX_CHARACTERS} characters`));
 
+const DATABASE_YEARS = { first: 1, last: 9999 } as const;
+
 /**
- * The deadline of a round as an instant, with its offset (`2026-11-12T18:00:00-03:00`, or the same moment in UTC); the answers carry it in
- * UTC. The year zero is refused here because the database has none, and its refusal would be a 500 instead of the 400 of a bad field.
+ * The deadline of a round as an instant, with its offset (`2026-11-12T18:00:00-03:00`, or the same moment in UTC). What leaves this schema is
+ * that instant in UTC, the only form the database is given: it refuses an offset past 15:59 (`22009`) and the years it does not hold, and
+ * the refusal of the database would be a 500 instead of the 400 of a bad field. So the instant must be one `Date` reads (`+99:99` is not),
+ * and its year in UTC must lie in the database's range, 0001 to 9999.
  */
-export const ApprovalDueAtSchema = z.string().datetime({ offset: true }).refine((value) => !value.startsWith('0000'), 'the year 0000 does not exist');
+export const ApprovalDueAtSchema = z.string().datetime({ offset: true })
+  .refine((value) => {
+    const instant = new Date(value);
+    const year = instant.getUTCFullYear();
+    return !Number.isNaN(instant.getTime()) && year >= DATABASE_YEARS.first && year <= DATABASE_YEARS.last;
+  }, `must be a real instant, in the years ${DATABASE_YEARS.first} to ${DATABASE_YEARS.last} in UTC`)
+  .transform((value) => new Date(value).toISOString());
 
 const oneDeadline = (value: { readonly dueAt?: string | undefined; readonly dueOn?: string | undefined }): boolean =>
   value.dueAt === undefined || value.dueOn === undefined;
