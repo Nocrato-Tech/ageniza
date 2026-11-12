@@ -114,7 +114,7 @@ const asContent = (row: StoredContent): PortalApprovalContent => {
     caption: row.caption,
     revision: row.revision,
     media: row.media.map((entry, index) => ({ id: entry.id, position: index + 1, kind: entry.kind })),
-    approval: row.approval,
+    approval: row.approval === null ? null : { dueAt: null, sentAt: null, sentBy: null, ...row.approval },
     canDecide: row.status === 'awaiting_approval' && !row.locked
   };
 };

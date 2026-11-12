@@ -38,7 +38,9 @@ export const clientViewOf = (content: ContentDetail): ClientView | null => {
     meta: { status: content.status, format, publishOn: content.publishOn, publishAtTime: content.publishAtTime, publishedOn: content.publishedOn },
     title,
     format,
-    approval: content.approval === null ? null : { dueOn: content.approval.dueOn, note: content.approval.note },
+    approval: content.approval === null
+      ? null
+      : { dueAt: content.approval.dueAt, dueOn: content.approval.dueOn, note: content.approval.note, sentAt: content.approval.sentAt, sentBy: null },
     open: { caption: content.caption, shownAssetId: hasCover(format) ? (content.coverAssetId ?? first) : first, mediaCount: content.media.length }
   };
 };
