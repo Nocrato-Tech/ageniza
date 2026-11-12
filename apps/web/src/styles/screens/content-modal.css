@@ -227,3 +227,17 @@
   border-radius: var(--radius-md);
 }
 
+
+/* The deadline of a round: the day and, beside it, the hour. */
+.approval-submit__due {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 9rem);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+@media (max-width: 47.99rem) {
+  .approval-submit__due {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

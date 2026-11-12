@@ -958,21 +958,21 @@ describe('the folder is a drive: choosing it gives the content what it holds', (
 });
 
 describe('creating a content', () => {
-  const createButton = (): HTMLElement | null => screen.queryByRole('button', { name: 'Nova publicação' });
+  const createButton = (): HTMLElement | null => screen.queryByRole('button', { name: 'Novo conteúdo' });
   /** The folder is read when it is chosen, and the content is not created before the list on screen is the folder's. */
   const readyToCreate = (): Promise<void> => waitFor(() => expect((within(dialog()).getByRole('button', { name: 'Criar conteúdo' }) as HTMLButtonElement).disabled).toBe(false));
 
   it.each([
     ['conteudo.visualizar only', [VISUALIZE, READ_CLIENTS], false],
     ['conteudo.operar with visualizar', EDITOR, true]
-  ])('%s: the "Nova publicação" button exists only for who operates', async (_name, permissions, shown) => {
+  ])('%s: the "Novo conteúdo" button exists only for who operates', async (_name, permissions, shown) => {
     const { impl } = makeFetch({ permissions });
     render_(impl);
     await calendarReady();
     await waitFor(() => expect(createButton() !== null).toBe(shown));
   });
 
-  it('has no "Nova publicação" on an archived client', async () => {
+  it('has no "Novo conteúdo" on an archived client', async () => {
     const { impl } = makeFetch();
     render_(impl, base(barbearia.id));
     await calendarReady();
@@ -984,7 +984,7 @@ describe('creating a content', () => {
     const { impl } = makeFetch();
     const { probe } = render_(impl);
     await calendarReady();
-    fireEvent.click(await screen.findByRole('button', { name: 'Nova publicação' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Novo conteúdo' }));
 
     expect(await screen.findByRole('dialog', { name: 'Novo conteúdo' })).toBeTruthy();
     await screen.findByLabelText('Data');

@@ -14,23 +14,33 @@ import {
   type SubmitContentRequest,
   type SubmitContentsBatchRequest
 } from '@ageniza/contracts';
-import { Button, DatePicker, Dialog, Field, FieldMessage, FormatTag, invalidDayMessage, Textarea } from '@ageniza/ui';
+import { Button, DatePicker, Dialog, Field, FieldMessage, FormatTag, invalidDayMessage, Textarea, TextInput } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { actionRefusal } from './content-actions.js';
-import { addDays, dayMonthLabel, todayInSaoPaulo, weekdayShortLabel } from './content-dates.js';
+import { addDays, dayMonthLabel, saoPauloClock, weekdayShortLabel } from './content-dates.js';
 import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
 import { HttpClientError, useApiClient } from './http.js';
 
-/** How far ahead a deadline may be, counted from today in São Paulo (decision 2026-11-10). */
+/** How far ahead a deadline may be, counted from now (decision 2026-11-11). */
 const DUE_MAX_DAYS = 90;
+
+/** The deadline proposed when a round is sent: 48 hours from now (decision 2026-11-11). */
+const DUE_DEFAULT_HOURS = 48;
+
+/** São Paulo has no daylight saving time since 2019, so its wall clock is UTC-3 all year. */
+const SAO_PAULO_OFFSET = '-03:00';
+
+const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
 
 const CONTENTS_PATH = '/agencies/:agencyId/clients/:clientId/contents';
 
 const MESSAGES = {
-  dueRange: 'Escolha um dia de hoje até 90 dias à frente.',
-  dueRefused: 'O prazo vai de hoje até 90 dias à frente. Escolha outro dia.',
+  dueRange: 'Escolha um dia e uma hora de agora até 90 dias à frente.',
+  dueRefused: 'O prazo vai de agora até 90 dias à frente. Escolha outro dia ou outra hora.',
+  timeInvalid: 'Escolha uma hora válida.',
   noteTooLong: `O recado tem até ${APPROVAL_NOTE_MAX_CHARACTERS} caracteres.`,
   noteInvalid: 'O recado tem caracteres que não são aceitos.',
   noteRefused: `O recado tem até ${APPROVAL_NOTE_MAX_CHARACTERS} caracteres e não pode ter caracteres especiais. Deixe em branco para enviar sem recado.`,
@@ -44,10 +54,27 @@ const MESSAGES = {
 
 const characters = (value: string): number => Array.from(value.trim()).length;
 
-/** The deadline by the rule of the screen (today to +90 days): the contract only checks the format of the day. */
-export const dueProblem = (dueOn: string, today: string): string | undefined => {
+const TIME_FORMAT = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** The deadline as an instant, from the day and the hour typed in São Paulo; `null` when either is not a real one. */
+export const dueInstant = (dueOn: string, time: string): Date | null => {
+  if (!CalendarDaySchema.safeParse(dueOn).success || !TIME_FORMAT.test(time)) return null;
+  const instant = new Date(`${dueOn}T${time}:00${SAO_PAULO_OFFSET}`);
+  return Number.isNaN(instant.getTime()) ? null : instant;
+};
+
+/** The deadline proposed for a send made `now`: 48 hours later, as the day and the hour of São Paulo. */
+export const defaultDue = (now: Date): { readonly dueOn: string; readonly time: string } => {
+  const clock = saoPauloClock(new Date(now.getTime() + DUE_DEFAULT_HOURS * HOUR_MS));
+  return { dueOn: clock.day, time: clock.time.slice(0, 5) };
+};
+
+/** The deadline by the rule of the screen (after now, up to 90 days ahead): the contract only checks the format of the instant. */
+export const dueProblem = (dueOn: string, time: string, now: Date): string | undefined => {
   if (dueOn === '') return undefined;
-  if (!CalendarDaySchema.safeParse(dueOn).success || dueOn < today || dueOn > addDays(today, DUE_MAX_DAYS)) return MESSAGES.dueRange;
+  if (!TIME_FORMAT.test(time)) return MESSAGES.timeInvalid;
+  const instant = dueInstant(dueOn, time);
+  if (instant === null || instant.getTime() <= now.getTime() || instant.getTime() > now.getTime() + DUE_MAX_DAYS * DAY_MS) return MESSAGES.dueRange;
   return undefined;
 };
 
@@ -94,11 +121,11 @@ export const batchCandidates = (contents: readonly ContentListItem[]): BatchCand
   };
 });
 
-type Refusal = { readonly field?: 'dueOn' | 'note'; readonly message: string };
+type Refusal = { readonly field?: 'due' | 'note'; readonly message: string };
 
 const refusalOf = (error: unknown, batch: boolean): Refusal => {
   if (error instanceof HttpClientError) {
-    if (error.status === 400 && error.code === 'CONTENT_APPROVAL_DUE_INVALID') return { field: 'dueOn', message: MESSAGES.dueRefused };
+    if (error.status === 400 && error.code === 'CONTENT_APPROVAL_DUE_INVALID') return { field: 'due', message: MESSAGES.dueRefused };
     if (error.status === 400 && error.code === 'CONTENT_APPROVAL_NOTE_INVALID') return { field: 'note', message: MESSAGES.noteRefused };
     if (error.status === 400) return { message: MESSAGES.review };
     if (batch) {
@@ -118,7 +145,7 @@ export type ApprovalSubmitTarget =
   | { readonly kind: 'batch'; readonly clientId: string; readonly candidates: readonly BatchCandidate[]; readonly scope: string };
 
 /**
- * "Enviar para aprovação": the deadline and the note of the round, both optional, for one content or for a batch of one client.
+ * "Enviar para aprovação": the deadline (day and hour, 48 hours ahead unless changed or cleared) and the note of the round, for one content or for a batch of one client.
  * What was typed stays when the API refuses; the dialog closes only on success, through `onSent`, and asks before it loses
  * typed data when the person closes it (the guard of `Dialog`).
  */
@@ -133,10 +160,12 @@ export function ApprovalSubmitDialog({ target, onClose, onSent, onBusyChange }: 
   const agency = useAgencyContext();
   const queryClient = useQueryClient();
   const formId = useId();
-  const today = todayInSaoPaulo();
+  const proposed = useRef(defaultDue(new Date())).current;
+  const today = saoPauloClock().day;
   const batch = target.kind === 'batch';
 
-  const [dueOn, setDueOn] = useState('');
+  const [dueOn, setDueOn] = useState(proposed.dueOn);
+  const [dueTime, setDueTime] = useState(proposed.time);
   // The field holds text that is not a day: `dueOn` is '' then too, and sending it as "no deadline" would drop what the person meant.
   const [dueInvalid, setDueInvalid] = useState(false);
   const [note, setNote] = useState('');
@@ -154,7 +183,7 @@ export function ApprovalSubmitDialog({ target, onClose, onSent, onBusyChange }: 
   const full = chosen.length >= APPROVAL_BATCH_MAX_CONTENTS;
 
   const send = useMutation({
-    mutationFn: async (body: { dueOn?: string; note?: string }) => {
+    mutationFn: async (body: { dueAt?: string; note?: string }) => {
       const base = apiPath(CONTENTS_PATH, { agencyId: agency.agencyId, clientId: target.clientId });
       if (target.kind === 'one') {
         await httpClient.request({ path: `${base}/${target.content.id}/submit`, method: 'POST', body: body satisfies SubmitContentRequest, response: ContentDetailSchema });
@@ -205,21 +234,22 @@ export function ApprovalSubmitDialog({ target, onClose, onSent, onBusyChange }: 
     event.preventDefault();
     if (sending.current) return;
     const found = {
-      dueOn: dueInvalid ? invalidDayMessage : dueProblem(dueOn, today),
+      dueOn: dueInvalid ? invalidDayMessage : dueProblem(dueOn, dueTime, new Date()),
       note: noteProblem(note),
       pick: batch && chosen.length === 0 ? 'Escolha ao menos um conteúdo.' : undefined
     };
     setProblems(found);
     if (found.dueOn !== undefined || found.note !== undefined || found.pick !== undefined) return;
+    const instant = dueOn === '' ? null : dueInstant(dueOn, dueTime);
     sending.current = true;
     setRefusal(undefined);
     send.mutate({
-      ...(dueOn === '' ? {} : { dueOn }),
+      ...(instant === null ? {} : { dueAt: instant.toISOString() }),
       ...(note.trim() === '' ? {} : { note: note.trim() })
     });
   };
 
-  const dirty = dueOn !== '' || dueInvalid || note !== '' || picked.size > 0;
+  const dirty = dueOn !== proposed.dueOn || dueTime !== proposed.time || dueInvalid || note !== '' || picked.size > 0;
   const label = batch ? (chosen.length === 0 ? 'Enviar para aprovação' : `Enviar ${chosen.length} para aprovação`) : 'Enviar para aprovação';
 
   return <Dialog
@@ -263,18 +293,29 @@ export function ApprovalSubmitDialog({ target, onClose, onSent, onBusyChange }: 
         {full && <p className="approval-submit__limit" role="status">{MESSAGES.limit}</p>}
         {problems.pick !== undefined && <FieldMessage id={`${formId}-pick`} role="alert">{problems.pick}</FieldMessage>}
       </fieldset>}
-      <Field label="Aprovar até" hint="Opcional. O cliente é lembrado na véspera do prazo e no dia seguinte, se ainda não tiver decidido." error={problems.dueOn ?? (refusal?.field === 'dueOn' ? refusal.message : undefined)}>
-        {(control) => <DatePicker
-          {...control}
-          today={today}
-          min={today}
-          max={addDays(today, DUE_MAX_DAYS)}
-          value={dueOn}
-          disabled={busy}
-          onInvalidChange={setDueInvalid}
-          onChange={(day) => { setDueOn(day); setProblems((current) => ({ ...current, dueOn: undefined })); setRefusal(undefined); }}
-        />}
-      </Field>
+      <div className="approval-submit__due">
+        <Field label="Responder até" hint="Padrão: 48 horas" error={problems.dueOn ?? (refusal?.field === 'due' ? refusal.message : undefined)}>
+          {(control) => <DatePicker
+            {...control}
+            today={today}
+            min={today}
+            max={addDays(today, DUE_MAX_DAYS)}
+            value={dueOn}
+            disabled={busy}
+            onInvalidChange={setDueInvalid}
+            onChange={(day) => { setDueOn(day); setProblems((current) => ({ ...current, dueOn: undefined })); setRefusal(undefined); }}
+          />}
+        </Field>
+        <Field label="Hora do prazo">
+          {(control) => <TextInput
+            {...control}
+            type="time"
+            value={dueTime}
+            disabled={busy || (dueOn === '' && !dueInvalid)}
+            onChange={(event) => { setDueTime(event.target.value); setProblems((current) => ({ ...current, dueOn: undefined })); setRefusal(undefined); }}
+          />}
+        </Field>
+      </div>
       <Field label="Recado para o cliente" hint="Opcional. O cliente lê junto do prazo, assinado pela agência." counter={{ count: characters(note), max: APPROVAL_NOTE_MAX_CHARACTERS }} error={problems.note ?? (refusal?.field === 'note' ? refusal.message : undefined)}>
         {(control) => <Textarea
           {...control}

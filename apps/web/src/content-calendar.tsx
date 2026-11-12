@@ -6,12 +6,12 @@ import { LateBadge, Popover, StatusTag, type PopoverPlacement } from '@ageniza/u
 
 import { useContentsAddress } from './content-address.js';
 import { ContentHoverCard } from './content-card-extras.js';
-import { FORMAT_ICONS } from './content-cover.js';
-import { fullDayLabel, WEEKDAY_LABELS, weekdayShortLabel, type CalendarView } from './content-dates.js';
-import { DEADLINE_LABELS, deadlineAlert, FORMAT_LABELS, FORMAT_TONES, isClosed, STATUS_LABELS, STATUS_TAGS } from './content-labels.js';
+import { ContentCover, FORMAT_ICONS } from './content-cover.js';
+import { addDays, dayOfMonthLabel, fullDayLabel, saoPauloClock, WEEKDAY_HEADERS, weekdayShortLabel, type CalendarView } from './content-dates.js';
+import { deadlineAlert, DEADLINE_LABELS, DISPLAY_LABELS, DISPLAY_TAGS, displayState, FORMAT_LABELS, FORMAT_TONES, isClosed, type DisplayState } from './content-labels.js';
 
 /**
- * Where the hover card opens, so it faces the inside of the grid: the last two columns (sábado and domingo) open to the
+ * Where the hover card opens, so it faces the inside of the grid: the last two columns (sexta and sábado) open to the
  * left, and the last row open upwards (a week is one row, so it opens upwards whole).
  */
 export const hoverPlacement = (index: number, total: number): PopoverPlacement =>
@@ -21,17 +21,19 @@ export const hoverPlacement = (index: number, total: number): PopoverPlacement =
 const DRAG_CLICK_GUARD = 60;
 
 /**
- * The card of the calendar (`specs/conteudo.md` section 7), compact: the format, the title in up to two lines and one line
- * for the state. The whole card is the link to the content, so a press anywhere on it opens it; the keyboard has one stop
+ * The card of the calendar (`specs/conteudo.md` section 7), compact: the cover (the shape of the format without one), the
+ * format, the title in up to two lines and one tag for the state. The whole card is the link to the content, so a press anywhere on it opens it; the keyboard has one stop
  * on it, named by what it shows. Every string that came from the server is a React text child, never markup. A card is
  * draggable only when the caller says it can move and the content is still open: a published or cancelled one never
  * changes date (specs/conteudo.md section 4). A drag never opens the content. Resting the mouse on it, or focusing it,
  * opens the floating card; a touch never does.
  */
-export function ContentCard({ content, clientId, today, placement = 'bottom-start', draggable = false, busy = false, onDragStart, onDragEnd }: {
+export function ContentCard({ content, clientId, today, now, placement = 'bottom-start', draggable = false, busy = false, onDragStart, onDragEnd }: {
   content: ContentListItem;
   clientId: string;
   today: string;
+  /** The day and time of São Paulo, for the states the hour decides ("agendado"); read from the clock when absent. */
+  now?: { readonly day: string; readonly time: string };
   placement?: PopoverPlacement;
   draggable?: boolean;
   busy?: boolean;
@@ -39,6 +41,7 @@ export function ContentCard({ content, clientId, today, placement = 'bottom-star
   onDragEnd?: () => void;
 }) {
   const alert = deadlineAlert(content, today);
+  const state: DisplayState = displayState(content, now ?? saoPauloClock());
   const address = useContentsAddress(clientId);
   const location = useLocation();
   const FormatIcon = FORMAT_ICONS[content.format];
@@ -56,6 +59,7 @@ export function ContentCard({ content, clientId, today, placement = 'bottom-star
     trigger={(hover) => <article
       className={`content-card${draggable ? ' content-card--movable' : ''}${busy ? ' content-card--busy' : ''}`}
       data-status={content.status}
+      data-state={state}
       data-format={FORMAT_TONES[content.format]}
       data-late={alert === 'overdue' || undefined}
       draggable={draggable}
@@ -82,11 +86,15 @@ export function ContentCard({ content, clientId, today, placement = 'bottom-star
         aria-haspopup={hover['aria-haspopup']}
         aria-describedby={hover['aria-expanded'] ? hover['aria-controls'] : undefined}
       >
-        <span className="content-card__title">{content.title}</span>
-        <span className="content-card__support"><FormatIcon aria-hidden="true" />{content.publishAtTime === null ? FORMAT_LABELS[content.format] : `${FORMAT_LABELS[content.format]} · ${content.publishAtTime}`}</span>
+        <ContentCover assetId={content.thumbnailAssetId} format={content.format} className="content-card__cover" />
+        <span className="content-card__body">
+          <span className="content-card__support"><FormatIcon aria-hidden="true" />{content.publishAtTime === null ? FORMAT_LABELS[content.format] : `${FORMAT_LABELS[content.format]} · ${content.publishAtTime}`}</span>
+          <span className="content-card__title">{content.title}</span>
+        </span>
         <span className="content-card__foot">
-          {alert === 'overdue' && <LateBadge>{DEADLINE_LABELS.overdue}</LateBadge>}
-          <StatusTag status={STATUS_TAGS[content.status]}>{STATUS_LABELS[content.status]}</StatusTag>
+          {state === 'late'
+            ? <LateBadge>{DEADLINE_LABELS.overdue}</LateBadge>
+            : <StatusTag status={DISPLAY_TAGS[state]}>{DISPLAY_LABELS[state]}</StatusTag>}
         </span>
       </Link>
     </article>}
@@ -106,6 +114,7 @@ export interface ContentCalendarProps {
   /** The day the period is built around; a month view dims the days of its neighbours. */
   readonly anchor: string;
   readonly today: string;
+  readonly now?: { readonly day: string; readonly time: string };
   readonly days: readonly string[];
   readonly contents: readonly ContentListItem[];
   /** Whether the person may move a content at all (permission, and a client that is not archived). */
@@ -119,14 +128,16 @@ export interface ContentCalendarProps {
   readonly onOpenDay?: (day: string) => void;
 }
 
+const capitalized = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
+
 const groupByDay = (contents: readonly ContentListItem[]): Map<string, ContentListItem[]> => {
   const byDay = new Map<string, ContentListItem[]>();
   for (const content of contents) byDay.set(content.publishOn, [...(byDay.get(content.publishOn) ?? []), content]);
   return byDay;
 };
 
-/** Whole weeks, Monday first: a month and a week are the same grid with a different number of rows. */
-export function ContentCalendar({ clientId, view, layout = 'grid', anchor, today, days, contents, canMove = false, movingId = null, onMove, dayExtras, onOpenDay }: ContentCalendarProps) {
+/** Whole weeks, Sunday first: a month and a week are the same grid with a different number of rows. */
+export function ContentCalendar({ clientId, view, layout = 'grid', anchor, today, now, days, contents, canMove = false, movingId = null, onMove, dayExtras, onOpenDay }: ContentCalendarProps) {
   // Which card is being dragged lives here, not in the data transfer: a drop that was not started by a card of this calendar moves nothing.
   const [dragging, setDragging] = useState<ContentListItem | null>(null);
   const byDay = groupByDay(contents);
@@ -143,18 +154,14 @@ export function ContentCalendar({ clientId, view, layout = 'grid', anchor, today
           aria-current={day === today ? 'date' : undefined}
           data-day={day}
         >
-          <p className="content-agenda__label">
-            <time dateTime={day}>
-              <span className="content-agenda__weekday" aria-hidden="true">{weekdayShortLabel(day)}</span>
-              <span className="content-agenda__number" aria-hidden="true">{Number(day.slice(8, 10))}</span>
-              <span className="visually-hidden">{fullDayLabel(day)}</span>
-            </time>
-            {day === today && <span className="content-agenda__today">hoje</span>}
-          </p>
+          <h3 className="content-agenda__label">
+            <span className="content-agenda__when">{day === today ? 'Hoje' : day === addDays(today, 1) ? 'Amanhã' : capitalized(weekdayShortLabel(day))}</span>
+            <time className="content-agenda__date" dateTime={day}>{dayOfMonthLabel(day)}</time>
+          </h3>
           <div className="content-agenda__body">
             {items.length > 0 && <ul className="content-day__items">
               {items.map((content) => <li key={content.id}>
-                <ContentCard content={content} clientId={clientId} today={today} placement="bottom-start" />
+                <ContentCard content={content} clientId={clientId} today={today} now={now} placement="bottom-start" />
               </li>)}
             </ul>}
             {dayExtras?.(day)}
@@ -166,7 +173,7 @@ export function ContentCalendar({ clientId, view, layout = 'grid', anchor, today
 
   return <div className="content-calendar" data-view={view}>
     <ol className="content-calendar__weekdays" aria-hidden="true">
-      {WEEKDAY_LABELS.map((label) => <li key={label}>{label}</li>)}
+      {WEEKDAY_HEADERS.map((label) => <li key={label}>{label}</li>)}
     </ol>
     <ol className="content-calendar__days">
       {days.map((day, dayIndex) => {
@@ -202,6 +209,7 @@ export function ContentCalendar({ clientId, view, layout = 'grid', anchor, today
                 content={content}
                 clientId={clientId}
                 today={today}
+                now={now}
                 placement={hoverPlacement(dayIndex, days.length)}
                 draggable={canMove && movingId === null && !isClosed(content.status)}
                 busy={movingId === content.id}
