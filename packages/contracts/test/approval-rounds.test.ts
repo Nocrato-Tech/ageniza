@@ -308,6 +308,16 @@ describe('the request for material as a subject of the conversation of the clien
     }
   });
 
+  it('counts the 80 characters of the title as characters, as the column does: a letter and 79 emoji pass, with one more emoji it does not', () => {
+    const body = { subject: material, body: 'x' };
+    const camera = text(0x1f4f8);
+    expect(CreateThreadRequestSchema.parse({ ...body, title: `a${camera.repeat(79)}` }).title).toBe(`a${camera.repeat(79)}`);
+    expect(CreateThreadRequestSchema.parse({ ...body, title: `${'a'.repeat(79)}${camera}` }).title).toHaveLength(81);
+    expect(CreateThreadRequestSchema.safeParse({ ...body, title: `a${camera.repeat(80)}` }).success).toBe(false);
+    expect(CreateThreadRequestSchema.safeParse({ ...body, title: `${'a'.repeat(80)}${camera}` }).success).toBe(false);
+    expect(CreateThreadRequestSchema.safeParse({ ...body, title: camera.repeat(80) }).success, 'only emoji is no text').toBe(false);
+  });
+
   it('refuses a title for any other subject, and a title on its own is not a request', () => {
     for (const subject of [{ sectionKey: 'branding' }, { personaId }, { contentId }]) {
       const result = CreateThreadRequestSchema.safeParse({ subject, body: 'x', title: 'Fotos' });

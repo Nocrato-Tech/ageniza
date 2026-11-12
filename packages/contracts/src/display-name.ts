@@ -36,22 +36,32 @@ export const JOINER_OUTSIDE_NAME_CHARACTERS = /(?<![\p{L}\p{M}\p{Extended_Pictog
 /** A name made only of punctuation, symbols or emoji is visually a blank badge. */
 const NAME_HAS_LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;
 
+/** Characters as a column check counts them (`char_length`): a code point, so an emoji is one and a surrogate pair is not two. */
+export const characterCount = (value: string): number => Array.from(value).length;
+
 /**
  * Builds a display-name schema for a flow with its own length limit. Trims first (so
  * whitespace-only, NBSP-only and tab-only are empty), caps the length, rejects the control, bidi
  * and invisible characters above, and requires at least one letter or number -- otherwise
  * "invisible name" would satisfy the "name is not empty" rule while showing nothing.
  *
+ * The limit counts UTF-16 units, as the older columns bound them (`octet_length`, the UTF-16 count of the job title): counting characters
+ * there would let emoji past the column as a 500. `countCharacters` is for a column that checks `char_length`.
+ *
  * `emojiSequences` takes the complete emoji sequences (a family, a keycap, a flag of England) out before the format-character and
  * joiner rules read the name, since a sequence is written with a joiner or with tags; the letter-or-number rule still reads the
  * whole name, so a name of only emoji is refused. A flow that does not pass it keeps the rules as they were.
  */
-export const createDisplayNameSchema = (maxLength: number = DISPLAY_NAME_MAX_LENGTH, options: { readonly emojiSequences?: boolean } = {}) => {
+export const createDisplayNameSchema = (
+  maxLength: number = DISPLAY_NAME_MAX_LENGTH,
+  options: { readonly emojiSequences?: boolean; readonly countCharacters?: boolean } = {}
+) => {
   const readable = options.emojiSequences === true ? withoutEmojiSequences : (value: string): string => value;
-  return z.string()
-    .trim()
-    .min(1)
-    .max(maxLength)
+  const trimmed = z.string().trim().min(1);
+  const capped: z.ZodType<string, z.ZodTypeDef, string> = options.countCharacters === true
+    ? trimmed.refine((value) => characterCount(value) <= maxLength, `must be at most ${maxLength} characters`)
+    : trimmed.max(maxLength);
+  return capped
     .refine((value) => !FORBIDDEN_NAME_CHARACTERS.test(readable(value)), 'must not contain control, bidi or invisible characters')
     .refine((value) => !JOINER_OUTSIDE_NAME_CHARACTERS.test(readable(value)), 'a zero-width joiner is only allowed between letters, combining marks or pictographs')
     .refine((value) => NAME_HAS_LETTER_OR_NUMBER.test(value), 'must contain at least one letter or number');

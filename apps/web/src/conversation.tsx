@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { CheckCheck, Clock, MessageSquare, Plus } from 'lucide-react';
 
 import {
+  characterCount,
   CommentBodySchema,
   CommentListResponseSchema,
   CommentSchema,
@@ -195,7 +196,7 @@ const MATERIAL_TITLE_REQUIRED = 'Informe o título do pedido.';
 const MATERIAL_TITLE_TOO_LONG = `O título passa de ${MATERIAL_REQUEST_TITLE_MAX_LENGTH} caracteres.`;
 const MATERIAL_TITLE_INVALID = 'O título tem caracteres que não são aceitos.';
 
-const titleLength = (value: string): number => Array.from(value.trim()).length;
+const titleLength = (value: string): number => characterCount(value.trim());
 
 const titleProblem = (title: string): string | undefined => {
   if (MaterialRequestTitleSchema.safeParse(title).success) return undefined;

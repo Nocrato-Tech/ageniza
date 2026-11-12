@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { AuthEmailSchema } from './auth.js';
-import { createDisplayNameSchema } from './display-name.js';
+import { characterCount, createDisplayNameSchema } from './display-name.js';
 import { hasInvisibleCharacters } from './invisible-characters.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
 import { PROFILE_PHOTO_MAX_BASE64_LENGTH } from './profile.js';
@@ -74,9 +74,10 @@ const nullableDisplayText = (maxChars: number, maxBytes: number) =>
 /**
  * One line of free text a person reads (a city, an occupation, a trait, the title of a request): the display-name rule with the emoji
  * sequences whole, and none of the invisible characters of `hasInvisibleCharacters`, the one rule of every free text of the product.
+ * The limit is in characters, as the `display_text_valid` check of each of those columns counts it.
  */
 export const createVisibleLineSchema = (maxChars: number) =>
-  createDisplayNameSchema(maxChars, { emojiSequences: true })
+  createDisplayNameSchema(maxChars, { emojiSequences: true, countCharacters: true })
     .refine((value) => !hasInvisibleCharacters(value), 'must not contain control or invisible characters');
 
 /** A nullable visible line: empty or whitespace-only is `null`, never `''`. */
@@ -86,9 +87,6 @@ const nullableVisibleLine = (maxChars: number) =>
     .transform((value) => (value === '' ? null : value))
     .pipe(z.union([z.null(), createVisibleLineSchema(maxChars)]))
     .nullable();
-
-/** Counted in characters (code points), which is what the column check counts; a surrogate pair is one. */
-const characterCount = (value: string): number => Array.from(value).length;
 
 /**
  * A nullable short text that may break lines: the same rule of hidden characters as the comments and the story scripts (a line break

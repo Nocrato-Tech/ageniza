@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { AuthEmailSchema } from './auth.js';
-import { DisplayNameSchema } from './display-name.js';
+import { createDisplayNameSchema, DISPLAY_NAME_MAX_LENGTH } from './display-name.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
 
 /**
@@ -18,12 +18,13 @@ export const ClientMemberListQuerySchema = PaginationInputSchema.extend({
 }).strict();
 
 /**
- * The name the agency types for the person (decision 2026-11-11): optional, with the limit of the profile name. Empty or whitespace-only
- * is "no name", so a form that always sends the field works. It is what the agency wrote and nothing else: it is never read from an account.
+ * The name the agency types for the person (decision 2026-11-11): optional, with the limit of the profile name, counted in characters
+ * as its column does (`display_text_valid`). Empty or whitespace-only is "no name", so a form that always sends the field works. It is
+ * what the agency wrote and nothing else: it is never read from an account.
  */
 export const ClientMemberNameSchema = z.string()
   .transform((value) => value.trim())
-  .pipe(z.union([z.literal('').transform(() => undefined), DisplayNameSchema]));
+  .pipe(z.union([z.literal('').transform(() => undefined), createDisplayNameSchema(DISPLAY_NAME_MAX_LENGTH, { countCharacters: true })]));
 
 /** Body of "Adicionar pessoa": the address and, when the agency has it, the name. The access is given on the spot, with no invitation and no acceptance. */
 export const ClientMemberAddRequestSchema = z.object({

@@ -30,6 +30,8 @@ const KEYCAP = text(0x31, 0xfe0f, 0x20e3);
 const FLAG_OF_ENGLAND = text(0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f);
 const RED_HEART = text(0x2764, 0xfe0f);
 const THUMB_WITH_TONE = text(0x1f44d, 0x1f3fd);
+// One character for the column and two UTF-16 units for the language: the limits of a line are read in the first.
+const CAMERA = text(0x1f4f8);
 
 describe('the city of the client', () => {
   it('is one trimmed line of up to 80 characters, on create and on edit, and empty clears it', () => {
@@ -41,6 +43,15 @@ describe('the city of the client', () => {
     expect(UpdateClientRequestSchema.parse({ city: '' })).toEqual({ city: null });
     expect(UpdateClientRequestSchema.parse({ city: 'a'.repeat(80) }).city).toHaveLength(80);
     expect(UpdateClientRequestSchema.parse({ city: 'ç'.repeat(80) }).city).toHaveLength(80);
+  });
+
+  it('counts the 80 characters as the column does: a letter and 79 emoji pass, with one more emoji it does not', () => {
+    expect(UpdateClientRequestSchema.parse({ city: `a${CAMERA.repeat(79)}` }).city).toBe(`a${CAMERA.repeat(79)}`);
+    expect(CreateClientRequestSchema.parse({ name: 'Padaria', city: `${'a'.repeat(79)}${CAMERA}` }).city).toHaveLength(81);
+    for (const city of [`a${CAMERA.repeat(80)}`, `${'a'.repeat(80)}${CAMERA}`]) {
+      expect(UpdateClientRequestSchema.safeParse({ city }).success, city).toBe(false);
+      expect(CreateClientRequestSchema.safeParse({ name: 'Padaria', city }).success, city).toBe(false);
+    }
   });
 
   it('takes an emoji sequence whole, and not the pieces of one', () => {
@@ -130,6 +141,8 @@ describe('the profile of the persona (decision 2026-11-11)', () => {
       for (const value of ['a'.repeat(81), ...HIDDEN_OR_MULTILINE, 5]) {
         expect(UpdatePersonaRequestSchema.safeParse({ [field]: value }).success, `${field} ${JSON.stringify(value)}`).toBe(false);
       }
+      expect(UpdatePersonaRequestSchema.parse({ [field]: `a${CAMERA.repeat(79)}` })[field], `${field} of 80 characters`).toBe(`a${CAMERA.repeat(79)}`);
+      expect(UpdatePersonaRequestSchema.safeParse({ [field]: `a${CAMERA.repeat(80)}` }).success, `${field} of 81 characters`).toBe(false);
     }
   });
 
@@ -153,6 +166,8 @@ describe('the profile of the persona (decision 2026-11-11)', () => {
     expect(PersonaTraitsSchema.parse([])).toEqual([]);
     expect(PersonaTraitsSchema.parse(['  Prática  ', 'b', 'c', 'd', 'e'])).toEqual(['Prática', 'b', 'c', 'd', 'e']);
     expect(PersonaTraitsSchema.parse(['a'.repeat(24)])).toEqual(['a'.repeat(24)]);
+    expect(PersonaTraitsSchema.parse([`a${CAMERA.repeat(23)}`]), 'a trait of 24 characters').toEqual([`a${CAMERA.repeat(23)}`]);
+    expect(PersonaTraitsSchema.safeParse([`a${CAMERA.repeat(24)}`]).success, 'a trait of 25 characters').toBe(false);
     for (const traits of [
       ['a', 'b', 'c', 'd', 'e', 'f'], ['a'.repeat(25)], [''], ['   '], [5], [null], [['a']], 'Prática', ...HIDDEN_OR_MULTILINE.map((trait) => [trait]),
       [text(0xd800)], [`a${text(0xdc00)}`]
@@ -186,6 +201,11 @@ describe('the name the agency types when it adds a person of the portal (decisio
     expect(ClientMemberAddRequestSchema.parse({ email, name: '' }).name).toBeUndefined();
     expect(ClientMemberAddRequestSchema.parse({ email, name: '   ' }).name).toBeUndefined();
     expect(ClientMemberAddRequestSchema.parse({ email, name: 'a'.repeat(120) }).name).toHaveLength(120);
+  });
+
+  it('counts the 120 characters of the name as the column does: a letter and 119 emoji pass, with one more emoji it does not', () => {
+    expect(ClientMemberAddRequestSchema.parse({ email, name: `a${CAMERA.repeat(119)}` }).name).toBe(`a${CAMERA.repeat(119)}`);
+    expect(ClientMemberAddRequestSchema.safeParse({ email, name: `a${CAMERA.repeat(120)}` }).success).toBe(false);
   });
 
   it('has the limit of the name of the profile and refuses what the profile name refuses', () => {

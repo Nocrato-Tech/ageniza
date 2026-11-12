@@ -1123,6 +1123,23 @@ describe('request for material (decision 2026-11-10)', () => {
     await waitFor(() => expect(api.bodies).toHaveLength(1));
   });
 
+  it('counts the title in characters, so the counter and the block agree on emoji: 80/80 sends, 81/80 is refused for its length', async () => {
+    const { api } = mountMaterial();
+    const dialog = await openDialog(await materialArea());
+    const camera = String.fromCodePoint(0x1f4f8);
+    write(dialog, 'Envie 3 fotos da equipe', `a${camera.repeat(80)}`);
+    expect(within(dialog).getByText('81/80')).toBeTruthy();
+    send(dialog);
+    await within(dialog).findByText('O título passa de 80 caracteres.');
+    expect(api.bodies).toHaveLength(0);
+
+    writeTitle(dialog, `a${camera.repeat(79)}`);
+    expect(within(dialog).getByText('80/80')).toBeTruthy();
+    send(dialog);
+    await waitFor(() => expect(api.bodies).toHaveLength(1));
+    expect(api.bodies[0]).toMatchObject({ title: `a${camera.repeat(79)}` });
+  });
+
   it('puts the refusal of the server about the title on its field and keeps everything typed', async () => {
     const { api } = mountMaterial();
     const dialog = await openDialog(await materialArea());
