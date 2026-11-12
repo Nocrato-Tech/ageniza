@@ -28,13 +28,18 @@ export const PortalContentInProductionSchema = z.object({
   status: z.literal('in_production')
 }).strict();
 
+/** The photo of who sent the round of a content, served by the portal itself under the guard of the client: the path is relative to the API. */
+export const PORTAL_SENDER_PHOTO_PATH = /^\/clients\/[0-9a-f-]{36}\/contents\/[0-9a-f-]{36}\/sender-photo$/i;
+
 /**
- * Who of the agency sent the round, as the portal shows it ("Recado de João Pereira, da Agência Horizonte"): the name and a signed address
- * of the photo, `null` when the person has none or the storage is not reachable. No e-mail, role, id or membership of the collaborator.
+ * Who of the agency sent the round, as the portal shows it ("Recado de João Pereira, da Agência Horizonte"): the name and the path of the
+ * photo, `null` when the person has none. The path is `/clients/:clientId/contents/:contentId/sender-photo`, relative to the API, and the
+ * route answers the bytes of the image (404 for no photo or no access): an address of the storage would carry the key of the object, which
+ * names the account of the sender. No e-mail, role, id or membership of the collaborator.
  */
 export const PortalApprovalSenderSchema = z.object({
   name: z.string(),
-  photoUrl: z.string().nullable()
+  photoUrl: z.string().regex(PORTAL_SENDER_PHOTO_PATH).nullable()
 }).strict();
 
 /**

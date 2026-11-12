@@ -34,7 +34,7 @@ import type { IdentityStorageClient } from '../identity-storage/storage-client.j
 import type { MediaStorageClient } from '../media/storage-client.js';
 import { isInsufficientPrivilegeError } from '../tenancy/guards.js';
 import { clientNotFound, contentNotFound, forbidden, periodTooLarge, unauthenticated } from './errors.js';
-import { mediaNotFound, notAwaitingApproval, translatePortalError, variantNotReady, variantProcessingFailed, type PortalContentAction } from './portal-errors.js';
+import { mediaNotFound, notAwaitingApproval, senderPhotoNotFound, translatePortalError, variantNotReady, variantProcessingFailed, type PortalContentAction } from './portal-errors.js';
 import {
   approveContent,
   detailFrom,
@@ -47,9 +47,10 @@ import {
   openListItemFrom,
   portalAccessHolds,
   requestContentChanges,
-  senderPhotoKeysOf,
+  senderPhotoPathOf,
+  USER_AVATAR_KEY,
   withdrawContentApproval,
-  type SenderPhotoUrls
+  type SenderPhotoPath
 } from './portal-service.js';
 import type { ContentTransaction } from './service.js';
 
@@ -68,19 +69,22 @@ export interface ContentPortalModuleDependencies {
     readonly storage: Pick<MediaStorageClient, 'presignGetObject'>;
     readonly downloadUrlExpirySeconds: number;
   };
-  /** Undefined where identity storage is not configured: the photo of the person who sent a round is then `null`, and the name still shows. */
+  /**
+   * Undefined where identity storage is not configured: the route of the sender's photo is then not registered, the photo of the person who
+   * sent a round is `null`, and the name still shows. The photo is read through the API, never as an address of the bucket.
+   */
   readonly senderPhoto?: {
-    readonly identityStorage: Pick<IdentityStorageClient, 'presignGetObject'>;
-    readonly downloadUrlExpirySeconds: number;
+    readonly identityStorage: Pick<IdentityStorageClient, 'readImage'>;
   };
   /** The instant "today" is read from for the progress of the month; only a test sets it, and without it the day is the database's own. */
   readonly now?: () => Date;
 }
 
-/** The account stores the photo as a key of the identity bucket: `users/<id>/avatar/<version>.<ext>`. Anything else is data, not a key to sign. */
-const USER_AVATAR_KEY = /^users\/[0-9a-f-]{36}\/avatar\/[0-9a-f-]{36}\.[a-z0-9]+$/i;
-
 const AWAITING_DEFAULT_PAGE_SIZE = 20;
+
+/** Counted per user across the clients, as the read of a media is: a page of the portal asks for the photo once per post that has a sender. */
+const SENDER_PHOTO_BUCKET = 'portal-sender-photo';
+const SENDER_PHOTO_RATE_LIMIT = { max: 600, windowMs: 5 * 60 * 1_000 } as const;
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -218,37 +222,16 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     if (row.status === 'in_production') throw notAwaitingApproval(action);
   };
 
-  /**
-   * The signed address of the photo of each person who sent the rounds of a page, by the key the account stores; `null` for a key that is
-   * not an avatar key, for a storage that is not configured and for one that refuses (the page still loads, the name is shown, and the
-   * log carries a code, never the key). Signing is a local computation, so it holds no connection of its own.
-   */
-  const signSenderPhotos = async (request: FastifyRequest, rows: Parameters<typeof senderPhotoKeysOf>[0]): Promise<SenderPhotoUrls> => {
-    const urls = new Map<string, string | null>();
-    const senderPhoto = dependencies.senderPhoto;
-    for (const key of senderPhotoKeysOf(rows)) {
-      if (senderPhoto === undefined || !USER_AVATAR_KEY.test(key)) {
-        urls.set(key, null);
-        continue;
-      }
-      try {
-        urls.set(key, await senderPhoto.identityStorage.presignGetObject({ key, expiresInSeconds: senderPhoto.downloadUrlExpirySeconds }));
-      } catch (error) {
-        request.log.warn({ error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'PORTAL_SENDER_PHOTO_URL_FAILED' } }, 'Could not sign the photo of the sender of a round; returning null');
-        urls.set(key, null);
-      }
-    }
-    return urls;
-  };
+  /** The path of the sender's photo of a post of this client, or none where the route that serves it is not registered. */
+  const senderPhotoPath = (clientId: string): SenderPhotoPath => dependencies.senderPhoto === undefined ? () => null : senderPhotoPathOf(clientId);
 
   const readBack = async (
-    request: FastifyRequest,
     transaction: ContentTransaction,
     scope: { readonly clientId: string; readonly contentId: string }
   ): Promise<PortalContentDetail> => {
     const row = await loadPortalContent(transaction, scope.clientId, scope.contentId);
     if (row === undefined) throw contentNotFound();
-    return detailFrom(transaction, row, await signSenderPhotos(request, [row]));
+    return detailFrom(transaction, row, senderPhotoPath(scope.clientId));
   };
 
   app.get('/clients/:clientId/contents', portalGuards(periodDocs), async (request, reply) => {
@@ -269,9 +252,8 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     const rows = await inTransaction(claims, (transaction) => listPortalContents(transaction, clientId, query, CONTENT_PERIOD_MAX_ITEMS + 1));
     if (rows.length > CONTENT_PERIOD_MAX_ITEMS) throw periodTooLarge();
 
-    const photos = await signSenderPhotos(request, rows);
     return reply.send(routeResponse(periodDocs, request, {
-      data: rows.map((row) => listItemFrom(row, photos)),
+      data: rows.map((row) => listItemFrom(row, senderPhotoPath(clientId))),
       meta: { from: query.from, to: query.to, count: rows.length }
     }));
   });
@@ -294,10 +276,9 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     const resolved = resolvePagination(routeQuery(awaitingDocs, request), AWAITING_DEFAULT_PAGE_SIZE);
 
     const page = await inTransaction(claims, (transaction) => listAwaitingContents(transaction, clientId, resolved));
-    const photos = await signSenderPhotos(request, page.items);
 
     return reply.send(routeResponse(awaitingDocs, request, {
-      data: page.items.map((row) => openListItemFrom({ ...row, status: 'awaiting_approval' }, photos)),
+      data: page.items.map((row) => openListItemFrom({ ...row, status: 'awaiting_approval' }, senderPhotoPath(clientId))),
       meta: buildPaginationMetadata(resolved, page.totalItems)
     }));
   });
@@ -308,7 +289,7 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     const contentId = contentIdFromRoute(request);
     routeParams(readDocs, request);
 
-    const detail = await inTransaction(claims, (transaction) => readBack(request, transaction, { clientId, contentId }));
+    const detail = await inTransaction(claims, (transaction) => readBack(transaction, { clientId, contentId }));
 
     return reply.send(routeResponse(readDocs, request, detail));
   });
@@ -360,6 +341,49 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     });
   }
 
+  const senderPhoto = dependencies.senderPhoto;
+  if (senderPhoto !== undefined) {
+    const senderPhotoDocs = {
+      permission: null,
+      responseStatus: 200,
+      schemas: { params: PortalContentPathParamsSchema }
+    } satisfies DocumentedRouteConfig;
+
+    // The photo of who sent the round of a content the person reads, as bytes: the storage is read here and no address of it leaves, because the
+    // key of the object names the account of the sender. Absent content, content of another client, a round with no sender, a sender with no
+    // photo (or with a value that is no avatar key) and a storage that does not answer are one 404, so nothing tells them apart.
+    const guards = portalGuards(senderPhotoDocs);
+    const limiter = sharedUserRateLimit(app, SENDER_PHOTO_BUCKET, SENDER_PHOTO_RATE_LIMIT);
+    app.get('/clients/:clientId/contents/:contentId/sender-photo', { ...guards, preHandler: [...guards.preHandler, limiter], exposeHeadRoute: false }, async (request, reply) => {
+      const { claims } = requireAuth(request);
+      const clientId = portalClientIdOf(request);
+      const contentId = contentIdFromRoute(request);
+      routeParams(senderPhotoDocs, request);
+
+      const key = await inTransaction(claims, async (transaction) => {
+        const row = await loadPortalContent(transaction, clientId, contentId);
+        return row?.has_approval === true ? row.approval_sent_by_photo_key : null;
+      });
+      if (key === null || key === undefined || !USER_AVATAR_KEY.test(key)) throw senderPhotoNotFound();
+
+      let image;
+      try {
+        image = await senderPhoto.identityStorage.readImage({ key });
+      } catch (error) {
+        request.log.warn({ error: { name: error instanceof Error ? error.name : 'UnknownError', code: 'PORTAL_SENDER_PHOTO_READ_FAILED' } }, 'Could not read the photo of the sender of a round; answering 404');
+        throw senderPhotoNotFound();
+      }
+      if (image === undefined) throw senderPhotoNotFound();
+
+      return reply
+        .header('cache-control', 'private, max-age=300')
+        .header('x-content-type-options', 'nosniff')
+        .header('content-disposition', 'inline')
+        .type(image.contentType)
+        .send(Buffer.from(image.body));
+    });
+  }
+
   app.post('/clients/:clientId/contents/:contentId/approve', portalGuards(approveDocs), async (request, reply) => {
     const clientId = portalClientIdOf(request);
     const contentId = contentIdFromRoute(request);
@@ -370,7 +394,7 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     const detail = await portalMove(request, scope, 'approve', async (transaction) => {
       await readForMove(transaction, scope, 'approve');
       await approveContent(transaction, { contentId, revision: body.revision, note: body.note });
-      return readBack(request, transaction, scope);
+      return readBack(transaction, scope);
     });
 
     return reply.send(routeResponse(approveDocs, request, detail));
@@ -382,7 +406,7 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     const result = await portalMove(request, scope, 'withdraw-approval', async (transaction) => {
       await readForMove(transaction, scope, 'withdraw-approval');
       await withdrawContentApproval(transaction, { contentId: scope.contentId, revision: body.revision });
-      return readBack(request, transaction, scope);
+      return readBack(transaction, scope);
     });
     return reply.send(routeResponse(withdrawDocs, request, result));
   });
@@ -397,7 +421,7 @@ export const registerContentPortalModule = (app: FastifyInstance, dependencies: 
     const detail = await portalMove(request, scope, 'request-changes', async (transaction) => {
       await readForMove(transaction, scope, 'request-changes');
       await requestContentChanges(transaction, { contentId, revision: body.revision, comment: body.comment });
-      return readBack(request, transaction, scope);
+      return readBack(transaction, scope);
     });
 
     return reply.send(routeResponse(requestChangesDocs, request, detail));

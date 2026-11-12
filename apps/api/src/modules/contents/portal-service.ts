@@ -33,8 +33,17 @@ export interface PortalContentRow {
   readonly approval_sent_by_photo_key: string | null;
 }
 
-/** The signed address of each sender photo of a page, by the key the account stores: the route signs the keys once, the mapping reads them. */
-export type SenderPhotoUrls = ReadonlyMap<string, string | null>;
+/**
+ * Where the portal gets the photo of who sent a round: a route of its own (`GET .../contents/:contentId/sender-photo`), under the guard of
+ * the client, never an address of the storage, which would carry the key of the object and so the id of the account. `null` for a deployment
+ * with no identity storage. The JSON carries only this relative path.
+ */
+export type SenderPhotoPath = (contentId: string) => string | null;
+
+/** The account stores the photo as a key of the identity bucket: `users/<id>/avatar/<version>.<ext>`. Anything else is data, not a key to read. */
+export const USER_AVATAR_KEY = /^users\/[0-9a-f-]{36}\/avatar\/[0-9a-f-]{36}\.[a-z0-9]+$/i;
+
+export const senderPhotoPathOf = (clientId: string): SenderPhotoPath => (contentId) => `/clients/${clientId}/contents/${contentId}/sender-photo`;
 
 /** The columns of a round the approval link also reads, and the ones only the person's own portal reads: a row without them is a round that says less. */
 type ApprovalRow = Pick<PortalContentRow, 'has_approval' | 'approval_due_on' | 'approval_note'>
@@ -44,10 +53,11 @@ const instantOf = (value: Date | null | undefined): string | null => value === n
 
 /**
  * What the agency asked of the client and who asked (decision 2026-11-11): the deadline as an instant and as its day, the note, when it was
- * sent and the sender as a name and a photo. The batch, the e-mail, the role and the id of the sender never reach the portal. The approval
- * link reads fewer columns of the same round: its answer has the day and the note, and the rest `null`.
+ * sent and the sender as a name and the path of the photo. The batch, the e-mail, the role and the id of the sender never reach the portal.
+ * The approval link reads fewer columns of the same round: its answer has the day and the note, and the rest `null`. `photoUrl` is given only
+ * for a sender whose key is that of an avatar: the route that serves the photo answers 404 for anything else.
  */
-export const portalApprovalOf = (row: ApprovalRow, senderPhotos: SenderPhotoUrls = new Map()): PortalContentApproval | null => {
+export const portalApprovalOf = (row: ApprovalRow, photoUrl: string | null = null): PortalContentApproval | null => {
   if (!row.has_approval) return null;
   const photoKey = row.approval_sent_by_photo_key ?? null;
   return {
@@ -55,13 +65,11 @@ export const portalApprovalOf = (row: ApprovalRow, senderPhotos: SenderPhotoUrls
     dueOn: row.approval_due_on,
     note: row.approval_note,
     sentAt: instantOf(row.approval_sent_at),
-    sentBy: row.approval_sent_by_name == null ? null : { name: row.approval_sent_by_name, photoUrl: photoKey === null ? null : senderPhotos.get(photoKey) ?? null }
+    sentBy: row.approval_sent_by_name == null
+      ? null
+      : { name: row.approval_sent_by_name, photoUrl: photoKey !== null && USER_AVATAR_KEY.test(photoKey) ? photoUrl : null }
   };
 };
-
-/** The keys of the sender photos a page of rows needs signed, each once. */
-export const senderPhotoKeysOf = (rows: ReadonlyArray<Pick<PortalContentRow, 'has_approval' | 'approval_sent_by_photo_key'>>): string[] =>
-  [...new Set(rows.flatMap((row) => row.has_approval && row.approval_sent_by_photo_key !== null ? [row.approval_sent_by_photo_key] : []))];
 
 /*
  * Every read of the portal goes through `app_private.portal_contents` and `app_private.portal_content_media`
@@ -213,7 +221,7 @@ const inProductionFrom = (row: PortalContentRow & { readonly status: 'in_product
 
 const openDetailBaseFrom = (
   row: PortalContentRow & { readonly status: PortalContentOpenListItem['status'] },
-  senderPhotos: SenderPhotoUrls
+  senderPhotoPath: SenderPhotoPath
 ): Omit<PortalContentOpenListItem, 'thumbnailAssetId'> => ({
   id: row.id,
   title: row.title,
@@ -224,26 +232,28 @@ const openDetailBaseFrom = (
   status: row.status,
   coverAssetId: row.cover_asset_id,
   publishedOn: row.published_on,
-  approval: portalApprovalOf(row, senderPhotos)
+  approval: portalApprovalOf(row, senderPhotoPath(row.id))
 });
+
+const NO_SENDER_PHOTO: SenderPhotoPath = () => null;
 
 /** `thumbnailAssetId` is the file that serves as the cover of the card: the function's first row, the chosen cover before the media. */
 export const openListItemFrom = (
   row: PortalContentRow & { readonly status: PortalContentOpenListItem['status'] },
-  senderPhotos: SenderPhotoUrls = new Map()
+  senderPhotoPath: SenderPhotoPath = NO_SENDER_PHOTO
 ): PortalContentOpenListItem => ({
-  ...openDetailBaseFrom(row, senderPhotos),
+  ...openDetailBaseFrom(row, senderPhotoPath),
   thumbnailAssetId: row.thumbnail_asset_id
 });
 
-export const listItemFrom = (row: PortalContentRow, senderPhotos: SenderPhotoUrls = new Map()): PortalContentListItem =>
-  row.status === 'in_production' ? inProductionFrom({ ...row, status: row.status }) : openListItemFrom({ ...row, status: row.status }, senderPhotos);
+export const listItemFrom = (row: PortalContentRow, senderPhotoPath: SenderPhotoPath = NO_SENDER_PHOTO): PortalContentListItem =>
+  row.status === 'in_production' ? inProductionFrom({ ...row, status: row.status }) : openListItemFrom({ ...row, status: row.status }, senderPhotoPath);
 
-export const detailFrom = async (transaction: ContentTransaction, row: PortalContentRow, senderPhotos: SenderPhotoUrls = new Map()): Promise<PortalContentDetail> => {
+export const detailFrom = async (transaction: ContentTransaction, row: PortalContentRow, senderPhotoPath: SenderPhotoPath = NO_SENDER_PHOTO): Promise<PortalContentDetail> => {
   if (row.status === 'in_production') return inProductionFrom({ ...row, status: row.status });
   if (row.revision === null) throw new Error('A content open to the client reached the portal without a revision.');
   return {
-    ...openDetailBaseFrom({ ...row, status: row.status }, senderPhotos),
+    ...openDetailBaseFrom({ ...row, status: row.status }, senderPhotoPath),
     caption: row.caption,
     revision: row.revision,
     media: await loadPortalMedia(transaction, row.id)

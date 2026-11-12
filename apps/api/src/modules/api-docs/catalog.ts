@@ -496,7 +496,7 @@ const portalContentOpenExample = {
     dueOn: contentApprovalExample.dueOn,
     note: contentApprovalExample.note,
     sentAt: contentApprovalExample.sentAt,
-    sentBy: { name: 'João Pereira', photoUrl: null }
+    sentBy: { name: 'João Pereira', photoUrl: `/clients/${clientId}/contents/${contentId}/sender-photo` }
   }
 } as const;
 
@@ -2065,7 +2065,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'itens (acima disso, `400 CONTENT_PERIOD_TOO_LARGE`, sem truncar). Do dia mais antigo ao mais novo. Um conteúdo em produção traz',
       'só o título, o dia e o formato; a partir de "aguardando aprovação" traz também a plataforma, a hora, a capa, o dia real da',
       'publicação e `approval` (o prazo da agência como instante, `dueAt`, e como dia, `dueOn`; o recado; quando foi enviado, `sentAt`; e quem enviou, `sentBy`,',
-      'só o nome e a foto assinada, ou nulo; tudo nulo no conteúdo enviado antes das rodadas), sem a legenda nem a mídia (essas vêm da leitura do conteúdo). Conteúdo cancelado nunca vem. Nenhuma resposta do',
+      'só o nome e o caminho da foto, que é uma rota do próprio portal, ou nulo; tudo nulo no conteúdo enviado antes das rodadas), sem a legenda nem a mídia (essas vêm da leitura do conteúdo). Conteúdo cancelado nunca vem. Nenhuma resposta do',
       'portal traz subtarefa, responsável, prazo interno, o lote do envio, o e-mail, o papel ou o id de uma pessoa, nem para o colaborador que também tem vínculo com o cliente.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
@@ -2166,7 +2166,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     description: [
       'A partir de "aguardando aprovação", o post com a legenda, a mídia (o id e o lugar de cada arquivo, em ordem) e a `revision` que',
       'a pessoa lê e devolve ao aprovar ou pedir ajuste, e `approval` com o prazo (`dueAt`, o instante, e `dueOn`, o dia), o recado (`note`), o instante',
-      'do envio (`sentAt`) e quem enviou (`sentBy`: só o nome e a foto assinada, ou nulo) que a agência deu ao enviar (nulo',
+      'do envio (`sentAt`) e quem enviou (`sentBy`: só o nome e o caminho da foto, que é uma rota do próprio portal, ou nulo) que a agência deu ao enviar (nulo',
       'para o conteúdo enviado antes das rodadas). Um conteúdo em produção traz só o título, o dia e o formato. Conteúdo',
       'cancelado, de outro cliente (mesmo de um cliente que a pessoa também lê), de outra agência, inexistente ou com id inválido',
       'devolve o mesmo 404, e o colaborador que também tem vínculo recebe o mesmo recorte que qualquer pessoa do portal.'
@@ -2179,6 +2179,32 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       COMMON_ERRORS.internal,
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/contents/:contentId/sender-photo',
+    operationId: 'getPortalContentSenderPhoto',
+    module: 'contents',
+    summary: 'Lê a foto de quem da agência enviou a rodada, no portal',
+    description: [
+      'Devolve os bytes da imagem (`image/png`, `image/jpeg`, `image/webp` ou `image/gif`, pelo que os bytes dizem, nunca pelo que o objeto',
+      'declara) da foto da pessoa da agência que enviou a rodada do conteúdo. É o caminho que `approval.sentBy.photoUrl` traz, relativo à',
+      'API: nenhum endereço do armazenamento sai do portal, porque a chave do objeto nomeia a conta de quem enviou. A resposta leva',
+      '`Cache-Control: private`, `X-Content-Type-Options: nosniff` e `Content-Disposition: inline`. Conteúdo em produção, cancelado, de outro',
+      'cliente (mesmo de um que a pessoa também lê), de outra agência ou inexistente, rodada sem remetente, remetente sem foto e armazenamento',
+      'que não responde devolvem o mesmo 404, sem dizer qual. Cada pessoa pede até 600 fotos a cada 5 minutos; o pedido seguinte é 429',
+      '`RATE_LIMITED` com `Retry-After`. A rota só existe onde o armazenamento de identidade está configurado.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: PortalContentPathParamsSchema,
+    responses: [{ status: 200, description: 'Os bytes da imagem, com o tipo que eles dizem (`image/png`, `image/jpeg`, `image/webp` ou `image/gif`).' }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Photo not found.' },
+      { status: 429, code: 'RATE_LIMITED' }
     ]
   },
   {
@@ -2253,11 +2279,12 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'Qualquer pessoa ativa do portal do cliente aprova um conteúdo que aguarda aprovação: o conteúdo passa a aprovado. Quem aprovou e',
       'quando são do banco, tirados da sessão, nunca do corpo (`.strict()`); a agência lê quem aprovou como `{ name, side: "client" }`, sem',
       'id. `revision` é a revisão que a pessoa leu: se a legenda, a capa, o formato ou a mídia mudou desde então, `409',
-      'CONTENT_REVISION_CHANGED` e nada é aprovado. Aprovar um conteúdo já aprovado não muda nada, e a primeira pessoa continua sendo',
+      'CONTENT_REVISION_CHANGED` e nada é aprovado. Aprovar sem recado um conteúdo já aprovado não muda nada, e a primeira pessoa continua sendo',
       'quem aprovou. `note` é o recado opcional para a agência (decisão de 2026-11-11): até 500 caracteres visíveis, com a mesma regra do recado',
       'da agência (aparado, nunca só espaços, sem caractere invisível ou de controle; `400 CONTENT_APPROVAL_NOTE_INVALID` quando em branco ou longo),',
       'e entra na conversa do conteúdo como comentário do cliente, na mesma transação da aprovação: se o recado é recusado, nada é aprovado. Um',
-      'conteúdo já aprovado não recebe segundo recado. Fora de "aguardando aprovação" (em produção, em ajuste, publicado): `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo',
+      'recado em conteúdo que já está aprovado, por quem aprovou ou por outra pessoa, não é gravado e a resposta diz isso: `409',
+      'CONTENT_ALREADY_APPROVED` (decisão de 2026-11-11). Fora de "aguardando aprovação" (em produção, em ajuste, publicado): `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo',
       'cancelado, de outro cliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404, também para o colaborador que tem vínculo.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
@@ -2275,6 +2302,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
       { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação é aprovado.' },
+      { status: 409, code: 'CONTENT_ALREADY_APPROVED', message: 'Este conteúdo já foi aprovado. Seu recado não foi enviado.' },
       { status: 409, code: 'CONTENT_REVISION_CHANGED' },
       { status: 409, code: 'TRY_AGAIN' }
     ]

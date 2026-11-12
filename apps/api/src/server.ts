@@ -126,7 +126,7 @@ export const startApi = async (): Promise<void> => {
     requireClientAccess: createRequireClientAccess({ database }),
     ...(mediaDependencies === undefined ? {} : { media: { storage: mediaDependencies.storage, downloadUrlExpirySeconds: mediaDependencies.config.downloadUrlExpirySeconds } }),
     ...(config.identityStorage === undefined ? {} : {
-      senderPhoto: { identityStorage: createIdentityStorageClient(config.identityStorage), downloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds }
+      senderPhoto: { identityStorage: createIdentityStorageClient(config.identityStorage) }
     })
   };
   const approvalLinkDependencies: ApprovalLinkModuleDependencies = {

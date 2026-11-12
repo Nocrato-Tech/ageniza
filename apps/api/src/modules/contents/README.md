@@ -150,7 +150,9 @@ O banco decide (migrations `20261110000100` e `20261111000200`: `submit_content(
 - **Envio individual.** `POST .../contents/:contentId/submit` leva `{ dueAt?, dueOn?, note? }` (`SubmitContentRequestSchema`, que é só dele:
   `ContentMoveRequestSchema` segue sem campo para `cancel` e `unpublish`). `dueAt` é o prazo como instante, com fuso
   (`2026-11-12T18:00:00-03:00`); `dueOn` continua valendo, e é o fim desse dia em São Paulo (23:59); os dois juntos são `400`. O banco
-  guarda `due_at` e deriva `due_on`, o dia de São Paulo dele, que os lembretes e os e-mails seguem lendo. O contrato confere só o formato
+  guarda `due_at` e deriva `due_on`, o dia de São Paulo dele, que os lembretes e os e-mails seguem lendo. O contrato confere o formato do
+  instante e o devolve **em UTC** (`ApprovalDueAtSchema`: o mesmo instante escrito com `+16:00` ou `-23:59`, que o banco não lê, chega à função
+  em UTC; um deslocamento que nenhum relógio tem, como `+99:99`, e um instante fora dos anos 0001 a 9999 são `400 VALIDATION_ERROR`, nunca `500`)
   e o texto do recado (1 a 500 caracteres, sem invisível, aparado); que o prazo esteja entre agora (exclusive) e 90 dias à frente é do
   banco (`A0120` -> `400 CONTENT_APPROVAL_DUE_INVALID`). O padrão de 48 horas é da tela: a API aceita o envio sem prazo.
   `A0068` num `submit` é a nota (`400 CONTENT_APPROVAL_NOTE_INVALID`), e em `approve-by-agency` é o motivo:
@@ -166,7 +168,13 @@ O banco decide (migrations `20261110000100` e `20261111000200`: `submit_content(
   feed, o detalhe e o lote compartilham.
 - **O portal** devolve `approval: { dueAt, dueOn, note, sentAt, sentBy }` (`portalApprovalOf`, uma só cópia, que `portal-routes.ts` exporta e
   `approval-links/service.ts` importa por essa porta), vindo de `portal_contents`. `sentBy` é `{ name, photoUrl }` de quem da agência enviou
-  (ver `portal.md`); o lote não sai do banco. **O link de aprovação** do e-mail continua com o dia e o recado: o `dueAt`, o `sentAt` e o
+  (ver `portal.md`); o lote não sai do banco. `photoUrl` é o **caminho** `/clients/:clientId/contents/:contentId/sender-photo`, uma rota do
+  portal sob a mesma guarda do cliente que responde os bytes da imagem (`404` único sem foto, sem acesso ou com o armazenamento fora do ar;
+  `Cache-Control: private`, `nosniff`, limite por pessoa): nenhum endereço assinado, que levaria a chave do objeto e com ela o id da conta de
+  quem enviou. Só uma chave de avatar (`users/<id>/avatar/...`) é lida do armazenamento, pelo `IdentityStorageClient.readImage`.
+- **Recado em conteúdo já aprovado.** `approve` com `note` num conteúdo que já está aprovado é `A0123` -> `409 CONTENT_ALREADY_APPROVED`
+  ("Este conteúdo já foi aprovado. Seu recado não foi enviado."), decidido depois da trava do conteúdo na função do banco (uma só cópia da regra,
+  porque é lá que duas pessoas aprovando juntas se separam); sem recado, o conteúdo já aprovado segue um `200` que não escreve nada. **O link de aprovação** do e-mail continua com o dia e o recado: o `dueAt`, o `sentAt` e o
   `sentBy` dele são `null` (vem de `portal_approval_contents`, que esta entrega não mexe).
 - **Parado no cliente.** `GET /agencies/:agencyId/contents/awaiting-client` (`awaiting-routes.ts`, `awaiting-service.ts`): o que aguarda
   aprovação, até 50 (`meta.truncated` quando havia mais), de quem espera há mais tempo ao mais novo (`sentAt`; o sem rodada vem por último,

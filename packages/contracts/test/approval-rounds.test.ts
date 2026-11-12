@@ -16,6 +16,7 @@ import {
   MaterialRequestListResponseSchema,
   PortalApproveContentRequestSchema,
   PortalApproveContentWithNoteRequestSchema,
+  PortalApprovalSenderSchema,
   PortalContentOpenDetailSchema,
   PortalContentOpenListItemSchema,
   PortalContentProgressResponseSchema,
@@ -104,19 +105,49 @@ describe('the body of the submit of one content', () => {
     expect(SubmitContentRequestSchema.safeParse({ dueAt: '2999-12-31T23:59:59-03:00' }).success).toBe(true);
   });
 
-  it('takes the deadline as an instant with its offset, as the screens send it (decision 2026-11-11)', () => {
-    for (const dueAt of ['2026-11-12T18:00:00-03:00', '2026-11-12T21:00:00Z', '2026-11-12T21:00:00.500Z', '2026-11-12T21:00:00+00:00']) {
-      expect(SubmitContentRequestSchema.parse({ dueAt }), dueAt).toEqual({ dueAt });
-      expect(SubmitContentsBatchRequestSchema.safeParse({ contentIds: [uuid(1)], dueAt }).success, dueAt).toBe(true);
+  it('takes the deadline as an instant with its offset, as the screens send it, and hands it on in UTC (decision 2026-11-11)', () => {
+    for (const [dueAt, utc] of [
+      ['2026-11-12T18:00:00-03:00', '2026-11-12T21:00:00.000Z'],
+      ['2026-11-12T21:00:00Z', '2026-11-12T21:00:00.000Z'],
+      ['2026-11-12T21:00:00.500Z', '2026-11-12T21:00:00.500Z'],
+      ['2026-11-12T21:00:00+00:00', '2026-11-12T21:00:00.000Z']
+    ] as const) {
+      expect(SubmitContentRequestSchema.parse({ dueAt }), dueAt).toEqual({ dueAt: utc });
+      expect(SubmitContentsBatchRequestSchema.parse({ contentIds: [uuid(1)], dueAt }).dueAt, dueAt).toBe(utc);
     }
-    expect(SubmitContentRequestSchema.parse({ dueAt: '2026-11-12T18:00:00-03:00', note: 'Oi' })).toEqual({ dueAt: '2026-11-12T18:00:00-03:00', note: 'Oi' });
+    expect(SubmitContentRequestSchema.parse({ dueAt: '2026-11-12T18:00:00-03:00', note: 'Oi' })).toEqual({ dueAt: '2026-11-12T21:00:00.000Z', note: 'Oi' });
+  });
+
+  // The database refuses an offset past 15:59 (22009) and the years it does not hold: what reaches it is always an instant in UTC.
+  it('turns an offset the database would refuse into the same instant in UTC, so it never reaches the database as it came', () => {
+    for (const [dueAt, utc] of [
+      ['2026-12-01T18:00:00+16:00', '2026-12-01T02:00:00.000Z'],
+      ['2026-12-01T18:00:00+23:59', '2026-11-30T18:01:00.000Z'],
+      ['2026-12-01T18:00:00-16:00', '2026-12-02T10:00:00.000Z'],
+      ['2026-12-01T18:00:00+1500', '2026-12-01T03:00:00.000Z']
+    ] as const) {
+      expect(SubmitContentRequestSchema.parse({ dueAt }).dueAt, dueAt).toBe(utc);
+      expect(SubmitContentsBatchRequestSchema.parse({ contentIds: [uuid(1)], dueAt }).dueAt, dueAt).toBe(utc);
+    }
   });
 
   it('refuses an instant with no offset, a day, a date with a time that does not exist and a null', () => {
-    for (const dueAt of ['2026-11-12T18:00:00', '2026-11-12', '2026-11-12 18:00:00Z', '2026-11-12T25:00:00Z', '2026-02-30T10:00:00Z', '0000-01-01T00:00:00Z', 'amanhã', '', null, 1_794_000_000_000]) {
+    for (const dueAt of ['2026-11-12T18:00:00', '2026-11-12', '2026-11-12 18:00:00Z', '2026-11-12T25:00:00Z', '2026-02-30T10:00:00Z', 'amanhã', '', null, 1_794_000_000_000]) {
       expect(SubmitContentRequestSchema.safeParse({ dueAt }).success, JSON.stringify(dueAt)).toBe(false);
       expect(SubmitContentsBatchRequestSchema.safeParse({ contentIds: [uuid(1)], dueAt }).success, JSON.stringify(dueAt)).toBe(false);
     }
+  });
+
+  it('refuses an offset no clock has and an instant outside the years 0001 to 9999 once in UTC', () => {
+    for (const dueAt of [
+      '2026-12-01T18:00:00+99:99', '2026-12-01T18:00:00+24:00', '2026-12-01T18:00:00-99:00', '2026-12-01T18:00:00+23:60',
+      '0000-01-01T00:00:00Z', '0001-01-01T00:00:00+05:00', '9999-12-31T23:00:00-05:00'
+    ]) {
+      expect(SubmitContentRequestSchema.safeParse({ dueAt }).success, dueAt).toBe(false);
+      expect(SubmitContentsBatchRequestSchema.safeParse({ contentIds: [uuid(1)], dueAt }).success, dueAt).toBe(false);
+    }
+    expect(SubmitContentRequestSchema.parse({ dueAt: '0001-01-01T05:00:00+05:00' }).dueAt).toBe('0001-01-01T00:00:00.000Z');
+    expect(SubmitContentRequestSchema.parse({ dueAt: '9999-12-31T23:59:59Z' }).dueAt).toBe('9999-12-31T23:59:59.000Z');
   });
 
   it('refuses the deadline given twice, as an instant and as a day, in one send and in a batch', () => {
@@ -327,7 +358,7 @@ describe('what the portal reads of a round', () => {
 
   const round = {
     dueAt: '2026-11-26T02:59:00.000Z', dueOn: '2026-11-25', note: 'Até terça', sentAt: SENT_AT,
-    sentBy: { name: 'João Pereira', photoUrl: 'https://files.example/joao.png?sig=x' }
+    sentBy: { name: 'João Pereira', photoUrl: `/clients/${uuid(7)}/contents/${uuid(1)}/sender-photo` }
   };
   const nobody = { dueAt: null, dueOn: null, note: null, sentAt: null, sentBy: null };
 
@@ -337,6 +368,24 @@ describe('what the portal reads of a round', () => {
       expect(PortalContentOpenDetailSchema.safeParse({ ...without(open, 'thumbnailAssetId'), approval, caption: null, revision: 1, media: [] }).success).toBe(true);
     }
     expect(PortalContentOpenListItemSchema.safeParse(open).success).toBe(false);
+  });
+
+  // A signed address of the storage carries the key of the object, which names the account of the sender: the portal is given a path of its own instead.
+  it('gives the photo of the sender as the path of the route of the portal, and never as an address of the storage or any other', () => {
+    const withPhoto = (photoUrl: unknown) => ({ ...round, sentBy: { name: 'João', photoUrl } });
+    expect(PortalApprovalSenderSchema.safeParse({ name: 'João', photoUrl: `/clients/${uuid(7)}/contents/${uuid(1)}/sender-photo` }).success).toBe(true);
+    for (const photoUrl of [
+      'https://files.example/users/3b0f9f1e-0000-4000-8000-000000000003/avatar/v.png?X-Amz-Signature=x',
+      `/clients/${uuid(7)}/contents/${uuid(1)}/sender-photo?x=1`,
+      `https://api.example/clients/${uuid(7)}/contents/${uuid(1)}/sender-photo`,
+      `/clients/${uuid(7)}/contents/${uuid(1)}/media/${uuid(2)}/url`,
+      `/users/${uuid(3)}/avatar/${uuid(4)}.png`,
+      '/clients/x/contents/y/sender-photo',
+      ''
+    ]) {
+      expect(PortalApprovalSenderSchema.safeParse({ name: 'João', photoUrl }).success, photoUrl).toBe(false);
+      expect(PortalContentOpenListItemSchema.safeParse({ ...open, approval: withPhoto(photoUrl) }).success, photoUrl).toBe(false);
+    }
   });
 
   it('names the sender and nothing else of them: no e-mail, id, role or membership, and never the batch', () => {

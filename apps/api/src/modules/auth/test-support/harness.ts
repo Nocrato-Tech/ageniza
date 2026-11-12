@@ -320,8 +320,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     ...(media === undefined ? {} : { media: { storage: media.storage, downloadUrlExpirySeconds: media.config.downloadUrlExpirySeconds } }),
     ...(config.identityStorage === undefined ? {} : {
       senderPhoto: {
-        identityStorage: (options.wrapIdentityStorage ?? ((storage) => storage))(createIdentityStorageClient(config.identityStorage)),
-        downloadUrlExpirySeconds: config.identityStorage.downloadUrlExpirySeconds
+        identityStorage: (options.wrapIdentityStorage ?? ((storage) => storage))(createIdentityStorageClient(config.identityStorage))
       }
     }),
     ...(options.contentsClock === undefined ? {} : { now: options.contentsClock })

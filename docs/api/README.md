@@ -2180,6 +2180,7 @@ Lê o estudo de marca, no portal.
 | `GET` | `/clients/:clientId/contents/awaiting-approval` | Sessão + vínculo com o cliente | — | Lista o que espera a aprovação da pessoa, no portal |
 | `GET` | `/clients/:clientId/contents/progress` | Sessão + vínculo com o cliente | — | Lê o progresso do mês, no portal ("Boa notícia") |
 | `GET` | `/clients/:clientId/contents/:contentId` | Sessão + vínculo com o cliente | — | Lê um conteúdo, no portal |
+| `GET` | `/clients/:clientId/contents/:contentId/sender-photo` | Sessão + vínculo com o cliente | — | Lê a foto de quem da agência enviou a rodada, no portal |
 | `GET` | `/clients/:clientId/contents/:contentId/media/:assetId/url` | Sessão + vínculo com o cliente | — | Emite a URL assinada de uma mídia do conteúdo, no portal |
 | `POST` | `/clients/:clientId/contents/:contentId/withdraw-approval` | Sessão + vínculo com o cliente | — | Desfaz a aprovação de um conteúdo antes da publicação, no portal |
 | `POST` | `/clients/:clientId/contents/:contentId/approve` | Sessão + vínculo com o cliente | — | Aprova um conteúdo, no portal |
@@ -3346,7 +3347,7 @@ Lista os conteúdos de um período, no portal.
         "sentAt": "2026-10-14T12:00:00.000Z",
         "sentBy": {
           "name": "João Pereira",
-          "photoUrl": null
+          "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
         }
       },
       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
@@ -3400,7 +3401,7 @@ Lista o que espera a aprovação da pessoa, no portal.
         "sentAt": "2026-10-14T12:00:00.000Z",
         "sentBy": {
           "name": "João Pereira",
-          "photoUrl": null
+          "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
         }
       },
       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
@@ -3471,7 +3472,7 @@ Lê um conteúdo, no portal.
     "sentAt": "2026-10-14T12:00:00.000Z",
     "sentBy": {
       "name": "João Pereira",
-      "photoUrl": null
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
     }
   },
   "caption": "Novidades de outono chegando!",
@@ -3487,6 +3488,17 @@ Lê um conteúdo, no portal.
 ```
 
 **Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/contents/:contentId/sender-photo`
+
+Lê a foto de quem da agência enviou a rodada, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Resposta `200`** — Os bytes da imagem, com o tipo que eles dizem (`image/png`, `image/jpeg`, `image/webp` ou `image/gif`).
+
+**Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/contents/:contentId/media/:assetId/url`
 
@@ -3549,7 +3561,7 @@ Desfaz a aprovação de um conteúdo antes da publicação, no portal.
     "sentAt": "2026-10-14T12:00:00.000Z",
     "sentBy": {
       "name": "João Pereira",
-      "photoUrl": null
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
     }
   },
   "caption": "Novidades de outono chegando!",
@@ -3602,7 +3614,7 @@ Aprova um conteúdo, no portal.
     "sentAt": "2026-10-14T12:00:00.000Z",
     "sentBy": {
       "name": "João Pereira",
-      "photoUrl": null
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
     }
   },
   "caption": "Novidades de outono chegando!",
@@ -3617,7 +3629,7 @@ Aprova um conteúdo, no portal.
 }
 ```
 
-**Erros:** `400 CONTENT_APPROVAL_NOTE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_APPROVAL_NOTE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CONTENT_ALREADY_APPROVED` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /clients/:clientId/contents/:contentId/request-changes`
 
@@ -3655,7 +3667,7 @@ Pede ajuste de um conteúdo, no portal.
     "sentAt": "2026-10-14T12:00:00.000Z",
     "sentBy": {
       "name": "João Pereira",
-      "photoUrl": null
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
     }
   },
   "caption": "Novidades de outono chegando!",
@@ -3820,7 +3832,7 @@ Aprova um conteúdo do lote, pelo link.
     "sentAt": "2026-10-14T12:00:00.000Z",
     "sentBy": {
       "name": "João Pereira",
-      "photoUrl": null
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
     }
   },
   "caption": "Novidades de outono chegando!",
@@ -3874,7 +3886,7 @@ Pede ajuste de um conteúdo do lote, pelo link.
     "sentAt": "2026-10-14T12:00:00.000Z",
     "sentBy": {
       "name": "João Pereira",
-      "photoUrl": null
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
     }
   },
   "caption": "Novidades de outono chegando!",

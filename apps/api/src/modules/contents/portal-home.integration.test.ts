@@ -18,7 +18,9 @@ const { people } = w;
 
 const NOW = new Date('2026-11-10T01:30:00.000Z'); // 2026-11-09 22:30:00 in America/Sao_Paulo
 let clock: Date | undefined;
-const bucket = { refusing: false };
+// The identity bucket as the sender photo route reads it: the images it holds by key, the keys asked of it and whether it answers.
+const PHOTO_BYTES = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+const bucket = { refusing: false, images: new Map<string, Uint8Array>(), asked: [] as string[] };
 
 const knex = () => w.getOwner().knex;
 const get = (person: PortalPerson, url: string): Promise<Reply> => w.call('GET', p.people[person].cookie, url);
@@ -60,9 +62,11 @@ beforeAll(async () => {
     contentsClock: () => clock ?? new Date(),
     wrapIdentityStorage: (real) => ({
       ...real,
-      presignGetObject: async (input) => {
-        if (bucket.refusing) throw new Error('The bucket refused to sign.');
-        return real.presignGetObject(input);
+      readImage: async ({ key }) => {
+        bucket.asked.push(key);
+        if (bucket.refusing) throw new Error('The bucket did not answer.');
+        const body = bucket.images.get(key);
+        return body === undefined ? undefined : { body, contentType: 'image/png' };
       }
     })
   });
@@ -73,6 +77,7 @@ beforeAll(async () => {
 afterEach(() => {
   clock = NOW;
   bucket.refusing = false;
+  bucket.asked.length = 0;
 });
 
 afterAll(async () => {
@@ -264,22 +269,45 @@ describe('what needs the client, in the order of the deadline with its hour', ()
 
 describe('who sent the round, as the portal shows it', () => {
   let client: string;
+  let otherClient: string;
   let managerPhotoKey: string;
+  let missingPhotoKey: string;
+  let clientPhotoKey: string;
   let withPhoto: string;
   let withoutPhoto: string;
   let withForeignPhoto: string;
+  let withClientKey: string;
+  let withMissingObject: string;
+  let withoutRound: string;
+  let ofOtherClient: string;
   let managerEmail: string;
+
+  const photoPath = (clientId: string, contentId: string): string => `${oneUrl(clientId, contentId)}/sender-photo`;
+  const bytesOf = (reply: Reply): Buffer => (reply as unknown as { rawPayload: Buffer }).rawPayload;
 
   beforeAll(async () => {
     managerPhotoKey = `users/${people.manager.id}/avatar/${randomUUID()}.png`;
+    missingPhotoKey = `users/${people.operateOnly.id}/avatar/${randomUUID()}.png`;
     await knex().raw('update auth."user" set image = ? where id = ?', [managerPhotoKey, people.manager.id]);
     await knex().raw('update auth."user" set image = ? where id = ?', ['https://evil.example/avatar.png', people.production.id]);
+    await knex().raw('update auth."user" set image = ? where id = ?', [missingPhotoKey, people.operateOnly.id]);
     managerEmail = (await knex()('auth.user').where({ id: people.manager.id }).first('email'))?.email as string;
 
-    client = await freshClient('sender');
+    client = await freshClient('sender', ['portalOne', 'portalMulti', 'dualRead']);
+    otherClient = await freshClient('sender-other', ['portalMulti']);
+    // A key of the bucket that is not the photo of an account (here, the photo of a client) is held by the bucket, so only the route's own check stops it.
+    clientPhotoKey = `clients/${client}/photo/${randomUUID()}.png`;
+    await knex().raw('update auth."user" set image = ? where id = ?', [clientPhotoKey, people.finance.id]);
+    bucket.images.set(managerPhotoKey, PHOTO_BYTES);
+    bucket.images.set(clientPhotoKey, PHOTO_BYTES);
+
     withPhoto = await waiting(client, 'Enviado pela gerente', { dueAt: '2026-11-12T13:00:00.000Z', sentBy: people.manager.id }, { publishOn: '2026-12-01' });
     withoutPhoto = await waiting(client, 'Enviado por comercial', { dueAt: '2026-11-13T13:00:00.000Z', sentBy: people.sales.id }, { publishOn: '2026-12-02' });
     withForeignPhoto = await waiting(client, 'Enviado pela produção', { dueAt: '2026-11-14T13:00:00.000Z', sentBy: people.production.id }, { publishOn: '2026-12-03' });
+    withClientKey = await waiting(client, 'Enviado pelo financeiro', { dueAt: '2026-11-15T13:00:00.000Z', sentBy: people.finance.id }, { publishOn: '2026-12-04' });
+    withMissingObject = await waiting(client, 'Foto que sumiu do bucket', { dueAt: '2026-11-16T13:00:00.000Z', sentBy: people.operateOnly.id }, { publishOn: '2026-12-05' });
+    withoutRound = await waiting(client, 'Antes das rodadas', undefined, { publishOn: '2026-12-06' });
+    ofOtherClient = await waiting(otherClient, 'De outro cliente', { dueAt: '2026-11-12T13:00:00.000Z', sentBy: people.manager.id }, { publishOn: '2026-12-01' });
   }, 60_000);
 
   const senderOf = (reply: Reply, id: string): unknown => {
@@ -288,40 +316,31 @@ describe('who sent the round, as the portal shows it', () => {
     return items.find((item) => item.id === id)?.approval?.sentBy;
   };
 
-  it.each(['period', 'awaiting', 'one'] as const)('gives the name and a signed address of the photo in the %s read, and only for a key of an avatar', async (read) => {
+  it.each(['period', 'awaiting', 'one'] as const)('gives the name and the path of the photo in the %s read, and only for the key of an avatar', async (read) => {
     const reply = await get('portalOne', read === 'period' ? `/clients/${client}/contents?from=2026-12-01&to=2026-12-31` : read === 'awaiting' ? awaitingUrl(client) : oneUrl(client, withPhoto));
 
     expect(reply.statusCode).toBe(200);
-    const sender = senderOf(reply, withPhoto) as { name: string; photoUrl: string | null };
-    expect(sender.name).toBe('Pessoa manager');
-    expect(decodeURIComponent(new URL(sender.photoUrl as string).pathname)).toContain(managerPhotoKey);
-    expect(senderOf(reply, read === 'one' ? withPhoto : withoutPhoto)).toEqual(read === 'one' ? sender : { name: 'Pessoa sales', photoUrl: null });
+    expect(senderOf(reply, withPhoto)).toEqual({ name: 'Pessoa manager', photoUrl: photoPath(client, withPhoto) });
     if (read !== 'one') {
-      // An image that is not a key of the identity bucket is a string the account holds, not something to sign or to hand over.
+      expect(senderOf(reply, withoutPhoto)).toEqual({ name: 'Pessoa sales', photoUrl: null });
+      // An image that is not the key of an account's avatar is a string the account holds, not something to read from the bucket or to hand over.
       expect(senderOf(reply, withForeignPhoto)).toEqual({ name: 'Pessoa production', photoUrl: null });
+      expect(senderOf(reply, withClientKey)).toEqual({ name: 'Pessoa finance', photoUrl: null });
       expect(JSON.stringify(reply.json())).not.toContain('evil.example');
     }
+    expect(bucket.asked).toEqual([]);
   });
 
-  it('gives the name and no photo when the bucket refuses to sign: the answer does not fail', async () => {
-    bucket.refusing = true;
-
-    const reply = await get('portalOne', oneUrl(client, withPhoto));
-
-    expect(reply.statusCode).toBe(200);
-    expect(senderOf(reply, withPhoto)).toEqual({ name: 'Pessoa manager', photoUrl: null });
-  });
-
-  it('never gives the e-mail, the id, the role or the batch of the person of the agency, nor the key of the photo', async () => {
+  it('never gives the e-mail, the id, the role or the batch of the person of the agency, nor the key of the photo, in what it reads', async () => {
     const replies = [await get('portalOne', oneUrl(client, withPhoto)), await get('portalOne', awaitingUrl(client)), await get('portalOne', `/clients/${client}/contents?from=2026-12-01&to=2026-12-31`)];
 
     for (const reply of replies) {
-      // The signed address of a photo is a URL of the bucket: it is the one place the key of the object, which names the account, is in.
-      const text = JSON.stringify(reply.json(), (key, value) => (key === 'photoUrl' && typeof value === 'string' ? '<signed url>' : value));
-      for (const secret of [managerEmail, people.manager.id, people.production.id, people.sales.id, 'batch', 'role', 'membership', managerPhotoKey]) {
+      const text = JSON.stringify(reply.json());
+      for (const secret of [managerEmail, people.manager.id, people.production.id, people.sales.id, people.finance.id, 'batch', 'role', 'membership', 'users/', managerPhotoKey, clientPhotoKey, 'X-Amz']) {
         expect(text, secret).not.toContain(secret);
       }
       expect(text).toContain('Pessoa manager');
+      expect(text).toContain(`/clients/${client}/contents/${withPhoto}/sender-photo`);
     }
   });
 
@@ -332,8 +351,98 @@ describe('who sent the round, as the portal shows it', () => {
     const approved = await post('portalOne', approveUrl(own, id), { revision: 1 });
 
     expect(approved.statusCode).toBe(200);
-    expect(approved.json().approval.sentBy.name).toBe('Pessoa manager');
-    expect(decodeURIComponent(new URL(approved.json().approval.sentBy.photoUrl).pathname)).toContain(managerPhotoKey);
+    expect(approved.json().approval.sentBy).toEqual({ name: 'Pessoa manager', photoUrl: photoPath(own, id) });
+    expect(JSON.stringify(approved.json())).not.toContain(managerPhotoKey);
+  });
+
+  describe('the route of the photo', () => {
+    it('answers the bytes of the image, private to the browser of the person and never sniffed, from the key the account holds', async () => {
+      const reply = await get('portalOne', photoPath(client, withPhoto));
+
+      expect(reply.statusCode).toBe(200);
+      expect(bytesOf(reply).equals(Buffer.from(PHOTO_BYTES))).toBe(true);
+      expect(reply.headers['content-type']).toBe('image/png');
+      expect(String(reply.headers['cache-control'])).toContain('private');
+      expect(String(reply.headers['cache-control'])).not.toContain('public');
+      expect(reply.headers['x-content-type-options']).toBe('nosniff');
+      expect(bucket.asked).toEqual([managerPhotoKey]);
+    });
+
+    it('serves the photo to the other person of the client too, and to a person who reads two clients through the client of the content', async () => {
+      expect((await get('portalMulti', photoPath(client, withPhoto))).statusCode).toBe(200);
+      expect((await get('portalMulti', photoPath(otherClient, ofOtherClient))).statusCode).toBe(200);
+    });
+
+    it('never names the account of the sender: not in the headers, not in the bytes, not in the path it was asked for', async () => {
+      const reply = await get('portalOne', photoPath(client, withPhoto));
+
+      const text = `${JSON.stringify(reply.headers)}${bytesOf(reply).toString('latin1')}${photoPath(client, withPhoto)}`;
+      for (const secret of [managerEmail, people.manager.id, managerPhotoKey, 'users/', 'X-Amz']) expect(text, secret).not.toContain(secret);
+    });
+
+    it('answers one 404 for no photo, a value that is no avatar key, another kind of key of the bucket, a photo gone from the bucket, a bucket that does not answer, a round that was never sent and a content that is not there', async () => {
+      const bodies: string[] = [];
+      for (const [label, contentId] of [
+        ['no photo', withoutPhoto], ['foreign value', withForeignPhoto], ['key of a client', withClientKey], ['photo gone from the bucket', withMissingObject],
+        ['no round', withoutRound], ['unknown content', randomUUID()]
+      ] as const) {
+        const reply = await get('portalOne', photoPath(client, contentId));
+        expect(reply.statusCode, label).toBe(404);
+        expect(errorOf(reply).code, label).toBe('NOT_FOUND');
+        bodies.push(JSON.stringify(reply.json(), (key, value) => (key === 'requestId' ? undefined : value)));
+      }
+      // Only the key of an avatar goes to the bucket, and only the one of the content that was asked.
+      expect(bucket.asked).toEqual([missingPhotoKey]);
+      bucket.refusing = true;
+      const refused = await get('portalOne', photoPath(client, withPhoto));
+      expect(refused.statusCode).toBe(404);
+      bodies.push(JSON.stringify(refused.json(), (key, value) => (key === 'requestId' ? undefined : value)));
+
+      expect(new Set(bodies).size).toBe(1);
+      for (const body of bodies) for (const secret of [people.manager.id, people.operateOnly.id, managerPhotoKey, missingPhotoKey, 'users/']) expect(body, secret).not.toContain(secret);
+    });
+
+    it('answers 404 for a content in production, whose sender no round has named', async () => {
+      const draft = await w.seedContent(client, { status: 'in_production', title: 'Ainda em produção' });
+
+      expect((await get('portalOne', photoPath(client, draft))).statusCode).toBe(404);
+      expect(bucket.asked).toEqual([]);
+    });
+
+    it('answers 404 for a person with no link to the client, one of another agency and one whose link was removed, and reads nothing from the bucket', async () => {
+      for (const person of ['portalOther', 'portalB', 'removed'] as const) {
+        const reply = await get(person, photoPath(client, withPhoto));
+        expect(reply.statusCode, person).toBe(404);
+        expect(bytesOf(reply).equals(Buffer.from(PHOTO_BYTES)), person).toBe(false);
+      }
+      expect(bucket.asked).toEqual([]);
+    });
+
+    it('answers 404 for the content of another client of the same person, asked through the client the person is linked to, and reads nothing', async () => {
+      const reply = await get('portalMulti', photoPath(client, ofOtherClient));
+
+      expect(reply.statusCode).toBe(404);
+      expect(bucket.asked).toEqual([]);
+    });
+
+    it('asks for a session, and answers a malformed identifier with the same 404 of a content that is not there', async () => {
+      expect((await w.call('GET', '', photoPath(client, withPhoto))).statusCode).toBe(401);
+      expect((await get('portalOne', `${oneUrl(client, 'not-an-id')}/sender-photo`)).statusCode).toBe(404);
+      expect(bucket.asked).toEqual([]);
+    });
+
+    it('counts the reads of one person in a bucket of its own: the 601st in five minutes is refused and another person is not', async () => {
+      const url = photoPath(client, withoutPhoto);
+      const statuses: number[] = [];
+      for (let batch = 0; batch < 12; batch += 1) {
+        statuses.push(...(await Promise.all(Array.from({ length: 50 }, () => get('dualRead', url)))).map((reply) => reply.statusCode));
+      }
+      const refused = await get('dualRead', url);
+
+      expect(statuses.every((status) => status === 404)).toBe(true);
+      expect(refused.statusCode).toBe(429);
+      expect((await get('portalOne', photoPath(client, withPhoto))).statusCode).toBe(200);
+    }, 120_000);
   });
 });
 
@@ -452,16 +561,42 @@ describe('approving with a note to the agency', () => {
     expect(await w.contentRow(id)).toMatchObject({ status: 'awaiting_approval' });
   });
 
-  it('does not write a second note when the content is already approved: the first person to approve stays', async () => {
+  // Decision 2026-11-11 "recado em conteúdo já aprovado": a note that would be dropped is refused, and says so (security review, round 1).
+  it('refuses a note on a content that is already approved, with the answer that says the note was not sent, and keeps the first person and the first note', async () => {
     const client = await freshClient('note-twice', ['portalOne', 'portalMulti']);
     const id = await waiting(client, 'Aprovado duas vezes');
 
     expect((await post('portalOne', approveUrl(client, id), { revision: 1, note: NOTE })).statusCode).toBe(200);
     const again = await post('portalMulti', approveUrl(client, id), { revision: 1, note: 'Outro recado' });
 
-    expect(again.statusCode).toBe(200);
+    expect(again.statusCode).toBe(409);
+    expect(errorOf(again)).toMatchObject({ code: 'CONTENT_ALREADY_APPROVED', message: 'Este conteúdo já foi aprovado. Seu recado não foi enviado.' });
     expect(await w.contentRow(id)).toMatchObject({ status: 'approved', approved_by: p.people.portalOne.id });
     expect((await noteOf(id)).map((comment) => comment.body)).toEqual([NOTE]);
+  });
+
+  it('keeps the approval of an approved content with no note a quiet success: nothing changes and nothing is written', async () => {
+    const client = await freshClient('note-approved-quiet', ['portalOne', 'portalMulti']);
+    const id = await waiting(client, 'Aprovado sem recado');
+    expect((await post('portalOne', approveUrl(client, id), { revision: 1 })).statusCode).toBe(200);
+
+    const again = await post('portalMulti', approveUrl(client, id), { revision: 1 });
+
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toMatchObject({ id, status: 'approved' });
+    expect(await w.contentRow(id)).toMatchObject({ status: 'approved', approved_by: p.people.portalOne.id });
+    expect(await noteOf(id)).toEqual([]);
+  });
+
+  it('refuses a note on a content the agency approved outside the platform, and leaves no conversation behind', async () => {
+    const client = await freshClient('note-approved-by-agency');
+    const id = await w.seedContent(client, { status: 'approved', title: 'Aprovado pela agência', approval: { by: people.manager.id, agencyReason: 'Cliente aprovou por telefone' } });
+
+    const reply = await post('portalOne', approveUrl(client, id), { revision: 1, note: NOTE });
+
+    expect(reply.statusCode).toBe(409);
+    expect(errorOf(reply).code).toBe('CONTENT_ALREADY_APPROVED');
+    expect(await knex()('client_threads').where({ content_id: id })).toHaveLength(0);
   });
 
   it('leaves no comment behind when the approval is refused: a content not awaiting, a stale revision', async () => {
