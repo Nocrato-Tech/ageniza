@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { characterCount } from './display-name.js';
 import { hasInvisibleCharacters } from './invisible-characters.js';
 
 /** The two media categories a content takes: a photo or a video (#21). A content never holds a PDF, an audio or a logo. */
@@ -17,7 +18,6 @@ export const MEDIA_ALT_TEXT_MAX_LENGTH = 500;
 
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
-const characterCount = (value: string): number => Array.from(value).length;
 // The line and paragraph separators (U+2028, U+2029) are not controls, and they break a line as a line feed does.
 const isOneReadableLine = (value: string): boolean =>
   !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(value) && !hasInvisibleCharacters(value) && !LONE_SURROGATE.test(value);

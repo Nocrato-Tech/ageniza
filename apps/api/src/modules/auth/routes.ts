@@ -37,6 +37,7 @@ import { registerGoogleRoutes } from './google-routes.js';
 import { perIpRateLimit } from './per-ip-rate-limit.js';
 import { AUTH_RATE_LIMITS } from './policy.js';
 import { createRequireSession } from './session-guard.js';
+import { registerSessionRoutes } from './session-routes.js';
 import { noStore } from '../../plugins/infra/no-store.js';
 import { normalizeRateLimitIp } from '../../plugins/infra/rate-limit-ip.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
@@ -133,6 +134,7 @@ export const registerAuthModule = (app: FastifyInstance, dependencies: AuthModul
   const requireSessionUnconfirmedAllowed = createRequireSession({ auth: dependencies.auth }, { allowUnconfirmed: true });
 
   registerGoogleRoutes(app, { auth: dependencies.auth, ...(dependencies.google === undefined ? {} : { google: dependencies.google }) });
+  registerSessionRoutes(app, { auth: dependencies.auth, database: dependencies.database });
 
   /** Issues and sends a new link when the address has an account waiting; nothing otherwise. */
   const sendConfirmationIfPending = async (email: string, mobileWeb = false): Promise<void> => {

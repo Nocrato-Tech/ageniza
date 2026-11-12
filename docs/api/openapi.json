@@ -12,7 +12,7 @@
     },
     {
       "name": "auth",
-      "description": "Cadastro e confirmação do e-mail, login, sessão, logout e recuperação de senha."
+      "description": "Cadastro e confirmação do e-mail, login, sessão, logout, as sessões ativas da conta e recuperação de senha."
     },
     {
       "name": "invitations",
@@ -374,6 +374,97 @@
         "required": [
           "user",
           "session"
+        ],
+        "additionalProperties": false
+      },
+      "getAuthSessionsResponse": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "current": {
+                  "type": "boolean"
+                },
+                "browser": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "Chrome",
+                    "Edge",
+                    "Firefox",
+                    "Safari",
+                    "Opera",
+                    "Samsung Internet"
+                  ]
+                },
+                "os": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "Windows",
+                    "macOS",
+                    "iOS",
+                    "Android",
+                    "Linux",
+                    "ChromeOS"
+                  ]
+                },
+                "city": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "lastUsedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "current",
+                "browser",
+                "os",
+                "city",
+                "lastUsedAt",
+                "createdAt"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "sessions"
+        ],
+        "additionalProperties": false
+      },
+      "postAuthSessionsRevokeOthersResponse": {
+        "type": "object",
+        "properties": {
+          "revoked": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "revoked"
         ],
         "additionalProperties": false
       },
@@ -10580,6 +10671,409 @@
                   "error": {
                     "code": "UNAUTHENTICATED",
                     "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/sessions": {
+      "get": {
+        "operationId": "getAuthSessions",
+        "summary": "Lista as sessões ativas da conta",
+        "description": "As sessões ativas **da própria conta**, da criada há menos tempo para a mais antiga (no máximo 100: a sessão da requisição, que sempre aparece, e as 99 mais recentes das outras); não entra a sessão expirada nem a criada antes da última troca da senha, que a requisição dela já recusa com 401.\n`id` identifica a sessão em `DELETE /auth/sessions/:sessionId` e nunca é o token; `current` marca a sessão do cookie da requisição.\n`browser` e `os` são lidos do `User-Agent` no servidor, de uma lista fechada, e são `null` quando ele não diz.\n`city` é a cidade aproximada que o cabeçalho de localização do Cloudflare (`cf-ipcity`) trouxe **na criação da sessão** (de 1 a 80 caracteres, contados por ponto de código), ou `null`;\nsó informa, nenhuma decisão de segurança depende dela. O IP, o token e o `User-Agent` bruto nunca saem da API.\nO cabeçalho `cf-ipcity` só chega com a regra \"Add visitor location headers\" ligada no Cloudflare (ação do dono); desligada, `city` é sempre `null`.\n`lastUsedAt` é a última renovação da sessão (no máximo a cada 24 horas de uso): vale como o dia, não como a hora.\nA resposta não é guardada em cache (`Cache-Control: no-store`).\n\nAcesso: Sessão.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "As sessões ativas da conta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getAuthSessionsResponse"
+                },
+                "example": {
+                  "sessions": [
+                    {
+                      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                      "current": true,
+                      "browser": "Chrome",
+                      "os": "Windows",
+                      "city": "São Paulo",
+                      "lastUsedAt": "2026-11-12T12:00:00.000Z",
+                      "createdAt": "2026-11-10T08:30:00.000Z"
+                    },
+                    {
+                      "id": "55555555-5555-4555-8555-555555555555",
+                      "current": false,
+                      "browser": "Safari",
+                      "os": "iOS",
+                      "city": null,
+                      "lastUsedAt": "2026-11-09T21:15:00.000Z",
+                      "createdAt": "2026-11-05T19:00:00.000Z"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required. | SESSION_EXPIRED: Session has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "EMAIL_NOT_CONFIRMED",
+                    "message": "Confirme o seu e-mail para entrar."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/sessions/{sessionId}": {
+      "delete": {
+        "operationId": "deleteAuthSession",
+        "summary": "Encerra uma das outras sessões da conta",
+        "description": "Encerra uma sessão ativa **da própria conta** que não é a atual: a próxima chamada do cookie dela responde 401.\nA sessão atual responde 409 `USE_LOGOUT` (ela sai por `POST /auth/logout`). A sessão de outra conta, uma que não existe,\numa que já expirou e um identificador malformado respondem o mesmo 404 `SESSION_NOT_FOUND`, sem dizer qual dos quatro.\nNão aceita corpo.\n\nAcesso: Sessão.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "sessionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Sessão encerrada."
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SESSION_NOT_FOUND: Sessão não encontrada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "SESSION_NOT_FOUND",
+                    "message": "Sessão não encontrada."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "USE_LOGOUT: Esta é a sessão deste aparelho. Para sair dela, use \"Sair\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "USE_LOGOUT",
+                    "message": "Esta é a sessão deste aparelho. Para sair dela, use \"Sair\"."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/sessions/revoke-others": {
+      "post": {
+        "operationId": "postAuthSessionsRevokeOthers",
+        "summary": "Encerra todas as sessões da conta, menos a atual",
+        "description": "Encerra toda sessão da conta que não é a do cookie da requisição, que **nunca** é encerrada; a próxima chamada de cada uma responde 401.\nResponde 200 com o número de sessões ativas encerradas, e zero é uma resposta válida. A SPEC (seção 14) pede 204 \"e devolve o número\":\num 204 não tem corpo, então a resposta é 200 com `{ revoked }`. Não aceita corpo.\n\nAcesso: Sessão.",
+        "tags": [
+          "auth"
+        ],
+        "x-permission": null,
+        "responses": {
+          "200": {
+            "description": "Quantas sessões foram encerradas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/postAuthSessionsRevokeOthersResponse"
+                },
+                "example": {
+                  "revoked": 2
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
