@@ -64,6 +64,7 @@ interface SeedAsset {
   readonly width?: number | null;
   readonly height?: number | null;
   readonly video?: VideoState;
+  readonly updatedAt?: Date;
 }
 
 const seed = async (extra: SeedAsset = {}): Promise<string> => {
@@ -96,7 +97,8 @@ const seed = async (extra: SeedAsset = {}): Promise<string> => {
     ...(extra.altText === undefined ? {} : { alt_text: extra.altText }),
     ...(extra.width === undefined ? {} : { width: extra.width }),
     ...(extra.height === undefined ? {} : { height: extra.height }),
-    ...(extra.video === undefined ? {} : { video_processing_status: extra.video })
+    ...(extra.video === undefined ? {} : { video_processing_status: extra.video }),
+    ...(extra.updatedAt === undefined ? {} : { updated_at: extra.updatedAt })
   });
   return id;
 };
@@ -843,6 +845,250 @@ describe('only a photo or a video enters a content', () => {
       'select app_private.folder_media_for(?::uuid, ?::uuid, ?) as ids', [ids.clientA1, folder, 'carousel']
     );
     expect(rows[0]!.ids).toEqual([photo]);
+  });
+});
+
+describe('deleting a folder: one that is not a default one and is empty', () => {
+  const HAS_FILES = { code: 'A0083' };
+  const HAS_SUBFOLDERS = { code: 'A0084' };
+  const HAS_CONTENTS = { code: 'A0085' };
+  const IS_DEFAULT = { code: 'A0086' };
+  const FOLDER_NOT_FOUND = { code: 'A0080', message: expect.stringContaining('Folder not found.') };
+
+  const deleteFolder = (user: string, folderId: string) =>
+    w.asUser(user, (transaction) => transaction.raw('select app_private.delete_media_folder(?::uuid)', [folderId]));
+  const folderCount = async (folderId: string): Promise<number> =>
+    Number((await w.getOwner().knex('media_folders').where({ id: folderId }).count<{ count: string }[]>('id as count'))[0]?.count);
+
+  it.each([
+    ['the Admin', () => ids.adminA],
+    ['a role with conteudo.operar and conteudo.visualizar', () => operarAndVisualizar]
+  ] as const)('lets %s delete an empty folder, and only that one', async (_label, user) => {
+    const folder = await newFolder(ids.clientA1);
+    const neighbour = await newFolder(ids.clientA1);
+    await deleteFolder(user(), folder);
+    expect(await folderCount(folder)).toBe(0);
+    expect(await folderCount(neighbour)).toBe(1);
+  });
+
+  it('answers the same "folder not found" to a role without the permission, to another agency, to a suspended one and to a folder that is not there', async () => {
+    const folder = await newFolder(ids.clientA1);
+    const suspended = await newFolder(ids.clientSuspended);
+    for (const user of [onlyOperar, onlyVisualizar, onlyMidia, ids.adminB]) {
+      await expect(deleteFolder(user, folder)).rejects.toMatchObject(FOLDER_NOT_FOUND);
+    }
+    await expect(deleteFolder(ids.adminSuspended, suspended)).rejects.toMatchObject(FOLDER_NOT_FOUND);
+    await expect(deleteFolder(ids.adminA, randomUUID())).rejects.toMatchObject(FOLDER_NOT_FOUND);
+    expect(await folderCount(folder)).toBe(1);
+    expect(await folderCount(suspended)).toBe(1);
+  });
+
+  it('refuses a default folder, to the one who may delete and the same as not found to the one who may not', async () => {
+    const defaults = (await w.getOwner().knex('media_folders').where({ client_id: ids.clientA1, is_default: true }).select('id')).map((row) => row.id as string);
+    expect(defaults.length).toBeGreaterThan(0);
+    for (const folder of defaults) {
+      await expect(deleteFolder(ids.adminA, folder)).rejects.toMatchObject(IS_DEFAULT);
+      await expect(deleteFolder(operarAndVisualizar, folder)).rejects.toMatchObject(IS_DEFAULT);
+      await expect(deleteFolder(onlyOperar, folder)).rejects.toMatchObject(FOLDER_NOT_FOUND);
+      expect(await folderCount(folder)).toBe(1);
+    }
+  });
+
+  it.each(['image', 'video', 'pdf', 'audio', 'logo'] as const)('refuses a folder that holds a %s, and writes nothing', async (category) => {
+    const folder = await newFolder(ids.clientA1);
+    const asset = await seed({ category, folderId: folder });
+    await expect(deleteFolder(ids.adminA, folder)).rejects.toMatchObject(HAS_FILES);
+    expect(await folderCount(folder)).toBe(1);
+    expect((await rowOf(asset)).folder_id).toBe(folder);
+  });
+
+  it('refuses a folder that an upload started a moment ago is on its way into, and lets go of one abandoned for more than a day', async () => {
+    const folder = await newFolder(ids.clientA1);
+    const recent = await seed({ folderId: folder, status: 'pending' });
+    const almostADay = await seed({ folderId: folder, status: 'pending', updatedAt: new Date(Date.now() - 23 * 3_600_000) });
+    await expect(deleteFolder(ids.adminA, folder)).rejects.toMatchObject(HAS_FILES);
+    expect(await rowOf(almostADay)).toMatchObject({ folder_id: folder, status: 'pending' });
+
+    await w.getOwner().knex('media_assets').whereIn('id', [recent, almostADay]).delete();
+    const abandoned = await seed({ folderId: folder, status: 'pending', updatedAt: new Date(Date.now() - 25 * 3_600_000) });
+    await deleteFolder(ids.adminA, folder);
+
+    expect(await folderCount(folder)).toBe(0);
+    expect(await rowOf(abandoned)).toMatchObject({ folder_id: null, status: 'rejected', rejected_reason: 'folder_deleted', client_id: ids.clientA1 });
+  });
+
+  it('deletes a folder whose files were all removed or rejected, and keeps their rows without the folder, for the audit and the retention', async () => {
+    const folder = await newFolder(ids.clientA1);
+    const removed = await seed({ folderId: folder, removed: true });
+    const rejected = await seed({ folderId: folder, status: 'rejected' });
+    await deleteFolder(ids.adminA, folder);
+
+    expect(await folderCount(folder)).toBe(0);
+    expect(await rowOf(removed)).toMatchObject({ folder_id: null, status: 'confirmed', removed_at: expect.any(Date), client_id: ids.clientA1 });
+    expect(await rowOf(rejected)).toMatchObject({ folder_id: null, status: 'rejected', rejected_reason: 'content_type_mismatch' });
+  });
+
+  it('deletes a folder once its last file was moved away, which then is in the other folder', async () => {
+    const from = await newFolder(ids.clientA1);
+    const to = await newFolder(ids.clientA1);
+    const asset = await seed({ folderId: from });
+    await expect(deleteFolder(ids.adminA, from)).rejects.toMatchObject(HAS_FILES);
+    await moveAs(ids.adminA, asset, to);
+    await deleteFolder(ids.adminA, from);
+    expect(await folderCount(from)).toBe(0);
+    expect((await rowOf(asset)).folder_id).toBe(to);
+  });
+
+  it('refuses a folder that has a subfolder, and takes both once the subfolder is gone', async () => {
+    const parent = await newFolder(ids.clientA1);
+    const child = await newFolder(ids.clientA1, parent);
+    await expect(deleteFolder(ids.adminA, parent)).rejects.toMatchObject(HAS_SUBFOLDERS);
+    await deleteFolder(ids.adminA, child);
+    await deleteFolder(ids.adminA, parent);
+    expect(await folderCount(parent)).toBe(0);
+  });
+
+  it('refuses a folder that a content is tied to, even with no file in it', async () => {
+    const folder = await newFolder(ids.clientA1);
+    await w.seedContent(ids.clientA1, { folderId: folder, format: 'image' });
+    await expect(deleteFolder(ids.adminA, folder)).rejects.toMatchObject(HAS_CONTENTS);
+    expect(await folderCount(folder)).toBe(1);
+  });
+
+  it('refuses the folder of an archived client and of an agency that is read-only', async () => {
+    const archivedFolder = await newFolder(ids.clientArchived);
+    await w.archiveClient(ids.clientArchived);
+    try {
+      await expect(deleteFolder(ids.adminA, archivedFolder)).rejects.toMatchObject(ARCHIVED);
+    } finally {
+      await w.reactivateClient(ids.clientArchived);
+    }
+    const folder = await newFolder(ids.clientA1);
+    await whileReadOnly(async () => {
+      await expect(deleteFolder(ids.adminA, folder)).rejects.toMatchObject({ code: 'A0090' });
+    });
+    expect(await folderCount(archivedFolder)).toBe(1);
+    expect(await folderCount(folder)).toBe(1);
+  });
+
+  it('is not a delete the application can make on its own: the table has no DELETE grant, and the function is the application only', async () => {
+    const folder = await newFolder(ids.clientA1);
+    await expect(w.asUser(ids.adminA, (transaction) => transaction('media_folders').where({ id: folder }).delete()))
+      .rejects.toMatchObject({ code: '42501', message: expect.stringContaining('permission denied for table media_folders') });
+    expect(await folderCount(folder)).toBe(1);
+
+    const { rows } = await w.getOwner().knex.raw<{ rows: Array<Record<string, unknown>> }>(`
+      select p.prosecdef as definer, p.proconfig as config,
+             coalesce((select bool_or(acl.grantee = 0) from aclexplode(p.proacl) acl), true) as public_execute,
+             has_function_privilege('ageniza_app', p.oid, 'execute') as app_execute
+      from pg_proc p where p.oid = 'app_private.delete_media_folder(uuid)'::regprocedure
+    `);
+    expect(rows).toEqual([{ definer: true, config: ['search_path=""'], public_execute: false, app_execute: true }]);
+  });
+
+  it.each(['repeatable read', 'serializable'] as const)('%s: a lock read again after a wait cannot be trusted, so the delete is refused', async (level) => {
+    const folder = await newFolder(ids.clientA1);
+    const stale = await w.openTransactionAs(ids.adminA, level);
+    try {
+      await expect(stale.raw('select app_private.delete_media_folder(?::uuid)', [folder])).rejects.toMatchObject({ code: '40001' });
+    } finally {
+      await stale.rollback();
+    }
+    expect(await folderCount(folder)).toBe(1);
+  });
+
+  it('serializes with a move into the folder, both ways: the delete behind the move finds the file there, the move behind the delete finds the folder gone', async () => {
+    const target = await newFolder(ids.clientA1);
+    const source = await newFolder(ids.clientA1);
+    const asset = await seed({ folderId: source });
+
+    const mover = await w.openTransactionAs(ids.adminA);
+    let released = false;
+    try {
+      await mover.raw('select app_private.move_media_asset(?::uuid, ?::uuid)', [asset, target]);
+      const holderPid = await backendPid(mover);
+      const outcome = deleteFolder(ids.adminA, target).then(() => 'deleted', (error: { code?: string }) => error.code);
+      await waitForBackendsBlockedBy(w.getOwner().knex, holderPid);
+      await mover.commit();
+      released = true;
+      expect(await outcome).toBe('A0083');
+    } finally {
+      if (!released) await mover.rollback();
+    }
+    expect(await folderCount(target)).toBe(1);
+    expect((await rowOf(asset)).folder_id).toBe(target);
+
+    const empty = await newFolder(ids.clientA1);
+    const deleter = await w.openTransactionAs(ids.adminA);
+    released = false;
+    try {
+      await deleter.raw('select app_private.delete_media_folder(?::uuid)', [empty]);
+      const holderPid = await backendPid(deleter);
+      const outcome = moveAs(ids.adminA, asset, empty).then(() => 'moved', (error: { code?: string }) => error.code);
+      await waitForBackendsBlockedBy(w.getOwner().knex, holderPid);
+      await deleter.commit();
+      released = true;
+      expect(await outcome).toBe('A0080');
+    } finally {
+      if (!released) await deleter.rollback();
+    }
+    expect(await folderCount(empty)).toBe(0);
+    expect((await rowOf(asset)).folder_id).toBe(target);
+  });
+
+  it('waits for a subfolder being created and then refuses, as the upload and the subfolder lock the folder the same way', async () => {
+    const parent = await newFolder(ids.clientA1);
+    const creator = await w.openTransactionAs(ids.adminA);
+    let released = false;
+    try {
+      await creator.raw('select app_private.lock_media_folder(?::uuid)', [parent]);
+      await creator('media_folders').insert({ client_id: ids.clientA1, parent_id: parent, name: `Sub ${parent.slice(0, 8)}` });
+      const holderPid = await backendPid(creator);
+      const outcome = deleteFolder(ids.adminA, parent).then(() => 'deleted', (error: { code?: string }) => error.code);
+      await waitForBackendsBlockedBy(w.getOwner().knex, holderPid);
+      await creator.commit();
+      released = true;
+      expect(await outcome).toBe('A0084');
+    } finally {
+      if (!released) await creator.rollback();
+    }
+    expect(await folderCount(parent)).toBe(1);
+  });
+
+  it('serializes with the archive: a delete that holds the client makes the archive wait, and a delete behind an uncommitted archive is refused', async () => {
+    const first = await newFolder(ids.clientArchived);
+    const deleter = await w.openTransactionAs(ids.adminA);
+    let released = false;
+    try {
+      await deleter.raw('select app_private.delete_media_folder(?::uuid)', [first]);
+      const holderPid = await backendPid(deleter);
+      const archive = w.archiveClient(ids.clientArchived);
+      await waitForBackendsBlockedBy(w.getOwner().knex, holderPid);
+      await deleter.commit();
+      released = true;
+      await archive;
+    } finally {
+      if (!released) await deleter.rollback();
+      await w.reactivateClient(ids.clientArchived);
+    }
+    expect(await folderCount(first)).toBe(0);
+
+    const second = await newFolder(ids.clientArchived);
+    const archiver = await w.getOwner().knex.transaction();
+    let done = false;
+    try {
+      await archiver('clients').where({ id: ids.clientArchived }).update({ status: 'archived', archived_at: new Date() });
+      const holderPid = await backendPid(archiver);
+      const late = deleteFolder(ids.adminA, second).then(() => 'deleted', (error: { code?: string }) => error.code);
+      await waitForBackendsBlockedBy(w.getOwner().knex, holderPid);
+      await archiver.commit();
+      done = true;
+      expect(await late).toBe('A0081');
+    } finally {
+      if (!done) await archiver.rollback();
+      await w.reactivateClient(ids.clientArchived);
+    }
+    expect(await folderCount(second)).toBe(1);
   });
 });
 
