@@ -174,18 +174,29 @@ describe('CLIENTES the name the agency types for a person of the portal (decisio
     it('takes up to 120 characters of one visible line, and refuses the rest with a 400 that names the field and writes nothing', async () => {
       const client = await newClient('limites');
       const before = await accessCount(client);
-      for (const name of ['a'.repeat(121), 'ç'.repeat(121), 'Duas\nlinhas', 'Tab\taqui', 'Sino\u0007aqui', 'Nulo\u0000aqui', 'Oculto​aqui', 'Bidi‮aqui', '!!!', 5, ['Ana'], { first: 'Ana' }]) {
+      for (const name of ['a'.repeat(121), 'ç'.repeat(121), `a${'😀'.repeat(120)}`, 'Duas\nlinhas', 'Tab\taqui', 'Sino\u0007aqui', 'Nulo\u0000aqui', 'Oculto​aqui', 'Bidi‮aqui', '!!!', 5, ['Ana'], { first: 'Ana' }]) {
         const label = JSON.stringify(name)?.slice(0, 24);
         const refused = await call('POST', membersUrl(agencyA, client), cookies.admin, { email: freshEmail('ruim'), name });
         expect(refused.statusCode, label).toBe(400);
         expect(errorOf(refused).code, label).toBe('VALIDATION_ERROR');
         expect(errorOf(refused).details?.issues?.[0]?.path, label).toBe('name');
-        expect(JSON.stringify(refused.json()), label).not.toMatch(/23514|_check|app_private|violates/i);
+        expect(JSON.stringify(errorOf(refused)), label).not.toMatch(/23514|_check|app_private|violates/i);
       }
       expect(await accessCount(client)).toBe(before);
       const accepted = await call('POST', membersUrl(agencyA, client), cookies.admin, { email: freshEmail('limite'), name: 'a'.repeat(120) });
       expect(accepted.statusCode).toBe(201);
       expect(accepted.json().name).toHaveLength(120);
+    });
+
+    it('counts the 120 characters as characters, as the column does: a letter and 119 emoji are saved and listed', async () => {
+      const client = await newClient('limite-emoji');
+      const name = `a${'😀'.repeat(119)}`;
+      const email = freshEmail('emoji');
+      const accepted = await call('POST', membersUrl(agencyA, client), cookies.admin, { email, name });
+      expect(accepted.statusCode).toBe(201);
+      expect(accepted.json()).toMatchObject({ name });
+      expect(await accessOf(client, email)).toMatchObject({ invited_name: name });
+      expect((await listOf('admin', client)).find((item) => item.email === email)).toMatchObject({ name });
     });
 
     it('is written by who may add people, and by nobody else, and is written for no other client than the one of the route', async () => {

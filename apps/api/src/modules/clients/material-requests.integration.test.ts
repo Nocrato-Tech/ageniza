@@ -287,7 +287,7 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
         const refused = await openRequest(cookies.admin!, clientA1, `Fora ${offset}`, saoPauloDay(offset));
         expect(refused.statusCode, `${offset}`).toBe(400);
         expect(errorOf(refused)).toMatchObject({ code: 'VALIDATION_ERROR', details: { issues: [{ path: 'dueOn' }] } });
-        expect(JSON.stringify(refused.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify(errorOf(refused))).not.toMatch(NO_DATABASE_DETAIL);
       }
       expect({ threads: await countThreads(clientA1), comments: await countComments(clientA1) }).toEqual(before);
     });
@@ -322,22 +322,25 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
       expect((await call('GET', requestsOf(client), cookies.portalOne!)).json().data).toEqual([expect.objectContaining({ title: 'Logo da marca', body: 'Envie o logo' })]);
     });
 
-    it('accepts a title of 80 characters, counted as characters and not as bytes', async () => {
+    it('accepts a title of 80 characters, counted as characters and not as bytes or UTF-16 units, and the column holds it', async () => {
       const client = await newClient('titulo-limite');
-      for (const title of ['a'.repeat(80), 'ç'.repeat(80), `a${'😀'.repeat(39)}`]) {
+      for (const title of ['a'.repeat(80), 'ç'.repeat(80), `a${'😀'.repeat(39)}`, `a${'😀'.repeat(79)}`]) {
         expect((await openRequest(cookies.admin!, client, 'x', undefined, app.app, agencyA, title)).statusCode, title.slice(0, 4)).toBe(201);
       }
-      expect(await countThreads(client)).toBe(3);
+      expect(await countThreads(client)).toBe(4);
+      // Three of the four are 80 characters long for the column (the one of 40 emoji is the other).
+      expect(await owner.knex('client_threads').where({ client_id: client }).whereRaw('char_length(title) = 80').count<{ count: string }[]>('id as count'))
+        .toEqual([{ count: '3' }]);
     });
 
     it('refuses a title that is missing, empty, long, in several lines or with a hidden character, with a 400 that names the field and writes nothing', async () => {
       const before = { threads: await countThreads(clientA1), comments: await countComments(clientA1) };
-      for (const title of [undefined, null, '', '   ', 5, ['Fotos'], 'a'.repeat(81), 'a'.repeat(501), 'ç'.repeat(81), 'Linha um\nlinha dois', 'Tab\taqui', 'Sino\u0007aqui', 'Nulo\u0000aqui', 'Oculto​aqui', 'Controle\u0085aqui']) {
+      for (const title of [undefined, null, '', '   ', 5, ['Fotos'], 'a'.repeat(81), 'a'.repeat(501), 'ç'.repeat(81), `a${'😀'.repeat(80)}`, 'Linha um\nlinha dois', 'Tab\taqui', 'Sino\u0007aqui', 'Nulo\u0000aqui', 'Oculto​aqui', 'Controle\u0085aqui']) {
         const refused = await call('POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject: MATERIAL, body: 'x', ...(title === undefined ? {} : { title }) });
         expect(refused.statusCode, JSON.stringify(title)?.slice(0, 30)).toBe(400);
         expect(errorOf(refused).code, JSON.stringify(title)?.slice(0, 30)).toBe('VALIDATION_ERROR');
         expect(new Set(errorOf(refused).details?.issues?.map((issue) => issue.path)), JSON.stringify(title)?.slice(0, 30)).toEqual(new Set(['title']));
-        expect(JSON.stringify(refused.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify(errorOf(refused))).not.toMatch(NO_DATABASE_DETAIL);
       }
       expect({ threads: await countThreads(clientA1), comments: await countComments(clientA1) }).toEqual(before);
     });
@@ -370,7 +373,7 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
       for (const reply of [tooLong, controlled, onAnotherSubject]) {
         expect(reply.statusCode).toBe(400);
         expect(errorOf(reply)).toMatchObject({ code: 'VALIDATION_ERROR', details: { issues: [{ path: 'title' }] } });
-        expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify(errorOf(reply))).not.toMatch(NO_DATABASE_DETAIL);
       }
       expect({ threads: await countThreads(clientA1), comments: await countComments(clientA1) }).toEqual(before);
     });
@@ -396,7 +399,7 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
       expect(fromThePortal.statusCode).toBe(403);
       expect(errorOf(fromThePortal).code).toBe('FORBIDDEN');
 
-      for (const reply of [withDeadline, fromThePortal]) expect(JSON.stringify(reply.json())).not.toMatch(NO_DATABASE_DETAIL);
+      for (const reply of [withDeadline, fromThePortal]) expect(JSON.stringify(errorOf(reply))).not.toMatch(NO_DATABASE_DETAIL);
       expect({ threads: await countThreads(clientA1), comments: await countComments(clientA1) }).toEqual(before);
     });
 
@@ -420,7 +423,7 @@ describe('CLIENTES request for material (decision 2026-11-10)', () => {
         for (const who of ['contentOnly', 'clientRead']) {
           const refused = await openRequest(cookies[who]!, client, 'Envie as fotos', undefined, proxied);
           expect(refused.statusCode, who).toBe(403);
-          expect(JSON.stringify(refused.json()), who).not.toMatch(NO_DATABASE_DETAIL);
+          expect(JSON.stringify(errorOf(refused)), who).not.toMatch(NO_DATABASE_DETAIL);
         }
         // The same app does write for who holds the permission, so an empty record is a refusal and not a recorder that sees nothing.
         expect((await openRequest(cookies.manager!, client, 'Envie as fotos', undefined, proxied)).statusCode).toBe(201);

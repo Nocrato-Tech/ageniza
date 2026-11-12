@@ -233,19 +233,29 @@ describe('CLIENTES city, tab counts, workers and persona profile (decisions 2026
     it('refuses a city that is long, in several lines, hidden, or not text, with a 400 that names the field, and writes nothing', async () => {
       const client = await newClient('cidade-limites', agencyA, { city: 'Original' });
       const before = await owner.knex('clients').where({ agency_id: agencyA }).count<{ count: string }[]>('id as count');
-      for (const city of ['a'.repeat(81), 'ç'.repeat(81), 'Linha um\nlinha dois', 'Tab\taqui', 'Sino\u0007aqui', 'Nulo\u0000aqui', 'Oculto​aqui', 'Controle\u0085aqui', 'Bidi‮aqui', 5, ['Campinas'], { name: 'x' }]) {
+      for (const city of ['a'.repeat(81), 'ç'.repeat(81), `a${'😀'.repeat(80)}`, 'Linha um\nlinha dois', 'Tab\taqui', 'Sino\u0007aqui', 'Nulo\u0000aqui', 'Oculto​aqui', 'Controle\u0085aqui', 'Bidi‮aqui', 5, ['Campinas'], { name: 'x' }]) {
         const label = JSON.stringify(city)?.slice(0, 24);
         const patched = await call('PATCH', `${clientsOf(agencyA)}/${client}`, cookies.admin, { city });
         expect(patched.statusCode, label).toBe(400);
         expect(errorOf(patched).code, label).toBe('VALIDATION_ERROR');
         expect(errorOf(patched).details?.issues?.[0]?.path, label).toBe('city');
-        expect(JSON.stringify(patched.json())).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify(errorOf(patched))).not.toMatch(NO_DATABASE_DETAIL);
         const created = await call('POST', clientsOf(agencyA), cookies.admin, { name: `Cidade ruim ${randomUUID()}`, city });
         expect(created.statusCode, label).toBe(400);
       }
       expect(await clientRow(client)).toMatchObject({ city: 'Original' });
       expect(await owner.knex('clients').where({ agency_id: agencyA }).count<{ count: string }[]>('id as count')).toEqual(before);
       expect((await call('PATCH', `${clientsOf(agencyA)}/${client}`, cookies.admin, { city: 'a'.repeat(80) })).statusCode).toBe(200);
+    });
+
+    it('counts the 80 characters of the city as characters, as the column does: a letter and 79 emoji are saved and read back', async () => {
+      const client = await newClient('cidade-emoji', agencyA);
+      const city = `a${'😀'.repeat(79)}`;
+      const patched = await call('PATCH', `${clientsOf(agencyA)}/${client}`, cookies.admin, { city });
+      expect(patched.statusCode).toBe(200);
+      expect(patched.json()).toMatchObject({ city });
+      expect(await clientRow(client)).toMatchObject({ city });
+      expect((await call('GET', `${clientsOf(agencyA)}/${client}`, cookies.admin)).json()).toMatchObject({ city });
     });
 
     it('asks cliente.operar to edit and cliente.cadastrar to create, and never writes for another agency, a portal person or an archived client', async () => {
@@ -528,6 +538,7 @@ describe('CLIENTES city, tab counts, workers and persona profile (decisions 2026
         ['trait blank', { traits: ['   '] }], ['trait with line break', { traits: ['duas\nlinhas'] }], ['trait with control', { traits: ['sino\u0007'] }],
         ['trait hidden', { traits: ['oculto​'] }], ['trait not text', { traits: [5] }], ['traits not a list', { traits: 'Prática' }],
         ['occupation 81', { occupation: 'a'.repeat(81) }], ['occupation with line break', { occupation: 'duas\nlinhas' }], ['location 81', { location: 'a'.repeat(81) }],
+        ['trait of 25 emoji', { traits: [`a${'😀'.repeat(24)}`] }], ['occupation 81 with emoji', { occupation: `a${'😀'.repeat(80)}` }], ['location 81 with emoji', { location: `a${'😀'.repeat(80)}` }],
         ['location with control', { location: 'sino\u0007' }], ['whereTheyAre 281', { whereTheyAre: 'a'.repeat(281) }], ['whereTheyAre with control', { whereTheyAre: 'sino\u0007' }],
         ['whereTheyAre hidden', { whereTheyAre: 'oculto​' }], ['toneThatWorks 281', { toneThatWorks: 'ç'.repeat(281) }], ['toneThatWorks not text', { toneThatWorks: 7 }],
         ['unknown field', { hobby: 'x' }]
@@ -536,7 +547,7 @@ describe('CLIENTES city, tab counts, workers and persona profile (decisions 2026
         const patched = await call('PATCH', `${personas(agencyA, client)}/${persona}`, cookies.admin, body);
         expect(patched.statusCode, label).toBe(400);
         expect(errorOf(patched).code, label).toBe('VALIDATION_ERROR');
-        expect(JSON.stringify(patched.json()), label).not.toMatch(NO_DATABASE_DETAIL);
+        expect(JSON.stringify(errorOf(patched)), label).not.toMatch(NO_DATABASE_DETAIL);
         expect((await call('POST', personas(agencyA, client), cookies.admin, { name: 'Recusada', ...body })).statusCode, label).toBe(400);
       }
       expect(await personaRow(persona)).toMatchObject({ age: 34, occupation: 'Dona de padaria', traits: PROFILE.traits });
@@ -548,6 +559,17 @@ describe('CLIENTES city, tab counts, workers and persona profile (decisions 2026
       });
       expect(accepted.statusCode).toBe(200);
       expect((await call('PATCH', `${personas(agencyA, client)}/${persona}`, cookies.admin, { age: 1 })).json().age).toBe(1);
+    });
+
+    it('counts the limits of one line as characters, as the columns do: 24 characters of a trait and 80 of the occupation and the place, in emoji', async () => {
+      const client = await newClient('persona-emoji');
+      const persona = await makePersona(client, PROFILE);
+      const trait = `a${'😀'.repeat(23)}`;
+      const line = `a${'😀'.repeat(79)}`;
+      const patched = await call('PATCH', `${personas(agencyA, client)}/${persona}`, cookies.admin, { traits: [trait, trait], occupation: line, location: line });
+      expect(patched.statusCode).toBe(200);
+      expect(patched.json()).toMatchObject({ traits: [trait, trait], occupation: line, location: line });
+      expect(await personaRow(persona)).toMatchObject({ traits: [trait, trait], occupation: line, location: line });
     });
 
     it('asks cliente.operar, and never writes for another agency, a portal person or an archived client', async () => {
