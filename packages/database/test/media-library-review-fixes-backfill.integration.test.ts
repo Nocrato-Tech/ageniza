@@ -9,12 +9,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { resolveIntegrationDatabaseUrls } from '../src/index.js';
 
-// Migration 20261111000102 runs over a library that already exists: the database is built up to the migration before it, filled with
+// Migration 20261112000002 runs over a library that already exists: the database is built up to the migration before it, filled with
 // files as the code of that time left them, and then upgraded. A name or an alternative text that carries a character the new CHECKs
 // refuse is cleaned instead of stopping the migration, and every confirmed file is filed at the instant it was confirmed.
 const { ownerUrl } = resolveIntegrationDatabaseUrls();
 const migrationsDir = fileURLToPath(new URL('../migrations', import.meta.url));
-const FIRST_OF_THIS_CHANGE = '20261111000102_media_library_review_fixes.mjs';
+const FIRST_OF_THIS_CHANGE = '20261112000002_media_library_review_fixes.mjs';
 
 const databaseName = `ageniza_backfill_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 let admin: Knex;

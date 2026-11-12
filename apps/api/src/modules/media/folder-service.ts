@@ -162,7 +162,7 @@ export type FolderFunctionRefusal =
   | 'not-found' | 'client-archived' | 'in-use'
   | 'folder-has-files' | 'folder-has-subfolders' | 'folder-has-contents' | 'folder-is-default';
 
-/** What the functions of 20261007001500 and 20261111000101 and the gate on the client raise, as the API's refusals. */
+/** What the functions of 20261007001500 and 20261112000001 and the gate on the client raise, as the API's refusals. */
 export const folderFunctionRefusal = (error: unknown): FolderFunctionRefusal | undefined => {
   switch (databaseCode(error)) {
     case 'A0080': return 'not-found';

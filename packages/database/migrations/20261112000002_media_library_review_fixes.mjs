@@ -9,7 +9,7 @@
 //     file that is confirmed and not removed is never one of them: if one is left, the folder is refused with A0083, as before.
 //  2. The two CHECKs of the name and the alternative text refuse the whole Bidi_Control set. U+061C (the Arabic letter mark) was the
 //     one missing, and U+2028 and U+2029 (line and paragraph separator) go in as well: the name and the alternative text are one line.
-//     The columns are only born in 20261111000100, but a row that already has one of these characters is cleaned first (replaced by a
+//     The columns are only born in 20261112000000, but a row that already has one of these characters is cleaned first (replaced by a
 //     space; a text left with nothing becomes null) so that the new CHECKs do not stop the migration.
 //  3. `filed_at` is the instant a file was put in its folder by a person: the confirmation of the upload, the rename of the file and
 //     its move to a folder (decision rule 10, the folder in use now). `updated_at` is written by more than that (the alternative text,
