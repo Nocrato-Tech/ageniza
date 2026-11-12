@@ -8,6 +8,12 @@ import { withoutEmojiSequences } from './invisible-characters.js';
 export const DISPLAY_NAME_MAX_LENGTH = 120;
 
 /**
+ * How many characters a text has, counting a code point as one (an emoji or a letter beyond the Basic Multilingual Plane is one, not
+ * the two UTF-16 units `.length` and `.max()` count). It is the count of every limit that a column or a screen states in characters.
+ */
+export const characterCount = (value: string): number => Array.from(value).length;
+
+/**
  * Characters that must never reach a display name, regardless of what a screen does with it:
  *
  * - `\p{Cc}` control characters -- a NUL byte is rejected by PostgreSQL (22021) and would surface

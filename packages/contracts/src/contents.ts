@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { isCalendarDay, utf8ByteLength } from './clients.js';
+import { characterCount } from './display-name.js';
 import {
   hasHiddenStoryCharacters,
   STORY_SCRIPT_PERIOD_MAX_DAYS,
@@ -47,8 +48,6 @@ export const ContentTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, '
 
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 const LINE_BREAKS = /[\t\n\r]/;
-
-const characterCount = (value: string): number => Array.from(value).length;
 
 // One rule of free text in Conteúdo: the story script's, so a title, a caption and a scene refuse the same characters.
 const visibleText = () => z.string()

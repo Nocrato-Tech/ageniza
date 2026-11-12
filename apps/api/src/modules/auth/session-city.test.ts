@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { cleanSessionCity, SESSION_CITY_HEADER, SESSION_CITY_MAX_CHARACTERS } from './session-city.js';
+import { AUTH_SESSION_CITY_MAX_CHARACTERS } from '@ageniza/contracts';
+
+import { cleanSessionCity, SESSION_CITY_HEADER } from './session-city.js';
 
 // What Node hands the code for a header: the bytes of the request read as Latin-1. A city typed in UTF-8 ("São Paulo") arrives as
 // "SÃ£o Paulo", and this is that form, so the table is judged on what the wire gives and not on what a test can type.
@@ -11,7 +13,7 @@ const NBSP = String.fromCodePoint(0xa0);
 describe('the header the city comes from', () => {
   it('is the one the edge sets, and its length is the column\'s', () => {
     expect(SESSION_CITY_HEADER).toBe('cf-ipcity');
-    expect(SESSION_CITY_MAX_CHARACTERS).toBe(80);
+    expect(AUTH_SESSION_CITY_MAX_CHARACTERS).toBe(80);
   });
 });
 

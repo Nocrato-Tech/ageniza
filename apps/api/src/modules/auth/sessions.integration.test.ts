@@ -673,6 +673,31 @@ describe('the city of a sign-in (cf-ipcity)', () => {
     expect(await cityOf(others.id)).toBeNull();
   });
 
+  // The cleaning and the column count code points, and the response must too: a letter or an emoji beyond the Basic Multilingual Plane is
+  // two UTF-16 units, and a response that counted those refused a city the column keeps, so the list answered 500 on every device.
+  it.each([
+    ['80 mathematical letters', chars(0x1d400).repeat(80)],
+    ['41 emoji', chars(0x1f600).repeat(41)],
+    ['80 emoji', chars(0x1f600).repeat(80)],
+    ['41 ideograms of the extension B', chars(0x20000).repeat(41)],
+    ['80 ideograms of the extension B', chars(0x20000).repeat(80)],
+    ['79 letters and one emoji', `${'a'.repeat(79)}${chars(0x1f600)}`],
+    ['a CJK name', chars(0x6771, 0x4eac, 0x90fd)]
+  ])('lists a city of %s, whole, from every device of the account', async (_label, value) => {
+    const user = await makeUser('city-astral');
+    const bystander = await login(user);
+    const entered = await login(user, { 'cf-ipcity': onTheWire(value) });
+    expect(await cityOf(entered.id)).toBe(value);
+
+    for (const cookie of [entered.cookie, bystander.cookie]) {
+      const response = await list(cookie);
+      expect(response.statusCode).toBe(200);
+      const sessions = (response.json() as { sessions: Listed[] }).sessions;
+      expect(sessions.find((session) => session.id === entered.id)?.city).toBe(value);
+      expect(sessions.find((session) => session.id === bystander.id)?.city).toBeNull();
+    }
+  });
+
   const hostile: readonly (readonly [string, string])[] = [
     ['a control character', `Sao${chars(0x01)}Paulo`],
     ['an escape', `Sao${chars(0x1b)}[2JPaulo`],
@@ -686,6 +711,7 @@ describe('the city of a sign-in (cf-ipcity)', () => {
     ['a byte-order mark', onTheWire(`${chars(0xfeff)}Sao Paulo`)],
     ['81 characters', 'a'.repeat(81)],
     ['81 two-byte characters', onTheWire('ã'.repeat(81))],
+    ['81 astral characters', onTheWire(chars(0x1f600).repeat(81))],
     ['an empty value', ''],
     ['only spaces', '    '],
     ['a replacement character', onTheWire(`Sao${chars(0xfffd)}Paulo`)]

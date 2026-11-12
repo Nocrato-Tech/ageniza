@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AUTH_SESSION_BROWSERS,
+  AUTH_SESSION_CITY_MAX_CHARACTERS,
   AUTH_SESSION_LIST_MAX,
   AUTH_SESSION_SYSTEMS,
   AuthActiveSessionSchema,
@@ -108,6 +109,23 @@ describe('active sessions contracts (issue #893)', () => {
     expect(AuthActiveSessionSchema.parse({ ...session, city: 'a'.repeat(80) }).city).toHaveLength(80);
     expect(() => AuthActiveSessionSchema.parse({ ...session, city: '' })).toThrow();
     expect(() => AuthActiveSessionSchema.parse({ ...session, city: 'a'.repeat(81) })).toThrow();
+  });
+
+  // The column and the cleaning of the header count code points; a letter or an emoji beyond the Basic Multilingual Plane is two
+  // UTF-16 units but one character, so a city the column keeps is never one the response refuses (which made the list answer 500).
+  it.each([
+    ['a mathematical letter', 0x1d400],
+    ['an emoji', 0x1f600],
+    ['an ideogram of the extension B', 0x20000]
+  ])('counts %s as one character, as the column does', (_label, codePoint) => {
+    const character = String.fromCodePoint(codePoint);
+    expect(AUTH_SESSION_CITY_MAX_CHARACTERS).toBe(80);
+    expect(AuthActiveSessionSchema.parse({ ...session, city: character }).city).toBe(character);
+    expect(AuthActiveSessionSchema.parse({ ...session, city: character.repeat(41) }).city).toBe(character.repeat(41));
+    expect(AuthActiveSessionSchema.parse({ ...session, city: character.repeat(80) }).city).toBe(character.repeat(80));
+    expect(() => AuthActiveSessionSchema.parse({ ...session, city: character.repeat(81) })).toThrow();
+    expect(AuthActiveSessionSchema.parse({ ...session, city: `${'a'.repeat(79)}${character}` }).city).toBe(`${'a'.repeat(79)}${character}`);
+    expect(() => AuthActiveSessionSchema.parse({ ...session, city: `${'a'.repeat(80)}${character}` })).toThrow();
   });
 
   it('wants an id that is a UUID, the two instants as ISO dates, and the current flag as a boolean', () => {

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { characterCount } from './display-name.js';
+
 /** Emails are canonicalized before they are validated or used as identifiers. */
 export const AuthEmailSchema = z.string().trim().toLowerCase().email().max(320);
 
@@ -53,6 +55,9 @@ export const AUTH_SESSION_SYSTEMS = ['Windows', 'macOS', 'iOS', 'Android', 'Linu
 /** The most sessions the list shows, the most recent ones: a defensive ceiling, far above what a person has. */
 export const AUTH_SESSION_LIST_MAX = 100;
 
+/** The city of a session has 1 to 80 characters, counted as the column counts them (migration 20261112000100): by code point, not by UTF-16 unit. */
+export const AUTH_SESSION_CITY_MAX_CHARACTERS = 80;
+
 /**
  * One active session of the account (`GET /auth/sessions`). `id` is the identifier of the session row, made to name it in
  * `DELETE /auth/sessions/:sessionId`; it is never the token. `lastUsedAt` is the last renewal of the session, at most once
@@ -64,7 +69,9 @@ export const AuthActiveSessionSchema = z.object({
   current: z.boolean(),
   browser: z.enum(AUTH_SESSION_BROWSERS).nullable(),
   os: z.enum(AUTH_SESSION_SYSTEMS).nullable(),
-  city: z.string().min(1).max(80).nullable(),
+  city: z.string().min(1)
+    .refine((city) => characterCount(city) <= AUTH_SESSION_CITY_MAX_CHARACTERS, `must be at most ${AUTH_SESSION_CITY_MAX_CHARACTERS} characters`)
+    .nullable(),
   lastUsedAt: z.string().datetime({ offset: true }),
   createdAt: z.string().datetime({ offset: true })
 }).strict();
