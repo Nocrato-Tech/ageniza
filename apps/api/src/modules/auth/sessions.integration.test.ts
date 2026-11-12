@@ -272,6 +272,54 @@ describe('GET /auth/sessions', () => {
     expect(ids[0]).toBe(current.id);
   });
 
+  // 101 open sessions, one more than the list holds: the one that asked stays however old it is, and the oldest of the others goes.
+  it.each([
+    ['the oldest of them', 1],
+    ['the second oldest, the 100th newest', 2],
+    ['in the middle', 51],
+    ['the newest', 101]
+  ] as const)('keeps the session that asked on the list of 101, when it is %s', async (_label, currentAfter) => {
+    const user = await makeUser(`list-crowd-${currentAfter}`);
+    await owner.knex.raw(
+      `insert into auth."session" (id, token, "userId", "createdAt", "updatedAt", "expiresAt")
+       select gen_random_uuid(), 'crowd-' || gen_random_uuid(), ?, now() + (n * interval '1 second'), now() + (n * interval '1 second'), now() + interval '7 days'
+       from generate_series(1, 101) as n
+       where n <> ?`,
+      [user.id, currentAfter]
+    );
+    const current = await seed(user.id, { createdAfter: currentAfter });
+    const newestFirst = (await owner.knex('auth.session').where({ userId: user.id }).orderBy('createdAt', 'desc').select<{ id: string }[]>('id')).map((row) => row.id);
+    expect(newestFirst).toHaveLength(AUTH_SESSION_LIST_MAX + 1);
+
+    const others = newestFirst.filter((id) => id !== current.id);
+    const dropped = others[others.length - 1];
+    const sessions = await listed(current.cookie);
+    expect(sessions).toHaveLength(AUTH_SESSION_LIST_MAX);
+    expect(sessions.map((session) => session.id)).toEqual(newestFirst.filter((id) => id !== dropped));
+    expect(sessions.filter((session) => session.current).map((session) => session.id)).toEqual([current.id]);
+    expect(sessions.map((session) => session.id)).not.toContain(dropped);
+  });
+
+  it.each([
+    ['the smallest', 0],
+    ['in the middle', 3],
+    ['the largest', 7]
+  ] as const)('puts the session that asked among the ones that tie with it by the id, when its id is %s', async (_label, position) => {
+    const user = await makeUser(`list-tie-current-${position}`);
+    // One statement, so the eight share one creation instant and only the id tells them apart.
+    const ids = Array.from({ length: 8 }, () => randomUUID()).sort();
+    await owner.knex.raw(
+      `insert into auth."session" (id, token, "userId", "createdAt", "updatedAt", "expiresAt")
+       select id, 'tie-' || id::text, ?, now() + interval '5 seconds', now() + interval '5 seconds', now() + interval '7 days'
+       from (values ${ids.map(() => '(?::uuid)').join(', ')}) as tied(id)`,
+      [user.id, ...ids]
+    );
+
+    const shown = await listed(signedCookie(`tie-${ids[position] ?? ''}`));
+    expect(shown.map((session) => session.id)).toEqual([...ids].reverse());
+    expect(shown.find((session) => session.current)?.id).toBe(ids[position]);
+  });
+
   it('breaks a tie of creation instants by the id, so the order never changes between two reads', async () => {
     const user = await makeUser('list-tie');
     // One statement, so every row gets the same `now()`: six that tie, whose chance order matching the ids is 1 in 720.

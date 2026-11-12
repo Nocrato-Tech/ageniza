@@ -152,8 +152,8 @@ The person sees where the account is signed in and ends one session or all but t
 routes, `sessions.ts` the queries, and every statement names the account of the session the request holds (`request.auth.userId`),
 never one the request chose.
 
-- **The list** answers `{ id, current, browser, os, city, lastUsedAt, createdAt }`, newest first (`createdAt`), at most 100, only
-  sessions still open (`expiresAt > now()`). `browser` and `os` come from a closed list (`user-agent.ts`: Chrome, Edge, Firefox,
+- **The list** answers `{ id, current, browser, os, city, lastUsedAt, createdAt }`, newest first (`createdAt`), at most 100 (the session that asked
+  plus the 99 newest others, so it is always there), only sessions still open (`expiresAt > now()`). `browser` and `os` come from a closed list (`user-agent.ts`: Chrome, Edge, Firefox,
   Safari, Opera, Samsung Internet; Windows, macOS, iOS, Android, Linux, ChromeOS) and are `null` when the agent says none of them
   (the app's own agent included). The address, the token and the text of the `userAgent` are never read into the answer.
   `lastUsedAt` is the session's `updatedAt`: Better Auth renews it at most once a day, so it is "last renewed", not a heartbeat.

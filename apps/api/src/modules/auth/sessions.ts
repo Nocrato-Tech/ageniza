@@ -20,17 +20,26 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isSessionId = (value: string): boolean => UUID.test(value);
 
 /**
- * The active sessions of one account, the most recently created first. It reads only the columns it shows or turns into a name:
- * the address and the token are never selected, and the `userAgent` goes no further than `describeUserAgent`.
+ * The active sessions of one account, the most recently created first, at most `AUTH_SESSION_LIST_MAX`: the session that asked and
+ * the newest others, so the one the person is using is always on the list however many are open. It reads only the columns it
+ * shows or turns into a name: the address and the token are never selected, and the `userAgent` goes no further than
+ * `describeUserAgent`.
  */
 export const listActiveSessions = async (executor: SessionExecutor, userId: string, currentSessionId: string): Promise<AuthActiveSession[]> => {
   const result = await raw<{ rows: SessionRow[] }>(executor, `
-    select id, "userAgent" as user_agent, city, "updatedAt" as last_used_at, "createdAt" as created_at
-    from auth."session"
-    where "userId" = ?::uuid and ${ACTIVE_SESSION_SQL}
-    order by "createdAt" desc, id desc
-    limit ?
-  `, [userId, AUTH_SESSION_LIST_MAX]);
+    select id, user_agent, city, last_used_at, created_at from (
+      (select id, "userAgent" as user_agent, city, "updatedAt" as last_used_at, "createdAt" as created_at
+       from auth."session"
+       where "userId" = ?::uuid and id = ?::uuid and ${ACTIVE_SESSION_SQL})
+      union all
+      (select id, "userAgent" as user_agent, city, "updatedAt" as last_used_at, "createdAt" as created_at
+       from auth."session"
+       where "userId" = ?::uuid and id <> ?::uuid and ${ACTIVE_SESSION_SQL}
+       order by "createdAt" desc, id desc
+       limit ?)
+    ) as shown
+    order by created_at desc, id desc
+  `, [userId, currentSessionId, userId, currentSessionId, AUTH_SESSION_LIST_MAX - 1]);
   return result.rows.map((row) => ({
     id: row.id,
     current: row.id === currentSessionId,
