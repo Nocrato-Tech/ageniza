@@ -45,6 +45,21 @@ describe('the dimensions an image gives', () => {
     expect(inspectMediaBytes('jpeg', Uint8Array.of(0xff, 0xd8, 0xff, 0xda, 0x00, 0x04, 0, 0))).toEqual({ matches: true, dimensions: undefined });
   });
 
+  it('takes the size of a PNG only from an IHDR of 13 bytes, which is always its first chunk', () => {
+    const otherChunk = pngBytes(3, 4);
+    otherChunk.set(textBytes('tEXt'), 12);
+    expect(inspectMediaBytes('png', otherChunk)).toEqual({ matches: true, dimensions: undefined });
+    const otherLength = pngBytes(3, 4);
+    otherLength.set([0, 0, 0, 12], 8);
+    expect(inspectMediaBytes('png', otherLength)).toEqual({ matches: true, dimensions: undefined });
+  });
+
+  it('takes the size of a JPEG from the frame, never from the tables that may come before it', () => {
+    // A DHT (0xC4) segment first: read as a frame it would say 258 by 772.
+    const withTable = Uint8Array.of(0xff, 0xd8, 0xff, 0xc4, 0x00, 0x0b, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, ...jpegBytes(640, 480).slice(2));
+    expect(inspectMediaBytes('jpeg', withTable)).toEqual({ matches: true, dimensions: { width: 640, height: 480 } });
+  });
+
   it('does not run past a segment that says it is shorter than its own length bytes', () => {
     expect(inspectMediaBytes('jpeg', Uint8Array.of(0xff, 0xd8, 0xff, 0xe0, 0x00, 0x01, 0xff, 0xc0))).toEqual({ matches: true, dimensions: undefined });
   });

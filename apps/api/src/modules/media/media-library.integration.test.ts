@@ -447,11 +447,12 @@ describe('one file of the library and where it is used', () => {
     await seedContent(client, 'in_production', imagens, { assetId: asset });
     // As the media and as the cover of the same content it is one content.
     await seedContent(client, 'approved', imagens, { assetId: asset, asCover: true });
+    await seedContent(client, 'awaiting_approval', imagens, { assetId: asset, asCover: true, asMedia: false });
 
     const detail = await call('GET', assetUrl(client, asset), 'opVis');
 
     expect(detail.statusCode).toBe(200);
-    expect(detail.json()).toMatchObject({ id: asset, name: 'em-uso.png', width: 640, height: 480, usageCount: 2, folderName: 'Imagens' });
+    expect(detail.json()).toMatchObject({ id: asset, name: 'em-uso.png', width: 640, height: 480, usageCount: 3, folderName: 'Imagens' });
     const listed = await call('GET', libraryUrl(client), 'opVis');
     expect(listed.json().data[0]).toEqual(detail.json());
   });
@@ -495,7 +496,7 @@ describe('the folders with what they hold', () => {
     const custom = await customFolder(client, 'Campanhas');
     // After the creation of the folders, which is the last change of an empty one.
     const at = (n: number): Date => new Date(`2027-01-0${n}T12:00:00Z`);
-    await seedAsset({ clientId: client, folder: 'Imagens', name: 'a.png', size: 100, at: at(1), by: 'opVis' });
+    await seedAsset({ clientId: client, folder: 'Imagens', name: 'a.png', size: 100, at: at(1), by: 'onlyOperar' });
     await seedAsset({ clientId: client, folder: 'Imagens', name: 'b.png', size: 200, at: at(2) });
     await seedAsset({ clientId: client, folder: 'Imagens', category: 'pdf', name: 'c.pdf', size: 50, at: at(3), by: 'opVis' });
     await seedAsset({ clientId: client, folder: 'Vídeos', category: 'video', name: 'v.mp4', size: 1_000, at: at(4) });

@@ -9,9 +9,18 @@ import { HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s
 import type { MediaProcessingConfig, WorkerStorageConfig } from '@ageniza/config/server';
 import { MEDIA_VIDEO_PROCESSING_JOB_NAME } from '@ageniza/contracts';
 import { createLogger } from '@ageniza/core';
-import { assertLocalDatabaseUrl, createLocalTestDatabaseClient, raw, type DatabaseClient, resolveIntegrationDatabaseUrls } from '@ageniza/database';
+import {
+  assertLocalDatabaseUrl,
+  createLocalTestDatabaseClient,
+  createVerifiedUserClaims,
+  raw,
+  withAuthenticatedUserTransaction,
+  type DatabaseClient,
+  resolveIntegrationDatabaseUrls
+} from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { markVideoProcessingReady } from './media-repository.js';
 import { createMediaProcessingStorageClient } from './media-storage.js';
 import { MEDIA_VIDEO_RETRY_LIMIT, mediaVideoProcessingJob } from './media-video-job.js';
 import type { DurableJobContext } from './queue.js';
@@ -331,5 +340,44 @@ describe('media video processing job (real PostgreSQL + LocalStack, real ffmpeg)
 
     const row = await videoProcessingRow(assetId);
     expect(row.video_processing_status).toBe('not_applicable');
+  });
+});
+
+describe('the size of a video written with the end of its processing', () => {
+  const finishWith = async (dimensions: { width?: number | undefined; height?: number | undefined }): Promise<VideoProcessingRow> => {
+    const { userId, agencyId } = await insertOwnerAndAgency('size');
+    const { assetId } = await insertConfirmedVideoAsset({ agencyId, userId });
+    await raw(owner.knex, "update public.media_assets set video_processing_status = 'processing' where id = ?::uuid", [assetId]);
+    await withAuthenticatedUserTransaction(application, createVerifiedUserClaims({ userId }), (transaction) => markVideoProcessingReady(transaction, assetId, {
+      thumbnailObjectKey: `${agencyId}/${assetId}/thumbnail.jpg`,
+      previewObjectKey: `${agencyId}/${assetId}/preview.mp4`,
+      durationSeconds: 2,
+      thumbnailSizeBytes: 1,
+      previewSizeBytes: 1,
+      ...dimensions
+    }));
+    return videoProcessingRow(assetId);
+  };
+
+  it('keeps the width and the height the probe read', async () => {
+    await expect(finishWith({ width: 1080, height: 1920 })).resolves.toMatchObject({ video_processing_status: 'ready', width: 1080, height: 1920 });
+  });
+
+  // The column holds 1 to 100000 and both or none: a size that does not fit is no size, never a failure of the processing.
+  it.each([
+    ['no size', {}],
+    ['a width alone', { width: 640 }],
+    ['a height alone', { height: 480 }],
+    ['a zero', { width: 0, height: 480 }],
+    ['a negative', { width: -1, height: 480 }],
+    ['a size above the column', { width: 100_001, height: 480 }],
+    ['a size that is not whole', { width: 10.5, height: 480 }],
+    ['not a number', { width: Number.NaN, height: 480 }]
+  ])('leaves the row ready with no size for %s', async (_label, dimensions) => {
+    await expect(finishWith(dimensions)).resolves.toMatchObject({ video_processing_status: 'ready', width: null, height: null });
+  });
+
+  it('accepts the largest size the column holds', async () => {
+    await expect(finishWith({ width: 100_000, height: 1 })).resolves.toMatchObject({ width: 100_000, height: 1 });
   });
 });

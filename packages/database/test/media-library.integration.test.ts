@@ -145,7 +145,7 @@ describe('the category is one of five, and a logo is the only home of an SVG', (
     expect((await rowOf(id)).category).toBe(category);
   });
 
-  it.each(['document', 'svg', 'IMAGE', ''])('refuses %j', async (category) => {
+  it.each(['document', 'svg', 'IMAGE', '', 'zip', 'other', 'text'])('refuses %j', async (category) => {
     await expect(seed({ category: category as Category })).rejects.toMatchObject(check('media_assets_category_check'));
   });
 });
@@ -456,6 +456,15 @@ describe('the dimensions are written once, with the confirmation of an image or 
     await expect(edit(operarAndVisualizar, ready, { width: 10, height: 10 })).rejects.toMatchObject(trigger('written with the confirmation'));
   });
 
+  it('refuses to confirm a video and to finish its processing in one write, with its dimensions or without', async () => {
+    for (const dimensions of [{ width: 10, height: 10 }, {}]) {
+      const id = await seed({ category: 'video', status: 'pending', video: 'processing' });
+      await expect(finish(operarAndVisualizar, id, { status: 'confirmed', confirmed_size_bytes: 1_000, confirmed_content_type: 'video/mp4', ...dimensions }))
+        .rejects.toMatchObject({ code: '42501' });
+      expect(await rowOf(id)).toMatchObject({ status: 'pending', video_processing_status: 'processing', width: null });
+    }
+  });
+
   it('refuses the dimensions of a pdf or of an audio at the confirmation, which they do not have', async () => {
     for (const category of ['pdf', 'audio'] as const) {
       const id = await seed({ category, status: 'pending' });
@@ -646,6 +655,28 @@ describe('moving a media to another folder of the same client', () => {
       if (!released) await attacher.rollback();
     }
     expect((await rowOf(asset)).folder_id).toBe(from);
+  });
+
+  it('waits for a content that is letting the media go, and moves it once that content is committed', async () => {
+    const { asset, from, to } = await scene();
+    const content = await w.seedContent(ids.clientA1, { folderId: from, format: 'image' });
+    await w.attach(content, [asset]);
+    const releaser = await w.openTransactionAs(ids.adminA);
+    let released = false;
+    try {
+      await releaser.raw('select app_private.set_content_media(?::uuid, ?::uuid[])', [content, '{}']);
+      const holderPid = await backendPid(releaser);
+
+      const outcome = moveAs(ids.adminA, asset, to).then((moved) => moved, (error: { code?: string }) => error.code);
+      await waitForBackendsBlockedBy(w.getOwner().knex, holderPid);
+
+      await releaser.commit();
+      released = true;
+      expect(await outcome).toBe(true);
+    } finally {
+      if (!released) await releaser.rollback();
+    }
+    expect((await rowOf(asset)).folder_id).toBe(to);
   });
 
   it('leaves a content that picks the media at the very instant of the move without it: the foreign key refuses and nothing is written', async () => {
