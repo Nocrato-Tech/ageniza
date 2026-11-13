@@ -59,7 +59,7 @@ export interface AssetRow extends Omit<MediaLibraryAsset, 'folderName' | 'usageC
 /** 01:30Z is the evening of the day before in São Paulo: a date computed in UTC is the wrong one. */
 export const assetFixture = (index: number, folderId: string, overrides: Partial<AssetRow> = {}): AssetRow => ({
   id: idOf('a', index), folderId, category: 'image', contentType: 'image/jpeg', sizeBytes: 2_411_724, name: `arquivo-${index}.jpg`,
-  width: 3024, height: 4032, altText: null, videoProcessingStatus: 'not_applicable', uploadedBy: MARINA,
+  width: 3024, height: 4032, altText: null, videoProcessingStatus: 'not_applicable', uploadedBy: MARINA, uploadedBySide: 'agency',
   createdAt: '2026-10-12T01:30:00.000Z', usage: [], ...overrides
 });
 
