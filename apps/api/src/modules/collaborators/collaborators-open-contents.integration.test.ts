@@ -139,10 +139,21 @@ describe('the count per person', () => {
     expect(reply.json()).toEqual({ summary: { clients: 0, contents: 0, awaiting: 0 }, data: [] });
   });
 
-  it('a person sees their own cards when they hold both permissions, the same as an Admin sees', async () => {
+  it('a person who holds both permissions, and the Owner, read another person\'s cards and get the same body an Admin gets', async () => {
     const asAdmin = bodyOf(await read(people.admin.cookie, membership.production.a!));
     expect(bodyOf(await read(extra.both.cookie, membership.production.a!))).toEqual(asAdmin);
     expect(bodyOf(await read(people.owner.cookie, membership.production.a!))).toEqual(asAdmin);
+  });
+
+  it('a person with only colaborador.visualizar is refused on their own link too: reading one\'s own cards takes conteudo.visualizar as well', async () => {
+    const ownId = await idOf(w.agencyA, extra.collabOnly.id);
+    expect(refusal(await read(extra.collabOnly.cookie, ownId)).status).toBe(403);
+    expect((await read(extra.collabOnly.cookie, ownId)).json().error.code).toBe('FORBIDDEN');
+  });
+
+  it('a person who holds both permissions reads their own link', async () => {
+    const ownId = await idOf(w.agencyA, extra.both.id);
+    expect(bodyOf(await read(extra.both.cookie, ownId))).toEqual({ summary: { clients: 0, contents: 0, awaiting: 0 }, data: [] });
   });
 });
 
@@ -288,6 +299,24 @@ describe('now', () => {
     const body = bodyOf(await read(people.admin.cookie, membership.reader.a!));
     expect(clientNames(body).map((name) => name.split(' ')[2])).toEqual(['d-w', 'e-v']);
     expect(body.summary).toEqual({ clients: 2, contents: 7, awaiting: 1 });
+  });
+});
+
+describe('the order of the clients', () => {
+  it('is by the folded name compared byte by byte, as the listing does: punctuation, accent and capitals do not reorder', async () => {
+    const owner = extra.both.id;
+    // Raw `client_name` would put "Zeta" first (capital) and "Éclair" last (multi-byte), or "ab" before "a-z" under a locale collation.
+    const labels = ['Zeta', 'alfa', 'Éclair', 'ab', 'a-z'];
+    const ids = new Map<string, string>();
+    for (const label of labels) {
+      const clientId = await w.newClient(label);
+      ids.set(label, clientId);
+      await seed(clientId, owner, 'in_production');
+    }
+
+    const body = bodyOf(await read(people.admin.cookie, await idOf(w.agencyA, owner)));
+
+    expect(body.data.map((entry) => entry.client.id)).toEqual(['a-z', 'ab', 'alfa', 'Éclair', 'Zeta'].map((label) => ids.get(label)!));
   });
 });
 
