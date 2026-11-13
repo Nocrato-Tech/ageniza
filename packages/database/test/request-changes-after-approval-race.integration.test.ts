@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { backendPid, createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, waitForBackendsBlockedBy, type DatabaseClient } from '../src/index.js';
 
 import { createApprovalFixtures } from './support/approval-fixtures.js';
+import { createLinkWorld } from './support/approval-link-world.js';
 import { createContentWorld } from './support/content-world.js';
 import { setPortalAccessStatus } from './support/portal-access.js';
 import { askedAtOrAfter, callAtInstant } from './support/pinned-clock.js';
@@ -253,6 +254,44 @@ describe('the request for changes of the portal on an approved content, against 
     } finally {
       await w.reactivateClient(ids.clientA2);
     }
+  });
+});
+
+// The guard opens `approved -> adjusting`, so the lock of the row is the only barrier between the link of the e-mail and the approval of someone else:
+// a request that read "awaiting approval" before the approval and writes after it would drop that approval.
+describe('the approval link: a request that waits for an approval holding the row is refused, and the approval stays', () => {
+  const approving = [
+    ['an account of the portal', () => w.openTransactionAs(ids.portalA1), (t: Knex.Transaction, content: string) =>
+      t.raw('select app_private.approve_content(?::uuid, ?::integer, ?::text)', [content, 1, null]), { approved_by: ids.portalA1, approved_by_agency_reason: null }],
+    ['the agency, with a reason', () => w.openTransactionAs(ids.adminA), (t: Knex.Transaction, content: string) =>
+      t.raw('select app_private.approve_content_by_agency(?::uuid, ?::integer, ?::text)', [content, 1, 'Aprovado por telefone']), { approved_by: ids.adminA, approved_by_agency_reason: 'Aprovado por telefone' }]
+  ] as const;
+
+  it.each(approving)('approved by %s while it holds the row: the link answers A0062 and writes no comment, no thread and no request notification', async (_label, open, approve, expected) => {
+    const world = await createLinkWorld(w, a, worker);
+    await owner()('client_memberships').insert({ client_id: world.clientId, user_id: ids.portalA1 });
+    const content = await w.seedContent(world.clientId, { status: 'awaiting_approval', publishOn: await a.day(3) });
+    await attachVideo(content, world.clientId);
+    await owner()('client_portal_approval_link_contents').insert({ link_id: world.linkId, content_id: content, client_id: world.clientId });
+    const linkRequest = async (): Promise<void> => {
+      const transaction = await worker.knex.transaction();
+      try {
+        await transaction.raw('select app_private.request_changes_by_portal_approval(?, ?::uuid, ?::integer, ?)', [world.sessionHash, content, 1, COMMENT]);
+        await transaction.commit();
+      } catch (error) {
+        await transaction.rollback();
+        throw error;
+      }
+    };
+
+    const answer = await heldWhile(open, (t) => approve(t, content), linkRequest);
+
+    expect(answer).toMatchObject({ code: 'A0062' });
+    expect(await rowOf(content)).toMatchObject({ status: 'approved', ...expected });
+    expect((await rowOf(content)).approved_at).not.toBeNull();
+    expect(await threadsOf(content)).toEqual([]);
+    expect(await commentsOf(content)).toEqual([]);
+    expect(await notificationsOf(content)).not.toContainEqual({ kind: 'content_changes_requested' });
   });
 });
 
