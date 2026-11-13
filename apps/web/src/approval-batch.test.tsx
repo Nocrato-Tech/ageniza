@@ -14,8 +14,8 @@ import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 
 /**
- * The batch send of "Enviar vários para aprovação" (scope telas-melhorias, S8): one dialog on the contents of ONE client, the
- * request to the batch route, the cap of 30, and what the screen says when the API refuses all of it.
+ * The batch send of the Conteúdos tab of the client (decision 2026-11-13, which took it out of the calendar): the marked contents of ONE
+ * client go in one dialog, the request to the batch route, the cap of 30, and what the screen says when the API refuses all of it.
  */
 
 afterEach(() => {
@@ -94,6 +94,7 @@ const listItem = (content: Row) => ({
 interface Scenario {
   readonly permissions?: readonly string[];
   readonly clientStatus?: 'active' | 'archived';
+  readonly readOnlyPlan?: boolean;
   readonly rows: Row[];
   /** Answers instead of the fake for the batch route, when it returns a response. */
   readonly batch?: (body: { contentIds: string[]; dueOn?: string; note?: string }, rows: Row[]) => Response | Promise<Response> | undefined;
@@ -109,7 +110,7 @@ const makeFetch = (scenario: Scenario) => {
     const path = url.pathname;
     const method = init?.method ?? 'GET';
     if (path.endsWith('/auth/session')) return json({ user: { id: '99999999-9999-4999-8999-999999999999', name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } });
-    if (path === `/agencies/${AGENCY}/me`) return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions });
+    if (path === `/agencies/${AGENCY}/me`) return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: scenario.readOnlyPlan ?? false }, permissions });
     if (path === `/agencies/${AGENCY}/clients` && method === 'GET') return json({ data: [client], meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } });
     if (path === `/agencies/${AGENCY}/clients/${CLIENT}` && method === 'GET') {
       return json({ id: client.id, name: client.name, status: client.status, photoUrl: null, instagramHandle: client.instagramHandle, legalName: null, taxId: null, segment: null, website: null, contactName: null, contactPhone: null, contactEmail: null, closingDate: null, archivedAt: null, ...clientRegistrationExtras, summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 } });
@@ -154,111 +155,132 @@ const mount = async (scenario: Scenario) => {
     <AuthSessionProvider store={store}>
       <QueryClientProvider client={createQueryClient()}>
         <ApiClientProvider client={client}>
-          <MemoryRouter initialEntries={[`/agencia/${AGENCY}/conteudos/${CLIENT}`]}>
+          <MemoryRouter initialEntries={[`/agencia/${AGENCY}/clientes/${CLIENT}/conteudos?agrupar=data`]}>
             <Harness store={store} />
           </MemoryRouter>
         </ApiClientProvider>
       </QueryClientProvider>
     </AuthSessionProvider>
   );
-  await waitFor(() => expect(document.querySelector('.content-calendar')).not.toBeNull());
+  await waitFor(() => expect(document.querySelector('.client-contents__group')).not.toBeNull());
   return fake;
 };
 
-const OPEN = 'Enviar vários para aprovação';
+const SEND = /^Enviar( \d+)? para aprovação$/;
 const batchDialog = (): HTMLElement => screen.getByRole('dialog', { name: 'Enviar conteúdos para aprovação' });
-const openBatch = async (): Promise<HTMLElement> => {
-  fireEvent.click(await screen.findByRole('button', { name: OPEN }));
+/** The box of the tab, before the dialog is open: it exists only on the contents that can go to approval. */
+const mark = (title: string): HTMLInputElement => screen.getByRole('checkbox', { name: `Marcar ${title} para enviar` }) as HTMLInputElement;
+const markBox = (title: string): HTMLInputElement | null => screen.queryByRole('checkbox', { name: `Marcar ${title} para enviar` }) as HTMLInputElement | null;
+const tabButton = (name: string | RegExp = SEND): HTMLElement => screen.getByRole('button', { name });
+const openBatch = (...titles: string[]): HTMLElement => {
+  for (const title of titles) fireEvent.click(mark(title));
+  fireEvent.click(tabButton());
   return batchDialog();
 };
 const box = (name: string | RegExp): HTMLInputElement => within(batchDialog()).getByRole('checkbox', { name }) as HTMLInputElement;
-const send = (name: string | RegExp = /^Enviar( \d+)? para aprovação$/): void => { fireEvent.click(within(batchDialog()).getByRole('button', { name })); };
+const send = (name: string | RegExp = SEND): void => { fireEvent.click(within(batchDialog()).getByRole('button', { name })); };
+const settle = async (): Promise<void> => { await new Promise<void>((resolve) => { setTimeout(resolve, 100); }); };
 
 describe('the entry point', () => {
-  it('shows "Enviar vários para aprovação" to who operates, when there is a content that can start a send', async () => {
+  it('offers a box on each content that can go to approval, and the button of the batch, to who operates', async () => {
     await mount({ rows: [row({ title: 'Reels da semana' })] });
-    expect(await screen.findByRole('button', { name: OPEN })).toBeTruthy();
+    expect(mark('Reels da semana').checked).toBe(false);
+    expect((tabButton('Enviar para aprovação') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it.each([
     ['who cannot operate', { permissions: [VISUALIZE, READ_CLIENTS], rows: [row()] }],
     ['a period where every content already waits', { rows: [row({ status: 'awaiting_approval' }), row({ status: 'approved' })] }],
     ['an archived client', { clientStatus: 'archived' as const, rows: [row()] }]
-  ])('does not show it for %s', async (_name, scenario) => {
+  ])('shows neither the boxes nor the button for %s', async (_name, scenario) => {
     await mount(scenario);
-    await new Promise<void>((resolve) => { setTimeout(resolve, 100); });
-    expect(screen.queryByRole('button', { name: OPEN })).toBeNull();
+    await settle();
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: SEND })).toBeNull();
+  });
+
+  it('puts a box only where the content can go: not on what waits, has no media or has subtasks open', async () => {
+    await mount({
+      rows: [
+        row({ title: 'Pronto' }),
+        row({ title: 'Em ajuste ainda', status: 'adjusting' }),
+        row({ title: 'Já está com o cliente', status: 'awaiting_approval' }),
+        row({ title: 'Já aprovado', status: 'approved' }),
+        row({ title: 'Sem mídia', thumbnailAssetId: null }),
+        row({ title: 'Subtarefa aberta', tasksTotal: 2, tasksApproved: 1 })
+      ]
+    });
+    expect(mark('Pronto')).toBeTruthy();
+    expect(mark('Em ajuste ainda')).toBeTruthy();
+    for (const title of ['Já está com o cliente', 'Já aprovado', 'Sem mídia', 'Subtarefa aberta']) expect(markBox(title)).toBeNull();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+  });
+
+  it('counts the marked ones on the button, and is disabled again when none is marked', async () => {
+    await mount({ rows: [row({ title: 'Um' }), row({ title: 'Dois' })] });
+    expect((tabButton('Enviar para aprovação') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(mark('Um'));
+    expect((tabButton('Enviar 1 para aprovação') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(mark('Dois'));
+    expect(tabButton('Enviar 2 para aprovação')).toBeTruthy();
+    fireEvent.click(mark('Um'));
+    fireEvent.click(mark('Dois'));
+    expect((tabButton('Enviar para aprovação') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('follows the permission that released the calendar button: a read-only plan blocks the marks and the send', async () => {
+    await mount({ rows: [row({ title: 'Um' })], readOnlyPlan: true });
+    expect(mark('Um').disabled).toBe(true);
+    expect(tabButton('Enviar para aprovação').getAttribute('aria-disabled')).toBe('true');
   });
 });
 
 describe('the dialog', () => {
-  it('lists what can start a send, with its format and day, and leaves out what already waits', async () => {
+  it('opens on the marked contents, already chosen, with their format and day, and leaves the others out', async () => {
     await mount({
       rows: [
         row({ title: 'Bastidores da recepção', format: 'reels', publishOn: '2026-10-20', publishAtTime: '18:30' }),
         row({ title: 'Em ajuste ainda', status: 'adjusting', publishOn: '2026-10-21' }),
-        row({ title: 'Já está com o cliente', status: 'awaiting_approval' })
+        row({ title: 'Não marcado', publishOn: '2026-10-22' })
       ]
     });
-    await openBatch();
-    expect(box(/Bastidores da recepção/).checked).toBe(false);
+    openBatch('Bastidores da recepção', 'Em ajuste ainda');
+    expect(box(/Bastidores da recepção/).checked).toBe(true);
     expect(within(batchDialog()).getByText('Reels')).toBeTruthy();
     expect(within(batchDialog()).getByText('ter, 20/10 · 18:30')).toBeTruthy();
-    expect(box(/Em ajuste ainda/)).toBeTruthy();
-    expect(within(batchDialog()).queryByText('Já está com o cliente')).toBeNull();
-    expect(within(batchDialog()).getByText(/Escolha os conteúdos do mês/)).toBeTruthy();
+    expect(box(/Em ajuste ainda/).checked).toBe(true);
+    expect(within(batchDialog()).queryByText('Não marcado')).toBeNull();
+    expect(within(batchDialog()).getByText(/Escolha os conteúdos marcados/)).toBeTruthy();
+    expect(within(batchDialog()).getByRole('button', { name: 'Enviar 2 para aprovação' })).toBeTruthy();
   });
 
-  it('holds what cannot go yet, and says why: no media, subtasks open', async () => {
-    await mount({
-      rows: [
-        row({ title: 'Sem mídia', thumbnailAssetId: null }),
-        row({ title: 'Duas subtarefas abertas', tasksTotal: 3, tasksApproved: 1 }),
-        row({ title: 'Uma subtarefa aberta', tasksTotal: 2, tasksApproved: 1 }),
-        row({ title: 'Pronto' })
-      ]
-    });
-    await openBatch();
-    expect(box(/Sem mídia/).disabled).toBe(true);
-    expect(within(batchDialog()).getByText('Falta a mídia do post.')).toBeTruthy();
-    expect(box(/Duas subtarefas abertas/).disabled).toBe(true);
-    expect(within(batchDialog()).getByText('Faltam aprovar 2 subtarefas.')).toBeTruthy();
-    expect(box(/Uma subtarefa aberta/).disabled).toBe(true);
-    expect(within(batchDialog()).getByText('Falta aprovar 1 subtarefa.')).toBeTruthy();
-    expect(box(/Pronto/).disabled).toBe(false);
-  });
-
-  it('counts the chosen ones on the button, and sends nothing while none is chosen', async () => {
+  it('sends nothing while none is chosen in the dialog', async () => {
     const { batches } = await mount({ rows: [row({ title: 'Um' }), row({ title: 'Dois' })] });
-    await openBatch();
+    openBatch('Um');
+    fireEvent.click(box(/Um/));
     expect(within(batchDialog()).getByRole('button', { name: 'Enviar para aprovação' })).toBeTruthy();
     send();
     expect(await within(batchDialog()).findByText('Escolha ao menos um conteúdo.')).toBeTruthy();
     expect(batches).toHaveLength(0);
     fireEvent.click(box(/Um/));
     expect(within(batchDialog()).getByRole('button', { name: 'Enviar 1 para aprovação' })).toBeTruthy();
-    fireEvent.click(box(/Dois/));
-    expect(within(batchDialog()).getByRole('button', { name: 'Enviar 2 para aprovação' })).toBeTruthy();
   });
 
-  it('"Marcar todos" marks only what can go, and "Desmarcar todos" clears them', async () => {
-    await mount({ rows: [row({ title: 'Um' }), row({ title: 'Dois' }), row({ title: 'Sem mídia', thumbnailAssetId: null })] });
-    await openBatch();
-    fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Marcar todos' }));
-    expect(box(/Um/).checked && box(/Dois/).checked).toBe(true);
-    expect(box(/Sem mídia/).checked).toBe(false);
+  it('"Desmarcar todos" clears the dialog and "Marcar todos" brings the marked ones back', async () => {
+    await mount({ rows: [row({ title: 'Um' }), row({ title: 'Dois' })] });
+    openBatch('Um', 'Dois');
     fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Desmarcar todos' }));
     expect(box(/Um/).checked || box(/Dois/).checked).toBe(false);
+    fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Marcar todos' }));
+    expect(box(/Um/).checked && box(/Dois/).checked).toBe(true);
   });
 });
 
 describe('the send', () => {
-  it('sends the chosen contents, and only them, to the batch route with the deadline and the note', async () => {
+  it('sends the marked contents, and only them, to the batch route with the deadline and the note, then clears the marks', async () => {
     const rows = [row({ title: 'Primeiro' }), row({ title: 'Segundo' }), row({ title: 'Terceiro' })];
     const { batches, periodCalls } = await mount({ rows });
-    await openBatch();
-    fireEvent.click(box(/Primeiro/));
-    fireEvent.click(box(/Terceiro/));
+    openBatch('Primeiro', 'Terceiro');
     fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '14/10/2026' } });
     fireEvent.change(within(batchDialog()).getByLabelText('Hora do prazo'), { target: { value: '18:00' } });
     fireEvent.change(within(batchDialog()).getByLabelText('Recado para o cliente'), { target: { value: ' Confira a legenda. ' } });
@@ -273,27 +295,30 @@ describe('the send', () => {
     }]);
     expect(rows.map((content) => content.status)).toEqual(['awaiting_approval', 'in_production', 'awaiting_approval']);
     await waitFor(() => expect(periodCalls.length).toBeGreaterThan(before));
+    // The list was read again: the two sent ones lost their boxes, and nothing stays marked.
+    await waitFor(() => expect(markBox('Primeiro')).toBeNull());
+    expect(markBox('Terceiro')).toBeNull();
+    expect(mark('Segundo').checked).toBe(false);
+    expect((tabButton('Enviar para aprovação') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('proposes the deadline of 48 hours, with the hour, and sends it untouched with no note; says "1 conteúdo" in the singular', async () => {
     const rows = [row({ title: 'Único' })];
     const { batches } = await mount({ rows });
-    await openBatch();
+    openBatch('Único');
     // 01:30Z of the 12th is 22:30 of the 11th in São Paulo: 48 hours later is 22:30 of the 13th.
     expect((within(batchDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('13/10/2026');
     expect((within(batchDialog()).getByLabelText('Hora do prazo') as HTMLInputElement).value).toBe('22:30');
     expect(within(batchDialog()).getByText('Padrão: 48 horas')).toBeTruthy();
-    fireEvent.click(box(/Único/));
     send('Enviar 1 para aprovação');
     expect(await screen.findByText('1 conteúdo enviado para aprovação.')).toBeTruthy();
     expect(batches[0]!.body).toEqual({ contentIds: [rows[0]!.id], dueAt: '2026-10-14T01:30:00.000Z' });
   });
 
-  it('is of one client: the ids are the ones the screen of that client lists', async () => {
+  it('is of one client: the ids are the ones the tab of that client lists', async () => {
     const rows = [row({ title: 'Do cliente' })];
     const { batches } = await mount({ rows });
-    await openBatch();
-    fireEvent.click(box(/Do cliente/));
+    openBatch('Do cliente');
     send('Enviar 1 para aprovação');
     await screen.findByText('1 conteúdo enviado para aprovação.');
     expect(batches[0]!.path).toContain(CLIENT);
@@ -302,8 +327,7 @@ describe('the send', () => {
 
   it('refuses a deadline out of the range on the field, before any request', async () => {
     const { batches } = await mount({ rows: [row({ title: 'Um' })] });
-    await openBatch();
-    fireEvent.click(box(/Um/));
+    openBatch('Um');
     fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '10/10/2026' } });
     send('Enviar 1 para aprovação');
     expect(await within(batchDialog()).findByText('Escolha um dia e uma hora de agora até 90 dias à frente.')).toBeTruthy();
@@ -316,8 +340,7 @@ describe('the send', () => {
     ['half a date', '14/10']
   ])('refuses %s as "Data inválida" on the field, sends nothing and keeps the dialog open with what was typed', async (_name, typed) => {
     const { batches } = await mount({ rows: [row({ title: 'Um' })] });
-    await openBatch();
-    fireEvent.click(box(/Um/));
+    openBatch('Um');
     fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: typed } });
     fireEvent.change(within(batchDialog()).getByLabelText('Recado para o cliente'), { target: { value: 'Até sábado.' } });
     send('Enviar 1 para aprovação');
@@ -331,8 +354,7 @@ describe('the send', () => {
 
   it('sends no deadline at all when the day was typed into and then emptied', async () => {
     const { batches } = await mount({ rows: [row({ title: 'Um' })] });
-    await openBatch();
-    fireEvent.click(box(/Um/));
+    openBatch('Um');
     fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '14/10/26' } });
     fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '' } });
     send('Enviar 1 para aprovação');
@@ -343,9 +365,9 @@ describe('the send', () => {
   it.each([
     ['X', () => { fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Fechar envio para aprovação' })); }],
     ['Esc', () => { fireEvent(batchDialog(), new Event('cancel', { bubbles: true, cancelable: true })); }]
-  ])('asks before %s discards a deadline that was only half typed, with nothing else chosen', async (_name, close) => {
+  ])('asks before %s discards a deadline that was only half typed', async (_name, close) => {
     await mount({ rows: [row({ title: 'Um' })] });
-    await openBatch();
+    openBatch('Um');
     fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '14/10' } });
     close();
     expect(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).toBeTruthy();
@@ -353,18 +375,20 @@ describe('the send', () => {
     expect((within(batchDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('14/10');
   });
 
-  it('asks before it closes with something chosen, and closes at once with nothing', async () => {
-    await mount({ rows: [row({ title: 'Um' })] });
-    await openBatch();
+  it('closes at once with what the tab marked and nothing else, keeping the marks; asks when the dialog changed the choice', async () => {
+    await mount({ rows: [row({ title: 'Um' }), row({ title: 'Dois' })] });
+    openBatch('Um', 'Dois');
     fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Fechar envio para aprovação' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mark('Um').checked && mark('Dois').checked).toBe(true);
 
-    await openBatch();
-    fireEvent.click(box(/Um/));
+    fireEvent.click(tabButton());
+    fireEvent.click(box(/Dois/));
     fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Fechar envio para aprovação' }));
     expect(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
     expect(box(/Um/).checked).toBe(true);
+    expect(box(/Dois/).checked).toBe(false);
   });
 });
 
@@ -377,31 +401,23 @@ describe('the cap of 30', () => {
   it('marks at most 30, blocks the 31st with the reason, and frees it when one is unmarked', async () => {
     const rows = many(31);
     const { batches } = await mount({ rows });
-    await openBatch();
-    fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Marcar os primeiros 30' }));
-    expect(within(batchDialog()).getByRole('button', { name: 'Enviar 30 para aprovação' })).toBeTruthy();
-    expect(within(batchDialog()).getByText('Um envio leva até 30 conteúdos.')).toBeTruthy();
-    expect(box(/Post 31/).disabled).toBe(true);
-    expect(box(/Post 30/).checked).toBe(true);
+    for (const content of rows.slice(0, 30)) fireEvent.click(mark(content.title));
+    expect(tabButton('Enviar 30 para aprovação')).toBeTruthy();
+    expect(screen.getByText('Um envio leva até 30 conteúdos.')).toBeTruthy();
+    expect(mark('Post 31').disabled).toBe(true);
+    expect(mark('Post 30').checked).toBe(true);
 
-    fireEvent.click(box(/Post 01/));
-    expect(box(/Post 31/).disabled).toBe(false);
-    fireEvent.click(box(/Post 31/));
-    expect(within(batchDialog()).getByRole('button', { name: 'Enviar 30 para aprovação' })).toBeTruthy();
+    fireEvent.click(mark('Post 01'));
+    expect(mark('Post 31').disabled).toBe(false);
+    fireEvent.click(mark('Post 31'));
+    expect(tabButton('Enviar 30 para aprovação')).toBeTruthy();
+    fireEvent.click(tabButton());
     send('Enviar 30 para aprovação');
     await screen.findByText('30 conteúdos enviados para aprovação.');
     const sent = (batches[0]!.body as { contentIds: string[] }).contentIds;
     expect(sent).toHaveLength(30);
     expect(sent).not.toContain(rows[0]!.id);
     expect(sent).toContain(rows[30]!.id);
-  });
-
-  it('with exactly 30 there is nothing to cut, and "Marcar todos" says so', async () => {
-    await mount({ rows: many(30) });
-    await openBatch();
-    expect(within(batchDialog()).queryByRole('button', { name: /Marcar os primeiros/ })).toBeNull();
-    fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Marcar todos' }));
-    expect(within(batchDialog()).getByRole('button', { name: 'Enviar 30 para aprovação' })).toBeTruthy();
   });
 });
 
@@ -416,9 +432,7 @@ describe('what the API refuses', () => {
         return failure(409, 'CONTENT_STATE');
       }
     });
-    await openBatch();
-    fireEvent.click(box(/Primeiro/));
-    fireEvent.click(box(/Segundo/));
+    openBatch('Primeiro', 'Segundo');
     fireEvent.change(within(batchDialog()).getByLabelText('Recado para o cliente'), { target: { value: 'Até sexta.' } });
     const before = periodCalls.length;
     send('Enviar 2 para aprovação');
@@ -447,8 +461,7 @@ describe('what the API refuses', () => {
   ])('says %s %s in its own words and keeps the dialog open', async (status, code, text) => {
     const rows = [row({ title: 'Um' })];
     await mount({ rows, batch: () => failure(status, code) });
-    await openBatch();
-    fireEvent.click(box(/Um/));
+    openBatch('Um');
     send('Enviar 1 para aprovação');
     expect(await within(batchDialog()).findByText(text)).toBeTruthy();
     expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
@@ -460,8 +473,7 @@ describe('what the API refuses', () => {
     ['CONTENT_APPROVAL_NOTE_INVALID', 'O recado tem até 500 caracteres e não pode ter caracteres especiais. Deixe em branco para enviar sem recado.']
   ])('puts %s on its own field', async (code, text) => {
     await mount({ rows: [row({ title: 'Um' })], batch: () => failure(400, code) });
-    await openBatch();
-    fireEvent.click(box(/Um/));
+    openBatch('Um');
     send('Enviar 1 para aprovação');
     expect(await within(batchDialog()).findByText(text)).toBeTruthy();
     expect(batchDialog().querySelectorAll('[aria-invalid="true"]')).toHaveLength(1);
@@ -471,8 +483,7 @@ describe('what the API refuses', () => {
     let refusing = true;
     const rows = [row({ title: 'Um' })];
     const { batches } = await mount({ rows, batch: () => (refusing ? failure(409, 'TRY_AGAIN') : undefined) });
-    await openBatch();
-    fireEvent.click(box(/Um/));
+    openBatch('Um');
     send('Enviar 1 para aprovação');
     await within(batchDialog()).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.');
     refusing = false;

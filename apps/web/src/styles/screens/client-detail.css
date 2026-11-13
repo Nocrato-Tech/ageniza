@@ -597,6 +597,38 @@ a.client-general__block:focus-visible {
   min-width: 0;
 }
 
+.client-contents__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.client-contents__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.client-contents__item > .client-contents__row {
+  flex: 1;
+  min-width: 0;
+}
+
+.client-contents__pick {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.25rem;
+}
+
+.client-contents__box {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+}
+
 .client-contents__filters {
   display: flex;
   flex-wrap: wrap;

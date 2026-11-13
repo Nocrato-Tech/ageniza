@@ -23,4 +23,4 @@
 
 **Origem.** Decisão do maestro na execução do #890, a partir do item 3 da decisão de 2026-11-11 (mínimo sensato para o MVP: a cobrança registra a recusa).
 
-**Validação.** Pendente de validação do dono.
+**Validação.** Validada pelo dono em 2026-11-13.

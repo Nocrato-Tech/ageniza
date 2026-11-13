@@ -3,11 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { CalendarClock, Check, Hourglass, PenLine, Send, TriangleAlert } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
-import { ContentPeriodResponseSchema, type ContentFormat, type ContentListItem, type ContentPeriodResponse } from '@ageniza/contracts';
-import { AvatarGroup, Button, ButtonLink, Chip, EmptyState, LateBadge, Pill, Skeleton, StatusTag } from '@ageniza/ui';
+import { APPROVAL_BATCH_MAX_CONTENTS, ContentPeriodResponseSchema, type ContentFormat, type ContentListItem, type ContentPeriodResponse } from '@ageniza/contracts';
+import { AvatarGroup, Button, ButtonLink, Chip, EmptyState, LateBadge, LiveStatus, Pill, Skeleton, StatusTag } from '@ageniza/ui';
 
-import { useAgencyContext, useCan } from './agency.js';
+import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
+import { ApprovalSubmitDialog, batchCandidates } from './approval-submit-dialog.js';
 import { useClientDetail } from './client-detail.js';
 import { contentsAddress } from './content-address.js';
 import { daysBetween, dayOfMonthLabel, monthPeriod, saoPauloClock, shortDayLabel, todayInSaoPaulo } from './content-dates.js';
@@ -119,13 +120,38 @@ const sentLabel = (sentAt: string, today: string): string => {
   return `enviado há ${plural(days, 'dia', 'dias')}`;
 };
 
-function ContentRow({ item, today, href, state }: { item: Item; today: string; href: { pathname: string; search: string }; state: unknown }) {
+/** The box that marks a content for the batch send; `null` where the content cannot go to approval yet. */
+interface RowPick {
+  readonly checked: boolean;
+  readonly disabled: boolean;
+  readonly onChange: (checked: boolean) => void;
+}
+
+function ContentRow({ item, today, href, state, pickable, pick }: {
+  item: Item;
+  today: string;
+  href: { pathname: string; search: string };
+  state: unknown;
+  /** The tab offers the batch send: a row without a box keeps the column so the covers line up. */
+  pickable: boolean;
+  pick: RowPick | null;
+}) {
   const { content } = item;
   const late = item.state === 'late';
   const sub = late
     ? `${CARD_FORMAT_LABELS[content.format]} · deveria ter saído em ${shortDayLabel(content.publishOn)}`
     : `${CARD_FORMAT_LABELS[content.format]} · ${whenLabel(content, today)}${content.status === 'awaiting_approval' && content.approval !== null ? ` · ${sentLabel(content.approval.sentAt, today)}` : ''}`;
-  return <li>
+  return <li className="client-contents__item" data-pickable={pickable ? '' : undefined}>
+    {pickable && <span className="client-contents__pick">
+      {pick !== null && <input
+        type="checkbox"
+        className="client-contents__box"
+        aria-label={`Marcar ${content.title} para enviar`}
+        checked={pick.checked}
+        disabled={pick.disabled}
+        onChange={(event) => { pick.onChange(event.target.checked); }}
+      />}
+    </span>}
     <Link className="client-contents__row" to={href} state={state}>
       <ContentCover assetId={content.thumbnailAssetId} format={content.format} className="client-contents__cover" />
       <span className="client-contents__main">
@@ -153,6 +179,12 @@ export function ClientContentsTab() {
   const canSeeAccess = useCan('cliente.convidar_usuario');
   const [searchParams, setSearchParams] = useSearchParams();
   const [showAllProduction, setShowAllProduction] = useState(false);
+  // The batch send (decision 2026-11-13): the marked contents, the dialog that sends them and what it said once it went.
+  const [marked, setMarked] = useState<ReadonlySet<string>>(new Set());
+  const [batching, setBatching] = useState(false);
+  const [sentNotice, setSentNotice] = useState<string | null>(null);
+  const canOperate = useCan('conteudo.operar');
+  const blocked = useWriteBlocked();
   const contents = useClientMonthContents(client.id, true);
   const grouping = parseGrouping(searchParams.get('agrupar'));
   const now = saoPauloClock();
@@ -182,10 +214,34 @@ export function ClientContentsTab() {
   };
   const groups = groupsOf(items, grouping);
 
+  const candidates = batchCandidates(items.map((item) => item.content));
+  const ready = new Set(candidates.filter((candidate) => candidate.startsHere && candidate.blocked === undefined).map((candidate) => candidate.id));
+  const canBatch = canOperate && client.status !== 'archived' && candidates.some((candidate) => candidate.startsHere);
+  const count = [...marked].filter((id) => ready.has(id)).length;
+  const full = count >= APPROVAL_BATCH_MAX_CONTENTS;
+  const toggle = (id: string, on: boolean): void => {
+    setMarked((current) => {
+      const next = new Set(current);
+      if (on) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
   return <div className="client-contents">
-    <div className="client-contents__filters" role="group" aria-label="Agrupar">
-      {GROUPINGS.map((option) => <Chip key={option.value} selected={grouping === option.value} onClick={() => choose(option.value)}>{option.label}</Chip>)}
+    <div className="client-contents__toolbar">
+      <div className="client-contents__filters" role="group" aria-label="Agrupar">
+        {GROUPINGS.map((option) => <Chip key={option.value} selected={grouping === option.value} onClick={() => choose(option.value)}>{option.label}</Chip>)}
+      </div>
+      {canBatch && <Button
+        variant="secondary"
+        leadingIcon={<Send />}
+        disabled={count === 0}
+        blockedReason={blocked}
+        onClick={() => { setSentNotice(null); setBatching(true); }}
+      >{count === 0 ? 'Enviar para aprovação' : `Enviar ${count} para aprovação`}</Button>}
     </div>
+    {canBatch && full && <p className="client-contents__note" role="status">Um envio leva até {APPROVAL_BATCH_MAX_CONTENTS} conteúdos.</p>}
+    {sentNotice !== null && <LiveStatus>{sentNotice}</LiveStatus>}
     {groups.map((group) => {
       const collapsed = grouping === 'acao' && group.key === 'production' && !showAllProduction && group.items.length > PRODUCTION_PREVIEW;
       const shown = collapsed ? group.items.slice(0, PRODUCTION_PREVIEW) : group.items;
@@ -207,11 +263,31 @@ export function ClientContentsTab() {
           >Reenviar o link</ButtonLink>}
         </div>
         <ul className="client-contents__rows">
-          {shown.map((item) => <ContentRow key={item.content.id} item={item} today={now.day} state={location.state} href={{ pathname: `${address}/${item.content.id}`, search: `?data=${item.content.publishOn}` }} />)}
+          {shown.map((item) => {
+            const checked = marked.has(item.content.id) && ready.has(item.content.id);
+            return <ContentRow
+              key={item.content.id}
+              item={item}
+              today={now.day}
+              state={location.state}
+              href={{ pathname: `${address}/${item.content.id}`, search: `?data=${item.content.publishOn}` }}
+              pickable={canBatch}
+              pick={canBatch && ready.has(item.content.id) ? { checked, disabled: blocked !== undefined || (full && !checked), onChange: (on) => { toggle(item.content.id, on); } } : null}
+            />;
+          })}
         </ul>
         {collapsed && <p className="client-contents__more">+ {group.items.length - PRODUCTION_PREVIEW} em produção · <Button variant="ghost" size="sm" onClick={() => setShowAllProduction(true)}>ver todos</Button></p>}
       </section>;
     })}
     <p className="client-contents__note">Mostrando os conteúdos de {month}. Para outros períodos, abra o Calendário Editorial.</p>
+    {batching && <ApprovalSubmitDialog
+      target={{ kind: 'batch', clientId: client.id, candidates: candidates.filter((candidate) => marked.has(candidate.id)), scope: 'marcados', preselected: marked }}
+      onClose={() => { setBatching(false); }}
+      onSent={(sent) => {
+        setBatching(false);
+        setMarked(new Set());
+        setSentNotice(sent === 1 ? '1 conteúdo enviado para aprovação.' : `${sent} conteúdos enviados para aprovação.`);
+      }}
+    />}
   </div>;
 }

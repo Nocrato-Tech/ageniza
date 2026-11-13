@@ -142,7 +142,7 @@ const refusalOf = (error: unknown, batch: boolean): Refusal => {
 
 export type ApprovalSubmitTarget =
   | { readonly kind: 'one'; readonly clientId: string; readonly content: { readonly id: string; readonly title: string } }
-  | { readonly kind: 'batch'; readonly clientId: string; readonly candidates: readonly BatchCandidate[]; readonly scope: string };
+  | { readonly kind: 'batch'; readonly clientId: string; readonly candidates: readonly BatchCandidate[]; readonly scope: string; readonly preselected?: ReadonlySet<string> };
 
 /**
  * "Enviar para aprovação": the deadline (day and hour, 48 hours ahead unless changed or cleared) and the note of the round, for one content or for a batch of one client.
@@ -169,7 +169,8 @@ export function ApprovalSubmitDialog({ target, onClose, onSent, onBusyChange }: 
   // The field holds text that is not a day: `dueOn` is '' then too, and sending it as "no deadline" would drop what the person meant.
   const [dueInvalid, setDueInvalid] = useState(false);
   const [note, setNote] = useState('');
-  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const initialPicked = useRef<ReadonlySet<string>>(batch ? target.preselected ?? new Set() : new Set()).current;
+  const [picked, setPicked] = useState<ReadonlySet<string>>(initialPicked);
   const [refusal, setRefusal] = useState<Refusal | undefined>();
   const [problems, setProblems] = useState<{ dueOn?: string; note?: string; pick?: string }>({});
   // The mutation's own pending state reaches the button a render late: a second click in between must not send a second request.
@@ -249,7 +250,7 @@ export function ApprovalSubmitDialog({ target, onClose, onSent, onBusyChange }: 
     });
   };
 
-  const dirty = dueOn !== proposed.dueOn || dueTime !== proposed.time || dueInvalid || note !== '' || picked.size > 0;
+  const dirty = dueOn !== proposed.dueOn || dueTime !== proposed.time || dueInvalid || note !== '' || picked.size !== initialPicked.size || [...picked].some((id) => !initialPicked.has(id));
   const label = batch ? (chosen.length === 0 ? 'Enviar para aprovação' : `Enviar ${chosen.length} para aprovação`) : 'Enviar para aprovação';
 
   return <Dialog
