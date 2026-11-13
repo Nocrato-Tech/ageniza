@@ -496,7 +496,7 @@ describe('client lifecycle actions (#139)', () => {
     // The detail itself was invalidated and read back from the server, not only patched in cache.
     await waitFor(() => expect(detailGets).toBe(2));
     // The roster behind carries the badge too, from the invalidated list.
-    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }));
     const card = await screen.findByRole('link', { name: 'Padaria Central' });
     await waitFor(() => expect(within(card).getByText(`encerra em ${dayMonthOf(target)}`)).toBeTruthy());
   });
@@ -524,7 +524,7 @@ describe('client lifecycle actions (#139)', () => {
     expect(screen.queryByRole('menu')).toBeNull();
     // The detail was invalidated and read back from the server.
     await waitFor(() => expect(detailGets).toBe(2));
-    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }));
     const card = await screen.findByRole('link', { name: 'Padaria Central' });
     await waitFor(() => expect(within(card).queryByText(/encerra em/)).toBeNull());
   });
@@ -552,11 +552,11 @@ describe('client lifecycle actions (#139)', () => {
     expect(detailGets).toBe(1);
 
     // Visiting Acessos once proves the archive invalidates its lists too.
-    fireEvent.click(screen.getByRole('link', { name: 'Acessos' }));
+    fireEvent.click(screen.getByRole('link', { name: /^Acessos/ }));
     await screen.findByRole('heading', { name: 'Pessoas com acesso ao portal' });
     expect(membersGets).toBe(1);
     expect(invitationsGets).toBe(1);
-    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
+    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
     await screen.findByRole('heading', { name: 'Padaria Central' });
 
     const dialog = await openArchiveDialog();
@@ -577,13 +577,13 @@ describe('client lifecycle actions (#139)', () => {
     await waitFor(() => expect(detailGets).toBe(2));
 
     // Acessos and Convites were invalidated: revisiting refetches both (the cache would be fresh).
-    fireEvent.click(screen.getByRole('link', { name: 'Acessos' }));
+    fireEvent.click(screen.getByRole('link', { name: /^Acessos/ }));
     await screen.findByRole('heading', { name: 'Pessoas com acesso ao portal' });
     expect(membersGets).toBe(2);
     await waitFor(() => expect(invitationsGets).toBe(2));
 
     // The roster behind lost the client from the default list.
-    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }));
     await screen.findByText('Nenhum cliente ainda');
     expect(screen.queryByText('Padaria Central')).toBeNull();
   });
@@ -609,7 +609,7 @@ describe('client lifecycle actions (#139)', () => {
     // The detail was invalidated and read back from the server.
     await waitFor(() => expect(detailGets).toBe(2));
 
-    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }));
     const card = await screen.findByRole('link', { name: 'Padaria Central' });
     expect(within(card).getByText('Padaria Central')).toBeTruthy();
     expect(probe.pathname).toBe(rosterUrl);
@@ -637,7 +637,7 @@ describe('client lifecycle actions (#139)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
     // The way back is the address the roster handed over, query included.
-    const back = screen.getByRole('link', { name: 'Voltar para Clientes' });
+    const back = within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' });
     expect(back.getAttribute('href')).toBe(filteredRoster);
     fireEvent.click(back);
     await waitFor(() => expect(probe.search).toBe('?status=active&page=2'));
@@ -659,7 +659,7 @@ describe('client lifecycle actions (#139)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Reativar' }));
     await waitFor(() => expect(screen.queryByText(/Cliente arquivado/)).toBeNull());
 
-    const back = screen.getByRole('link', { name: 'Voltar para Clientes' });
+    const back = within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' });
     expect(back.getAttribute('href')).toBe(filteredRoster);
     fireEvent.click(back);
     await waitFor(() => expect(probe.search).toBe('?status=archived&page=2'));

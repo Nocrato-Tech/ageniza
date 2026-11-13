@@ -2030,7 +2030,7 @@ describe('the calendar lives only on the screen of Conteúdos, and the profile l
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Abrir no cadastro do cliente' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`));
     expect(probe.state).toEqual({ clientListUrl: ROSTER_ADDRESS });
-    expect((await screen.findByRole('link', { name: 'Voltar para Clientes' })).getAttribute('href')).toBe(ROSTER_ADDRESS);
+    expect((await within(await screen.findByRole('navigation', { name: 'Você está em' })).findByRole('link', { name: 'Clientes' })).getAttribute('href')).toBe(ROSTER_ADDRESS);
     expect(screen.queryByRole('link', { name: 'Abrir na tela do Calendário Editorial' })).toBeNull();
   });
 

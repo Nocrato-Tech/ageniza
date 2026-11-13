@@ -306,7 +306,7 @@ describe('portal access tab (#140)', () => {
     });
     const { container, probe } = renderAccess(impl, { pathname: accessUrl, state: { clientListUrl: rosterUrl } });
     await screen.findByText('Maria Souza');
-    const back = (): HTMLElement => screen.getByRole('link', { name: 'Voltar para Clientes' });
+    const back = (): HTMLElement => within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' });
     expect(back().getAttribute('href')).toBe(rosterUrl);
     // The members pagination is the first on the page; the invitations one comes after it.
     const membersNext = (): HTMLElement => {
@@ -352,7 +352,7 @@ describe('portal access tab (#140)', () => {
       search: '?membros=2&convites=2&removidas=2',
       state: { clientListUrl: rosterUrl }
     });
-    const back = (): HTMLElement => screen.getByRole('link', { name: 'Voltar para Clientes' });
+    const back = (): HTMLElement => within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' });
 
     await screen.findByText('Maria Souza');
     await waitFor(() => expect(probe.search).not.toContain('membros=2'));
@@ -401,8 +401,8 @@ describe('portal access tab (#140)', () => {
     expect(calls.some((call) => call.startsWith(`POST /agencies/${AGENCY_A}/clients/${CLIENT_ID}/members`))).toBe(true);
     expect(calls.some((call) => call.includes('/invitations') && call.startsWith('POST'))).toBe(false);
 
-    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
-    expect(await screen.findByText('1 pessoa com acesso')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
+    await waitFor(() => expect(screen.getByRole('link', { name: /^Portal/ }).textContent).toContain('Portal1pessoa com acesso'));
   });
 
   it('maps every server refusal of an addition to its own message and keeps the typed e-mail', async () => {
@@ -495,7 +495,7 @@ describe('portal access tab (#140)', () => {
       const status = await screen.findByText(/agora tem acesso ao portal/);
       texts.push(status.textContent ?? '');
       expect(container.textContent).not.toContain('Maria Souza');
-      expect(container.textContent?.toLowerCase()).not.toContain('conta');
+      expect(container.textContent?.toLowerCase().replace('quem aprova os posts, sem criar conta', '')).not.toContain('conta');
       cleanup();
     }
     expect(texts[0]).toBe(texts[1]);
@@ -523,7 +523,7 @@ describe('portal access tab (#140)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Removidas (2)' }));
     expect(within(rowOf('bia@padaria.test')).getByText('ainda não entrou')).toBeTruthy();
     expect(within(rowOf('pedro@padaria.test')).getByText('Pedro Alves')).toBeTruthy();
-    expect(container.textContent?.toLowerCase()).not.toContain('conta');
+    expect(container.textContent?.toLowerCase().replace('quem aprova os posts, sem criar conta', '')).not.toContain('conta');
   });
 
   it('cancels an old invitation, the section goes away with the last one and the roster badge follows', async () => {
@@ -538,19 +538,19 @@ describe('portal access tab (#140)', () => {
     const { probe } = renderAccess(impl, `/agencia/${AGENCY_A}/clientes`);
     await screen.findByText('Padaria Central');
     fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
-    await screen.findByRole('link', { name: 'Acessos' });
-    fireEvent.click(screen.getByRole('link', { name: 'Acessos' }));
+    await screen.findByRole('link', { name: /^Acessos/ });
+    fireEvent.click(screen.getByRole('link', { name: /^Acessos/ }));
     await screen.findByText('expira em 7 dias');
 
     // The row of an old invitation has Reenviar and Cancelar (decision 2026-10-27, "acessos pendentes ... reenviados e removidos").
     expect(screen.getByRole('button', { name: 'Reenviar convite de carla@padaria.test' })).toBeTruthy();
 
     // The roster badge is on the screen before the cancellation, and the cancel invalidates it.
-    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }));
     expect(await screen.findByText('convite pendente')).toBeTruthy();
     fireEvent.click(screen.getByRole('link', { name: 'Padaria Central' }));
-    await screen.findByRole('link', { name: 'Acessos' });
-    fireEvent.click(screen.getByRole('link', { name: 'Acessos' }));
+    await screen.findByRole('link', { name: /^Acessos/ });
+    fireEvent.click(screen.getByRole('link', { name: /^Acessos/ }));
     await screen.findByText('carla@padaria.test');
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar convite de carla@padaria.test' }));
@@ -559,7 +559,7 @@ describe('portal access tab (#140)', () => {
 
     await waitFor(() => expect(calls.some((call) => call.startsWith('DELETE /agencies'))).toBe(true));
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Convites aguardando aceite' })).toBeNull());
-    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }));
     await waitFor(() => expect(screen.queryByText('convite pendente')).toBeNull());
     expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`);
   });
@@ -626,8 +626,8 @@ describe('portal access tab (#140)', () => {
     expect(screen.getByText('removido')).toBeTruthy();
 
     // The General tab counter follows the invalidated detail summary, without a reload.
-    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
-    expect(await screen.findByText('1 pessoa com acesso')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
+    await waitFor(() => expect(screen.getByRole('link', { name: /^Portal/ }).textContent).toContain('Portal1pessoa com acesso'));
   });
 
   it('reactivates the removed person that was clicked and updates the General counter', async () => {
@@ -660,8 +660,8 @@ describe('portal access tab (#140)', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Removidas (1)' })).toBeTruthy());
     expect(screen.getByText('Pedro Alves')).toBeTruthy();
     // The General tab counter follows the invalidated detail summary, without a reload.
-    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
-    expect(await screen.findByText('2 pessoas com acesso')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
+    await waitFor(() => expect(screen.getByRole('link', { name: /^Portal/ }).textContent).toContain('Portal2pessoas com acesso'));
   });
 
   it.each([

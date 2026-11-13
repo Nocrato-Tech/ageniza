@@ -279,7 +279,7 @@ export function CommentItem({ comment }: { comment: ThreadComment }) {
   </li>;
 }
 
-function OpenThread({ props, thread, onClose }: { props: ConversationProps; thread: Thread; onClose: () => void }) {
+export function OpenThread({ props, thread, onClose }: { props: ConversationProps; thread: Thread; onClose: () => void }) {
   const { scope, subjectLabel, canWrite, readOnly, blockedReason, planBlockedReason, onWritten, onStale } = props;
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
@@ -412,7 +412,7 @@ function NewConversationDialog({ props, onClose }: { props: ConversationProps; o
 }
 
 /** The agency asks the client for material: a first message, as any thread, and a deadline that only this subject has. */
-function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; onClose: () => void }) {
+export function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; onClose: () => void }) {
   const { scope, onWritten } = props;
   const httpClient = useApiClient();
   const queryClient = useQueryClient();

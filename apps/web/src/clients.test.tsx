@@ -659,7 +659,7 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`));
     expect(await screen.findByRole('heading', { name: 'Padaria Central' })).toBeTruthy();
     // The real detail (issue #136) renders the tab bar with Geral active.
-    expect(screen.getByRole('link', { name: 'Geral' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: /^Visão geral/ }).getAttribute('aria-current')).toBe('page');
   });
 
   it('renders an archived card dimmed and without any badge or indicator strip', async () => {
@@ -868,7 +868,7 @@ describe('create client modal (#135)', () => {
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${createdClient.id}/geral`));
 
     // The creation invalidated the roster: going back shows the new client without a reload.
-    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }));
     expect(await screen.findByText('Padaria Nova')).toBeTruthy();
   });
 
@@ -1318,7 +1318,7 @@ describe('the roster address travels to the detail from every way in (#636)', ()
     await screen.findByText('Padaria Central');
 
     await enter();
-    fireEvent.click(await screen.findByRole('link', { name: 'Voltar para Clientes' }));
+    fireEvent.click(await within(await screen.findByRole('navigation', { name: 'Você está em' })).findByRole('link', { name: 'Clientes' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`));
     expect(probe.search).toBe('?search=padaria');
   });
