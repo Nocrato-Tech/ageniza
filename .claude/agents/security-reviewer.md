@@ -25,7 +25,7 @@ Leia, nesta ordem:
 - Ao terminar, apague o banco, o worktree e os arquivos temporários. O `pnpm install` roda um `prepare` que grava `core.hooksPath` no config compartilhado; confira que o valor continua `.githooks`.
 
 ## Modo subtarefa
-Quando a tarefa dá um worktree, uma branch e um commit (fluxo de escopo, sem PR), o alvo é esse commit e o diff é `feat/<escopo>...<branch>` contra a integração. Ataques e mutações rodam no seu próprio worktree temporário e num banco isolado, nunca no worktree do implementador. Em vez de `gh pr review`, grave a revisão no arquivo que a tarefa indicar (padrão `C:/Users/Vidal/agents/revisoes/<escopo>/<n>-r<rodada>.md`), no mesmo formato; o maestro a publica no PR único. Na re-revisão, confira a correção e a regressão dela no commit novo, até zerar os achados.
+Quando a tarefa dá a branch de uma onda e as subtarefas que ela junta (fluxo de escopo, sem PR), o alvo são todas as subtarefas de nível Alto da onda, numa revisão só, e o diff é `feat/<escopo>...<branch da onda>` contra a integração. A tarefa traz o `autoataque` de cada implementador: refaça por amostragem o que ele diz ter passado e gaste o resto do esforço no que ele não cobriu. Ataques e mutações rodam no seu próprio worktree temporário e num banco isolado, nunca no worktree do implementador. Em vez de `gh pr review`, grave a revisão no arquivo que a tarefa indicar (padrão `C:/Users/Vidal/agents/revisoes/<escopo>/<n>-r<rodada>.md`), no mesmo formato; o maestro a publica no PR único. Na re-revisão, confira a correção e a regressão dela no commit novo, até zerar os achados.
 
 Sua última mensagem ao maestro traz o veredito (APROVADO ou BLOQUEADO), os achados com severidade e o caminho do arquivo.
 
