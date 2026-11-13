@@ -135,6 +135,7 @@ Convite pendente **não é um estado do vínculo**: é uma linha em `invitations
 | `GET` | `/agencies/:agencyId/collaborators` | `colaborador.visualizar` | `{ data, meta }` paginado |
 | `GET` | `/agencies/:agencyId/collaborators/:membershipId` | `colaborador.visualizar` | o detalhe de uma pessoa |
 | `GET` | `/agencies/:agencyId/collaborators/job-titles` | `colaborador.visualizar` | `{ data: string[] }` com os cargos que existem na agência |
+| `GET` | `/agencies/:agencyId/collaborators/:membershipId/open-contents` | `colaborador.visualizar` **e** `conteudo.visualizar` | `{ summary, data }` com os clientes e o que está com a pessoa |
 | `GET` | `/agencies/:agencyId/roles` | `colaborador.convidar` **ou** `colaborador.alterar_papel` | `{ data: { id, key, name }[] }` com os papéis atribuíveis |
 | `PATCH` | `/agencies/:agencyId/collaborators/:membershipId` | `alterar_papel` e/ou `alterar_funcao` | o vínculo atualizado |
 | `POST` | `/agencies/:agencyId/collaborators/:membershipId/remove` | `colaborador.remover` | o vínculo em `removed` |
@@ -142,6 +143,8 @@ Convite pendente **não é um estado do vínculo**: é uma linha em `invitations
 | `GET` | `/agencies/:agencyId/invitations` | `colaborador.convidar` | convites pendentes, paginado |
 | `PATCH` | `/me/profile` | — (identidade) | nome atualizado |
 | `POST` | `/me/photo` | — (identidade) | a foto do usuário |
+
+**`open-contents`** (2026-11-12, decisão de 2026-11-11) é a leitura do cartão "Clientes e o que está com ele" (seção 7): os conteúdos abertos cujo `owner_user_id` é o usuário daquele vínculo, por cliente, lidos como quem olha sob a RLS, com a agência e o responsável repetidos no `WHERE`. Sem `conteudo.visualizar` é `403`; a ordem das recusas é a do detalhe, e o vínculo removido é o mesmo `404`.
 
 As rotas de perfil **não são escopadas por agência**: o usuário é global, e escopá-las sugeriria que a pessoa tem um nome por tenant.
 

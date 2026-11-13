@@ -8,12 +8,15 @@ import {
   CollaboratorJobTitlesResponseSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
+  CollaboratorOpenContentsQuerySchema,
+  CollaboratorOpenContentsResponseSchema,
   CollaboratorSchema,
   ReactivateCollaboratorRequestSchema,
   UpdateCollaboratorRequestSchema,
   buildPaginationMetadata,
   resolvePagination,
-  type Collaborator
+  type Collaborator,
+  type CollaboratorOpenContentsResponse
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { isRetryableConflict, withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
@@ -28,7 +31,14 @@ import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.j
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { isInsufficientPrivilegeError, tenantHolds } from '../tenancy/guards.js';
 import { COLLABORATOR_ROLES_READ_PERMISSIONS, COLLABORATOR_UPDATE_PERMISSIONS } from './permissions.js';
-import { COLLABORATOR_PERMISSIONS, COLLABORATOR_REMOVE_PERMISSION, canSeeRemovedLinks, permissionsRequiredByChange } from './policy.js';
+import { findActiveMembershipUser, listOpenContents } from './open-contents.js';
+import {
+  COLLABORATOR_OPEN_CONTENTS_CONTENT_PERMISSION,
+  COLLABORATOR_PERMISSIONS,
+  COLLABORATOR_REMOVE_PERMISSION,
+  canSeeRemovedLinks,
+  permissionsRequiredByChange
+} from './policy.js';
 import {
   findAssignableRole,
   getCollaborator,
@@ -176,6 +186,19 @@ const collaboratorDetailDocs = {
     params: AgencyCollaboratorPathParamsSchema,
     query: CollaboratorDetailQuerySchema,
     response: CollaboratorSchema
+  }
+} satisfies DocumentedRouteConfig;
+
+// What a person has open, per client. The cards show content titles, so the route also demands
+// `conteudo.visualizar` (a second guard below; the metadata names the door, like the routes of the
+// contents module that need two keys). The response is its own schema, not the item's.
+const collaboratorOpenContentsDocs = {
+  permission: 'colaborador.visualizar',
+  responseStatus: 200,
+  schemas: {
+    params: AgencyCollaboratorPathParamsSchema,
+    query: CollaboratorOpenContentsQuerySchema,
+    response: CollaboratorOpenContentsResponseSchema
   }
 } satisfies DocumentedRouteConfig;
 
@@ -331,6 +354,41 @@ export const registerCollaboratorModule = (app: FastifyInstance, dependencies: C
     // same 404, and so does a removed one for a caller who may not see removed links.
     if (row === undefined) throw collaboratorNotFound();
     return reply.send(routeResponse(collaboratorDetailDocs, request, await collaboratorFromRow(dependencies, row, request.log)));
+  });
+
+  app.get('/agencies/:agencyId/collaborators/:membershipId/open-contents', {
+    preHandler: [
+      requireSession,
+      dependencies.requireAgencyAccess,
+      dependencies.requirePermission(collaboratorOpenContentsDocs.permission),
+      dependencies.requirePermission(COLLABORATOR_OPEN_CONTENTS_CONTENT_PERMISSION)
+    ],
+    config: collaboratorOpenContentsDocs
+  }, async (request, reply) => {
+    const auth = request.auth;
+    if (auth === undefined) throw unauthenticated();
+    const tenant = request.tenant;
+    if (tenant === undefined) throw agencyNotFound();
+
+    const params = routeParams(collaboratorOpenContentsDocs, request);
+    routeQuery(collaboratorOpenContentsDocs, request);
+    if (!uuidPattern.test(params.membershipId)) throw collaboratorNotFound();
+
+    let result: CollaboratorOpenContentsResponse | undefined;
+    try {
+      result = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
+        const userId = await findActiveMembershipUser(transaction, tenant.agencyId, params.membershipId);
+        if (userId === undefined) return undefined;
+        return listOpenContents(transaction, { agencyId: tenant.agencyId, userId });
+      });
+    } catch (error) {
+      if (isInsufficientPrivilegeError(error)) throw forbidden();
+      if (isRetryableConflict(error)) throw tryAgain();
+      throw error;
+    }
+    // Another agency's link, a nonexistent one, a malformed one and a removed one: the same 404 as the detail.
+    if (result === undefined) throw collaboratorNotFound();
+    return reply.send(routeResponse(collaboratorOpenContentsDocs, request, result));
   });
 
   app.patch('/agencies/:agencyId/collaborators/:membershipId', {

@@ -480,7 +480,7 @@ sequenceDiagram
 |---|---|---|---|
 | `GET` | `…/collaborators` | `colaborador.visualizar` | lista paginada, com busca e filtros (24 por página por padrão) |
 | `GET` | `…/collaborators/:membershipId` | `colaborador.visualizar` | um colaborador |
-| `GET` | `…/collaborators/:membershipId/clients` | `colaborador.visualizar` e `conteudo.visualizar` | "Clientes e o que está com ele": por cliente, os conteúdos abertos cujo responsável é a pessoa (*proposta*) |
+| `GET` | `…/collaborators/:membershipId/open-contents` | `colaborador.visualizar` e `conteudo.visualizar` | "Clientes e o que está com ele" e o resumo do cabeçalho: por cliente, os conteúdos abertos cujo responsável é a pessoa |
 | `GET` | `…/collaborators/job-titles` | `colaborador.visualizar` | cargos que existem na agência |
 | `PATCH` | `…/collaborators/:membershipId` | `colaborador.alterar_funcao` (cargo) ou `colaborador.alterar_papel` (papel) | altera o cargo e/ou o papel |
 | `POST` | `…/collaborators/:membershipId/remove` | `colaborador.remover` | remove do quadro |
@@ -495,6 +495,7 @@ sequenceDiagram
 
 - O perfil de um colaborador (e o próprio) é a **página** `/agencia/:agenciaId/colaboradores/:membershipId`, com a trilha "Equipe > Nome", a **lista de pessoas ao lado** (com busca) e o perfil à direita; em tela estreita, a lista é uma tela e o perfil, outra. O endereço antigo `?colaborador=<id>` redireciona para ela. O cabeçalho, as abas (Detalhes, com Performance e Entregas desativadas), a nota do e-mail, Salvar e "Remover do quadro" e as permissões são os de sempre.
 - O cabeçalho resume "3 clientes · 6 conteúdos · 2 aguardando", e o cartão **"Clientes e o que está com ele"** lista, por cliente, os conteúdos **abertos** (em produção, em ajuste, aguardando aprovação, aprovado) cujo **responsável é aquela pessoa**, com a contagem de conteúdos e a de "aguardando", e "Com ele agora". É **derivado do responsável do conteúdo**: não existe atribuição de cliente a pessoa. Só aparece para quem tem `conteudo.visualizar` (a própria pessoa também), e só com os clientes que quem olha pode ver.
+- **A rota do cartão (`GET …/collaborators/:membershipId/open-contents`).** Exige `colaborador.visualizar` **e** `conteudo.visualizar`; sem a segunda é `403` (o Owner passa por posse), e o app não mostra o cartão. A ordem das recusas é a do detalhe: `401`, `404` da agência, `403` da porta e `404` do vínculo (de outra agência, inexistente, malformado ou removido, sempre a mesma resposta). Resposta: `{ summary: { clients, contents, awaiting }, data: [{ client: { id, name }, contents, awaiting, now: [{ contentId, title, state }] }] }`. `summary` alimenta o cabeçalho ("3 clientes · 6 conteúdos · 2 aguardando") e conta todos os clientes; `data` vem por nome do cliente, até 100; `now` traz até 3 conteúdos por cliente, do mais próximo de ir ao ar para o mais distante (`state` é um de `in_production`, `awaiting_approval`, `adjusting`, `approved`). Quem não tem conteúdo aberto recebe `200` com `summary` zerado e `data` vazio.
 - O crachá da grade (três colunas a partir de 64 rem) mostra o papel numa etiqueta **colorida por papel**, com o nome do papel (a cor só identifica), e a dona da agência (Owner) com a coroa e "Dona da agência".
 
 **Ciclo do colaborador**

@@ -4065,6 +4065,7 @@ Pede ajuste de um conteúdo do lote, pelo link.
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
 | `GET` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.visualizar` | Devolve um colaborador da agência |
+| `GET` | `/agencies/:agencyId/collaborators/:membershipId/open-contents` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista os clientes e o que está com um colaborador |
 | `PATCH` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.alterar_funcao` ou `colaborador.alterar_papel` | Altera o cargo e/ou o papel de um colaborador |
 | `POST` | `/agencies/:agencyId/collaborators/:membershipId/remove` | Sessão + vínculo com a agência | `colaborador.remover` | Remove um colaborador do quadro |
 | `POST` | `/agencies/:agencyId/collaborators/:membershipId/reactivate` | Sessão + vínculo com a agência | `colaborador.alterar_papel` | Reativa um colaborador removido |
@@ -4150,6 +4151,49 @@ Devolve um colaborador da agência.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/collaborators/:membershipId/open-contents`
+
+Lista os clientes e o que está com um colaborador.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Resposta `200`** — Os clientes e o que está com o colaborador.
+
+```json
+{
+  "summary": {
+    "clients": 1,
+    "contents": 2,
+    "awaiting": 1
+  },
+  "data": [
+    {
+      "client": {
+        "id": "77777777-7777-4777-8777-777777777777",
+        "name": "Casa Aurora"
+      },
+      "contents": 2,
+      "awaiting": 1,
+      "now": [
+        {
+          "contentId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+          "title": "Bastidores da coleção",
+          "state": "awaiting_approval"
+        },
+        {
+          "contentId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          "title": "Lançamento de verão",
+          "state": "in_production"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `PATCH /agencies/:agencyId/collaborators/:membershipId`
 

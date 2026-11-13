@@ -4197,6 +4197,111 @@
         ],
         "additionalProperties": false
       },
+      "listCollaboratorOpenContentsResponse": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "object",
+            "properties": {
+              "clients": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "contents": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "awaiting": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "clients",
+              "contents",
+              "awaiting"
+            ],
+            "additionalProperties": false
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "client": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "contents": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "awaiting": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "now": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "contentId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "in_production",
+                          "awaiting_approval",
+                          "adjusting",
+                          "approved"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "contentId",
+                      "title",
+                      "state"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 3
+                }
+              },
+              "required": [
+                "client",
+                "contents",
+                "awaiting",
+                "now"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "summary",
+          "data"
+        ],
+        "additionalProperties": false
+      },
       "updateCollaboratorRequest": {
         "type": "object",
         "properties": {
@@ -19273,6 +19378,193 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/collaborators/{membershipId}/open-contents": {
+      "get": {
+        "operationId": "listCollaboratorOpenContents",
+        "summary": "Lista os clientes e o que está com um colaborador",
+        "description": "Alimenta o cartão \"Clientes e o que está com ele\" e o resumo do cabeçalho da página do colaborador.\nExige `colaborador.visualizar` e também `conteudo.visualizar`: o cartão mostra títulos de conteúdo, e\nsem a segunda permissão a resposta é 403 (o Owner passa por posse). Não existe atribuição de cliente a\npessoa: o vínculo é o responsável do conteúdo. \"Aberto\" é em produção, em ajuste, aguardando aprovação\nou aprovado; `awaiting` é o que aguarda aprovação. Entram só os clientes e os conteúdos que quem olha\npode ler. `summary` soma todos os clientes; `data` vem por nome do cliente, até 100, e `now` traz até 3\nconteúdos por cliente, do mais próximo de ir ao ar para o mais distante. Sem nenhum conteúdo aberto,\n`summary` zerado e `data` vazio. Um vínculo de outra agência, inexistente, malformado ou removido\ndevolve o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `colaborador.visualizar`.",
+        "tags": [
+          "collaborators"
+        ],
+        "x-permission": "colaborador.visualizar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "membershipId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Os clientes e o que está com o colaborador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listCollaboratorOpenContentsResponse"
+                },
+                "example": {
+                  "summary": {
+                    "clients": 1,
+                    "contents": 2,
+                    "awaiting": 1
+                  },
+                  "data": [
+                    {
+                      "client": {
+                        "id": "77777777-7777-4777-8777-777777777777",
+                        "name": "Casa Aurora"
+                      },
+                      "contents": 2,
+                      "awaiting": 1,
+                      "now": [
+                        {
+                          "contentId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                          "title": "Bastidores da coleção",
+                          "state": "awaiting_approval"
+                        },
+                        {
+                          "contentId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                          "title": "Lançamento de verão",
+                          "state": "in_production"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found. | NOT_FOUND: Collaborator not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TRY_AGAIN",
+                    "message": "Houve um conflito momentâneo. Tente de novo."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
