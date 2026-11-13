@@ -20,8 +20,10 @@ export const MediaVideoProcessingStatusSchema = z.enum(['not_applicable', 'pendi
 /**
  * `name` and the dimensions are `null` for a media uploaded before they were kept (the screen shows the label of the type), and the
  * dimensions are also `null` for a PDF, an audio and an SVG, and for a video whose processing has not finished. `uploadedBy` is `null`
- * for a person with no link to the agency. `usageCount` is the number of contents (as a media or as the cover) the reader can see.
+ * for a person with no link to the agency. `uploadedBySide` is `client` for a file the client sent through the portal (the screen reads "Enviada por <nome do cliente>"). `usageCount` is the number of contents (as a media or as the cover) the reader can see.
  */
+export const MediaUploadedBySideSchema = z.enum(['agency', 'client']);
+
 export const MediaLibraryAssetSchema = z.object({
   id: mediaIdSchema,
   folderId: mediaIdSchema,
@@ -35,6 +37,7 @@ export const MediaLibraryAssetSchema = z.object({
   altText: z.string().min(1).nullable(),
   videoProcessingStatus: MediaVideoProcessingStatusSchema,
   uploadedBy: ContentPersonSchema.nullable(),
+  uploadedBySide: MediaUploadedBySideSchema,
   createdAt: z.string().datetime(),
   usageCount: z.number().int().nonnegative()
 }).strict();

@@ -120,12 +120,15 @@ export interface MediaAssetRow {
   readonly multipart_upload_id: string | null;
 }
 
-/** Locks the row so two concurrent confirm/complete calls for the same asset cannot race. */
+/**
+ * Locks the row so two concurrent confirm/complete calls for the same asset cannot race. Only a file of the agency's own side: the
+ * reservation of a client's portal is finished by the portal's route, with the checks of that side, and here it is a file that is not there.
+ */
 export const lockAssetForCompletion = async (transaction: Transaction, assetId: string, agencyId: string): Promise<MediaAssetRow | undefined> => {
   const result = await raw<RawRows<MediaAssetRow>>(transaction, `
     select id, agency_id, client_id, category, declared_content_type, object_key, upload_object_key, status, declared_size_bytes, multipart_upload_id
     from public.media_assets
-    where id = ?::uuid and agency_id = ?::uuid
+    where id = ?::uuid and agency_id = ?::uuid and uploaded_by_side = 'agency'
     for update
   `, [assetId, agencyId]);
   return result.rows[0];

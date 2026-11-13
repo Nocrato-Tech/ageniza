@@ -156,6 +156,7 @@ describe('what the library answers', () => {
     altText: null,
     videoProcessingStatus: 'not_applicable',
     uploadedBy: null,
+    uploadedBySide: 'agency',
     createdAt: '2026-11-11T12:00:00.000Z',
     usageCount: 0
   };

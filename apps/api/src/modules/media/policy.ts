@@ -149,6 +149,17 @@ export const maxBytesForCategory = (limits: MediaLimits, category: MediaLibraryC
   }
 };
 
+/**
+ * The keys of an upload, from the identifiers and the extension of its type alone: object keys never carry anything resembling personal
+ * data (issue #21). The database builds the same two for the portal's upload (migration 20261113000100), and the integration test of the
+ * portal's upload compares them with what it wrote.
+ */
+export const objectKeyFor = (agencyId: string, assetId: string, extension: string): string => `${agencyId}/${assetId}/original.${extension}`;
+// All temporary objects share a leading prefix so R2 lifecycle can expire them without matching
+// canonical originals or generated variants. R2 lifecycle filters support prefixes, not suffixes.
+export const uploadObjectKeyFor = (agencyId: string, assetId: string, extension: string): string =>
+  `staging/${agencyId}/${assetId}/upload.${extension}`;
+
 /** Files at or above the threshold use multipart; everything else uses one presigned PUT. */
 export const usesMultipartUpload = (limits: MediaLimits, sizeBytes: number): boolean =>
   sizeBytes >= limits.multipartThresholdBytes;

@@ -99,6 +99,38 @@ checks the pair and the client, and demands the same two permissions instead of 
 `parts` and `complete` accept either family, and RLS decides which media a role sees. The signed read URL
 for a role that only holds `conteudo.visualizar` is the next section.
 
+### The portal's upload (scope redesign-igual, W12-S1; decision 2026-11-11)
+
+`portal-upload-routes.ts` serves the client's own people under `/clients/:clientId/material-requests/:threadId/uploads` (`requireSession` and
+`requireClientAccess`; the client is the one the guard proved): `POST` starts (the database function reserves the file and the route signs the
+single `PUT` to staging), `POST …/:assetId/complete` finishes, `GET` lists what the person sent. The announcement of a batch lives in the
+clients module (`POST …/uploads/announce`), because it writes the comment of the portal; it is handed what it needs from here
+(`portalUploadsForClients`) by `app.ts`, so neither module imports the other.
+
+- **One reading of the bytes.** `copyAndInspectStagedObject` (`upload-inspection.ts`) is the agency's confirmation and the portal's: head the
+  staging, copy to the final key, head and judge the copy with `judgeUploadedObject`. The portal gives it the limits of 25 MiB for every category
+  and refuses a bigger staging object before copying it. An SVG is never accepted: the database refuses the declared type, and an object whose
+  bytes are one is `content_type_mismatch`.
+- **What happens to the objects.** A verdict that turns the file down (the bytes, or the database's `request_full`/`agency_unavailable`) is
+  recorded and answered as `422 UPLOAD_REJECTED`, and **both objects are removed**: the one at the final key before the refusal is written (a
+  failure to remove it rolls the refusal back), the one in staging after the commit, best effort (the bucket lifecycle takes what is left). A
+  failure of the database or a refusal that records nothing (a resolved request, a read-only agency, a lost race) removes only the copy at the
+  final key and leaves staging, so the person can finish the same file again.
+- **One finish at a time per file.** The whole finish is one transaction, and a per-file advisory lock (`lockPortalUploadCompletion`) is
+  taken once the file is proven the person's own and always before the locks of the database. Without it two finishes of one file copy two
+  staging objects to the one final key between the verdict and the confirmation.
+- **The keys.** The list of the person carries the final key only of a confirmed file and never the staging one, and the portal reads no
+  table. The two keys of a pending file are derived from the agency of the client and the extension of the declared type with the agency's own
+  functions (`objectKeyFor`, `uploadObjectKeyFor`, `policy.ts`); `portal-upload.integration.test.ts` compares them with what the database wrote.
+  No answer carries a key: the read URLs of the list are signed with the final key and dropped.
+- **Neutral answers.** `portal-upload-errors.ts` turns `A0130`…`A0136` and `A0090` into answers that say nothing of the plan, the quota, the
+  storage or the billing: one 404 for everything that is not there for the person, and one sentence for the agency that cannot take the file
+  and the one that is read-only. `A0090` never reaches the global handler, whose text is the trial's.
+- **Audit.** `media.upload_initiated`, `media.upload_confirmed` and `media.upload_rejected`, with the person of the portal as the actor.
+- **The agency's side.** `lockAssetForCompletion` takes only `uploaded_by_side = 'agency'`: the agency finishing the reservation of a client
+  (`complete` or `parts`) is the same 404 as an absent file, so it cannot skip the checks of the portal. The library answers `uploadedBySide`.
+- The tests use an in-memory bucket (`test-support/memory-storage.ts`) behind `wrapMediaStorage`, so they need no storage running.
+
 ### The read URL of a client's media (issue #550)
 
 `download-url` lets in `midia.enviar` **or** `conteudo.visualizar` (`MEDIA_READ_PERMISSIONS`), and the RLS of

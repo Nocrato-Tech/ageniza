@@ -34,7 +34,7 @@ import type { EmailService } from '../auth/email-service.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import { tenantHolds } from '../tenancy/guards.js';
 import { registerAccessRoutes } from './access-routes.js';
-import { registerConversationRoutes } from './conversation-routes.js';
+import { registerConversationRoutes, type PortalUploadsPort } from './conversation-routes.js';
 import { registerLifecycleRoutes } from './lifecycle-routes.js';
 import { registerPortalReadRoutes } from './portal-routes.js';
 import { buildClientAvatarKeyPrefix, isClientAvatarKey } from '../identity-storage/policy.js';
@@ -94,6 +94,8 @@ export interface ClientModuleDependencies {
   readonly requirePermission: (key: string) => ClientPreHandler;
   /** Injected by the tenancy module; the portal conversation routes are authorized by the client link alone. */
   readonly requireClientAccess: ClientPreHandler;
+  /** Injected at the composition by the media module's owner; absent, the route that announces a batch of files is not registered. */
+  readonly portalUploads?: PortalUploadsPort;
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

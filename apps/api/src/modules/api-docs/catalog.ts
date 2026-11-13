@@ -17,6 +17,15 @@ import {
   AgencyClientPersonaPathParamsSchema,
   AgencyClientStoryScriptPathParamsSchema,
   AgencyClientThreadPathParamsSchema,
+  AnnouncePortalMaterialUploadsRequestSchema,
+  AnnouncePortalMaterialUploadsResponseSchema,
+  ClientMaterialRequestUploadAssetPathParamsSchema,
+  CompletePortalMaterialUploadRequestSchema,
+  CompletePortalMaterialUploadResponseSchema,
+  CreatePortalMaterialUploadRequestSchema,
+  CreatePortalMaterialUploadResponseSchema,
+  PortalMaterialUploadListQuerySchema,
+  PortalMaterialUploadListResponseSchema,
   AgencyClientSectionPathParamsSchema,
   AgencyCollaboratorPathParamsSchema,
   AgencyInvitationPathParamsSchema,
@@ -597,8 +606,22 @@ const libraryAssetExample = {
   altText: 'Vitrine da padaria com pães recém-saídos do forno',
   videoProcessingStatus: 'not_applicable',
   uploadedBy: { membershipId, name: 'Ana Souza' },
+  uploadedBySide: 'agency',
   createdAt: '2026-11-11T12:00:00.000Z',
   usageCount: 2
+} as const;
+
+const portalUploadExample = {
+  id: assetId,
+  status: 'confirmed',
+  category: 'image',
+  contentType: 'image/jpeg',
+  sizeBytes: 2_404_019,
+  name: 'equipe.jpg',
+  width: 3024,
+  height: 4032,
+  url: signedStorageUrl,
+  createdAt: '2026-11-13T12:00:00.000Z'
 } as const;
 
 const clientExample = {
@@ -3854,6 +3877,144 @@ path: '/agencies/:agencyId/roles',
     ]
   },
   {
+    method: 'post',
+    path: '/clients/:clientId/material-requests/:threadId/uploads',
+    operationId: 'startPortalMaterialUpload',
+    module: 'media',
+    summary: 'Inicia o envio de uma foto ou áudio a um pedido de material, no portal',
+    description: [
+      'Decisão 2026-11-11 ("o cliente envia material pelo portal"). A pessoa do portal envia **imagem** (PNG, JPEG, WebP, GIF) ou **áudio** (MP3, M4A, WAV, WebM, Ogg; o parâmetro `;codecs=opus` de uma gravação não conta) a um pedido de material **aberto** do cliente dela, até 25 MiB por arquivo e 20 arquivos por pedido.',
+      'Nunca SVG, vídeo nem PDF. O fluxo é o do upload da agência, sempre em uma parte só: esta rota reserva o arquivo e devolve a URL assinada de `PUT` (com o `Content-Type` devolvido em `contentType`); depois do `PUT`, `…/uploads/:assetId/complete` lê os bytes e confirma.',
+      'O tipo e o tamanho declarados não são confiados: a recusa de tipo (415) e de tamanho (413) vem do banco, e os bytes são lidos na confirmação. O arquivo cai na pasta "Enviados pelo cliente" do cliente e conta no armazenamento da agência.',
+      'Nenhuma resposta fala de plano, cota, armazenamento nem cobrança: a agência que não pode receber o arquivo agora (`UPLOAD_UNAVAILABLE`) e a agência em somente leitura (`AGENCY_READ_ONLY`) respondem a mesma frase neutra do portal. Pedido de outro cliente, que não é de material, cliente arquivado, agência suspensa e vínculo removido são o mesmo 404.',
+      'Limitada por endereço, como o upload da agência. A chave do objeto nunca é devolvida.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientThreadPathParamsSchema,
+    body: CreatePortalMaterialUploadRequestSchema,
+    requestExample: { fileName: 'equipe.jpg', contentType: 'image/jpeg', declaredSizeBytes: 2_404_019 },
+    responses: [{
+      status: 201,
+      description: 'Reserva criada; a URL assinada vale até `expiresAt`.',
+      schema: CreatePortalMaterialUploadResponseSchema,
+      example: { assetId, category: 'image', contentType: 'image/jpeg', upload: { type: 'single', url: signedStorageUrl, expiresAt: '2026-11-13T12:15:00.000Z' } }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Pedido não encontrado.' },
+      { status: 409, code: 'REQUEST_RESOLVED' },
+      { status: 409, code: 'REQUEST_FULL' },
+      { status: 409, code: 'UPLOAD_UNAVAILABLE', message: 'A aprovação está pausada no momento. A agência já foi avisada.' },
+      { status: 409, code: 'AGENCY_READ_ONLY', message: 'A aprovação está pausada no momento. A agência já foi avisada.' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/clients/:clientId/material-requests/:threadId/uploads/:assetId/complete',
+    operationId: 'completePortalMaterialUpload',
+    module: 'media',
+    summary: 'Confirma o envio depois do PUT, no portal',
+    description: [
+      'Sem corpo. Só a pessoa que fez a reserva a confirma (o arquivo de outra pessoa, do mesmo cliente ou de outro, é o mesmo 404 de um id que não existe). A API lê o objeto do armazenamento com o mesmo código da agência: copia do staging para a chave final e confere o tipo real pelos primeiros bytes, o tamanho (até 25 MiB, antes de copiar) e as dimensões de uma foto; um SVG nunca é aceito. A confirmação é uma por arquivo, em série.',
+      'A recusa por causa dos bytes é **422 `UPLOAD_REJECTED`** com `details.reason` em `empty_object`, `content_type_mismatch`, `too_large`, `invalid_dimensions`, `request_full` ou `agency_unavailable` (a falta de espaço da agência chega assim, sem falar de plano nem de cota). A recusa fica gravada, a reserva é liberada e os objetos (a chave final e o staging) são apagados: o cliente começa de novo pela rota de iniciar.',
+      'Pedido resolvido, agência em somente leitura e agência sem vínculo seguem as respostas da rota de iniciar, e o arquivo continua pendente.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientMaterialRequestUploadAssetPathParamsSchema,
+    body: CompletePortalMaterialUploadRequestSchema,
+    requestExample: {},
+    responses: [{
+      status: 200,
+      description: 'Arquivo confirmado.',
+      schema: CompletePortalMaterialUploadResponseSchema,
+      example: { assetId, status: 'confirmed', sizeBytes: 2_404_019, contentType: 'image/jpeg' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Pedido não encontrado.' },
+      { status: 409, code: 'REQUEST_RESOLVED' },
+      { status: 409, code: 'UPLOAD_NOT_PENDING' },
+      { status: 409, code: 'AGENCY_READ_ONLY', message: 'A aprovação está pausada no momento. A agência já foi avisada.' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 422, code: 'UPLOAD_REJECTED' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/material-requests/:threadId/uploads',
+    operationId: 'listPortalMaterialUploads',
+    module: 'media',
+    summary: 'Lista o que a própria pessoa enviou a um pedido de material, no portal',
+    description: [
+      'Só os arquivos que **a própria pessoa** enviou àquele pedido, `pending` e `confirmed`, do mais antigo ao mais novo; o arquivo de outra pessoa, de outro cliente ou da agência nunca aparece. Quarenta e oito por página, e uma página além do fim traz só o total.',
+      '`url` é a URL assinada de leitura do arquivo confirmado (o áudio sai como download) e `null` no pendente. Nunca devolve a chave do objeto, a do staging nem o id do multipart. A leitura não exige que o pedido esteja aberto: o cliente continua vendo o que enviou.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientThreadPathParamsSchema,
+    query: PortalMaterialUploadListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página dos arquivos enviados pela pessoa.',
+      schema: PortalMaterialUploadListResponseSchema,
+      example: { data: [portalUploadExample], meta: { page: 1, pageSize: 48, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Pedido não encontrado.' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/clients/:clientId/material-requests/:threadId/uploads/announce',
+    operationId: 'announcePortalMaterialUploads',
+    module: 'clients',
+    summary: 'Avisa o pedido de que o cliente enviou um lote de arquivos, no portal',
+    description: [
+      'Chamada no fim do lote. Cada id de `assetIds` (de 1 a 20, sem repetir) tem de ser um arquivo **confirmado** da própria pessoa **naquele pedido**; qualquer outro (de outra pessoa, pendente, recusado, de outro pedido ou inexistente) é o mesmo 404, sem dizer qual, e nada é gravado.',
+      'Grava **um** comentário do cliente no pedido, pelo caminho de comentário do portal, com o texto montado pelo servidor ("enviou 3 fotos", "enviou 1 áudio", "enviou 2 fotos e 1 áudio"); é esse comentário que gera a notificação de resposta. Nada marca o arquivo como avisado: avisar o mesmo lote duas vezes são dois comentários.',
+      'Pedido resolvido é 409 `REQUEST_RESOLVED`, e a agência em somente leitura responde a frase neutra do portal.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientThreadPathParamsSchema,
+    body: AnnouncePortalMaterialUploadsRequestSchema,
+    requestExample: { assetIds: [assetId] },
+    responses: [{
+      status: 201,
+      description: 'Comentário gravado.',
+      schema: AnnouncePortalMaterialUploadsResponseSchema,
+      example: { ...commentExample, body: 'enviou 1 foto' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Pedido não encontrado.' },
+      { status: 409, code: 'REQUEST_RESOLVED' },
+      { status: 409, code: 'AGENCY_READ_ONLY', message: 'A aprovação está pausada no momento. A agência já foi avisada.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
     method: 'get',
     path: '/clients/:clientId',
     operationId: 'getPortalClient',
@@ -4004,7 +4165,8 @@ path: '/agencies/:agencyId/roles',
       'O tipo do objeto tem de ser o declarado e os primeiros bytes têm de ser os desse tipo (`details.reason`: `content_type_mismatch`);',
       'uma foto traz as dimensões do cabeçalho (`invalid_dimensions` quando passam de 100000). Um SVG é lido inteiro e é recusado',
       '(`svg_rejected`) se tiver script, manipulador de evento (`on…`), `foreignObject`, referência externa, `data:`, `javascript:`,',
-      'entidade ou instrução de processamento. Outras razões: `too_large`, `empty_object`, `object_not_found` e `quota_exceeded`.'
+      'entidade ou instrução de processamento. Outras razões: `too_large`, `empty_object`, `object_not_found` e `quota_exceeded`.',
+      'Só confirma arquivo da agência: a reserva que o cliente fez pelo portal responde o mesmo 404 de um arquivo que não existe, e é o portal quem a confirma.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: MEDIA_UPLOAD_PERMISSIONS,
@@ -4202,7 +4364,7 @@ path: '/agencies/:agencyId/roles',
       'recentemente"); quarenta e oito por página. `q` busca pelo nome, sem diferenciar maiúsculas nem acento (um `%` ou `_`',
       'digitado vale como o próprio caractere; o arquivo enviado antes de o nome ser guardado não casa), `category` filtra por tipo',
       '(`image`, `video`, `pdf`, `audio`, `logo`) e `folderId` por pasta. Cada item traz nome, dimensões, texto alternativo, quem',
-      'enviou (`uploadedBy`, `null` para quem não tem vínculo com a agência) e em quantos conteúdos é usado (`usageCount`, só os que a pessoa lê).',
+      'enviou (`uploadedBy`, `null` para quem não tem vínculo com a agência; `uploadedBySide`, `client` para o arquivo que o cliente mandou pelo portal, que a tela mostra como "Enviada por <nome do cliente>") e em quantos conteúdos é usado (`usageCount`, só os que a pessoa lê).',
       'Nunca devolve chave de objeto. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',

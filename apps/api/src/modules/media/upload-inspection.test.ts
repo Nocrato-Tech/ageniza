@@ -18,7 +18,8 @@ import {
   webmBytes,
   webpBytes
 } from './test-support/files.js';
-import { judgeUploadedObject } from './upload-inspection.js';
+import { createMemoryStorage } from './test-support/memory-storage.js';
+import { copyAndInspectStagedObject, judgeUploadedObject } from './upload-inspection.js';
 
 // The confirmation of an upload (decision 2026-11-11): the type the object has must be the declared one, the size inside the ceiling,
 // and the first bytes must open as that type. An SVG is read whole and must pass the guard.
@@ -180,5 +181,52 @@ describe('the size of a file', () => {
     expect(jpeg.storage.readObjectStart).toHaveBeenCalledWith({ key: 'agency/asset/original.bin', length: 1024 * 1024 });
     const tiny = await judge({ declared: 'application/pdf', category: 'pdf', bytes: pdfBytes() });
     expect(tiny.storage.readObjectStart.mock.calls[0]?.[0].length).toBe(8);
+  });
+});
+
+describe('the object a browser left in staging', () => {
+  const input = { stagingKey: 'staging/a/b/upload.png', canonicalKey: 'a/b/original.png', declaredContentType: 'image/png', category: 'image' as const };
+
+  it('is copied first and judged where it was copied to, so what is judged is what stays', async () => {
+    const storage = createMemoryStorage();
+    storage.put(input.stagingKey, pngBytes(30, 20), 'image/png');
+    let copied = false;
+    const result = await copyAndInspectStagedObject(storage, limits, { ...input, onCopied: () => { copied = true; } });
+    expect(result).toMatchObject({ stagingFound: true, copied: true, verdict: { ok: true, contentType: 'image/png', dimensions: { width: 30, height: 20 } } });
+    expect(copied).toBe(true);
+    expect(storage.calls.map((call) => call.split(' ')[0])).toEqual(['head', 'copy', 'head', 'read']);
+    expect(storage.calls.filter((call) => call.startsWith('read '))).toEqual([`read ${input.canonicalKey}`]);
+  });
+
+  it('tells that nothing came, without a copy that would fail opaquely', async () => {
+    const storage = createMemoryStorage();
+    expect(await copyAndInspectStagedObject(storage, limits, input)).toEqual({ stagingFound: false, copied: false });
+    expect(storage.calls).toEqual([`head ${input.stagingKey}`]);
+  });
+
+  it('refuses an object above the ceiling it was given before it is copied, and above none when it is given none', async () => {
+    const storage = createMemoryStorage();
+    storage.put(input.stagingKey, pngBytes(), 'image/png');
+    const refused = await copyAndInspectStagedObject(storage, limits, { ...input, maxCopyBytes: pngBytes().length - 1 });
+    expect(refused).toEqual({ stagingFound: true, copied: false, verdict: { ok: false, reason: 'too_large' } });
+    expect(storage.objects.has(input.canonicalKey)).toBe(false);
+    expect((await copyAndInspectStagedObject(storage, limits, { ...input, maxCopyBytes: pngBytes().length })).copied).toBe(true);
+    expect((await copyAndInspectStagedObject(storage, limits, input)).copied).toBe(true);
+  });
+
+  it('hands the copy to whoever must remove it even when the judgement then throws', async () => {
+    const storage = createMemoryStorage();
+    storage.put(input.stagingKey, pngBytes(), 'image/png');
+    let copied = false;
+    const failing = { ...storage, readObjectStart: async () => { throw new Error('the read failed'); } };
+    await expect(copyAndInspectStagedObject(failing, limits, { ...input, onCopied: () => { copied = true; } })).rejects.toThrow('the read failed');
+    expect(copied).toBe(true);
+  });
+
+  it('says an object that vanished after the copy is not there', async () => {
+    const storage = createMemoryStorage();
+    storage.put(input.stagingKey, pngBytes(), 'image/png');
+    const vanishing = { ...storage, copyObject: async () => undefined };
+    expect(await copyAndInspectStagedObject(vanishing, limits, input)).toMatchObject({ stagingFound: true, copied: true, head: undefined, verdict: { ok: false, reason: 'object_not_found' } });
   });
 });

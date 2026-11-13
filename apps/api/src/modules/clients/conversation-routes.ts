@@ -1,5 +1,7 @@
 import {
   AgencyClientPathParamsSchema,
+  AnnouncePortalMaterialUploadsRequestSchema,
+  AnnouncePortalMaterialUploadsResponseSchema,
   AgencyClientThreadPathParamsSchema,
   ClientPathParamsSchema,
   ClientThreadPathParamsSchema,
@@ -55,14 +57,31 @@ import {
   type ConversationScope,
   type MaterialRequestDatabaseRefusal
 } from './conversation-service.js';
+import { announcementBody } from './material-upload-announcement.js';
 import { createPhotoUrlSigner } from './photo-url.js';
 import { COMMENT_DEFAULT_PAGE_SIZE, CONVERSATION_READ_PERMISSIONS, CONVERSATION_WRITE_PERMISSIONS, THREAD_DEFAULT_PAGE_SIZE } from './policy.js';
 import { isClientNoLongerActive, isRowLevelSecurityViolation, type ClientTransaction } from './service.js';
 
 type PreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
+/**
+ * What the announcement of a batch of files needs from the module that owns them, injected at the composition (this module never imports
+ * the media module): the files the person confirmed in a request, and the answers of its refusals, which say nothing about the agency's plan.
+ */
+export interface PortalUploadsPort {
+  readonly listOwnUploads: (
+    transaction: ClientTransaction,
+    input: { readonly clientId: string; readonly threadId: string }
+  ) => Promise<readonly { readonly id: string; readonly status: 'pending' | 'confirmed'; readonly category: 'image' | 'audio' }[]>;
+  readonly translateError: (error: unknown) => HttpError | undefined;
+  readonly requestNotFound: () => HttpError;
+  readonly requestResolved: () => HttpError;
+}
+
 export interface ConversationRouteDependencies {
   readonly database: DatabaseClient;
+  /** Absent where the media module is not wired; then the announcement route is not registered. */
+  readonly portalUploads?: PortalUploadsPort;
   readonly auth: AuthInstance;
   readonly identityStorage?: IdentityStorageClient;
   readonly photoUrlExpirySeconds: number;
@@ -427,6 +446,51 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
   app.post('/clients/:clientId/threads', portalGuards(portalOpenThreadDocs), openThreadHandler(portalScope, portalOpenThreadDocs));
   app.get('/clients/:clientId/threads/:threadId/comments', portalGuards(portalListCommentsDocs), listCommentsHandler(portalScope, portalListCommentsDocs));
   app.post('/clients/:clientId/threads/:threadId/comments', portalGuards(portalAddCommentDocs), addCommentHandler(portalScope, portalAddCommentDocs));
+
+  const portalUploads = dependencies.portalUploads;
+  if (portalUploads !== undefined) {
+    const announceDocs = {
+      permission: null,
+      responseStatus: 201,
+      schemas: { params: ClientThreadPathParamsSchema, body: AnnouncePortalMaterialUploadsRequestSchema, response: AnnouncePortalMaterialUploadsResponseSchema }
+    } satisfies DocumentedRouteConfig;
+
+    // The client says she sent a batch: one comment of hers on the request, worded here from the files she confirmed, and that comment is
+    // what notifies the agency. Nothing marks a file as announced, so the same batch announced twice is two comments.
+    app.post('/clients/:clientId/material-requests/:threadId/uploads/announce', portalGuards(announceDocs), async (request, reply) => {
+      const scope = portalScope(request);
+      const threadId = uuidFromRoute(request, 'threadId', 'Thread not found.');
+      const body = routeBody(announceDocs, request);
+
+      const outcome = await write(request, scope, { threadId }, async (transaction) => {
+        const files = await portalUploads.listOwnUploads(transaction, { clientId: scope.clientId, threadId });
+        const thread = await loadThreadRow(transaction, { clientId: scope.clientId, threadId });
+        if (thread === undefined) return { kind: 'thread-not-found' as const };
+        if (!thread.is_open) return { kind: 'request-resolved' as const };
+        const confirmed = new Map(files.filter((file) => file.status === 'confirmed').map((file) => [file.id, file]));
+        const picked = body.assetIds.map((id) => confirmed.get(id));
+        if (picked.some((file) => file === undefined)) return { kind: 'files-not-found' as const };
+
+        const text = announcementBody({
+          images: picked.filter((file) => file?.category === 'image').length,
+          audios: picked.filter((file) => file?.category === 'audio').length
+        });
+        const added = await addComment(transaction, scope, { threadId, body: text });
+        if (added.kind !== 'ok') return added;
+        const comment = await loadComment(transaction, { clientId: scope.clientId, threadId, commentId: added.commentId });
+        const authors = await loadAuthors(transaction, [threadId]);
+        if (comment === undefined) throw new Error('The comment that was just written could not be read back.');
+        return { kind: 'ok' as const, comment, authors };
+      }).catch((error: unknown) => {
+        throw portalUploads.translateError(error) ?? error;
+      });
+      if (outcome.kind === 'files-not-found') throw portalUploads.requestNotFound();
+      if (outcome.kind === 'request-resolved') throw portalUploads.requestResolved();
+      if (outcome.kind !== 'ok') throw refusalError(outcome.kind);
+
+      return reply.status(201).send(routeResponse(announceDocs, request, await commentFrom(request, outcome.comment, threadId, outcome.authors)));
+    });
+  }
 
   app.get('/clients/:clientId/material-requests', portalGuards(portalListMaterialRequestsDocs), async (request, reply) => {
     const scope = portalScope(request);
