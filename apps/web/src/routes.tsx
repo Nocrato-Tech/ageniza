@@ -17,6 +17,7 @@ import { ClientContentsTab, hasLegacyContentsQuery } from './client-contents.js'
 import { ClientDetailPage, ClientGeneralTab } from './client-detail.js';
 import { ClientMediaTab } from './client-media.js';
 import { ClientsPage } from './clients.js';
+import { CollaboratorPage } from './collaborator-page.js';
 import { CollaboratorsPage } from './collaborators.js';
 import { SubscriptionPage } from './subscription.js';
 import { NotificationsPage } from './notifications.js';
@@ -175,6 +176,11 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="colaboradores" element={
         <AgencyPermissionRoute permission="colaborador.visualizar">
           <CollaboratorsPage />
+        </AgencyPermissionRoute>
+      } />
+      <Route path="colaboradores/:membershipId" element={
+        <AgencyPermissionRoute permission="colaborador.visualizar">
+          <CollaboratorPage />
         </AgencyPermissionRoute>
       } />
       <Route path="notificacoes" element={<NotificationsPage />} />
