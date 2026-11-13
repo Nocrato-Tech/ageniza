@@ -23303,7 +23303,7 @@
       "patch": {
         "operationId": "updatePersona",
         "summary": "Edita uma persona",
-        "description": "Aceita um subconjunto dos campos; `null` limpa. Persona de outro cliente é o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "Aceita um subconjunto dos campos; `null` limpa. Persona de outro cliente é o mesmo 404. Persona arquivada é somente leitura: responde 409 `PERSONA_READ_ONLY` e nada muda; para editar, desarquive antes.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
         "tags": [
           "clients"
         ],
@@ -23462,7 +23462,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_READ_ONLY: Esta persona está arquivada. Desarquive-a para editar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -23506,7 +23506,7 @@
       "post": {
         "operationId": "archivePersona",
         "summary": "Arquiva uma persona",
-        "description": "A persona sai do portal e as conversas dela ficam somente leitura; o histórico continua na agência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "A persona sai do portal e as conversas dela ficam somente leitura; o histórico continua na agência. Arquivar uma persona que já está arquivada não muda o status e responde 409 `PERSONA_READ_ONLY`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
         "tags": [
           "clients"
         ],
@@ -23632,7 +23632,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_READ_ONLY: Esta persona está arquivada. Desarquive-a para editar.",
             "content": {
               "application/json": {
                 "schema": {

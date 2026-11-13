@@ -662,6 +662,9 @@ export const isRowLevelSecurityViolation = (error: unknown): boolean =>
 /** The trigger of 20261007001400 found the client no longer active after waiting for the archive that held it. */
 export const isClientNoLongerActive = (error: unknown): boolean => databaseErrorCode(error) === 'A0020';
 
+/** The trigger of 20261113000300 refused a write to a persona that is archived (also after waiting for the archive that held it). */
+export const isPersonaReadOnly = (error: unknown): boolean => databaseErrorCode(error) === 'A0137';
+
 export const loadBrandSections = async (
   transaction: ClientTransaction,
   input: { readonly agencyId: string; readonly clientId: string }

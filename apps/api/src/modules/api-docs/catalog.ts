@@ -360,6 +360,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   CLIENT_NOT_ARCHIVED: 'Este cliente já está ativo.',
   CLOSING_DATE_NOT_SET: 'Este cliente não tem encerramento agendado.',
   PERSONA_ARCHIVED: 'Persona arquivada: a conversa é somente leitura.',
+  PERSONA_READ_ONLY: 'Esta persona está arquivada. Desarquive-a para editar.',
   SECTION_NOT_FILLED: 'Esta seção ainda não foi preenchida pela agência.',
   CONTENT_PERIOD_TOO_LARGE: 'O período tem mais de 500 itens. Consulte um período menor.',
   CONTENT_NOT_EDITABLE: 'Conteúdo publicado ou cancelado não pode ser editado.',
@@ -3263,7 +3264,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'updatePersona',
     module: 'clients',
     summary: 'Edita uma persona',
-    description: 'Aceita um subconjunto dos campos; `null` limpa. Persona de outro cliente é o mesmo 404.',
+    description: 'Aceita um subconjunto dos campos; `null` limpa. Persona de outro cliente é o mesmo 404. Persona arquivada é somente leitura: responde 409 `PERSONA_READ_ONLY` e nada muda; para editar, desarquive antes.',
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.operar',
     params: AgencyClientPersonaPathParamsSchema,
@@ -3277,7 +3278,8 @@ path: '/agencies/:agencyId/roles',
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Persona not found.' },
-      { status: 409, code: 'CLIENT_ARCHIVED' }
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'PERSONA_READ_ONLY' }
     ]
   },
   {
@@ -3286,7 +3288,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'archivePersona',
     module: 'clients',
     summary: 'Arquiva uma persona',
-    description: 'A persona sai do portal e as conversas dela ficam somente leitura; o histórico continua na agência.',
+    description: 'A persona sai do portal e as conversas dela ficam somente leitura; o histórico continua na agência. Arquivar uma persona que já está arquivada não muda o status e responde 409 `PERSONA_READ_ONLY`.',
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.operar',
     params: AgencyClientPersonaPathParamsSchema,
@@ -3297,7 +3299,8 @@ path: '/agencies/:agencyId/roles',
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Persona not found.' },
-      { status: 409, code: 'CLIENT_ARCHIVED' }
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'PERSONA_READ_ONLY' }
     ]
   },
   {
