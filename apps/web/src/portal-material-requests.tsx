@@ -6,12 +6,13 @@ import {
   CommentListResponseSchema,
   CommentSchema,
   MaterialRequestListResponseSchema,
+  isMaterialRequestOverdue,
   type MaterialRequest
 } from '@ageniza/contracts';
-import { Button, EmptyState, Modal, Skeleton } from '@ageniza/ui';
+import { Button, EmptyState, LateBadge, Modal, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
-import { todayInSaoPaulo } from './content-dates.js';
+import { dayOfMonthLabel, todayInSaoPaulo } from './content-dates.js';
 import { CommentItem, Composer, MATERIAL_REQUEST_LABEL, MaterialDue, routesOf, writeError } from './conversation.js';
 import { useApiClient } from './http.js';
 import { PORTAL_PAUSED_REASON } from './plan-notice.js';
@@ -94,19 +95,21 @@ export function RequestThread({ clientId, request, onClose }: { clientId: string
   </Modal>;
 }
 
-function Request({ request, agencyName, onOpen }: { request: MaterialRequest; agencyName: string; onOpen: () => void }) {
+function Request({ request, today, onOpen }: { request: MaterialRequest; today: string; onOpen: () => void }) {
   const id = useId();
-  const today = todayInSaoPaulo();
+  // A request without a title (made before they had one) is told by its text; with a title, the text is the description.
+  const described = request.title !== null;
+  const overdue = isMaterialRequestOverdue(request, today);
   return <li className="portal-request">
     <span className="portal-request__icon" aria-hidden="true"><Inbox /></span>
     <div className="portal-request__text">
-      <p id={`${id}-body`} className="portal-request__body">{request.body}</p>
-      <p className="portal-request__meta">
-        <span>Pedido de {agencyName}</span>
-        <MaterialDue thread={request} today={today} />
-      </p>
+      <h3 id={`${id}-title`} className="portal-request__title">{request.title ?? request.body}</h3>
+      {described && <p className="portal-request__meta">{request.body}</p>}
+      {request.dueOn !== null && <p className="portal-request__due">até {dayOfMonthLabel(request.dueOn)}{overdue && <> <LateBadge>venceu</LateBadge></>}</p>}
     </div>
-    <Button variant="secondary" id={`${id}-button`} aria-labelledby={`${id}-button ${id}-body`} onClick={onOpen}>Responder</Button>
+    <div className="portal-request__actions">
+      <Button variant="ghost" id={`${id}-button`} aria-labelledby={`${id}-button ${id}-title`} onClick={onOpen}>Ver o pedido</Button>
+    </div>
   </li>;
 }
 
@@ -117,7 +120,6 @@ function Request({ request, agencyName, onOpen }: { request: MaterialRequest; ag
  */
 export function PortalMaterialRequests({ clientId }: { clientId: string }) {
   const httpClient = useApiClient();
-  const client = usePortalClient();
   const [openId, setOpenId] = useState<string | null>(null);
   const requests = useQuery({
     queryKey: portalMaterialRequestsKey(clientId),
@@ -131,9 +133,9 @@ export function PortalMaterialRequests({ clientId }: { clientId: string }) {
   // A retry keeps the failure and its button mounted (and the focus on it): only the first read is nothing.
   if (requests.isPending && requests.errorUpdateCount === 0) return null;
   if (requests.data === undefined) {
-    return <section className="portal-section portal-requests" aria-labelledby="portal-requests-title">
-      <h2 id="portal-requests-title" className="portal-section__title">A agência pediu</h2>
-      <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar os pedidos da agência."
+    return <section className="portal-requests" aria-labelledby="portal-requests-title">
+      <h2 id="portal-requests-title" className="portal-requests__title">A agência pediu</h2>
+      <EmptyState kind="failure" mascot className="portal-empty" headingLevel={3} title="Não foi possível carregar os pedidos da agência."
         retrying={requests.isFetching}
         onRetry={() => { void requests.refetch(); }}
       />
@@ -142,13 +144,17 @@ export function PortalMaterialRequests({ clientId }: { clientId: string }) {
   const { data, meta } = requests.data;
   if (data.length === 0) return null;
   const current = openId === null ? undefined : data.find((request) => request.threadId === openId);
-  return <section className="portal-section portal-requests" aria-labelledby="portal-requests-title">
+  const today = todayInSaoPaulo();
+  return <section className="portal-requests" aria-labelledby="portal-requests-title">
     <div className="portal-requests__head">
-      <h2 id="portal-requests-title" className="portal-section__title">A agência pediu</h2>
+      <div>
+        <h2 id="portal-requests-title" className="portal-requests__title">A agência pediu</h2>
+        <p className="portal-requests__lead">Material que falta para os próximos posts.</p>
+      </div>
       <span className="portal-requests__count"><Inbox aria-hidden="true" />{meta.totalItems} {meta.totalItems === 1 ? 'pedido' : 'pedidos'}</span>
     </div>
     <ul className="portal-requests__list">
-      {data.map((request) => <Request key={request.threadId} request={request} agencyName={client.agencyName} onOpen={() => setOpenId(request.threadId)} />)}
+      {data.map((request) => <Request key={request.threadId} request={request} today={today} onOpen={() => setOpenId(request.threadId)} />)}
     </ul>
     {meta.totalItems > data.length && <p className="portal-requests__more">Mostrando {data.length} de {meta.totalItems}</p>}
     {current !== undefined && <RequestThread clientId={clientId} request={current} onClose={() => setOpenId(null)} />}

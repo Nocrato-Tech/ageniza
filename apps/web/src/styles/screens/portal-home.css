@@ -6,6 +6,20 @@
   min-width: 0;
 }
 
+.portal-home__head {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.portal-home__eyebrow {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .portal-home__greeting {
   margin: 0;
   font: var(--display-lg);
@@ -13,30 +27,23 @@
   overflow-wrap: anywhere;
 }
 
-.portal-home__main {
+.portal-home__lede {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+/* "A agência pediu" and the good news side by side on a wide screen; either one alone takes the whole row. */
+.portal-home__split {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
   min-width: 0;
+  align-items: start;
 }
 
-.portal-home__main:empty {
+.portal-home__split:empty {
   display: none;
-}
-
-.portal-home__calm {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-/* The week is a card of the screen, as "A agência pediu" is. */
-.portal-home__week {
-  min-width: 0;
-  align-content: start;
-  padding: var(--space-6);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
 }
 
 /* What waits for the person, in the lilac block of the board: the posts as white cards on it, the one action under them. */
@@ -109,9 +116,54 @@
   font: var(--title-md);
 }
 
-.portal-postcard .approval-round__due {
+.portal-postcard__tag {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.portal-postcard__due {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--text-secondary);
   font: var(--caption);
   font-weight: 600;
+}
+
+.portal-postcard__due svg {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.portal-postcard__due--urgent {
+  color: var(--text-danger);
+}
+
+.portal-hero__text {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.portal-hero__lede {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+.portal-hero__cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  min-width: 0;
+}
+
+.portal-hero__hint {
+  color: var(--text-secondary);
+  font: var(--body-md);
 }
 
 /* The loose 3D icon of an empty state: a block of the tone of its family, the icon in the middle and the text under it. */
@@ -215,8 +267,10 @@
   height: 1.25rem;
 }
 
-/* "A agência pediu": the open requests for material, each a block with the text, who asked and by when. */
+/* "A agência pediu": the open requests for material, each a row with the mark, what was asked and by when, and the way in. */
 .portal-requests {
+  display: grid;
+  gap: var(--space-2);
   min-width: 0;
   padding: var(--space-6);
   border: 1px solid var(--border-default);
@@ -224,14 +278,21 @@
   background: var(--bg-surface);
 }
 
-.portal-requests .portal-section__title {
+.portal-requests__title {
+  margin: 0;
   font: var(--heading-lg);
+}
+
+.portal-requests__lead {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
 }
 
 .portal-requests__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-2) var(--space-3);
 }
@@ -261,7 +322,6 @@
   list-style: none;
 }
 
-/* A request is a row: the mark, what was asked and by when, and the one action under them. */
 .portal-request {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -274,19 +334,19 @@
   border-top: 1px solid var(--border-default);
 }
 
-.portal-request > .ui-button {
-  grid-column: 1 / -1;
-  justify-self: start;
-}
-
 .portal-request__icon {
   display: grid;
   place-items: center;
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 3rem;
+  height: 3rem;
   border-radius: var(--radius-md);
-  background: var(--block-indigo-bg);
-  color: var(--block-indigo-fg);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+}
+
+.portal-request__icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 .portal-request__text {
@@ -295,28 +355,118 @@
   min-width: 0;
 }
 
-.portal-request__body {
+.portal-request__title {
   margin: 0;
-  font: var(--body-md);
-  font-weight: 600;
-  white-space: pre-wrap;
+  font: var(--title-md);
   overflow-wrap: anywhere;
 }
 
 .portal-request__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-3);
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.portal-request__due {
   margin: 0;
   color: var(--text-secondary);
-  font: var(--caption);
+  font: var(--body-md);
+}
+
+.portal-request__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .portal-requests__more {
   margin: 0;
   color: var(--text-secondary);
   font: var(--caption);
+}
+
+/* "Boa notícia": the month so far, in the teal block of good news. One mascot, one bar, one link. */
+.portal-win {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--color-teal-100);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(160deg, var(--block-teal-bg), var(--bg-surface) 120%);
+  color: var(--text-primary);
+}
+
+.portal-win__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-4);
+}
+
+.portal-win__head {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.portal-win__eyebrow {
+  margin: 0;
+  color: var(--block-teal-fg);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.portal-win__title {
+  margin: 0;
+  color: var(--block-teal-fg);
+  font: var(--heading-lg);
+  overflow-wrap: anywhere;
+}
+
+.portal-win .portal-win__mascot {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: 6.5rem;
+  object-fit: contain;
+}
+
+.portal-win__text {
+  margin: 0;
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.portal-win__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 2.75rem;
+  color: var(--block-teal-fg);
+  font: var(--label-md);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.portal-win__link svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+
+.portal-win__skeleton {
+  width: 100%;
+  height: 12rem;
 }
 
 .portal-today {
@@ -511,22 +661,6 @@
     margin: 0;
   }
 
-  .portal-home {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    gap: var(--space-6);
-    align-items: start;
-  }
-
-  .portal-home__greeting,
-  .portal-hero,
-  .portal-home__calm {
-    grid-column: 1 / -1;
-  }
-
-  .portal-home__main:empty + .portal-home__week {
-    grid-column: 1 / -1;
-  }
-
   .portal-hero {
     gap: var(--space-6);
     padding: var(--space-8);
@@ -543,3 +677,8 @@
   }
 }
 
+@media (min-width: 80rem) {
+  .portal-home__split:has(> .portal-requests + .portal-win) {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
+}
