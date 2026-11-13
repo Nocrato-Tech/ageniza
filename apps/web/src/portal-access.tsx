@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, CircleCheck, CircleDashed, Clock, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, CircleCheck, CircleDashed, Clock, Mail, Send, UserMinus, UserPlus } from 'lucide-react';
 import { useLocation, useSearchParams, type SetURLSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 
@@ -14,14 +14,14 @@ import {
   type ClientPendingInvitation,
   type ClientDetailResponse
 } from '@ageniza/contracts';
-import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, LiveStatus, Modal, Pagination, Pill, Skeleton, TextInput, useFormErrors } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, IconButton, LiveStatus, Modal, Pagination, Pill, Skeleton, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth, useClientDetail } from './client-detail.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { pendingInviteExpiryLabel } from './pending-invitations.js';
-import { PortalAccessShare } from './portal-access-share.js';
+import { PortalAccessShare, PortalSharePanel } from './portal-access-share.js';
 import { lastAccessLabel } from './portal-last-access.js';
 import { NotFoundPage } from './status-pages.js';
 
@@ -123,7 +123,15 @@ function MemberName({ member }: { member: ClientMember }) {
 /** The state of the access beside its words, so the icon's shape and not its colour tells entered, link only and never apart. */
 function LastAccess({ member }: { member: ClientMember }) {
   const Icon = member.entered ? CircleCheck : member.lastEnteredAt === null ? CircleDashed : Clock;
-  return <span className="portal-access__last"><Icon aria-hidden="true" />{lastAccessLabel(member)}</span>;
+  return <span className="portal-access__last"><Icon aria-hidden="true" />{`${lastAccessLabel(member)} · desde ${formatAgencyDayMonth(member.since)}`}</span>;
+}
+
+/** The name the agency typed stays on screen until the person enters; the words say why she is still not in. */
+function MemberTitle({ member }: { member: ClientMember }) {
+  return <span className="portal-access__title">
+    <MemberName member={member} />
+    {!member.entered && member.name !== null && <Pill className="portal-access__not-entered">{NOT_ENTERED}</Pill>}
+  </span>;
 }
 
 /** The "Adicionar pessoa" modal (`specs/clientes.md` §7): the e-mail, and nothing else. The access is valid on the spot. */
@@ -366,147 +374,158 @@ export function ClientAccessTab() {
   const hasRemoved = removed.data !== undefined && removedTotal > 0;
   // With nobody listed the empty state carries the one primary action, so the header's drops to secondary.
   const emptyList = members.data !== undefined && memberRows.length === 0;
+  // The ready message is shown for the first person who has not entered, who is the one the agency is about to write to.
+  const featured = memberRows.find((member) => !member.entered) ?? memberRows[0];
+  const invitationsTotal = invitations.data?.meta.totalItems ?? invitationRows.length;
+
+  const failure = (message: string, retry: () => void, retrying: boolean) =>
+    <EmptyState kind="failure" mascot headingLevel={3} title={message} retrying={retrying} onRetry={retry} />;
+
+  const invitesBlock = invitations.isPending ? (
+    <section className="portal-access__invites" aria-labelledby="portal-invites-title">
+      <h3 id="portal-invites-title">Convites aguardando aceite</h3>
+      <ul className="portal-access__list" aria-hidden="true"><li><Skeleton /></li></ul>
+    </section>
+  ) : invitations.isError && invitations.error instanceof HttpClientError && [403, 404].includes(invitations.error.status ?? 0) ? null : invitations.isError ? (
+    <section className="portal-access__invites" aria-labelledby="portal-invites-title">
+      <h3 id="portal-invites-title">Convites aguardando aceite</h3>
+      {failure(INVITATIONS_FAILED, () => { void invitations.refetch(); }, invitations.isFetching)}
+    </section>
+  ) : invitationRows.length > 0 ? (
+    <section className="portal-access__invites" aria-labelledby="portal-invites-title">
+      <div className="portal-access__section-head"><h3 id="portal-invites-title">Convites aguardando aceite</h3><span className="portal-access__count">{invitationsTotal}</span></div>
+      <ul className="portal-access__list">
+        {invitationRows.map((invitation: ClientPendingInvitation) => <li key={invitation.invitationId} className="portal-access__ask">
+          <span className="portal-access__who">
+            <span className="portal-access__email-strong">{invitation.email}</span>
+            <span className="portal-access__email">{pendingInviteExpiryLabel(invitation.expiresAt)}</span>
+          </span>
+          <span className="portal-access__actions">
+            {activeClient && <Button
+              size="sm"
+              variant="secondary"
+              leadingIcon={<Send />}
+              aria-label={`Reenviar convite de ${invitation.email}`}
+              blockedReason={blocked}
+              loading={resendInvitation.isPending && resendInvitation.variables?.invitationId === invitation.invitationId}
+              onClick={() => { if (resending.current) return; resending.current = true; setActionError(undefined); resendInvitation.mutate(invitation); }}
+            >Reenviar</Button>}
+            {activeClient && canCancel && <Button
+              size="sm"
+              variant="danger-quiet"
+              aria-label={`Cancelar convite de ${invitation.email}`}
+              onClick={() => { setActionError(undefined); setPending({ kind: 'cancel', id: invitation.invitationId, name: invitation.email, email: invitation.email }); }}
+            >Cancelar</Button>}
+          </span>
+        </li>)}
+      </ul>
+      <Pagination page={invitations.data?.meta.page ?? 1} totalPages={invitations.data?.meta.totalPages ?? 1} onPageChange={(page) => { replacePage(setSearchParams, location.state, 'convites', page); }} />
+    </section>
+  ) : null;
+
+  const removedBlock = hasRemoved && <section className="portal-access__removed" aria-label="Pessoas removidas">
+    <div className="portal-access__section-head">
+      <div className="portal-access__section-title"><h3>Removidas</h3><span className="portal-access__count">{removedTotal}</span></div>
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-expanded={removedOpen}
+        aria-label={`${removedOpen ? 'Ocultar' : 'Mostrar'} removidas (${removedTotal})`}
+        trailingIcon={removedOpen ? <ChevronUp /> : <ChevronDown />}
+        onClick={() => setRemovedOpen(!removedOpen)}
+      >{removedOpen ? 'Ocultar' : 'Mostrar'}</Button>
+    </div>
+    {removedOpen && (removed.isPending ? (
+      <ul className="portal-access__list" aria-hidden="true">
+        {Array.from({ length: 2 }, (_value, index) => <li key={index}><Skeleton /></li>)}
+      </ul>
+    ) : removed.isError ? failure(MEMBERS_FAILED, () => { void removed.refetch(); }, removed.isFetching) : <>
+      <ul className="portal-access__list">
+        {removedRows.map((member: ClientMember) => <li key={member.accessId} className="portal-access__row">
+          <Avatar name={member.name ?? member.email} size="md" />
+          <span className="portal-access__who">
+            <MemberName member={member} />
+            <span className="portal-access__email">{member.email}</span>
+            <span className="portal-access__last">removido</span>
+          </span>
+          {activeClient && canRemove && <Button
+            size="sm"
+            variant="secondary"
+            aria-label={`Reativar o acesso de ${member.name ?? member.email}`}
+            blockedReason={blocked}
+            loading={changeMemberStatus.isPending && changeMemberStatus.variables?.id === member.accessId}
+            onClick={() => { setActionError(undefined); changeMemberStatus.mutate({ kind: 'reactivate', id: member.accessId, name: member.name ?? member.email }); }}
+          >Reativar</Button>}
+        </li>)}
+      </ul>
+      <Pagination page={removed.data?.meta.page ?? 1} totalPages={removed.data?.meta.totalPages ?? 1} onPageChange={(page) => { replacePage(setSearchParams, location.state, 'removidas', page); }} />
+    </>)}
+  </section>;
 
   return <section className="portal-access" aria-labelledby="portal-access-title">
     <header className="portal-access__header">
-      <h2 id="portal-access-title">Pessoas com acesso ao portal</h2>
-      {activeClient && <Button variant={emptyList ? 'secondary' : 'primary'} leadingIcon={<Plus />} blockedReason={blocked} onClick={() => { setAddedEmail(null); setResentTo(null); setAddOpen(true); }}>Adicionar pessoa</Button>}
+      <div className="portal-access__heading">
+        <h2 id="portal-access-title">Pessoas com acesso ao portal</h2>
+      </div>
+      {activeClient && <Button variant={emptyList ? 'secondary' : 'primary'} leadingIcon={<UserPlus />} blockedReason={blocked} onClick={() => { setAddedEmail(null); setResentTo(null); setAddOpen(true); }}>Adicionar pessoa</Button>}
     </header>
 
     {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
     {addedEmail !== null && <LiveStatus>{addedEmail} agora tem acesso ao portal deste cliente.</LiveStatus>}
     {resentTo !== null && <LiveStatus>{resentTo}</LiveStatus>}
 
-    {members.isPending ? (
-      <ul className="portal-access__list" aria-hidden="true">
-        {Array.from({ length: 3 }, (_value, index) => <li key={index}><Skeleton /></li>)}
-      </ul>
-    ) : members.isError ? (
-      <div className="portal-access__error" role="alert">
-        <p>{MEMBERS_FAILED}</p>
-        <Button onClick={() => { void members.refetch(); }}>Tentar de novo</Button>
-      </div>
-    ) : memberRows.length === 0 ? (
-      <EmptyState
-        className="portal-access__empty"
-        mascot={activeClient}
-        headingLevel={3}
-        title="Ninguém deste cliente acessa o portal ainda"
-        description={activeClient ? ADD_HINT : undefined}
-        action={activeClient ? <Button leadingIcon={<Plus />} blockedReason={blocked} onClick={() => { setAddedEmail(null); setAddOpen(true); }}>Adicionar pessoa</Button> : undefined}
-      />
-    ) : <>
-      <ul className="portal-access__list">
-        {memberRows.map((member: ClientMember) => <li key={member.accessId} className="portal-access__row">
-          <Avatar name={member.name ?? member.email} size="md" />
-          <span className="portal-access__who">
-            <MemberName member={member} />
-            <span className="portal-access__email">{member.email}</span>
-            <LastAccess member={member} />
-          </span>
-          <span className="portal-access__since">desde {formatAgencyDayMonth(member.since)}</span>
-          <span className="portal-access__actions">
-            {activeClient && <PortalAccessShare member={member} clientName={client.name} />}
-            {activeClient && !member.entered && <Button
-              size="sm"
-              variant="ghost"
-              aria-label={`Reenviar e-mail para ${member.email}`}
-              blockedReason={blocked}
-              loading={resendEmail.isPending && resendEmail.variables?.accessId === member.accessId}
-              onClick={() => { if (resending.current) return; resending.current = true; setActionError(undefined); resendEmail.mutate(member); }}
-            >Reenviar e-mail</Button>}
-            {activeClient && canRemove && <Button
-              size="sm"
-              variant="ghost"
-              aria-label={`Remover o acesso de ${member.name ?? member.email}`}
-              onClick={() => { setActionError(undefined); setPending({ kind: 'remove', id: member.accessId, name: member.name ?? member.email }); }}
-            >Remover</Button>}
-          </span>
-        </li>)}
-      </ul>
-      <Pagination page={members.data?.meta.page ?? 1} totalPages={members.data?.meta.totalPages ?? 1} onPageChange={(page) => { replacePage(setSearchParams, location.state, 'membros', page); }} />
-    </>}
-
-    {hasRemoved && (removedOpen
-      ? <section className="portal-access__removed" aria-label="Pessoas removidas">
-        <header className="portal-access__removed-header">
-          <h3>{`Removidas (${removedTotal})`}</h3>
-          <Button size="sm" variant="ghost" aria-expanded={removedOpen} onClick={() => setRemovedOpen(false)}>Ocultar</Button>
-        </header>
-        {removed.isPending ? (
+    <div className="portal-access__split">
+      <div className="portal-access__main">
+        {members.isPending ? (
           <ul className="portal-access__list" aria-hidden="true">
-            {Array.from({ length: 2 }, (_value, index) => <li key={index}><Skeleton /></li>)}
+            {Array.from({ length: 3 }, (_value, index) => <li key={index}><Skeleton /></li>)}
           </ul>
-        ) : removed.isError ? (
-          <div className="portal-access__error" role="alert">
-            <p>{MEMBERS_FAILED}</p>
-            <Button onClick={() => { void removed.refetch(); }}>Tentar de novo</Button>
-          </div>
+        ) : members.isError ? failure(MEMBERS_FAILED, () => { void members.refetch(); }, members.isFetching) : memberRows.length === 0 ? (
+          <EmptyState
+            className="portal-access__empty"
+            mascot={activeClient}
+            headingLevel={3}
+            title="Ninguém deste cliente acessa o portal ainda"
+            description={activeClient ? ADD_HINT : undefined}
+            action={activeClient ? <Button leadingIcon={<UserPlus />} blockedReason={blocked} onClick={() => { setAddedEmail(null); setAddOpen(true); }}>Adicionar pessoa</Button> : undefined}
+          />
         ) : <>
           <ul className="portal-access__list">
-            {removedRows.map((member: ClientMember) => <li key={member.accessId} className="portal-access__row">
+            {memberRows.map((member: ClientMember) => <li key={member.accessId} className="portal-access__row">
               <Avatar name={member.name ?? member.email} size="md" />
               <span className="portal-access__who">
-                <MemberName member={member} />
+                <MemberTitle member={member} />
                 <span className="portal-access__email">{member.email}</span>
+                <LastAccess member={member} />
               </span>
-              <span className="portal-access__since">removido</span>
-              {activeClient && canRemove && <Button
-                size="sm"
-                variant="secondary"
-                aria-label={`Reativar o acesso de ${member.name ?? member.email}`}
-                blockedReason={blocked}
-                loading={changeMemberStatus.isPending && changeMemberStatus.variables?.id === member.accessId}
-                onClick={() => { setActionError(undefined); changeMemberStatus.mutate({ kind: 'reactivate', id: member.accessId, name: member.name ?? member.email }); }}
-              >Reativar</Button>}
+              <span className="portal-access__actions">
+                {activeClient && <PortalAccessShare member={member} clientName={client.name} primary={member.accessId === featured?.accessId} />}
+                {activeClient && !member.entered && <Button
+                  size="sm"
+                  variant="ghost"
+                  leadingIcon={<Mail />}
+                  aria-label={`Reenviar e-mail para ${member.email}`}
+                  blockedReason={blocked}
+                  loading={resendEmail.isPending && resendEmail.variables?.accessId === member.accessId}
+                  onClick={() => { if (resending.current) return; resending.current = true; setActionError(undefined); resendEmail.mutate(member); }}
+                >Reenviar e-mail</Button>}
+                {activeClient && canRemove && <IconButton
+                  label={`Remover o acesso de ${member.name ?? member.email}`}
+                  icon={<UserMinus />}
+                  onClick={() => { setActionError(undefined); setPending({ kind: 'remove', id: member.accessId, name: member.name ?? member.email }); }}
+                />}
+              </span>
             </li>)}
           </ul>
-          <Pagination page={removed.data?.meta.page ?? 1} totalPages={removed.data?.meta.totalPages ?? 1} onPageChange={(page) => { replacePage(setSearchParams, location.state, 'removidas', page); }} />
+          <Pagination page={members.data?.meta.page ?? 1} totalPages={members.data?.meta.totalPages ?? 1} onPageChange={(page) => { replacePage(setSearchParams, location.state, 'membros', page); }} />
         </>}
-      </section>
-      : <Button variant="ghost" aria-expanded={removedOpen} trailingIcon={<ChevronDown />} onClick={() => setRemovedOpen(true)}>{`Removidas (${removedTotal})`}</Button>)}
 
-    {invitations.isPending ? (
-      <section className="portal-access__invites" aria-labelledby="portal-invites-title">
-        <h3 id="portal-invites-title">Convites aguardando aceite</h3>
-        <ul className="portal-access__list" aria-hidden="true"><li><Skeleton /></li></ul>
-      </section>
-    ) : invitations.isError && invitations.error instanceof HttpClientError && [403, 404].includes(invitations.error.status ?? 0) ? null : invitations.isError ? (
-      <section className="portal-access__invites" aria-labelledby="portal-invites-title">
-        <h3 id="portal-invites-title">Convites aguardando aceite</h3>
-        <div className="portal-access__error" role="alert">
-          <p>{INVITATIONS_FAILED}</p>
-          <Button onClick={() => { void invitations.refetch(); }}>Tentar de novo</Button>
-        </div>
-      </section>
-    ) : invitationRows.length > 0 ? (
-      <section className="portal-access__invites" aria-labelledby="portal-invites-title">
-        <h3 id="portal-invites-title">Convites aguardando aceite</h3>
-        <ul className="portal-access__list">
-          {invitationRows.map((invitation: ClientPendingInvitation) => <li key={invitation.invitationId} className="portal-access__row">
-            <span className="portal-access__who"><span className="portal-access__email">{invitation.email}</span></span>
-            <Pill icon={<Clock />}>{pendingInviteExpiryLabel(invitation.expiresAt)}</Pill>
-            <span className="portal-access__actions">
-              {activeClient && <Button
-                size="sm"
-                variant="secondary"
-                aria-label={`Reenviar convite de ${invitation.email}`}
-                blockedReason={blocked}
-                loading={resendInvitation.isPending && resendInvitation.variables?.invitationId === invitation.invitationId}
-                onClick={() => { if (resending.current) return; resending.current = true; setActionError(undefined); resendInvitation.mutate(invitation); }}
-              >Reenviar</Button>}
-              {activeClient && canCancel && <Button
-                size="sm"
-                variant="ghost"
-                aria-label={`Cancelar convite de ${invitation.email}`}
-                onClick={() => { setActionError(undefined); setPending({ kind: 'cancel', id: invitation.invitationId, name: invitation.email, email: invitation.email }); }}
-              >Cancelar</Button>}
-            </span>
-          </li>)}
-        </ul>
-        <Pagination page={invitations.data?.meta.page ?? 1} totalPages={invitations.data?.meta.totalPages ?? 1} onPageChange={(page) => { replacePage(setSearchParams, location.state, 'convites', page); }} />
-      </section>
-    ) : null}
+        {invitesBlock}
+        {removedBlock}
+      </div>
+
+      {activeClient && featured !== undefined && <PortalSharePanel member={featured} clientName={client.name} />}
+    </div>
 
     <ConfirmDialog
       open={pending?.kind === 'remove'}

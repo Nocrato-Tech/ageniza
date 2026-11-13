@@ -106,7 +106,10 @@ const donaAposentada: PersonaFixture = {
   status: 'archived'
 };
 
-const ANY_USER = { id: 'ffffffff-1111-4111-8111-111111111111', name: 'Ana' };
+/** What the create modal sends for the fields of the profile that were left empty. */
+const emptyCreateProfile = { age: null, occupation: null, location: null, traits: [], whereTheyAre: null, toneThatWorks: null };
+
+const ANY_USER ={ id: 'ffffffff-1111-4111-8111-111111111111', name: 'Ana' };
 // 01:30 UTC of the 13th is 22:30 of the 12th in São Paulo: the label must read 12/10.
 const BRANDING_EDITED_AT = '2026-10-13T01:30:00.000Z';
 
@@ -273,12 +276,12 @@ describe('brand study tab (#138)', () => {
     const { container } = renderStudy(impl);
 
     await screen.findByRole('heading', { name: 'Estudo de marca' });
-    expect(screen.getByText('5 de 7 preenchidas')).toBeTruthy();
+    expect(screen.getByText('5 de 7')).toBeTruthy();
     const nav = screen.getByRole('navigation', { name: 'Seções do estudo de marca' });
     const links = within(nav).getAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual([
       'Branding preenchida',
-      'Tom de voz não preenchida',
+      'Tom de voz não preenchida, a próxima',
       'Cores preenchida',
       'Posicionamento não preenchida',
       'Arquétipo preenchida',
@@ -483,13 +486,13 @@ describe('brand study tab (#138)', () => {
     });
     const { container } = renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
-    expect(screen.getByText('5 de 7 preenchidas')).toBeTruthy();
+    expect(screen.getByText('5 de 7')).toBeTruthy();
 
     fireEvent.click(within(await sectionCard(container, 'Tom de voz')).getByRole('button', { name: 'Preencher Tom de voz' }));
     fireEvent.change(within(await sectionCard(container, 'Tom de voz')).getByRole('textbox', { name: 'Editar Tom de voz' }), { target: { value: 'Falamos simples' } });
     fireEvent.click(within(await sectionCard(container, 'Tom de voz')).getByRole('button', { name: 'Salvar' }));
 
-    expect(await screen.findByText('6 de 7 preenchidas')).toBeTruthy();
+    expect(await screen.findByText('6 de 7')).toBeTruthy();
     expect(within(await sectionCard(container, 'Tom de voz')).getByText('editado por Ana · 12/10')).toBeTruthy();
     // The General tab's counter comes from the invalidated detail query, not a page reload.
     fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
@@ -518,7 +521,7 @@ describe('brand study tab (#138)', () => {
     });
     const { container } = renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
-    expect(screen.getByText('4 de 7 preenchidas')).toBeTruthy();
+    expect(screen.getByText('4 de 7')).toBeTruthy();
     expect(within(await sectionCard(container, 'Cores')).getByText('Ainda não preenchida')).toBeTruthy();
 
     fireEvent.click(within(await sectionCard(container, 'Cores')).getByRole('button', { name: 'Preencher Cores' }));
@@ -537,7 +540,7 @@ describe('brand study tab (#138)', () => {
     await waitFor(() => expect(within(panelOf(container, 'Cores')).queryByLabelText('Nome da cor 1')).toBeNull());
     expect(within(await sectionCard(container, 'Cores')).getByText('#112233')).toBeTruthy();
     expect(within(await sectionCard(container, 'Cores')).getByText('editado por Ana · 12/10')).toBeTruthy();
-    expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
+    expect(await screen.findByText('5 de 7')).toBeTruthy();
     fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
     await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('5 de 7'));
 
@@ -550,7 +553,7 @@ describe('brand study tab (#138)', () => {
     fireEvent.click(within(await sectionCard(container, 'Cores')).getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1]).toEqual({ colors: [] });
-    expect(await screen.findByText('4 de 7 preenchidas')).toBeTruthy();
+    expect(await screen.findByText('4 de 7')).toBeTruthy();
     await waitFor(() => expect(within(panelOf(container, 'Cores')).getByText('Ainda não preenchida')).toBeTruthy());
   });
 
@@ -608,7 +611,7 @@ describe('brand study tab (#138)', () => {
     });
     const { container } = renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
-    expect(screen.getByText('4 de 7 preenchidas')).toBeTruthy();
+    expect(screen.getByText('4 de 7')).toBeTruthy();
 
     fireEvent.click(within(await sectionCard(container, 'Arquétipo')).getByRole('button', { name: 'Preencher Arquétipo' }));
     fireEvent.change(within(await sectionCard(container, 'Arquétipo')).getByRole('combobox', { name: 'Arquétipo' }), { target: { value: 'hero' } });
@@ -618,7 +621,7 @@ describe('brand study tab (#138)', () => {
     expect(await within(await sectionCard(container, 'Arquétipo')).findByText('Herói')).toBeTruthy();
     expect(within(await sectionCard(container, 'Arquétipo')).queryByRole('combobox')).toBeNull();
     expect(within(await sectionCard(container, 'Arquétipo')).getByText('editado por Ana · 12/10')).toBeTruthy();
-    expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
+    expect(await screen.findByText('5 de 7')).toBeTruthy();
     fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
     await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('5 de 7'));
   });
@@ -715,7 +718,7 @@ describe('brand study tab (#138)', () => {
     await screen.findByRole('heading', { name: 'Estudo de marca' });
     await openSection('Personas');
     expect(screen.getByText('Nenhuma persona ainda')).toBeTruthy();
-    expect(screen.getByText('4 de 7 preenchidas')).toBeTruthy();
+    expect(screen.getByText('4 de 7')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Nova persona' }));
     const dialog = await screen.findByRole('dialog', { name: 'Nova persona' });
@@ -735,11 +738,11 @@ describe('brand study tab (#138)', () => {
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Descrição' }), { target: { value: 'Dona da padaria' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
 
-    await waitFor(() => expect(bodies).toEqual([{ name: 'Dona Maria', description: 'Dona da padaria', pains: null, desires: null, objections: null }]));
+    await waitFor(() => expect(bodies).toEqual([{ name: 'Dona Maria', description: 'Dona da padaria', pains: null, desires: null, objections: null, ...emptyCreateProfile }]));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByRole('link', { name: /Dona Maria/ })).toBeTruthy();
     // The counter here and on the General tab follow the invalidated study and detail.
-    expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
+    expect(await screen.findByText('5 de 7')).toBeTruthy();
     fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
     await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('5 de 7'));
   });
@@ -813,12 +816,14 @@ describe('brand study tab (#138)', () => {
     expect(probe.search).toBe(`?secao=personas&persona=${donaMaria.id}`);
     expect(profile.querySelector('.brand-persona__identity .ui-avatar')?.textContent).toBe('DM');
     expect(within(profile).getByText('Dona da padaria')).toBeTruthy();
-    // Pains, desires and objections are one card each, titled by the field.
-    const cards = Array.from(profile.querySelectorAll<HTMLElement>('.brand-persona__card'));
-    expect(cards.map((card) => [card.querySelector('h4')?.textContent, card.querySelector('p')?.textContent])).toEqual([
-      ['Dores', 'Pouco tempo'],
-      ['Desejos', 'Clientes fiéis'],
-      ['Objeções', 'Preço']
+    // One row for each field, titled by it; what was never filled says so.
+    const rows = Array.from(profile.querySelectorAll<HTMLElement>('.brand-persona__row'));
+    expect(rows.map((row) => [row.querySelector('h4')?.textContent, row.querySelector('p')?.textContent])).toEqual([
+      ['Dor', 'Pouco tempo'],
+      ['Desejo', 'Clientes fiéis'],
+      ['Objeção', 'Preço'],
+      ['Onde está', 'Não informado'],
+      ['Tom que funciona', 'Não informado']
     ]);
     const area = within(profile).getByRole('region', { name: 'Conversas sobre Dona Maria' });
     await waitFor(() => expect(within(area).getByText('Nenhuma conversa sobre esta parte')).toBeTruthy());
@@ -854,7 +859,7 @@ describe('brand study tab (#138)', () => {
     expect(within(archived).getByRole('button', { name: 'Desarquivar Dona Maria' })).toBeTruthy();
     expect(within(archived).getByRole('button', { name: 'Desarquivar Dona Aposentada' })).toBeTruthy();
     // Archiving the last active persona moves the counter, here and on the General tab.
-    expect(await screen.findByText('4 de 7 preenchidas')).toBeTruthy();
+    expect(await screen.findByText('4 de 7')).toBeTruthy();
     fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
     await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('4 de 7'));
   });
@@ -935,7 +940,7 @@ describe('brand study tab (#138)', () => {
     });
     renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
-    expect(screen.getByText('4 de 7 preenchidas')).toBeTruthy();
+    expect(screen.getByText('4 de 7')).toBeTruthy();
     await openSection('Personas');
 
     fireEvent.click(screen.getByRole('button', { name: 'Arquivadas (1)' }));
@@ -947,7 +952,7 @@ describe('brand study tab (#138)', () => {
     expect(await screen.findByRole('link', { name: /Dona Aposentada/ })).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Arquivadas (1)' })).toBeNull());
     // The counter here and on the General tab follow the invalidated study and detail.
-    expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
+    expect(await screen.findByText('5 de 7')).toBeTruthy();
     fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
     await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('5 de 7'));
   });
@@ -1272,9 +1277,10 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
     expect(probe.search).toBe(`?secao=personas&persona=${donaMaria.id}`);
     expect(probe.state).toEqual({ clientListUrl: roster });
     expect(document.activeElement).toBe(name);
-    // The profile has no grid and no "Nova persona": one thing at a time.
-    expect(screen.queryByRole('button', { name: 'Nova persona' })).toBeNull();
-    expect(screen.queryByRole('link', { name: /Dona Maria/ })).toBeNull();
+    // The list stays beside the profile, with the open persona marked, and the way to add another stays too.
+    expect(screen.getByRole('button', { name: 'Nova persona' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Dona Maria/ }).getAttribute('aria-current')).toBe('true');
+    expect(screen.getByRole('complementary', { name: 'Perfil de Dona Maria' })).toBeTruthy();
 
     const back = screen.getByRole('link', { name: 'Voltar para Personas' });
     expect(back.getAttribute('href')).toBe(`${studyUrl}?secao=personas`);
@@ -1602,5 +1608,238 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
       expect(empty.classList.contains('ui-empty-state--failure')).toBe(false);
       expect(empty.getAttribute('role')).toBeNull();
     }
+  });
+});
+
+describe('brand study as the board shows it (w5, tela 5.C)', () => {
+  const camila: PersonaFixture = {
+    ...donaMaria,
+    id: 'cccccccc-4444-4444-8444-444444444444',
+    name: 'Camila, a mãe que corre',
+    description: 'Gerente de RH, mãe de dois',
+    pains: 'Chega depois das 18h e o pão acabou.',
+    desires: 'Resolver o café da manhã em uma encomenda.',
+    objections: 'Acha caro',
+    age: 34,
+    occupation: 'gerente de RH',
+    location: 'Pinheiros',
+    traits: ['Rotina corrida', 'Compra por impulso'],
+    whereTheyAre: 'Instagram à noite.',
+    toneThatWorks: 'Direto e caloroso.'
+  };
+  const antonio: PersonaFixture = { ...camila, id: 'cccccccc-5555-4444-8444-444444444444', name: 'Seu Antônio', description: 'Freguês de sempre', age: 61, occupation: 'aposentado', location: 'duas quadras', traits: ['Vai todo dia às 7h'], whereTheyAre: 'No balcão.', toneThatWorks: 'Simples.' };
+  const withNew = (personas: PersonaFixture[], sections: SectionFixture[] = studyOf().sections) => studyOf({ personas, sections });
+  /** Six of the seven sections filled: only Observações is missing. */
+  const sixFilled = (): SectionFixture[] => studyOf().sections.map((section) => (
+    section.key === 'tone_of_voice' || section.key === 'positioning' ? { ...section, body: 'Texto' } : section));
+
+  it('says the count, the bar, who saved last and the one section to fill now, and goes there from the primary button', async () => {
+    const { impl } = makeFetch({ study: () => json(withNew([camila])) });
+    const { probe } = renderStudy(impl, { pathname: studyUrl, state: { clientListUrl: '/agencia/x/clientes?aba=meus' } });
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    expect(screen.getByText('5 de 7')).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: 'Seções preenchidas' }).getAttribute('aria-valuenow')).toBe('5');
+    // 01:30Z of the 13th is the evening of the 12th in São Paulo.
+    expect(screen.getByText('Atualizado em 12/10 por Ana')).toBeTruthy();
+    const fill = screen.getByRole('link', { name: 'Preencher Tom de voz' });
+    expect(fill.getAttribute('href')).toBe(`${studyUrl}?secao=tom-de-voz`);
+    fireEvent.click(fill);
+    await waitFor(() => expect(probe.search).toBe('?secao=tom-de-voz'));
+    expect(probe.state).toEqual({ clientListUrl: '/agencia/x/clientes?aba=meus' });
+    expect(screen.getByRole('link', { name: /^Tom de voz/ }).getAttribute('aria-current')).toBe('page');
+  });
+
+  it('offers no "Preencher" to a reader, and names the last missing section when only one is left', async () => {
+    const reader = makeFetch({ permissions: READER_PERMISSIONS, study: () => json(withNew([camila])) });
+    const first = renderStudy(reader.impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    expect(screen.queryByRole('link', { name: /^Preencher/ })).toBeNull();
+    cleanup();
+    first.queryClient.clear();
+
+    const { impl } = makeFetch({ study: () => json({ ...withNew([camila], sixFilled()), filled: 6 }) });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    expect(screen.getByText('6 de 7')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Preencher Observações' })).toBeTruthy();
+  });
+
+  it('lists each persona with age, occupation, place and traits, and says what is missing to close the study', async () => {
+    const { impl } = makeFetch({ study: () => json(withNew([camila, antonio], sixFilled())) });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    await openSection('Personas');
+    expect(screen.getByText('Para quem Padaria Central escreve. Cada post deve ter uma delas em mente.')).toBeTruthy();
+    const card = screen.getByRole('link', { name: /Camila, a mãe que corre/ });
+    expect(within(card).getByText('34 anos · gerente de RH · Pinheiros')).toBeTruthy();
+    expect(within(card).getByText('Rotina corrida')).toBeTruthy();
+    expect(within(card).getByText('Compra por impulso')).toBeTruthy();
+    const other = screen.getByRole('link', { name: /Seu Antônio/ });
+    expect(within(other).getByText('61 anos · aposentado · duas quadras')).toBeTruthy();
+    expect(screen.getByText('Falta uma pergunta para fechar o estudo')).toBeTruthy();
+    expect(screen.getByText('Observações é a última seção. Anote o que o dono não quer ver nos posts: isso evita retrabalho na aprovação.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Nova persona' })).toBeTruthy();
+  });
+
+  it('shows the profile column with identity, traits and one row for each field, and the controls of the persona stay where they were', async () => {
+    const { impl } = makeFetch({ study: () => json(withNew([camila, antonio])) });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    const profile = await openPersona('Camila, a mãe que corre');
+    const column = within(screen.getByRole('complementary', { name: 'Perfil de Camila, a mãe que corre' }));
+    expect(column.getByText('34 anos · gerente de RH · Pinheiros')).toBeTruthy();
+    expect(column.getByText('Gerente de RH, mãe de dois')).toBeTruthy();
+    expect(column.getByText('Rotina corrida')).toBeTruthy();
+    const rows = Array.from(profile.querySelectorAll<HTMLElement>('.brand-persona__row'));
+    expect(rows.map((row) => [row.querySelector('h4')?.textContent, row.querySelector('p')?.textContent])).toEqual([
+      ['Dor', 'Chega depois das 18h e o pão acabou.'],
+      ['Desejo', 'Resolver o café da manhã em uma encomenda.'],
+      ['Objeção', 'Acha caro'],
+      ['Onde está', 'Instagram à noite.'],
+      ['Tom que funciona', 'Direto e caloroso.']
+    ]);
+    for (const name of ['Editar a dor', 'Editar o desejo', 'Editar a objeção', 'Editar onde está', 'Editar o tom', 'Editar', 'Arquivar']) {
+      expect(column.getByRole('button', { name })).toBeTruthy();
+    }
+  });
+
+  it('edits the persona that was opened from the pencil of its row, with that field under the cursor, and sends only what changed', async () => {
+    const patches: Array<{ personaId: string; body: unknown }> = [];
+    let studyData = withNew([camila, antonio]);
+    const { impl } = makeFetch({
+      study: () => json(studyData),
+      patchPersona: (personaId, body) => {
+        patches.push({ personaId, body });
+        const updated = { ...antonio, ...(body as object) };
+        studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
+        return json(updated);
+      }
+    });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    const profile = await openPersona('Seu Antônio');
+    fireEvent.click(within(profile).getByRole('button', { name: 'Editar o tom' }));
+    const tone = await within(profile).findByRole('textbox', { name: 'Tom que funciona' });
+    expect(document.activeElement).toBe(tone);
+    expect((within(profile).getByRole('spinbutton', { name: 'Idade' }) as HTMLInputElement).value).toBe('61');
+    expect((within(profile).getByRole('textbox', { name: 'Ocupação' }) as HTMLInputElement).value).toBe('aposentado');
+    expect((within(profile).getByRole('textbox', { name: 'Local' }) as HTMLInputElement).value).toBe('duas quadras');
+    expect((within(profile).getByRole('textbox', { name: 'Traços' }) as HTMLInputElement).value).toBe('Vai todo dia às 7h');
+
+    fireEvent.change(tone, { target: { value: 'Simples e direto.' } });
+    fireEvent.change(within(profile).getByRole('spinbutton', { name: 'Idade' }), { target: { value: '62' } });
+    fireEvent.change(within(profile).getByRole('textbox', { name: 'Traços' }), { target: { value: 'Vai todo dia às 7h, Confia no balcão' } });
+    fireEvent.change(within(profile).getByRole('textbox', { name: 'Onde está' }), { target: { value: 'Na fila do pão.' } });
+    fireEvent.click(within(profile).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(patches).toEqual([{
+      personaId: antonio.id,
+      body: { toneThatWorks: 'Simples e direto.', age: 62, traits: ['Vai todo dia às 7h', 'Confia no balcão'], whereTheyAre: 'Na fila do pão.' }
+    }]));
+    expect((await screen.findAllByText('62 anos · aposentado · duas quadras')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Confia no balcão').length).toBeGreaterThan(0);
+    expect(screen.getByText('Simples e direto.')).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: 'Tom que funciona' })).toBeNull();
+  });
+
+  it('clears a field of the profile with null and refuses a bad age or too many traits without a request', async () => {
+    const patches: unknown[] = [];
+    const { impl } = makeFetch({
+      study: () => json(withNew([camila])),
+      patchPersona: (_personaId, body) => { patches.push(body); return json({ ...camila, ...(body as object) }); }
+    });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    const profile = await openPersona('Camila, a mãe que corre');
+    fireEvent.click(within(profile).getByRole('button', { name: 'Editar' }));
+    fireEvent.change(within(profile).getByRole('spinbutton', { name: 'Idade' }), { target: { value: '150' } });
+    fireEvent.change(within(profile).getByRole('textbox', { name: 'Traços' }), { target: { value: 'a, b, c, d, e, f' } });
+    fireEvent.click(within(profile).getByRole('button', { name: 'Salvar' }));
+    expect(await within(profile).findByText('Informe uma idade entre 1 e 120.')).toBeTruthy();
+    expect(within(profile).getByText('Use até 5 traços de até 24 caracteres, separados por vírgula.')).toBeTruthy();
+    expect(patches).toEqual([]);
+
+    fireEvent.change(within(profile).getByRole('spinbutton', { name: 'Idade' }), { target: { value: '' } });
+    fireEvent.change(within(profile).getByRole('textbox', { name: 'Traços' }), { target: { value: '' } });
+    fireEvent.change(within(profile).getByRole('textbox', { name: 'Local' }), { target: { value: '' } });
+    fireEvent.click(within(profile).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(patches).toEqual([{ location: null, age: null, traits: [] }]));
+  });
+
+  it('keeps what was typed in the profile when the save fails', async () => {
+    const { impl } = makeFetch({
+      study: () => json(withNew([camila])),
+      patchPersona: () => json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500)
+    });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    const profile = await openPersona('Camila, a mãe que corre');
+    fireEvent.click(within(profile).getByRole('button', { name: 'Editar o desejo' }));
+    fireEvent.change(within(profile).getByRole('textbox', { name: 'Ocupação' }), { target: { value: 'diretora de RH' } });
+    fireEvent.change(within(profile).getByRole('textbox', { name: 'Traços' }), { target: { value: 'Rotina corrida, Exigente' } });
+    fireEvent.click(within(profile).getByRole('button', { name: 'Salvar' }));
+    expect(await within(profile).findByText('Não foi possível salvar. Tente de novo.')).toBeTruthy();
+    expect((within(profile).getByRole('textbox', { name: 'Ocupação' }) as HTMLInputElement).value).toBe('diretora de RH');
+    expect((within(profile).getByRole('textbox', { name: 'Traços' }) as HTMLInputElement).value).toBe('Rotina corrida, Exigente');
+  });
+
+  it('creates a persona with the new fields, closes the modal on success and keeps the typing on an error', async () => {
+    const bodies: unknown[] = [];
+    let fail = true;
+    let studyData = studyOf({ personas: [] });
+    const { impl } = makeFetch({
+      study: () => json(studyData),
+      createPersona: (body) => {
+        bodies.push(body);
+        if (fail) return json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500);
+        const created = { ...camila, ...(body as object) };
+        studyData = { ...studyData, personas: [created] };
+        return json(created, 201);
+      }
+    });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    await openSection('Personas');
+    fireEvent.click(screen.getByRole('button', { name: 'Nova persona' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nova persona' });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nome' }), { target: { value: 'Bia' } });
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Idade' }), { target: { value: '22' } });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Ocupação' }), { target: { value: 'estudante de design' } });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Local' }), { target: { value: 'Vila Madalena' } });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Traços' }), { target: { value: 'Posta o que come,  Procura promoção ,' } });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Onde está' }), { target: { value: 'Instagram' } });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Tom que funciona' }), { target: { value: 'Leve' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
+    expect(await within(dialog).findByText('Não foi possível salvar. Tente de novo.')).toBeTruthy();
+    expect((within(dialog).getByRole('textbox', { name: 'Traços' }) as HTMLInputElement).value).toBe('Posta o que come,  Procura promoção ,');
+    expect((within(dialog).getByRole('spinbutton', { name: 'Idade' }) as HTMLInputElement).value).toBe('22');
+
+    fail = false;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar persona' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(bodies.at(-1)).toEqual({
+      name: 'Bia', description: null, pains: null, desires: null, objections: null,
+      age: 22, occupation: 'estudante de design', location: 'Vila Madalena', traits: ['Posta o que come', 'Procura promoção'], whereTheyAre: 'Instagram', toneThatWorks: 'Leve'
+    });
+  });
+
+  it('shows the loading skeleton, the empty personas and, on a failure, the serious owl with the way to try again', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const loading = makeFetch({ study: () => new Promise<Response>((resolve) => { release = resolve; }) });
+    const { container } = renderStudy(loading.impl);
+    await waitFor(() => expect(container.querySelector('.brand-study[aria-busy="true"]')).not.toBeNull());
+    release(json(studyOf({ personas: [] })));
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+    await openSection('Personas');
+    expect(screen.getByText('Nenhuma persona ainda')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Nova persona' })).toBeTruthy();
+    cleanup();
+
+    const failing = makeFetch({ study: () => json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500) });
+    const failed = renderStudy(failing.impl);
+    const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
+    expect(alert.textContent).toContain('Não foi possível carregar o estudo de marca. Tente de novo.');
+    expect(alert.querySelector('img[src*="mascote-serio"]')).not.toBeNull();
+    expect(within(alert).getByRole('button', { name: 'Tentar de novo' })).toBeTruthy();
+    failed.queryClient.clear();
   });
 });
