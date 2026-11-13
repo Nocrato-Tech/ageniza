@@ -1,8 +1,8 @@
 /* --- Portal: post em tela cheia (#270, #687) ---
    Phone first: every box may shrink (`min-width: 0`), every server text wraps, no width is fixed, and the actions
-   take the whole row, so a 390 px screen never scrolls sideways. While a post is open the bottom bar of the shell steps
-   aside (the way back is the link on top) and the decision bar takes the bottom of the screen, as the last piece of the
-   page: the end of the conversation is never under it, and `scroll-padding-bottom` keeps a focused control clear of it. */
+   take the whole row, so a 390 px screen never scrolls sideways. The post is the preview card, then "Sua resposta"; while
+   a post is open the bottom bar of the shell steps aside (the way back is the trail on top) and, on a phone, the two
+   decisions sit in a bar fixed at the bottom, with room kept under the page so no control hides behind it. */
 
 .portal-post {
   display: grid;
@@ -16,7 +16,7 @@
 }
 
 .portal-post h1 {
-  font: var(--display-lg);
+  font: var(--heading-xl);
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
@@ -26,40 +26,66 @@
   font-weight: 600;
 }
 
-.portal-post__back {
-  justify-self: start;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: 2.75rem;
-  /* The chevron hangs in the margin, so the word lines up with the title under it. */
-  margin-inline-start: calc(-1 * var(--space-1));
-  padding-inline-end: var(--space-3);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font: var(--body-md);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.portal-post__back:hover {
-  color: var(--text-primary);
-}
-
-.portal-post__back:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.portal-post__back svg {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-
 .portal-post__heading {
   display: grid;
   gap: var(--space-2);
   min-width: 0;
+}
+
+.portal-post__crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-post__crumbs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--text-secondary);
+}
+
+.portal-post__crumbs a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.portal-post__crumbs a:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.portal-post__crumbs svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+}
+
+.portal-post__crumbs [aria-current='page'] {
+  min-width: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.portal-post__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.portal-post__summary {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
 }
 
 .portal-post__meta {
@@ -101,26 +127,24 @@
   font: var(--body-md);
 }
 
-.portal-post__body {
+/* The preview, the caption and the conversation in one white card of the board. */
+.portal-post__layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-6);
+  gap: var(--space-4);
   min-width: 0;
 }
 
-/* The picture on its tinted stage, the caption under it, all in one white card of the board. */
-.portal-post__card {
+.portal-post__card,
+.portal-post__decide {
   display: grid;
+  align-content: start;
   gap: var(--space-4);
   min-width: 0;
   padding: var(--space-4);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
-}
-
-.portal-post__caption-block {
-  padding: 0;
 }
 
 .portal-post__eyebrow {
@@ -136,7 +160,7 @@
 
 .portal-post__section {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -149,12 +173,62 @@
 .portal-post__caption {
   white-space: pre-wrap;
   color: var(--text-primary);
-  font: var(--body-md);
+  font: var(--body-lg);
 }
 
 .portal-post__hint {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: var(--caption);
+}
+
+/* The conversation of the post: closed, one row; open, the conversation as it always was. */
+.portal-post__convo {
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.portal-post__convo > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 3.5rem;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-xl);
+  color: var(--text-primary);
+  font: var(--body-md);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.portal-post__convo > summary::-webkit-details-marker {
+  display: none;
+}
+
+.portal-post__convo > summary:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.portal-post__convo > summary svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+
+.portal-post__convo-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.portal-post__convo[open] > summary .portal-post__convo-chevron {
+  transform: rotate(180deg);
+}
+
+.portal-post__convo > .conversation {
+  padding: var(--space-2) var(--space-4) var(--space-4);
 }
 
 .portal-post__request,
@@ -168,69 +242,19 @@
   width: 100%;
 }
 
+/* "Sua resposta": the deadline, the agency's note, the person's own note and the two decisions. */
+.portal-post .portal-post__decide h2 {
+  font: var(--heading-lg);
+}
+
+.portal-post__decide .ui-field {
+  min-width: 0;
+}
+
 .portal-post__bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 4;
   display: grid;
   gap: var(--space-2);
   min-width: 0;
-  /* Edge to edge on a phone, over the padding of the content. */
-  margin-inline: calc(-1 * var(--space-4));
-  padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border-default);
-  background: var(--bg-surface);
-}
-
-.portal-post__bar .portal-post__actions {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-}
-
-/* "Pedir ajuste" and its icon fit the narrower column of a 360 px phone on one line. */
-.portal-post__bar .ui-button {
-  padding-inline: var(--space-3);
-}
-
-/* The deadline and the note, then the post, then the decision bar: the order of the page is the order of the markup, on a phone and for assistive technology. */
-.portal-post__layout {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.portal-post__layout .approval-round {
-  gap: var(--space-3);
-}
-
-.portal-post__layout .approval-round__due {
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--status-waiting-bg);
-  color: var(--status-waiting-text);
-  font: var(--title-md);
-  font-weight: 700;
-}
-
-.portal-post__layout .approval-round__due .ui-icon {
-  color: inherit;
-}
-
-.portal-post__layout .approval-round__note {
-  padding: var(--space-4);
-  border: 0;
-  border-radius: var(--radius-lg);
-  border-top-left-radius: var(--radius-sm);
-  background: var(--bg-hover);
-}
-
-.portal-post__layout .approval-round__author {
-  color: var(--text-primary);
-  font: var(--label-md);
-  font-weight: 600;
-}
-
-.portal-post__layout .approval-round__text {
-  font: var(--body-lg);
 }
 
 /* The section already has its title; the conversation's own is kept for assistive technology only, and its rule is not needed under a title. */
@@ -281,13 +305,8 @@
   height: 16rem;
 }
 
-/* The focused control scrolls clear of the bar, whatever the message above its buttons makes of its height (WCAG 2.4.11). */
-html:has(.portal-post__bar) {
-  scroll-padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
-}
-
 @media (max-width: 47.99rem) {
-  /* The post is the whole screen: the way back is the link on top. The tour points at the bar, so it keeps the bar while it is open. */
+  /* The post is the whole screen: the way back is the trail on top. The tour points at the bar, so it keeps the bar while it is open. */
   .portal-shell:has(.portal-post):not(:has(.portal-tour)) .portal-nav {
     display: none;
   }
@@ -296,77 +315,73 @@ html:has(.portal-post__bar) {
     padding-bottom: 0;
   }
 
-  /* Under the tour the shell's bar is back at the bottom, and the decision bar is a plain end of the page above it. */
+  /* Room under the page for the fixed bar, so the last control is never behind it (WCAG 2.4.11). */
+  .portal-post:has(.portal-post__bar) {
+    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  }
+
+  /* The two decisions on the screen's bottom edge: "Pedir ajuste" on the left, "Aprovar o post" wider on the right, as on the board. */
+  .portal-post__bar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 4;
+    padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border-default);
+    background: var(--bg-surface);
+  }
+
+  .portal-post__bar .portal-post__actions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  }
+
+  .portal-post__bar .portal-post__actions > :first-child {
+    order: 2;
+  }
+
+  .portal-post__bar .ui-button {
+    padding-inline: var(--space-2);
+    white-space: nowrap;
+  }
+
+  /* Under the tour the shell's bar is back at the bottom, and the decisions are a plain end of the page above it. */
   .portal-shell:has(.portal-tour) .portal-post__bar {
     position: static;
+    padding: 0;
+    border-top: 0;
+  }
+
+  .portal-shell:has(.portal-tour) .portal-post:has(.portal-post__bar) {
+    padding-bottom: 0;
   }
 }
 
 @media (min-width: 48rem) {
-  /* The post and its answer side by side, with no change in the order of the markup: the picture and the conversation span the left column, the deadline and the decision stack on the right. */
+  .portal-post__card,
+  .portal-post__decide {
+    padding: var(--space-6);
+  }
+
+  /* The post and its answer side by side, in the order of the markup: the preview on the left, "Sua resposta" on the right. */
   .portal-post__layout {
     grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
-    grid-template-rows: auto auto 1fr;
     align-items: start;
     column-gap: var(--space-6);
-    row-gap: 0;
   }
 
-  .portal-post__layout > .portal-post__body {
-    grid-column: 1;
-    grid-row: 1 / -1;
-  }
-
-  .portal-post__layout > .approval-round,
-  .portal-post__layout > .portal-post__bar {
-    grid-column: 2;
-    border: 1px solid var(--border-default);
-    background: var(--bg-surface);
-  }
-
-  .portal-post__layout > .approval-round {
-    grid-row: 1;
-    padding: var(--space-6) var(--space-6) var(--space-4);
-    border-bottom: 0;
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  }
-
-  .portal-post__layout > .portal-post__bar {
-    grid-row: 2 / -1;
-    align-self: start;
+  .portal-post__decide {
     position: sticky;
     top: var(--space-4);
-    bottom: auto;
-    margin-inline: 0;
-    padding: var(--space-4) var(--space-6) var(--space-6);
-    border-radius: var(--radius-xl);
   }
 
-  .portal-post__layout:has(.approval-round) > .portal-post__bar {
-    border-top: 0;
-    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
-  }
-
-  /* Without an answer to give (approved, published, adjusting) the post keeps its own two columns. */
-  .portal-post__layout:not(:has(.portal-post__bar)) {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
-  }
-
-  .portal-post__layout:not(:has(.portal-post__bar)) > .portal-post__body {
-    grid-row: auto;
-    grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
-    align-items: start;
-    column-gap: var(--space-8);
+  /* Without an answer to give (approved, published, adjusting) the post keeps one column. */
+  .portal-post__layout:not(:has(.portal-post__decide)) {
+    grid-template-columns: minmax(0, 40rem);
   }
 
   /* The picture leaves room for its controls under it. */
   .portal-post__card .portal-media__item {
     max-height: 32rem;
-  }
-
-  .portal-post__bar .portal-post__actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -378,6 +393,7 @@ html:has(.portal-post__bar) {
 }
 
 .portal-media__stage {
+  position: relative;
   display: grid;
   min-width: 0;
   place-items: center;
@@ -401,6 +417,21 @@ html:has(.portal-post__bar) {
 
 .portal-post__card .portal-media__strip {
   padding: var(--space-1);
+}
+
+/* "1 de 5" on the corner of the stage. */
+.portal-media__counter {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 1;
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--caption);
 }
 
 /* What the agency asked of the client: until when and the note, signed by the agency. Plain text on the page, no box of its own. */
@@ -460,6 +491,81 @@ html:has(.portal-post__bar) {
   overflow: hidden;
 }
 
+/* "Responda até quinta, 12 nov, 18h" in a block of the waiting colour, and how long is left under it. */
+.approval-deadline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+}
+
+.approval-deadline .ui-icon {
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.approval-deadline p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.approval-deadline__big {
+  font: var(--title-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.approval-deadline__left {
+  font: var(--caption);
+}
+
+.approval-deadline--expired {
+  background: var(--bg-canvas);
+  color: var(--text-danger);
+}
+
+/* The agency's note with who sent it: the avatar, the name, the text and the day it was sent. */
+.approval-sender {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+.approval-sender__body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.approval-sender p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.approval-sender__who {
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.approval-sender__text {
+  color: var(--text-primary);
+  font: var(--body-lg);
+  white-space: pre-line;
+}
+
+.approval-sender__when {
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
 .portal-media__item {
   display: block;
   width: 100%;
@@ -492,21 +598,16 @@ html:has(.portal-post__bar) {
 }
 
 .portal-media__controls {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
-}
-
-.portal-media__counter {
-  margin: 0;
-  color: var(--text-secondary);
-  font: var(--label-md);
 }
 
 .portal-media__strip {
   min-width: 0;
   display: flex;
+  justify-content: center;
   gap: var(--space-2);
   margin: 0;
   padding: 0;
@@ -540,4 +641,3 @@ html:has(.portal-post__bar) {
   height: 100%;
   object-fit: cover;
 }
-

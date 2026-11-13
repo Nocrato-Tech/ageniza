@@ -1,8 +1,21 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import type { ReactNode } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { AwaitingState, ApprovalRound, deadlineWording, dueDayLabel, waitingWording } from './approval-deadline.js';
+import {
+  ApprovalDeadline,
+  ApprovalRound,
+  ApprovalSenderNote,
+  AwaitingState,
+  deadlineWording,
+  dueDayLabel,
+  hourLabel,
+  spokenDayLabel,
+  waitingWording,
+  weekdayArticle
+} from './approval-deadline.js';
+import { ApiClientProvider, HttpClient } from './http.js';
 
 afterEach(cleanup);
 
@@ -61,5 +74,64 @@ describe('the words of an approval deadline (telas-melhorias S8)', () => {
     expect(screen.getByText('Recado da agência')).toBeTruthy();
     rerender(<ApprovalRound approval={round(null, 'Oi')} showNote={false} today="2026-10-11" />);
     expect(container.textContent).toBe('');
+  });
+});
+
+describe('the answer panel of the post (redesign W6)', () => {
+  const sent = { dueAt: '2026-11-13T01:30:00.000Z', dueOn: '2026-11-12', note: 'Oi, Rosana.', sentAt: '2026-11-10T01:30:00.000Z', sentBy: { name: 'João Pereira', photoUrl: null } };
+
+  it.each([
+    ['2026-11-12', 'quinta, 12 nov'], ['2026-11-13', 'sexta, 13 nov'], ['2026-11-14', 'sábado, 14 nov'], ['2026-11-15', 'domingo, 15 nov'], ['2026-11-16', 'segunda, 16 nov']
+  ])('writes %s as "%s"', (day, text) => { expect(spokenDayLabel(day)).toBe(text); });
+
+  it('takes "no" for the weekend and "na" for the other days', () => {
+    expect(['2026-11-14', '2026-11-15'].map(weekdayArticle)).toEqual(['no', 'no']);
+    expect(['2026-11-12', '2026-11-13', '2026-11-16'].map(weekdayArticle)).toEqual(['na', 'na', 'na']);
+  });
+
+  it.each([['12:00', '12h'], ['09:05', '9h05'], ['18:30', '18h30'], ['00:00', '0h']])('writes %s as "%s"', (time, text) => { expect(hourLabel(time)).toBe(text); });
+
+  it('says the deadline with the hour of São Paulo (01:30Z is still the day before) and how long is left', () => {
+    render(<ApprovalDeadline approval={sent} today="2026-11-11" />);
+    expect(screen.getByText('Responda até', { exact: false }).textContent).toBe('Responda até quinta, 12 nov, 22h30');
+    expect(screen.getByText('Falta 1 dia')).toBeTruthy();
+  });
+
+  it('says "Faltam N dias", "Vence hoje" and "Venceu há N dias"', () => {
+    const { rerender } = render(<ApprovalDeadline approval={sent} today="2026-11-07" />);
+    expect(screen.getByText('Faltam 5 dias')).toBeTruthy();
+    rerender(<ApprovalDeadline approval={sent} today="2026-11-12" />);
+    expect(screen.getByText('Vence hoje')).toBeTruthy();
+    rerender(<ApprovalDeadline approval={sent} today="2026-11-14" />);
+    expect(screen.getByText('Venceu há 2 dias')).toBeTruthy();
+  });
+
+  it('leaves the hour out when the round has only the day, and draws nothing without a day', () => {
+    const { container, rerender } = render(<ApprovalDeadline approval={{ ...sent, dueAt: null }} today="2026-11-11" />);
+    expect(screen.getByText('Responda até', { exact: false }).textContent).toBe('Responda até quinta, 12 nov');
+    rerender(<ApprovalDeadline approval={{ ...sent, dueOn: null, dueAt: null }} today="2026-11-11" />);
+    expect(container.textContent).toBe('');
+    rerender(<ApprovalDeadline approval={null} today="2026-11-11" />);
+    expect(container.textContent).toBe('');
+  });
+
+  const inClient = (node: ReactNode) => <ApiClientProvider client={new HttpClient('http://127.0.0.1:3001')}>{node}</ApiClientProvider>;
+
+  it('signs the note with the sender, the agency and the day and hour it was sent', () => {
+    render(inClient(<ApprovalSenderNote approval={sent} agencyName="Agência Horizonte" />));
+    expect(screen.getByText('Recado de João Pereira, da Agência Horizonte')).toBeTruthy();
+    expect(screen.getByText('Oi, Rosana.')).toBeTruthy();
+    expect(screen.getByText('9 de novembro, 22h30')).toBeTruthy();
+  });
+
+  it('draws nothing without a note, and never uses a photo address that is not the portal route', () => {
+    const { container, rerender } = render(inClient(<ApprovalSenderNote approval={{ ...sent, note: null }} agencyName="Agência Horizonte" />));
+    expect(container.textContent).toBe('');
+    const requested: string[] = [];
+    vi.stubGlobal('Image', class { public onload: (() => void) | null = null; public set src(value: string) { requested.push(value); } });
+    rerender(inClient(<ApprovalSenderNote approval={{ ...sent, sentBy: { name: 'João Pereira', photoUrl: 'https://storage.example/obj/key.png' } }} agencyName="Agência Horizonte" />));
+    vi.unstubAllGlobals();
+    expect(requested).toEqual([]);
+    expect(document.querySelector('.ui-avatar__photo')).toBeNull();
   });
 });
