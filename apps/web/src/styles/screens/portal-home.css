@@ -440,6 +440,23 @@
   object-fit: contain;
 }
 
+/* Narrow: the mascot goes under the title, as on the board, instead of squeezing the title beside it. */
+@media (max-width: 47.99rem) {
+  .portal-request__meta {
+    display: block;
+    overflow: visible;
+  }
+
+  .portal-win__row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .portal-win .portal-win__mascot {
+    justify-self: start;
+  }
+}
+
 .portal-win__text {
   margin: 0;
   font: var(--body-md);

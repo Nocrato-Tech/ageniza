@@ -51,10 +51,14 @@
   background: var(--bg-surface);
 }
 
-.account-card h2,
-.account-danger h2 {
+.account-card h2 {
   margin: 0;
   font: var(--heading-lg);
+}
+
+.account-danger h2 {
+  margin: 0;
+  font: var(--title-md);
 }
 
 .account-card__person {

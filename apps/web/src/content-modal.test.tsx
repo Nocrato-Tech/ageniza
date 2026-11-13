@@ -1487,3 +1487,56 @@ describe('the conversation of the content (#266)', () => {
     expect(screen.getByRole('dialog', { name: row.title })).toBeTruthy();
   });
 });
+
+describe('"Usar em um conteúdo": ?midia= opens a new content with that file chosen', () => {
+  const PDF_ID = 'a0a0a0a0-0000-4000-8000-0000000000f1';
+  const MISSING = 'a0a0a0a0-0000-4000-8000-0000000000ee';
+  const libraryAsset = (found: typeof IMG_2, folderId: string, category: string = found.category) => ({
+    ...found, category, folderId, folderName: 'Pasta', name: null, width: null, height: null, altText: null, uploadedBy: null, usageCount: 0
+  });
+  const mediaRead = (assetId: string, body: () => Response) => (call: { method: string; path: string }): Response | undefined =>
+    (call.method === 'GET' && call.path === `/agencies/${AGENCY}/clients/${padaria.id}/media/${assetId}` ? body() : undefined);
+  const selected = (): string[] => Array.from(dialog().querySelectorAll('.content-media__selected .content-media__tile')).map((tile) => tile.textContent ?? '');
+
+  it('starts in the folder of the file, as an image, with that file (the second of the folder) as the media, and saves it', async () => {
+    const { impl, calls } = makeFetch({ override: mediaRead(IMG_2.id, () => json(libraryAsset(IMG_2, IMAGES))) });
+    render_(impl, `${base()}/novo?midia=${IMG_2.id}`);
+    await screen.findByLabelText('Título');
+    await waitFor(() => expect((field('Pasta') as HTMLSelectElement).value).toBe(IMAGES));
+    expect((field('Formato') as HTMLSelectElement).value).toBe('image');
+    await waitFor(() => expect(selected()).toHaveLength(1));
+    type('Título', 'Do arquivo');
+    await savable();
+    click('Criar conteúdo');
+    await waitFor(closed);
+    expect(writes(calls)).toHaveLength(1);
+    expect(writes(calls)[0]!.body).toMatchObject({ folderId: IMAGES, format: 'image', mediaAssetIds: [IMG_2.id] });
+  });
+
+  it('starts a video as a reels, in its own folder', async () => {
+    const { impl } = makeFetch({ override: mediaRead(VID_1.id, () => json(libraryAsset(VID_1, VIDEOS))) });
+    render_(impl, `${base()}/novo?midia=${VID_1.id}`);
+    await screen.findByLabelText('Título');
+    await waitFor(() => expect((field('Pasta') as HTMLSelectElement).value).toBe(VIDEOS));
+    expect((field('Formato') as HTMLSelectElement).value).toBe('reels');
+    await waitFor(() => expect(selected()).toHaveLength(1));
+  });
+
+  it.each([
+    ['a file that does not exist', MISSING, () => failure(404, 'NOT_FOUND')],
+    ['a read that fails', IMG_2.id, () => failure(500, 'INTERNAL')],
+    ['a file that no content takes (a PDF)', PDF_ID, () => json(libraryAsset(IMG_2, IMAGES, 'pdf'))],
+    ['an id that is not one', 'not-an-id', () => failure(404, 'NOT_FOUND')]
+  ])('opens the modal empty and without an error for %s', async (_name, midia, answer) => {
+    const { impl, calls } = makeFetch({ override: mediaRead(midia, answer) });
+    render_(impl, `${base()}/novo?midia=${midia}`);
+    await screen.findByLabelText('Título');
+    await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
+
+    expect((field('Pasta') as HTMLSelectElement).value).toBe('');
+    expect((field('Formato') as HTMLSelectElement).value).toBe('image');
+    expect(selected()).toEqual([]);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(writes(calls)).toHaveLength(0);
+  });
+});

@@ -452,7 +452,7 @@ export const componentEntries: readonly ComponentEntry[] = [
     covers: ['StatusTag'],
     examples: [
       ...([
-        ['ready', 'Pronto para publicar'], ['waiting', 'Aguardando'], ['adjust', 'Em ajuste'], ['published', 'Publicado'], ['production', 'Em produção'], ['scheduled', 'Agendado']
+        ['ready', 'Aprovado'], ['waiting', 'Aguardando'], ['adjust', 'Em ajuste'], ['published', 'Publicado'], ['production', 'Em produção'], ['scheduled', 'Agendado']
       ] as const).map(([status, label]) => ({ label: status as string, render: (state: RenderedState) => stateOnly(state, ['default'], <StatusTag status={status}>{label}</StatusTag>) })),
       { label: 'grande', render: (state: RenderedState) => stateOnly(state, ['default'], <StatusTag status="waiting" size="lg">Aguardando aprovação</StatusTag>) }
     ]

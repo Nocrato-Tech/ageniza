@@ -338,7 +338,7 @@ describe('portal tour (#144)', () => {
     const world = makeWorld({ seen: [CLIENT_ID] });
     renderPortal(world.impl);
     await screen.findByRole('heading', { name: 'Olá, Maria' });
-    // The home reads the scripts and the contents after the heading is on screen: the count is taken once both requests have left, or one lands after it (issue #767).
+    // The home reads the scripts after the heading is on screen: the count is taken once that request has left, or it lands after it (issue #767).
     await waitFor(() => {
       expect(world.calls).toContain(`GET /clients/${CLIENT_ID}/story-scripts`);
     });

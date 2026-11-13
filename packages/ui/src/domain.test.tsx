@@ -42,7 +42,8 @@ describe('StatusTag', () => {
     ['waiting', 'Aguardando', 'lucide-clock'],
     ['adjust', 'Em ajuste', 'lucide-pencil'],
     ['published', 'Publicado', 'lucide-check-check'],
-    ['production', 'Em produção', 'lucide-circle']
+    ['production', 'Em produção', 'lucide-pen-line'],
+    ['scheduled', 'Agendado', 'lucide-calendar-clock']
   ])('says %s in words and in the form of its own icon', (status, label, shape) => {
     render(<StatusTag status={status}>{label}</StatusTag>);
     const tag = screen.getByText(label);
@@ -55,7 +56,7 @@ describe('StatusTag', () => {
   });
 
   it('never tells two states apart by colour alone: every state has a different shape', () => {
-    const statuses: StatusTagStatus[] = ['ready', 'waiting', 'adjust', 'published', 'production'];
+    const statuses: StatusTagStatus[] = ['ready', 'waiting', 'adjust', 'published', 'production', 'scheduled'];
     const shapes = statuses.map((status) => {
       const { container, unmount } = render(<StatusTag status={status}>x</StatusTag>);
       const shape = container.querySelector('svg')!.getAttribute('class')!.split(' ').find((name) => name.startsWith('lucide-') && name !== 'lucide');
@@ -63,7 +64,7 @@ describe('StatusTag', () => {
       return shape;
     });
 
-    expect(new Set(shapes).size).toBe(5);
+    expect(new Set(shapes).size).toBe(6);
   });
 
   it('exposes the label alone as its text, since the icon is decorative', () => {
@@ -79,6 +80,16 @@ describe('LateBadge', () => {
 
     expect(screen.getByText('Atrasado').className).toBe('ui-late-badge');
     expectStatic(screen.getByText('Atrasado'));
+  });
+
+  it('carries the warning triangle, decorative, and keeps the label as its text', () => {
+    render(<LateBadge />);
+    const badge = screen.getByText('Atrasado');
+    const icon = badge.querySelector('.ui-icon');
+
+    expect(icon?.getAttribute('aria-hidden')).toBe('true');
+    expect(icon?.querySelector('svg')?.getAttribute('class')?.split(' ')).toContain('lucide-triangle-alert');
+    expect(badge.textContent).toBe('Atrasado');
   });
 
   it('takes another wording when the screen has one', () => {

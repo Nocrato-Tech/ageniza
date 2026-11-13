@@ -1,5 +1,5 @@
 import type { HTMLAttributes } from 'react';
-import { CalendarClock, Check, CheckCheck, Circle, Clock, Pencil } from 'lucide-react';
+import { CalendarClock, Check, CheckCheck, Clock, Pencil, PenLine, TriangleAlert } from 'lucide-react';
 
 import { IconSlot } from './icon.js';
 
@@ -31,7 +31,7 @@ const STATUS_ICONS: Readonly<Record<StatusTagStatus, typeof Check>> = {
   waiting: Clock,
   adjust: Pencil,
   published: CheckCheck,
-  production: Circle,
+  production: PenLine,
   scheduled: CalendarClock
 };
 
@@ -57,5 +57,10 @@ export function StatusTag({ status, size = 'md', className, children, ...props }
 
 /** "Atrasado": the one state in a solid block, because it must jump out of a card full of outlines. */
 export function LateBadge({ className, children = 'Atrasado', ...props }: HTMLAttributes<HTMLSpanElement>) {
-  return <span className={['ui-late-badge', className].filter(Boolean).join(' ')} {...props}>{children}</span>;
+  return (
+    <span className={['ui-late-badge', className].filter(Boolean).join(' ')} {...props}>
+      <IconSlot><TriangleAlert /></IconSlot>
+      {children}
+    </span>
+  );
 }

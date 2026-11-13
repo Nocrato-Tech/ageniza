@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Hourglass, Plus, TriangleAlert } from 'lucide-react';
 
@@ -84,7 +85,15 @@ export function ClientMaterialRequests({ client }: { client: ClientDetailRespons
   const canSeeClient = useCan('cliente.visualizar');
   const canOperate = useCan('cliente.operar');
   const blocked = useWriteBlocked();
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requested = searchParams.get('pedido');
+  const [openId, setOpenId] = useState<string | null>(requested);
+  // A notification opens this page with `?pedido=`; the request opens once the list holds it, and an unknown one opens nothing.
+  useEffect(() => { if (requested !== null) setOpenId(requested); }, [requested]);
+  const closeRequest = (): void => {
+    setOpenId(null);
+    if (requested !== null) setSearchParams((params) => { const next = new URLSearchParams(params); next.delete('pedido'); return next; }, { replace: true });
+  };
   const [creating, setCreating] = useState(false);
   const scope: ConversationScope = { side: 'agency', agencyId: agency.agencyId, clientId: client.id };
   const threads = useMaterialThreads(scope);
@@ -127,7 +136,7 @@ export function ClientMaterialRequests({ client }: { client: ClientDetailRespons
     </ul>}
     {truncated && <p className="client-requests__note">Mostrando os {PAGE_SIZE} pedidos mais recentes de cada situação.</p>}
     <p className="client-requests__note">Abertos primeiro, depois resolvidos. Depois de enviada, a mensagem não pode ser editada nem apagada.</p>
-    {current !== undefined && <OpenThread props={props} thread={current} onClose={() => setOpenId(null)} />}
+    {current !== undefined && <OpenThread props={props} thread={current} onClose={closeRequest} />}
     {creating && <MaterialRequestDialog props={props} onClose={() => setCreating(false)} />}
   </section>;
 }
