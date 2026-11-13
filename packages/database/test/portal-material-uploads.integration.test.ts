@@ -456,10 +456,10 @@ describe('who may send, and to which request', () => {
 
   it('takes a window of no seconds: a reservation then counts for nothing', async () => {
     const f = await fresh();
-    await setQuota(f.agency, 1_000, null);
-    await start(f.user, startArgs(f.thread, { client: f.client, size: 1_000, window: 0 }));
+    await setQuota(f.agency, MAX_BYTES, null);
+    await start(f.user, startArgs(f.thread, { client: f.client, size: MAX_BYTES, window: 0 }));
 
-    expect((await start(f.user, startArgs(f.thread, { client: f.client, size: 1_000, window: 0 }))).asset_id).toBeDefined();
+    expect((await start(f.user, startArgs(f.thread, { client: f.client, size: MAX_BYTES, window: 0 }))).asset_id).toBeDefined();
     await expect(start(f.user, startArgs(f.thread, { client: f.client, size: 1_000 }))).rejects.toMatchObject({ code: 'A0136' });
   });
 
@@ -565,11 +565,11 @@ describe('how many files a request takes', () => {
 });
 
 describe('how much the agency can store, and what the portal is told when it cannot', () => {
-  it('takes what fits and refuses the byte that does not with A0136, a code that says nothing of plans, quotas or billing', async () => {
+  it('takes the file while the agency has room for one of the ceiling and refuses with A0136 when it has less, a code that says nothing of plans, quotas or billing', async () => {
     const f = await fresh();
-    await setQuota(f.agency, 2_000, null);
-    await start(f.user, startArgs(f.thread, { client: f.client, size: 1_000 }));
-    await start(f.other, startArgs(f.thread, { client: f.client, size: 1_000 }));
+    await setQuota(f.agency, 2 * MAX_BYTES, null);
+    await start(f.user, startArgs(f.thread, { client: f.client, size: MAX_BYTES }));
+    await start(f.other, startArgs(f.thread, { client: f.client, size: MAX_BYTES }));
 
     const refusal = await attempt(() => start(f.user, startArgs(f.thread, { client: f.client, size: 1 })));
 
@@ -578,12 +578,32 @@ describe('how much the agency can store, and what the portal is told when it can
     expect(await filesOf(f.thread)).toHaveLength(2);
   });
 
-  it('takes the file that lands exactly on the ceiling of bytes, and the one that lands exactly on the ceiling of files', async () => {
-    const bytes = await fresh();
-    await setQuota(bytes.agency, 1_500, null);
-    await start(bytes.user, startArgs(bytes.thread, { client: bytes.client, size: 500 }));
-    expect((await start(bytes.user, startArgs(bytes.thread, { client: bytes.client, size: 1_000 }))).asset_id).toBeDefined();
+  // The answer must not depend on a number the person controls: with less than the ceiling of one file free, every size is refused, the
+  // room left itself included, and with that much or more, every size up to the ceiling is taken.
+  it.each([1, 1_000, MAX_BYTES - 1])('refuses every size at the start when the agency has %i bytes left, the room left and the byte above it included', async (room) => {
+    const f = await fresh();
+    await setQuota(f.agency, 4 * MAX_BYTES, null);
+    await seed(f.client, f.agency, { size: 4 * MAX_BYTES - room });
 
+    for (const size of new Set([1, room, room + 1, MAX_BYTES])) {
+      expect(await attempt(() => start(f.user, startArgs(f.thread, { client: f.client, size }))), `size ${size}`).toMatchObject({ code: 'A0136' });
+    }
+    expect(await filesOf(f.thread)).toHaveLength(0);
+  });
+
+  it.each([MAX_BYTES, MAX_BYTES + 1, 3 * MAX_BYTES])('takes every size at the start up to the ceiling when the agency has %i bytes left', async (room) => {
+    const f = await fresh();
+    await setQuota(f.agency, 4 * MAX_BYTES, null);
+    await seed(f.client, f.agency, { size: 4 * MAX_BYTES - room });
+
+    // A window of no seconds so that a reservation counts for nothing and every size meets the same room.
+    for (const size of [1, 1_000, MAX_BYTES / 2, MAX_BYTES]) {
+      expect((await start(f.user, startArgs(f.thread, { client: f.client, size, window: 0 }))).asset_id, `size ${size}`).toBeDefined();
+    }
+    expect(await filesOf(f.thread)).toHaveLength(4);
+  });
+
+  it('takes the file that lands exactly on the ceiling of files', async () => {
     const count = await fresh();
     await setQuota(count.agency, null, 2);
     await start(count.user, startArgs(count.thread, { client: count.client }));
@@ -593,23 +613,24 @@ describe('how much the agency can store, and what the portal is told when it can
 
   it('counts the whole agency, the media of the agency included, and not what is not in use: rejected, purged or abandoned', async () => {
     const f = await fresh();
-    await setQuota(f.agency, 3_000, null);
-    await seed(f.client, f.agency, { size: 1_000 });
-    await seed(f.client, f.agency, { size: 1_000, status: 'rejected' });
-    await seed(f.client, f.agency, { size: 1_000, purged: true });
-    await seed(f.client, f.agency, { size: 1_000, status: 'pending', ageSeconds: WINDOW + 60 });
+    await setQuota(f.agency, 3 * MAX_BYTES, null);
+    await seed(f.client, f.agency, { size: MAX_BYTES });
+    await seed(f.client, f.agency, { size: MAX_BYTES, status: 'rejected' });
+    await seed(f.client, f.agency, { size: MAX_BYTES, purged: true });
+    await seed(f.client, f.agency, { size: MAX_BYTES, status: 'pending', ageSeconds: WINDOW + 60 });
     // A removed file still sits in the storage until the retention purges it.
-    await seed(f.client, f.agency, { size: 1_000, removed: true });
+    await seed(f.client, f.agency, { size: MAX_BYTES, removed: true });
 
-    expect((await start(f.user, startArgs(f.thread, { client: f.client, size: 1_000 }))).asset_id).toBeDefined();
+    // Two files in use leave exactly the room of one file of the ceiling; the one that is taken leaves less.
+    expect((await start(f.user, startArgs(f.thread, { client: f.client, size: 1 }))).asset_id).toBeDefined();
     await expect(start(f.user, startArgs(f.thread, { client: f.client, size: 1 }))).rejects.toMatchObject({ code: 'A0136' });
   });
 
   it('counts the media of another agency for nothing', async () => {
     const [full, empty] = [await fresh(), await fresh()];
-    await setQuota(full.agency, 1_000, null);
-    await setQuota(empty.agency, 1_000, null);
-    await seed(full.client, full.agency, { size: 1_000 });
+    await setQuota(full.agency, MAX_BYTES, null);
+    await setQuota(empty.agency, MAX_BYTES, null);
+    await seed(full.client, full.agency, { size: MAX_BYTES });
 
     await expect(start(full.user, startArgs(full.thread, { client: full.client }))).rejects.toMatchObject({ code: 'A0136' });
     expect((await start(empty.user, startArgs(empty.thread, { client: empty.client }))).asset_id).toBeDefined();
@@ -617,7 +638,7 @@ describe('how much the agency can store, and what the portal is told when it can
 
   it('takes the default of the deployment for the count of files too, when the agency has no ceiling of its own', async () => {
     const f = await fresh();
-    const oneFile = { defaultBytes: 1_000_000, defaultCount: 1 };
+    const oneFile = { defaultBytes: 100 * MAX_BYTES, defaultCount: 1 };
 
     expect((await start(f.user, startArgs(f.thread, { client: f.client, size: 10, ...oneFile }))).asset_id).toBeDefined();
     await expect(start(f.user, startArgs(f.thread, { client: f.client, size: 10, ...oneFile }))).rejects.toMatchObject({ code: 'A0136' });
@@ -625,12 +646,12 @@ describe('how much the agency can store, and what the portal is told when it can
 
   it('uses the ceiling of the agency when it has one and the default of the deployment when it has none or has it empty', async () => {
     const f = await fresh();
-    const tight = { defaultBytes: 500, defaultCount: 1 };
+    const tight = { defaultBytes: MAX_BYTES - 1, defaultCount: 1 };
 
     await expect(start(f.user, startArgs(f.thread, { client: f.client, size: 600, ...tight }))).rejects.toMatchObject({ code: 'A0136' });
     await setQuota(f.agency, null, null);
     await expect(start(f.user, startArgs(f.thread, { client: f.client, size: 600, ...tight }))).rejects.toMatchObject({ code: 'A0136' });
-    await setQuota(f.agency, 10_000, 10);
+    await setQuota(f.agency, 10 * MAX_BYTES, 10);
     expect((await start(f.user, startArgs(f.thread, { client: f.client, size: 600, ...tight }))).asset_id).toBeDefined();
     expect((await start(f.user, startArgs(f.thread, { client: f.client, size: 600, ...tight }))).asset_id).toBeDefined();
     await setQuota(f.agency, null, null);
@@ -705,7 +726,7 @@ describe('finishing the upload', () => {
     expect(await confirm(ids.portalA1, started.asset_id, { size: MAX_BYTES, width: 100_000, height: 1 })).toEqual({ outcome: 'confirmed', reason: null });
   });
 
-  it('looks again at the room of the request and of the agency, with the real size, and counts itself once', async () => {
+  it('looks again at the room of the request and of the agency, which the agency\'s own files shrank after the start', async () => {
     const full = await fresh();
     await seedFilesOfRequest(full, MAX_FILES - 1);
     const lastOne = await start(full.user, startArgs(full.thread, { client: full.client }));
@@ -718,18 +739,18 @@ describe('finishing the upload', () => {
     expect(await confirm(crowded.user, abandoned.asset_id)).toEqual({ outcome: 'rejected', reason: 'request_full' });
 
     const tight = await fresh();
-    await setQuota(tight.agency, 1_500, null);
+    await setQuota(tight.agency, 2 * MAX_BYTES, null);
     const declaredSmall = await start(tight.user, startArgs(tight.thread, { client: tight.client, size: 100 }));
-    await seed(tight.client, tight.agency, { size: 600 });
+    await seed(tight.client, tight.agency, { size: MAX_BYTES + 1 });
     expect(await confirm(tight.user, declaredSmall.asset_id, { size: 2_000 })).toEqual({ outcome: 'rejected', reason: 'agency_unavailable' });
   });
 
   it('takes a confirmation that lands exactly on the ceiling of bytes or of files, the agency\'s own files counted and its own reservation not', async () => {
     const bytes = await fresh();
-    await setQuota(bytes.agency, 1_500, null);
-    const reserved = await start(bytes.user, startArgs(bytes.thread, { client: bytes.client, size: 900 }));
-    await seed(bytes.client, bytes.agency, { size: 600 });
-    expect(await confirm(bytes.user, reserved.asset_id, { size: 900 })).toEqual({ outcome: 'confirmed', reason: null });
+    await setQuota(bytes.agency, 2 * MAX_BYTES, null);
+    const reserved = await start(bytes.user, startArgs(bytes.thread, { client: bytes.client, size: MAX_BYTES }));
+    await seed(bytes.client, bytes.agency, { size: MAX_BYTES });
+    expect(await confirm(bytes.user, reserved.asset_id, { size: MAX_BYTES })).toEqual({ outcome: 'confirmed', reason: null });
 
     const count = await fresh();
     await setQuota(count.agency, null, 2);
@@ -743,6 +764,32 @@ describe('finishing the upload', () => {
     await owner()('media_assets').where({ id: crowded.asset_id }).update({ updated_at: owner().raw(`now() - interval '2 hours'`) });
     await seed(over.client, over.agency);
     expect(await confirm(over.user, crowded.asset_id)).toEqual({ outcome: 'rejected', reason: 'agency_unavailable' });
+  });
+
+  // The answer must not depend on the real size of the bytes either: the person chooses what she uploads, and then lets the reservation go.
+  it.each([1, 1_000, MAX_BYTES - 1])('turns down every size at the confirmation when the agency has %i bytes left, the room left and the byte above it included', async (room) => {
+    const f = await fresh();
+    await setQuota(f.agency, 4 * MAX_BYTES, null);
+    const sizes = [...new Set([1, room, room + 1, MAX_BYTES])];
+    // A window of no seconds so that the other reservations count for nothing and every size meets the same room.
+    const reserved = await Promise.all(sizes.map(() => start(f.user, startArgs(f.thread, { client: f.client, size: 1, window: 0 }))));
+    await seed(f.client, f.agency, { size: 4 * MAX_BYTES - room });
+
+    for (const [index, size] of sizes.entries()) {
+      expect(await confirm(f.user, reserved[index]!.asset_id, { size, window: 0 }), `size ${size}`).toEqual({ outcome: 'rejected', reason: 'agency_unavailable' });
+      expect(await assetRow(reserved[index]!.asset_id)).toMatchObject({ status: 'rejected', rejected_reason: 'agency_unavailable' });
+    }
+  });
+
+  it.each([MAX_BYTES, MAX_BYTES + 1, 3 * MAX_BYTES])('takes every size at the confirmation up to the ceiling when the agency has %i bytes left, its own reservation not counted', async (room) => {
+    for (const size of [1, MAX_BYTES]) {
+      const f = await fresh();
+      await setQuota(f.agency, 4 * MAX_BYTES, null);
+      const reserved = await start(f.user, startArgs(f.thread, { client: f.client, size: 1 }));
+      await seed(f.client, f.agency, { size: 4 * MAX_BYTES - room });
+
+      expect(await confirm(f.user, reserved.asset_id, { size }), `size ${size}`).toEqual({ outcome: 'confirmed', reason: null });
+    }
   });
 
   it('gives the reason of every refusal in words that say nothing of the plan or the storage of the agency, and the contract names the same reasons', async () => {
@@ -768,9 +815,9 @@ describe('finishing the upload', () => {
     await refused(full, abandoned.asset_id);
 
     const tight = await fresh();
-    await setQuota(tight.agency, 1_500, null);
+    await setQuota(tight.agency, 2 * MAX_BYTES, null);
     const small = await startFor(tight, 100);
-    await seed(tight.client, tight.agency, { size: 600 });
+    await seed(tight.client, tight.agency, { size: MAX_BYTES + 1 });
     await refused(tight, small.asset_id, { size: 2_000 });
 
     expect(refusals.map(({ verdict }) => verdict.outcome)).toEqual(Array(6).fill('rejected'));
@@ -1147,7 +1194,7 @@ describe('the storage usage, counted in one place', () => {
   it('is not for the application role to call: the helpers of the portal\'s functions are closed to it', async () => {
     const closed = [
       'app_private.agency_storage_in_use(uuid, integer, uuid)',
-      'app_private.portal_upload_refusal(uuid, uuid, bigint, uuid, bigint, bigint, integer)',
+      'app_private.portal_upload_refusal(uuid, uuid, uuid, bigint, bigint, integer)',
       'app_private.lock_own_pending_portal_upload(uuid)',
       'app_private.require_portal_material_request(uuid, uuid)',
       'app_private.require_portal_upload_settings(bigint, bigint, integer)',
@@ -1178,7 +1225,7 @@ describe('the storage usage, counted in one place', () => {
 describe('two transactions at once', () => {
   it('lets one file in when the agency has room for one: the second waits for the first, then sees what it took', async () => {
     const f = await fresh();
-    await setQuota(f.agency, 1_500, null);
+    await setQuota(f.agency, MAX_BYTES + 500, null);
     const first = await w.openTransactionAs(f.user);
     const firstPid = await backendPid(first);
     let second: Promise<unknown> | undefined;
@@ -1196,7 +1243,7 @@ describe('two transactions at once', () => {
 
   it('queues behind the agency\'s own upload, which holds the same quota lock, for a start and for a confirmation alike', async () => {
     const f = await fresh();
-    await setQuota(f.agency, 1_500, null);
+    await setQuota(f.agency, 3 * MAX_BYTES, null);
     const reserved = await start(f.user, startArgs(f.thread, { client: f.client, size: 1_000 }));
     const agencyUpload = await w.openTransactionAs(f.user);
     const agencyUploadPid = await backendPid(agencyUpload);
@@ -1237,7 +1284,8 @@ describe('two transactions at once', () => {
 
   it('keeps the ceilings under a burst of starts and confirmations that all go for the last places, with no deadlock', async () => {
     const f = await fresh();
-    await setQuota(f.agency, 5_000, null);
+    // Room for three more files of a thousand bytes beyond the two reserved: a start is taken while the room left holds one file of the ceiling.
+    await setQuota(f.agency, MAX_BYTES + 4_500, null);
     const reserved = [
       await start(f.user, startArgs(f.thread, { client: f.client })),
       await start(f.other, startArgs(f.thread, { client: f.client }))

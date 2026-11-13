@@ -16,11 +16,13 @@
 //  - `start_portal_material_upload` writes the pending row: the key of the object and its extension are built here from ids the database
 //    read, the category comes from the type (image or audio, never an SVG, a video or a PDF), and it refuses the person who is not an active
 //    link of that client, a request of another client or that is not a request for material, a resolved request, an archived client, an
-//    agency that does not accept writes, a file above the ceiling, a request with its files, and the storage of the agency full.
+//    agency that does not accept writes, a file above the ceiling, a request with its files, and an agency with less room than one file of the ceiling.
 //    `confirm_portal_material_upload` and `reject_portal_material_upload` move the pending row of the same person to confirmed or rejected,
 //    and a verdict about the bytes (type, size, dimensions, the room left) is recorded as a rejection, so the reservation does not hang.
 //    Nothing that reaches the portal names the agency's plan or storage: the refusal for lack of room is `agency_unavailable` in the
-//    verdict, as A0136 is at the start, and a read-only agency gets the neutral A0090 from the three functions, never the trigger's words.
+//    verdict, as A0136 is at the start, and it asks whether the agency has room for the ceiling of one file (25 MiB), never for the size
+//    the person declared or sent, so that the line where the answer flips is not the room the agency has left (the reservation and the
+//    accounting still use the real size), and a read-only agency gets the neutral A0090 from the three functions, never the trigger's words.
 //  - The only read of the portal is `list_portal_material_uploads`: a page of the files the person herself sent to a request, pending or
 //    confirmed and not removed, while she is an active link of the client. It answers the columns of a listing and the final key of a
 //    confirmed object (the API is the server that signs the read), never the key of the staging, the multipart id or the texts the agency
@@ -200,13 +202,14 @@ export async function up(knex) {
     end;
     $function$;
 
-    -- Whether one more file of p_size_bytes fits: the request still has room for it and so does the storage of the agency (its own ceiling,
-    -- or the default of the deployment that the API hands over). Null when it fits, otherwise the reason: 'request_full', or
-    -- 'agency_unavailable' for the storage of the agency, a word that is safe to hand to the portal. The caller holds the locks.
+    -- Whether one more file fits: the request still has room for it and so does the storage of the agency (its own ceiling, or the default
+    -- of the deployment that the API hands over). Null when it fits, otherwise the reason: 'request_full', or 'agency_unavailable' for the
+    -- storage of the agency, a word that is safe to hand to the portal. The room is asked for the ceiling of one file, never for the size
+    -- of this one: a number the person controls would make the line where the answer flips the room the agency has left. The caller holds
+    -- the locks.
     create function app_private.portal_upload_refusal(
       p_agency_id uuid,
       p_thread_id uuid,
-      p_size_bytes bigint,
       p_exclude_asset_id uuid,
       p_default_quota_bytes bigint,
       p_default_quota_object_count bigint,
@@ -246,14 +249,14 @@ export async function up(knex) {
 
       select usage.used_bytes, usage.used_object_count into v_used_bytes, v_used_count
       from app_private.agency_storage_in_use(p_agency_id, p_pending_window_seconds, p_exclude_asset_id) usage;
-      if v_used_bytes + p_size_bytes > v_quota_bytes or v_used_count + 1 > v_quota_count then
+      if v_used_bytes + app_private.portal_upload_max_bytes() > v_quota_bytes or v_used_count + 1 > v_quota_count then
         return 'agency_unavailable';
       end if;
 
       return null;
     end;
     $function$;
-    revoke all on function app_private.portal_upload_refusal(uuid, uuid, bigint, uuid, bigint, bigint, integer) from public;
+    revoke all on function app_private.portal_upload_refusal(uuid, uuid, uuid, bigint, bigint, integer) from public;
   `);
 
   await knex.raw(`
@@ -389,7 +392,7 @@ export async function up(knex) {
       end if;
 
       v_refusal := app_private.portal_upload_refusal(
-        v_agency_id, p_thread_id, p_declared_size_bytes, null, p_default_quota_bytes, p_default_quota_object_count, p_pending_window_seconds
+        v_agency_id, p_thread_id, null, p_default_quota_bytes, p_default_quota_object_count, p_pending_window_seconds
       );
       if v_refusal = 'request_full' then
         raise exception using errcode = 'A0134', message = 'The request already holds its files.';
@@ -475,7 +478,7 @@ export async function up(knex) {
           or (p_width is not null and (v_asset.category <> 'image' or p_width not between 1 and 100000 or p_height not between 1 and 100000))
           then 'invalid_dimensions'
         else app_private.portal_upload_refusal(
-          v_asset.agency_id, v_asset.material_request_thread_id, p_size_bytes, v_asset.id,
+          v_asset.agency_id, v_asset.material_request_thread_id, v_asset.id,
           p_default_quota_bytes, p_default_quota_object_count, p_pending_window_seconds
         )
       end;
