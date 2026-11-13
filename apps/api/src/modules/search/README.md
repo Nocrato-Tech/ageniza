@@ -27,11 +27,16 @@ A resposta é `{ data: { clients, contents, files }, meta: { q } }`, com os trê
   papel. A tela nunca diz "sem permissão".
 - **A agência da rota está no WHERE das três consultas.** `clients_select` mostra à pessoa todas as agências a que ela pertence, e a
   pessoa de um cliente no portal de outra agência lê esse cliente também: só o filtro `client.agency_id = :agencyId` mantém a outra
-  agência de fora. `contents` e `media_assets` chegam à agência pelo cliente. O último teste do arquivo troca as três policies por
-  `using (true)` e mostra que a agência e a permissão de cada grupo continuam seguras.
+  agência de fora. `contents` chega à agência pelo cliente. `media_assets` leva a agência **também na própria linha**
+  (`asset.agency_id`): só pela junção com o cliente, o planejador podia varrer os arquivos de todas as agências, avaliando a policy em
+  cada um, e o custo da busca de uma agência seguiria o volume das outras. O teste de plano prende isso (sem `Seq Scan on media_assets`,
+  com 30 mil arquivos em outra agência). O teste das três policies em `using (true)` mostra que a agência e a permissão de cada grupo
+  continuam seguras.
 - **O termo é dado, nunca SQL.** Aparado, de 2 a 80 caracteres, sem caractere de controle (`AgencySearchQuerySchema`, `.strict()`); vai
   como parâmetro, e `%`, `_` e a barra invertida são escapados para valerem como texto. O dobramento (sem acento e sem maiúscula) é
-  `foldTextSql`, o mesmo da carteira e da Equipe, aplicado à coluna e ao termo. O `@` do começo vale só para o campo do @.
+  `foldTextSql`, o mesmo da carteira e da Equipe, aplicado à coluna e ao termo. O `@` do começo vale só para o campo do @. O mínimo de
+  2 é medido pela rota **depois** de tirar os acentos e o `@` (`searchedCharacters`): termo de marcas combinantes, `á` e um `@` com marca ficam
+  abaixo dele e recebem o `400` de um termo curto, em vez de virar um padrão vazio que casa tudo.
 - **O arquivo achado é o confirmado e não removido.** Envio em andamento, recusado e removido não aparecem; mídia sem nome (anterior ao
   nome) não casa. Cliente arquivado e conteúdo cancelado aparecem, com `archived` e `status`.
 - **Ordem e teto.** Dentro de cada grupo: o nome que começa com o termo antes do que só o contém, depois o nome dobrado
@@ -40,7 +45,8 @@ A resposta é `{ data: { clients, contents, files }, meta: { q } }`, com os trê
   `contentIsScheduled`) lidas no relógio de São Paulo da mesma instrução. O relógio é uma cópia curta da leitura de
   `contents/clock-sql.ts`, porque um módulo não importa o arquivo interno de outro; um módulo de contratos ou de infra que a exporte
   a trocaria.
-- **A foto** do cliente é assinada só quando a chave guardada é exatamente a do avatar daquele cliente (`isClientAvatarKey`); uma
+- **A foto** do cliente é assinada só quando a chave guardada é exatamente a do avatar daquele cliente (`isClientAvatarKey`), com a
+  agência da linha do banco e nunca a da URL (que a guarda aceita em qualquer caixa); uma
   chave estranha, a falta do armazenamento ou uma assinatura recusada dão `photoUrl: null`, e o log leva o código, nunca a chave.
 - **O termo não vai para o log nem para métrica.** O log da requisição usa o padrão da rota (`/agencies/:agencyId/search`), nunca a URL, e
   a recusa de um termo inválido nomeia o campo e a regra, sem o valor. A resposta do termo válido traz `meta.q`.

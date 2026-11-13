@@ -14,6 +14,8 @@ export interface SearchAccess {
 
 export interface SearchClientRow {
   readonly id: string;
+  /** The agency of the row, lowercase as stored: the scope of the photo key is built from it, never from the (case-insensitive) URL. */
+  readonly agency_id: string;
   readonly name: string;
   readonly photo_key: string | null;
   readonly instagram_handle: string | null;
@@ -54,7 +56,19 @@ interface RawRows<TResult> {
 }
 
 /** `%`, `_` and the escape character itself are text in what was typed; the `escape` clause below names the backslash. */
-const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (character) => `\\${character}`);
+const COMBINING_MARKS = /[̀-ͯ]/g;
+
+const escapeLikePattern =(value: string): string => value.replace(/[\\%_]/g, (character) => `\\${character}`);
+
+/**
+ * What of the term is left to search for: without the accents, which the database folds away (`foldTextSql`), and without the leading `@`
+ * that `patternsOf` drops for the handle. A term of combining marks only is empty there, and a letter with a mark is one letter, so the
+ * minimum is measured on this and not on what was typed.
+ */
+export const searchedCharacters = (term: string): string => {
+  const folded = term.normalize('NFD').replace(COMBINING_MARKS, '');
+  return folded.startsWith('@') && folded.length > 1 ? folded.slice(1) : folded;
+};
 
 interface Patterns {
   readonly contains: string;
@@ -99,7 +113,7 @@ const ranking = (column: string, idColumn: string): string =>
 const searchClients = async (transaction: SearchTransaction, agencyId: string, patterns: Patterns): Promise<readonly SearchClientRow[]> => {
   const result = await raw<RawRows<SearchClientRow>>(transaction, `
     with ${TERM_CTE}
-    select client.id, client.name, client.photo_key, client.instagram_handle, (client.status = 'archived') as archived
+    select client.id, client.agency_id, client.name, client.photo_key, client.instagram_handle, (client.status = 'archived') as archived
     from public.clients as client
     cross join term
     where client.agency_id = ?::uuid
@@ -153,7 +167,9 @@ const searchContents = async (
 /**
  * Files by name: the confirmed ones that were not removed (an upload still in flight, a refused one and a removed one are not files the
  * person has), and a file with no name, from before the name was kept, matches nothing since `like` over null is not true. The picture of
- * a file is itself for an image, a logo and a video whose thumbnail the worker made; a PDF and an audio have none.
+ * a file is itself for an image, a logo and a video whose thumbnail the worker made; a PDF and an audio have none. The agency is on the
+ * asset itself as well as on the client: through the client alone the planner may scan the assets of every agency and run the policy on
+ * each, so the cost of one agency would follow the volume of the others.
  */
 const searchFiles = async (transaction: SearchTransaction, agencyId: string, patterns: Patterns): Promise<readonly SearchFileRow[]> => {
   const result = await raw<RawRows<SearchFileRow>>(transaction, `
@@ -167,13 +183,14 @@ const searchFiles = async (transaction: SearchTransaction, agencyId: string, pat
     join public.clients as client on client.id = asset.client_id
     cross join term
     where client.agency_id = ?::uuid
+      and asset.agency_id = ?::uuid
       and asset.status = 'confirmed'
       and asset.removed_at is null
       and asset.folder_id is not null
       and ${matches('asset.file_name', 'term.contains')}
     order by ${ranking('asset.file_name', 'asset.id')}
     limit ?
-  `, [patterns.contains, patterns.prefix, patterns.handle, agencyId, AGENCY_SEARCH_GROUP_LIMIT]);
+  `, [patterns.contains, patterns.prefix, patterns.handle, agencyId, agencyId, AGENCY_SEARCH_GROUP_LIMIT]);
   return result.rows;
 };
 

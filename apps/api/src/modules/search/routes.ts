@@ -1,4 +1,5 @@
 import {
+  AGENCY_SEARCH_TERM_MIN_LENGTH,
   AgencyPathParamsSchema,
   AgencySearchQuerySchema,
   AgencySearchResponseSchema,
@@ -21,9 +22,9 @@ import { createRequireSession } from '../auth/session-guard.js';
 import { isClientAvatarKey } from '../identity-storage/policy.js';
 import type { IdentityStorageClient } from '../identity-storage/storage-client.js';
 import { tenantHolds } from '../tenancy/guards.js';
-import { translateDatabaseError } from './errors.js';
+import { termTooShort, translateDatabaseError } from './errors.js';
 import { SEARCH_PERMISSIONS, SEARCH_RATE_BUCKET, SEARCH_RATE_LIMIT } from './policy.js';
-import { searchAgency, type SearchAccess, type SearchClientRow, type SearchContentRow, type SearchFileRow } from './service.js';
+import { searchAgency, searchedCharacters, type SearchAccess, type SearchClientRow, type SearchContentRow, type SearchFileRow } from './service.js';
 
 export type SearchPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -84,11 +85,12 @@ export const registerSearchModule = (app: FastifyInstance, dependencies: SearchM
   // After the guards, so a request the guards refuse counts for nobody; one bucket per person across every agency.
   const limiter = sharedUserRateLimit(app, SEARCH_RATE_BUCKET, SEARCH_RATE_LIMIT);
 
-  // The stored key is data, not proof: it is signed only when it is exactly an avatar key of this agency and client. A key that cannot
-  // be signed is a missing photo, not a 500, and the log carries the code, never the key.
-  const photoUrlOf = async (request: FastifyRequest, agencyId: string, row: SearchClientRow): Promise<string | null> => {
+  // The stored key is data, not proof: it is signed only when it is exactly an avatar key of this agency and client, the agency being the
+  // one of the row (the id in the URL may be in capitals). A key that cannot be signed is a missing photo, not a 500, and the log carries
+  // the code, never the key.
+  const photoUrlOf = async (request: FastifyRequest, row: SearchClientRow): Promise<string | null> => {
     const storage = dependencies.identityStorage;
-    if (row.photo_key === null || storage === undefined || !isClientAvatarKey(row.photo_key, agencyId, row.id)) return null;
+    if (row.photo_key === null || storage === undefined || !isClientAvatarKey(row.photo_key, row.agency_id, row.id)) return null;
     try {
       return await storage.presignGetObject({ key: row.photo_key, expiresInSeconds: dependencies.photoUrlExpirySeconds });
     } catch (error) {
@@ -109,6 +111,8 @@ export const registerSearchModule = (app: FastifyInstance, dependencies: SearchM
     if (tenant === undefined) throw agencyNotFound();
     routeParams(searchDocs, request);
     const { q } = routeQuery(searchDocs, request);
+    // The contract measures what was typed; the database searches what is left once the accents are folded.
+    if (searchedCharacters(q).length < AGENCY_SEARCH_TERM_MIN_LENGTH) throw termTooShort();
 
     const access: SearchAccess = {
       clients: tenantHolds(tenant, SEARCH_PERMISSIONS.clients),
@@ -128,7 +132,7 @@ export const registerSearchModule = (app: FastifyInstance, dependencies: SearchM
     const clients: AgencySearchClient[] = await Promise.all(rows.clients.map(async (row) => ({
       id: row.id,
       name: row.name,
-      photoUrl: await photoUrlOf(request, tenant.agencyId, row),
+      photoUrl: await photoUrlOf(request, row),
       instagramHandle: row.instagram_handle,
       archived: row.archived
     })));

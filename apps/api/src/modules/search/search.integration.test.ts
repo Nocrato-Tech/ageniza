@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
 import type { AgencySearchResponse } from '@ageniza/contracts';
+import { createVerifiedUserClaims, withAuthenticatedUserTransaction } from '@ageniza/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { captureLogs, insertTestUser, TEST_APP_PUBLIC_URL } from '../auth/test-support/harness.js';
 import { createPortalFixtures } from '../contents/test-support/portal-fixtures.js';
 import { createContentsWorld, type Reply, type SeedContent } from '../contents/test-support/world.js';
+import { searchAgency, type SearchTransaction } from './service.js';
 
 // Scope redesign-igual, subtask W9-S1 (specs/busca.md, decision 2026-11-11): the search of the agency's top bar. It is probed with what a
 // person who may not read a group could infer (the shape of the answer, the statements that ran), with the agency of the route against
@@ -244,13 +246,16 @@ describe('what a name matches', () => {
     const removed = await newFile(client, 'padaria-removida.jpg', { removed: true });
     const pending = await newFile(client, 'padaria-pendente.jpg', { status: 'pending' });
     const inOtherAgency = await newFile(await newClient('Casa Arquivos B', { agencyId: w.agencyB }), 'padaria-b.jpg');
+    // The constraint of the table lets a file of a client sit outside every folder, and the answer has no shape for it.
+    const noFolder = await newFile(client, 'padaria-sem-pasta.jpg');
+    await knex()('media_assets').where({ id: noFolder }).update({ folder_id: null });
 
     const data = await found(admin.cookie, 'PADARIA');
     const byId = new Map(data.files.map((file) => [file.id, file]));
 
     expect([...byId.keys()].sort()).toEqual(sorted([image, ready, processing]));
     expect(data.files.map((file) => file.id)).not.toEqual(expect.arrayContaining([removed]));
-    expect([removed, pending, inOtherAgency].some((id) => byId.has(id))).toBe(false);
+    expect([removed, pending, inOtherAgency, noFolder].some((id) => byId.has(id))).toBe(false);
     expect(byId.get(image)).toEqual({ id: image, clientId: client, clientName: 'Casa Arquivos', folderId: folder, name: 'padaria-fachada.jpg', category: 'image', thumbnailAssetId: image });
     expect(byId.get(ready)).toMatchObject({ category: 'video', thumbnailAssetId: ready });
     expect(byId.get(processing)).toMatchObject({ category: 'video', thumbnailAssetId: null });
@@ -501,6 +506,36 @@ describe('the term', () => {
     }
   });
 
+  it('measures the minimum after the accents are folded: marks alone, a letter with a mark and an @ with a mark are as short as one character, and reach no table', async () => {
+    const tooShort = await search(admin.cookie, 'z');
+    expect(tooShort.statusCode).toBe(400);
+    const cases: Array<[string, string]> = [
+      ['two combining marks', '́́'],
+      ['one letter and a mark', 'á'],
+      ['the composed letter', 'á'],
+      ['an @ and a mark', '@́'],
+      ['the @ alone', '@'],
+      ['an @ and one letter', '@a'],
+      ['an @ and a letter with a mark', '@á']
+    ];
+
+    for (const [label, term] of cases) {
+      forget();
+      const reply = await search(admin.cookie, term);
+      expect({ label, status: reply.statusCode }).toEqual({ label, status: 400 });
+      // The same refusal a short term gets, field and rule only: nothing tells the two apart.
+      expect({ label, error: { ...reply.json().error, requestId: undefined } }).toEqual({ label, error: { ...tooShort.json().error, requestId: undefined } });
+      expect({ label, ran: ran() }).toEqual({ label, ran: { clients: false, contents: false, files: false } });
+    }
+  });
+
+  it('keeps a term that is two characters or more once the accents are folded, and an @ with two letters', async () => {
+    for (const term of ['áb', 'áb', 'á́b', '@ab', '@áb', 'ab́']) {
+      const reply = await search(admin.cookie, term);
+      expect({ term, status: reply.statusCode }).toEqual({ term, status: 200 });
+    }
+  });
+
   it('answers 400 to a missing term, to a term sent twice and to any other parameter', async () => {
     for (const url of [
       `/agencies/${w.agencyA}/search`,
@@ -631,6 +666,11 @@ describe('the photo of a client', () => {
     expect(photoOf(foreign)).toBeNull();
     expect(photoOf(bare)).toBeNull();
 
+    // The guard takes the agency id in any case, and the key is stored in lowercase: the scope comes from the row, not from the URL.
+    const upper = await found(admin.cookie, 'foto', w.agencyA.toUpperCase() as typeof w.agencyA);
+    expect(upper.clients.find((client) => client.id === own)?.photoUrl).toMatch(/^https?:\/\//);
+    expect(upper.clients.find((client) => client.id === foreign)?.photoUrl).toBeNull();
+
     failPresign = true;
     try {
       const refused = await search(admin.cookie, 'foto');
@@ -679,6 +719,60 @@ describe('what the database may raise', () => {
       }
     }
     expect((await search(person.cookie, 'erro')).statusCode).toBe(200);
+  });
+});
+
+describe('the cost of the files query', () => {
+  const VOLUME = 30_000;
+  let admin: { id: string; cookie: string };
+
+  // The statement of the files group as `ageniza_app` plans it, with the person bound, and never run: `searchAgency` is given a transaction
+  // that asks for the plan instead of the rows.
+  const planOfFiles = async (agencyId: string, term: string): Promise<string> => {
+    let plan = '';
+    await withAuthenticatedUserTransaction(w.getApp().database, createVerifiedUserClaims({ userId: admin.id }), async (transaction) => {
+      const planner = {
+        raw: async (statement: string, bindings: readonly unknown[]) => {
+          const result = await transaction.raw<{ rows: Array<{ 'QUERY PLAN': string }> }>(`explain ${statement}`, bindings as never[]);
+          plan = result.rows.map((row) => row['QUERY PLAN']).join('\n');
+          return { rows: [] };
+        }
+      } as unknown as SearchTransaction;
+      await searchAgency(planner, { agencyId, term, access: { clients: false, contents: false, files: true }, now: undefined });
+    });
+    return plan;
+  };
+
+  beforeAll(async () => {
+    admin = await freshAdmin('plan');
+    // Agency B holds the volume, on one client (a distribution the planner reads as "this client is most of the table"); the person is not in B.
+    const big = await newClient('Cliente do Volume', { agencyId: w.agencyB });
+    const folder = await w.folderOf(big);
+    await knex().raw(`
+      insert into public.media_assets (id, agency_id, client_id, folder_id, category, declared_content_type, extension, object_key, upload_object_key,
+        declared_size_bytes, created_by_user_id, status, confirmed_size_bytes, confirmed_content_type, confirmed_at, file_name)
+      select s.id, ?::uuid, ?::uuid, ?::uuid, 'image', 'image/png', 'png', ?::text || '/' || s.id || '/original.png', 'staging/' || ?::text || '/' || s.id || '/upload.png',
+        1000, ?::uuid, 'confirmed', 1000, 'image/png', now(), 'volume-' || s.n
+      from (select gen_random_uuid() as id, n from generate_series(1, ?::int) as n) as s
+    `, [w.agencyB, big, folder, w.agencyB, w.agencyB, people.admin.id, VOLUME]);
+    await newFile(await newClient('Cliente Pequeno'), 'volume-poucos.png');
+    await knex().raw('analyze public.media_assets');
+  });
+
+  afterAll(async () => {
+    await knex()('media_assets').where('file_name', 'like', 'volume-%').delete();
+    await knex().raw('analyze public.media_assets');
+  });
+
+  it('plans the files of an agency by the index of the agency, never by a scan of the table that holds the files of every agency', async () => {
+    const plan = await planOfFiles(w.agencyA, 'volume');
+
+    expect(plan).not.toMatch(/Seq Scan on media_assets/);
+    expect(plan).toMatch(/Index Cond: \(\(?agency_id = /);
+  });
+
+  it('still finds the file of the agency while another agency holds the volume', async () => {
+    expect(fileNames(await found(admin.cookie, 'volume'))).toEqual(['volume-poucos.png']);
   });
 });
 
