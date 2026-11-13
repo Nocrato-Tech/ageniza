@@ -163,6 +163,9 @@ describe('the quote', () => {
 
   it('starts with the plan, once, and takes each extra at most once', () => {
     expect(refused({ lines: [clients, plan, storage] })).toBe(false);
+    // An extra of one unit in front of the plan has the quantity the plan has, so only the kind can tell it is not the plan.
+    expect(refused({ lines: [{ kind: 'extra_clients', quantity: 1, unitCents: 600, totalCents: 600 }, plan], monthlyCents: 19700 + 600 })).toBe(false);
+    expect(refused({ lines: [plan, { kind: 'extra_clients', quantity: 1, unitCents: 600, totalCents: 600 }], monthlyCents: 19700 + 600 })).toBe(true);
     expect(refused({ lines: [plan, clients, clients], monthlyCents: 19700 + 6000 })).toBe(false);
     expect(refused({ lines: [{ ...plan, quantity: 2, totalCents: 39400 }], monthlyCents: 39400 })).toBe(false);
     expect(refused({ lines: [], monthlyCents: 0 })).toBe(false);
