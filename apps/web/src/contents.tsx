@@ -1,4 +1,4 @@
-import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, ChevronsUpDown, Grid3x3, Plus, Send } from 'lucide-react';
+import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, ChevronsUpDown, Grid3x3, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -13,11 +13,10 @@ import {
   type ContentListItem,
   type UpdateContentRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, ButtonLink, Chip, EmptyState, IconButton, LateBadge, LiveStatus, Menu, MenuItem, MenuSeparator, Segmented, Skeleton, StatusTag } from '@ageniza/ui';
+import { Avatar, Button, ButtonLink, Chip, EmptyState, IconButton, LateBadge, Menu, MenuItem, MenuSeparator, Segmented, Skeleton, StatusTag } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
-import { ApprovalSubmitDialog, batchCandidates } from './approval-submit-dialog.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { contentsAddress } from './content-address.js';
 import { ContentCalendar } from './content-calendar.js';
@@ -308,9 +307,6 @@ export function ContentsClientPage() {
   const canOperate = useCan('conteudo.operar');
   const blocked = useWriteBlocked();
   const [moveError, setMoveError] = useState<string | null>(null);
-  // The batch send: one dialog for the contents of the period that can go together, and what it said once it went.
-  const [batching, setBatching] = useState(false);
-  const [sentNotice, setSentNotice] = useState<string | null>(null);
   const move = useMutation({
     mutationFn: ({ content, day }: { content: ContentListItem; day: string }) => httpClient.request({
       path: apiPath('/agencies/:agencyId/clients/:clientId/contents/:contentId', { agencyId: agency.agencyId, clientId: normalizedId, contentId: content.id }),
@@ -348,7 +344,6 @@ export function ContentsClientPage() {
   // Moving through periods rewrites the address; choosing another view adds a step to it, so "voltar" returns to the view before.
   const setPeriod = (nextView: ScreenView, nextAnchor: string | null, replace = true): void => {
     setMoveError(null);
-    setSentNotice(null);
     const next = new URLSearchParams(searchParams);
     const param = VIEW_PARAMS[nextView];
     if (param === null) next.delete('visao'); else next.set('visao', param);
@@ -377,8 +372,6 @@ export function ContentsClientPage() {
   const archived = clientData?.status === 'archived';
   const canEdit = canOperate && clientData !== undefined && !archived;
   const canMove = canEdit && blocked === undefined;
-  const candidates = loaded === undefined ? [] : batchCandidates(loaded.data.contents);
-  const canBatch = canEdit && candidates.some((candidate) => candidate.startsHere);
 
   // What the chips count: the days of the month on screen (not the neighbours' the grid spills into), or the week.
   const counted = loaded === undefined ? [] : loaded.data.contents.filter((content) => calendarView === 'week' || content.publishOn.slice(0, 7) === anchor.slice(0, 7));
@@ -421,7 +414,6 @@ export function ContentsClientPage() {
             { value: 'feed', label: 'Feed', icon: <Grid3x3 /> }
           ]}
         />
-        {canBatch && <Button size="lg" variant="secondary" leadingIcon={<Send />} blockedReason={blocked} onClick={() => { setSentNotice(null); setBatching(true); }}>Enviar vários para aprovação</Button>}
         {canWriteScripts && <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => startContent(today)}>{onFeed ? 'Nova publicação' : 'Novo conteúdo'}</Button>}
       </div>
     </header>
@@ -429,7 +421,6 @@ export function ContentsClientPage() {
       {archived && <p className="contents__note">Cliente arquivado: o calendário é só leitura.</p>}
       {moveError !== null && <p className="contents__move-error" role="alert">{moveError}</p>}
       {move.isPending && <p className="list-refreshing" role="status">Movendo conteúdo…</p>}
-      {sentNotice !== null && <LiveStatus>{sentNotice}</LiveStatus>}
       {loaded === undefined
         ? <div className="contents__skeleton" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
         : <>
@@ -471,14 +462,6 @@ export function ContentsClientPage() {
         </>}
     </div>}
     {scriptLayer.modal}
-    {batching && <ApprovalSubmitDialog
-      target={{ kind: 'batch', clientId: normalizedId, candidates, scope: calendarView === 'week' ? 'da semana' : 'do mês' }}
-      onClose={() => { setBatching(false); }}
-      onSent={(count) => {
-        setBatching(false);
-        setSentNotice(count === 1 ? '1 conteúdo enviado para aprovação.' : `${count} conteúdos enviados para aprovação.`);
-      }}
-    />}
     <Outlet context={{
       clientId: normalizedId,
       canEdit,

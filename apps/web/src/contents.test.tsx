@@ -2603,19 +2603,14 @@ describe('the Calendário Editorial of the approved board: filters, legend, peri
     expect(periodCalls(calls)).toEqual([periodCall(padaria.id, '2026-10-11', '2026-10-17'), periodCall(academia.id, '2026-10-11', '2026-10-17')]);
   });
 
-  it('offers "Enviar vários para aprovação" only to who can operate, beside the primary "Novo conteúdo"', async () => {
+  it('keeps only "Novo conteúdo" at the top, and no "Enviar vários para aprovação" (it lives on the client tab since 2026-11-13)', async () => {
     const toApprove = [contentFixture({ title: 'Pronto para enviar', publishOn: '2026-10-14', status: 'in_production' })];
-    const reader = makeFetch({ contents: { [padaria.id]: toApprove } });
-    render_(reader.impl, contentsUrl(padaria.id));
-    await screen.findByText('Pronto para enviar');
-    expect(screen.queryByRole('button', { name: 'Enviar vários para aprovação' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Novo conteúdo' })).toBeNull();
-    cleanup();
-
     const operator = makeFetch({ permissions: OPERATE, contents: { [padaria.id]: toApprove } });
     const { probe } = render_(operator.impl, contentsUrl(padaria.id));
     await screen.findByText('Pronto para enviar');
-    expect(await screen.findByRole('button', { name: 'Enviar vários para aprovação' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Novo conteúdo' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Enviar vários/ })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Novo conteúdo' }));
     await waitFor(() => expect(probe.pathname).toBe(`${contentsUrl(padaria.id)}/novo`));
     expect(probe.search).toBe('?dia=2026-10-11');
