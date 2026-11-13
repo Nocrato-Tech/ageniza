@@ -38,9 +38,18 @@ export const translateSubscriptionError = (error: unknown): HttpError | undefine
 
 const FIELDS_ACCEPTED = 'Só last4, expMonth, expYear e brand são aceitos.';
 
+const CONTRACT_FIELDS: ReadonlySet<string> = new Set(['last4', 'expMonth', 'expYear', 'brand']);
+
+const contractFieldOf = (path: unknown): string => {
+  const first = typeof path === 'string' ? path.split('.', 1)[0] : '';
+  return CONTRACT_FIELDS.has(first) ? first : '';
+};
+
 /**
- * The generic validation answer names an unknown field, and on the test card the name of a field can be the number of the card. Only
- * this route swaps that one message for a fixed one: the rest of the answer (path, code, other issues) stays as the plugin built it.
+ * The generic validation answer names an unknown field, and on the test card the name of a field can be the number of the card. It
+ * shows up in the message of an unknown key and, through the ceiling on lists that runs before the schema, in the path. Only this route
+ * swaps the message for a fixed one and cuts every path down to the contract field it starts with, or to nothing when it starts with
+ * anything else; the rest of the answer (code, other issues) stays as the plugin built it.
  */
 export const withoutFieldNames = <TResult>(parse: () => TResult): TResult => {
   try {
@@ -53,7 +62,13 @@ export const withoutFieldNames = <TResult>(parse: () => TResult): TResult => {
       statusCode: error.statusCode,
       code: error.code,
       message: error.message,
-      details: { issues: issues.map((issue: { code?: unknown }) => issue.code === 'unrecognized_keys' ? { ...issue, message: FIELDS_ACCEPTED } : issue) }
+      details: {
+        issues: issues.map((issue: { code?: unknown; path?: unknown }) => ({
+          ...issue,
+          path: contractFieldOf(issue.path),
+          ...(issue.code === 'unrecognized_keys' ? { message: FIELDS_ACCEPTED } : {})
+        }))
+      }
     });
   }
 };

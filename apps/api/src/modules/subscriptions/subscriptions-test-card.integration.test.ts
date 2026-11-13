@@ -127,6 +127,8 @@ describe('what the body of a save can carry', () => {
   const NUMBER = '4111111111111111';
   const CODE = '9137';
   const NAME = 'Maria Teste Silva';
+  // One element past the ceiling on lists, which refuses before the schema runs and builds its path from the names the body brought.
+  const LONG = new Array<number>(10_001).fill(0);
   const refused: Array<[string, unknown]> = [
     ['the card number as an extra field', { ...card, number: NUMBER }],
     ['the security code as an extra field', { ...card, cvc: CODE }],
@@ -136,6 +138,10 @@ describe('what the body of a save can carry', () => {
     ['the card number as the name of a field', { ...card, [NUMBER]: 1 }],
     ['the card number as the only field, and nothing else', { [NUMBER]: 1 }],
     ['the card number as the name of a field next to a bad value', { ...card, brand: 'visa', [NUMBER]: 1 }],
+    ['the card number as the name of a list over the ceiling', { ...card, [NUMBER]: LONG }],
+    ['the card number as the name of a list over the ceiling, one level down', { ...card, x: { [NUMBER]: LONG } }],
+    ['the card number as the name of a list over the ceiling, inside a field of the contract', { ...card, last4: { [NUMBER]: LONG } }],
+    ['the card number inside a field of the contract, as the start of a dotted name', { ...card, [`last4.${NUMBER}`]: LONG }],
     ['the whole number in place of the last four digits', { ...card, last4: NUMBER }],
     ['five digits', { ...card, last4: '73910' }],
     ['three digits', { ...card, last4: '739' }],
@@ -173,6 +179,20 @@ describe('what the body of a save can carry', () => {
     expect(recorder.running(TEST_CARD_STATEMENT)).toEqual([]);
     expect(await savedCard(agencyId)).toEqual(before);
     expect(await auditCount(agencyId)).toBe(audited);
+  });
+
+  it('keeps the path of a refusal about a field of the contract, and gives none for a field that is not', async () => {
+    const send = async (body: unknown): Promise<Array<{ path: string; code: string }>> => {
+      const response = await app.app.inject({
+        method: 'PUT', url: url(agencyId), headers: { origin: TEST_APP_PUBLIC_URL, cookie: owner.cookie, 'content-type': 'application/json' }, payload: JSON.stringify(body)
+      });
+      expect(response.statusCode).toBe(400);
+      return response.json<{ error: { details: { issues: Array<{ path: string; code: string }> } } }>().error.details.issues;
+    };
+    expect(await send({ ...card, last4: '73' })).toEqual([expect.objectContaining({ path: 'last4' })]);
+    expect(await send({ ...card, expMonth: 13 })).toEqual([expect.objectContaining({ path: 'expMonth' })]);
+    expect(await send({ ...card, last4: LONG })).toEqual([{ path: 'last4', code: 'too_big', message: expect.any(String) }]);
+    expect(await send({ ...card, [NUMBER]: LONG })).toEqual([{ path: '', code: 'too_big', message: expect.any(String) }]);
   });
 
   it('refuses a __proto__ field out of the JSON text', async () => {
