@@ -454,10 +454,10 @@ describe('who may send, and to which request', () => {
     expect(await filesOf(thread)).toHaveLength(0);
   });
 
-  it('takes a window of no seconds: a reservation then counts for nothing', async () => {
+  it('takes a window of no seconds: a reservation of the agency then counts for nothing', async () => {
     const f = await fresh();
     await setQuota(f.agency, MAX_BYTES, null);
-    await start(f.user, startArgs(f.thread, { client: f.client, size: MAX_BYTES, window: 0 }));
+    await seed(f.client, f.agency, { size: MAX_BYTES, status: 'pending' });
 
     expect((await start(f.user, startArgs(f.thread, { client: f.client, size: MAX_BYTES, window: 0 }))).asset_id).toBeDefined();
     await expect(start(f.user, startArgs(f.thread, { client: f.client, size: 1_000 }))).rejects.toMatchObject({ code: 'A0136' });
@@ -568,14 +568,15 @@ describe('how much the agency can store, and what the portal is told when it can
   it('takes the file while the agency has room for one of the ceiling and refuses with A0136 when it has less, a code that says nothing of plans, quotas or billing', async () => {
     const f = await fresh();
     await setQuota(f.agency, 2 * MAX_BYTES, null);
+    await seed(f.client, f.agency, { size: MAX_BYTES });
     await start(f.user, startArgs(f.thread, { client: f.client, size: MAX_BYTES }));
-    await start(f.other, startArgs(f.thread, { client: f.client, size: MAX_BYTES }));
+    await seed(f.client, f.agency, { size: 1 });
 
     const refusal = await attempt(() => start(f.user, startArgs(f.thread, { client: f.client, size: 1 })));
 
     expect(refusal).toMatchObject({ code: 'A0136' });
     expect((refusal as { message: string }).message).not.toMatch(/quota|plan|billing|storage|limit|full|space|upgrade|pay/i);
-    expect(await filesOf(f.thread)).toHaveLength(2);
+    expect(await filesOf(f.thread)).toHaveLength(1);
   });
 
   // The answer must not depend on a number the person controls: with less than the ceiling of one file free, every size is refused, the
@@ -606,8 +607,9 @@ describe('how much the agency can store, and what the portal is told when it can
   it('takes the file that lands exactly on the ceiling of files', async () => {
     const count = await fresh();
     await setQuota(count.agency, null, 2);
-    await start(count.user, startArgs(count.thread, { client: count.client }));
+    await seed(count.client, count.agency);
     expect((await start(count.user, startArgs(count.thread, { client: count.client }))).asset_id).toBeDefined();
+    await seed(count.client, count.agency);
     await expect(start(count.user, startArgs(count.thread, { client: count.client }))).rejects.toMatchObject({ code: 'A0136' });
   });
 
@@ -621,8 +623,9 @@ describe('how much the agency can store, and what the portal is told when it can
     // A removed file still sits in the storage until the retention purges it.
     await seed(f.client, f.agency, { size: MAX_BYTES, removed: true });
 
-    // Two files in use leave exactly the room of one file of the ceiling; the one that is taken leaves less.
+    // Two files in use leave exactly the room of one file of the ceiling; one more byte of the agency leaves less.
     expect((await start(f.user, startArgs(f.thread, { client: f.client, size: 1 }))).asset_id).toBeDefined();
+    await seed(f.client, f.agency, { size: 1, status: 'pending' });
     await expect(start(f.user, startArgs(f.thread, { client: f.client, size: 1 }))).rejects.toMatchObject({ code: 'A0136' });
   });
 
@@ -641,6 +644,7 @@ describe('how much the agency can store, and what the portal is told when it can
     const oneFile = { defaultBytes: 100 * MAX_BYTES, defaultCount: 1 };
 
     expect((await start(f.user, startArgs(f.thread, { client: f.client, size: 10, ...oneFile }))).asset_id).toBeDefined();
+    await seed(f.client, f.agency, { size: 10 });
     await expect(start(f.user, startArgs(f.thread, { client: f.client, size: 10, ...oneFile }))).rejects.toMatchObject({ code: 'A0136' });
   });
 
@@ -656,6 +660,150 @@ describe('how much the agency can store, and what the portal is told when it can
     expect((await start(f.user, startArgs(f.thread, { client: f.client, size: 600, ...tight }))).asset_id).toBeDefined();
     await setQuota(f.agency, null, null);
     await expect(start(f.user, startArgs(f.thread, { client: f.client, size: 100, ...tight }))).rejects.toMatchObject({ code: 'A0136' });
+  });
+});
+
+// ---- what the person controls must not move the answer ---------------------------------------------------------------------------
+
+// The person makes reservations, sizes them and lets them go at will. If the question "does one more fit?" counted them, she would hold one of
+// a size she picks, ask, let it go and read the room the agency has left byte by byte (and the files left, by reserving until she is refused).
+// So the answer may change only with what the agency confirmed or reserved itself.
+describe('the room of the agency is not read through the reservations of the portal', () => {
+  const QUOTA = 40 * MAX_BYTES;
+  const ROOMS = [1, 1_000, MAX_BYTES - 1, MAX_BYTES, MAX_BYTES + 1, 2 * MAX_BYTES + 1_234];
+
+  /**
+   * An agency whose confirmed files leave exactly `room` bytes. The reservations are made first, while the agency has room for them, and the
+   * agency fills up after: the person can only reserve where there was room, but the agency changes under her.
+   */
+  const agencyWithRoom = async (room: number, hold: (f: Fresh) => Promise<unknown> = async () => undefined): Promise<Fresh> => {
+    const f = await fresh();
+    await setQuota(f.agency, QUOTA, null);
+    await hold(f);
+    await seed(f.client, f.agency, { size: QUOTA - room });
+    return f;
+  };
+  const answerOfStart = async (user: string, f: Fresh, size: number, thread = f.thread, client = f.client): Promise<string> => {
+    try {
+      const taken = await start(user, startArgs(thread, { client, size }));
+      await rejectUpload(user, taken.asset_id, 'probe');
+      return 'taken';
+    } catch (error) {
+      return (error as { code: string }).code;
+    }
+  };
+  const expectedAnswer = (room: number): string => (room >= MAX_BYTES ? 'taken' : 'A0136');
+
+  /** A person of another client of the same agency, with a request of her own to hold reservations in. */
+  const otherClientOf = async (f: Fresh): Promise<{ client: string; user: string; thread: string }> => {
+    const client = randomUUID();
+    const user = randomUUID();
+    freshClients.push(client);
+    freshUsers.push(user);
+    await owner().transaction(async (t) => {
+      await t('auth.user').insert({ id: user, name: `User ${user}`, email: `${user}@portal-uploads.test`, emailVerified: true });
+      await t('clients').insert({ id: client, agency_id: f.agency, name: `Cliente ${client}` });
+      await t('client_memberships').insert({ client_id: client, user_id: user });
+    });
+    return { client, user, thread: await openRequest(client) };
+  };
+
+  it.each(ROOMS)('answers the start the same whatever the size of the reservation she holds, with %i bytes left: no binary search on the size', async (room) => {
+    const edge = room - MAX_BYTES;
+    const sizes = [1, 1_000, edge - 1, edge, edge + 1, MAX_BYTES / 2, MAX_BYTES - 1, MAX_BYTES].filter((size) => size >= 1 && size <= MAX_BYTES);
+
+    for (const size of new Set(sizes)) {
+      const f = await agencyWithRoom(room, (a) => start(a.other, startArgs(a.thread, { client: a.client, size })));
+      expect(await answerOfStart(f.user, f, 1), `held ${size}`).toBe(expectedAnswer(room));
+    }
+  });
+
+  it.each([0, 1, 2, 5, 19])('answers the start the same with %i reservations of the ceiling held by the person, so the window does not slide', async (held) => {
+    for (const room of [MAX_BYTES - 1, MAX_BYTES, 3 * MAX_BYTES - 1, 3 * MAX_BYTES + 1]) {
+      const f = await agencyWithRoom(room, async (a) => {
+        for (let index = 0; index < held; index += 1) await start(a.user, startArgs(a.thread, { client: a.client, size: MAX_BYTES }));
+      });
+
+      expect(await answerOfStart(f.user, f, 1), `room ${room}`).toBe(expectedAnswer(room));
+    }
+  });
+
+  it('does not count the reservations of the other people and of the other clients of the agency either', async () => {
+    interface Other { client: string; user: string; thread: string }
+    const heldByOthers = async (a: Fresh): Promise<Other> => {
+      const other = await otherClientOf(a);
+      for (let index = 0; index < 3; index += 1) await start(other.user, startArgs(other.thread, { client: other.client, size: MAX_BYTES }));
+      await start(a.other, startArgs(a.thread, { client: a.client, size: MAX_BYTES }));
+      return other;
+    };
+    let tightOther: Other | undefined;
+    let roomyOther: Other | undefined;
+    const tight = await agencyWithRoom(MAX_BYTES - 1, async (a) => { tightOther = await heldByOthers(a); });
+    const roomy = await agencyWithRoom(MAX_BYTES, async (a) => { roomyOther = await heldByOthers(a); });
+
+    expect(await answerOfStart(tight.user, tight, 1)).toBe('A0136');
+    expect(await answerOfStart(tightOther!.user, tight, 1, tightOther!.thread, tightOther!.client)).toBe('A0136');
+    expect(await answerOfStart(roomy.user, roomy, 1)).toBe('taken');
+    expect(await answerOfStart(roomyOther!.user, roomy, 1, roomyOther!.thread, roomyOther!.client)).toBe('taken');
+  });
+
+  it('still moves with what the agency does: a file it confirms or a reservation it holds takes the room, and what it lets go gives it back', async () => {
+    const f = await agencyWithRoom(MAX_BYTES + 10, (a) => start(a.other, startArgs(a.thread, { client: a.client, size: MAX_BYTES })));
+
+    expect(await answerOfStart(f.user, f, 1)).toBe('taken');
+    const reservation = await seed(f.client, f.agency, { size: 11, status: 'pending' });
+    expect(await answerOfStart(f.user, f, 1)).toBe('A0136');
+    await owner()('media_assets').where({ id: reservation }).update({ status: 'rejected', rejected_reason: 'abandoned' });
+    expect(await answerOfStart(f.user, f, 1)).toBe('taken');
+    await seed(f.client, f.agency, { size: 11 });
+    expect(await answerOfStart(f.user, f, 1)).toBe('A0136');
+  });
+
+  // One byte below and one byte above the line where the answer flips, for the reservation the person holds when she confirms another file.
+  it.each([MAX_BYTES - 1, MAX_BYTES, MAX_BYTES + 1_000])('gives the confirmation the same verdict whatever the reservation she holds, with %i bytes left', async (room) => {
+    const edge = room - MAX_BYTES;
+    const sizes = new Set([1, 999, 1_000, 1_001, Math.max(1, edge - 1), Math.max(1, edge), edge + 1, MAX_BYTES / 2, MAX_BYTES].filter((size) => size >= 1 && size <= MAX_BYTES));
+
+    for (const size of sizes) {
+      let target: Started | undefined;
+      let held: Started | undefined;
+      const f = await agencyWithRoom(room, async (a) => {
+        target = await start(a.user, startArgs(a.thread, { client: a.client, size: 1 }));
+        held = await start(a.other, startArgs(a.thread, { client: a.client, size }));
+      });
+
+      expect(await confirm(f.user, target!.asset_id, { size: 1 }), `held ${size}`)
+        .toEqual(room >= MAX_BYTES ? { outcome: 'confirmed', reason: null } : { outcome: 'rejected', reason: 'agency_unavailable' });
+      expect(await assetRow(held!.asset_id)).toMatchObject({ status: 'pending' });
+    }
+  });
+
+  it('does not let the number of reservations of the person read the files the agency has left: she is accepted as many times as the request takes', async () => {
+    const room = 7;
+    const f = await fresh();
+    await setQuota(f.agency, null, 43 + room);
+    for (let index = 0; index < 43; index += 1) await seed(f.client, f.agency, { size: 1 });
+    const threads = [f.thread, await openRequest(f.client), await openRequest(f.client)];
+
+    const answers: string[] = [];
+    for (let index = 0; index < 3 * 10; index += 1) {
+      const thread = threads[index % 3]!;
+      answers.push(await (async () => {
+        try {
+          await start(f.user, startArgs(thread, { client: f.client, size: 1 }));
+          return 'taken';
+        } catch (error) {
+          return (error as { code: string }).code;
+        }
+      })());
+    }
+    expect(new Set(answers)).toEqual(new Set(['taken']));
+
+    // The agency fills the room that was left, and the same person is refused from the first file, with her reservations or without them.
+    for (let index = 0; index < room; index += 1) await seed(f.client, f.agency, { size: 1 });
+    await expect(start(f.user, startArgs(f.thread, { client: f.client, size: 1 }))).rejects.toMatchObject({ code: 'A0136' });
+    await owner()('media_assets').where({ material_request_thread_id: f.thread, status: 'pending' }).update({ status: 'rejected', rejected_reason: 'abandoned' });
+    await expect(start(f.user, startArgs(f.thread, { client: f.client, size: 1 }))).rejects.toMatchObject({ code: 'A0136' });
   });
 });
 
@@ -1166,10 +1314,12 @@ describe('the storage usage, counted in one place', () => {
     await seed(f.client, f.agency, { size: 16_000, purged: true });
     await seed(f.client, f.agency, { size: 32_000, removed: true });
     const one = await seed(f.client, f.agency, { size: 64_000 });
+    // The reservation of the portal counts here, as for the agency's own route: only the question of the portal leaves it out.
+    await seed(f.client, f.agency, { size: 128_000, status: 'pending', side: 'client', thread: f.thread, user: f.user });
 
-    expect(await usageOf(f.agency)).toEqual({ used_bytes: '99100', used_object_count: '4' });
-    expect(await usageOf(f.agency, WINDOW, one)).toEqual({ used_bytes: '35100', used_object_count: '3' });
-    expect(await usageOf(f.agency, WINDOW * 2)).toEqual({ used_bytes: '103100', used_object_count: '5' });
+    expect(await usageOf(f.agency)).toEqual({ used_bytes: '227100', used_object_count: '5' });
+    expect(await usageOf(f.agency, WINDOW, one)).toEqual({ used_bytes: '163100', used_object_count: '4' });
+    expect(await usageOf(f.agency, WINDOW * 2)).toEqual({ used_bytes: '231100', used_object_count: '6' });
     expect(await usageOf(f.agency, 0)).toEqual({ used_bytes: '97100', used_object_count: '3' });
     expect(await assetRow(old)).toMatchObject({ status: 'pending' });
     expect(await usageOf((await fresh()).agency)).toEqual({ used_bytes: '0', used_object_count: '0' });
@@ -1230,7 +1380,8 @@ describe('two transactions at once', () => {
     const firstPid = await backendPid(first);
     let second: Promise<unknown> | undefined;
     try {
-      await startIn(first, startArgs(f.thread, { client: f.client, size: 1_000 }));
+      const taken = await startIn(first, startArgs(f.thread, { client: f.client, size: 1_000 }));
+      expect(await confirmIn(first, taken.asset_id, confirmArgs({ size: 1_000 }))).toEqual({ outcome: 'confirmed', reason: null });
       second = attempt(() => start(f.other, startArgs(f.thread, { client: f.client, size: 1_000 })));
       await waitForBackendsBlockedBy(owner(), firstPid);
     } finally {
@@ -1282,10 +1433,27 @@ describe('two transactions at once', () => {
     expect(await filesOf(f.thread)).toHaveLength(MAX_FILES);
   });
 
-  it('keeps the ceilings under a burst of starts and confirmations that all go for the last places, with no deadlock', async () => {
+  it('never lets the confirmed bytes pass the quota when many reservations of the portal go for the last place: the reservations hold no room and the confirmations stop in time', async () => {
     const f = await fresh();
-    // Room for three more files of a thousand bytes beyond the two reserved: a start is taken while the room left holds one file of the ceiling.
-    await setQuota(f.agency, MAX_BYTES + 4_500, null);
+    // Room for two files of the ceiling and a half: the third confirmation has less than one file of the ceiling to take.
+    const quota = 2 * MAX_BYTES + MAX_BYTES / 2;
+    await setQuota(f.agency, quota, null);
+    const users = [f.user, f.other];
+    const reserved = [];
+    for (let index = 0; index < 6; index += 1) reserved.push(await start(users[index % 2]!, startArgs(f.thread, { client: f.client, size: 1_000 })));
+
+    const verdicts = await Promise.all(reserved.map((asset, index) => confirm(users[index % 2]!, asset.asset_id, { size: MAX_BYTES })));
+
+    expect(verdicts.filter((verdict) => verdict.outcome === 'confirmed')).toHaveLength(2);
+    expect(verdicts.filter((verdict) => verdict.outcome === 'rejected' && verdict.reason === 'agency_unavailable')).toHaveLength(4);
+    const confirmed = (await filesOf(f.thread)).filter((file) => file.status === 'confirmed');
+    expect(confirmed.reduce((sum, file) => sum + Number(file.confirmed_size_bytes), 0)).toBeLessThanOrEqual(quota);
+  });
+
+  it('lets starts and confirmations race for the last place of the agency with no deadlock and no confirmed byte past the quota', async () => {
+    const f = await fresh();
+    const quota = MAX_BYTES + 4_500;
+    await setQuota(f.agency, quota, null);
     const reserved = [
       await start(f.user, startArgs(f.thread, { client: f.client })),
       await start(f.other, startArgs(f.thread, { client: f.client }))
@@ -1297,10 +1465,10 @@ describe('two transactions at once', () => {
       ...Array.from({ length: 8 }, (_, index) => attempt(() => start(users[index % 2]!, startArgs(f.thread, { client: f.client }))))
     ]);
 
-    const failures = results.filter((result) => typeof result === 'object' && result !== null && 'code' in result);
-    expect(failures.map((failure) => (failure as { code: string }).code)).toEqual(Array(5).fill('A0136'));
-    expect((await filesOf(f.thread)).filter((file) => file.status === 'confirmed')).toHaveLength(2);
-    expect(await filesOf(f.thread)).toHaveLength(5);
+    expect(results.filter((result) => typeof result === 'object' && result !== null && 'code' in result)).toEqual([]);
+    expect(await filesOf(f.thread)).toHaveLength(10);
+    const confirmed = (await filesOf(f.thread)).filter((file) => file.status === 'confirmed');
+    expect(confirmed.reduce((sum, file) => sum + Number(file.confirmed_size_bytes), 0)).toBeLessThanOrEqual(quota);
   });
 
   it('keeps the ceiling of the request under a burst, with no deadlock', async () => {

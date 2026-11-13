@@ -227,6 +227,8 @@ export async function up(knex) {
       v_quota_count bigint;
       v_used_bytes bigint;
       v_used_count bigint;
+      v_held_bytes bigint;
+      v_held_count bigint;
     begin
       select pg_catalog.count(*) into v_in_request
       from public.media_assets asset
@@ -249,6 +251,19 @@ export async function up(knex) {
 
       select usage.used_bytes, usage.used_object_count into v_used_bytes, v_used_count
       from app_private.agency_storage_in_use(p_agency_id, p_pending_window_seconds, p_exclude_asset_id) usage;
+      -- The reservations of the portal are left out of what the portal is told: the person makes them, sizes them and lets them go at will,
+      -- so counting them would let her read the room the agency has left by probing. What counts for her is what is confirmed and what the
+      -- agency itself holds; the route of the agency still counts every reservation.
+      select coalesce(sum(asset.declared_size_bytes), 0)::bigint, pg_catalog.count(*)::bigint into v_held_bytes, v_held_count
+      from public.media_assets asset
+      where asset.agency_id = p_agency_id
+        and asset.purged_at is null
+        and asset.uploaded_by_side = 'client'
+        and asset.status = 'pending'
+        and (p_exclude_asset_id is null or asset.id <> p_exclude_asset_id)
+        and asset.updated_at >= pg_catalog.now() - (p_pending_window_seconds * interval '1 second');
+      v_used_bytes := v_used_bytes - v_held_bytes;
+      v_used_count := v_used_count - v_held_count;
       if v_used_bytes + app_private.portal_upload_max_bytes() > v_quota_bytes or v_used_count + 1 > v_quota_count then
         return 'agency_unavailable';
       end if;
