@@ -69,7 +69,17 @@ function LocationProbe({ probe }: { probe: LocationCapture }) {
 interface RenderOptions {
   /** Response for `GET /me/contexts`; two contexts by default. */
   contexts?: () => Response | Promise<Response>;
+  /** Response for `GET /auth/sessions`; two sessions by default. */
+  sessions?: () => Response | Promise<Response>;
 }
+
+const sessionRow = (id: string, current: boolean) => ({
+  id, current, browser: 'Chrome', os: 'Windows', city: null, lastUsedAt: '2026-11-11T01:30:00.000Z', createdAt: '2026-11-10T01:30:00.000Z'
+});
+const SESSION_ONE = '44444444-4444-4444-8444-444444444444';
+const SESSION_TWO = '55555555-5555-4555-8555-555555555555';
+const twoSessions = (): Response => json({ sessions: [sessionRow(SESSION_ONE, true), sessionRow(SESSION_TWO, false)] });
+const oneSession = (): Response => json({ sessions: [sessionRow(SESSION_ONE, true)] });
 
 function renderAccountMenu(fetchImplementation: typeof fetch, options: RenderOptions = {}) {
   const queryClient = createQueryClient();
@@ -86,6 +96,7 @@ function renderAccountMenu(fetchImplementation: typeof fetch, options: RenderOpt
     if (url.endsWith('/me/contexts')) {
       return options.contexts === undefined ? json({ canCreateAgency: false, contexts: [agencyA, agencyB, clientC] }) : options.contexts();
     }
+    if (url.endsWith('/auth/sessions')) return (options.sessions ?? twoSessions)();
     return fetchImplementation(input, init);
   };
   const client = new HttpClient('http://127.0.0.1:3001', impl, { onSessionEnded: signal.notify });
@@ -155,6 +166,68 @@ describe('AccountMenu', () => {
     expect(queryClient.getQueryData(['private-account-data'])).toBeUndefined();
   });
 
+  it('offers Sair de todas as sessões only with 2 or more sessions', async () => {
+    const two = renderAccountMenu(async (input) => {
+      if (String(input).endsWith('/auth/session')) return json(sessionBody);
+      throw new Error('unexpected ' + String(input));
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    expect(await screen.findByRole('menuitem', { name: 'Sair de todas as sessões' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Sair' })).toBeTruthy();
+    expect(two.calls.some((call) => call.method === 'GET' && call.path === '/auth/sessions')).toBe(true);
+    cleanup();
+
+    renderAccountMenu(async (input) => {
+      if (String(input).endsWith('/auth/session')) return json(sessionBody);
+      throw new Error('unexpected ' + String(input));
+    }, { sessions: oneSession });
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    await screen.findByRole('menuitem', { name: 'Sair' });
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Minha conta' })).toBeTruthy());
+    expect(screen.queryByRole('menuitem', { name: 'Sair de todas as sessões' })).toBeNull();
+  });
+
+  it('keeps only Sair when the list of sessions cannot be read', async () => {
+    renderAccountMenu(async (input) => {
+      if (String(input).endsWith('/auth/session')) return json(sessionBody);
+      throw new Error('unexpected ' + String(input));
+    }, { sessions: () => json({ error: { code: 'INTERNAL_ERROR', message: 'Failure' } }, 500) });
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    await screen.findByRole('menuitem', { name: 'Sair' });
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Sair de todas as sessões' })).toBeNull());
+  });
+
+  it('opens Minha conta under the area the person is in', async () => {
+    const { probe } = renderAccountMenu(async (input) => {
+      if (String(input).endsWith('/auth/session')) return json(sessionBody);
+      throw new Error('unexpected ' + String(input));
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Minha conta' }));
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/conta`));
+  });
+
+  it('opens Minha conta of the portal under /portal', async () => {
+    const queryClient = createQueryClient();
+    const client = new HttpClient('http://127.0.0.1:3001', async (input) => {
+      if (String(input).endsWith('/auth/sessions')) return oneSession();
+      return json({ canCreateAgency: false, contexts: [] });
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ApiClientProvider client={client}>
+          <MemoryRouter initialEntries={[`/portal/${CLIENT_C}/inicio`]}>
+            <AccountMenu user={{ id: USER_ID, name: 'Pessoa', email: 'pessoa@example.test' }} />
+            <LocationProbe probe={{ pathname: '', state: null }} />
+          </MemoryRouter>
+        </ApiClientProvider>
+      </QueryClientProvider>
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Pessoa/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Minha conta' }));
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe(`/portal/${CLIENT_C}/conta`));
+  });
+
   it('requires confirmation before logout-all and uses the serious action style', async () => {
     const { calls } = renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
@@ -163,7 +236,7 @@ describe('AccountMenu', () => {
     });
 
     fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
-    const logoutAll = screen.getByRole('menuitem', { name: 'Sair de todas as sessões' });
+    const logoutAll = await screen.findByRole('menuitem', { name: 'Sair de todas as sessões' });
     expect(logoutAll.className).toContain('ui-menu-item--destructive');
     fireEvent.click(logoutAll);
     expect(calls.some((call) => call.method === 'POST' && call.path === '/auth/logout-all')).toBe(false);
@@ -347,8 +420,8 @@ describe('AccountMenu', () => {
     }, { contexts: () => pending });
 
     fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
-    // Before the list resolves the first item is the e-mail change request; the menu focuses it for now.
-    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Pedir troca de e-mail' }));
+    // Before the list resolves the first item is Minha conta; the menu focuses it for now.
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Minha conta' }));
 
     await act(async () => { release?.(); });
     const switcher = await screen.findByRole('menuitem', { name: /Trocar de contexto/ });
@@ -365,8 +438,8 @@ describe('AccountMenu', () => {
     }, { contexts: () => pending });
 
     fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
-    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Pedir troca de e-mail' }), { key: 'ArrowDown' });
-    const moved = screen.getByRole('menuitem', { name: 'Sair' });
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Minha conta' }), { key: 'ArrowDown' });
+    const moved = screen.getByRole('menuitem', { name: 'Pedir troca de e-mail' });
     expect(document.activeElement).toBe(moved);
 
     await act(async () => { release?.(); });

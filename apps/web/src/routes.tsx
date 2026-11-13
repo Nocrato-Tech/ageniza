@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { AuthSessionSnapshot } from './auth.js';
 import { AcceptanceGate, AcceptancePage } from './acceptance.js';
 import { AccountMenu } from './account-menu.js';
+import { AccountPage } from './account-page.js';
 import { ApprovalLinkPage } from './approval-link.js';
 import { AgencyAreaLayout, AgencyPermissionRoute } from './agency.js';
 import { AgencyHomePage } from './agency-home.js';
@@ -177,6 +178,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
         </AgencyPermissionRoute>
       } />
       <Route path="notificacoes" element={<NotificationsPage />} />
+      <Route path="conta" element={<AccountPage />} />
       <Route path="assinatura" element={
         <AgencyPermissionRoute permission="assinatura.gerenciar">
           <SubscriptionPage />
@@ -239,6 +241,7 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="calendario" element={<PortalCalendarRedirect />} />
       <Route path="marca" element={<PortalBrandPage />} />
       <Route path="pedidos" element={<PortalRequestsPage />} />
+      <Route path="conta" element={<AccountPage />} />
       <Route path="relatorios" element={<PortalReportsRedirect />} />
       <Route path="*" element={<NotFoundPage as="section" />} />
     </Route>
