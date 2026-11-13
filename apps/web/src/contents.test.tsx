@@ -1019,7 +1019,7 @@ describe('every request goes through apiPath', () => {
 
     const agencyCalls = calls.filter((call) => call.includes('/agencies/'));
     expect(agencyCalls.length).toBeGreaterThan(2);
-    for (const call of agencyCalls) expect(call).toMatch(new RegExp(`^GET /agencies/${AGENCY_A}/(me|clients(/${padaria.id}(/contents(\\?from=\\d{4}-\\d{2}-\\d{2}&to=\\d{4}-\\d{2}-\\d{2}|/feed))?|\\?page=1&pageSize=100)?)$`));
+    for (const call of agencyCalls) expect(call).toMatch(new RegExp(`^GET /agencies/${AGENCY_A}/(me|notifications/unread-count|clients(/${padaria.id}(/contents(\\?from=\\d{4}-\\d{2}-\\d{2}&to=\\d{4}-\\d{2}-\\d{2}|/feed))?|\\?page=1&pageSize=100)?)$`));
     // The id in the address is lower-cased before it becomes a request: the API compares it as is.
     expect(calls.some((call) => call.includes(padaria.id.toUpperCase()))).toBe(false);
   });

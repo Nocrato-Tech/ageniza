@@ -6,6 +6,7 @@ import { BrandSymbol, IconButton, Logo, Skeleton } from '@ageniza/ui';
 
 import { AccountMenu } from './account-menu.js';
 import { HelpMenu } from './help-menu.js';
+import { NotificationsBell } from './notifications-panel.js';
 import { usePhone } from './use-phone.js';
 
 interface NavItem {
@@ -80,7 +81,7 @@ export function AgencySidebar({ agenciaId, agencyName, permissions, isOwner, rol
           <span className="agency-mbar__name">{agencyName}</span>
         </Link>
         <div className="agency-mbar__end">
-          <span className="agency-mbar__bell-slot" aria-hidden="true" />
+          <NotificationsBell agencyId={agenciaId} />
           <HelpMenu />
           <AccountMenu variant="compact" activeContext={agencyName} contextLabel="Agência logada" subscriptionTo={subscriptionTo} />
         </div>

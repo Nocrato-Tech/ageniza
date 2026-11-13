@@ -15,7 +15,7 @@
   height: 1.75rem;
 }
 
-/* The top bar of the wide shells: the search and the bell have their own subtasks, so their places are kept and empty. */
+/* The top bar of the wide shells: the search has its own subtask, so its place is kept empty; the portal keeps the bell's place empty too. */
 .shell-topbar {
   display: flex;
   align-items: center;
