@@ -662,6 +662,31 @@ describe('client detail (#136)', () => {
       await waitFor(() => expect(comments).toEqual([`GET ${SECOND_THREAD_ID}`, `GET ${THREAD_ID}`]));
     });
 
+    it('opens the request named in ?pedido= (a notification), reading its own comments and not the other row', async () => {
+      const comments: string[] = [];
+      const { impl } = makeFetch({
+        threads: openOnly(request(), request({ id: SECOND_THREAD_ID, title: 'Forno novo' })),
+        comments: (threadId, method) => { comments.push(`${method} ${threadId}`); return json({ data: [], meta: { page: 1, pageSize: 50, totalItems: 0, totalPages: 1 } }); }
+      });
+      renderClientDetail(impl, `${clientUrl()}?pedido=${SECOND_THREAD_ID}`);
+
+      const dialog = await screen.findByRole('dialog', { name: 'Pedido de material' });
+      expect(within(dialog).getByRole('button', { name: 'Resolver' })).toBeTruthy();
+      await waitFor(() => expect(comments).toEqual([`GET ${SECOND_THREAD_ID}`]));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar conversa' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Pedido de material' })).toBeNull());
+    });
+
+    it('opens the page as usual when ?pedido= names a request that does not exist', async () => {
+      const { impl } = makeFetch({ threads: openOnly(request()) });
+      renderClientDetail(impl, `${clientUrl()}?pedido=${SECOND_THREAD_ID}`);
+      const section = await sectionOf();
+      await within(section).findByText('Fotos da equipe');
+
+      expect(screen.queryByRole('dialog', { name: 'Pedido de material' })).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
     it('says there is no request, and a failed read with Tentar de novo that reads again, never the empty text', async () => {
       const empty = makeFetch();
       renderClientDetail(empty.impl);

@@ -11,8 +11,8 @@ describe('notificationPath', () => {
     expect(notificationPath(AGENCY, { type: 'content', clientId: CLIENT, contentId: OTHER })).toBe(`/agencia/${AGENCY}/conteudos/${CLIENT}/${OTHER}`);
   });
 
-  it('opens the Visão geral of the client for a request for material', () => {
-    expect(notificationPath(AGENCY, { type: 'material-request', clientId: CLIENT, threadId: OTHER })).toBe(`/agencia/${AGENCY}/clientes/${CLIENT}/geral`);
+  it('opens the Visão geral of the client with the request for material in the address', () => {
+    expect(notificationPath(AGENCY, { type: 'material-request', clientId: CLIENT, threadId: OTHER })).toBe(`/agencia/${AGENCY}/clientes/${CLIENT}/geral?pedido=${OTHER}`);
   });
 
   it('opens the Equipe for an accepted invitation', () => {

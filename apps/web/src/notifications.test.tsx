@@ -315,7 +315,7 @@ describe('the panel', () => {
 
   it.each([
     [1, `/agencia/${AGENCY}/conteudos/${CLIENT}/${id(801)}`, true],
-    [3, `/agencia/${AGENCY}/clientes/${CLIENT}/geral`, false],
+    [3, `/agencia/${AGENCY}/clientes/${CLIENT}/geral?pedido=${id(903)}`, false],
     [4, `/agencia/${AGENCY}/conteudos/${CLIENT}/${id(804)}`, false],
     [5, `/agencia/${AGENCY}/colaboradores`, false]
   ])('goes from row %i to its destination, and reads it only if it was unread', async (n, destination, unread) => {

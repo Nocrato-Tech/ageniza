@@ -39,7 +39,8 @@
   font-weight: 600;
 }
 
-.ui-status-tag .ui-icon > svg {
+.ui-status-tag .ui-icon > svg,
+.ui-late-badge .ui-icon > svg {
   width: 0.75rem;
   height: 0.75rem;
   stroke-width: 2.4;

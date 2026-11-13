@@ -6,6 +6,7 @@ import { Pencil, Save } from 'lucide-react';
 import {
   CalendarDaySchema,
   ContentDetailSchema,
+  MediaLibraryAssetSchema,
   type ContentDetail,
   type ContentFormat,
   type ContentStatus,
@@ -39,6 +40,7 @@ import { CoverField, FolderField, MediaField, useFreshFolder } from './content-m
 import { Conversation } from './conversation.js';
 import { captionCounter, ContentPreview } from './content-preview.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { mediaBase } from './media-library-model.js';
 
 /** What the client page hands the modal it renders in its `Outlet`: the rules that belong to the client, not to the content. */
 export interface ContentsOutletContext {
@@ -82,10 +84,18 @@ const useCloseTo = (clientId: string): (() => void) => {
   };
 };
 
-function ContentEditor({ context, initial, initialDay, onBusyChange, onDirtyChange, onDone }: {
+/** A file chosen in the media library ("Usar em um conteúdo"): the new content starts in its folder, with it as the media. */
+interface PickedMedia {
+  readonly assetId: string;
+  readonly folderId: string;
+  readonly format: ContentFormat;
+}
+
+function ContentEditor({ context, initial, initialDay, picked, onBusyChange, onDirtyChange, onDone }: {
   context: ContentsOutletContext;
   initial: ContentDetail | null;
   initialDay: string;
+  picked?: PickedMedia | undefined;
   onBusyChange: (busy: boolean) => void;
   onDirtyChange: (dirty: boolean) => void;
   /** Closes after a success: it never asks, because nothing is left to lose. */
@@ -105,7 +115,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDirtyChan
   const [born, setBorn] = useState<ContentDetail | null>(null);
   const saved = initial ?? born;
   const [form, setForm] = useState<ContentFormValues>(() => initial === null
-    ? { title: '', format: 'image', publishOn: initialDay, publishAtTime: '', folderId: '', caption: '', mediaAssetIds: [], coverAssetId: null }
+    ? { title: '', format: picked?.format ?? 'image', publishOn: initialDay, publishAtTime: '', folderId: picked?.folderId ?? '', caption: '', mediaAssetIds: picked === undefined ? [] : [picked.assetId], coverAssetId: null }
     : valuesOf(initial));
   const initialForm = useRef(form);
   const [errors, setErrors] = useState<ContentFieldErrors>({});
@@ -517,6 +527,29 @@ export function ContentModalRoute() {
   </ContentDialog>;
 }
 
+/**
+ * The file in `?midia=`, read from the library of the client of the address. Anything that is not a usable photo or video of this
+ * client (unknown id, another type, a failed read) is no file at all: the modal opens as it would without the parameter.
+ */
+function usePickedMedia(context: ContentsOutletContext, param: string | null): { pending: boolean; media: PickedMedia | undefined } {
+  const httpClient = useApiClient();
+  const agency = useAgencyContext();
+  const id = MediaLibraryAssetSchema.shape.id.safeParse(param?.toLowerCase());
+  const asset = useQuery({
+    queryKey: ['agency', agency.agencyId, 'contents', context.clientId, 'picked-media', id.success ? id.data : ''],
+    queryFn: ({ signal }) => httpClient.request({ path: `${mediaBase(agency.agencyId, context.clientId)}/${encodeURIComponent(id.success ? id.data : '')}`, response: MediaLibraryAssetSchema, signal }),
+    enabled: id.success && context.ready && context.canEdit,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false
+  });
+  if (!id.success || !context.ready || !context.canEdit || asset.isError) return { pending: false, media: undefined };
+  if (asset.data === undefined) return { pending: true, media: undefined };
+  if (asset.data.category !== 'image' && asset.data.category !== 'video') return { pending: false, media: undefined };
+  return { pending: false, media: { assetId: asset.data.id, folderId: asset.data.folderId, format: asset.data.category === 'image' ? 'image' : 'reels' } };
+}
+
 /** `/agencia/:agenciaId/conteudos/:clienteId/novo?dia=AAAA-MM-DD`: a new content, born in production on the day of the "+" or today. */
 export function ContentCreateRoute() {
   const context = useOutletContext<ContentsOutletContext>();
@@ -525,11 +558,12 @@ export function ContentCreateRoute() {
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const day = CalendarDaySchema.safeParse(searchParams.get('dia'));
+  const picked = usePickedMedia(context, searchParams.get('midia'));
   return <ContentDialog title="Novo conteúdo" onClose={close} busy={busy} dirty={dirty}>
-    {!context.ready
+    {!context.ready || picked.pending
       ? <div className="content-modal__loading" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
       : context.canEdit
-      ? <ContentEditor context={context} initial={null} initialDay={day.success ? day.data : todayInSaoPaulo()} onBusyChange={setBusy} onDirtyChange={setDirty} onDone={close} />
+      ? <ContentEditor context={context} initial={null} initialDay={day.success ? day.data : todayInSaoPaulo()} picked={picked.media} onBusyChange={setBusy} onDirtyChange={setDirty} onDone={close} />
       : <div className="form-stack content-modal__notice" role="alert">
         <p>{context.archived ? 'Este cliente está arquivado: não recebe conteúdo novo.' : 'Você não tem permissão para criar conteúdos.'}</p>
         <div className="form-actions"><Button variant="secondary" onClick={close}>Fechar</Button></div>
