@@ -14,6 +14,8 @@ export interface MemoryStorage extends MediaStorageClient {
   keyOfUrl(url: string): string;
   /** Every call of the bucket waits this long (a macrotask), so two requests really overlap. */
   latencyMs: number;
+  /** The keys whose deletion fails, as a bucket that is down for a moment does. */
+  readonly refuseDeleteOf: Set<string>;
 }
 
 const wait = (milliseconds: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, milliseconds); });
@@ -26,6 +28,7 @@ export const createMemoryStorage = (): MemoryStorage => {
     objects,
     calls,
     latencyMs: 0,
+    refuseDeleteOf: new Set<string>(),
     put: (key, bytes, contentType) => { objects.set(key, { bytes, contentType }); },
     keyOfUrl: (url) => new URL(url).searchParams.get('key') ?? '',
     createMultipartUpload: async () => { throw new Error('The portal never opens a multipart upload.'); },
@@ -43,6 +46,7 @@ export const createMemoryStorage = (): MemoryStorage => {
     },
     deleteObject: async ({ key }) => {
       calls.push(`delete ${key}`);
+      if (storage.refuseDeleteOf.has(key)) throw new Error('The bucket refused to delete this object.');
       objects.delete(key);
     },
     copyObject: async ({ sourceKey, destinationKey }) => {

@@ -398,9 +398,138 @@ describe('the portal sends material to a request (decision 2026-11-11)', () => {
       expect(storage.objects.has(portalUploadKeys(agencyA, sent.assetId, 'image/png').canonicalKey)).toBe(true);
       expect(await rowOf(sent.assetId)).toMatchObject({ status: 'confirmed' });
     });
+
+    // The delay of the double above lets the second request arrive after the commit of the first; this holds the lock from outside until both
+    // wait on it (proved in pg_locks), and the staging stays in the bucket, as it does when its deletion after the commit fails.
+    it('rereads the file after the lock: the completion that waited finds it confirmed and never copies over, or deletes, the kept object', async () => {
+      const sent = await send(cookies.portalOne, clientA1, threadA1, pngBytes(), 'image/png');
+      const { canonicalKey } = portalUploadKeys(agencyA, sent.assetId, 'image/png');
+      storage.refuseDeleteOf.add(sent.stagingKey);
+      storage.calls.length = 0;
+
+      const holder = await owner.knex.transaction();
+      let replies: Reply[];
+      try {
+        await holder.raw("select pg_advisory_xact_lock(hashtextextended('portal-upload-completion:' || ?::text, 0))", [sent.assetId]);
+        const pending = Promise.all([
+          completeUpload(cookies.portalOne, clientA1, threadA1, sent.assetId),
+          completeUpload(cookies.portalOne, clientA1, threadA1, sent.assetId)
+        ]);
+        let waiting = 0;
+        for (let attempt = 0; attempt < 200 && waiting < 2; attempt += 1) {
+          const found = await owner.knex.raw(
+            "select count(*)::int as waiting from pg_locks where locktype = 'advisory' and not granted and database = (select oid from pg_database where datname = current_database())"
+          );
+          waiting = (found.rows[0] as { waiting: number }).waiting;
+          if (waiting < 2) await new Promise((resolve) => { setTimeout(resolve, 25); });
+        }
+        expect(waiting).toBe(2);
+        await holder.commit();
+        replies = await pending;
+      } finally {
+        if (!holder.isCompleted()) await holder.rollback();
+        storage.refuseDeleteOf.clear();
+      }
+
+      expect(replies.map((reply) => reply.statusCode).sort()).toEqual([200, 409]);
+      expect(storage.objects.has(sent.stagingKey)).toBe(true);
+      expect(storage.calls.filter((call) => call.startsWith('copy '))).toHaveLength(1);
+      expect(storage.calls).not.toContain(`delete ${canonicalKey}`);
+      expect(storage.objects.has(canonicalKey)).toBe(true);
+      expect(await rowOf(sent.assetId)).toMatchObject({ status: 'confirmed' });
+    });
+
+    it('records the size of the bytes it read, not the one the person declared', async () => {
+      const bytes = new Uint8Array(5_000);
+      bytes.set(pngBytes());
+      const sent = await send(cookies.portalOne, clientA1, threadA1, bytes, 'image/png', { declaredSizeBytes: 1 });
+      const done = await completeUpload(cookies.portalOne, clientA1, threadA1, sent.assetId);
+      expect(done.statusCode, JSON.stringify(done.json())).toBe(200);
+      expect(done.json().sizeBytes).toBe(5_000);
+      expect(await rowOf(sent.assetId)).toMatchObject({ status: 'confirmed', confirmed_size_bytes: '5000' });
+      const listed = (await listUploads(cookies.portalOne, clientA1, threadA1)).json().data.find((file: { id: string }) => file.id === sent.assetId);
+      expect(listed.sizeBytes).toBe(5_000);
+    });
+
+    it('takes an object of exactly 25 MiB and turns down one byte more', async () => {
+      const exact = new Uint8Array(PORTAL_MATERIAL_UPLOAD_MAX_BYTES);
+      exact.set(pngBytes());
+      const taken = await send(cookies.portalOne, clientA1, threadA1, exact, 'image/png');
+      const done = await completeUpload(cookies.portalOne, clientA1, threadA1, taken.assetId);
+      expect(done.statusCode, JSON.stringify(done.json())).toBe(200);
+      expect(done.json().sizeBytes).toBe(PORTAL_MATERIAL_UPLOAD_MAX_BYTES);
+
+      const over = new Uint8Array(PORTAL_MATERIAL_UPLOAD_MAX_BYTES + 1);
+      over.set(pngBytes());
+      const refused = await send(cookies.portalOne, clientA1, threadA1, over, 'image/png', { declaredSizeBytes: PORTAL_MATERIAL_UPLOAD_MAX_BYTES });
+      const answer = await completeUpload(cookies.portalOne, clientA1, threadA1, refused.assetId);
+      expect(answer.statusCode).toBe(422);
+      expect(errorOf(answer).details?.reason).toBe('too_large');
+    });
+  });
+
+  describe('hostile input on the new routes', () => {
+    const raw = (method: 'GET' | 'POST', url: string, headers: Record<string, string>, payload?: string) =>
+      app.app.inject({ method, url, remoteAddress: nextAddress(), headers, ...(payload === undefined ? {} : { payload }) });
+
+    it('answers every route with 401 without a session, and with no write accepted from a foreign origin', async () => {
+      const id = randomUUID();
+      for (const reply of [
+        await startUpload(undefined, clientA1, threadA1),
+        await completeUpload(undefined, clientA1, threadA1, id),
+        await listUploads(undefined, clientA1, threadA1),
+        await announce(undefined, clientA1, threadA1, [id])
+      ]) expect(reply.statusCode).toBe(401);
+      const before = await owner.knex('media_assets').where({ client_id: clientA1 }).count<Array<{ count: string }>>('id');
+      const foreign = await raw('POST', uploadsOf(clientA1, threadA1), { origin: 'https://evil.example', cookie: cookies.portalOne!, 'content-type': 'application/json' },
+        JSON.stringify({ fileName: 'a.png', contentType: 'image/png', declaredSizeBytes: 100 }));
+      expect(foreign.statusCode).toBe(403);
+      expect(await owner.knex('media_assets').where({ client_id: clientA1 }).count('id')).toEqual(before);
+    });
+
+    it('turns down an extra field, a tenant the person names, a malformed or typed-wrong body and a key, each as a 4xx that echoes nothing', async () => {
+      const good = { fileName: 'a.png', contentType: 'image/png', declaredSizeBytes: 100 };
+      const sent = await send(cookies.portalOne, clientA1, threadA1, pngBytes(), 'image/png');
+      const cases: Array<[string, Reply]> = [
+        ['extra field', await call('POST', uploadsOf(clientA1, threadA1), cookies.portalOne, { ...good, status: 'confirmed' })],
+        ['agency named', await call('POST', uploadsOf(clientA1, threadA1), cookies.portalOne, { ...good, agencyId: agencyB })],
+        ['size as text', await call('POST', uploadsOf(clientA1, threadA1), cookies.portalOne, { ...good, declaredSizeBytes: '100' })],
+        ['negative size', await call('POST', uploadsOf(clientA1, threadA1), cookies.portalOne, { ...good, declaredSizeBytes: -1 })],
+        ['key on complete', await call('POST', `${uploadsOf(clientA1, threadA1)}/${sent.assetId}/complete`, cookies.portalOne, { key: 'staging/x' })],
+        ['text on announce', await call('POST', `${uploadsOf(clientA1, threadA1)}/announce`, cookies.portalOne, { assetIds: [sent.assetId], body: 'oi' })],
+        ['not a uuid', await call('POST', `${uploadsOf(clientA1, threadA1)}/not-a-uuid/complete`, cookies.portalOne, {})],
+        ['malformed json', await raw('POST', uploadsOf(clientA1, threadA1), { ...origin, cookie: cookies.portalOne!, 'content-type': 'application/json' }, '{"fileName": ') as unknown as Reply],
+        ['text body', await raw('POST', uploadsOf(clientA1, threadA1), { ...origin, cookie: cookies.portalOne!, 'content-type': 'text/plain' }, 'hello') as unknown as Reply]
+      ];
+      for (const [name, reply] of cases) {
+        expect(reply.statusCode, name).toBeGreaterThanOrEqual(400);
+        expect(reply.statusCode, name).toBeLessThan(500);
+        expect(JSON.stringify(reply.json()), name).not.toMatch(/hello|evil|staging\/|fileName": $/);
+      }
+      expect(await rowOf(sent.assetId)).toMatchObject({ status: 'pending' });
+      expect(await owner.knex('media_assets').where({ agency_id: agencyB }).count('id')).toEqual([{ count: '0' }]);
+    });
+
+    it('answers a hostile page, page size or query as a 400, never as a 5xx', async () => {
+      for (const query of ['?page=1e20', '?page=-1', '?page=0', '?pageSize=0', '?pageSize=abc', '?pageSize=100000', '?key=staging/x', '?page=1&page=2']) {
+        const reply = await listUploads(cookies.portalOne, clientA1, threadA1, query);
+        expect(reply.statusCode, query).toBeLessThan(500);
+        expect(JSON.stringify(reply.json()), query).not.toMatch(/staging\/|object_key/);
+      }
+      expect((await listUploads(cookies.portalOne, clientA1, threadA1, '?pageSize=0')).statusCode).toBe(400);
+      expect((await listUploads(cookies.portalOne, clientA1, threadA1, '?page=1e20')).statusCode).toBe(400);
+    });
   });
 
   describe('who reads and who finishes what', () => {
+    it('signs the read URL of a listed audio as a download of the type the server confirmed', async () => {
+      const thread = await newThread(clientA1);
+      const { sent, done } = await sendAndComplete(cookies.portalOne, clientA1, thread, mp3Bytes(), 'audio/mpeg');
+      expect(done.statusCode).toBe(200);
+      const listed = (await listUploads(cookies.portalOne, clientA1, thread)).json().data.find((file: { id: string }) => file.id === sent.assetId);
+      expect(new URL(listed.url).searchParams.get('disposition')).toMatch(/^attachment; filename="/);
+    });
+
     it('lists only the files the person sent to this request, with a read URL that reaches only those, and never a key', async () => {
       const mine = await sendAndComplete(cookies.portalTwo, clientA1, threadA1Second);
       const pending = await send(cookies.portalTwo, clientA1, threadA1Second, mp3Bytes(), 'audio/mpeg');
