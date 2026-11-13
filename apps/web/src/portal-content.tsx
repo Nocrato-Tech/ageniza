@@ -1,25 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronLeft, Pencil } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, MessagesSquare, MessageSquarePlus } from 'lucide-react';
 
 import {
+  APPROVAL_NOTE_MAX_CHARACTERS,
+  ApprovalNoteSchema,
   CalendarDaySchema,
   PortalContentDetailSchema,
   type ContentFormat,
-  type PortalApproveContentRequest,
+  type PortalApproveContentWithNoteRequest,
   type PortalContentDetail,
   type PortalContentInProduction,
   type PortalContentOpenListItem,
   type PortalRequestContentChangesRequest
 } from '@ageniza/contracts';
-import { Button, FieldMessage, FormatTag, LiveStatus, Skeleton, StatusTag } from '@ageniza/ui';
+import { Button, EmptyState, Field, FieldMessage, FormatTag, LiveStatus, Skeleton, StatusTag, Textarea } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
-import { ApprovalRound } from './approval-deadline.js';
+import { ApprovalDeadline, ApprovalSenderNote, hourLabel, spokenDayLabel, weekdayArticle } from './approval-deadline.js';
 import { Conversation } from './conversation.js';
 import { fullDayLabel } from './content-dates.js';
-import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
+import { CARD_FORMAT_LABELS, FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { portalClientQueryKey, usePortalClient, uuidPattern } from './portal.js';
@@ -59,6 +61,9 @@ const MESSAGES = {
   stateChanged: 'A situação deste conteúdo mudou enquanto você o via. Mostramos a situação atual.',
   tryAgain: 'Não foi possível agora. Tente de novo em instantes.',
   approveFailed: 'Não foi possível aprovar. Tente de novo.',
+  alreadyApproved: 'Este conteúdo já foi aprovado. Seu recado não foi enviado.',
+  noteTooLong: `O recado pode ter no máximo ${APPROVAL_NOTE_MAX_CHARACTERS} caracteres.`,
+  noteInvalid: 'O recado contém caracteres que não são aceitos.',
   requestFailed: 'Não foi possível enviar o pedido. Tente de novo.',
   approved: 'Conteúdo aprovado. Obrigado!',
   requested: 'Pedido de ajuste enviado. A agência vai ver a sua mensagem na conversa abaixo.',
@@ -71,11 +76,49 @@ const isCode = (error: unknown, code: string): boolean => error instanceof HttpC
 /** A day is read as text and never through a `Date`: the planned day is São Paulo's, whatever the browser's zone. */
 const dayText = (day: string): string => CalendarDaySchema.safeParse(day).success ? fullDayLabel(day) : day;
 
-/** The way back on every state of the screen: while a post is open the bottom bar of the shell steps aside (issue #687). */
-function PostBack() {
+/** The way back on every state of the screen, and the only one on a phone, where the bottom bar of the shell steps aside while a post is open (issue #687). */
+function PostCrumbs({ title }: { title?: string }) {
   const client = usePortalClient();
-  return <Link className="portal-post__back" to={`/portal/${client.id}/conteudos`}><ChevronLeft aria-hidden="true" />Conteúdos</Link>;
+  return <nav className="portal-post__crumbs" aria-label="Você está em">
+    <Link to={`/portal/${client.id}/inicio`}>Início</Link>
+    <ChevronRight aria-hidden="true" />
+    {title === undefined ? <Link to={`/portal/${client.id}/conteudos`}>Conteúdos</Link> : <>
+      <Link to={`/portal/${client.id}/conteudos`}>Conteúdos</Link>
+      <ChevronRight aria-hidden="true" />
+      <span aria-current="page">{title}</span>
+    </>}
+  </nav>;
 }
+
+const countOf = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+
+/** "5 imagens", "1 vídeo" or "3 imagens e 1 vídeo": what the post carries, from the media the API listed. */
+const mediaSummary = (media: readonly { kind: 'image' | 'video' }[]): string | undefined => {
+  const images = media.filter((item) => item.kind === 'image').length;
+  const videos = media.length - images;
+  const parts = [images > 0 && countOf(images, 'imagem', 'imagens'), videos > 0 && countOf(videos, 'vídeo', 'vídeos')].filter(Boolean);
+  return parts.length === 0 ? undefined : parts.join(' e ');
+};
+
+/** The line under the title: the format, what it carries and, from the state, the day (and hour) it goes out or went out. */
+function PostSummary({ content }: { content: PortalContent }) {
+  const day = CalendarDaySchema.safeParse(content.publishOn).success ? content.publishOn : undefined;
+  const open = content.status === 'in_production' ? undefined : content;
+  const media = open === undefined ? undefined : mediaSummary(open.media);
+  const publishedOn = open?.publishedOn ?? null;
+  return <p className="portal-post__summary">
+    {CARD_FORMAT_LABELS[content.format]}
+    {media !== undefined && ` · ${media}`}
+    {' · '}
+    {content.status === 'published' && publishedOn !== null && CalendarDaySchema.safeParse(publishedOn).success
+      ? <>publicado em <time dateTime={publishedOn}>{spokenDayLabel(publishedOn)}</time></>
+      : day === undefined
+        ? content.publishOn
+        : <>publica {weekdayArticle(day)} <time dateTime={day}>{spokenDayLabel(day)}</time>{open?.publishAtTime != null && `, às ${hourLabel(open.publishAtTime)}`}</>}
+  </p>;
+}
+
+const STATE_TAG_LABELS: Partial<Record<PortalContent['status'], string>> = { awaiting_approval: 'Aguardando sua aprovação' };
 
 /** The part of a post that the meta line reads: the agency's preview has no media or revision to hand it, and needs none. */
 export type PostMetaContent = PortalContentInProduction | Pick<PortalContentOpenListItem, 'status' | 'format' | 'publishOn' | 'publishAtTime' | 'publishedOn'>;
@@ -106,6 +149,10 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
   const [requestError, setRequestError] = useState<RequestError | undefined>();
   const [asking, setAsking] = useState(false);
   const [draft, setDraft] = useState('');
+  const [note, setNote] = useState('');
+  const [noteProblem, setNoteProblem] = useState<string | undefined>();
+  // Once opened the conversation stays mounted, so a draft in it survives the panel being closed.
+  const [conversationOpened, setConversationOpened] = useState(false);
   const noticeRef = useRef<HTMLDivElement>(null);
   // The mutation's own pending state reaches the button a tick late: a second tap in between must not send a second request.
   const sending = useRef(false);
@@ -125,21 +172,25 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
   };
 
   const approve = useMutation({
-    mutationFn: () => httpClient.request({
+    mutationFn: (note: string | undefined) => httpClient.request({
       path: apiPath(`${DETAIL_PATH}/approve`, { clientId: client.id, contentId: content.id }),
       method: 'POST',
-      body: { revision: content.revision } satisfies PortalApproveContentRequest,
+      body: (note === undefined ? { revision: content.revision } : { revision: content.revision, note }) satisfies PortalApproveContentWithNoteRequest,
       response: PortalContentDetailSchema
     }),
     onSuccess: (updated) => {
       setActionError(undefined);
+      setNoteProblem(undefined);
       setNotice(MESSAGES.approved);
       queryClient.setQueryData(key, updated);
+      void queryClient.invalidateQueries({ queryKey: ['conversation', 'client', client.id] });
       refresh();
     },
     onError: (error: unknown) => {
       setNotice(undefined);
       if (isCode(error, 'CONTENT_NOT_AWAITING_APPROVAL')) setStateChanged(MESSAGES.stateChanged);
+      else if (isCode(error, 'CONTENT_ALREADY_APPROVED')) setStateChanged(MESSAGES.alreadyApproved);
+      else if (isCode(error, 'CONTENT_APPROVAL_NOTE_INVALID')) setNoteProblem(MESSAGES.noteInvalid);
       else setActionError(stale(error) ?? MESSAGES.approveFailed);
       refresh();
     },
@@ -178,6 +229,16 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
     action();
   };
 
+  const approveWithNote = (): void => {
+    const trimmed = note.trim();
+    if (trimmed !== '' && !ApprovalNoteSchema.safeParse(note).success) {
+      setNoteProblem(Array.from(trimmed).length > APPROVAL_NOTE_MAX_CHARACTERS ? MESSAGES.noteTooLong : MESSAGES.noteInvalid);
+      return;
+    }
+    setActionError(undefined); setStateChanged(undefined); setNotice(undefined); setNoteProblem(undefined);
+    send(() => { approve.mutate(trimmed === '' ? undefined : trimmed); });
+  };
+
   const awaiting = content.status === 'awaiting_approval';
   const stateNote = STATE_NOTES[content.status];
 
@@ -193,27 +254,28 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
       {stateNote !== undefined && <p className="portal-post__hint">{stateNote}</p>}
     </div>}
     <div className="portal-post__layout">
-      {awaiting && <ApprovalRound approval={content.approval} agencyName={client.agencyName} />}
-      <div className="portal-post__body">
-        <div className="portal-post__card">
-          <PortalMediaCarousel
-            key={content.id}
-            ids={{ clientId: client.id, contentId: content.id }}
-            format={content.format}
-            coverAssetId={content.coverAssetId}
-            media={content.media}
-            title={content.title}
-          />
-          <section className="portal-post__section portal-post__caption-block" aria-labelledby="portal-post-caption">
-            <h2 id="portal-post-caption" className="portal-post__eyebrow">Legenda</h2>
-            {content.caption === null || content.caption === ''
-              ? <p className="portal-post__hint">{NO_CAPTION_NOTE}</p>
-              : <p className="portal-post__caption">{content.caption}</p>}
-          </section>
-        </div>
-        <section className="portal-post__section" aria-labelledby="portal-post-conversation">
-          <h2 id="portal-post-conversation">Conversa com a agência</h2>
-          <Conversation
+      <section className="portal-post__card" aria-label="Prévia do post">
+        <PortalMediaCarousel
+          key={content.id}
+          ids={{ clientId: client.id, contentId: content.id }}
+          format={content.format}
+          coverAssetId={content.coverAssetId}
+          media={content.media}
+          title={content.title}
+        />
+        <section className="portal-post__section" aria-labelledby="portal-post-caption">
+          <h2 id="portal-post-caption" className="portal-post__eyebrow">Legenda</h2>
+          {content.caption === null || content.caption === ''
+            ? <p className="portal-post__hint">{NO_CAPTION_NOTE}</p>
+            : <p className="portal-post__caption">{content.caption}</p>}
+        </section>
+        <details className="portal-post__convo" onToggle={(event) => { if (event.currentTarget.open) setConversationOpened(true); }}>
+          <summary>
+            <MessagesSquare aria-hidden="true" />
+            <span className="portal-post__convo-title">Conversa sobre este post</span>
+            <ChevronDown className="portal-post__convo-chevron" aria-hidden="true" />
+          </summary>
+          {conversationOpened && <Conversation
             scope={{ side: 'client', clientId: client.id }}
             subject={{ contentId: content.id }}
             subjectLabel={content.title}
@@ -222,17 +284,37 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
             planBlockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined}
             onWritten={refresh}
             headingLevel={3}
-          />
-        </section>
-      </div>
-      {awaiting && <section className="portal-post__bar" aria-labelledby="portal-post-decision">
-        <h2 id="portal-post-decision" className="visually-hidden">Sua decisão</h2>
-        {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
-        <div className="portal-post__actions">
-          <Button variant="secondary" size="lg" leadingIcon={<Pencil />} disabled={reloading || approve.isPending} blockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined} onClick={() => { setRequestError(undefined); setStateChanged(undefined); setAsking(true); }}>Pedir ajuste</Button>
-          <Button size="lg" leadingIcon={<Check />} loading={approve.isPending} disabled={reloading || requestChanges.isPending} blockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined} onClick={() => { setActionError(undefined); setStateChanged(undefined); setNotice(undefined); send(() => { approve.mutate(); }); }}>Aprovar</Button>
+          />}
+        </details>
+      </section>
+      {awaiting && <aside className="portal-post__decide" aria-labelledby="portal-post-decision">
+        <h2 id="portal-post-decision">Sua resposta</h2>
+        <ApprovalDeadline approval={content.approval} />
+        <ApprovalSenderNote approval={content.approval} agencyName={client.agencyName} />
+        <Field
+          label="Seu recado para a agência"
+          hint="Opcional ao aprovar"
+          error={noteProblem}
+          counter={{ count: Array.from(note).length, max: APPROVAL_NOTE_MAX_CHARACTERS }}
+        >
+          {(control) => <Textarea
+            {...control}
+            value={note}
+            rows={4}
+            placeholder="Ex.: trocar a foto da capa por uma com o panetone inteiro"
+            readOnly={approve.isPending}
+            onChange={(event) => { setNote(event.target.value); setNoteProblem(undefined); }}
+          />}
+        </Field>
+        <div className="portal-post__bar">
+          {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
+          <div className="portal-post__actions">
+            <Button size="lg" leadingIcon={<Check />} loading={approve.isPending} disabled={reloading || requestChanges.isPending} blockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined} onClick={approveWithNote}>Aprovar o post</Button>
+            <Button variant="secondary" size="lg" leadingIcon={<MessageSquarePlus />} disabled={reloading || approve.isPending} blockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined} onClick={() => { setRequestError(undefined); setStateChanged(undefined); setAsking(true); }}>Pedir ajuste</Button>
+          </div>
         </div>
-      </section>}
+        <p className="portal-post__hint">Ao aprovar, a agência cuida da publicação na data marcada.</p>
+      </aside>}
     </div>
     {asking && <RequestChangesDialog
       hint="A agência vai ver a sua mensagem e responder na conversa deste conteúdo."
@@ -248,7 +330,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
 
 function PostSkeleton() {
   return <section className="portal-post" aria-busy="true" aria-label="Carregando o conteúdo">
-    <PostBack />
+    <PostCrumbs />
     <Skeleton className="portal-post__title-skeleton" />
     <Skeleton className="portal-post__media-skeleton" />
     <Skeleton />
@@ -257,11 +339,8 @@ function PostSkeleton() {
 
 function PostFailure({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
   return <section className="portal-post">
-    <PostBack />
-    <div className="portal-error" role="alert">
-      <p>{MESSAGES.loadError}</p>
-      <Button variant="secondary" loading={retrying} onClick={onRetry}>Tentar de novo</Button>
-    </div>
+    <PostCrumbs />
+    <EmptyState kind="failure" mascot className="portal-empty" title={MESSAGES.loadError} retrying={retrying} onRetry={onRetry} />
   </section>;
 }
 
@@ -292,11 +371,14 @@ function Post({ contentId }: { contentId: string }) {
   if (content.id !== contentId) return <NotFoundPage as="section" />;
 
   return <article className="portal-post" aria-labelledby="portal-post-title">
-    <PostBack />
-    <div className="portal-post__heading">
+    <header className="portal-post__heading">
+      <PostCrumbs title={content.title} />
       <h1 id="portal-post-title" className="portal-headline">{content.title}</h1>
-      <PostMeta content={content} />
-    </div>
+      <div className="portal-post__state">
+        <StatusTag size="lg" status={PORTAL_STATUS_TAGS[content.status]}>{STATE_TAG_LABELS[content.status] ?? PORTAL_STATUS_LABELS[content.status]}</StatusTag>
+        <PostSummary content={content} />
+      </div>
+    </header>
     {query.isError && <div className="portal-error" role="alert">
       <p>{MESSAGES.loadError}</p>
       <Button variant="secondary" loading={query.isFetching} onClick={() => { void query.refetch(); }}>Tentar de novo</Button>

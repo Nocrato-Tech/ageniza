@@ -121,6 +121,10 @@ const title = (name: string) => screen.findByRole('heading', { level: 1, name })
 const sentBodies = (contents: ReturnType<typeof setup>['contents'], action: string): unknown[] =>
   contents.bodies.filter((entry) => entry.path.endsWith(`/${action}`)).map((entry) => entry.body);
 
+const stateLine = (): HTMLElement => document.querySelector<HTMLElement>('.portal-post__state')!;
+const summary = (): HTMLElement => document.querySelector<HTMLElement>('.portal-post__summary')!;
+const openConversation = async (): Promise<void> => { fireEvent.click(await screen.findByText('Conversa sobre este post')); };
+
 const askForChanges = async (comment: string): Promise<void> => {
   fireEvent.click(await screen.findByRole('button', { name: 'Pedir ajuste' }));
   fireEvent.change(await screen.findByLabelText('O que precisa mudar?'), { target: { value: comment } });
@@ -132,15 +136,14 @@ describe('the post of the portal (#270)', () => {
     it('shows the title, the state, the format, the day in São Paulo, the whole caption and the two decisions', async () => {
       await open({ title: 'Lançamento da primavera', format: 'reels', publishOn: '2026-10-12', publishAtTime: '18:30', caption: 'Primeira linha\nSegunda linha' });
       expect(await title('Lançamento da primavera')).toBeTruthy();
-      const meta = screen.getByRole('list', { name: 'Dados do conteúdo' });
-      expect(within(meta).getByText('Aguardando aprovação')).toBeTruthy();
-      expect(within(meta).getByText('Reels')).toBeTruthy();
-      expect(within(meta).getByText('segunda-feira, 12 de outubro de 2026').getAttribute('datetime')).toBe('2026-10-12');
-      expect(meta.textContent).toContain('18:30');
+      const state = stateLine();
+      expect(within(state).getByText('Aguardando sua aprovação')).toBeTruthy();
+      expect(summary().textContent).toBe('Reels · 1 vídeo · publica na segunda, 12 out, às 18h30');
+      expect(within(summary()).getByText('segunda, 12 out').getAttribute('datetime')).toBe('2026-10-12');
       expect(screen.getByRole('heading', { level: 2, name: 'Legenda' })).toBeTruthy();
       expect(document.querySelector('.portal-post__caption')?.textContent).toBe('Primeira linha\nSegunda linha');
-      expect(screen.getByRole('heading', { level: 2, name: 'Sua decisão' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Aprovar' })).toBeTruthy();
+      expect(screen.getByRole('heading', { level: 2, name: 'Sua resposta' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Aprovar o post' })).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Pedir ajuste' })).toBeTruthy();
       expect(document.title).toBe('Lançamento da primavera — Portal do cliente — Ageniza');
     });
@@ -150,29 +153,50 @@ describe('the post of the portal (#270)', () => {
       expect(await screen.findByText('Este post não tem legenda.')).toBeTruthy();
     });
 
-    it('links back to the contents of the client', async () => {
+    it('has the trail Início > Conteúdos > title, and both links go where they say', async () => {
       const { probe } = await open();
       await title('Lançamento da primavera');
-      // The link of the post, not the item of the bottom bar that carries the same name.
-      const back = within(screen.getByRole('main')).getByRole('link', { name: 'Conteúdos' });
+      const trail = within(screen.getByRole('main')).getByRole('navigation', { name: 'Você está em' });
+      expect(within(trail).getByRole('link', { name: 'Início' }).getAttribute('href')).toBe(`/portal/${CLIENT}/inicio`);
+      expect(within(trail).getByText('Lançamento da primavera').getAttribute('aria-current')).toBe('page');
+      const back = within(trail).getByRole('link', { name: 'Conteúdos' });
       expect(back.getAttribute('href')).toBe(`/portal/${CLIENT}/conteudos`);
       fireEvent.click(back);
       await waitFor(() => { expect(probe.pathname).toBe(`/portal/${CLIENT}/conteudos`); });
     });
 
+    it('goes to the Início from the first link of the trail', async () => {
+      const { probe } = await open();
+      await title('Lançamento da primavera');
+      fireEvent.click(within(within(screen.getByRole('main')).getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Início' }));
+      await waitFor(() => { expect(probe.pathname).toBe(`/portal/${CLIENT}/inicio`); });
+    });
+
+    it('says what the post carries, by what the API listed: images, videos or both', async () => {
+      await open({ format: 'carousel', media: [
+        { id: asset(1), position: 1, kind: 'image' }, { id: asset(2), position: 2, kind: 'image' }, { id: asset(3), position: 3, kind: 'video' }
+      ] });
+      await title('Lançamento da primavera');
+      expect(summary().textContent).toBe('Carrossel · 2 imagens e 1 vídeo · publica na segunda, 12 out');
+    });
+
+    it('says "no sábado" for a weekend day and leaves the hour out when there is none', async () => {
+      await open({ publishOn: '2026-10-10', format: 'image' });
+      await title('Lançamento da primavera');
+      expect(summary().textContent).toBe('Estático · 1 imagem · publica no sábado, 10 out');
+    });
+
     it('shows only the title, the day and the format of a content in production, and asks for nothing else', async () => {
       const { contents, conversation } = await open({ state: 'in_production', title: 'Em produção', format: 'carousel', caption: 'LEGENDA SECRETA', publishAtTime: '09:00' });
       expect(await title('Em produção')).toBeTruthy();
-      const meta = screen.getByRole('list', { name: 'Dados do conteúdo' });
-      expect(within(meta).getByText('Em produção')).toBeTruthy();
-      expect(within(meta).getByText('Carrossel')).toBeTruthy();
-      expect(within(meta).getByText('segunda-feira, 12 de outubro de 2026')).toBeTruthy();
+      expect(within(stateLine()).getByText('Em produção')).toBeTruthy();
+      expect(summary().textContent).toBe('Carrossel · publica na segunda, 12 out');
       expect(screen.getByText('Este conteúdo ainda está em produção. Quando estiver pronto, ele aparece aqui para você aprovar.')).toBeTruthy();
       expect(screen.queryByText('Legenda')).toBeNull();
       expect(screen.queryByText('LEGENDA SECRETA')).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Aprovar o post' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Pedir ajuste' })).toBeNull();
-      expect(screen.queryByRole('region', { name: /Conversa sobre/ })).toBeNull();
+      expect(screen.queryByText('Conversa sobre este post')).toBeNull();
       expect(contents.calls.filter((call) => call.includes('/media/'))).toEqual([]);
       expect(conversation.calls).toEqual([]);
     });
@@ -184,17 +208,27 @@ describe('the post of the portal (#270)', () => {
     ] as const)('says where a %s content stands and offers no decision', async (state, label, note) => {
       await open({ state, publishedOn: state === 'published' ? '2026-10-13' : null });
       await title('Lançamento da primavera');
-      expect(within(screen.getByRole('list', { name: 'Dados do conteúdo' })).getByText(label)).toBeTruthy();
+      expect(within(stateLine()).getByText(label)).toBeTruthy();
       expect(screen.getByText(note)).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Aprovar o post' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Pedir ajuste' })).toBeNull();
-      expect(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' })).toBeTruthy();
+      expect(screen.queryByRole('heading', { name: 'Sua resposta' })).toBeNull();
+      expect(screen.getByText('Conversa sobre este post')).toBeTruthy();
+    });
+
+    it('says Aprovado with the day and the hour it goes out, and never Agendado', async () => {
+      await open({ state: 'approved', publishOn: '2026-11-13', publishAtTime: '12:00' });
+      await title('Lançamento da primavera');
+      expect(within(stateLine()).getByText('Aprovado')).toBeTruthy();
+      expect(summary().textContent).toBe('Estático · 1 imagem · publica na sexta, 13 nov, às 12h');
+      expect(document.body.textContent).not.toMatch(/agendad/i);
     });
 
     it('writes the day the post went live as text of São Paulo', async () => {
       await open({ state: 'published', publishedOn: '2026-10-13' });
       await title('Lançamento da primavera');
-      expect(screen.getByText('terça-feira, 13 de outubro de 2026').getAttribute('datetime')).toBe('2026-10-13');
+      expect(summary().textContent).toBe('Estático · 1 imagem · publicado em terça, 13 out');
+      expect(within(summary()).getByText('terça, 13 out').getAttribute('datetime')).toBe('2026-10-13');
     });
   });
 
@@ -250,6 +284,7 @@ describe('the post of the portal (#270)', () => {
       await title(`Título ${SCRIPT} ${BIDI}`);
       expect(document.querySelector('.portal-post__caption')?.textContent).toBe(`Legenda ${SCRIPT} ${BIDI}`);
       expect(document.title).toBe(`Título ${SCRIPT} ${BIDI} — Portal do cliente — Ageniza`);
+      await openConversation();
       fireEvent.click(await screen.findByRole('button', { name: /Aberta/ }));
       expect((await screen.findAllByText(`Resposta ${SCRIPT} ${BIDI}`)).length).toBeGreaterThan(0);
       expect(container.querySelector('script')).toBeNull();
@@ -293,6 +328,10 @@ describe('the post of the portal (#270)', () => {
       };
       renderPost(impl);
       expect(await screen.findByText('Não foi possível carregar o conteúdo.', undefined, { timeout: 5000 })).toBeTruthy();
+      // The failure has the serious mascot of the board, one primary ("Tentar de novo") and the trail still on top.
+      expect(document.querySelector('.ui-empty-state--serious img, .ui-empty-state--serious svg')).not.toBeNull();
+      expect(screen.getByRole('button', { name: 'Tentar de novo' }).classList.contains('ui-button--primary')).toBe(true);
+      expect(within(screen.getByRole('main')).getByRole('navigation', { name: 'Você está em' })).toBeTruthy();
       expect(screen.queryByText('ERRO INTERNO DO SERVIDOR')).toBeNull();
       failing = false;
       fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
@@ -300,8 +339,21 @@ describe('the post of the portal (#270)', () => {
       expect(screen.queryByText('Não foi possível carregar o conteúdo.')).toBeNull();
     });
 
+    it('keeps the conversation closed until the person opens it, and asks for nothing before', async () => {
+      const { conversation } = await open();
+      await title('Lançamento da primavera');
+      const summaryRow = screen.getByText('Conversa sobre este post').closest('details')!;
+      expect(summaryRow.hasAttribute('open')).toBe(false);
+      expect(conversation.calls).toEqual([]);
+      await openConversation();
+      expect(summaryRow.hasAttribute('open')).toBe(true);
+      await screen.findByText('Nenhuma conversa sobre este conteúdo');
+      expect(conversation.calls.length).toBeGreaterThan(0);
+    });
+
     it('says the conversation is empty when nobody wrote yet', async () => {
       await open();
+      await openConversation();
       expect(await screen.findByText('Nenhuma conversa sobre este conteúdo')).toBeTruthy();
     });
 
@@ -322,7 +374,7 @@ describe('the post of the portal (#270)', () => {
       const { contents } = await open({ title: 'Lançamento da primavera' }, { agencyReadOnly: true });
       expect(await title('Lançamento da primavera')).toBeTruthy();
       const describedBy = (button: HTMLElement) => (button.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent).join(' ');
-      for (const name of ['Aprovar', 'Pedir ajuste']) {
+      for (const name of ['Aprovar o post', 'Pedir ajuste']) {
         const button = await screen.findByRole('button', { name });
         expect(button.getAttribute('aria-disabled')).toBe('true');
         expect(describedBy(button)).toBe('A aprovação está pausada no momento. A agência já foi avisada.');
@@ -331,6 +383,7 @@ describe('the post of the portal (#270)', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(sentBodies(contents, 'approve')).toEqual([]);
       // Commenting is a write too: the button that opens the conversation is there, disabled with the same reason.
+      await openConversation();
       const conversation = await screen.findByRole('region', { name: /Conversa sobre/ });
       const start = await within(conversation).findByRole('button');
       expect(start.getAttribute('aria-disabled')).toBe('true');
@@ -341,22 +394,100 @@ describe('the post of the portal (#270)', () => {
 
     it('sends the revision that was read, shows Aprovado and takes the decision away', async () => {
       const { contents, portalCalls } = await open({ revision: 7 });
-      fireEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Aprovar o post' }));
       expect(await screen.findByText('Conteúdo aprovado. Obrigado!')).toBeTruthy();
       expect(sentBodies(contents, 'approve')).toEqual([{ revision: 7 }]);
       expect(contents.rows.get(CONTENT)?.state).toBe('approved');
-      await waitFor(() => { expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull(); });
-      expect(within(screen.getByRole('list', { name: 'Dados do conteúdo' })).getByText('Aprovado')).toBeTruthy();
+      await waitFor(() => { expect(screen.queryByRole('button', { name: 'Aprovar o post' })).toBeNull(); });
+      expect(within(stateLine()).getByText('Aprovado')).toBeTruthy();
       expect(screen.getByText('Este conteúdo está aprovado. A agência cuida da publicação.')).toBeTruthy();
       // The count of the Início lives in the client's answer: it is read again.
       await waitFor(() => { expect(portalCalls.length).toBeGreaterThan(1); });
+    });
+
+    const noteField = async (): Promise<HTMLTextAreaElement> => await screen.findByLabelText('Seu recado para a agência') as HTMLTextAreaElement;
+
+    it('shows the optional note field of the board, with its hint and a counter', async () => {
+      await open();
+      const field = await noteField();
+      expect(field.getAttribute('placeholder')).toBe('Ex.: trocar a foto da capa por uma com o panetone inteiro');
+      expect(screen.getByText('Opcional ao aprovar')).toBeTruthy();
+      expect(screen.getByText('0/500')).toBeTruthy();
+      expect(screen.getByText('Ao aprovar, a agência cuida da publicação na data marcada.')).toBeTruthy();
+    });
+
+    it('approves with the note in the body the API expects, trimmed, and the note enters the conversation', async () => {
+      const { contents } = await open({ revision: 4 });
+      fireEvent.change(await noteField(), { target: { value: '  Pode publicar, trocar a capa depois.  ' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
+      expect(await screen.findByText('Conteúdo aprovado. Obrigado!')).toBeTruthy();
+      expect(sentBodies(contents, 'approve')).toEqual([{ revision: 4, note: 'Pode publicar, trocar a capa depois.' }]);
+      expect(contents.rows.get(CONTENT)?.state).toBe('approved');
+      await openConversation();
+      expect(await screen.findByRole('button', { name: /Pode publicar, trocar a capa depois\./ })).toBeTruthy();
+    });
+
+    it.each([['empty', ''], ['only spaces', '   \n ']])('approves without a note when the field is %s', async (_name, value) => {
+      const { contents } = await open({ revision: 2 });
+      fireEvent.change(await noteField(), { target: { value } });
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
+      expect(await screen.findByText('Conteúdo aprovado. Obrigado!')).toBeTruthy();
+      expect(sentBodies(contents, 'approve')).toEqual([{ revision: 2 }]);
+    });
+
+    it('does not send a note over 500 characters, or with an invisible character, and keeps what was typed', async () => {
+      const { contents } = await open();
+      const field = await noteField();
+      fireEvent.change(field, { target: { value: 'a'.repeat(501) } });
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
+      expect(await screen.findByText('O recado pode ter no máximo 500 caracteres.')).toBeTruthy();
+      expect(field.getAttribute('aria-invalid')).toBe('true');
+      fireEvent.change(field, { target: { value: 'oi‮' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
+      expect(await screen.findByText('O recado contém caracteres que não são aceitos.')).toBeTruthy();
+      expect(field.value).toBe('oi‮');
+      expect(sentBodies(contents, 'approve')).toEqual([]);
+    });
+
+    it('keeps the note on a failure and sends it again on the next try', async () => {
+      const { contents } = await open();
+      fireEvent.change(await noteField(), { target: { value: 'Meu recado' } });
+      contents.failNextWrite(() => portalContentError(500, 'INTERNAL_ERROR'));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
+      expect(await screen.findByText('Não foi possível aprovar. Tente de novo.')).toBeTruthy();
+      expect((await noteField()).value).toBe('Meu recado');
+      await waitFor(() => { expect(screen.getByRole('button', { name: 'Aprovar o post' }).hasAttribute('disabled')).toBe(false); });
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
+      await screen.findByText('Conteúdo aprovado. Obrigado!');
+      expect(sentBodies(contents, 'approve')).toEqual([{ revision: 1, note: 'Meu recado' }, { revision: 1, note: 'Meu recado' }]);
+    });
+
+    it('marks the field when the server refuses the note, and keeps what was typed', async () => {
+      const { contents } = await open();
+      const field = await noteField();
+      fireEvent.change(field, { target: { value: 'Meu recado' } });
+      contents.failNextWrite(() => portalContentError(400, 'CONTENT_APPROVAL_NOTE_INVALID', 'MENSAGEM DO SERVIDOR'));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
+      expect(await screen.findByText('O recado contém caracteres que não são aceitos.')).toBeTruthy();
+      expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+      expect(field.value).toBe('Meu recado');
+    });
+
+    it('says the note was not sent when the content was already approved by someone else', async () => {
+      const { contents } = await open();
+      fireEvent.change(await noteField(), { target: { value: 'Meu recado' } });
+      contents.setState(CONTENT, 'approved');
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
+      expect(await screen.findByText('Este conteúdo já foi aprovado. Seu recado não foi enviado.')).toBeTruthy();
+      expect(await screen.findByText('Este conteúdo está aprovado. A agência cuida da publicação.')).toBeTruthy();
+      expect(screen.queryByText('Conteúdo aprovado. Obrigado!')).toBeNull();
     });
 
     it('sends one request however many times the button is pressed while it waits', async () => {
       let release: () => void = () => undefined;
       const holdWrite = new Promise<void>((resolveHold) => { release = resolveHold; });
       const { contents } = await open({}, { holdWrite });
-      const approve = await screen.findByRole('button', { name: 'Aprovar' });
+      const approve = await screen.findByRole('button', { name: 'Aprovar o post' });
       fireEvent.click(approve);
       fireEvent.click(approve);
       fireEvent.click(approve);
@@ -370,13 +501,13 @@ describe('the post of the portal (#270)', () => {
       const { contents } = await open({ revision: 3, caption: 'Legenda antiga' });
       await screen.findByText('Legenda antiga');
       contents.editCaption(CONTENT, 'Legenda nova da agência');
-      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
       expect(await screen.findByText('A agência alterou este conteúdo depois que você o abriu. Mostramos a versão atual: leia de novo antes de aprovar.')).toBeTruthy();
       expect(await screen.findByText('Legenda nova da agência')).toBeTruthy();
       expect(screen.queryByText('Legenda antiga')).toBeNull();
       expect(contents.rows.get(CONTENT)?.state).toBe('awaiting_approval');
-      await waitFor(() => { expect(screen.getByRole('button', { name: 'Aprovar' }).hasAttribute('disabled')).toBe(false); });
-      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      await waitFor(() => { expect(screen.getByRole('button', { name: 'Aprovar o post' }).hasAttribute('disabled')).toBe(false); });
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
       expect(await screen.findByText('Conteúdo aprovado. Obrigado!')).toBeTruthy();
       expect(sentBodies(contents, 'approve')).toEqual([{ revision: 3 }, { revision: 4 }]);
       expect(screen.queryByText('A agência alterou este conteúdo depois que você o abriu. Mostramos a versão atual: leia de novo antes de aprovar.')).toBeNull();
@@ -394,26 +525,26 @@ describe('the post of the portal (#270)', () => {
         return scenario.impl(input, init);
       };
       renderPost(impl);
-      await screen.findByRole('button', { name: 'Aprovar' });
+      await screen.findByRole('button', { name: 'Aprovar o post' });
       scenario.contents.editCaption(CONTENT, 'Nova');
-      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
       await screen.findByText('A agência alterou este conteúdo depois que você o abriu. Mostramos a versão atual: leia de novo antes de aprovar.');
-      expect(screen.getByRole('button', { name: 'Aprovar' }).hasAttribute('disabled')).toBe(true);
+      expect(screen.getByRole('button', { name: 'Aprovar o post' }).hasAttribute('disabled')).toBe(true);
       expect(screen.getByRole('button', { name: 'Pedir ajuste' }).hasAttribute('disabled')).toBe(true);
       release();
       await screen.findByText('Nova');
-      await waitFor(() => { expect(screen.getByRole('button', { name: 'Aprovar' }).hasAttribute('disabled')).toBe(false); });
+      await waitFor(() => { expect(screen.getByRole('button', { name: 'Aprovar o post' }).hasAttribute('disabled')).toBe(false); });
       expect(screen.getByRole('button', { name: 'Pedir ajuste' }).hasAttribute('disabled')).toBe(false);
     });
 
     it('refuses what is no longer waiting: its own text and the state read again', async () => {
       const { contents } = await open();
-      await screen.findByRole('button', { name: 'Aprovar' });
+      await screen.findByRole('button', { name: 'Aprovar o post' });
       contents.setState(CONTENT, 'adjusting');
-      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
       expect(await screen.findByText('A situação deste conteúdo mudou enquanto você o via. Mostramos a situação atual.')).toBeTruthy();
       expect(await screen.findByText('Foi pedido um ajuste. A agência vai revisar e enviar de novo para a sua aprovação.')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Aprovar o post' })).toBeNull();
       // The reading is done and the bar is gone: the message outlives it, and the focus is where it is said.
       expect(screen.getByText('A situação deste conteúdo mudou enquanto você o via. Mostramos a situação atual.')).toBeTruthy();
       await waitFor(() => { expect(document.activeElement).toBe(document.querySelector('.portal-post__notes')); });
@@ -422,30 +553,30 @@ describe('the post of the portal (#270)', () => {
 
     it('turns a content cancelled meanwhile into "não encontrado"', async () => {
       const { contents } = await open();
-      await screen.findByRole('button', { name: 'Aprovar' });
+      await screen.findByRole('button', { name: 'Aprovar o post' });
       contents.setState(CONTENT, 'cancelled');
-      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
       expect(await screen.findByRole('heading', { name: 'Página não encontrada' })).toBeTruthy();
     });
 
     it('a refusal because the agency turned read-only mid-use says the neutral reason, never the server text about the plan', async () => {
       const { contents } = await open();
-      await screen.findByRole('button', { name: 'Aprovar' });
+      await screen.findByRole('button', { name: 'Aprovar o post' });
       contents.failNextWrite(() => portalContentError(409, 'AGENCY_READ_ONLY', 'O plano desta agência precisa ser renovado para usar esta opção. Os dados estão guardados.'));
-      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
       expect(await screen.findByText('A aprovação está pausada no momento. A agência já foi avisada.')).toBeTruthy();
       expect(document.body.textContent).not.toMatch(/plano|renov/i);
     });
 
     it('words a lost race and any other failure without the text of the server', async () => {
       const { contents } = await open();
-      await screen.findByRole('button', { name: 'Aprovar' });
+      await screen.findByRole('button', { name: 'Aprovar o post' });
       contents.failNextWrite(() => portalContentError(409, 'TRY_AGAIN', 'DEADLOCK DO SERVIDOR'));
-      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
       expect(await screen.findByText('Não foi possível agora. Tente de novo em instantes.')).toBeTruthy();
-      await waitFor(() => { expect(screen.getByRole('button', { name: 'Aprovar' }).hasAttribute('disabled')).toBe(false); });
+      await waitFor(() => { expect(screen.getByRole('button', { name: 'Aprovar o post' }).hasAttribute('disabled')).toBe(false); });
       contents.failNextWrite(() => portalContentError(500, 'INTERNAL_ERROR', 'ERRO DO SERVIDOR'));
-      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
       expect(await screen.findByText('Não foi possível aprovar. Tente de novo.')).toBeTruthy();
       expect(screen.queryByText('ERRO DO SERVIDOR')).toBeNull();
       expect(screen.queryByText('DEADLOCK DO SERVIDOR')).toBeNull();
@@ -475,14 +606,15 @@ describe('the post of the portal (#270)', () => {
 
     it('records the comment with the revision read, closes, shows Em ajuste and the conversation of the content', async () => {
       const { contents, conversation } = await open({ revision: 5 });
+      await openConversation();
       await screen.findByText('Nenhuma conversa sobre este conteúdo');
       await askForChanges('  Troque a primeira foto  ');
       expect(await screen.findByText('Pedido de ajuste enviado. A agência vai ver a sua mensagem na conversa abaixo.')).toBeTruthy();
       expect(sentBodies(contents, 'request-changes')).toEqual([{ revision: 5, comment: 'Troque a primeira foto' }]);
       expect(screen.queryByLabelText('O que precisa mudar?')).toBeNull();
       expect(contents.rows.get(CONTENT)?.state).toBe('adjusting');
-      expect(within(screen.getByRole('list', { name: 'Dados do conteúdo' })).getByText('Em ajuste')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
+      expect(within(stateLine()).getByText('Em ajuste')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Aprovar o post' })).toBeNull();
       const row = await screen.findByRole('button', { name: /Aberta por Maria \(cliente\)/ });
       expect(within(row).getByText('Troque a primeira foto')).toBeTruthy();
       expect(conversation.calls.some((call) => call.startsWith(`GET /clients/${CLIENT}/threads?contentId=${CONTENT}`))).toBe(true);
@@ -561,6 +693,8 @@ describe('the post of the portal (#270)', () => {
         { side: 'agency', body: 'Ajustamos a legenda', at: '2026-10-13T01:40:00.000Z' }
       ]);
       conversation.seed({ contentId: OTHER_CONTENT }, [{ side: 'agency', body: 'Conversa de outro conteúdo', at: '2026-10-13T01:30:00.000Z' }]);
+      await title('Lançamento da primavera');
+      await openConversation();
       const row = await screen.findByRole('button', { name: /Ajustamos a legenda/ });
       expect(screen.queryByText('Conversa de outro conteúdo')).toBeNull();
       fireEvent.click(row);
@@ -825,7 +959,7 @@ describe('the post of the portal (#270)', () => {
       renderPost(impl);
       expect(await screen.findByText('Não foi possível carregar esta mídia.')).toBeTruthy();
       expect(screen.queryByText('Media asset not found.')).toBeNull();
-      expect(screen.getByRole('button', { name: 'Aprovar' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Aprovar o post' })).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Próxima' }));
       await waitFor(() => { expect(shown()).toBe(`https://storage.test/${asset(2)}/original`); });
     });
@@ -913,16 +1047,16 @@ describe('the post of the portal (#270)', () => {
   });
 
   describe('the screen in the Pauta (#687)', () => {
-    const bar = (): HTMLElement => screen.getByRole('region', { name: 'Sua decisão' });
+    const bar = (): HTMLElement => document.querySelector<HTMLElement>('.portal-post__bar')!;
 
-    it('names the state with its shape and word, and the format as a label with its own colour', async () => {
+    it('names the state in the big tag with its shape and word, and the format in the line next to it', async () => {
       await open({ format: 'reels' });
       await title('Lançamento da primavera');
-      const meta = screen.getByRole('list', { name: 'Dados do conteúdo' });
-      const status = within(meta).getByText('Aguardando aprovação');
+      const status = within(stateLine()).getByText('Aguardando sua aprovação');
       expect(status.classList.contains('ui-status-tag--waiting')).toBe(true);
+      expect(status.classList.contains('ui-status-tag--lg')).toBe(true);
       expect(status.querySelector('svg')).not.toBeNull();
-      expect(within(meta).getByText('Reels').classList.contains('ui-format-tag--reels')).toBe(true);
+      expect(summary().textContent).toMatch(/^Reels · /);
     });
 
     it.each([
@@ -932,39 +1066,39 @@ describe('the post of the portal (#270)', () => {
     ] as const)('draws %s with the shape of its state', async (state, label, shape) => {
       await open({ state, publishedOn: state === 'published' ? '2026-10-13' : null });
       await title('Lançamento da primavera');
-      const tag = within(screen.getByRole('list', { name: 'Dados do conteúdo' })).getByText(label);
+      const tag = within(stateLine()).getByText(label);
       expect(tag.classList.contains(shape)).toBe(true);
       expect(tag.querySelector('svg')).not.toBeNull();
     });
 
-    it('keeps the two decisions in one bar, the last piece of the post, with Aprovar as the action on the right', async () => {
+    it('is the preview card, then "Sua resposta", with one primary: "Aprovar o post" first and "Pedir ajuste" secondary', async () => {
       const { container } = await open();
       await title('Lançamento da primavera');
-      expect(within(bar()).getAllByRole('button').map((button) => button.textContent)).toEqual(['Pedir ajuste', 'Aprovar']);
-      expect(within(bar()).getByRole('heading', { level: 2, name: 'Sua decisão' })).toBeTruthy();
-      // The end of the conversation is never under the bar: the bar comes after everything else in the markup, so a phone, the keyboard and a screen reader all meet it last.
+      expect(within(bar()).getAllByRole('button').map((button) => button.textContent)).toEqual(['Aprovar o post', 'Pedir ajuste']);
+      expect(screen.getByRole('button', { name: 'Aprovar o post' }).classList.contains('ui-button--primary')).toBe(true);
+      expect(screen.getByRole('button', { name: 'Pedir ajuste' }).classList.contains('ui-button--secondary')).toBe(true);
       const post = container.querySelector('.portal-post') as HTMLElement;
       const layout = post.querySelector('.portal-post__layout') as HTMLElement;
       expect(post.lastElementChild).toBe(layout);
-      expect(layout.lastElementChild).toBe(bar());
-      const follows = (earlier: Element, later: Element): boolean => (earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-      expect(follows(post.querySelector('.portal-media') as Element, bar())).toBe(true);
-      expect(follows(post.querySelector('.portal-post__caption') as Element, bar())).toBe(true);
-      expect(follows(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }), bar())).toBe(true);
-      expect(post.contains(screen.getByRole('region', { name: 'Conversa sobre Lançamento da primavera' }))).toBe(true);
-      expect(bar().classList.contains('portal-post__bar')).toBe(true);
+      const card = screen.getByRole('region', { name: 'Prévia do post' });
+      const panel = screen.getByRole('complementary', { name: 'Sua resposta' });
+      expect(Array.from(layout.children)).toEqual([card, panel]);
+      expect(panel.contains(bar())).toBe(true);
+      expect(card.contains(post.querySelector('.portal-media'))).toBe(true);
+      expect(card.contains(post.querySelector('.portal-post__caption'))).toBe(true);
+      expect(card.contains(screen.getByText('Conversa sobre este post'))).toBe(true);
     });
 
     it('says a failure of Aprovar inside the bar, next to the buttons', async () => {
       const { contents } = await open();
-      await screen.findByRole('button', { name: 'Aprovar' });
+      await screen.findByRole('button', { name: 'Aprovar o post' });
       contents.failNextWrite(() => portalContentError(500, 'INTERNAL_ERROR'));
-      fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Aprovar o post' }));
       expect((await within(bar()).findByRole('alert')).textContent).toBe('Não foi possível aprovar. Tente de novo.');
     });
 
     it.each([
-      ['the confirmation of Aprovar', async () => { fireEvent.click(await screen.findByRole('button', { name: 'Aprovar' })); }, 'Conteúdo aprovado. Obrigado!'],
+      ['the confirmation of Aprovar', async () => { fireEvent.click(await screen.findByRole('button', { name: 'Aprovar o post' })); }, 'Conteúdo aprovado. Obrigado!'],
       ['the confirmation of Pedir ajuste', async () => { await askForChanges('Troque a primeira foto'); }, 'Pedido de ajuste enviado. A agência vai ver a sua mensagem na conversa abaixo.']
     ])('takes the focus to %s when the buttons that were pressed leave with the bar', async (_name, act, text) => {
       await open();
@@ -972,7 +1106,7 @@ describe('the post of the portal (#270)', () => {
       const notice = (await screen.findByText(text)).closest('.portal-post__notes') as HTMLElement;
       expect(notice).not.toBeNull();
       await waitFor(() => { expect(document.activeElement).toBe(notice); });
-      expect(screen.queryByRole('region', { name: 'Sua decisão' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Sua resposta' })).toBeNull();
     });
 
     it('keeps the way back on every state of the screen, since the bottom bar of the shell steps aside', async () => {
@@ -1071,13 +1205,12 @@ describe('the post of the portal (#270)', () => {
 
     it('lays the post out in the order of the markup on a phone, and stacks the answer beside the post only from the wide screen', () => {
       expect(rule('.portal-post__layout')).toMatch(/display:\s*grid;/);
-      expect(rule('.portal-post__bar')).not.toMatch(/(^|[^-])order:/);
-      expect(rule('.portal-post__body')).not.toMatch(/(^|[^-])order:/);
+      expect(rule('.portal-post__layout')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\);/);
+      expect(rule('.portal-post__decide')).not.toMatch(/(^|[s;])order:/);
       const wide = mediaBlock('(min-width: 48rem)', '.portal-post__layout');
       expect(wide).toMatch(/\.portal-post__layout \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 24rem\);/);
-      expect(wide).toMatch(/\.portal-post__layout > \.portal-post__bar \{[^}]*grid-column:\s*2;/);
-      // On a long post the answer stays in view beside it: the bar spans the flexible row and is held at the top while the page scrolls.
-      expect(wide).toMatch(/\.portal-post__layout > \.portal-post__bar \{\s*grid-row:\s*2 \/ -1;\s*align-self:\s*start;\s*position:\s*sticky;\s*top:\s*var\(--space-4\);/);
+      // On a long post the answer stays in view beside it, held at the top while the page scrolls.
+      expect(wide).toMatch(/\.portal-post__decide \{\s*position:\s*sticky;\s*top:\s*var\(--space-4\);/);
     });
 
     it('draws no blur on the header of the portal and takes the hover lift of a cover card away for those who ask for less motion', () => {
@@ -1087,13 +1220,18 @@ describe('the post of the portal (#270)', () => {
       expect(reduced).toMatch(/\.portal-postcard:hover \{\s*transform:\s*none;/);
     });
 
-    it('holds the decision bar at the bottom of the screen and keeps a focused control clear of it', () => {
-      expect(rule('.portal-post__bar')).toMatch(/position:\s*sticky;/);
-      expect(rule('.portal-post__bar')).toMatch(/bottom:\s*0;/);
-      expect(rule('.portal-post__bar')).toMatch(/padding:[^;]*env\(safe-area-inset-bottom\)/);
-      // The bar is about 5 rem tall and grows with a message above its buttons: the room kept is never less than that.
-      const room = /scroll-padding-bottom:\s*calc\((\d+(?:\.\d+)?)rem \+ env\(safe-area-inset-bottom\)\)/.exec(rule('html:has(.portal-post__bar)'));
-      expect(Number(room?.[1])).toBeGreaterThanOrEqual(8);
+    it('holds the decision bar at the bottom edge of a phone and leaves room under the page for it', () => {
+      const phone = mediaBlock('(max-width: 47.99rem)', '.portal-post__bar');
+      const fixedBar = /\n {2}\.portal-post__bar \{([^}]*)\}/.exec(phone)?.[1] ?? '';
+      expect(fixedBar).toMatch(/position:\s*fixed;/);
+      expect(fixedBar).toMatch(/bottom:\s*0;/);
+      expect(fixedBar).toMatch(/padding:[^;]*env\(safe-area-inset-bottom\)/);
+      // The bar is about 5 rem tall: the page keeps more than that under its last control.
+      const room = /\.portal-post:has\(\.portal-post__bar\) \{\s*padding-bottom:\s*calc\((\d+(?:\.\d+)?)rem \+ env\(safe-area-inset-bottom\)\)/.exec(phone);
+      expect(Number(room?.[1])).toBeGreaterThanOrEqual(6);
+      // "Pedir ajuste" on the left and the wider "Aprovar o post" on the right, as on the board.
+      expect(phone).toMatch(/\.portal-post__bar \.portal-post__actions \{\s*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1\.4fr\);/);
+      expect(phone).toMatch(/\.portal-post__bar \.portal-post__actions > :first-child \{\s*order:\s*2;/);
     });
 
     it('steps the bottom bar of the shell aside while a post is open, except under the tour that points at it', () => {
@@ -1108,8 +1246,14 @@ describe('the post of the portal (#270)', () => {
 });
 
 describe('the round the agency opened, on the post of the portal (telas-melhorias S8)', () => {
-  const ROUND = { dueOn: '2026-10-14', note: 'Confira a legenda.\nObrigada!' };
-  const round = (): HTMLElement | null => document.querySelector('.approval-round');
+  const ROUND = {
+    dueOn: '2026-10-14',
+    dueAt: '2026-10-15T01:30:00.000Z',
+    sentAt: '2026-10-10T01:30:00.000Z',
+    sentBy: { name: 'João Pereira', photoUrl: null },
+    note: 'Confira a legenda.\nObrigada!'
+  };
+  const round = (): HTMLElement | null => document.querySelector('.approval-deadline, .approval-sender');
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -1120,16 +1264,64 @@ describe('the round the agency opened, on the post of the portal (telas-melhoria
   it('says until when, in the day of São Paulo (still the 11th at 01:30Z), and the note signed by the agency', async () => {
     await open({ title: 'Post com prazo', approval: ROUND });
     await title('Post com prazo');
-    expect(round()?.querySelector('.approval-round__due')?.textContent).toBe('Aprovar até qua, 14/10 · vence em 3 dias');
-    expect(screen.getByText('Recado de Agência Um')).toBeTruthy();
-    expect(round()?.querySelector('.approval-round__text')?.textContent).toBe('Confira a legenda.\nObrigada!');
+    expect(document.querySelector('.approval-deadline__big')?.textContent).toBe('Responda até quarta, 14 out, 22h30');
+    expect(document.querySelector('.approval-deadline__left')?.textContent).toBe('Faltam 3 dias');
+    expect(within(screen.getByRole('complementary')).getByText('Recado de João Pereira, da Agência Um')).toBeTruthy();
+    expect(document.querySelector('.approval-sender__text')?.textContent).toBe('Confira a legenda.\nObrigada!');
+    expect(document.querySelector('.approval-sender__when')?.textContent).toBe('9 de outubro, 22h30');
+    expect(screen.getByText('Aguardando sua aprovação')).toBeTruthy();
+  });
+
+  it('counts one day as "Falta 1 dia" and the same day as "Vence hoje"', async () => {
+    await open({ title: 'Post de amanhã', approval: { dueOn: '2026-10-12', note: null } });
+    await title('Post de amanhã');
+    expect(document.querySelector('.approval-deadline__left')?.textContent).toBe('Falta 1 dia');
+    expect(document.querySelector('.approval-deadline__big')?.textContent).toBe('Responda até segunda, 12 out, 12h');
+    cleanup();
+    await open({ title: 'Post de hoje', approval: { dueOn: '2026-10-11', note: null } });
+    await title('Post de hoje');
+    expect(document.querySelector('.approval-deadline__left')?.textContent).toBe('Vence hoje');
   });
 
   it('shows the deadline as venceu once it has passed, never as Atrasado', async () => {
     await open({ title: 'Post vencido', approval: { dueOn: '2026-10-09', note: null } });
     await title('Post vencido');
-    expect(round()?.querySelector('.approval-round__due')?.textContent).toBe('Aprovar até sex, 09/10 · venceu há 2 dias');
+    expect(document.querySelector('.approval-deadline__left')?.textContent).toBe('Venceu há 2 dias');
+    expect(document.querySelector('.approval-deadline')?.classList.contains('approval-deadline--expired')).toBe(true);
     expect(screen.queryByText(/Atrasad/)).toBeNull();
+  });
+
+  it('signs the note with the agency alone when the round has no readable sender', async () => {
+    await open({ title: 'Post sem remetente', approval: { dueOn: null, note: 'Oi.', sentBy: null } });
+    await title('Post sem remetente');
+    expect(screen.getByText('Recado de Agência Um')).toBeTruthy();
+    expect(document.querySelector('.approval-sender .ui-avatar')).toBeNull();
+  });
+
+  it('shows the sender photo from the portal route, never an address of the storage, once it loads', async () => {
+    const photoPath = `/clients/${CLIENT}/contents/${CONTENT}/sender-photo`;
+    const requested: string[] = [];
+    class FakeImage {
+      public onload: (() => void) | null = null;
+      public set src(value: string) { requested.push(value); queueMicrotask(() => { this.onload?.(); }); }
+    }
+    vi.stubGlobal('Image', FakeImage);
+    try {
+      await open({ title: 'Post com foto', approval: { ...ROUND, sentBy: { name: 'João Pereira', photoUrl: photoPath } } });
+      await title('Post com foto');
+      await waitFor(() => { expect(document.querySelector('.approval-sender .ui-avatar__photo')).not.toBeNull(); });
+      expect(requested).toEqual([`http://127.0.0.1:3001${photoPath}`]);
+      expect(document.querySelector('.approval-sender .ui-avatar__photo')?.getAttribute('src')).toBe(`http://127.0.0.1:3001${photoPath}`);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps the initials while the photo has not answered', async () => {
+    await open({ title: 'Post sem foto ainda', approval: { ...ROUND, sentBy: { name: 'João Pereira', photoUrl: `/clients/${CLIENT}/contents/${CONTENT}/sender-photo` } } });
+    await title('Post sem foto ainda');
+    expect(document.querySelector('.approval-sender .ui-avatar__photo')).toBeNull();
+    expect(document.querySelector('.approval-sender .ui-avatar__initials')?.textContent).toBe('JP');
   });
 
   it('says nothing when the agency asked for no deadline and left no note', async () => {
@@ -1145,7 +1337,7 @@ describe('the round the agency opened, on the post of the portal (telas-melhoria
     await open({ title: 'Post com recado', approval: { dueOn: null, note: 'Sem pressa.' } });
     await title('Post com recado');
     expect(screen.getByText('Sem pressa.')).toBeTruthy();
-    expect(screen.queryByText(/Aprovar até/)).toBeNull();
+    expect(screen.queryByText(/Responda até/)).toBeNull();
   });
 
   it('does not show the round once the content is no longer waiting for the person', async () => {
@@ -1158,7 +1350,7 @@ describe('the round the agency opened, on the post of the portal (telas-melhoria
     const note = '<img src=x onerror="window.hacked = 1"><b>negrito</b>';
     await open({ title: 'Post com marcação', approval: { dueOn: null, note } });
     await title('Post com marcação');
-    const text = round()?.querySelector('.approval-round__text') as HTMLElement;
+    const text = round()?.querySelector('.approval-sender__text') as HTMLElement;
     expect(text.textContent).toBe(note);
     expect(text.querySelector('b, img')).toBeNull();
   });

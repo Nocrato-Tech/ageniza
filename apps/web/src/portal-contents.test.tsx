@@ -180,7 +180,7 @@ describe('the portal Conteúdos (#269)', () => {
       const world = makeWorld();
       const { probe } = renderPortal(world, [`/portal/${CLIENT_ID}/inicio`]);
       await screen.findByRole('heading', { name: 'Olá, Maria' });
-      expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca']);
+      expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca', 'Pedidos da agênciaPedidos']);
       expect(within(nav()).queryByRole('link', { name: 'Calendário' })).toBeNull();
 
       fireEvent.click(within(nav()).getByRole('link', { name: 'Conteúdos' }));

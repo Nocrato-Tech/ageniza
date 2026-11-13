@@ -62,6 +62,7 @@
 @import './screens/portal-tour.css';
 @import './screens/portal-common.css';
 @import './screens/portal-home.css';
+@import './screens/portal-requests.css';
 @import './screens/portal-contents.css';
 @import './screens/portal-content.css';
 @import './screens/portal-brand.css';
@@ -102,3 +103,4 @@
 @import './ui/table.css';
 @import './ui/progress-bar.css';
 @import './ui/trait.css';
+@import './screens/notifications.css';

@@ -1,16 +1,20 @@
-import { useEffect, useRef, useState, type FormEvent, type Ref } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode, type Ref } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArrowLeft, ChevronDown, ChevronRight, Clock, Frown, Heart, MessageCircleWarning, Pencil, Plus } from 'lucide-react';
+import { Archive, ArrowLeft, ChevronDown, ChevronRight, Clock, Frown, Heart, MapPin, MessageCircleWarning, Mic, Pencil, Plus } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import {
+  PERSONA_TRAIT_MAX_LENGTH,
+  PERSONA_TRAITS_MAX,
+  PersonaAgeSchema,
   PersonaNameSchema,
   PersonaSchema,
+  PersonaTraitsSchema,
   utf8ByteLength,
   type ClientDetailResponse,
   type Persona
 } from '@ageniza/contracts';
-import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, Modal, Pill, Textarea, TextInput, useFormErrors } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, EmptyState, Field, FieldMessage, IconButton, Modal, Pill, Stage3D, Textarea, TextInput, Trait, useFormErrors } from '@ageniza/ui';
 
 import { useAgencyContext, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -25,7 +29,8 @@ import {
   SAVE_FAILED,
   SECTION_LABELS,
   sectionMutationError,
-  sectionSearch
+  sectionSearch,
+  type SectionKey
 } from './brand-study-model.js';
 import { PanelLayout } from './brand-study-sections.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -38,34 +43,84 @@ const PERSONA_NAME_MAX_BYTES = 120;
 
 interface PersonaDraft {
   readonly name: string;
+  readonly age: string;
+  readonly occupation: string;
+  readonly location: string;
+  /** Comma-separated while typing; the request carries the list. */
+  readonly traits: string;
   readonly description: string;
   readonly pains: string;
   readonly desires: string;
   readonly objections: string;
+  readonly whereTheyAre: string;
+  readonly toneThatWorks: string;
 }
 
 const draftFromPersona = (persona: Persona): PersonaDraft => ({
   name: persona.name,
+  age: persona.age === null ? '' : String(persona.age),
+  occupation: persona.occupation ?? '',
+  location: persona.location ?? '',
+  traits: persona.traits.join(', '),
   description: persona.description ?? '',
   pains: persona.pains ?? '',
   desires: persona.desires ?? '',
-  objections: persona.objections ?? ''
+  objections: persona.objections ?? '',
+  whereTheyAre: persona.whereTheyAre ?? '',
+  toneThatWorks: persona.toneThatWorks ?? ''
 });
 
-const emptyDraft: PersonaDraft = { name: '', description: '', pains: '', desires: '', objections: '' };
+const emptyDraft: PersonaDraft = {
+  name: '', age: '', occupation: '', location: '', traits: '', description: '', pains: '', desires: '', objections: '', whereTheyAre: '', toneThatWorks: ''
+};
+
+const AGE_INVALID = 'Informe uma idade entre 1 e 120.';
+const TRAITS_INVALID = `Use até ${PERSONA_TRAITS_MAX} traços de até ${PERSONA_TRAIT_MAX_LENGTH} caracteres, separados por vírgula.`;
+
+const parseTraits = (raw: string): string[] => raw.split(',').map((trait) => trait.trim()).filter((trait) => trait !== '');
+const parseAge = (raw: string): number | null => (raw.trim() === '' ? null : Number(raw.trim()));
+
+interface ProfileProblems { readonly age?: string; readonly traits?: string }
+
+/** What the screen checks before the request, so the API's refusal never surfaces as a generic failure. */
+const profileProblems = (draft: PersonaDraft): ProfileProblems => {
+  const age = parseAge(draft.age);
+  return {
+    ...(age !== null && !PersonaAgeSchema.safeParse(age).success ? { age: AGE_INVALID } : {}),
+    ...(!PersonaTraitsSchema.safeParse(parseTraits(draft.traits)).success ? { traits: TRAITS_INVALID } : {})
+  };
+};
+
+const LONG_FIELDS = [
+  ['description', 'Descrição'], ['pains', 'Dores'], ['desires', 'Desejos'], ['objections', 'Objeções'],
+  ['whereTheyAre', 'Onde está'], ['toneThatWorks', 'Tom que funciona']
+] as const;
 
 /** The persona form fields, shared by the create modal and the in-place edit of the profile. */
-function PersonaFields({ draft, onChange, nameRef, nameError }: {
+function PersonaFields({ draft, onChange, nameRef, nameError, problems }: {
   draft: PersonaDraft;
   onChange: (patch: Partial<PersonaDraft>) => void;
   nameRef?: Ref<HTMLInputElement>;
   nameError?: string;
+  problems: ProfileProblems;
 }) {
   return <>
     <Field label="Nome" error={nameError}>
       {(control) => <TextInput ref={nameRef} {...control} name="name" value={draft.name} onChange={(event) => onChange({ name: event.target.value })} />}
     </Field>
-    {([['description', 'Descrição'], ['pains', 'Dores'], ['desires', 'Desejos'], ['objections', 'Objeções']] as const).map(([field, label]) => (
+    <Field label="Idade" error={problems.age}>
+      {(control) => <TextInput {...control} name="age" type="number" inputMode="numeric" min={1} max={120} value={draft.age} onChange={(event) => onChange({ age: event.target.value })} />}
+    </Field>
+    <Field label="Ocupação">
+      {(control) => <TextInput {...control} name="occupation" value={draft.occupation} onChange={(event) => onChange({ occupation: event.target.value })} />}
+    </Field>
+    <Field label="Local">
+      {(control) => <TextInput {...control} name="location" value={draft.location} onChange={(event) => onChange({ location: event.target.value })} />}
+    </Field>
+    <Field label="Traços" hint="Separe por vírgula. Ex.: Rotina corrida, Compra por impulso" error={problems.traits}>
+      {(control) => <TextInput {...control} name="traits" value={draft.traits} onChange={(event) => onChange({ traits: event.target.value })} />}
+    </Field>
+    {LONG_FIELDS.map(([field, label]) => (
       <Field key={field} label={label}>
         {(control) => <Textarea {...control} name={field} rows={3} value={draft[field]} onChange={(event) => onChange({ [field]: event.target.value })} />}
       </Field>
@@ -74,14 +129,18 @@ function PersonaFields({ draft, onChange, nameRef, nameError }: {
 }
 
 /** The `PATCH` body: only what changed; a cleared field travels as `null` (review lessons of #379). */
-const personaChanges = (persona: Persona, draft: PersonaDraft): Record<string, string | null> => {
-  const body: Record<string, string | null> = {};
+const personaChanges = (persona: Persona, draft: PersonaDraft): Record<string, unknown> => {
+  const body: Record<string, unknown> = {};
   const name = draft.name.trim();
   if (name !== persona.name) body.name = name;
-  for (const field of ['description', 'pains', 'desires', 'objections'] as const) {
+  for (const field of ['description', 'pains', 'desires', 'objections', 'occupation', 'location', 'whereTheyAre', 'toneThatWorks'] as const) {
     const value = draft[field].trim();
     if (value !== (persona[field] ?? '')) body[field] = value === '' ? null : value;
   }
+  const age = parseAge(draft.age);
+  if (age !== persona.age) body.age = age;
+  const traits = parseTraits(draft.traits);
+  if (traits.join('\n') !== persona.traits.join('\n')) body.traits = traits;
   return body;
 };
 
@@ -109,6 +168,7 @@ function CreatePersonaDialog({ client, onClose }: { client: ClientDetailResponse
   const [draft, setDraft] = useState<PersonaDraft>(emptyDraft);
   const [nameError, setNameError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
+  const [shown, setShown] = useState<ProfileProblems>({});
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { nameRef.current?.focus(); }, []);
@@ -122,7 +182,13 @@ function CreatePersonaDialog({ client, onClose }: { client: ClientDetailResponse
         description: draft.description.trim() === '' ? null : draft.description,
         pains: draft.pains.trim() === '' ? null : draft.pains,
         desires: draft.desires.trim() === '' ? null : draft.desires,
-        objections: draft.objections.trim() === '' ? null : draft.objections
+        objections: draft.objections.trim() === '' ? null : draft.objections,
+        age: parseAge(draft.age),
+        occupation: draft.occupation.trim() === '' ? null : draft.occupation.trim(),
+        location: draft.location.trim() === '' ? null : draft.location.trim(),
+        traits: parseTraits(draft.traits),
+        whereTheyAre: draft.whereTheyAre.trim() === '' ? null : draft.whereTheyAre.trim(),
+        toneThatWorks: draft.toneThatWorks.trim() === '' ? null : draft.toneThatWorks.trim()
       },
       response: PersonaSchema
     }),
@@ -140,7 +206,10 @@ function CreatePersonaDialog({ client, onClose }: { client: ClientDetailResponse
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     const problem = nameProblem(draft.name);
-    if (problem !== undefined) { setNameError(problem); return; }
+    const problems = profileProblems(draft);
+    setShown(problems);
+    if (problem !== undefined) setNameError(problem);
+    if (problem !== undefined || Object.keys(problems).length > 0) return;
     create.mutate();
   };
 
@@ -151,7 +220,8 @@ function CreatePersonaDialog({ client, onClose }: { client: ClientDetailResponse
         draft={draft}
         nameRef={nameRef}
         nameError={nameError}
-        onChange={(patch) => { setDraft((current) => ({ ...current, ...patch })); setNameError(undefined); setFormError(undefined); }}
+        problems={shown}
+        onChange={(patch) => { setDraft((current) => ({ ...current, ...patch })); setNameError(undefined); setShown({}); setFormError(undefined); }}
       />
       {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
       <div className="form-actions">
@@ -164,20 +234,29 @@ function CreatePersonaDialog({ client, onClose }: { client: ClientDetailResponse
 const AwaitingPill = ({ count }: { count: number | undefined }) =>
   count === undefined || count === 0 ? null : <Pill icon={<Clock />} className="brand-personas__awaiting">{count} aguardando</Pill>;
 
-/** The three long fields of a persona, each in a card of its own with the icon that names it. */
-const PROFILE_CARDS = [
-  ['pains', 'Dores', Frown],
-  ['desires', 'Desejos', Heart],
-  ['objections', 'Objeções', MessageCircleWarning]
+/** The rows of the profile column: what the field is called, the icon that names it, and what the pencil says it edits. */
+const PROFILE_ROWS = [
+  ['pains', 'Dor', Frown, 'a dor'],
+  ['desires', 'Desejo', Heart, 'o desejo'],
+  ['objections', 'Objeção', MessageCircleWarning, 'a objeção'],
+  ['whereTheyAre', 'Onde está', MapPin, 'onde está'],
+  ['toneThatWorks', 'Tom que funciona', Mic, 'o tom']
 ] as const;
 
+/** "34 anos · gerente de RH · Pinheiros": whatever of the three is known. */
+const personaRole = (persona: Persona): string => [persona.age === null ? null : `${persona.age} anos`, persona.occupation, persona.location]
+  .filter((part): part is string => part !== null && part !== '')
+  .join(' · ');
+
 /**
- * The profile of one persona: identity on the left, pains, desires and objections in cards, then the persona's
- * conversations. Editing swaps the cards for the form; archiving asks first and goes back to the grid.
+ * The profile of one persona beside the list: who she is, then one row for each field with the pencil that edits it,
+ * then the persona's conversations. Editing swaps the column for the form; archiving asks first and goes back to the list.
  */
-function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft, onDraft }: {
+function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft, onDraft, list }: {
   client: ClientDetailResponse;
   persona: Persona;
+  /** The personas beside the profile, with this one marked. */
+  list: ReactNode;
   canEdit: boolean;
   backState: unknown;
   headingRef: Ref<HTMLHeadingElement>;
@@ -195,9 +274,11 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
   const [nameError, setNameError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
   const [confirmingArchive, setConfirmingArchive] = useState(false);
+  const [shown, setShown] = useState<ProfileProblems>({});
+  const [focusField, setFocusField] = useState<string | null>(null);
 
   const save = useMutation({
-    mutationFn: (body: Record<string, string | null>) => httpClient.request({
+    mutationFn: (body: Record<string, unknown>) => httpClient.request({
       path: apiPath('/agencies/:agencyId/clients/:clientId/personas/:personaId', {
         agencyId: agency.agencyId,
         clientId: client.id,
@@ -244,7 +325,10 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
     event.preventDefault();
     if (draft === null) return;
     const problem = nameProblem(draft.name);
-    if (problem !== undefined) { setNameError(problem); return; }
+    const problems = profileProblems(draft);
+    setShown(problems);
+    if (problem !== undefined) setNameError(problem);
+    if (problem !== undefined || Object.keys(problems).length > 0) return;
     const body = personaChanges(persona, draft);
     if (Object.keys(body).length === 0) { onDraft(() => null); return; }
     save.mutate(body);
@@ -262,6 +346,14 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
     if (draft !== null && !editing) onDraft(() => null);
   }, [draft, editing, onDraft]);
 
+  // The pencil of a row opens the form with that field under the cursor.
+  const formOpen = draft !== null && editing;
+  useEffect(() => {
+    if (!formOpen || focusField === null) return;
+    formRef.current?.querySelector<HTMLElement>(`[name="${focusField}"]`)?.focus();
+    setFocusField(null);
+  }, [formOpen, focusField, formRef]);
+
   if (draft !== null && editing) {
     return <div className="brand-persona">
       {back}
@@ -271,7 +363,8 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
         <PersonaFields
           draft={draft}
           nameError={nameError}
-          onChange={(patch) => { onDraft((current) => (current === null ? current : { ...current, ...patch })); setNameError(undefined); setFormError(undefined); }}
+          problems={shown}
+          onChange={(patch) => { onDraft((current) => (current === null ? current : { ...current, ...patch })); setNameError(undefined); setShown({}); setFormError(undefined); }}
         />
         {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
         <div className="form-actions">
@@ -282,30 +375,49 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
     </div>;
   }
 
+  const startEditing = (field: string | null): void => {
+    setFormError(undefined);
+    setNameError(undefined);
+    setShown({});
+    setFocusField(field);
+    onDraft(() => draftFromPersona(persona));
+  };
+  const role = personaRole(persona);
+
   return <div className="brand-persona">
     {back}
-    <div className="brand-persona__profile">
-      <div className="brand-persona__identity">
-        <Avatar name={persona.name} size="lg" className="brand-persona__avatar" />
-        <h3 ref={headingRef} tabIndex={-1} className="brand-persona__name">{persona.name}</h3>
-        {archived && <Pill>Arquivada</Pill>}
-        <p className="brand-persona__description">{persona.description ?? NOT_INFORMED}</p>
-        {canEdit && !archived && <div className="brand-persona__actions">
-          <Button size="sm" variant="secondary" leadingIcon={<Pencil />} blockedReason={blocked} onClick={() => { onDraft(() => draftFromPersona(persona)); setNameError(undefined); }}>Editar</Button>
-          <Button size="sm" variant="ghost" leadingIcon={<Archive />} blockedReason={blocked} onClick={() => { setFormError(undefined); setConfirmingArchive(true); }}>Arquivar</Button>
-        </div>}
-        {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
-      </div>
-      <div className="brand-persona__content">
-        {PROFILE_CARDS.map(([field, label, FieldIcon]) => <article key={field} className="brand-persona__card">
-          <span className="brand-persona__card-icon" aria-hidden="true"><FieldIcon /></span>
-          <h4>{label}</h4>
-          <p className="brand-section__body">{persona[field] ?? NOT_INFORMED}</p>
-        </article>)}
-        <div className="brand-persona__conversations">
-          <StudyConversation client={client} subject={{ personaId: persona.id }} subjectLabel={persona.name} readOnly={archived} headingLevel={4} />
+    <div className="brand-persona__split">
+      <div className="brand-persona__list">{list}</div>
+      <aside className="brand-persona__profile" aria-label={`Perfil de ${persona.name}`}>
+        <div className="brand-persona__identity">
+          <Avatar name={persona.name} size="lg" className="brand-persona__avatar" />
+          <h3 ref={headingRef} tabIndex={-1} className="brand-persona__name">{persona.name}</h3>
+          {archived && <Pill>Arquivada</Pill>}
+          {role !== '' && <p className="brand-persona__role">{role}</p>}
+          <p className="brand-persona__description">{persona.description ?? NOT_INFORMED}</p>
+          {persona.traits.length > 0 && <div className="brand-persona__traits">
+            {persona.traits.map((trait) => <Trait key={trait}>{trait}</Trait>)}
+          </div>}
+          {canEdit && !archived && <div className="brand-persona__actions">
+            <Button size="sm" variant="secondary" leadingIcon={<Pencil />} blockedReason={blocked} onClick={() => startEditing(null)}>Editar</Button>
+            <Button size="sm" variant="ghost" leadingIcon={<Archive />} blockedReason={blocked} onClick={() => { setFormError(undefined); setConfirmingArchive(true); }}>Arquivar</Button>
+          </div>}
+          {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
         </div>
-      </div>
+        <div className="brand-persona__rows">
+          {PROFILE_ROWS.map(([field, label, RowIcon, what]) => <div key={field} className="brand-persona__row">
+            <span className="brand-persona__row-icon" aria-hidden="true"><RowIcon /></span>
+            <div>
+              <h4>{label}</h4>
+              <p className="brand-section__body">{persona[field] ?? NOT_INFORMED}</p>
+            </div>
+            {canEdit && !archived && <IconButton label={`Editar ${what}`} icon={<Pencil />} blockedReason={blocked} onClick={() => startEditing(field)} />}
+          </div>)}
+        </div>
+      </aside>
+    </div>
+    <div className="brand-persona__conversations">
+      <StudyConversation client={client} subject={{ personaId: persona.id }} subjectLabel={persona.name} readOnly={archived} headingLevel={4} />
     </div>
     <ConfirmDialog
       open={confirmingArchive}
@@ -324,8 +436,10 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
  * The personas section: a grid of the active ones with the way to add another, the collapsed archived list
  * with Desarquivar, and the profile of one persona when the address names it.
  */
-export function PersonasSection({ client, personas, canEdit, active, selectedId, awaiting }: {
+export function PersonasSection({ client, personas, canEdit, active, selectedId, awaiting, lastMissing }: {
   client: ClientDetailResponse;
+  /** The one section still unfilled when the study lacks only one; the note under the list names it. */
+  lastMissing: SectionKey | null;
   personas: Persona[];
   canEdit: boolean;
   /** This section is the one on screen: only then does the focus follow an open or a return. */
@@ -380,6 +494,38 @@ export function PersonasSection({ client, personas, canEdit, active, selectedId,
   const newPersona = <Button size="sm" variant="secondary" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova persona</Button>;
   const createDialog = creating && <CreatePersonaDialog client={client} onClose={() => setCreating(false)} />;
 
+  const cards = (current: string | null) => <ul className="brand-personas__list">
+    {activePersonas.map((persona) => {
+      const role = personaRole(persona);
+      return <li key={persona.id}>
+        <Link
+          className="brand-personas__card"
+          data-persona-id={persona.id}
+          to={{ search: personaSearch(persona.id) }}
+          state={location.state}
+          aria-current={persona.id === current ? 'true' : undefined}
+        >
+          <Avatar name={persona.name} size="lg" />
+          <span className="brand-personas__body">
+            <span className="brand-personas__name">{persona.name}</span>
+            {role !== '' && <span className="brand-personas__role">{role}</span>}
+            {role === '' && persona.id !== current && persona.description !== null && <span className="brand-personas__description">{persona.description}</span>}
+            {persona.traits.length > 0 && <span className="brand-personas__traits">
+              {persona.traits.map((trait) => <Trait key={trait}>{trait}</Trait>)}
+            </span>}
+            <AwaitingPill count={awaiting.persona[persona.id]} />
+          </span>
+          <ChevronRight className="brand-personas__go" aria-hidden="true" />
+        </Link>
+      </li>;
+    })}
+  </ul>;
+
+  const listHeader = <header className="brand-personas__header">
+    <h3>{SECTION_LABELS.personas}</h3>
+    {canEdit && activePersonas.length > 0 && newPersona}
+  </header>;
+
   if (selected !== null) {
     const personaId = selected.id;
     const onDraft = (update: (current: PersonaDraft | null) => PersonaDraft | null): void => {
@@ -390,15 +536,20 @@ export function PersonasSection({ client, personas, canEdit, active, selectedId,
         return copy;
       });
     };
-    return <PersonaProfile key={personaId} client={client} persona={selected} canEdit={canEdit} backState={location.state} headingRef={headingRef} draft={drafts.get(personaId) ?? null} onDraft={onDraft} />;
+    const list = <div className="brand-personas" ref={gridRef}>
+      {listHeader}
+      {cards(personaId)}
+    </div>;
+    return <>
+      <PersonaProfile key={personaId} client={client} persona={selected} canEdit={canEdit} backState={location.state} headingRef={headingRef} draft={drafts.get(personaId) ?? null} onDraft={onDraft} list={list} />
+      {createDialog}
+    </>;
   }
 
   return <PanelLayout conversation={active ? <StudyConversation client={client} subject={{ sectionKey: 'personas' }} subjectLabel={SECTION_LABELS.personas} readOnly={false} /> : null}>
     <div className="brand-personas" ref={gridRef}>
-      <header className="brand-personas__header">
-        <h3>{SECTION_LABELS.personas}</h3>
-        {canEdit && activePersonas.length > 0 && newPersona}
-      </header>
+      {listHeader}
+      <p className="brand-personas__intro">{`Para quem ${client.name} escreve. Cada post deve ter uma delas em mente.`}</p>
       {activePersonas.length === 0
         ? <EmptyState
           className="brand-section__empty"
@@ -407,19 +558,17 @@ export function PersonasSection({ client, personas, canEdit, active, selectedId,
           description={canEdit ? 'Descreva para quem a marca fala: dores, desejos e objeções.' : undefined}
           action={canEdit ? newPersona : undefined}
         />
-        : <ul className="brand-personas__list">
-          {activePersonas.map((persona) => <li key={persona.id}>
-            <Link className="brand-personas__card" data-persona-id={persona.id} to={{ search: personaSearch(persona.id) }} state={location.state}>
-              <Avatar name={persona.name} size="lg" />
-              <span className="brand-personas__body">
-                <span className="brand-personas__name">{persona.name}</span>
-                {persona.description !== null && <span className="brand-personas__description">{persona.description}</span>}
-                <AwaitingPill count={awaiting.persona[persona.id]} />
-              </span>
-              <ChevronRight className="brand-personas__go" aria-hidden="true" />
-            </Link>
-          </li>)}
-        </ul>}
+        : cards(null)}
+
+      {lastMissing !== null && <div className="brand-note">
+        <Stage3D src="/3d/bulb.png" tone="indigo" size="sm" />
+        <div>
+          <p className="brand-note__title">{lastMissing === 'observations' ? 'Falta uma pergunta para fechar o estudo' : 'Falta uma seção para fechar o estudo'}</p>
+          <p className="brand-note__text">{lastMissing === 'observations'
+            ? 'Observações é a última seção. Anote o que o dono não quer ver nos posts: isso evita retrabalho na aprovação.'
+            : `${SECTION_LABELS[lastMissing]} é a última seção que falta preencher.`}</p>
+        </div>
+      </div>}
 
       {archivedPersonas.length > 0 && (archivedOpen
         ? <section className="brand-personas__archived" aria-label="Personas arquivadas">

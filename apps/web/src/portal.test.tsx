@@ -226,7 +226,7 @@ describe('client portal shell (#141)', () => {
     const { probe } = renderPortal(impl, `/portal/${CLIENT_ID}`);
     expect(await screen.findByRole('heading', { name: 'Olá, Maria' })).toBeTruthy();
     expect(probe.pathname).toBe(portalUrl('inicio'));
-    expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca']);
+    expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca', 'Pedidos da agênciaPedidos']);
     expect(within(nav()).getByRole('link', { name: 'Início' }).getAttribute('aria-current')).toBe('page');
 
     clickTab('Conteúdos');
@@ -479,7 +479,7 @@ describe('client portal shell (#141)', () => {
     expect(probe.pathname).toBe(portalUrl('qualquer-coisa'));
     // Still the portal shell (client header and bar), not the generic protected header: the `*` of the portal answers.
     expect(within(container.querySelector('.portal-header') as HTMLElement).getByText('Padaria Central')).toBeTruthy();
-    expect(within(nav()).getAllByRole('link').map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null]);
+    expect(within(nav()).getAllByRole('link').map((link) => link.getAttribute('aria-current'))).toEqual([null, null, null, null]);
     expect(container.querySelector('.protected-header')).toBeNull();
     expect(screen.queryByRole('heading', { name: /Olá/ })).toBeNull();
 
@@ -1017,6 +1017,184 @@ describe('the Início: approvals and the script of today (#271)', () => {
       renderPortal(makeFetch({ scripts: api }).impl);
       expect(await screen.findByText('Não foi possível carregar o roteiro de hoje.', undefined, { timeout: 5000 })).toBeTruthy();
       expect(screen.queryByText('Rascunho vazado')).toBeNull();
+    });
+  });
+
+  describe('Pedidos da agência: the page and the badge of the navigation (decision 2026-11-11)', () => {
+    const materialApi = () => createPortalMaterialRequestsApi(CLIENT_ID);
+    const REQUESTS = `GET /clients/${CLIENT_ID}/material-requests`;
+    const requestsLink = (): HTMLElement => within(nav()).getByRole('link', { name: /^Pedidos da agência/ });
+    const badgeOf = (): HTMLElement | null => requestsLink().querySelector('.portal-nav__badge');
+    const serverError = (): Response => json({ error: { code: 'INTERNAL_ERROR', message: 'MENSAGEM DO SERVIDOR' } }, 500);
+    const itemOf = (title: string): HTMLElement => screen.getByRole('heading', { level: 2, name: title }).closest('li') as HTMLElement;
+
+    it('adds the item to the navigation, with no badge when nothing is open, and opens the page on a click', async () => {
+      const { impl } = makeFetch();
+      const { probe } = renderPortal(impl);
+      await screen.findByRole('heading', { name: 'Olá, Maria' });
+
+      expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca', 'Pedidos da agênciaPedidos']);
+      await waitFor(() => expect(requestsLink()).toBeTruthy());
+      expect(requestsLink().getAttribute('href')).toBe(portalUrl('pedidos'));
+      expect(badgeOf()).toBeNull();
+      expect(requestsLink().textContent).not.toMatch(/\d/);
+
+      clickTab('Pedidos da agência');
+      expect(await screen.findByRole('heading', { level: 1, name: 'Pedidos da agência' })).toBeTruthy();
+      expect(screen.getByText('Material que falta para os próximos posts.')).toBeTruthy();
+      expect(probe.pathname).toBe(portalUrl('pedidos'));
+      expect(requestsLink().getAttribute('aria-current')).toBe('page');
+      expect(within(nav()).getByRole('link', { name: 'Início' }).getAttribute('aria-current')).toBeNull();
+    });
+
+    it('counts the open requests in the badge, as the API counts them (resolved ones are not), and names it for assistive technology', async () => {
+      const api = materialApi();
+      api.seed({ body: 'Um', dueOn: '2026-10-20' });
+      api.seed({ body: 'Dois', dueOn: '2026-10-21' });
+      api.seed({ body: 'Três', dueOn: '2026-10-22' });
+      api.seed({ body: 'Resolvido', state: 'resolved' });
+      renderPortal(makeFetch({ materialRequests: api }).impl);
+
+      await waitFor(() => expect(badgeOf()?.textContent).toBe('3'));
+      expect(badgeOf()?.getAttribute('aria-label')).toBe('3 pedidos abertos');
+      expect(within(nav()).getByRole('link', { name: 'Pedidos da agência 3 pedidos abertos' })).toBeTruthy();
+    });
+
+    it('writes the badge in the singular for one request, and drops it when the agency resolves the last one', async () => {
+      const api = materialApi();
+      const only = api.seed({ body: 'Só este' });
+      const { queryClient } = renderPortal(makeFetch({ materialRequests: api }).impl);
+
+      await waitFor(() => expect(badgeOf()?.getAttribute('aria-label')).toBe('1 pedido aberto'));
+      api.resolve(only.threadId);
+      await act(async () => { await queryClient.invalidateQueries({ queryKey: portalMaterialRequestsKey(CLIENT_ID) }); });
+      await waitFor(() => expect(badgeOf()).toBeNull());
+    });
+
+    it('shows no badge when the count could not be read, and never a zero', async () => {
+      const api = materialApi();
+      api.seed({ body: 'Um' });
+      api.state.failList = serverError;
+      renderPortal(makeFetch({ materialRequests: api }).impl);
+      await screen.findByRole('heading', { name: 'Olá, Maria' });
+      await waitFor(() => expect(api.calls).toContain(REQUESTS));
+      expect(badgeOf()).toBeNull();
+    });
+
+    it('lists the open requests with title, text, who asked and the deadline day, and flags only the late one in São Paulo days', async () => {
+      const api = materialApi();
+      api.seed({ title: 'Fotos da equipe', body: 'Envie 3 fotos da equipe no balcão', dueOn: '2026-10-10' });
+      api.seed({ title: 'Logotipo', body: 'Mande o logotipo em PNG', dueOn: TODAY });
+      api.seed({ title: null, body: 'Pedido antigo sem título', dueOn: '2026-10-25' });
+      api.seed({ title: 'Sem prazo', body: 'Quando puder' });
+      api.seed({ title: 'Já resolvido', body: 'Resolvido', state: 'resolved' });
+      renderPortal(makeFetch({ materialRequests: api }).impl, portalUrl('pedidos'));
+
+      await screen.findByRole('heading', { level: 2, name: 'Fotos da equipe' });
+      expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['Fotos da equipe', 'Logotipo', 'Pedido de material', 'Sem prazo']);
+      expect(screen.getByText('4 pedidos')).toBeTruthy();
+      expect(screen.queryByText('Já resolvido')).toBeNull();
+
+      const first = itemOf('Fotos da equipe');
+      expect(within(first).getByText('Envie 3 fotos da equipe no balcão')).toBeTruthy();
+      expect(within(first).getByText('Pedido de Agência Um')).toBeTruthy();
+      expect(within(first).getByText('até 10 de outubro')).toBeTruthy();
+      expect(within(first).getByText('Atrasado')).toBeTruthy();
+      // The 01:30Z night is still the 11th in São Paulo: a deadline of the 11th is not late, and the one of the 10th is.
+      expect(within(itemOf('Logotipo')).getByText('até 11 de outubro')).toBeTruthy();
+      expect(within(itemOf('Logotipo')).queryByText('Atrasado')).toBeNull();
+      expect(within(itemOf('Pedido de material')).getByText('Pedido antigo sem título')).toBeTruthy();
+      expect(within(itemOf('Pedido de material')).getByText('até 25 de outubro')).toBeTruthy();
+      expect(within(itemOf('Sem prazo')).queryByText(/^até /)).toBeNull();
+      expect(document.querySelectorAll('.portal-requests-page .ui-late-badge')).toHaveLength(1);
+    });
+
+    it('answers on the right request when there are two, from the page, naming each button by its title', async () => {
+      const api = materialApi();
+      const first = api.seed({ title: 'Fotos da equipe', body: 'Envie 3 fotos', dueOn: '2026-10-20' });
+      const second = api.seed({ title: 'Logotipo', body: 'Mande o logotipo', dueOn: '2026-10-25' });
+      renderPortal(makeFetch({ materialRequests: api }).impl, portalUrl('pedidos'));
+      await screen.findByRole('heading', { level: 2, name: 'Logotipo' });
+
+      expect(screen.getAllByRole('button', { name: /^Responder/ }).map((button) => button.textContent)).toEqual(['Responder', 'Responder']);
+      fireEvent.click(screen.getByRole('button', { name: 'Responder Logotipo' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Pedido de material' });
+      expect(await within(dialog).findByText('Mande o logotipo')).toBeTruthy();
+      expect(within(dialog).queryByText('Envie 3 fotos')).toBeNull();
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Escrever resposta' }), { target: { value: 'Segue o logotipo' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+      await waitFor(() => expect(api.posted).toEqual([{ threadId: second.threadId, body: 'Segue o logotipo' }]));
+      expect(api.rows.find((row) => row.threadId === first.threadId)!.comments).toHaveLength(1);
+      // The request stays on the page after the answer: only the agency resolves.
+      expect(screen.getByRole('heading', { level: 2, name: 'Logotipo' })).toBeTruthy();
+    });
+
+    it('says there is nothing open, as good news, when the read answered with no request', async () => {
+      const api = materialApi();
+      api.seed({ title: 'Já resolvido', body: 'Resolvido', state: 'resolved' });
+      renderPortal(makeFetch({ materialRequests: api }).impl, portalUrl('pedidos'));
+
+      expect(await screen.findByText('Nenhum pedido aberto')).toBeTruthy();
+      expect(screen.getByText('A Agência Um não está esperando nenhum material seu.')).toBeTruthy();
+      expect(screen.queryByText(/pedidos?$/)).toBeNull();
+      expect(screen.queryByRole('button', { name: /Responder/ })).toBeNull();
+    });
+
+    it('shows a loading shape on the first read, with no good news and no failure yet', async () => {
+      const held = gateReads(makeFetch({ materialRequests: materialApi() }).impl, (url) => url.pathname === `/clients/${CLIENT_ID}/material-requests`);
+      let release: () => void = () => undefined;
+      held.gate.hold = new Promise<void>((resolve) => { release = resolve; });
+      renderPortal(held.impl, portalUrl('pedidos'));
+      await screen.findByRole('heading', { level: 1, name: 'Pedidos da agência' });
+
+      expect(document.querySelector('.portal-requests-page__skeleton')?.getAttribute('aria-busy')).toBe('true');
+      expect(screen.queryByText('Nenhum pedido aberto')).toBeNull();
+      expect(screen.queryByText('Não foi possível carregar os pedidos da agência.')).toBeNull();
+      release();
+      expect(await screen.findByText('Nenhum pedido aberto')).toBeTruthy();
+      expect(document.querySelector('.portal-requests-page__skeleton')).toBeNull();
+    });
+
+    it('shows the failure with Tentar de novo that reads again, and never the empty state or the server words', async () => {
+      const api = materialApi();
+      api.seed({ title: 'Logotipo', body: 'Mande o logotipo' });
+      api.state.failList = serverError;
+      renderPortal(makeFetch({ materialRequests: api }).impl, portalUrl('pedidos'));
+
+      const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
+      expect(alert.textContent).toContain('Não foi possível carregar os pedidos da agência.');
+      expect(screen.queryByText('Nenhum pedido aberto')).toBeNull();
+      expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+      api.state.failList = null;
+      fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
+      expect(await screen.findByRole('heading', { level: 2, name: 'Logotipo' })).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('reads the client of the address only: the requests of the other client the person belongs to never show', async () => {
+      const own = materialApi();
+      own.seed({ title: 'Do Padaria', body: 'Pedido deste cliente' });
+      const other = createPortalMaterialRequestsApi(OTHER_CLIENT_ID);
+      other.seed({ title: 'Do outro', body: 'Pedido de outro cliente' });
+      const { impl, calls } = makeFetch({ materialRequests: own, otherMaterialRequests: other });
+      renderPortal(impl, portalUrl('pedidos'));
+
+      expect(await screen.findByRole('heading', { level: 2, name: 'Do Padaria' })).toBeTruthy();
+      expect(screen.queryByText('Do outro')).toBeNull();
+      expect(calls.filter((call) => call.includes('material-requests'))).toEqual([REQUESTS]);
+      cleanup();
+
+      const second = makeFetch({ materialRequests: own, otherMaterialRequests: other });
+      renderPortal(second.impl, portalUrl('pedidos', OTHER_CLIENT_ID));
+      expect(await screen.findByRole('heading', { level: 2, name: 'Do outro' })).toBeTruthy();
+      expect(screen.queryByText('Do Padaria')).toBeNull();
+      expect(second.calls.filter((call) => call.includes('material-requests'))).toEqual([`GET /clients/${OTHER_CLIENT_ID}/material-requests`]);
+    });
+
+    it('has no Relatórios in the navigation', async () => {
+      renderPortal(makeFetch().impl);
+      await screen.findByRole('heading', { name: 'Olá, Maria' });
+      expect(within(nav()).queryByRole('link', { name: /Relatórios/ })).toBeNull();
     });
   });
 

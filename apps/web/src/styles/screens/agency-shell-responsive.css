@@ -214,12 +214,6 @@
   gap: var(--space-2);
 }
 
-/* The bell comes with its own subtask: its place is kept so the bar does not move when it arrives. */
-.agency-mbar__bell-slot {
-  width: 2.75rem;
-  height: 2.75rem;
-}
-
 .agency-bottomnav {
   position: fixed;
   inset: auto 0 0;

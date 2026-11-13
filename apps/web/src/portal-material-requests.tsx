@@ -24,7 +24,7 @@ export const portalMaterialRequestsKey = (clientId: string) => ['portal', client
 const commentsKey = (clientId: string, threadId: string) => [...portalMaterialRequestsKey(clientId), 'comments', threadId] as const;
 
 /** The thread of one request: what the agency asked and what was answered, and the box to answer. The portal never resolves. */
-function RequestThread({ clientId, request, onClose }: { clientId: string; request: MaterialRequest; onClose: () => void }) {
+export function RequestThread({ clientId, request, onClose }: { clientId: string; request: MaterialRequest; onClose: () => void }) {
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
   const client = usePortalClient();

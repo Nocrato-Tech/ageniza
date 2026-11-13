@@ -212,6 +212,30 @@
   min-width: 0;
 }
 
+.brand-personas__role {
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.brand-personas__intro {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.brand-personas__traits,
+.brand-persona__traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.brand-personas__card[aria-current='true'] {
+  border-color: var(--action-primary-bg);
+}
+
 .brand-personas__go {
   flex: none;
   width: 1.25rem;
@@ -321,28 +345,14 @@
   color: var(--status-ready-text);
 }
 
-.brand-study--agency .brand-study__progress {
-  appearance: none;
+.brand-study__updated {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.brand-study__fill {
   width: 100%;
-  height: 0.5rem;
-  border: 0;
-  border-radius: var(--radius-full);
-  background: var(--status-ready-bg);
-  overflow: hidden;
-}
-
-.brand-study--agency .brand-study__progress::-webkit-progress-bar {
-  background: var(--status-ready-bg);
-}
-
-.brand-study--agency .brand-study__progress::-webkit-progress-value {
-  border-radius: var(--radius-full);
-  background: var(--status-ready-fg);
-}
-
-.brand-study--agency .brand-study__progress::-moz-progress-bar {
-  border-radius: var(--radius-full);
-  background: var(--status-ready-fg);
 }
 
 /* The index is a column on a wide screen and a row that scrolls sideways on a narrow one; the page itself never scrolls sideways. */
@@ -391,6 +401,11 @@
 .brand-index__dot--done {
   background: var(--status-ready-bg);
   color: var(--status-ready-text);
+}
+
+.brand-index__dot--now {
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
 }
 
 .brand-index__dot--open {
@@ -568,15 +583,25 @@
   color: var(--text-primary);
 }
 
-.brand-persona__profile {
+.brand-persona__split {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
   align-items: start;
 }
 
+.brand-persona__list,
+.brand-persona__profile {
+  min-width: 0;
+}
+
+.brand-persona__profile {
+  display: grid;
+  gap: var(--space-4);
+}
+
 .brand-persona__identity,
-.brand-persona__content {
+.brand-persona__rows {
   display: grid;
   min-width: 0;
   gap: var(--space-3);
@@ -601,10 +626,6 @@
   font: var(--heading-xl);
 }
 
-.brand-persona__content {
-  gap: var(--space-4);
-}
-
 .brand-persona__name {
   margin: 0;
   font: var(--heading-lg);
@@ -619,20 +640,38 @@
   overflow-wrap: anywhere;
 }
 
-.brand-persona__card {
-  display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr);
-  gap: var(--space-1) var(--space-3);
-  align-content: start;
-  padding: var(--space-4) var(--space-5);
+.brand-persona__role {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+.brand-persona__traits {
+  justify-content: center;
+}
+
+.brand-persona__rows {
+  gap: 0;
+  padding: var(--space-2) var(--space-5);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
-.brand-persona__card-icon {
+.brand-persona__row {
   display: grid;
-  grid-row: span 2;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  padding-block: var(--space-4);
+}
+
+.brand-persona__row + .brand-persona__row {
+  border-top: 1px solid var(--border-default);
+}
+
+.brand-persona__row-icon {
+  display: grid;
   place-items: center;
   width: 2.5rem;
   height: 2.5rem;
@@ -641,15 +680,40 @@
   color: var(--action-secondary-fg);
 }
 
-.brand-persona__card-icon > svg {
+.brand-persona__row-icon > svg {
   width: 1.25rem;
   height: 1.25rem;
 }
 
-.brand-persona__card h4 {
+.brand-persona__row h4 {
   margin: 0;
   color: var(--text-secondary);
   font: var(--label-md);
+}
+
+.brand-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+  margin-top: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tint);
+}
+
+.brand-note__title,
+.brand-note__text {
+  margin: 0;
+}
+
+.brand-note__title {
+  font: var(--label-md);
+}
+
+.brand-note__text {
+  color: var(--text-primary);
+  font: var(--body-md);
 }
 
 .brand-persona__conversations {
@@ -672,9 +736,9 @@
   background: var(--bg-surface);
 }
 
-@media (min-width: 48rem) {
-  .brand-persona__profile {
-    grid-template-columns: 16rem minmax(0, 1fr);
+@media (min-width: 64rem) {
+  .brand-persona__split {
+    grid-template-columns: minmax(0, 1fr) 20rem;
   }
 }
 
@@ -691,6 +755,7 @@
   }
 
   .brand-index__link {
+    flex-wrap: wrap;
     border-color: transparent;
     white-space: normal;
   }
