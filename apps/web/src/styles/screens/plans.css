@@ -24,20 +24,15 @@
 
 /* The tags ride at the top right of the card, on the line of the plan name. */
 .plan-card__tags {
-  position: absolute;
-  top: var(--space-6);
-  right: var(--space-6);
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: var(--space-2);
-  max-width: 50%;
+  min-height: 1.75rem;
 }
 
 .plan-card__name {
   margin: 0;
   min-height: 1.5rem;
-  padding-right: 35%;
   font: var(--heading-lg);
 }
 

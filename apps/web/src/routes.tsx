@@ -18,6 +18,7 @@ import { ClientDetailPage, ClientGeneralTab } from './client-detail.js';
 import { ClientMediaTab } from './client-media.js';
 import { ClientsPage } from './clients.js';
 import { CollaboratorsPage } from './collaborators.js';
+import { SubscriptionInvoicesPage } from './subscription-invoices.js';
 import { SubscriptionPage } from './subscription.js';
 import { NotificationsPage } from './notifications.js';
 import { ContentCreateRoute, ContentModalRoute } from './content-modal.js';
@@ -179,11 +180,18 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       } />
       <Route path="notificacoes" element={<NotificationsPage />} />
       <Route path="conta" element={<AccountPage />} />
-      <Route path="assinatura" element={
-        <AgencyPermissionRoute permission="assinatura.gerenciar">
-          <SubscriptionPage />
-        </AgencyPermissionRoute>
-      } />
+      <Route path="assinatura">
+        <Route index element={
+          <AgencyPermissionRoute permission="assinatura.gerenciar">
+            <SubscriptionPage />
+          </AgencyPermissionRoute>
+        } />
+        <Route path="faturas" element={
+          <AgencyPermissionRoute permission="assinatura.gerenciar">
+            <SubscriptionInvoicesPage />
+          </AgencyPermissionRoute>
+        } />
+      </Route>
       <Route path="conteudos">
         <Route index element={
           <AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}>
