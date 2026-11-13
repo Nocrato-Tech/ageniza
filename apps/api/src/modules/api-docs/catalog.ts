@@ -24,7 +24,11 @@ import {
   CreateAgencyRequestSchema,
   CreateAgencyResponseSchema,
   AgencyMediaAssetPathParamsSchema,
+  AgencyNotificationPathParamsSchema,
   AgencyPathParamsSchema,
+  NotificationListQuerySchema,
+  NotificationListResponseSchema,
+  NotificationUnreadCountResponseSchema,
   AgencyRolesQuerySchema,
   AgencyRolesResponseSchema,
   AuthEmailVerificationResendRequestSchema,
@@ -216,7 +220,7 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'approval-link' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts' | 'subscriptions';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'approval-link' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts' | 'subscriptions' | 'notifications';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
@@ -290,7 +294,8 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   legal: 'Versão dos Termos e da Privacidade que a conta aceitou, e o aceite de um documento por vez.',
   'email-change': 'Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo.',
   'story-scripts': 'Roteiros de stories de um cliente: a agência cria, edita e envia; o portal lê os enviados de um período e marca como gravado.',
-  subscriptions: 'Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar; e, só fora de produção, pagar com o provedor simulado e avançar o relógio.'
+  subscriptions: 'Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar; e, só fora de produção, pagar com o provedor simulado e avançar o relógio.',
+  notifications: 'As notificações da pessoa dentro do app: a lista paginada, a contagem de não lidas para o sino e marcar como lida, uma ou todas. Cada pessoa lê só as próprias; quem as cria é o banco, junto do evento.'
 };
 
 export const ERROR_MESSAGES: Record<string, string> = {
@@ -5216,6 +5221,131 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
       { status: 409, code: 'SUBSCRIPTION_NOT_AVAILABLE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/notifications',
+    operationId: 'listNotifications',
+    module: 'notifications',
+    summary: 'Lista as notificações da pessoa na agência',
+    description: [
+      'Paginada pelo contrato global de listagem, 20 por página, da mais recente à mais antiga (o `id` desempata). Cada pessoa lê só as próprias:',
+      'a de outra pessoa, nem do Owner ou de um Admin, aparece aqui, e a notificação de um assunto cuja permissão a pessoa perdeu deixa de aparecer.',
+      '`unread=true` lista só as não lidas. Sem permissão própria: basta o vínculo com a agência, e quem só tem vínculo com um cliente recebe 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: null,
+    params: AgencyPathParamsSchema,
+    query: NotificationListQuerySchema,
+    requestExample: { page: 1, pageSize: 20, unread: 'true' },
+    responses: [{
+      status: 200,
+      description: 'Página das notificações da pessoa.',
+      schema: NotificationListResponseSchema,
+      example: {
+        data: [
+          {
+            id: invitationId,
+            kind: 'content_approved',
+            summary: 'Rosana aprovou "Promoção de pães"',
+            createdAt: '2026-11-12T14:00:00.000Z',
+            readAt: null,
+            destination: { type: 'content', clientId, contentId }
+          },
+          {
+            id: assetId,
+            kind: 'invitation_accepted',
+            summary: 'Ana aceitou o seu convite',
+            createdAt: '2026-11-10T12:00:00.000Z',
+            readAt: '2026-11-10T13:00:00.000Z',
+            destination: { type: 'collaborators' }
+          }
+        ],
+        meta: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_CONFIRMED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/notifications/unread-count',
+    operationId: 'countUnreadNotifications',
+    module: 'notifications',
+    summary: 'Conta as notificações não lidas da pessoa',
+    description: 'Quantas notificações a pessoa ainda não leu nesta agência, só as que ela ainda pode ler. É o ponto do sino.',
+    access: 'Sessão + vínculo com a agência',
+    permission: null,
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'A contagem.',
+      schema: NotificationUnreadCountResponseSchema,
+      example: { data: { count: 3 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_CONFIRMED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/notifications/:notificationId/read',
+    operationId: 'readNotification',
+    module: 'notifications',
+    summary: 'Marca uma notificação como lida',
+    description: [
+      'Só a pessoa destinatária marca a própria; o instante da leitura é do banco e a primeira leitura é a que vale (ler de novo não é erro).',
+      'A notificação de outra pessoa, de outra agência, de um assunto cuja permissão se perdeu, inexistente ou com id malformado devolve o mesmo 404 (o malformado, 400 de validação), sem revelar o que existe.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: null,
+    params: AgencyNotificationPathParamsSchema,
+    responses: [{ status: 204, description: 'Notificação marcada como lida.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_CONFIRMED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Notification not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/notifications/read-all',
+    operationId: 'readAllNotifications',
+    module: 'notifications',
+    summary: 'Marca como lidas todas as notificações da pessoa na agência',
+    description: 'Marca só as não lidas da própria pessoa nesta agência que ela ainda pode ler; as de outra pessoa e as de outra agência não mudam. Sem nenhuma não lida, também é 204.',
+    access: 'Sessão + vínculo com a agência',
+    permission: null,
+    params: AgencyPathParamsSchema,
+    responses: [{ status: 204, description: 'Notificações marcadas como lidas.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_CONFIRMED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   }

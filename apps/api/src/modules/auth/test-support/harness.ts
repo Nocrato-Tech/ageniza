@@ -32,6 +32,7 @@ import { createMediaJobDispatcher, type MediaJobDispatcher } from '../../media/j
 import type { MediaModuleDependencies } from '../../media/routes.js';
 import { createMediaStorageClient, type MediaStorageClient } from '../../media/storage-client.js';
 import type { LegalModuleDependencies } from '../../legal/routes.js';
+import type { NotificationModuleDependencies } from '../../notifications/routes.js';
 import type { EmailChangeModuleDependencies } from '../../email-change/routes.js';
 import type { StoryScriptModuleDependencies } from '../../story-scripts/routes.js';
 import type { SubscriptionModuleDependencies } from '../../subscriptions/routes.js';
@@ -345,6 +346,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     config: { authTermsVersion: config.authTermsVersion, authPrivacyVersion: config.authPrivacyVersion }
   };
   const emailChange: EmailChangeModuleDependencies = { database, auth, emailService };
+  const notifications: NotificationModuleDependencies = { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }) };
   const storyScripts: StoryScriptModuleDependencies = {
     database,
     auth,
@@ -389,6 +391,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     profile,
     legal,
     emailChange,
+    notifications,
     storyScripts,
     subscriptions,
     onRoute: options.onRoute,

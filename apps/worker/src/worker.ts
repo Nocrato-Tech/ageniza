@@ -26,6 +26,7 @@ import { mediaPurgeJob } from './media-purge-job.js';
 import { mediaVideoProcessingJob } from './media-video-job.js';
 import { createMediaProcessingStorageClient } from './media-storage.js';
 import { createNotificationQueue } from './notification-queue.js';
+import { approvalDeadlineNotificationsJob } from './notifications-deadline-job.js';
 import { createDurableQueue, type DurableQueue } from './queue.js';
 import { renewSubscriptionsJob } from './renew-subscriptions-job.js';
 import { unconfirmedAccountPurgeJob } from './unconfirmed-account-purge-job.js';
@@ -110,6 +111,8 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
   if (queue !== undefined) queue.register(unconfirmedAccountPurgeJob({ database }));
   // The reminders of approval (decision 2026-11-10) only enqueue, from the database: the e-mail job below sends them.
   if (queue !== undefined) queue.register(approvalRemindersJob({ database }));
+  // The notification inside the app of a deadline that passed (decision 2026-11-11) needs only the database too.
+  if (queue !== undefined) queue.register(approvalDeadlineNotificationsJob({ database }));
   // Video processing (issue #24): registered whenever object storage is configured, exactly like
   // the API only mounts its media routes when `config.storage` is present. Registration must
   // happen before `queue.start()` (enforced by `queue.register` itself).

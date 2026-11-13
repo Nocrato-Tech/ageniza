@@ -26,6 +26,7 @@ import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
 import type { MediaModuleDependencies } from './modules/media/routes.js';
 import { createMediaStorageClient } from './modules/media/storage-client.js';
 import type { LegalModuleDependencies } from './modules/legal/routes.js';
+import type { NotificationModuleDependencies } from './modules/notifications/routes.js';
 import type { EmailChangeModuleDependencies } from './modules/email-change/routes.js';
 import type { ProfileModuleDependencies } from './modules/profile/routes.js';
 import type { StoryScriptModuleDependencies } from './modules/story-scripts/routes.js';
@@ -154,6 +155,12 @@ export const startApi = async (): Promise<void> => {
 
   const emailChangeDependencies: EmailChangeModuleDependencies = { database, auth, emailService };
 
+  const notificationDependencies: NotificationModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database })
+  };
+
   const storyScriptDependencies: StoryScriptModuleDependencies = {
     database,
     auth,
@@ -204,6 +211,7 @@ export const startApi = async (): Promise<void> => {
     profile: profileDependencies,
     legal: legalDependencies,
     emailChange: emailChangeDependencies,
+    notifications: notificationDependencies,
     storyScripts: storyScriptDependencies,
     subscriptions: subscriptionDependencies
   });
