@@ -41,6 +41,7 @@
 @import './ui/date-picker.css';
 @import './ui/modal-heading.css';
 @import './screens/collaborator-detail.css';
+@import './screens/collaborator-page.css';
 @import './screens/collaborators-invites.css';
 @import './screens/portal-access.css';
 @import './screens/auth.css';

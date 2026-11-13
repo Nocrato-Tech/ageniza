@@ -102,13 +102,19 @@
 
 .collaborators__grid {
   display: grid;
-  /* The minimum is the larger of 13.5rem and a quarter of the row, so it opens 1 to 4 columns and never a fifth: a page of 24
-     (a multiple of 1, 2, 3 and 4) never leaves a broken row (specs/colaboradores.md section 6). The 1px keeps the fourth column fitting. */
-  grid-template-columns: repeat(auto-fill, minmax(max(13.5rem, calc((100% - 3 * var(--space-4)) / 4 - 1px)), 1fr));
+  /* Below 64rem the columns follow the width; from 64rem there are three, never more: a page of 24 (a multiple of 3) never
+     leaves a broken row (specs/colaboradores.md section 6, docs/design-system.md section 13.3). */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
   gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+@media (min-width: 64rem) {
+  .collaborators__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .collaborators__grid > li {

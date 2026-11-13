@@ -1,56 +1,13 @@
-/* The profile of the board: who the person is on the left, the details on the right; one column on a phone. */
-.collaborator-detail__profile {
-  display: grid;
-  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
-  gap: var(--space-6);
-  align-items: start;
-}
-
-@media (max-width: 47.99rem) {
-  .collaborator-detail__profile {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-4);
-  }
-}
-
-.collaborator-detail__main {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.collaborator-detail__identity {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-4);
-  padding: var(--space-5);
-  border-radius: var(--radius-lg);
-  background: var(--bg-canvas);
-}
-
-.collaborator-detail__identity > div {
-  display: grid;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.collaborator-detail__identity .ui-avatar {
-  width: 5.5rem;
-  height: 5.5rem;
-}
-
-.collaborator-detail__identity p {
-  margin: 0;
-  color: var(--text-secondary);
-  font: var(--body-md);
-  overflow-wrap: anywhere;
-}
-
+/* Detail of a collaborator: the pieces of the profile that are not layout (the layout is collaborator-page.css). */
 .collaborator-detail__meta {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
 }
 
 .collaborator-detail__meta svg {
@@ -59,20 +16,14 @@
   margin-top: var(--space-1);
 }
 
-/* The line that says who the person is in the agency: the one that reads first. */
-.collaborator-detail__identity .collaborator-detail__headline {
-  color: var(--text-primary);
-  font: var(--label-md);
-}
-
-/* Labels of the modal fields speak one language, whether the field is plain or a Select. */
-.ui-modal .form-field > label {
+/* Labels of the profile fields speak one language, whether the field is plain or a Select. */
+.collaborator-profile .form-field > label {
   color: var(--text-secondary);
   font: var(--label-sm);
 }
 
 /* The panel of the open tab: the fields sit a step below the tab list. */
-.ui-modal .ui-tabs__panel {
+.collaborator-profile .ui-tabs__panel {
   padding-top: var(--space-4);
 }
 
@@ -132,7 +83,7 @@
   font: var(--label-sm);
 }
 
-/* The only destructive action of the modal, set apart at its foot (specs/colaboradores.md §7). */
+/* The only destructive action of the page, set apart at the foot of the page (specs/colaboradores.md §7). */
 .collaborator-detail__remove {
   display: grid;
   justify-items: start;
@@ -158,7 +109,7 @@
   margin: 0;
 }
 
-/* Self profile (specs/colaboradores.md section 7): the same modal, editable only for its own person. */
+/* Self profile (specs/colaboradores.md section 7): the same page, editable only for its own person. */
 .collaborator-detail__photo {
   display: grid;
   flex: none;
@@ -184,15 +135,6 @@
 
 .collaborator-detail__photo-progress {
   width: 100%;
-}
-
-.collaborator-detail__self {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.collaborator-detail__self p {
-  margin: 0;
 }
 
 .self-profile {

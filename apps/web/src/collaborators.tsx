@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, RotateCcw } from 'lucide-react';
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 
 import { CollaboratorListResponseSchema } from '@ageniza/contracts';
@@ -9,7 +9,7 @@ import { BadgeCard, Button, EmptyState, FilterBar, FilterBarItem, FilterBarSelec
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
-import { CollaboratorDetailDialog } from './collaborator-detail.js';
+import { collaboratorRoleTone } from './collaborator-detail.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InviteCollaboratorDialog } from './invite-collaborator.js';
@@ -76,7 +76,7 @@ const isNotVisible = (error: unknown): boolean =>
  * Search, role and job-title filters live in the URL, so the state is shareable and survives a
  * reload. The screen never reorders, groups or draws an empty state.
  */
-export function CollaboratorsPage() {
+function CollaboratorTeam() {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   const canInvite = useCan('colaborador.convidar');
@@ -91,16 +91,7 @@ export function CollaboratorsPage() {
   const [reactivating, setReactivating] = useState<{ membershipId: string; name: string } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
-  const navigate = useNavigate();
-  const membershipId = searchParams.get('colaborador');
-  const listParams = new URLSearchParams(searchParams);
-  listParams.delete('colaborador');
-  const listUrl = `${location.pathname}${listParams.size === 0 ? '' : `?${listParams}`}`;
-  const closeDetail = (): void => {
-    const state = z.object({ collaboratorListUrl: z.string() }).safeParse(location.state);
-    if (state.success && state.data.collaboratorListUrl === listUrl) void navigate(-1);
-    else setSearchParams(listParams, { replace: true, state: null });
-  };
+  const listUrl = `${location.pathname}${location.search}`;
   useDocumentTitle('Colaboradores — Ageniza');
 
   const q = searchParams.get('q') ?? '';
@@ -259,7 +250,7 @@ export function CollaboratorsPage() {
               <li key={collaborator.membershipId}>
                 <Link
                   className="collaborators__badge-link"
-                  to={{ search: `?${new URLSearchParams([...listParams, ['colaborador', collaborator.membershipId]])}` }}
+                  to={`/agencia/${agency.agencyId}/colaboradores/${collaborator.membershipId}`}
                   state={{ collaboratorListUrl: listUrl }}
                   aria-label={`Ver detalhes de ${collaborator.name}`}
                 >
@@ -268,6 +259,8 @@ export function CollaboratorsPage() {
                     photoUrl={collaborator.photoUrl}
                     jobTitle={collaborator.jobTitle}
                     role={collaborator.role.name}
+                    roleTone={collaboratorRoleTone(collaborator.role.key)}
+                    isOwner={collaborator.isOwner}
                     removed={collaborator.status === 'removed'}
                   />
                 </Link>
@@ -294,7 +287,6 @@ export function CollaboratorsPage() {
         />
       </>}
       <PendingInvitationsSection page={invitesPage} onPageChange={changeInvitesPage} onInvite={() => setInviteOpen(true)} mascot={aloneInTheTeam} />
-      {membershipId !== null && <CollaboratorDetailDialog key={agency.agencyId + membershipId} membershipId={membershipId} onClose={closeDetail} />}
       {inviteOpen && <InviteCollaboratorDialog onClose={() => setInviteOpen(false)} />}
       {reactivating !== null && <ReactivateCollaboratorDialog
         key={agency.agencyId + reactivating.membershipId}
@@ -304,4 +296,16 @@ export function CollaboratorsPage() {
       />}
     </section>
   );
+}
+
+/** The legacy address of the detail (`?colaborador=<id>`, from when it was a modal) goes to the page of the person. */
+export function CollaboratorsPage() {
+  const agency = useAgencyContext();
+  const [searchParams] = useSearchParams();
+  const membershipId = searchParams.get('colaborador');
+  if (membershipId === null || membershipId === '') return <CollaboratorTeam />;
+  const rest = new URLSearchParams(searchParams);
+  rest.delete('colaborador');
+  const teamPath = `/agencia/${agency.agencyId}/colaboradores`;
+  return <Navigate replace to={`${teamPath}/${encodeURIComponent(membershipId)}`} state={{ collaboratorListUrl: rest.size === 0 ? teamPath : `${teamPath}?${rest}` }} />;
 }

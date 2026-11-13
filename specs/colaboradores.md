@@ -43,7 +43,7 @@ Administrar quem faz parte da agência: quem entra, com que papel, em que cargo,
 
 ¹ já existe no catálogo e já é concedida ao `admin`.
 
-² A API recusa a edição do **próprio** cargo e a do cargo do **Owner** (`403`), como já recusa a do papel: o modal mostra o cargo como leitura nos dois casos. Decisão do dono em 2026-10-08 (`docs/business/decisions/2026-10-08-cargo-proprio-e-do-owner-nao-se-edita.md`), que substitui o item 7 da decisão de 2026-10-07 do `PATCH` do vínculo.
+² A API recusa a edição do **próprio** cargo e a do cargo do **Owner** (`403`), como já recusa a do papel: o perfil mostra o cargo como leitura nos dois casos. Decisão do dono em 2026-10-08 (`docs/business/decisions/2026-10-08-cargo-proprio-e-do-owner-nao-se-edita.md`), que substitui o item 7 da decisão de 2026-10-07 do `PATCH` do vínculo.
 
 ³ Além deles, o Owner, por posse. O critério é a tarefa, não o nome do papel: quem remove ou reativa precisa encontrar a pessoa, e uma agência pode montar um papel personalizado de administração do quadro sem usar o preset `admin`. É um desvio deliberado de "apenas para Admin e Owner" (2026-09-24): o `account_manager`, que edita cargo mas não papel, **não** vê removidos. **Pendente de validação** (2026-10-07).
 
@@ -299,11 +299,11 @@ O **transporte** (presigned como na mídia, ou upload pelo servidor, dado que av
 
 **Quem é a própria pessoa** a tela sabe por `isSelf` no item de colaborador (seção 6), nunca comparando e-mails.
 
-**Abas.** `Detalhes` no MVP; **`Performance` e `Entregas` existem desabilitadas**, com a razão visível — elas dependem do módulo Conteúdo (entregas e subtarefas), que atribui o trabalho a pessoas (2026-10-07, pendente de validação). Declarar a estrutura agora evita que o modal seja redesenhado quando aquele módulo chegar; o conteúdo das abas é definido por uma issue aberta quando o Conteúdo existir, a partir dos dados reais — seção 10.
+**Abas.** `Detalhes` no MVP; **`Performance` e `Entregas` existem desabilitadas**, com a razão visível — elas dependem do módulo Conteúdo (entregas e subtarefas), que atribui o trabalho a pessoas (2026-10-07, pendente de validação). Declarar a estrutura agora evita que o perfil seja redesenhado quando aquele módulo chegar; o conteúdo das abas é definido por uma issue aberta quando o Conteúdo existir, a partir dos dados reais — seção 10.
 
 **Variação por quem olha**
 
-| quem | o que pode neste modal |
+| quem | o que pode nesta página |
 |---|---|
 | **Admin** e **Owner** | editam cargo e papel; removem. O Owner é o único que pode conceder `admin` |
 | **Gestor de conta** | edita **cargo**; o papel aparece como leitura |
@@ -313,7 +313,7 @@ O **transporte** (presigned como na mídia, ou upload pelo servidor, dado que av
 
 **E-mail** aparece como leitura em todos os casos, com a nota de que a troca é feita pela operação — nunca um campo desabilitado sem explicação.
 
-**Remover** fica separado do resto, ao pé do modal, e pede confirmação dizendo o que acontece: a pessoa perde o acesso àquela agência e o registro permanece.
+**Remover** fica separado do resto, ao pé da página, e pede confirmação dizendo o que acontece: a pessoa perde o acesso àquela agência e o registro permanece.
 
 ### Convites pendentes — seção separada
 

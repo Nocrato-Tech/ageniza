@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, Plus, Send, ShieldCheck, X } from 'lucide-react';
+import { Clock, Info, Plus, Send, ShieldCheck, X } from 'lucide-react';
 
 import {
   AuthNoContentResponseSchema,
@@ -22,6 +22,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const LIST_ERROR = 'Não foi possível carregar os convites. Tente de novo.';
 const RESEND_ERROR = 'Não foi possível reenviar o convite. Tente de novo.';
 const CANCEL_ERROR = 'Não foi possível cancelar o convite. Tente de novo.';
+const INVITES_NOTE = 'Depois de reenviar, o link anterior deixa de valer e aparece o botão “Copiar link”. Convide por e-mail e escolha o papel: a pessoa entra na equipe assim que aceitar.';
 
 /**
  * The relative deadline (`specs/colaboradores.md` §7): "expira em 5 dias", "expira amanhã". The
@@ -197,6 +198,7 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
         </li>)}
       </ul>
       <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onPageChange={onPageChange} />
+      <p className="invites__note"><Info aria-hidden="true" />{INVITES_NOTE}</p>
     </>;
   }
 
