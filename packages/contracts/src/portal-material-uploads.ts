@@ -38,14 +38,18 @@ export const PORTAL_MATERIAL_UPLOAD_TYPES = {
 
 export type PortalMaterialUploadContentType = keyof typeof PORTAL_MATERIAL_UPLOAD_TYPES;
 
-/** What the database records when it turns the bytes of a finished upload down (`rejected_reason`). */
+/**
+ * What the database records, and answers the portal, when it turns the bytes of a finished upload down (`rejected_reason`). The portal never
+ * learns the plan or the storage of the agency (decision 2026-11-11, item 5): when the agency has no room, the reason is `agency_unavailable`,
+ * as the start of the upload answers it with the neutral A0136.
+ */
 export const PortalMaterialUploadRejectionReasonSchema = z.enum([
   'empty_object',
   'content_type_mismatch',
   'too_large',
   'invalid_dimensions',
   'request_full',
-  'quota_exceeded'
+  'agency_unavailable'
 ]);
 
 /** The path of the request is `ClientThreadPathParamsSchema`; the file adds its identifier. */

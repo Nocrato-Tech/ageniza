@@ -113,10 +113,12 @@ describe('the answers', () => {
     expect(PortalMaterialUploadListResponseSchema.parse(page)).toEqual(page);
   });
 
-  it('names the reasons the database records when it turns the bytes down', () => {
+  it('names the reasons the database records when it turns the bytes down, and none of them speaks of the plan or the storage of the agency', () => {
     expect(PortalMaterialUploadRejectionReasonSchema.options).toEqual([
-      'empty_object', 'content_type_mismatch', 'too_large', 'invalid_dimensions', 'request_full', 'quota_exceeded'
+      'empty_object', 'content_type_mismatch', 'too_large', 'invalid_dimensions', 'request_full', 'agency_unavailable'
     ]);
+    for (const reason of PortalMaterialUploadRejectionReasonSchema.options) expect(reason).not.toMatch(/quota|plan|storage|limit/i);
+    expect(PortalMaterialUploadRejectionReasonSchema.safeParse('quota_exceeded').success).toBe(false);
   });
 });
 

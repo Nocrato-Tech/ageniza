@@ -5,9 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addedKeys, changedKeys, migrateAcross, removedKeys, type MigratedAcross } from './support/catalog-snapshot.js';
 
 // Scope redesign-igual, subtask W10-S3 (decision 2026-11-11, "o cliente envia material pelo portal"): the catalog before and after the migration
-// that lets the person of the portal send material to a request. It adds two columns to the media, one unique key to the conversations, one
-// policy that reads and ten functions, three of them open to the application role; it may change the grant, the policy, the RLS flag, the
-// owner or the text of nothing else, and it rewrites no row of the media that exists.
+// that lets the person of the portal send material to a request. It adds two columns to the media, one unique key to the conversations and
+// twelve functions, four of them open to the application role, and no policy: the portal reads the media through a function, never the table.
+// It may change the grant, the policy, the RLS flag, the owner or the text of nothing else, and it rewrites no row of the media that exists.
 const THIS_MIGRATION = '20261113000100_portal_material_uploads.mjs';
 
 const IN_USE = '(p_agency_id uuid, p_pending_window_seconds integer, p_exclude_asset_id uuid)';
@@ -17,15 +17,20 @@ const TYPE = '(p_content_type text)';
 const SETTINGS = '(p_default_quota_bytes bigint, p_default_quota_object_count bigint, p_pending_window_seconds integer)';
 const REFUSAL = '(p_agency_id uuid, p_thread_id uuid, p_size_bytes bigint, p_exclude_asset_id uuid, p_default_quota_bytes bigint, p_default_quota_object_count bigint, p_pending_window_seconds integer)';
 const LOCK_OWN = '(p_asset_id uuid)';
+const REQUIRE_REQUEST = '(p_client_id uuid, p_thread_id uuid)';
+const LIST = '(p_client_id uuid, p_thread_id uuid, p_limit integer, p_offset bigint)';
 const START = '(p_client_id uuid, p_thread_id uuid, p_content_type text, p_declared_size_bytes bigint, p_file_name text, p_default_quota_bytes bigint, p_default_quota_object_count bigint, p_pending_window_seconds integer)';
 const CONFIRM = '(p_asset_id uuid, p_size_bytes bigint, p_content_type text, p_width integer, p_height integer, p_default_quota_bytes bigint, p_default_quota_object_count bigint, p_pending_window_seconds integer)';
 const REJECT = '(p_asset_id uuid, p_reason text)';
 const USAGE = '(p_agency_id uuid, p_pending_window_seconds integer, p_exclude_asset_id uuid)';
 
-const OPEN = [`start_portal_material_upload${START}`, `confirm_portal_material_upload${CONFIRM}`, `reject_portal_material_upload${REJECT}`];
+const OPEN = [
+  `start_portal_material_upload${START}`, `confirm_portal_material_upload${CONFIRM}`, `reject_portal_material_upload${REJECT}`, `list_portal_material_uploads${LIST}`
+];
 const CLOSED = [
   `agency_storage_in_use${IN_USE}`, `portal_upload_max_bytes${MAX_BYTES}`, `portal_upload_max_files${MAX_FILES}`, `portal_upload_type${TYPE}`,
-  `require_portal_upload_settings${SETTINGS}`, `portal_upload_refusal${REFUSAL}`, `lock_own_pending_portal_upload${LOCK_OWN}`
+  `require_portal_upload_settings${SETTINGS}`, `portal_upload_refusal${REFUSAL}`, `lock_own_pending_portal_upload${LOCK_OWN}`,
+  `require_portal_material_request${REQUIRE_REQUEST}`
 ];
 
 let migrated: MigratedAcross;
@@ -72,7 +77,7 @@ describe('what the migration does to the privileges of the catalog', () => {
     expect(migrated.before.privileges.get(`function app_private.agency_media_usage${USAGE}`)).toContain('"app":true');
   });
 
-  it('adds ten functions and no other object, and removes nothing', () => {
+  it('adds twelve functions and no other object, and removes nothing', () => {
     expect(addedKeys(migrated.before.privileges, migrated.after.privileges)).toEqual(
       [...OPEN, ...CLOSED].map((signature) => `function app_private.${signature}`).sort()
     );
@@ -101,19 +106,15 @@ describe('what the migration does to the privileges of the catalog', () => {
     expect(Object.values(after.public).filter(Boolean)).toEqual([]);
   });
 
-  it('adds one policy to the media, a SELECT for the application role, and leaves the others as they were', () => {
-    const before = table(migrated.before.privileges, 'media_assets').policies;
-    const after = table(migrated.after.privileges, 'media_assets').policies;
-    const added = after.filter((policy) => !before.some((old) => old[0] === policy[0]));
+  it('adds no policy to the media, and none to any other table: the portal reads the media through a function, never the table', () => {
+    const policies = (snapshot: Map<string, string>): unknown[][] => table(snapshot, 'media_assets').policies;
 
-    expect(added).toHaveLength(1);
-    expect(added[0]![0]).toBe('media_assets_select_portal_upload');
-    expect(added[0]![1]).toBe('r');
-    expect(after.filter((policy) => before.some((old) => old[0] === policy[0]))).toEqual(before);
-    expect(after.filter((policy) => policy[1] !== 'r').map((policy) => policy[0])).toEqual(before.filter((policy) => policy[1] !== 'r').map((policy) => policy[0]));
+    expect(policies(migrated.after.privileges)).toEqual(policies(migrated.before.privileges));
+    expect(policies(migrated.before.privileges).length).toBeGreaterThan(0);
+    expect([...migrated.after.privileges.keys()].filter((key) => key.startsWith('table ') && !migrated.before.privileges.has(key))).toEqual([]);
   });
 
-  it('opens three functions to the application role only, definers with a fixed search_path, owned like the functions of the agency upload', () => {
+  it('opens four functions to the application role only, definers with a fixed search_path, owned like the functions of the agency upload', () => {
     const owner = grants(`agency_media_usage${USAGE}`).owner;
     for (const signature of OPEN) {
       expect(grants(signature), signature).toMatchObject({ app: true, public: false, definer: true, config: ['search_path=""'], owner });
@@ -125,7 +126,7 @@ describe('what the migration does to the privileges of the catalog', () => {
     for (const signature of CLOSED) {
       expect(grants(signature), signature).toMatchObject({ app: false, public: false, config: ['search_path=""'], owner });
     }
-    for (const signature of ['agency_storage_in_use', 'portal_upload_refusal', 'lock_own_pending_portal_upload']) {
+    for (const signature of ['agency_storage_in_use', 'portal_upload_refusal', 'lock_own_pending_portal_upload', 'require_portal_material_request']) {
       expect(grants(CLOSED.find((closed) => closed.startsWith(signature))!).definer, signature).toBe(true);
     }
   });
@@ -136,7 +137,7 @@ describe('what the migration does to the privileges of the catalog', () => {
 });
 
 describe('what the migration does to the objects of the catalog', () => {
-  it('adds the two columns, the constraints, the index and the body of ten functions, and removes nothing', () => {
+  it('adds the two columns, the constraints, the index and the body of twelve functions, and removes nothing', () => {
     expect(addedKeys(migrated.before.structure, migrated.after.structure)).toEqual([
       ...[...OPEN, ...CLOSED].map((signature) => `body app_private.${signature}`),
       'column public.media_assets.material_request_thread_id',

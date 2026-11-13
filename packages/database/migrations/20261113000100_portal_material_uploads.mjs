@@ -2,8 +2,9 @@
 // backfill: the media that exists keeps no request and the side `agency`, which is what it is.
 //
 // The person of the portal sends photos and audio to an open request for material of her client, and reads back what she sent. The portal
-// has no INSERT and no UPDATE on `media_assets`: it writes through three functions, the three steps of the upload the agency already has
-// (start, confirm or reject), and reads through one policy.
+// has no INSERT, no UPDATE and no SELECT on `media_assets`: it writes through three functions, the three steps of the upload the agency
+// already has (start, confirm or reject), and reads through a fourth that answers only the columns the API needs (the lesson of the media
+// of the portal: no table of the media is read directly, so the keys of the staging and the multipart id never reach her context).
 //
 //  - `media_assets.material_request_thread_id` ties a file to the request (a composite foreign key keeps it in the client of the request, a
 //    CHECK keeps it from a media of the library with no client) and `uploaded_by_side` says who sent it. A file of the client carries its
@@ -18,17 +19,20 @@
 //    agency that does not accept writes, a file above the ceiling, a request with its files, and the storage of the agency full.
 //    `confirm_portal_material_upload` and `reject_portal_material_upload` move the pending row of the same person to confirmed or rejected,
 //    and a verdict about the bytes (type, size, dimensions, the room left) is recorded as a rejection, so the reservation does not hang.
-//  - The single read of the portal is `media_assets_select_portal_upload`: the file the person herself sent to a request, pending or
-//    confirmed and not removed, while she is an active link of the client. She never reads another person's file, another client's or the
-//    agency's own media; the agency reads the files of the client as it reads the rest of the library.
+//    Nothing that reaches the portal names the agency's plan or storage: the refusal for lack of room is `agency_unavailable` in the
+//    verdict, as A0136 is at the start, and a read-only agency gets the neutral A0090 from the three functions, never the trigger's words.
+//  - The only read of the portal is `list_portal_material_uploads`: a page of the files the person herself sent to a request, pending or
+//    confirmed and not removed, while she is an active link of the client. It answers the columns of a listing and the final key of a
+//    confirmed object (the API is the server that signs the read), never the key of the staging, the multipart id or the texts the agency
+//    wrote. The agency reads the files of the client as it reads the rest of the library.
 //  - The ceiling per file (25 MiB) and per request (20 files) are one copy each (`portal_upload_max_bytes`, `portal_upload_max_files`). The
 //    storage of the agency is counted by the one function that counts it (`agency_storage_in_use`), which `agency_media_usage` now calls too.
 //
 // Locks, always in this order: the file being confirmed (its row), the agency's `media-quota:<agency>` advisory lock, the client FOR SHARE
 // (conflicts with archiving it), the request FOR SHARE (conflicts with resolving it); everything is read again after the last wait. The agency's
 // own upload takes the same quota lock before the client, and nothing here takes `agency_trial_limits:`, so the order of
-// `lock_subscription_change` is untouched. Each function refuses another isolation level than READ COMMITTED (40001), as the other locking
-// functions do.
+// `lock_subscription_change` is untouched. Each function that locks refuses another isolation level than READ COMMITTED (40001), as the other
+// locking functions do.
 //
 // Stable error codes for the API:
 //   A0130 -> 404  the request, the file or the link of the person is not found, or the client is archived (one error: never an oracle)
@@ -59,17 +63,6 @@ export async function up(knex) {
 
     create index media_assets_material_request_idx
       on public.media_assets (material_request_thread_id, created_at) where material_request_thread_id is not null;
-
-    create policy media_assets_select_portal_upload on public.media_assets
-      for select to ageniza_app
-      using (
-        uploaded_by_side = 'client'
-        and material_request_thread_id is not null
-        and created_by_user_id = app_private.current_user_id()
-        and status in ('pending', 'confirmed')
-        and removed_at is null
-        and app_private.is_client_member(client_id)
-      );
   `);
 
   await knex.raw(`
@@ -208,7 +201,8 @@ export async function up(knex) {
     $function$;
 
     -- Whether one more file of p_size_bytes fits: the request still has room for it and so does the storage of the agency (its own ceiling,
-    -- or the default of the deployment that the API hands over). Null when it fits, otherwise the reason. The caller holds the locks.
+    -- or the default of the deployment that the API hands over). Null when it fits, otherwise the reason: 'request_full', or
+    -- 'agency_unavailable' for the storage of the agency, a word that is safe to hand to the portal. The caller holds the locks.
     create function app_private.portal_upload_refusal(
       p_agency_id uuid,
       p_thread_id uuid,
@@ -253,7 +247,7 @@ export async function up(knex) {
       select usage.used_bytes, usage.used_object_count into v_used_bytes, v_used_count
       from app_private.agency_storage_in_use(p_agency_id, p_pending_window_seconds, p_exclude_asset_id) usage;
       if v_used_bytes + p_size_bytes > v_quota_bytes or v_used_count + 1 > v_quota_count then
-        return 'quota_exceeded';
+        return 'agency_unavailable';
       end if;
 
       return null;
@@ -300,6 +294,34 @@ export async function up(knex) {
     $function$;
     revoke all on function app_private.lock_own_pending_portal_upload(uuid) from public;
 
+    -- The agency of the client when the person is an active link of that client and the conversation is a request for material of it, and
+    -- the one answer of a request that is not there otherwise: the one place that says what a request of the portal is.
+    create function app_private.require_portal_material_request(p_client_id uuid, p_thread_id uuid)
+    returns uuid
+    language plpgsql
+    security definer
+    set search_path = ''
+    as $function$
+    declare
+      v_agency_id uuid;
+    begin
+      select client.agency_id into v_agency_id
+      from public.clients client
+      where client.id = p_client_id
+        and app_private.is_client_member(client.id)
+        and exists (
+          select 1
+          from public.client_threads thread
+          where thread.id = p_thread_id and thread.client_id = client.id and thread.is_material_request
+        );
+      if not found then
+        raise exception using errcode = 'A0130', message = 'Request not found.';
+      end if;
+      return v_agency_id;
+    end;
+    $function$;
+    revoke all on function app_private.require_portal_material_request(uuid, uuid) from public;
+
     create function app_private.start_portal_material_upload(
       p_client_id uuid,
       p_thread_id uuid,
@@ -335,18 +357,7 @@ export async function up(knex) {
       perform app_private.require_portal_upload_settings(p_default_quota_bytes, p_default_quota_object_count, p_pending_window_seconds);
 
       -- The person, the client and the request, read BEFORE any lock; every refusal reads the same.
-      select client.agency_id into v_agency_id
-      from public.clients client
-      where client.id = p_client_id
-        and app_private.is_client_member(client.id)
-        and exists (
-          select 1
-          from public.client_threads thread
-          where thread.id = p_thread_id and thread.client_id = client.id and thread.is_material_request
-        );
-      if not found then
-        raise exception using errcode = 'A0130', message = 'Request not found.';
-      end if;
+      v_agency_id := app_private.require_portal_material_request(p_client_id, p_thread_id);
 
       select kind.* into v_kind from app_private.portal_upload_type(p_content_type) kind;
       if not found then
@@ -411,7 +422,7 @@ export async function up(knex) {
     -- The API read the object after it was uploaded: p_content_type is the type its bytes turned out to have, p_size_bytes the size the
     -- storage reports, and the dimensions come from the bytes of an image. A verdict that is about the file is recorded and answered, not
     -- raised, so the rejection survives the request: 'confirmed', or 'rejected' with a reason (empty_object, content_type_mismatch,
-    -- too_large, invalid_dimensions, request_full, quota_exceeded).
+    -- too_large, invalid_dimensions, request_full, agency_unavailable). None of them speaks of the plan or the storage of the agency.
     create function app_private.confirm_portal_material_upload(
       p_asset_id uuid,
       p_size_bytes bigint,
@@ -485,7 +496,8 @@ export async function up(knex) {
     end;
     $function$;
 
-    -- The upload that cannot be finished (the object is not there, or the API turned it down): the reservation is let go.
+    -- The upload that cannot be finished (the object is not there, or the API turned it down): the reservation is let go. The agency that
+    -- does not accept writes is answered here, in the neutral words, before the trigger of the table answers with the ones about its trial.
     create function app_private.reject_portal_material_upload(p_asset_id uuid, p_reason text)
     returns void
     language plpgsql
@@ -501,6 +513,9 @@ export async function up(knex) {
       end if;
 
       v_asset := app_private.lock_own_pending_portal_upload(p_asset_id);
+      if not app_private.agency_accepts_writes(v_asset.agency_id) then
+        raise exception using errcode = 'A0090', message = 'The agency does not accept writes now.';
+      end if;
 
       update public.media_assets
       set status = 'rejected', rejected_reason = p_reason, updated_at = pg_catalog.now()
@@ -508,12 +523,63 @@ export async function up(knex) {
     end;
     $function$;
 
+    -- A page of what the person sent to the request, oldest first, with the total of her files in it. It answers the columns of a listing,
+    -- the type and size the file has now (the bytes read for a confirmed one, what was declared for a pending one) and the final key of a
+    -- confirmed object, for the API to sign the read: never the key of the staging, the multipart id, the alt text or the folder. A page
+    -- past the end answers one row with the total and no file (asset_id null), so the total never depends on there being a page.
+    create function app_private.list_portal_material_uploads(p_client_id uuid, p_thread_id uuid, p_limit integer, p_offset bigint)
+    returns table (
+      total_count bigint, asset_id uuid, status text, category text, content_type text, size_bytes bigint, file_name text,
+      width integer, height integer, created_at timestamptz, object_key text
+    )
+    language plpgsql
+    security definer
+    set search_path = ''
+    as $function$
+    declare
+      v_actor uuid := app_private.current_user_id();
+    begin
+      if v_actor is null then
+        raise exception using errcode = '42501', message = 'The files are read by an authenticated person.';
+      end if;
+      if p_limit is null or p_limit not between 1 and 100 or p_offset is null or p_offset < 0 then
+        raise exception using errcode = '22023', message = 'A page is one to a hundred files, from a position of zero or more.';
+      end if;
+      perform app_private.require_portal_material_request(p_client_id, p_thread_id);
+
+      return query
+      with mine as (
+        select
+          asset.id, asset.status, asset.category, asset.file_name, asset.width, asset.height, asset.created_at,
+          case when asset.status = 'confirmed' then asset.confirmed_content_type else asset.declared_content_type end as content_type,
+          case when asset.status = 'confirmed' then asset.confirmed_size_bytes else asset.declared_size_bytes end as size_bytes,
+          case when asset.status = 'confirmed' then asset.object_key end as object_key
+        from public.media_assets asset
+        where asset.client_id = p_client_id
+          and asset.material_request_thread_id = p_thread_id
+          and asset.uploaded_by_side = 'client'
+          and asset.created_by_user_id = v_actor
+          and asset.status in ('pending', 'confirmed')
+          and asset.removed_at is null
+      )
+      select
+        total.n, page.id, page.status, page.category, page.content_type, page.size_bytes, page.file_name,
+        page.width, page.height, page.created_at, page.object_key
+      from (select pg_catalog.count(*) as n from mine) total
+      left join (
+        select mine.* from mine order by mine.created_at, mine.id limit p_limit offset p_offset
+      ) page on true;
+    end;
+    $function$;
+
     revoke all on function app_private.start_portal_material_upload(uuid, uuid, text, bigint, text, bigint, bigint, integer) from public;
     revoke all on function app_private.confirm_portal_material_upload(uuid, bigint, text, integer, integer, bigint, bigint, integer) from public;
     revoke all on function app_private.reject_portal_material_upload(uuid, text) from public;
+    revoke all on function app_private.list_portal_material_uploads(uuid, uuid, integer, bigint) from public;
     grant execute on function app_private.start_portal_material_upload(uuid, uuid, text, bigint, text, bigint, bigint, integer) to ageniza_app;
     grant execute on function app_private.confirm_portal_material_upload(uuid, bigint, text, integer, integer, bigint, bigint, integer) to ageniza_app;
     grant execute on function app_private.reject_portal_material_upload(uuid, text) to ageniza_app;
+    grant execute on function app_private.list_portal_material_uploads(uuid, uuid, integer, bigint) to ageniza_app;
   `);
 }
 

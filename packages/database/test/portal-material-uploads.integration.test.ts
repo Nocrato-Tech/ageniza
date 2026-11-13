@@ -7,7 +7,8 @@ import {
   PORTAL_MATERIAL_UPLOAD_FOLDER_NAME,
   PORTAL_MATERIAL_UPLOAD_MAX_BYTES,
   PORTAL_MATERIAL_UPLOAD_MAX_FILES,
-  PORTAL_MATERIAL_UPLOAD_TYPES
+  PORTAL_MATERIAL_UPLOAD_TYPES,
+  PortalMaterialUploadRejectionReasonSchema
 } from '../../contracts/src/portal-material-uploads.js';
 import { backendPid, waitForBackendsBlockedBy } from '../src/index.js';
 
@@ -58,6 +59,21 @@ const confirm = (user: string, assetId: string, over: Partial<ConfirmArgs> = {})
   w.asUser(user, (t) => confirmIn(t, assetId, confirmArgs(over)));
 const rejectUpload = (user: string, assetId: string, reason: string | null): Promise<unknown> =>
   w.asUser(user, (t) => t.raw('select app_private.reject_portal_material_upload(?::uuid, ?::text)', [assetId, reason]));
+
+interface ListedRow {
+  total_count: string; asset_id: string | null; status: string | null; category: string | null; content_type: string | null; size_bytes: string | null;
+  file_name: string | null; width: number | null; height: number | null; created_at: Date | null; object_key: string | null;
+}
+const LIST_SQL = 'select * from app_private.list_portal_material_uploads(?::uuid, ?::uuid, ?::integer, ?::bigint)';
+const list = (user: string, client: string, thread: string, limit: number | null = 100, offset: number | null = 0): Promise<ListedRow[]> =>
+  w.asUser(user, async (t) => (await t.raw<{ rows: ListedRow[] }>(LIST_SQL, [client, thread, limit, offset])).rows);
+const listed = async (user: string, client: string, thread: string): Promise<string[]> =>
+  (await list(user, client, thread)).flatMap((row) => (row.asset_id === null ? [] : [row.asset_id]));
+/** A page with no file in it still answers the total, in one row with no file. */
+const emptyPage = (total: number): ListedRow => ({
+  total_count: String(total), asset_id: null, status: null, category: null, content_type: null, size_bytes: null, file_name: null, width: null, height: null,
+  created_at: null, object_key: null
+});
 
 // ---- the world -------------------------------------------------------------------------------------------------------------------
 
@@ -148,6 +164,9 @@ const visible = async (user: string, among: readonly string[]): Promise<string[]
   (await w.asUser(user, (t) => t('media_assets').whereIn('id', among).select('id'))).map((row) => row.id as string).sort();
 
 const attempt = async (work: () => Promise<unknown>): Promise<unknown> => work().then(() => 'done', (error: unknown) => error);
+
+// What the portal hears from an agency that does not accept writes: not the words of the trigger of the table, which speak of its trial.
+const NEUTRAL_READ_ONLY = { code: 'A0090', message: expect.stringContaining('The agency does not accept writes now.') };
 
 let suspendedThread: string;
 
@@ -417,10 +436,7 @@ describe('who may send, and to which request', () => {
     await setQuota(f.agency, 1, 1);
     await makeReadOnly(f.agency);
 
-    const refusal = await attempt(() => start(f.user, startArgs(f.thread, { client: f.client })));
-
-    expect(refusal).toMatchObject({ code: 'A0090' });
-    expect((refusal as { message: string }).message).not.toMatch(/trial|plan|quota|billing|storage/i);
+    expect(await attempt(() => start(f.user, startArgs(f.thread, { client: f.client })))).toMatchObject(NEUTRAL_READ_ONLY);
     expect(await filesOf(f.thread)).toHaveLength(0);
   });
 
@@ -705,7 +721,7 @@ describe('finishing the upload', () => {
     await setQuota(tight.agency, 1_500, null);
     const declaredSmall = await start(tight.user, startArgs(tight.thread, { client: tight.client, size: 100 }));
     await seed(tight.client, tight.agency, { size: 600 });
-    expect(await confirm(tight.user, declaredSmall.asset_id, { size: 2_000 })).toEqual({ outcome: 'rejected', reason: 'quota_exceeded' });
+    expect(await confirm(tight.user, declaredSmall.asset_id, { size: 2_000 })).toEqual({ outcome: 'rejected', reason: 'agency_unavailable' });
   });
 
   it('takes a confirmation that lands exactly on the ceiling of bytes or of files, the agency\'s own files counted and its own reservation not', async () => {
@@ -726,7 +742,44 @@ describe('finishing the upload', () => {
     const crowded = await start(over.user, startArgs(over.thread, { client: over.client }));
     await owner()('media_assets').where({ id: crowded.asset_id }).update({ updated_at: owner().raw(`now() - interval '2 hours'`) });
     await seed(over.client, over.agency);
-    expect(await confirm(over.user, crowded.asset_id)).toEqual({ outcome: 'rejected', reason: 'quota_exceeded' });
+    expect(await confirm(over.user, crowded.asset_id)).toEqual({ outcome: 'rejected', reason: 'agency_unavailable' });
+  });
+
+  it('gives the reason of every refusal in words that say nothing of the plan or the storage of the agency, and the contract names the same reasons', async () => {
+    const refusals: Array<{ verdict: Verdict; row: Record<string, unknown> }> = [];
+    const refused = async (f: Fresh, assetId: string, over: Partial<ConfirmArgs> = {}): Promise<void> => {
+      refusals.push({ verdict: await confirm(f.user, assetId, over), row: await assetRow(assetId) });
+    };
+    const startFor = (f: Fresh, size = 1_000): Promise<Started> => start(f.user, startArgs(f.thread, { client: f.client, size }));
+
+    const bytes = await fresh();
+    await refused(bytes, (await startFor(bytes)).asset_id, { size: 0 });
+    const type = await fresh();
+    await refused(type, (await startFor(type)).asset_id, { type: 'image/jpeg' });
+    const large = await fresh();
+    await refused(large, (await startFor(large)).asset_id, { size: MAX_BYTES + 1 });
+    const dimensions = await fresh();
+    await refused(dimensions, (await startFor(dimensions)).asset_id, { width: 0, height: 10 });
+
+    const full = await fresh();
+    const abandoned = await startFor(full);
+    await owner()('media_assets').where({ id: abandoned.asset_id }).update({ updated_at: owner().raw(`now() - interval '2 hours'`) });
+    await seedFilesOfRequest(full, MAX_FILES);
+    await refused(full, abandoned.asset_id);
+
+    const tight = await fresh();
+    await setQuota(tight.agency, 1_500, null);
+    const small = await startFor(tight, 100);
+    await seed(tight.client, tight.agency, { size: 600 });
+    await refused(tight, small.asset_id, { size: 2_000 });
+
+    expect(refusals.map(({ verdict }) => verdict.outcome)).toEqual(Array(6).fill('rejected'));
+    const reasons = refusals.map(({ verdict }) => verdict.reason as string);
+    expect([...reasons].sort()).toEqual([...PortalMaterialUploadRejectionReasonSchema.options].sort());
+    for (const { verdict, row } of refusals) {
+      expect(verdict.reason).not.toMatch(/quota|plan|storage|limit/i);
+      expect(row.rejected_reason).toBe(verdict.reason);
+    }
   });
 
   it('is finished by the person who sent it and by nobody else, with the one answer of a file that is not there', async () => {
@@ -785,10 +838,9 @@ describe('finishing the upload', () => {
     const readOnly = await fresh();
     const readOnlyFile = await start(readOnly.user, startArgs(readOnly.thread, { client: readOnly.client }));
     await makeReadOnly(readOnly.agency);
-    // The trigger of the read-only agency would refuse the write too, in words that speak of its trial: the function answers first, in neutral ones.
-    const readOnlyRefusal = await attempt(() => confirm(readOnly.user, readOnlyFile.asset_id));
-    expect(readOnlyRefusal).toMatchObject({ code: 'A0090' });
-    expect((readOnlyRefusal as { message: string }).message).not.toMatch(/trial|plan|quota|billing|storage/i);
+    // The trigger of the read-only agency would refuse the write too, in words that speak of its trial: each function answers first, in neutral ones.
+    expect(await attempt(() => confirm(readOnly.user, readOnlyFile.asset_id))).toMatchObject(NEUTRAL_READ_ONLY);
+    expect(await attempt(() => rejectUpload(readOnly.user, readOnlyFile.asset_id, 'abandoned'))).toMatchObject(NEUTRAL_READ_ONLY);
 
     for (const asset of [resolvedFile, archivedFile, suspendedFile, readOnlyFile]) expect(await assetRow(asset.asset_id)).toMatchObject({ status: 'pending' });
   });
@@ -847,58 +899,167 @@ describe('finishing the upload', () => {
 // ---- what the portal reads ---------------------------------------------------------------------------------------------------
 
 describe('what the person of the portal reads of the media', () => {
-  it('reads the file she sent to a request, pending or confirmed, and nothing else of the client', async () => {
+  it('lists the files she sent to a request, pending or confirmed, and nothing else of the client, oldest first', async () => {
     const thread = await openRequest();
     const pending = await start(ids.portalA1, startArgs(thread));
     const confirmed = await start(ids.portalA1, startArgs(thread));
     await confirm(ids.portalA1, confirmed.asset_id);
     const rejected = await start(ids.portalA1, startArgs(thread));
     await rejectUpload(ids.portalA1, rejected.asset_id, 'abandoned');
-    const removed = await seed(ids.clientA1, ids.agencyA, { side: 'client', thread, user: ids.portalA1, removed: true });
-    const agencyMedia = await seed(ids.clientA1, ids.agencyA);
-    const pretender = await seed(ids.clientA1, ids.agencyA, { user: ids.portalA1 });
-    const all = [pending.asset_id, confirmed.asset_id, rejected.asset_id, removed, agencyMedia, pretender];
+    await seed(ids.clientA1, ids.agencyA, { side: 'client', thread, user: ids.portalA1, removed: true });
+    await seed(ids.clientA1, ids.agencyA);
+    await seed(ids.clientA1, ids.agencyA, { user: ids.portalA1 });
+    await start(ids.portalA1, startArgs(await openRequest()));
 
-    expect(await visible(ids.portalA1, all)).toEqual([pending.asset_id, confirmed.asset_id].sort());
+    expect(await listed(ids.portalA1, ids.clientA1, thread)).toEqual([pending.asset_id, confirmed.asset_id]);
+    expect((await list(ids.portalA1, ids.clientA1, thread)).map((row) => row.total_count)).toEqual(['2', '2']);
+  });
+
+  it('answers what a listing needs, with the final key of a confirmed file only, and nothing that the staging, the upload or the agency keeps', async () => {
+    const thread = await openRequest();
+    const pending = await start(ids.portalA1, startArgs(thread, { size: 2_000, name: 'pendente.png' }));
+    const confirmed = await start(ids.portalA1, startArgs(thread, { size: 2_000, name: 'pronta.png' }));
+    await confirm(ids.portalA1, confirmed.asset_id, { size: 1_900, width: 800, height: 600 });
+    const recording = await start(ids.portalA1, startArgs(thread, { type: 'audio/mpeg', size: 5_000, name: 'depoimento.mp3' }));
+    await confirm(ids.portalA1, recording.asset_id, { size: 4_800, type: 'audio/mpeg', width: null, height: null });
+    await owner()('media_assets').whereIn('id', [pending.asset_id, confirmed.asset_id, recording.asset_id]).update({ alt_text: 'texto-da-agencia', multipart_upload_id: 'multipart-secreto' });
+
+    const rows = await list(ids.portalA1, ids.clientA1, thread);
+
+    expect(rows).toEqual([
+      {
+        total_count: '3', asset_id: pending.asset_id, status: 'pending', category: 'image', content_type: 'image/png', size_bytes: '2000', file_name: 'pendente.png',
+        width: null, height: null, created_at: expect.any(Date), object_key: null
+      },
+      {
+        total_count: '3', asset_id: confirmed.asset_id, status: 'confirmed', category: 'image', content_type: 'image/png', size_bytes: '1900', file_name: 'pronta.png',
+        width: 800, height: 600, created_at: expect.any(Date), object_key: confirmed.object_key
+      },
+      {
+        total_count: '3', asset_id: recording.asset_id, status: 'confirmed', category: 'audio', content_type: 'audio/mpeg', size_bytes: '4800', file_name: 'depoimento.mp3',
+        width: null, height: null, created_at: expect.any(Date), object_key: recording.object_key
+      }
+    ]);
+    expect(JSON.stringify(rows)).not.toMatch(/staging|upload\.(png|mp3)|texto-da-agencia|multipart-secreto/);
   });
 
   it.each([
     ['another person of the portal of the same client', () => ids.portalA1Second],
     ['a collaborator with a link and the Sales role', () => ids.dualBare],
-    ['an Admin of another agency who holds a link to the client', () => ids.crossDual],
+    ['an Admin of another agency who holds a link to the client', () => ids.crossDual]
+  ] as const)('lists nothing of what another person sent: %s gets an empty page', async (_label, user) => {
+    const thread = await openRequest();
+    await start(ids.portalA1, startArgs(thread));
+
+    expect(await list(user(), ids.clientA1, thread)).toEqual([emptyPage(0)]);
+  });
+
+  it.each([
     ['a person of another client of the same agency', () => ids.portalA2],
     ['a person of another agency', () => ids.portalB],
-    ['the Admin of another agency', () => ids.adminB]
-  ] as const)('does not read what another person sent: %s sees nothing of it', async (_label, user) => {
-    const sent = await start(ids.portalA1, startArgs(await openRequest()));
+    ['the Admin of the agency, who holds no link to the client', () => ids.adminA],
+    ['the Owner of the agency, who holds no link to the client', () => ids.ownerA],
+    ['the Admin of another agency, who holds no link here', () => ids.adminB],
+    ['a collaborator whose link to the client was removed', () => ids.dualRemoved]
+  ] as const)('refuses %s with the one answer of a request that is not there', async (_label, user) => {
+    const thread = await openRequest();
+    await start(ids.portalA1, startArgs(thread));
 
-    expect(await visible(user(), [sent.asset_id])).toEqual([]);
+    await expect(list(user(), ids.clientA1, thread)).rejects.toMatchObject({ code: 'A0130' });
   });
 
-  it('keeps reading the file she sent while she holds the link to the client, and loses it with the link', async () => {
+  it('refuses a request that is not hers to list: another client\'s, a section, one that does not exist', async () => {
+    const elsewhere = await openRequest(ids.clientA2);
+    const section = randomUUID();
+    requests.push(section);
+    await owner()('client_threads').insert({ id: section, client_id: ids.clientA1, section_key: 'branding', opened_by: ids.adminA, opened_side: 'agency' });
+
+    await expect(list(ids.portalA1, ids.clientA1, elsewhere)).rejects.toMatchObject({ code: 'A0130' });
+    await expect(list(ids.portalA1, ids.clientA2, elsewhere)).rejects.toMatchObject({ code: 'A0130' });
+    await expect(list(ids.portalA1, ids.clientA1, section)).rejects.toMatchObject({ code: 'A0130' });
+    await expect(list(ids.portalA1, ids.clientA1, randomUUID())).rejects.toMatchObject({ code: 'A0130' });
+    await expect(list(ids.portalA1, randomUUID(), elsewhere)).rejects.toMatchObject({ code: 'A0130' });
+  });
+
+  it('keeps listing the files she sent while she holds the link to the client, and refuses her with the link gone', async () => {
     const f = await fresh();
     const sent = await start(f.user, startArgs(f.thread, { client: f.client }));
-    expect(await visible(f.user, [sent.asset_id])).toEqual([sent.asset_id]);
+    expect(await listed(f.user, f.client, f.thread)).toEqual([sent.asset_id]);
 
-    // The link that counts is the one to this client: another live link of the same person does not keep the file in sight.
+    // The link that counts is the one to this client: another live link of the same person does not keep the files in sight.
     await owner()('client_memberships').insert({ client_id: ids.clientA2, user_id: f.user });
     await removeAccess(f.client, f.user);
-    expect(await visible(f.user, [sent.asset_id])).toEqual([]);
+    await expect(list(f.user, f.client, f.thread)).rejects.toMatchObject({ code: 'A0130' });
+    expect(await listed(f.other, f.client, f.thread)).toEqual([]);
   });
 
-  it('stops reading when the client is archived or the agency suspended', async () => {
+  it('refuses the person when the client is archived or the agency suspended', async () => {
     const archived = await fresh();
-    const sentToArchived = await start(archived.user, startArgs(archived.thread, { client: archived.client }));
+    await start(archived.user, startArgs(archived.thread, { client: archived.client }));
     const suspended = await fresh();
-    const sentToSuspended = await start(suspended.user, startArgs(suspended.thread, { client: suspended.client }));
-    expect(await visible(archived.user, [sentToArchived.asset_id])).toHaveLength(1);
-    expect(await visible(suspended.user, [sentToSuspended.asset_id])).toHaveLength(1);
+    await start(suspended.user, startArgs(suspended.thread, { client: suspended.client }));
+    expect(await listed(archived.user, archived.client, archived.thread)).toHaveLength(1);
+    expect(await listed(suspended.user, suspended.client, suspended.thread)).toHaveLength(1);
 
     await archive(archived.client);
     await suspend(suspended.agency);
 
-    expect(await visible(archived.user, [sentToArchived.asset_id])).toEqual([]);
-    expect(await visible(suspended.user, [sentToSuspended.asset_id])).toEqual([]);
+    await expect(list(archived.user, archived.client, archived.thread)).rejects.toMatchObject({ code: 'A0130' });
+    await expect(list(suspended.user, suspended.client, suspended.thread)).rejects.toMatchObject({ code: 'A0130' });
+  });
+
+  it('keeps listing on a resolved request, and on an agency that does not accept writes: reading is not sending', async () => {
+    const f = await fresh();
+    const sent = await start(f.user, startArgs(f.thread, { client: f.client }));
+    await owner()('client_threads').where({ id: f.thread }).update({ resolved_by: ids.adminA, resolved_at: new Date() });
+    await makeReadOnly(f.agency);
+
+    expect(await listed(f.user, f.client, f.thread)).toEqual([sent.asset_id]);
+  });
+
+  it('pages by the order of arrival with the id as the tie, and the total of her files comes with every page, past the end too', async () => {
+    const f = await fresh();
+    const byId: string[] = [];
+    for (let index = 0; index < 6; index += 1) byId.push(await seed(f.client, f.agency, { side: 'client', thread: f.thread, user: f.user, size: 10 }));
+    byId.sort();
+    // Arrival does not follow the ids, and two pairs arrived together: the third file came first, the pairs are told apart by their ids. The
+    // rows are rewritten from the last id to the first, so a tie left to the physical order would show up reversed.
+    const [now, day] = [Date.now(), 86_400_000];
+    const daysAgo = [2, 2, 3, 1, 1, 0.5];
+    for (const index of [5, 4, 3, 2, 1, 0]) {
+      await owner()('media_assets').where({ id: byId[index] }).update({ created_at: new Date(now - daysAgo[index]! * day) });
+    }
+    const expected = [byId[2]!, byId[0]!, byId[1]!, byId[3]!, byId[4]!, byId[5]!];
+
+    const pages = [await list(f.user, f.client, f.thread, 2, 0), await list(f.user, f.client, f.thread, 2, 2), await list(f.user, f.client, f.thread, 2, 4)];
+
+    expect(pages.map((page) => page.map((row) => row.asset_id))).toEqual([expected.slice(0, 2), expected.slice(2, 4), expected.slice(4)]);
+    expect(pages.flat().map((row) => row.total_count)).toEqual(Array(6).fill('6'));
+    expect(await list(f.user, f.client, f.thread, 2, 6)).toEqual([emptyPage(6)]);
+    expect(await list(f.user, f.client, f.thread, 100, 1_000_000_000_000)).toEqual([emptyPage(6)]);
+    expect((await list(f.user, f.client, f.thread, 100, 5)).map((row) => row.asset_id)).toEqual([expected[5]]);
+    expect((await list(f.user, f.client, f.thread, 1, 0)).map((row) => row.asset_id)).toEqual([expected[0]]);
+    expect((await list(f.user, f.client, f.thread, 100, 0)).map((row) => row.asset_id)).toEqual(expected);
+  });
+
+  it('refuses a page that is not one to a hundred files from a position of zero or more, and a call with no actor bound', async () => {
+    const thread = await openRequest();
+    for (const [limit, offset] of [[0, 0], [101, 0], [-1, 0], [null, 0], [10, -1], [10, null]] as const) {
+      await expect(list(ids.portalA1, ids.clientA1, thread, limit, offset), `${limit} ${offset}`).rejects.toMatchObject({ code: '22023' });
+    }
+    expect(await list(ids.portalA1, ids.clientA1, thread, 100, 0)).toEqual([emptyPage(0)]);
+    await expect(owner().raw(LIST_SQL, [ids.clientA1, thread, 10, 0])).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('is the only way in: the table of the media shows the portal no row at all, not even the files she sent, and no column of them', async () => {
+    const thread = await openRequest();
+    const pending = await start(ids.portalA1, startArgs(thread));
+    const confirmed = await start(ids.portalA1, startArgs(thread));
+    await confirm(ids.portalA1, confirmed.asset_id);
+
+    expect(await visible(ids.portalA1, [pending.asset_id, confirmed.asset_id])).toEqual([]);
+    expect(await w.asUser(ids.portalA1, (t) => t('media_assets').whereIn('id', [pending.asset_id, confirmed.asset_id]).select('upload_object_key', 'object_key', 'multipart_upload_id'))).toEqual([]);
+    expect(await w.asUser(ids.portalA1, async (t) => (await t.raw<{ rows: Array<{ n: string }> }>('select count(*)::text as n from public.media_assets where client_id = ?::uuid', [ids.clientA1])).rows[0])).toEqual({ n: '0' });
   });
 
   it('reads the media of the agency as the agency does: the files of the client are seen by who sees the rest of that client\'s library', async () => {
@@ -988,6 +1149,7 @@ describe('the storage usage, counted in one place', () => {
       'app_private.agency_storage_in_use(uuid, integer, uuid)',
       'app_private.portal_upload_refusal(uuid, uuid, bigint, uuid, bigint, bigint, integer)',
       'app_private.lock_own_pending_portal_upload(uuid)',
+      'app_private.require_portal_material_request(uuid, uuid)',
       'app_private.require_portal_upload_settings(bigint, bigint, integer)',
       'app_private.portal_upload_type(text)',
       'app_private.portal_upload_max_bytes()',
@@ -996,7 +1158,8 @@ describe('the storage usage, counted in one place', () => {
     const open = [
       'app_private.start_portal_material_upload(uuid, uuid, text, bigint, text, bigint, bigint, integer)',
       'app_private.confirm_portal_material_upload(uuid, bigint, text, integer, integer, bigint, bigint, integer)',
-      'app_private.reject_portal_material_upload(uuid, text)'
+      'app_private.reject_portal_material_upload(uuid, text)',
+      'app_private.list_portal_material_uploads(uuid, uuid, integer, bigint)'
     ];
     const privileges = async (signature: string) => (await owner().raw<{ rows: Array<{ app: boolean; pub: boolean; definer: boolean; config: string[] | null }> }>(
       `select has_function_privilege('ageniza_app', ?::regprocedure, 'execute') as app, has_function_privilege('public', ?::regprocedure, 'execute') as pub,
