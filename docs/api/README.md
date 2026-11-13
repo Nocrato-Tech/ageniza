@@ -5350,18 +5350,21 @@ Marca o roteiro como gravado, no portal.
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
-### subscriptions — Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar; e, só fora de produção, pagar com o provedor simulado e avançar o relógio.
+### subscriptions — Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar, e as faturas; e, só fora de produção, o cartão de teste, pagar com o provedor simulado e avançar o relógio.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/subscription/plans` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Lista os planos pagos e o preço dos extras |
 | `GET` | `/agencies/:agencyId/subscription` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Devolve a assinatura da agência, o uso e a tolerância |
+| `GET` | `/agencies/:agencyId/subscription/invoices` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Lista as faturas da agência |
 | `POST` | `/agencies/:agencyId/subscription/quote` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Calcula o que uma mudança de plano ou de extras faz e custa |
 | `POST` | `/agencies/:agencyId/subscription/charges` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Pede a mudança de plano ou de extras e abre a cobrança |
 | `POST` | `/agencies/:agencyId/subscription/cancel` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Cancela a assinatura |
 | `POST` | `/agencies/:agencyId/subscription/reactivate` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Desfaz o cancelamento até o fim do período |
 | `POST` | `/agencies/:agencyId/subscription/charges/:chargeId/simulated-payment` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Paga uma cobrança com o provedor simulado (só fora de produção) |
 | `POST` | `/agencies/:agencyId/subscription/simulated-period-advance` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Avança o relógio da assinatura simulada (só fora de produção) |
+| `GET` | `/agencies/:agencyId/subscription/test-card` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Devolve o cartão de teste da agência (só fora de produção) |
+| `PUT` | `/agencies/:agencyId/subscription/test-card` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Salva ou troca o cartão de teste da agência (só fora de produção) |
 
 #### `GET /agencies/:agencyId/subscription/plans`
 
@@ -5431,6 +5434,53 @@ Devolve a assinatura da agência, o uso e a tolerância.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
+#### `GET /agencies/:agencyId/subscription/invoices`
+
+Lista as faturas da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1,
+  "pageSize": 20
+}
+```
+
+**Resposta `200`** — Página das faturas.
+
+```json
+{
+  "data": [
+    {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "date": "2026-11-12T14:00:00.000Z",
+      "description": "Plano Profissional + 5 clientes extras",
+      "amountCents": 22700,
+      "status": "declined"
+    },
+    {
+      "id": "88888888-8888-4888-8888-888888888888",
+      "date": "2026-10-12T14:00:00.000Z",
+      "description": "Plano Profissional",
+      "amountCents": 19700,
+      "status": "paid"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 2,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
 #### `POST /agencies/:agencyId/subscription/quote`
 
 Calcula o que uma mudança de plano ou de extras faz e custa.
@@ -5455,7 +5505,17 @@ Calcula o que uma mudança de plano ou de extras faz e custa.
   "effect": "upgrade",
   "monthlyCents": 19700,
   "amountCents": 6800,
-  "effectiveAt": "2026-11-15T12:00:00.000Z"
+  "effectiveAt": "2026-11-15T12:00:00.000Z",
+  "daysLeft": 15,
+  "periodDays": 30,
+  "lines": [
+    {
+      "kind": "plan",
+      "quantity": 1,
+      "unitCents": 19700,
+      "totalCents": 19700
+    }
+  ]
 }
 ```
 
@@ -5549,6 +5609,61 @@ Avança o relógio da assinatura simulada (só fora de produção).
 **Resposta `204`** — Período avançado.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 SUBSCRIPTION_NOT_AVAILABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/subscription/test-card`
+
+Devolve o cartão de teste da agência (só fora de produção).
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Resposta `200`** — O cartão de teste, ou `null`.
+
+```json
+{
+  "card": {
+    "last4": "4242",
+    "expMonth": 8,
+    "expYear": 2028,
+    "brand": "test"
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `PUT /agencies/:agencyId/subscription/test-card`
+
+Salva ou troca o cartão de teste da agência (só fora de produção).
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "last4": "4242",
+  "expMonth": 8,
+  "expYear": 2028,
+  "brand": "test"
+}
+```
+
+**Resposta `200`** — O cartão de teste salvo.
+
+```json
+{
+  "card": {
+    "last4": "4242",
+    "expMonth": 8,
+    "expYear": 2028,
+    "brand": "test"
+  }
+}
+```
+
+**Erros:** `400 TEST_CARD_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
 
 ### notifications — As notificações da pessoa dentro do app: a lista paginada, a contagem de não lidas para o sino e marcar como lida, uma ou todas. Cada pessoa lê só as próprias; quem as cria é o banco, junto do evento.
 

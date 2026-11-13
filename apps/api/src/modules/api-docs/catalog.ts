@@ -200,14 +200,18 @@ import {
   UpdateContentTaskRequestSchema,
   UploadMyPhotoRequestSchema,
   UploadMyPhotoResponseSchema,
+  SaveSubscriptionTestCardRequestSchema,
   SimulatedPaymentRequestSchema,
   SimulatedPaymentResponseSchema,
   SubscriptionChangeRequestSchema,
   SubscriptionChargePathParamsSchema,
   SubscriptionChargeResponseSchema,
+  SubscriptionInvoiceListQuerySchema,
+  SubscriptionInvoiceListResponseSchema,
   SubscriptionOverviewResponseSchema,
   SubscriptionPlansResponseSchema,
-  SubscriptionQuoteResponseSchema
+  SubscriptionQuoteResponseSchema,
+  SubscriptionTestCardResponseSchema
 } from '@ageniza/contracts';
 
 /**
@@ -294,7 +298,7 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   legal: 'Versão dos Termos e da Privacidade que a conta aceitou, e o aceite de um documento por vez.',
   'email-change': 'Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo.',
   'story-scripts': 'Roteiros de stories de um cliente: a agência cria, edita e envia; o portal lê os enviados de um período e marca como gravado.',
-  subscriptions: 'Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar; e, só fora de produção, pagar com o provedor simulado e avançar o relógio.',
+  subscriptions: 'Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar, e as faturas; e, só fora de produção, o cartão de teste, pagar com o provedor simulado e avançar o relógio.',
   notifications: 'As notificações da pessoa dentro do app: a lista paginada, a contagem de não lidas para o sino e marcar como lida, uma ou todas. Cada pessoa lê só as próprias; quem as cria é o banco, junto do evento.'
 };
 
@@ -5028,6 +5032,45 @@ path: '/agencies/:agencyId/roles',
     ]
   },
   {
+    method: 'get',
+    path: '/agencies/:agencyId/subscription/invoices',
+    operationId: 'listSubscriptionInvoices',
+    module: 'subscriptions',
+    summary: 'Lista as faturas da agência',
+    description: [
+      'Cada cobrança da agência é uma fatura: a data (a do pagamento, quando paga; a do pedido, nas outras), a descrição (o plano e os extras, escrita no',
+      'servidor), o valor e o estado. `status` é `declined` (o provedor recusou o pagamento; vale mesmo que a cobrança tenha sido substituída depois),',
+      '`paid`, `open` (aguardando pagamento, dentro dos 30 minutos) ou `expired`. Paginada pelo contrato global de listagem, 20 por página, da mais recente à',
+      'mais antiga (o `id` desempata); `totalItems` vale também para uma página depois do fim, que vem vazia. Existe em qualquer ambiente, sem PDF nem nota fiscal.',
+      'Só o Owner: a pessoa do portal nunca vê a cobrança da agência.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    query: SubscriptionInvoiceListQuerySchema,
+    requestExample: { page: 1, pageSize: 20 },
+    responses: [{
+      status: 200,
+      description: 'Página das faturas.',
+      schema: SubscriptionInvoiceListResponseSchema,
+      example: {
+        data: [
+          { id: '99999999-9999-4999-8999-999999999999', date: '2026-11-12T14:00:00.000Z', description: 'Plano Profissional + 5 clientes extras', amountCents: 22700, status: 'declined' },
+          { id: '88888888-8888-4888-8888-888888888888', date: '2026-10-12T14:00:00.000Z', description: 'Plano Profissional', amountCents: 19700, status: 'paid' }
+        ],
+        meta: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
     method: 'post',
     path: '/agencies/:agencyId/subscription/quote',
     operationId: 'quoteSubscriptionChange',
@@ -5039,7 +5082,9 @@ path: '/agencies/:agencyId/roles',
       '`effectiveAt` é o fim do período). Recusas: `409 SUBSCRIPTION_BELOW_CLIENTS` ou `409 SUBSCRIPTION_BELOW_STORAGE` quando o novo teto fica abaixo do',
       'uso; `409 SUBSCRIPTION_MIXED_CHANGE` quando sobe um limite e desce outro; `409 SUBSCRIPTION_UNCHANGED` quando nada muda;',
       '`409 SUBSCRIPTION_NOT_AVAILABLE` quando a agência não pode mudar de plano (isenta, cortesia, sem assinatura da operação ou cancelada);',
-      '`400 SUBSCRIPTION_INVALID` para um plano que não existe.'
+      '`400 SUBSCRIPTION_INVALID` para um plano que não existe. `lines` é de que se compõe o `monthlyCents` (o plano, uma vez, e cada extra comprado, no preço',
+      'de cada unidade), e a soma delas é o `monthlyCents`. `daysLeft` de `periodDays` é a parte do período que a subida cobra agora (o dia que começou',
+      'conta); os dois são `null` na primeira assinatura, que cobra o mês inteiro, e na descida, que não cobra nada.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'assinatura.gerenciar',
@@ -5050,7 +5095,15 @@ path: '/agencies/:agencyId/roles',
       status: 200,
       description: 'O que a mudança faz.',
       schema: SubscriptionQuoteResponseSchema,
-      example: { effect: 'upgrade', monthlyCents: 19700, amountCents: 6800, effectiveAt: '2026-11-15T12:00:00.000Z' }
+      example: {
+        effect: 'upgrade',
+        monthlyCents: 19700,
+        amountCents: 6800,
+        effectiveAt: '2026-11-15T12:00:00.000Z',
+        daysLeft: 15,
+        periodDays: 30,
+        lines: [{ kind: 'plan', quantity: 1, unitCents: 19700, totalCents: 19700 }]
+      }
     }],
     errors: [
       COMMON_ERRORS.csrf,
@@ -5172,7 +5225,9 @@ path: '/agencies/:agencyId/roles',
       'Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). O cartão **nunca** viaja: a tela escolhe `outcome`',
       '(`approved`, ou `declined` para o número de cartão de teste fixo) e não manda mais nada do cartão. A cobrança precisa ser da agência do Owner que paga e',
       'estar aberta; a de outra agência responde `404 NOT_FOUND` e continua pendente. Aprovada, o provedor confirma ao banco, e só então o plano e os tetos',
-      'mudam (`confirmed`); recusada (`declined`), nada muda e a cobrança segue aberta até vencer.'
+      'mudam (`confirmed`). Recusada (`declined`), o plano e os tetos não mudam, e a cobrança registra a recusa numa transação própria: ela aparece como',
+      '"recusada" nas faturas e **não é paga de novo** (`409 CHARGE_NOT_OPEN`, sem chamar o provedor). Tentar outra vez é pedir uma cobrança nova em',
+      '`POST /charges`, que expira a recusada.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'assinatura.gerenciar',
@@ -5221,6 +5276,69 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
       { status: 409, code: 'SUBSCRIPTION_NOT_AVAILABLE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/subscription/test-card',
+    operationId: 'getSubscriptionTestCard',
+    module: 'subscriptions',
+    summary: 'Devolve o cartão de teste da agência (só fora de produção)',
+    description: [
+      'Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). `card` é `null` enquanto a agência não salvou um.',
+      'O cartão é só os quatro últimos dígitos, a validade e a marca `test`: o número, o código de segurança e o nome nunca saem do navegador. Só o Owner.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'O cartão de teste, ou `null`.',
+      schema: SubscriptionTestCardResponseSchema,
+      example: { card: { last4: '4242', expMonth: 8, expYear: 2028, brand: 'test' } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'put',
+    path: '/agencies/:agencyId/subscription/test-card',
+    operationId: 'saveSubscriptionTestCard',
+    module: 'subscriptions',
+    summary: 'Salva ou troca o cartão de teste da agência (só fora de produção)',
+    description: [
+      'Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). Um cartão por agência: salvar de novo o troca.',
+      'O corpo são exatamente os quatro valores (`last4`, `expMonth`, `expYear` e `brand` igual a `test`): qualquer outro campo, como `number`, `cvc` ou `name`,',
+      'é recusado com `400 VALIDATION_ERROR` sem repetir o que veio, e um valor que não é de um cartão de teste, com `400 TEST_CARD_INVALID`. Nenhuma resposta, log ou',
+      'auditoria leva o número. Só o Owner.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    body: SaveSubscriptionTestCardRequestSchema,
+    requestExample: { last4: '4242', expMonth: 8, expYear: 2028, brand: 'test' },
+    responses: [{
+      status: 200,
+      description: 'O cartão de teste salvo.',
+      schema: SubscriptionTestCardResponseSchema,
+      example: { card: { last4: '4242', expMonth: 8, expYear: 2028, brand: 'test' } }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'TEST_CARD_INVALID' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },
