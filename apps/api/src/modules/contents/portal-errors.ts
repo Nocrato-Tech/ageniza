@@ -13,7 +13,8 @@ import { revisionChanged } from './transition-errors.js';
  * - `A0060`: the content is not there for this person (absent, another client's, not open yet, client archived while the
  *   request waited for the lock): 404;
  * - `A0020`, `A0061`: the archive of the client won the race for a write into one of its children: 404;
- * - `A0062`: the content is not awaiting approval (the route reads it again to tell a content that was cancelled meanwhile apart);
+ * - `A0062`: the content is not awaiting approval, or, for a request for changes, is neither awaiting approval nor approved with a planned
+ *   day after today (the route reads it again to tell a content that was cancelled meanwhile apart);
  * - `A0063`: the content changed since the revision the person read: 409;
  * - `A0068`: the comment of a request for changes, or the note of an approval, is blank or too long: 400 (the schema stops it first; the
  *   function is the second barrier), each with its own code;
@@ -26,7 +27,7 @@ export type PortalContentAction = 'approve' | 'request-changes' | 'withdraw-appr
 
 const STATE_MESSAGES: Record<PortalContentAction, string> = {
   approve: 'Só um conteúdo aguardando aprovação é aprovado.',
-  'request-changes': 'Só um conteúdo aguardando aprovação recebe um pedido de ajuste.',
+  'request-changes': 'Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação.',
   'withdraw-approval': 'Só é possível desfazer a aprovação antes da publicação.'
 };
 

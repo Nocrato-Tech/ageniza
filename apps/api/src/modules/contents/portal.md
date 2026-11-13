@@ -13,7 +13,7 @@ provou. As decisões estão em `docs/business/decisions/2026-10-11-conteudo-port
 | `GET` | `/clients/:clientId/contents/:contentId/media/:assetId/url?variant=` | a URL assinada da capa ou de um item da mídia (#584) |
 | `POST` | `/clients/:clientId/contents/:contentId/approve` | `{ revision, note? }`: aguardando aprovação → aprovado; o `note` (recado à agência, até 500 caracteres) vira comentário do cliente na conversa, na mesma transação |
 | `POST` | `/clients/:clientId/contents/:contentId/withdraw-approval` | `{ revision }`: aprovado → aguardando aprovação, com vínculo próprio ativo e evento `content.approval_withdrawn`; publicado é conflito |
-| `POST` | `/clients/:clientId/contents/:contentId/request-changes` | `{ revision, comment }`: aguardando aprovação → em ajuste, e o comentário entra na conversa |
+| `POST` | `/clients/:clientId/contents/:contentId/request-changes` | `{ revision, comment }`: aguardando aprovação → em ajuste; aprovado → em ajuste (a aprovação cai) até a véspera da publicação; o comentário entra na conversa |
 
 ## Onde cada regra mora
 
@@ -32,6 +32,10 @@ provou. As decisões estão em `docs/business/decisions/2026-10-11-conteudo-port
   os dois clientes), recusa o que está em produção com `409 CONTENT_NOT_AWAITING_APPROVAL` e chama a função, que o recusa de novo por dentro.
 - **Aprovar é idempotente, pedir ajuste não.** Aprovar o que já está aprovado é `200` e a primeira pessoa continua sendo quem aprovou, sem
   um segundo recado; pedir ajuste de um conteúdo já em ajuste é `409`, porque cada pedido é um comentário.
+- **O pedido de ajuste vale até a véspera da publicação.** Um conteúdo aprovado aceita o pedido enquanto o dia planejado (`publishOn`) é depois
+  de hoje em São Paulo; no dia da publicação, ou depois, e para o publicado, é `409 CONTENT_NOT_AWAITING_APPROVAL` (a mesma resposta do conteúdo
+  já em ajuste), com a mensagem "Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação." A regra (estado e dia) é de
+  um auxiliar único do banco, lido da linha travada e do relógio de quando ela foi travada, e o link do e-mail a segue igual.
 - **Aprovar com recado é tudo ou nada.** `approve_content(uuid, integer, text)` aprova e, com recado, abre (ou acha) a conversa do conteúdo e
   grava o comentário do cliente na mesma transação: um comentário recusado (agência somente leitura) deixa o conteúdo aguardando, e uma
   aprovação recusada não deixa comentário. O recado segue a regra do da agência (`ApprovalNoteSchema`: sem caractere invisível ou de controle,
@@ -56,7 +60,8 @@ provou. As decisões estão em `docs/business/decisions/2026-10-11-conteudo-port
   hora, vale o dia inteiro), ou `null`. Lê só por `app_private.portal_contents`, então vale o mesmo recorte do resto do portal. Um instante só
   (`clock-sql.ts`) dá o dia, o mês e a hora; o `now` da dependência o fixa nos testes.
 - **O pedido de ajuste é uma função só.** Abre (ou acha) a conversa do conteúdo, grava o comentário como o cliente e leva o conteúdo a
-  "em ajuste", na mesma transação: um comentário recusado não deixa conversa nem estado. O comentário segue a regra única de texto livre
+  "em ajuste", na mesma transação (de um aprovado, limpa também quem aprovou e quando; o recado da aprovação continua na conversa): um comentário
+  recusado não deixa conversa nem estado. O comentário segue a regra única de texto livre
   das conversas (`CommentBodySchema`): só espaço, só caractere invisível e só caractere de controle são vazios.
 
 ## A URL assinada da mídia (issue #584)
@@ -79,7 +84,8 @@ está configurado (como o módulo `media`), e não tem migration.
 ## A corrida
 
 As duas funções travam o cliente ativo (`FOR SHARE`) antes do conteúdo (`FOR UPDATE`). Aprovar e pedir ajuste do mesmo conteúdo ao
-mesmo tempo: um ganha e o outro é `409`. A agência que cancela enquanto o pedido espera: `404` (a rota relê o recorte do portal
+mesmo tempo: um ganha e o outro é `409`. Pedir ajuste de um aprovado contra a publicação, ou contra a agência que muda a data para hoje:
+quem pega a linha primeiro ganha e o outro é `409`, porque o estado e a data são lidos depois da espera. A agência que cancela enquanto o pedido espera: `404` (a rota relê o recorte do portal
 quando o banco responde `A0062`). A agência que edita a legenda enquanto a aprovação espera: `409 CONTENT_REVISION_CHANGED`. O arquivamento
 do cliente, nas duas janelas (em curso e já confirmado), é `404`, sem gravar nada; o portal nunca fica sabendo que o cliente foi arquivado.
 

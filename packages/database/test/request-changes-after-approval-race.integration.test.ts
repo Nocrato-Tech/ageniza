@@ -1,24 +1,30 @@
 import type { Knex } from 'knex';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { backendPid, waitForBackendsBlockedBy } from '../src/index.js';
+import { backendPid, createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, waitForBackendsBlockedBy, type DatabaseClient } from '../src/index.js';
 
 import { createApprovalFixtures } from './support/approval-fixtures.js';
+import { createLinkWorld } from './support/approval-link-world.js';
 import { createContentWorld } from './support/content-world.js';
 import { askedAtOrAfter, callAtInstant } from './support/pinned-clock.js';
 
 // Scope redesign-igual, subtask W11-S1: the request for changes on an APPROVED content against whatever else moves the same content, with two
-// real transactions. The function takes the lock of the client (FOR SHARE) and then the one of the content (FOR UPDATE), the order of the
-// archive and of every edit, and it adds no lock of its own for the new transition: the one that waited reads the state, the revision and the
-// planned day of the row AFTER the wait, and judges the day by the clock of that moment. The holder is always the transaction that came first;
-// the one under test is asked to wait for it (`waitForBackendsBlockedBy`), never by a sleep.
+// real transactions, through the two doors (the account of the portal and the link of the e-mail). The function takes the lock of the content
+// (and the portal one, the share lock of the client before it, the order of the archive and of every edit) and adds no lock of its own for the
+// new transition: the one that waited reads the state, the revision and the planned day of the row AFTER the wait, and judges the day by the
+// clock of that moment. The holder is always the transaction that came first; the one under test is asked to wait for it
+// (`waitForBackendsBlockedBy`), never by a sleep.
 const w = createContentWorld('w11s1-race');
 const { ids } = w;
 const a = createApprovalFixtures(w);
+const { applicationUrl } = resolveIntegrationDatabaseUrls();
 const owner = (): Knex => w.getOwner().knex;
+
+let worker: DatabaseClient;
 
 beforeAll(async () => {
   await w.setup();
+  worker = createLocalTestDatabaseClient(applicationUrl);
   await a.waitForQuietClock();
 }, 300_000);
 
@@ -26,63 +32,121 @@ afterAll(async () => {
   try {
     await a.cleanUp();
   } finally {
+    await worker.close();
     await w.teardown();
   }
 });
 
 const COMMENT = 'Troque a foto da capa';
-const settle = (work: Promise<unknown>): Promise<unknown> => work.catch((error: unknown) => error);
+const settle = (work: Promise<unknown>): Promise<unknown> => work.then(() => undefined, (error: unknown) => error);
 const rowOf = (content: string): Promise<Record<string, unknown>> => w.contentRow(content);
 const threadsOf = (content: string): Promise<unknown[]> => owner()('client_threads').where({ content_id: content });
 const commentsOf = (content: string): Promise<unknown[]> =>
-  owner()('client_thread_comments').whereIn('thread_id', owner()('client_threads').where({ content_id: content }).select('id')).select('body', 'author_user_id');
+  owner()('client_thread_comments').whereIn('thread_id', owner()('client_threads').where({ content_id: content }).select('id')).select('body');
 const notificationsOf = (content: string): Promise<unknown[]> => owner()('notifications').where({ content_id: content }).select('kind');
 
-/** An approved reels with a confirmed video, planned `offset` days from today in São Paulo: it can be published and sent again. */
-const approved = async (offset: number, clientId = ids.clientA1): Promise<string> => {
-  const content = await w.seedContent(clientId, { status: 'approved', publishOn: await a.day(offset) });
+interface Door {
+  readonly name: string;
+  /** Who is bound in the transaction of the call: no one for the link. */
+  readonly actor: string | null;
+  /** An approved reels with a confirmed video, planned on `day`, that this door reaches. */
+  seedOn(day: string): Promise<string>;
+  open(): Promise<Knex.Transaction>;
+  call(transaction: Knex.Transaction, content: string, revision: number): Promise<unknown>;
+}
+
+const attachVideo = async (content: string, clientId: string): Promise<void> => {
   await w.attach(content, [await w.seedAsset(clientId, await w.folderOf(clientId), { category: 'video' })]);
-  return content;
 };
 
-const requestAs = (user: string, content: string, revision = 1): Promise<unknown> =>
-  w.asUser(user, (t) => t.raw('select app_private.request_content_changes(?::uuid, ?::integer, ?::text)', [content, revision, COMMENT]));
-const requestIn = (transaction: Knex.Transaction, content: string, revision = 1): Promise<unknown> =>
-  transaction.raw('select app_private.request_content_changes(?::uuid, ?::integer, ?::text)', [content, revision, COMMENT]);
-const publishAs = (user: string, content: string): Promise<unknown> =>
-  w.asUser(user, async (t) => t.raw('select app_private.publish_content(?::uuid, ?::date)', [content, await a.day(0)]));
+const portalDoor = (): Door => ({
+  name: 'the portal',
+  actor: ids.portalA1,
+  seedOn: async (day) => {
+    const content = await w.seedContent(ids.clientA1, { status: 'approved', publishOn: day });
+    await attachVideo(content, ids.clientA1);
+    return content;
+  },
+  open: () => w.openTransactionAs(ids.portalA1),
+  call: (transaction, content, revision) =>
+    transaction.raw('select app_private.request_content_changes(?::uuid, ?::integer, ?::text)', [content, revision, COMMENT])
+});
+
+const linkDoor = async (): Promise<Door> => {
+  const world = await createLinkWorld(w, a, worker);
+  return {
+    name: 'the approval link',
+    actor: null,
+    seedOn: async (day) => {
+      const content = await w.seedContent(world.clientId, { status: 'approved', publishOn: day });
+      await attachVideo(content, world.clientId);
+      await owner()('client_portal_approval_link_contents').insert({ link_id: world.linkId, content_id: content, client_id: world.clientId });
+      return content;
+    },
+    open: () => worker.knex.transaction(),
+    call: (transaction, content, revision) =>
+      transaction.raw('select app_private.request_changes_by_portal_approval(?, ?::uuid, ?::integer, ?)', [world.sessionHash, content, revision, COMMENT])
+  };
+};
+
+const request = async (door: Door, content: string, revision = 1): Promise<void> => {
+  const transaction = await door.open();
+  try {
+    await door.call(transaction, content, revision);
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+};
+
+const publish = async (content: string): Promise<void> => {
+  await w.asUser(ids.adminA, async (t) => t.raw('select app_private.publish_content(?::uuid, ?::date)', [content, await a.day(0)]));
+};
 
 /**
  * Runs `holder` in a transaction that is open, starts `waiting` while it is, and commits the holder once `waiting` is blocked by it. Returns what
- * the waiting call answered.
+ * the waiting call answered: undefined when it went through, the error otherwise.
  */
 const heldWhile = async (
-  user: string,
+  open: () => Promise<Knex.Transaction>,
   holder: (transaction: Knex.Transaction) => Promise<unknown>,
   waiting: () => Promise<unknown>
 ): Promise<unknown> => {
-  const first = await w.openTransactionAs(user);
+  const first = await open();
   const pid = await backendPid(first);
   let second: Promise<unknown> | undefined;
   try {
     await holder(first);
     second = settle(waiting());
     await waitForBackendsBlockedBy(owner(), pid);
-  } finally {
-    await first.commit();
+  } catch (error) {
+    await first.rollback();
+    await second;
+    throw error;
   }
+  await first.commit();
   return second;
 };
 
-describe('the request for changes on an approved content against a publication', () => {
+const byAgency = (): Promise<Knex.Transaction> => w.openTransactionAs(ids.productionA);
+const today = 'app_private.sao_paulo_date(pg_catalog.now())';
+
+describe.each([
+  ['the portal', async (): Promise<Door> => portalDoor()],
+  ['the approval link', linkDoor]
+] as const)('%s: a request for changes on an approved content, against what else moves the content', (_name, make) => {
+  let door: Door;
+  const approved = async (offset: number): Promise<string> => door.seedOn(await a.day(offset));
+
+  beforeAll(async () => {
+    door = await make();
+  }, 120_000);
+
   it('finds the content published when the publication held the row first: A0062, and no comment, thread or notification', async () => {
     const content = await approved(3);
 
-    const answer = await heldWhile(
-      ids.adminA,
-      async (t) => t.raw('select app_private.publish_content(?::uuid, ?::date)', [content, await a.day(0)]),
-      () => requestAs(ids.portalA1, content)
-    );
+    const answer = await heldWhile(() => w.openTransactionAs(ids.adminA), async (t) => t.raw('select app_private.publish_content(?::uuid, ?::date)', [content, await a.day(0)]), () => request(door, content));
 
     expect(answer).toMatchObject({ code: 'A0062' });
     expect(await rowOf(content)).toMatchObject({ status: 'published' });
@@ -93,24 +157,18 @@ describe('the request for changes on an approved content against a publication',
   it('makes the publication that waited find the content in adjustment when the request held the row first: A0062, and one comment', async () => {
     const content = await approved(3);
 
-    const answer = await heldWhile(ids.portalA1, (t) => requestIn(t, content), () => publishAs(ids.adminA, content));
+    const answer = await heldWhile(door.open, (t) => door.call(t, content, 1), () => publish(content));
 
     expect(answer).toMatchObject({ code: 'A0062' });
     expect(await rowOf(content)).toMatchObject({ status: 'adjusting', published_on: null, published_at: null, approved_by: null });
-    expect(await commentsOf(content)).toEqual([{ body: COMMENT, author_user_id: ids.portalA1 }]);
+    expect(await commentsOf(content)).toEqual([{ body: COMMENT }]);
     expect(await notificationsOf(content)).toEqual([{ kind: 'content_changes_requested' }]);
   });
-});
 
-describe('the request for changes on an approved content against a change of the planned day', () => {
-  it('reads the planned day after the wait: the agency moved it to today and held the row, so the request is refused', async () => {
+  it('reads the planned day after the wait: the agency moved it to today and held the row, so the request is refused and writes nothing', async () => {
     const content = await approved(3);
 
-    const answer = await heldWhile(
-      ids.productionA,
-      (t) => t('contents').where({ id: content }).update({ publish_on: t.raw('app_private.sao_paulo_date(pg_catalog.now())') }),
-      () => requestAs(ids.portalA1, content)
-    );
+    const answer = await heldWhile(byAgency, (t) => t('contents').where({ id: content }).update({ publish_on: t.raw(today) }), () => request(door, content));
 
     expect(answer).toMatchObject({ code: 'A0062' });
     expect(await rowOf(content)).toMatchObject({ status: 'approved' });
@@ -121,83 +179,74 @@ describe('the request for changes on an approved content against a change of the
   it('reads the planned day after the wait, the other way: the agency moved it from today to tomorrow, so the request that waited is accepted', async () => {
     const content = await approved(0);
 
-    const answer = await heldWhile(
-      ids.productionA,
-      (t) => t('contents').where({ id: content }).update({ publish_on: t.raw('app_private.sao_paulo_date(pg_catalog.now()) + 1') }),
-      () => requestAs(ids.portalA1, content)
-    );
+    const answer = await heldWhile(byAgency, (t) => t('contents').where({ id: content }).update({ publish_on: t.raw(`${today} + 1`) }), () => request(door, content));
 
-    expect(answer).not.toBeInstanceOf(Error);
+    expect(answer).toBeUndefined();
     expect(await rowOf(content)).toMatchObject({ status: 'adjusting' });
-    expect(await commentsOf(content)).toHaveLength(1);
+    expect(await commentsOf(content)).toEqual([{ body: COMMENT }]);
   });
 
-  it('takes no lock the edit does not: an edit of the title that holds the row and the share lock of the client does not deadlock with the request', async () => {
+  it('takes no lock the edit does not: an edit of the title that holds the row does not deadlock with the request', async () => {
     const content = await approved(3);
 
-    const answer = await heldWhile(
-      ids.productionA,
-      (t) => t('contents').where({ id: content }).update({ title: 'Título novo' }),
-      () => requestAs(ids.portalA1, content)
-    );
+    const answer = await heldWhile(byAgency, (t) => t('contents').where({ id: content }).update({ title: 'Título novo' }), () => request(door, content));
 
-    expect(answer).not.toBeInstanceOf(Error);
+    expect(answer).toBeUndefined();
     expect(await rowOf(content)).toMatchObject({ status: 'adjusting', title: 'Título novo' });
   });
-});
 
-describe('the request for changes on an approved content against another decision of the client or the agency', () => {
   it('lets only one of two requests at the same moment move the content: the one that waited finds it in adjustment, with one comment and one notification', async () => {
     const content = await approved(3);
 
-    const answer = await heldWhile(ids.portalA1, (t) => requestIn(t, content), () => requestAs(ids.portalA1Second, content));
+    const answer = await heldWhile(door.open, (t) => door.call(t, content, 1), () => request(door, content));
 
     expect(answer).toMatchObject({ code: 'A0062' });
     expect(await rowOf(content)).toMatchObject({ status: 'adjusting' });
-    expect(await commentsOf(content)).toEqual([{ body: COMMENT, author_user_id: ids.portalA1 }]);
+    expect(await commentsOf(content)).toEqual([{ body: COMMENT }]);
     expect(await notificationsOf(content)).toEqual([{ kind: 'content_changes_requested' }]);
-  });
-
-  it('judges a request that waited for the client undoing the approval as one on a content awaiting approval, which is the old rule and is accepted', async () => {
-    const content = await approved(0);
-
-    const answer = await heldWhile(
-      ids.portalA1,
-      (t) => t.raw('select app_private.withdraw_content_approval(?::uuid, ?::integer)', [content, 1]),
-      () => requestAs(ids.portalA1Second, content)
-    );
-
-    expect(answer).not.toBeInstanceOf(Error);
-    expect(await rowOf(content)).toMatchObject({ status: 'adjusting', approved_by: null });
-    expect(await commentsOf(content)).toHaveLength(1);
   });
 
   it('refuses the revision the person saw when the agency edited the caption, which sent the approved content back to waiting with a new revision, and writes nothing', async () => {
     const content = await approved(3);
 
-    const answer = await heldWhile(
-      ids.productionA,
-      (t) => t('contents').where({ id: content }).update({ caption: 'Legenda nova' }),
-      () => requestAs(ids.portalA1, content, 1)
-    );
+    const answer = await heldWhile(byAgency, (t) => t('contents').where({ id: content }).update({ caption: 'Legenda nova' }), () => request(door, content, 1));
 
     expect(answer).toMatchObject({ code: 'A0063' });
     expect(await rowOf(content)).toMatchObject({ status: 'awaiting_approval', revision: 2 });
     expect(await threadsOf(content)).toEqual([]);
   });
+});
 
-  it('waits for the archiving of the client, then answers "not found" without moving the approved content or writing the comment', async () => {
-    const content = await approved(3, ids.clientA2);
+describe('the request for changes of the portal on an approved content, against the client and its own account', () => {
+  const door = portalDoor();
+
+  it('judges a request that waited for the client undoing the approval as one on a content awaiting approval, which is the old rule and is accepted', async () => {
+    const content = await door.seedOn(await a.day(0));
 
     const answer = await heldWhile(
-      ids.adminA,
+      () => w.openTransactionAs(ids.portalA1),
+      (t) => t.raw('select app_private.withdraw_content_approval(?::uuid, ?::integer)', [content, 1]),
+      () => w.asUser(ids.portalA1Second, (t) => t.raw('select app_private.request_content_changes(?::uuid, ?::integer, ?::text)', [content, 1, COMMENT]))
+    );
+
+    expect(answer).toBeUndefined();
+    expect(await rowOf(content)).toMatchObject({ status: 'adjusting', approved_by: null });
+    expect(await commentsOf(content)).toEqual([{ body: COMMENT }]);
+  });
+
+  it('waits for the archiving of the client, which cancels its contents, then answers "not found" and writes no comment', async () => {
+    const content = await w.seedContent(ids.clientA2, { status: 'approved', publishOn: await a.day(3) });
+    await attachVideo(content, ids.clientA2);
+
+    const answer = await heldWhile(
+      () => w.openTransactionAs(ids.adminA),
       (t) => t.raw('select app_private.archive_client(?::uuid)', [ids.clientA2]),
-      () => requestAs(ids.portalA2, content)
+      () => w.asUser(ids.portalA2, (t) => t.raw('select app_private.request_content_changes(?::uuid, ?::integer, ?::text)', [content, 1, COMMENT]))
     );
 
     try {
       expect(answer).toMatchObject({ code: 'A0060' });
-      expect(await rowOf(content)).not.toMatchObject({ status: 'adjusting' });
+      expect(await rowOf(content)).toMatchObject({ status: 'cancelled' });
       expect(await threadsOf(content)).toEqual([]);
       expect(await notificationsOf(content)).toEqual([]);
     } finally {
@@ -206,23 +255,26 @@ describe('the request for changes on an approved content against another decisio
   });
 });
 
-describe('the clock of the day is the one of the moment the request gets the lock', () => {
-  it('asks the day of São Paulo at an instant after the wait, not at the one the transaction began, so a request that waited across midnight is judged by the new day', async () => {
-    const content = await w.seedContent(ids.clientA1, { status: 'approved', publishOn: '2031-03-14' });
-    const holder = await w.openTransactionAs(ids.productionA);
+describe.each([
+  ['the portal', async (): Promise<Door> => portalDoor()],
+  ['the approval link', linkDoor]
+] as const)('%s: the clock of the day is the one of the moment the request gets the lock', (_name, make) => {
+  let door: Door;
+
+  beforeAll(async () => {
+    door = await make();
+  }, 120_000);
+
+  it('asks the day of São Paulo at an instant after the wait, not at the one the transaction began', async () => {
+    const content = await door.seedOn('2031-03-14');
+    const holder = await byAgency();
     const pid = await backendPid(holder);
     let released = '';
     let asking: ReturnType<typeof callAtInstant<boolean>> | undefined;
 
     try {
       await holder('contents').where({ id: content }).update({ title: 'Título novo' });
-      asking = callAtInstant(
-        owner(),
-        '2031-03-13T12:00:00-03:00',
-        ids.portalA1,
-        (t) => requestIn(t, content),
-        (t) => askedAtOrAfter(t, released)
-      );
+      asking = callAtInstant(owner(), '2031-03-13T12:00:00-03:00', door.actor, (t) => door.call(t, content, 1), (t) => askedAtOrAfter(t, released));
       void asking.catch(() => undefined);
       await waitForBackendsBlockedBy(owner(), pid);
       released = (await holder.raw<{ rows: Array<{ now: string }> }>('select pg_catalog.clock_timestamp()::pg_catalog.text as now')).rows[0]!.now;
@@ -233,23 +285,17 @@ describe('the clock of the day is the one of the moment the request gets the loc
     expect(await asking).toEqual({ ok: true, read: true });
   });
 
-  it('is judged at the clock of the wait for a request that began on the eve and got the lock on the planned day: the day moved while it waited', async () => {
-    const content = await w.seedContent(ids.clientA1, { status: 'approved', publishOn: '2031-03-14' });
-    const holder = await w.openTransactionAs(ids.productionA);
+  it('judges by the clock of the wait a request that began on the eve and got the lock on the planned day: the day moved while it waited', async () => {
+    const content = await door.seedOn('2031-03-14');
+    const holder = await byAgency();
     const pid = await backendPid(holder);
     let asking: Promise<unknown> | undefined;
 
     try {
       await holder('contents').where({ id: content }).update({ title: 'Título novo' });
-      // The stand-in answers the eve for the first 2 seconds after the transaction began and the planned day after that: the instant the
-      // function asks is shifted by the time the transaction has been running, so the wait is what moves the day.
-      asking = callAtInstant(
-        owner(),
-        '2031-03-13T23:59:59-03:00',
-        ids.portalA1,
-        (t) => requestIn(t, content),
-        async () => true
-      );
+      // The stand-in answers the day of the instant it is asked about, moved by the time the transaction has run: the eve at 23:59:59 for a
+      // function that asks at once, and the planned day for one that asks after the wait.
+      asking = callAtInstant(owner(), '2031-03-13T23:59:59-03:00', door.actor, (t) => door.call(t, content, 1), async () => true);
       void settle(asking);
       await waitForBackendsBlockedBy(owner(), pid);
       await new Promise((resolve) => setTimeout(resolve, 2_500));

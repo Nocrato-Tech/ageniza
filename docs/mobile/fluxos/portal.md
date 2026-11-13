@@ -26,7 +26,7 @@ No detalhe de um conteúdo aprovado, **Desfazer aprovação** abre uma confirma�
 | `GET` | `…/contents/:contentId/sender-photo` | a foto de quem da agência enviou a rodada do post, como a imagem (não é JSON); `404` sem foto ou sem acesso |
 | `POST` | `…/contents/:contentId/approve` | aprova; o corpo aceita o `note` opcional (recado à agência, até 500 caracteres); com recado em conteúdo que já está aprovado, `409` `CONTENT_ALREADY_APPROVED` |
 | `GET` | `…/contents/progress` | o progresso do mês para a "Boa notícia" do Início: `{ data: { month, approved, total, next } }`; `month` é `AAAA-MM` (o mês de hoje em São Paulo), `total` são os conteúdos do mês que não foram cancelados e `approved`, os aprovados e publicados; `next` é o próximo post a ir ao ar (`{ id, title, publishOn, publishAtTime }`, com `publishAtTime` `null` se o aprovado não tem hora) ou `null` quando não há |
-| `POST` | `…/contents/:contentId/request-changes` | pede ajuste (comentário obrigatório) |
+| `POST` | `…/contents/:contentId/request-changes` | pede ajuste (comentário obrigatório); vale para o post aguardando aprovação e para o aprovado até a véspera da data de publicação; fora disso, `409` `CONTENT_NOT_AWAITING_APPROVAL` |
 | `GET` | `…/threads` | conversas de um assunto |
 | `POST` | `…/threads` | abre uma conversa com o primeiro comentário |
 | `GET` | `…/threads/:threadId/comments` | comentários |
@@ -64,6 +64,7 @@ No detalhe de um conteúdo aprovado, **Desfazer aprovação** abre uma confirma�
 **Regras**
 - Uma pessoa basta para aprovar, e fica registrado quem aprovou. Quando duas aprovam juntas, vale a primeira; a segunda, se levou um recado, recebe o `409` acima (o recado dela não é gravado).
 - Aprovar leva o conteúdo a "Aprovado". Pedir ajuste leva a "em ajuste", e a agência reenvia depois de ajustar.
+- **Pedir ajuste num post já aprovado (2026-11-13, [decisão](../../business/decisions/2026-11-13-o-cliente-pede-ajuste-depois-de-aprovar-ate-a-vespera-da-publicacao.md)).** O post aprovado mostra "Pedir ajuste" enquanto a data de publicação (`publishOn`) é **depois de hoje**, no dia de São Paulo; no dia da publicação, ou depois, o botão não aparece (a hora de publicação não conta: só o dia). É a mesma chamada, `request-changes` com a `revision` lida e o comentário obrigatório. O post vai a "em ajuste" e a aprovação cai: mostre-o como um post em ajuste, sem "Aprovado", e o recado que o cliente deixou ao aprovar continua na conversa. Se o dia virou entre abrir o post e enviar, ou se a agência mudou a data para hoje, a resposta é `409` `CONTENT_NOT_AWAITING_APPROVAL` com a mensagem "Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação.": mostre a mensagem, recarregue o post e **não repita a chamada**. Se a agência mudou a legenda, a mídia, a capa ou o formato, o post voltou a aguardar com uma revisão nova, e a chamada com a revisão antiga responde `409` `CONTENT_REVISION_CHANGED`. O pedido de ajuste do link de aprovação do e-mail segue a mesma regra.
 - Se a agência mudar a legenda, a mídia, a capa ou o formato de um conteúdo aprovado, ele volta a esperar aprovação.
 
 **O que o portal vê de cada conteúdo**

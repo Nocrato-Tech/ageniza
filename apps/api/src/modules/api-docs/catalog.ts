@@ -2465,13 +2465,14 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     module: 'contents',
     summary: 'Pede ajuste de um conteúdo, no portal',
     description: [
-      'Qualquer pessoa ativa do portal do cliente pede ajuste de um conteúdo que aguarda aprovação: o conteúdo passa a "em ajuste" e o',
+      'Qualquer pessoa ativa do portal do cliente pede ajuste de um conteúdo que aguarda aprovação, ou de um já aprovado até a véspera da',
+      'publicação (o dia da publicação, em São Paulo, já não aceita): o conteúdo passa a "em ajuste", a aprovação cai e o',
       '`comment`, obrigatório, entra na conversa do conteúdo como comentário do cliente (a conversa é aberta se ainda não existe, e é a',
       'mesma que a agência abre). O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de',
       'formato, nunca vazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. Quem',
-      'pediu é a pessoa da sessão. `revision` é a revisão que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de "aguardando',
-      'aprovação", inclusive um conteúdo que já está em ajuste: `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo cancelado, de outro',
-      'cliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404.'
+      'pediu é a pessoa da sessão. `revision` é a revisão que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Um conteúdo aprovado cuja',
+      'publicação é hoje ou já passou, um que já está em ajuste e um publicado: `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo cancelado, de',
+      'outro cliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -2487,7 +2488,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
-      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação recebe um pedido de ajuste.' },
+      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação.' },
       { status: 409, code: 'CONTENT_REVISION_CHANGED' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
@@ -4978,8 +4979,10 @@ path: '/agencies/:agencyId/roles',
       'como comentário do cliente (a conversa é aberta se ainda não existe). O comentário e a abertura da conversa são gravados **como aquele',
       'acesso**. O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de formato, nunca',
       'vazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. `revision` é a revisão',
-      'que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de "aguardando aprovação": `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do',
-      'lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto: `404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.'
+      'que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Vale para um conteúdo aguardando aprovação e para um aprovado até a véspera da',
+      'publicação, como no portal: o dia da publicação (em São Paulo), um conteúdo já em ajuste e um publicado respondem',
+      '`409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto:',
+      '`404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.'
     ].join('\n'),
     access: 'Cookie da sessão de aprovação',
     permission: null,
@@ -4995,7 +4998,7 @@ path: '/agencies/:agencyId/roles',
       { status: 400, code: 'CONTENT_COMMENT_INVALID' },
       { status: 404, code: 'APPROVAL_LINK_INVALID' },
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
-      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação recebe um pedido de ajuste.' },
+      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação.' },
       { status: 409, code: 'CONTENT_REVISION_CHANGED' },
       { status: 409, code: 'TRY_AGAIN' },
       { status: 429, code: 'RATE_LIMITED' }
