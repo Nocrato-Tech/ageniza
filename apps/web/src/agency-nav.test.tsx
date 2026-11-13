@@ -35,6 +35,10 @@ const makeFetch = (permissions: readonly string[], gate?: Promise<void>, logoutG
     const method = init?.method ?? 'GET';
     calls.push(`${method} ${new URL(url).pathname}`);
     if (url.endsWith('/auth/session')) return json(sessionBody);
+    if (url.endsWith('/auth/sessions')) {
+      const row = (id: string, current: boolean) => ({ id, current, browser: 'Chrome', os: 'Windows', city: null, lastUsedAt: '2026-11-11T01:30:00.000Z', createdAt: '2026-11-10T01:30:00.000Z' });
+      return json({ sessions: [row('44444444-4444-4444-8444-444444444444', true), row('55555555-5555-4555-8555-555555555555', false)] });
+    }
     if (url.endsWith('/health')) return health();
     if (url.endsWith(`/agencies/${AGENCY}/me`)) {
       await gate;
@@ -380,7 +384,7 @@ describe('the phone shell (390px)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Conta de Pessoa' }));
     const menu = await screen.findByRole('menu', { name: 'Menu da conta' });
     expect(within(menu).getByRole('group', { name: 'Agência logada' })).toBeTruthy();
-    for (const name of ['Pedir troca de e-mail', 'Sair', 'Sair de todas as sessões']) expect(within(menu).getByRole('menuitem', { name })).toBeTruthy();
+    for (const name of ['Pedir troca de e-mail', 'Sair', 'Minha conta', 'Sair de todas as sessões']) expect(await within(menu).findByRole('menuitem', { name })).toBeTruthy();
   });
 
   it('opens Ajuda from the top bar with the status of the system', async () => {

@@ -1,0 +1,249 @@
+/* --- Conta e sessões (specs/auth.md section 14): the same page under the agency and the portal --- */
+
+.account-page {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+  max-width: 52rem;
+}
+
+.account-page__head {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.account-page__head h1 {
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.account-page__eyebrow {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.account-page__lead {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+.account-page__body {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.account-card,
+.account-danger {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.account-card h2,
+.account-danger h2 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.account-card__person {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.account-card__text {
+  min-width: 0;
+}
+
+.account-card__name,
+.account-card__email {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.account-card__name {
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.account-card__email {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.account-card__skeleton {
+  height: 3rem;
+}
+
+.account-card__action {
+  justify-self: start;
+}
+
+.account-sessions__head {
+  margin-bottom: var(--space-3);
+}
+
+.account-sessions__head h2 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.account-sessions__head p {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.account-sessions__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-sessions__skeleton {
+  height: 5rem;
+  border-radius: var(--radius-lg);
+}
+
+.account-sessions__notice,
+.account-sessions__error {
+  margin: 0 0 var(--space-3);
+  font: var(--body-md);
+}
+
+.account-sessions__notice {
+  color: var(--text-secondary);
+}
+
+.account-sessions__error {
+  color: var(--text-danger);
+}
+
+.account-sessions__hint {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.account-session {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  align-items: center;
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.account-session--current {
+  border: 1.5px solid var(--color-indigo-200);
+  background: var(--color-indigo-50);
+}
+
+.account-session__thumb {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+}
+
+.account-session--current .account-session__thumb {
+  background: var(--color-white);
+}
+
+.account-session__thumb svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.account-session__text {
+  min-width: 0;
+}
+
+.account-session__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.account-session__meta {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.account-session__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--status-production-bg);
+  color: var(--status-production-text);
+  font: var(--caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.account-session__tag svg {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  stroke-width: 2.4;
+}
+
+.account-danger {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-color: var(--color-red-100);
+}
+
+.account-danger__text p {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+@media (max-width: 47.99rem) {
+  .account-session {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .account-session__action {
+    grid-column: 1 / -1;
+  }
+
+  .account-card,
+  .account-danger {
+    padding: var(--space-4);
+  }
+
+  .account-danger {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

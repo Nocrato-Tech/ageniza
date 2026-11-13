@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeftRight, ChevronDown, ChevronsUpDown, Crown, LogOut, Mail, Plus, Route, WalletCards } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, ChevronsUpDown, Crown, LogOut, Mail, Plus, Route, UserRound, WalletCards } from 'lucide-react';
 
 import {
   AuthLogoutAllResponseSchema,
@@ -13,6 +13,7 @@ import {
 } from '@ageniza/contracts';
 import { Avatar, Button, ConfirmDialog, Menu, MenuItem, MenuSeparator, Skeleton } from '@ageniza/ui';
 
+import { useActiveSessions } from './account-sessions.js';
 import { useAuthSession, useOptionalAuthSessionStore, type AuthSessionStore } from './auth.js';
 import { contextDestination, targetFromDestination, type ContextTarget } from './context-destination.js';
 import { contextDescription, contextKey, contextTitle } from './context-labels.js';
@@ -94,6 +95,10 @@ export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', on
     enabled: menuOpen && user !== null
   });
 
+  // The same query as the Conta page: "Sair de todas" is offered only with 2 or more sessions, and on a failure the menu keeps only "Sair".
+  const sessions = useActiveSessions(menuOpen && user !== null);
+  const canLogoutAll = sessions.data !== undefined && sessions.data.sessions.length >= 2;
+
   const switchContext = useMutation({
     mutationFn: (context: Context) => httpClient.request({
       path: '/me/last-context',
@@ -112,6 +117,10 @@ export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', on
   });
 
   const currentTarget = targetFromDestination(location.pathname);
+  // The Conta page lives under the area the person is in; outside one (the context list) there is no page to open.
+  const accountTo = currentTarget === null
+    ? null
+    : currentTarget.type === 'agency' ? `/agencia/${currentTarget.agencyId}/conta` : `/portal/${currentTarget.clientId}/conta`;
 
   // The marker is spent on arrival, so a reload or a later visit to the same entry does not reopen the dialog.
   useEffect(() => {
@@ -207,15 +216,18 @@ export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', on
           {contexts.data?.canCreateAgency === true && (
             <MenuItem icon={<Plus />} onClick={() => { setCreateAgencyOpen(true); }}>{CREATE_AGENCY_LABEL}</MenuItem>
           )}
-          {subscriptionTo !== undefined && <MenuItem icon={<WalletCards />} onClick={() => { navigate(subscriptionTo); }}>Assinatura</MenuItem>}
+          {accountTo !== null && <MenuItem icon={<UserRound />} onClick={() => { navigate(accountTo); }}>Minha conta</MenuItem>}
+          {subscriptionTo !== undefined &&<MenuItem icon={<WalletCards />} onClick={() => { navigate(subscriptionTo); }}>Assinatura</MenuItem>}
           {onReviewTour !== undefined && <MenuItem icon={<Route />} onClick={onReviewTour}>Rever o tour</MenuItem>}
           <MenuItem icon={<Mail />} onClick={() => { setEmailChangeOpen(true); }}>{emailChangeLabel}</MenuItem>
           <MenuSeparator />
           <MenuItem icon={<LogOut />} onClick={() => { void startLogout('logout'); }}>Sair</MenuItem>
-          <MenuSeparator />
-          <MenuItem variant='destructive' icon={<LogOut />} onClick={() => { setFailedAction(null); setConfirmOpen(true); }}>
-            {logoutAllLabel}
-          </MenuItem>
+          {canLogoutAll && <>
+            <MenuSeparator />
+            <MenuItem variant='destructive' icon={<LogOut />} onClick={() => { setFailedAction(null); setConfirmOpen(true); }}>
+              {logoutAllLabel}
+            </MenuItem>
+          </>}
         </> : <>
           <MenuItem onClick={(event) => { event.preventDefault(); setPanel('root'); }}>
             <span aria-hidden='true'>{'\u2039'}</span> {switchLabel}

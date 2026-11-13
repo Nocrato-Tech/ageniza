@@ -81,6 +81,10 @@ const makeWorld = (scenario: Scenario = {}) => {
     const method = init?.method ?? 'GET';
     calls.push(`${method} ${path}`);
     if (path.endsWith('/auth/session')) return json({ user: person, session: sessionBody.session });
+    if (path.endsWith('/auth/sessions')) {
+      const row = (id: string, current: boolean) => ({ id, current, browser: 'Chrome', os: 'Windows', city: null, lastUsedAt: '2026-11-11T01:30:00.000Z', createdAt: '2026-11-10T01:30:00.000Z' });
+      return json({ sessions: [row('44444444-4444-4444-8444-444444444444', true), row('55555555-5555-4555-8555-555555555555', false)] });
+    }
     if (path.endsWith('/auth/logout') && method === 'POST') {
       return scenario.logoutStatus === 401
         ? json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' } }, 401)
@@ -721,7 +725,7 @@ ${selector} {`);
     renderPortal(world.impl);
     await tour(WELCOME);
     fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
-    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: /todas as sessões/i }));
+    fireEvent.click(await within(await screen.findByRole('menu')).findByRole('menuitem', { name: /todas as sessões/i }));
     const confirm = await screen.findByRole('dialog', { name: /todas as sessões/i });
     fireEvent.keyDown(within(confirm).getByRole('button', { name: 'Cancelar' }), { key: 'Escape' });
 
