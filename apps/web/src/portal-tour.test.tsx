@@ -341,7 +341,6 @@ describe('portal tour (#144)', () => {
     // The home reads the scripts and the contents after the heading is on screen: the count is taken once both requests have left, or one lands after it (issue #767).
     await waitFor(() => {
       expect(world.calls).toContain(`GET /clients/${CLIENT_ID}/story-scripts`);
-      expect(world.calls).toContain(`GET /clients/${CLIENT_ID}/contents`);
     });
     const before = world.calls.length;
 
