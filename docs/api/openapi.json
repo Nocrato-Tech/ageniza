@@ -19072,7 +19072,7 @@
       "post": {
         "operationId": "requestPortalContentChanges",
         "summary": "Pede ajuste de um conteúdo, no portal",
-        "description": "Qualquer pessoa ativa do portal do cliente pede ajuste de um conteúdo que aguarda aprovação: o conteúdo passa a \"em ajuste\" e o\n`comment`, obrigatório, entra na conversa do conteúdo como comentário do cliente (a conversa é aberta se ainda não existe, e é a\nmesma que a agência abre). O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de\nformato, nunca vazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. Quem\npediu é a pessoa da sessão. `revision` é a revisão que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de \"aguardando\naprovação\", inclusive um conteúdo que já está em ajuste: `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo cancelado, de outro\ncliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "description": "Qualquer pessoa ativa do portal do cliente pede ajuste de um conteúdo que aguarda aprovação, ou de um já aprovado até a véspera da\npublicação (o dia da publicação, em São Paulo, já não aceita): o conteúdo passa a \"em ajuste\", a aprovação cai e o\n`comment`, obrigatório, entra na conversa do conteúdo como comentário do cliente (a conversa é aberta se ainda não existe, e é a\nmesma que a agência abre). O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de\nformato, nunca vazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. Quem\npediu é a pessoa da sessão. `revision` é a revisão que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Um conteúdo aprovado cuja\npublicação é hoje ou já passou, um que já está em ajuste e um publicado: `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo cancelado, de\noutro cliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404.\n\nAcesso: Sessão + vínculo com o cliente.",
         "tags": [
           "contents"
         ],
@@ -19229,7 +19229,7 @@
             }
           },
           "409": {
-            "description": "CONTENT_NOT_AWAITING_APPROVAL: Só um conteúdo aguardando aprovação recebe um pedido de ajuste. | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "description": "CONTENT_NOT_AWAITING_APPROVAL: Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação. | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19238,7 +19238,7 @@
                 "example": {
                   "error": {
                     "code": "CONTENT_NOT_AWAITING_APPROVAL",
-                    "message": "Só um conteúdo aguardando aprovação recebe um pedido de ajuste."
+                    "message": "Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
@@ -32936,7 +32936,7 @@
       "post": {
         "operationId": "requestPortalApprovalContentChanges",
         "summary": "Pede ajuste de um conteúdo do lote, pelo link",
-        "description": "O mesmo efeito do pedido de ajuste no portal: o conteúdo passa a \"em ajuste\" e o `comment`, obrigatório, entra na conversa do conteúdo\ncomo comentário do cliente (a conversa é aberta se ainda não existe). O comentário e a abertura da conversa são gravados **como aquele\nacesso**. O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de formato, nunca\nvazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. `revision` é a revisão\nque a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de \"aguardando aprovação\": `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do\nlote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto: `404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.\n\nAcesso: Cookie da sessão de aprovação.",
+        "description": "O mesmo efeito do pedido de ajuste no portal: o conteúdo passa a \"em ajuste\" e o `comment`, obrigatório, entra na conversa do conteúdo\ncomo comentário do cliente (a conversa é aberta se ainda não existe). O comentário e a abertura da conversa são gravados **como aquele\nacesso**. O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de formato, nunca\nvazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. `revision` é a revisão\nque a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Vale só para um conteúdo aguardando aprovação, em qualquer data: o link não pede\najuste de um aprovado (isso é do portal, com conta). Um conteúdo aprovado, em ajuste, em produção ou publicado responde\n`409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto:\n`404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.\n\nAcesso: Cookie da sessão de aprovação.",
         "tags": [
           "approval-link"
         ],

@@ -179,6 +179,7 @@ Sem mídia, sem aprovação, sem comentário no MVP.
 em produção ─────────▶ aguardando aprovação   # conteudo.operar; exige mídia completa para o formato e todas as subtarefas aprovadas
 aguardando aprovação ▶ aprovado               # pessoa ativa do portal; ou conteudo.aprovar_pela_agencia com motivo
 aguardando aprovação ▶ em ajuste              # pessoa ativa do portal; exige comentário
+aprovado ────────────▶ em ajuste              # pessoa ativa do portal; exige comentário e revisão lida; só até a véspera da data de publicação; a aprovação cai
 em ajuste ───────────▶ aguardando aprovação   # conteudo.operar (reenviar)
 aprovado ────────────▶ publicado              # conteudo.publicar; data real não futura
 publicado ───────────▶ aprovado               # conteudo.publicar; só no mesmo dia
@@ -188,6 +189,7 @@ aprovado ────────────▶ aguardando aprovação   # auto
 aprovado ────────────▶ aguardando aprovação   # pessoa ativa do portal desfaz a aprovação; exige revisão lida, antes de publicar (#850)
 ```
 
+- **O cliente pede ajuste no aprovado até a véspera da publicação** (2026-11-13, [`2026-11-13-o-cliente-pede-ajuste-depois-de-aprovar-ate-a-vespera-da-publicacao`](../docs/business/decisions/2026-11-13-o-cliente-pede-ajuste-depois-de-aprovar-ate-a-vespera-da-publicacao.md)): vale enquanto `publish_on` é depois de hoje em São Paulo; no dia da publicação, ou depois, é recusado. O conteúdo aguardando aprovação aceita o pedido em qualquer data. O link de aprovação do e-mail não muda: só decide o conteúdo que aguarda aprovação (um aprovado responde `409`).
 - **Agência e portal dizem "Aprovado"** (2026-11-11, [`2026-11-11-agendado-e-um-estado-derivado-de-aprovado-com-data-e-hora-futuras`](../docs/business/decisions/2026-11-11-agendado-e-um-estado-derivado-de-aprovado-com-data-e-hora-futuras.md), que substitui o "pronto para publicar" da agência).
 - **Agendado** é derivado: aprovado, com hora de publicação (`publish_at_time`) e o instante `publish_on` + hora (São Paulo) ainda no futuro. Sem hora, é só Aprovado. Não há estado novo nem publicação automática; o portal não usa a palavra Agendado.
 - Mudar data, hora, título, responsável ou subtarefas **mantém** a aprovação. Mover de data vale em todos os estados menos publicado e cancelado.

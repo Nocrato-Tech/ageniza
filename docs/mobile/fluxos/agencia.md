@@ -309,6 +309,7 @@ Formatos: `image`, `carousel`, `reels`, `long_video` e `vsl`. Plataforma: `insta
 | em produção (`in_production`) | aguardando aprovação | `conteudo.operar` | mídia completa para o formato e todas as subtarefas aprovadas |
 | aguardando aprovação (`awaiting_approval`) | aprovado | pessoa do portal, link de aprovação, ou `conteudo.aprovar_pela_agencia` com motivo | — |
 | aguardando aprovação | em ajuste (`adjusting`) | pessoa do portal ou link de aprovação | comentário obrigatório |
+| aprovado | em ajuste | pessoa do portal (o link de aprovação não faz isto) | comentário obrigatório; só até a véspera da data de publicação, no dia de São Paulo ([decisão de 2026-11-13](../../business/decisions/2026-11-13-o-cliente-pede-ajuste-depois-de-aprovar-ate-a-vespera-da-publicacao.md)); a aprovação cai (quem aprovou, quando e o motivo da aprovação pela agência) |
 | em ajuste | aguardando aprovação | `conteudo.operar` | reenviar |
 | aprovado (`approved`) | publicado (`published`) | `conteudo.publicar` | data real, não futura |
 | publicado | aprovado | `conteudo.publicar` | só no mesmo dia |
@@ -325,6 +326,7 @@ stateDiagram-v2
     producao --> aguardando: mídia completa e subtarefas aprovadas
     aguardando --> aprovado: portal, link ou agência com motivo
     aguardando --> ajuste: comentário obrigatório
+    aprovado --> ajuste: o cliente pede ajuste até a véspera da publicação
     ajuste --> aguardando: reenvia
     aprovado --> aguardando: legenda, mídia, capa ou formato mudam
     aprovado --> publicado: data real, não futura
@@ -342,6 +344,7 @@ stateDiagram-v2
 - Prazo fora da faixa é `400 CONTENT_APPROVAL_DUE_INVALID`; recado em branco, longo ou com caractere invisível é `400 VALIDATION_ERROR` (o banco ainda responde `400 CONTENT_APPROVAL_NOTE_INVALID` como segunda barreira). Cancelar e desfazer a publicação continuam sem corpo.
 - **Envio em lote** (parte da aba Conteúdos do cliente, onde a pessoa marca os conteúdos; no Calendário Editorial não há mais o botão): de 1 a 30 conteúdos do mesmo cliente, cada um uma vez, com o mesmo `dueAt` e `note`. É tudo ou nada: um conteúdo que não pode ser enviado recusa o lote inteiro com o código do envio individual (`409 CONTENT_STATE`, `CONTENT_MEDIA_INCOMPLETE`, `CONTENT_MEDIA_NOT_CONFIRMED` ou `CONTENT_TASKS_NOT_APPROVED`). Conteúdo de outro cliente, de outra agência ou inexistente é `404 NOT_FOUND`; mais de 30, repetido ou lista vazia é `400 VALIDATION_ERROR`. A resposta traz `batchId` e os conteúdos como a lista do calendário os traz, já em "aguardando aprovação".
 - Reenviar depois do ajuste abre uma rodada nova, com o prazo e o recado do novo envio. Quando o cliente desfaz a aprovação, o conteúdo volta à **mesma rodada**, com o mesmo prazo e recado.
+- **O cliente pode pedir ajuste de um conteúdo já aprovado** até a véspera da data de publicação (a agência não vê botão nenhum: o que ela vê é o conteúdo aprovado passar a "em ajuste", com o comentário do cliente na conversa e a notificação "pediu ajuste" ao responsável, como no pedido de sempre). Quem aprovou e quando deixam de aparecer. A agência que muda a data de um aprovado para **hoje** impede o pedido a partir daí; mover para o dia seguinte o libera. Reenviar é o mesmo `submit` de sempre.
 - Repetir o mesmo envio (o mesmo prazo e o mesmo recado) de um conteúdo que já aguarda não muda nada e não é erro; pedir outro prazo ou recado para quem já aguarda é `409 CONTENT_STATE`.
 - O conteúdo e a lista do calendário trazem `approval`: `{ sentAt, dueAt, dueOn, note }` da rodada (`dueAt` é o prazo, o instante; `dueOn` é o dia de São Paulo desse instante, e `dueAt`, `dueOn` e `note` vêm `null` quando a rodada não os tem) enquanto o conteúdo aguarda aprovação, e `null` nos outros estados e no conteúdo que já aguardava antes das rodadas (sem data de envio e sem prazo; nada foi reescrito).
 - O cliente é avisado por e-mail no envio, com o prazo e o recado assinados pela agência, e recebe dois lembretes: "vence amanhã", na véspera do prazo, e "venceu", no dia seguinte. Saem às 9h de São Paulo, uma vez por rodada cada um, só para as pessoas ativas do portal daquele cliente e só enquanto o conteúdo ainda aguarda decisão. Não sai nada para cliente arquivado, agência suspensa ou em somente leitura, e não sai "vence amanhã" quando o envio foi feito na própria véspera do prazo. Os lembretes contam o **dia** de São Paulo do prazo; a hora do prazo não cria lembrete novo. No Início e no portal o estado do prazo usa a hora ("vence hoje às 18h", "vence em 2 dias", "venceu há 1 dia").

@@ -452,7 +452,7 @@ describe('the trigger holds the transitions of §4 for every writer (issue #249,
     ['in_production', 'adjusting'], ['in_production', 'approved'], ['in_production', 'published'],
     ['awaiting_approval', 'in_production'], ['awaiting_approval', 'published'],
     ['adjusting', 'in_production'], ['adjusting', 'approved'], ['adjusting', 'published'],
-    ['approved', 'in_production'], ['approved', 'adjusting'],
+    ['approved', 'in_production'],
     ['published', 'in_production'], ['published', 'awaiting_approval'], ['published', 'adjusting'], ['published', 'cancelled'],
     ['cancelled', 'awaiting_approval'], ['cancelled', 'adjusting'], ['cancelled', 'approved'], ['cancelled', 'published']
   ];
