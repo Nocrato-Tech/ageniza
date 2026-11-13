@@ -93,6 +93,7 @@
 @import './screens/plans.css';
 @import './screens/subscription-billing.css';
 @import './screens/subscription-notices.css';
+@import './screens/subscription-checkout.css';
 @import './screens/activation.css';
 @import './screens/milestones.css';
 @import './ui/stage.css';

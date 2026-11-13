@@ -23,16 +23,27 @@ const PLANS = [
 
 export interface SubscriptionWorld {
   /** `null`: the agency is in trial. */
-  subscription: null | { planKey: string; extraClients: number; extraStorageGib: number; cancelAtPeriodEnd?: boolean; graceEndsOn?: string | null; provider?: string; periodEnd?: string };
+  subscription: null | { planKey: string; extraClients: number; extraStorageGib: number; cancelAtPeriodEnd?: boolean; graceEndsOn?: string | null; provider?: string; periodEnd?: string; usedClients?: number };
   provider: 'simulado' | null;
   permissions: string[];
   plan: Record<string, unknown>;
   /** What the simulated provider answers; defaults to following the requested outcome. */
   paymentStatus?: 'confirmed' | 'declined' | 'error';
+  /** What the next payments answer, one per payment, before `paymentStatus` (or the requested outcome) takes over. */
+  paymentSequence?: Array<'confirmed' | 'declined' | 'error'>;
   quoteError?: boolean;
+  /** The test card: absent is an environment without one (404, as in production); `null` is "no card saved yet". */
+  testCard?: TestCardWorld | null;
+  /** What the PUT of the test card answers instead of saving: an HTTP status and code. */
+  testCardRefusal?: { status: number; code: string };
+  /** Every invoice, newest first; the fake pages them by 20. */
+  invoices?: InvoiceWorld[];
 }
 
-export interface Recorded { method: string; path: string; body: unknown; headers: Headers }
+export interface TestCardWorld { last4: string; expMonth: number; expYear: number; brand: 'test' }
+export interface InvoiceWorld { id: string; date: string; description: string; amountCents: number; status: 'paid' | 'declined' | 'open' | 'expired' }
+
+export interface Recorded { method: string; path: string; body: unknown; query: string; headers: Headers }
 
 export const ownerWorld = (over: Partial<SubscriptionWorld> = {}): SubscriptionWorld => ({
   subscription: { planKey: 'essencial', extraClients: 0, extraStorageGib: 0 },
@@ -71,7 +82,7 @@ const overview = (world: SubscriptionWorld) => {
       nextMonthlyCents: current.cancelAtPeriodEnd === true ? null : monthly,
       clientLimit: plan.clientLimit + current.extraClients,
       storageBytes: (plan.storageBytes / GIB + current.extraStorageGib) * GIB,
-      usedClients: 4,
+      usedClients: current.usedClients ?? 4,
       usedBytes: GIB,
       graceEndsOn: current.graceEndsOn ?? null
     },
@@ -93,7 +104,7 @@ const quoteOf = (world: SubscriptionWorld, body: { planKey: string; extraClients
   ];
   const prorated = effect === 'upgrade';
   return {
-    effect, monthlyCents: monthly, amountCents: effect === 'downgrade' ? 0 : monthly - currentMonthly, effectiveAt: '2026-11-10T01:30:00.000Z',
+    effect, monthlyCents: monthly, amountCents: effect === 'downgrade' ? 0 : prorated ? Math.round(((monthly - currentMonthly) * 20) / 30) : monthly - currentMonthly, effectiveAt: '2026-11-10T01:30:00.000Z',
     daysLeft: prorated ? 20 : null, periodDays: prorated ? 30 : null, lines
   };
 };
@@ -107,6 +118,7 @@ const chargeOf = (world: SubscriptionWorld, body: { planKey: string; extraClient
 export const makeSubscriptionApi = (world: SubscriptionWorld) => {
   const recorded: Recorded[] = [];
   let chargeCounter = 0;
+  const declinedCharges = new Set<string>();
   const impl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
@@ -115,7 +127,7 @@ export const makeSubscriptionApi = (world: SubscriptionWorld) => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     if (url.pathname.endsWith('/auth/session')) return json({ user: { id: AGENCY, name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } });
     if (url.pathname.endsWith('/me/last-context')) return new Response(null, { status: 204 });
-    recorded.push({ method, path: url.pathname.replace(`/agencies/${AGENCY}`, ''), body, headers: new Headers(init?.headers) });
+    recorded.push({ method, path: url.pathname.replace(`/agencies/${AGENCY}`, ''), body, query: url.search, headers: new Headers(init?.headers) });
     const path = url.pathname.replace(`/agencies/${AGENCY}`, '');
     if (path === '/me') {
       return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: world.permissions.includes('assinatura.gerenciar'), membershipId: null, role: { key: 'admin', name: 'Admin' }, permissions: world.permissions, plan: world.plan });
@@ -132,10 +144,29 @@ export const makeSubscriptionApi = (world: SubscriptionWorld) => {
       chargeCounter += 1;
       return json({ ...quote, chargeId: `00000000-0000-4000-8000-00000000000${chargeCounter}` }, 201);
     }
+    if (path === '/subscription/test-card') {
+      if (world.testCard === undefined) return apiError(404, 'NOT_FOUND', 'Recurso não encontrado.');
+      if (method === 'PUT') {
+        if (world.testCardRefusal !== undefined) return apiError(world.testCardRefusal.status, world.testCardRefusal.code, 'private diagnostic');
+        world.testCard = body as TestCardWorld;
+      }
+      return json({ card: world.testCard });
+    }
+    if (path.startsWith('/subscription/invoices')) {
+      const all = world.invoices ?? [];
+      const page = Number(url.searchParams.get('page') ?? '1');
+      const pageSize = Number(url.searchParams.get('pageSize') ?? '20');
+      return json({ data: all.slice((page - 1) * pageSize, page * pageSize), meta: { page, pageSize, totalItems: all.length, totalPages: Math.ceil(all.length / pageSize) } });
+    }
     if (/^\/subscription\/charges\/[^/]+\/simulated-payment$/.test(path)) {
-      if (world.paymentStatus === 'error') return apiError(500, 'INTERNAL_ERROR', 'x');
+      const chargeId = path.split('/')[3]!;
+      // A refused charge is closed for good: paying it again is the 409 of the real API, and a retry has to open another one.
+      if (declinedCharges.has(chargeId)) return apiError(409, 'CHARGE_NOT_OPEN', 'A cobrança não está aberta.');
+      const sequenced = world.paymentSequence?.shift();
+      if ((sequenced ?? world.paymentStatus) === 'error') return apiError(500, 'INTERNAL_ERROR', 'x');
       const outcome = (body as { outcome: string }).outcome;
-      const status = world.paymentStatus ?? (outcome === 'approved' ? 'confirmed' : 'declined');
+      const status = sequenced ?? world.paymentStatus ?? (outcome === 'approved' ? 'confirmed' : 'declined');
+      if (status === 'declined') declinedCharges.add(chargeId);
       if (status === 'confirmed') {
         const charge = recorded.filter((entry) => entry.path === '/subscription/charges').at(-1)!.body as { planKey: string; extraClients: number; extraStorageGib: number };
         world.subscription = { planKey: charge.planKey, extraClients: charge.extraClients, extraStorageGib: charge.extraStorageGib };

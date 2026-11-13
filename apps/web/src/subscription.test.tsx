@@ -21,7 +21,10 @@ afterAll(() => {
 
 const posts = (recorded: Recorded[], suffix: string): Recorded[] => recorded.filter((entry) => entry.method === 'POST' && entry.path.endsWith(suffix));
 const planCard = (name: string): HTMLElement => screen.getByRole('article', { name });
-const CARD_HEADING = /Pagamento simulado/;
+/** The purchase screen: the summary only exists there. */
+const CARD_HEADING = 'Resumo';
+const payButton = (amount: string): HTMLElement => screen.getByRole('button', { name: new RegExp(`^(Assinar e pagar|Pagar) ${amount}`) });
+const dueNow = (): string => screen.getByText('Você paga agora').parentElement!.textContent ?? '';
 
 /** From the price table (agency without a paid plan): one click on the card's own button opens the simulated card. */
 const subscribeTo = async (name: string): Promise<void> => {
@@ -29,21 +32,6 @@ const subscribeTo = async (name: string): Promise<void> => {
   await screen.findByRole('heading', { name: CARD_HEADING });
 };
 
-/** From "Seu plano" (Essencial): change to another plan through the same table and confirm the raise. */
-const changeTo = async (name: string): Promise<void> => {
-  fireEvent.click(await screen.findByRole('button', { name: 'Trocar de plano' }));
-  fireEvent.click(await screen.findByRole('button', { name: `Escolher ${name}` }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Subir o plano' }));
-  await screen.findByRole('heading', { name: CARD_HEADING });
-};
-
-const CARD_VALUES = ['4111111111111111', '12/30', 'CVV-731', 'Fulana de Tal'];
-const fillCard = (): void => {
-  fireEvent.change(screen.getByLabelText('Número do cartão'), { target: { value: CARD_VALUES[0] } });
-  fireEvent.change(screen.getByLabelText('Validade'), { target: { value: CARD_VALUES[1] } });
-  fireEvent.change(screen.getByLabelText('CVV'), { target: { value: CARD_VALUES[2] } });
-  fireEvent.change(screen.getByLabelText('Nome impresso no cartão'), { target: { value: CARD_VALUES[3] } });
-};
 
 describe('when the subscription cannot be read (empty-state rule)', () => {
   it.each(['/subscription/plans', '/subscription'])('shows the failure with "Tentar de novo" when %s does not answer, never the price table or "Seu plano", and the retry reads it again', async (failing) => {
@@ -88,20 +76,43 @@ describe('without a paid plan: only the price table (#773)', () => {
     const essential = within(planCard('Essencial'));
     expect(essential.getByText('R$ 97')).toBeTruthy();
     expect(essential.getByText('/mês')).toBeTruthy();
-    expect(essential.getByText('Para quem está começando, com poucos clientes.')).toBeTruthy();
+    expect(essential.getByText('Aprovação por link para até 10 clientes')).toBeTruthy();
+    expect(essential.getByText('R$ 9,70 por cliente com o plano cheio')).toBeTruthy();
+    expect(essential.getByText('Para quem é')).toBeTruthy();
+    expect(essential.getByText('Autônomo ou agência de 1 a 3 pessoas, com até 10 clientes ativos.')).toBeTruthy();
+    expect(essential.getByText('O que destrava')).toBeTruthy();
     expect(essential.getByText('10 clientes ativos')).toBeTruthy();
-    expect(essential.getByText('20 GB de armazenamento')).toBeTruthy();
+    expect(essential.getByText('20 GB: cerca de 5 mil fotos de 4 MB')).toBeTruthy();
+    expect(essential.getByText('Colaboradores ilimitados')).toBeTruthy();
+    expect(essential.getByText('Cerca de 13 horas por mês de volta')).toBeTruthy();
+    expect(essential.getByText('Exemplo ilustrativo.')).toBeTruthy();
     expect(essential.getByRole('button', { name: 'Assinar Essencial' })).toBeTruthy();
 
     const professional = within(planCard('Profissional'));
     expect(professional.getByText('R$ 197')).toBeTruthy();
-    expect(professional.getByText('30 clientes ativos')).toBeTruthy();
-    expect(professional.getByText('100 GB de armazenamento')).toBeTruthy();
+    expect(professional.getByText('R$ 6,57 por cliente com o plano cheio')).toBeTruthy();
+    expect(professional.getByText('30 clientes ativos: 20 vagas a mais')).toBeTruthy();
+    expect(professional.getByText('100 GB: cerca de 25 mil fotos de 4 MB')).toBeTruthy();
+    expect(professional.getByText('Tudo do Essencial')).toBeTruthy();
+    expect(professional.getByText('240 posts por mês, a R$ 6,57 por cliente')).toBeTruthy();
 
     const agency = within(planCard('Agência'));
     expect(agency.getByText('R$ 397')).toBeTruthy();
-    expect(agency.getByText('60 clientes ativos')).toBeTruthy();
-    expect(agency.getByText('300 GB de armazenamento')).toBeTruthy();
+    expect(agency.getByText('Para atender de 31 a 60 clientes sem comprar extra')).toBeTruthy();
+    expect(agency.getByText('60 clientes ativos: 30 vagas a mais')).toBeTruthy();
+    expect(agency.getByText('300 GB: cerca de 75 mil fotos de 4 MB')).toBeTruthy();
+    expect(agency.getByText('200 GB a mais por R$ 20 a mais')).toBeTruthy();
+    expect(agency.getByText('Atender 60 clientes no Profissional custaria R$ 197 + 30 extras × R$ 6 = R$ 377, com só 100 GB. No Agência são R$ 397 e 300 GB.')).toBeTruthy();
+  });
+
+  it('says what it knows of the use only for a subscriber: a trial has no recommendation block and no "Não cabe"', async () => {
+    const { impl } = makeSubscriptionApi(trialWorld(5));
+    renderSubscription(impl);
+    await screen.findByRole('button', { name: 'Assinar Essencial' });
+
+    expect(screen.queryByText('Recomendação para a sua agência')).toBeNull();
+    expect(screen.queryByText(/Não cabe/)).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Ver faturas' })).toBeNull();
   });
 
   it('highlights only the middle plan as recommended, with the primary button; the others are secondary; no claim without data', async () => {
@@ -133,7 +144,7 @@ describe('without a paid plan: only the price table (#773)', () => {
 
     expect(screen.queryByLabelText('Clientes extras')).toBeNull();
     expect(screen.queryByLabelText(/Armazenamento extra/)).toBeNull();
-    expect(screen.queryByText(/extras/i)).toBeNull();
+    expect(screen.queryByRole('heading', { name: /extras/i })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Trocar de plano' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancelar a assinatura' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Seu plano' })).toBeNull();
@@ -156,13 +167,14 @@ describe('without a paid plan: only the price table (#773)', () => {
     renderSubscription(impl);
 
     await subscribeTo('Essencial');
-    expect(screen.getByText(/Plano/, { selector: '.subscription-card__plan' }).textContent).toBe('Plano Essencial, R$ 97/mês');
-    expect(screen.getByText(/Valor desta cobrança/).textContent).toContain('R$ 97');
+    expect(screen.getByRole('heading', { level: 1, name: 'Assinar o Essencial' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Plano Essencial' })).toBeTruthy();
+    expect(dueNow()).toContain('R$ 97,00');
     fireEvent.click(screen.getByRole('button', { name: 'Voltar sem pagar' }));
 
     await subscribeTo('Agência');
-    expect(screen.getByText(/Plano/, { selector: '.subscription-card__plan' }).textContent).toBe('Plano Agência, R$ 397/mês');
-    expect(screen.getByText(/Valor desta cobrança/).textContent).toContain('R$ 397');
+    expect(screen.getByRole('heading', { level: 1, name: 'Assinar o Agência' })).toBeTruthy();
+    expect(dueNow()).toContain('R$ 397,00');
 
     expect(posts(recorded, '/quote').map((entry) => entry.body)).toEqual([
       { planKey: 'essencial', extraClients: 0, extraStorageGib: 0 },
@@ -188,9 +200,11 @@ describe('without a paid plan: only the price table (#773)', () => {
     const { impl, recorded } = makeSubscriptionApi(trialWorld(5));
     renderSubscription(impl);
     await subscribeTo('Essencial');
-    fireEvent.click(screen.getByRole('button', { name: /^Pagar R\$ 97/ }));
+    fireEvent.click(payButton('R\\$ 97'));
 
-    expect(await screen.findByText('Pagamento aprovado. A sua assinatura já vale.')).toBeTruthy();
+    expect(await screen.findByText('Plano Essencial ativo')).toBeTruthy();
+    expect(screen.getByText('Os novos tetos já valem: 10 clientes ativos e 20 GB. A cobrança de R$ 97,00 foi confirmada.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar para a assinatura' }));
     expect(await screen.findByRole('heading', { name: 'Seu plano' })).toBeTruthy();
     expect(await screen.findByLabelText('Clientes extras')).toBeTruthy();
     // The shell asks who the agency is again, so the read-only notices follow the new plan.
@@ -240,13 +254,37 @@ describe('with a paid plan: "Seu plano" (#773)', () => {
     renderSubscription(impl);
 
     expect(await screen.findByRole('heading', { name: 'Seu plano' })).toBeTruthy();
-    expect(screen.getByText('Essencial', { selector: 'strong' })).toBeTruthy();
-    expect(screen.getByText(/R\$ 97\/mês/)).toBeTruthy();
-    expect(screen.getByText(/Próxima cobrança em 30 de novembro de 2026/)).toBeTruthy();
+    expect(screen.getByText('Essencial, cobrado todo mês.')).toBeTruthy();
+    expect(screen.getByText('R$ 97', { selector: '.subscription__stat' })).toBeTruthy();
+    expect(screen.getByText('/mês · sem extras')).toBeTruthy();
+    expect(screen.getByText('Próxima cobrança em 30 de novembro de 2026: R$ 97,00.')).toBeTruthy();
     expect(screen.getByText('Clientes: 4 de 10')).toBeTruthy();
     expect(screen.getByText('Armazenamento: 1 GB de 20 GB')).toBeTruthy();
-    expect(screen.queryByText('Recomendado')).toBeNull();
+    expect(screen.getByText('Colaboradores e acessos ao portal: sem limite em todos os planos.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Assinar / })).toBeNull();
+  });
+
+  it('has one primary in the header, "Trocar de plano", which takes to the plans of the page, and "Ver faturas" beside it', async () => {
+    const { impl } = makeSubscriptionApi(ownerWorld());
+    renderSubscription(impl);
+    const change = await screen.findByRole('button', { name: 'Trocar de plano' });
+
+    expect(change.className).toContain('ui-button--primary');
+    expect(screen.getAllByRole('button', { name: 'Trocar de plano' })).toHaveLength(1);
+    fireEvent.click(change);
+    expect(document.activeElement?.id).toBe('planos-title');
+    expect(screen.getByRole('heading', { name: 'O que cada plano coloca na sua mão' })).toBeTruthy();
+    const invoices = screen.getAllByRole('link', { name: 'Ver faturas' });
+    expect(invoices.length).toBeGreaterThan(0);
+    for (const link of invoices) expect(link.getAttribute('href')).toBe('/agencia/11111111-1111-4111-8111-111111111111/assinatura/faturas');
+  });
+
+  it('shows the extras of the plan next to its price when there are some', async () => {
+    const { impl } = makeSubscriptionApi(ownerWorld({ subscription: { planKey: 'essencial', extraClients: 5, extraStorageGib: 30 } }));
+    renderSubscription(impl);
+
+    expect(await screen.findByText('R$ 139', { selector: '.subscription__stat' })).toBeTruthy();
+    expect(screen.getByText('/mês · com 5 clientes extras e 30 GB extras')).toBeTruthy();
   });
 
   it('shows the extras here, and the total follows what is typed, as the server quoted it', async () => {
@@ -254,13 +292,40 @@ describe('with a paid plan: "Seu plano" (#773)', () => {
     renderSubscription(impl);
     fireEvent.change(await screen.findByLabelText('Clientes extras'), { target: { value: '7' } });
 
-    expect(await screen.findByText('R$ 97 + R$ 42 = R$ 139/mês')).toBeTruthy();
-    expect(screen.getByText(/Cobrança agora: R\$ 42 \(o restante do período atual\)\./)).toBeTruthy();
+    // The sum line by line, as the server quoted it, and what is charged now with the days of the period.
+    const sum = within((await screen.findByText('Total por mês')).closest('ul')!);
+    expect(sum.getByText('Plano Essencial')).toBeTruthy();
+    expect(sum.getByText('7 clientes extras')).toBeTruthy();
+    expect(sum.getByText('R$ 42,00')).toBeTruthy();
+    expect(sum.getByText('R$ 139,00')).toBeTruthy();
+    expect(screen.getByText('Cobrança agora: R$ 28,00 (20 dias que faltam do período atual). Subir vale na hora.')).toBeTruthy();
     expect(posts(recorded, '/quote').at(-1)?.body).toEqual({ planKey: 'essencial', extraClients: 7, extraStorageGib: 0 });
 
     fireEvent.change(screen.getByLabelText('Armazenamento extra, em GB'), { target: { value: '10' } });
-    expect(await screen.findByText('R$ 97 + R$ 46 = R$ 143/mês')).toBeTruthy();
+    expect(await screen.findByText('10 GB extras')).toBeTruthy();
+    expect(screen.getByText('R$ 143,00')).toBeTruthy();
     expect(posts(recorded, '/quote').at(-1)?.body).toEqual({ planKey: 'essencial', extraClients: 7, extraStorageGib: 10 });
+  });
+
+  it('shows the board texts of the extras card: the subtitle, the hints and the confirmation', async () => {
+    const { impl } = makeSubscriptionApi(ownerWorld());
+    renderSubscription(impl);
+    await screen.findByLabelText('Clientes extras');
+
+    expect(screen.getByText('Some ao teto do plano.')).toBeTruthy();
+    expect(screen.getByText('R$ 6 por cliente, por mês')).toBeTruthy();
+    expect(screen.getByText('R$ 0,40 por GB, por mês')).toBeTruthy();
+    expect(screen.getByText('Vai crescer um pouco, mas não o bastante para trocar de plano?')).toBeTruthy();
+  });
+
+  it('a reduction of the extras shows no days: the API sends none, and the screen does not make them up', async () => {
+    const { impl } = makeSubscriptionApi(ownerWorld({ subscription: { planKey: 'essencial', extraClients: 7, extraStorageGib: 0 } }));
+    renderSubscription(impl);
+    fireEvent.change(await screen.findByLabelText('Clientes extras'), { target: { value: '2' } });
+
+    expect(await screen.findByText(/Nada é cobrado agora\. A mudança vale a partir de/)).toBeTruthy();
+    expect(screen.queryByText(/\d+ dias? que falt/)).toBeNull();
+    expect(screen.queryByText(/Cobrança agora/)).toBeNull();
   });
 
   it('buys extras through the simulated card, sending the terms and never an amount', async () => {
@@ -271,10 +336,21 @@ describe('with a paid plan: "Seu plano" (#773)', () => {
     await screen.findByText(/Cobrança agora/);
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar e pagar' }));
     await screen.findByRole('heading', { name: CARD_HEADING });
-    fireEvent.click(screen.getByRole('button', { name: /^Pagar R\$ 42/ }));
+    // The purchase screen: the plan, the lines of the sum, the days and what is paid now.
+    expect(screen.getByRole('heading', { level: 1, name: 'Comprar extras' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Extras no Essencial' })).toBeTruthy();
+    expect(screen.getByText('7 clientes a mais: de 10 para 17 vagas')).toBeTruthy();
+    expect(screen.getByText('Período atual até 30 de novembro de 2026 (20 dias que faltam).')).toBeTruthy();
+    expect(screen.getByText('7 clientes extras')).toBeTruthy();
+    expect(screen.getByText('Total por mês')).toBeTruthy();
+    expect(dueNow()).toContain('R$ 28,00');
+    expect(screen.getByText('Depois, R$ 139,00 por mês a partir de 30 de novembro de 2026.')).toBeTruthy();
+    fireEvent.click(payButton('R\\$ 28,00'));
 
-    expect(await screen.findByText('Pagamento aprovado. A sua assinatura já vale.')).toBeTruthy();
+    expect(await screen.findByText('Extras ativos')).toBeTruthy();
+    expect(screen.getByText('Seu teto agora é de 17 clientes e 20 GB. A cobrança de R$ 28,00 foi confirmada.')).toBeTruthy();
     expect(posts(recorded, '/charges')[0]?.body).toEqual({ planKey: 'essencial', extraClients: 7, extraStorageGib: 0 });
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar para a assinatura' }));
     expect(await screen.findByText('Clientes: 4 de 17')).toBeTruthy();
   });
 
@@ -326,7 +402,6 @@ describe('with a paid plan: "Seu plano" (#773)', () => {
     it('opens the same table with the current plan marked "Seu plano" and not offered again', async () => {
       const { impl } = makeSubscriptionApi(ownerWorld());
       renderSubscription(impl);
-      fireEvent.click(await screen.findByRole('button', { name: 'Trocar de plano' }));
 
       const current = within(await screen.findByRole('article', { name: 'Essencial' }));
       expect(current.getByText('Seu plano')).toBeTruthy();
@@ -341,7 +416,6 @@ describe('with a paid plan: "Seu plano" (#773)', () => {
     it('marks the plan that is current, whichever it is', async () => {
       const { impl } = makeSubscriptionApi(ownerWorld({ subscription: { planKey: 'agencia', extraClients: 0, extraStorageGib: 0 } }));
       renderSubscription(impl);
-      fireEvent.click(await screen.findByRole('button', { name: 'Trocar de plano' }));
 
       expect(within(await screen.findByRole('article', { name: 'Agência' })).getByText('Seu plano')).toBeTruthy();
       expect(within(planCard('Essencial')).queryByText('Seu plano')).toBeNull();
@@ -350,19 +424,67 @@ describe('with a paid plan: "Seu plano" (#773)', () => {
     it('shows the server total of the chosen plan and what is charged now', async () => {
       const { impl, recorded } = makeSubscriptionApi(ownerWorld());
       renderSubscription(impl);
-      fireEvent.click(await screen.findByRole('button', { name: 'Trocar de plano' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Escolher Profissional' }));
 
-      expect(await screen.findByText('R$ 197/mês', { selector: '.subscription__total' })).toBeTruthy();
-      expect(screen.getByText(/Cobrança agora: R\$ 100 \(o restante do período atual\)\./)).toBeTruthy();
+      expect(await screen.findByText('Mudar para Profissional')).toBeTruthy();
+      const sum = within((await screen.findByText('Total por mês')).closest('ul')!);
+      expect(sum.getByText('Plano Profissional')).toBeTruthy();
+      expect(sum.getAllByText('R$ 197,00')).toHaveLength(2);
+      expect(screen.getByText('Cobrança agora: R$ 66,67 (20 dias que faltam do período atual). Subir vale na hora.')).toBeTruthy();
       expect(posts(recorded, '/quote').at(-1)?.body).toEqual({ planKey: 'profissional', extraClients: 0, extraStorageGib: 0 });
+    });
+
+    it('a plan that cannot hold the active clients is closed with "Não cabe: N clientes ativos" and says why on its card', async () => {
+      const world = ownerWorld({ subscription: { planKey: 'profissional', extraClients: 0, extraStorageGib: 0, usedClients: 18 } });
+      const { impl, recorded } = makeSubscriptionApi(world);
+      renderSubscription(impl);
+
+      const closed = await screen.findByRole('button', { name: 'Não cabe: 18 clientes ativos' }) as HTMLButtonElement;
+      expect(closed.disabled).toBe(true);
+      expect(within(planCard('Essencial')).getByText(/Não cabe hoje: você tem 18 clientes ativos e 1 GB\./)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Escolher Essencial' })).toBeNull();
+      expect(within(planCard('Profissional')).getByRole('button', { name: 'Plano atual' })).toBeTruthy();
+      fireEvent.click(closed);
+      expect(posts(recorded, '/quote')).toHaveLength(0);
+      // Agência fits and is the one the screen points to once the clients pass 80% of the ceiling (24 of 30).
+      expect(within(planCard('Agência')).getByRole('button', { name: 'Escolher Agência' })).toBeTruthy();
+    });
+
+    it('the choice acts on the plan clicked: with two plans to pick from, the quote and the charge are for the second', async () => {
+      const { impl, recorded } = makeSubscriptionApi(ownerWorld());
+      renderSubscription(impl);
+      fireEvent.click(await screen.findByRole('button', { name: 'Escolher Profissional' }));
+      await screen.findByText('Mudar para Profissional');
+      fireEvent.click(screen.getByRole('button', { name: 'Escolher Agência' }));
+      expect(await screen.findByText('Mudar para Agência')).toBeTruthy();
+      await waitFor(() => expect(screen.getByText(/Cobrança agora: R\$ 200,00/)).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'Subir o plano' }));
+
+      await screen.findByRole('heading', { name: CARD_HEADING });
+      expect(posts(recorded, '/charges').map((entry) => entry.body)).toEqual([{ planKey: 'agencia', extraClients: 0, extraStorageGib: 0 }]);
+    });
+
+    it('says what the use asks of the plan: stay while there is room, look at the next one near the ceiling', async () => {
+      const room = makeSubscriptionApi(ownerWorld({ subscription: { planKey: 'profissional', extraClients: 0, extraStorageGib: 0, usedClients: 18 } }));
+      renderSubscription(room.impl);
+      expect(await screen.findByText('Fique no Profissional: ele cobre a sua carteira com folga')).toBeTruthy();
+      expect(screen.getByText(/Você usa 18 de 30 clientes \(60%\) e 1 GB de 100 GB\. Hoje cada cliente ativo sai a R\$ 10,94 por mês; com a carteira cheia, o Profissional sai a R\$ 6,57 por cliente e é o plano de menor custo por cliente do catálogo\. Quando você passar de 24 clientes, 80% do teto, a recomendação muda para o Agência\./)).toBeTruthy();
+      expect(screen.getByText('Agência vale ao passar de 24')).toBeTruthy();
+      expect(within(planCard('Profissional')).getByText('Recomendado')).toBeTruthy();
+      expect(within(planCard('Agência')).getByText('Passa a valer ao passar de 24 clientes.')).toBeTruthy();
+      cleanup();
+
+      const near = makeSubscriptionApi(ownerWorld({ subscription: { planKey: 'profissional', extraClients: 0, extraStorageGib: 0, usedClients: 26 } }));
+      renderSubscription(near.impl);
+      expect(await screen.findByText('Passe para o Agência: o Profissional está perto do teto')).toBeTruthy();
+      expect(within(planCard('Agência')).getByText('Recomendado')).toBeTruthy();
+      expect(within(planCard('Profissional')).queryByText('Recomendado')).toBeNull();
     });
 
     it('a downgrade is scheduled without a card', async () => {
       const world = ownerWorld({ subscription: { planKey: 'agencia', extraClients: 0, extraStorageGib: 0 } });
       const { impl, recorded } = makeSubscriptionApi(world);
       renderSubscription(impl);
-      fireEvent.click(await screen.findByRole('button', { name: 'Trocar de plano' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Escolher Essencial' }));
 
       expect(await screen.findByText(/Nada é cobrado agora\. A mudança vale a partir de 9 de novembro de 2026\./)).toBeTruthy();
@@ -376,7 +498,6 @@ describe('with a paid plan: "Seu plano" (#773)', () => {
     it('two clicks in the same tick on the confirmation open one charge', async () => {
       const { impl, recorded } = makeSubscriptionApi(ownerWorld());
       renderSubscription(impl);
-      fireEvent.click(await screen.findByRole('button', { name: 'Trocar de plano' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Escolher Profissional' }));
       const action = await screen.findByRole('button', { name: 'Subir o plano' });
       act(() => { fireEvent.click(action); fireEvent.click(action); });
@@ -385,156 +506,16 @@ describe('with a paid plan: "Seu plano" (#773)', () => {
       expect(posts(recorded, '/charges')).toHaveLength(1);
     });
 
-    it('going back returns to "Seu plano" and sends nothing', async () => {
+    it('not changing the plan closes the panel and sends no charge', async () => {
       const { impl, recorded } = makeSubscriptionApi(ownerWorld());
       renderSubscription(impl);
-      fireEvent.click(await screen.findByRole('button', { name: 'Trocar de plano' }));
-      fireEvent.click(await screen.findByRole('button', { name: 'Voltar ao meu plano' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Escolher Profissional' }));
+      await screen.findByText('Mudar para Profissional');
+      fireEvent.click(screen.getByRole('button', { name: 'Não mudar de plano' }));
 
+      expect(screen.queryByText('Mudar para Profissional')).toBeNull();
       expect(await screen.findByLabelText('Clientes extras')).toBeTruthy();
       expect(posts(recorded, '/charges')).toHaveLength(0);
-    });
-  });
-
-  describe('the simulated card', () => {
-    it('approves with any data, sends only the outcome, and the card values appear in no request at all', async () => {
-      const world = ownerWorld();
-      const { impl, recorded } = makeSubscriptionApi(world);
-      renderSubscription(impl);
-      await changeTo('Profissional');
-
-      expect(screen.getByText(/pagamento de teste: qualquer dado serve, nenhum dado de cartão sai do seu navegador/)).toBeTruthy();
-      expect(screen.getByText(/Valor desta cobrança/).textContent).toContain('R$ 100');
-      expect(screen.getByText(/Plano/, { selector: '.subscription-card__plan' }).textContent).toBe('Plano Profissional, R$ 197/mês');
-      fillCard();
-      fireEvent.click(screen.getByRole('button', { name: /^Pagar R\$ 100/ }));
-
-      expect(await screen.findByText('Pagamento aprovado. A sua assinatura já vale.')).toBeTruthy();
-      const payment = posts(recorded, '/simulated-payment');
-      expect(payment).toHaveLength(1);
-      expect(payment[0]?.body).toEqual({ outcome: 'approved' });
-      expect(payment[0]?.path).toBe('/subscription/charges/00000000-0000-4000-8000-000000000001/simulated-payment');
-
-      const everything = JSON.stringify(recorded.map(({ method, path, body, headers }) => [method, path, body, [...headers.entries()]]));
-      for (const value of CARD_VALUES) expect(everything).not.toContain(value);
-      // The change request carries the terms asked for and never an amount or a price.
-      expect(posts(recorded, '/charges')[0]?.body).toEqual({ planKey: 'profissional', extraClients: 0, extraStorageGib: 0 });
-      expect(Object.keys(posts(recorded, '/quote')[0]?.body as object).sort()).toEqual(['extraClients', 'extraStorageGib', 'planKey']);
-      expect(Object.keys(posts(recorded, '/charges')[0]?.body as object).sort()).toEqual(['extraClients', 'extraStorageGib', 'planKey']);
-      // The plan on screen is what the server then said, read again after the payment.
-      expect(await screen.findByText('Clientes: 4 de 30')).toBeTruthy();
-    });
-
-    it('accepts an empty card too: nothing about it is validated', async () => {
-      const { impl, recorded } = makeSubscriptionApi(ownerWorld());
-      renderSubscription(impl);
-      await changeTo('Profissional');
-      fireEvent.click(screen.getByRole('button', { name: /^Pagar/ }));
-
-      expect(await screen.findByText('Pagamento aprovado. A sua assinatura já vale.')).toBeTruthy();
-      expect(posts(recorded, '/simulated-payment')[0]?.body).toEqual({ outcome: 'approved' });
-    });
-
-    it('simulates a decline: says so, charges nothing and leaves the plan; the next try opens a new charge', async () => {
-      const world = ownerWorld();
-      const { impl, recorded } = makeSubscriptionApi(world);
-      renderSubscription(impl);
-      await changeTo('Profissional');
-      fireEvent.click(screen.getByRole('button', { name: 'Simular recusa' }));
-
-      expect(await screen.findByText(/Pagamento recusado\. Nada foi cobrado e o plano continua o mesmo/)).toBeTruthy();
-      expect(posts(recorded, '/simulated-payment')[0]?.body).toEqual({ outcome: 'declined' });
-      expect(screen.queryByRole('heading', { name: CARD_HEADING })).toBeNull();
-      expect(world.subscription?.planKey).toBe('essencial');
-
-      await changeTo('Profissional');
-      fireEvent.click(screen.getByRole('button', { name: /^Pagar/ }));
-      await screen.findByText('Pagamento aprovado. A sua assinatura já vale.');
-      expect(posts(recorded, '/charges')).toHaveLength(2);
-      expect(posts(recorded, '/simulated-payment').map((entry) => entry.path)).toEqual([
-        '/subscription/charges/00000000-0000-4000-8000-000000000001/simulated-payment',
-        '/subscription/charges/00000000-0000-4000-8000-000000000002/simulated-payment'
-      ]);
-    });
-
-    it('abandoning the card pays nothing, says so, and a later entry in the same tab opens a fresh charge', async () => {
-      const { impl, recorded } = makeSubscriptionApi(trialWorld(5));
-      renderSubscription(impl);
-      await subscribeTo('Profissional');
-      fillCard();
-      fireEvent.click(screen.getByRole('button', { name: 'Voltar sem pagar' }));
-
-      expect(await screen.findByText('Você saiu sem pagar. Nada foi cobrado e o plano continua o mesmo.')).toBeTruthy();
-      expect(posts(recorded, '/simulated-payment')).toHaveLength(0);
-      expect(screen.queryByLabelText('Número do cartão')).toBeNull();
-
-      await subscribeTo('Agência');
-      // The new card is empty: what was typed before is gone.
-      expect((screen.getByLabelText('Número do cartão') as HTMLInputElement).value).toBe('');
-      fireEvent.click(screen.getByRole('button', { name: /^Pagar/ }));
-      await screen.findByText('Pagamento aprovado. A sua assinatura já vale.');
-      expect(posts(recorded, '/simulated-payment').map((entry) => entry.path)).toEqual(['/subscription/charges/00000000-0000-4000-8000-000000000002/simulated-payment']);
-    });
-
-    it('leaving is closed while the payment is in flight: Voltar sem pagar does not say nothing was charged, and the approval is what shows', async () => {
-      const { impl, recorded } = makeSubscriptionApi(trialWorld(5));
-      renderSubscription(impl);
-      await subscribeTo('Profissional');
-      fireEvent.click(screen.getByRole('button', { name: /^Pagar/ }));
-      const leave = screen.getByRole('button', { name: 'Voltar sem pagar' }) as HTMLButtonElement;
-      expect(leave.disabled).toBe(true);
-      fireEvent.click(leave);
-
-      expect(await screen.findByText('Pagamento aprovado. A sua assinatura já vale.')).toBeTruthy();
-      expect(screen.queryByText(/Você saiu sem pagar/)).toBeNull();
-      expect(posts(recorded, '/simulated-payment')).toHaveLength(1);
-    });
-
-    it('two quick clicks on Pagar send one payment', async () => {
-      const { impl, recorded } = makeSubscriptionApi(trialWorld(5));
-      renderSubscription(impl);
-      await subscribeTo('Profissional');
-      const pay = screen.getByRole('button', { name: /^Pagar/ });
-      fireEvent.click(pay);
-      fireEvent.click(pay);
-      fireEvent.click(screen.getByRole('button', { name: 'Simular recusa' }));
-
-      await screen.findByText('Pagamento aprovado. A sua assinatura já vale.');
-      expect(posts(recorded, '/simulated-payment')).toHaveLength(1);
-    });
-
-    it('submitting the form again while the payment is in flight (Enter) sends nothing more', async () => {
-      const { impl, recorded } = makeSubscriptionApi(trialWorld(5));
-      renderSubscription(impl);
-      await subscribeTo('Profissional');
-      const form = screen.getByRole('heading', { name: CARD_HEADING }).closest('form')!;
-      fireEvent.click(screen.getByRole('button', { name: /^Pagar/ }));
-      fireEvent.submit(form);
-      fireEvent.submit(form);
-
-      await screen.findByText('Pagamento aprovado. A sua assinatura já vale.');
-      expect(posts(recorded, '/simulated-payment')).toHaveLength(1);
-    });
-
-    it('trusts what the server answered, not what was asked: an approval the server declined reads as declined', async () => {
-      const { impl } = makeSubscriptionApi(trialWorld(5, { paymentStatus: 'declined' }));
-      renderSubscription(impl);
-      await subscribeTo('Profissional');
-      fireEvent.click(screen.getByRole('button', { name: /^Pagar/ }));
-
-      expect(await screen.findByText(/Pagamento recusado/)).toBeTruthy();
-      expect(screen.queryByText('Pagamento aprovado. A sua assinatura já vale.')).toBeNull();
-    });
-
-    it('a failure of the payment request is announced as an alert and never as an approval', async () => {
-      const { impl } = makeSubscriptionApi(trialWorld(5, { paymentStatus: 'error' }));
-      renderSubscription(impl);
-      await subscribeTo('Profissional');
-      fireEvent.click(screen.getByRole('button', { name: /^Pagar/ }));
-
-      const alert = await screen.findByRole('alert');
-      expect(alert.textContent).toContain('Não foi possível concluir o pagamento');
-      expect(screen.queryByText('Pagamento aprovado. A sua assinatura já vale.')).toBeNull();
     });
   });
 
