@@ -12,8 +12,10 @@ import { SECTION_LABELS, SECTION_ORDER, sectionSearch, type SectionKey } from '.
  * Each says whether it is filled (icon and a word for assistive technology, never only a colour) and how many
  * conversations wait for the agency. The open one is `aria-current`; the link keeps the roster's address in `state`.
  */
-export function SectionIndex({ active, filled, awaiting }: {
+export function SectionIndex({ active, filled, awaiting, next }: {
   active: SectionKey;
+  /** The first section still unfilled: its dot says it is the one to do now. */
+  next: SectionKey | null;
   filled: Readonly<Record<SectionKey, boolean>>;
   awaiting: AwaitingCounts;
 }) {
@@ -42,9 +44,9 @@ export function SectionIndex({ active, filled, awaiting }: {
             state={location.state}
             aria-current={key === active ? 'page' : undefined}
           >
-            <span className={`brand-index__dot brand-index__dot--${filled[key] ? 'done' : 'open'}`} aria-hidden="true">{filled[key] && <Check />}</span>
+            <span className={`brand-index__dot brand-index__dot--${filled[key] ? 'done' : key === next ? 'now' : 'open'}`} aria-hidden="true">{filled[key] && <Check />}</span>
             <span className="brand-index__label">{SECTION_LABELS[key]}</span>
-            <span className="visually-hidden">{filled[key] ? ' preenchida' : ' não preenchida'}</span>
+            <span className="visually-hidden">{filled[key] ? ' preenchida' : key === next ? ' não preenchida, a próxima' : ' não preenchida'}</span>
             {pending !== undefined && pending > 0 && <Pill icon={<Clock />} className="brand-index__awaiting">{pending} aguardando</Pill>}
           </Link>
         </li>;

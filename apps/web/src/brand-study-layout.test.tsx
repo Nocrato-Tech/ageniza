@@ -62,7 +62,7 @@ describe('brand study layout (telas-melhorias S13)', () => {
     const selectors = Array.from(block.matchAll(/^\s*([^\s/*}@][^{}]*)\{/gm)).map((match) => match[1]!.trim());
     expect(selectors.length).toBeGreaterThan(20);
     // Everything in the block is new to the agency screen or sits under its modifier: no bare shared selector is restyled.
-    expect(selectors.filter((selector) => !/^\.(brand-study--agency|brand-index|brand-panel|brand-persona|brand-personas__awaiting|brand-personas__archived-item|brand-archetype|brand-card-skeleton|brand-section__header-action)/.test(selector))).toEqual([]);
+    expect(selectors.filter((selector) => !/^\.(brand-study--agency|brand-index|brand-panel|brand-persona|brand-personas__awaiting|brand-personas__archived-item|brand-archetype|brand-card-skeleton|brand-section__header-action|brand-study__updated|brand-study__fill|brand-note)/.test(selector))).toEqual([]);
     // The shared section row of the portal still has its line on top and its own header.
     const section = declarationsFor(css, '.brand-section');
     expect(section.get('border-top')).toBe('1px solid var(--border-default)');
@@ -98,9 +98,11 @@ describe('brand study layout (telas-melhorias S13)', () => {
   it('lets the card, the profile and the colours shrink at 390 px instead of pushing the page', () => {
     expect(declarationsFor(base, '.brand-panel__layout').get('grid-template-columns')).toBe('minmax(0, 1fr)');
     expect(declarationsFor(base, '.brand-panel__main').get('min-width')).toBe('0');
-    expect(declarationsFor(base, '.brand-persona__profile').get('grid-template-columns')).toBe('minmax(0, 1fr)');
-    expect(declarationsFor(mediaOf(block, '48rem'), '.brand-persona__profile').get('grid-template-columns')).toBe('16rem minmax(0, 1fr)');
+    expect(declarationsFor(base, '.brand-persona__split').get('grid-template-columns')).toBe('minmax(0, 1fr)');
+    expect(declarationsFor(mediaOf(block, '64rem'), '.brand-persona__split').get('grid-template-columns')).toBe('minmax(0, 1fr) 20rem');
     expect(declarationsFor(base, '.brand-persona__identity').get('min-width')).toBe('0');
+    expect(declarationsFor(base, '.brand-persona__row').get('grid-template-columns')).toBe('2.5rem minmax(0, 1fr) auto');
+    expect(declarationsFor(base, '.brand-note').get('grid-template-columns')).toBe('auto minmax(0, 1fr)');
     expect(declarationsFor(base, '.brand-persona__name').get('overflow-wrap')).toBe('anywhere');
     expect(declarationsFor(base, '.brand-persona__description').get('overflow-wrap')).toBe('anywhere');
     expect(declarationsFor(base, '.brand-archetype').get('overflow-wrap')).toBe('anywhere');
@@ -134,8 +136,10 @@ describe('brand study layout (telas-melhorias S13)', () => {
   it('draws the index as a card with the count and a bar, and tells filled from open by shape, not only by colour', () => {
     const side = declarationsFor(base, '.brand-study--agency .brand-study__side');
     expect([side.get('background'), side.get('border-radius')]).toEqual(['var(--bg-surface)', 'var(--radius-xl)']);
-    expect(declarationsFor(base, '.brand-study--agency .brand-study__progress').get('width')).toBe('100%');
+    expect(declarationsFor(base, '.brand-study__fill').get('width')).toBe('100%');
     expect(declarationsFor(base, '.brand-index__dot--done').get('background')).toBe('var(--status-ready-bg)');
+    // The section to do now is a filled dot, apart from the done check and the open ring.
+    expect(declarationsFor(base, '.brand-index__dot--now').get('background')).toBe('var(--action-primary-bg)');
     // An open section is an empty ring and a filled one holds a check: the two differ without the colour.
     expect(declarationsFor(base, '.brand-index__dot--open').get('border')).toBe('1.5px solid var(--border-control)');
     expect(declarationsFor(base, ".brand-index__link[aria-current='page']").get('background')).toBe('var(--bg-tint)');
