@@ -56,19 +56,7 @@ interface RawRows<TResult> {
 }
 
 /** `%`, `_` and the escape character itself are text in what was typed; the `escape` clause below names the backslash. */
-const COMBINING_MARKS = /[̀-ͯ]/g;
-
-const escapeLikePattern =(value: string): string => value.replace(/[\\%_]/g, (character) => `\\${character}`);
-
-/**
- * What of the term is left to search for: without the accents, which the database folds away (`foldTextSql`), and without the leading `@`
- * that `patternsOf` drops for the handle. A term of combining marks only is empty there, and a letter with a mark is one letter, so the
- * minimum is measured on this and not on what was typed.
- */
-export const searchedCharacters = (term: string): string => {
-  const folded = term.normalize('NFD').replace(COMBINING_MARKS, '');
-  return folded.startsWith('@') && folded.length > 1 ? folded.slice(1) : folded;
-};
+const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (character) => `\\${character}`);
 
 interface Patterns {
   readonly contains: string;

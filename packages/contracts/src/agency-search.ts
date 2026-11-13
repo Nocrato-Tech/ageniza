@@ -16,6 +16,18 @@ export const AGENCY_SEARCH_TERM_MAX_LENGTH = 80;
 /** At most this many of each group; whoever wants more refines the term (decision 2026-11-11, item 4). */
 export const AGENCY_SEARCH_GROUP_LIMIT = 6;
 
+const COMBINING_MARKS = /[\u0300-\u036f]/g;
+
+/**
+ * What of the term is searched for: without the accents, which the database folds away, and without a leading `@` that marks the handle
+ * field and is not a character searched. The minimum of `AGENCY_SEARCH_TERM_MIN_LENGTH` counts this, not what was typed, so the route and
+ * the screen share one rule: `@a` and a lone accent are below it. A lone `@` stays, as the search does not drop it.
+ */
+export const searchedCharacters = (term: string): string => {
+  const folded = term.normalize('NFD').replace(COMBINING_MARKS, '');
+  return folded.startsWith('@') && folded.length > 1 ? folded.slice(1) : folded;
+};
+
 export const AgencySearchQuerySchema = z.object({
   q: SearchTextSchema.min(AGENCY_SEARCH_TERM_MIN_LENGTH).max(AGENCY_SEARCH_TERM_MAX_LENGTH)
 }).strict();

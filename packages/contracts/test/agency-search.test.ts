@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   AGENCY_SEARCH_GROUP_LIMIT,
   AgencySearchQuerySchema,
-  AgencySearchResponseSchema
+  AgencySearchResponseSchema,
+  AGENCY_SEARCH_TERM_MIN_LENGTH,
+  searchedCharacters
 } from '../src/index.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -11,6 +13,41 @@ const client = { id, name: 'Padaria Central', photoUrl: null, instagramHandle: '
 const content = { id, clientId: id, clientName: 'Padaria Central', title: 'Promoção de pães', format: 'reels', status: 'approved', overdue: false, scheduled: true, publishOn: '2026-11-20' };
 const file = { id, clientId: id, clientName: 'Padaria Central', folderId: id, name: 'padaria-fachada.jpg', category: 'image', thumbnailAssetId: id };
 const response = (data: Record<string, unknown>) => ({ data: { clients: [], contents: [], files: [], ...data }, meta: { q: 'padar' } });
+
+describe('the characters searched of a term', () => {
+  const searched = (term: string): number => searchedCharacters(term).length;
+
+  it('drops the accents, composed or not, and keeps the letters', () => {
+    expect(searchedCharacters('Promoção')).toBe('Promocao');
+    expect(searchedCharacters('promoc\u0327a\u0303o')).toBe('promocao');
+    expect(searchedCharacters('á')).toBe('a');
+    expect(searchedCharacters('a\u0301')).toBe('a');
+    expect(searchedCharacters('\u0301\u0301')).toBe('');
+  });
+
+  it('drops the @ of the start, which marks the handle field, and only one', () => {
+    expect(searchedCharacters('@padaria')).toBe('padaria');
+    expect(searchedCharacters('@@a')).toBe('@a');
+    expect(searchedCharacters('@\u0301a')).toBe('a');
+    expect(searchedCharacters('a@b')).toBe('a@b');
+  });
+
+  it('keeps a lone @, as the search does', () => {
+    expect(searchedCharacters('@')).toBe('@');
+    expect(searchedCharacters('@\u0301')).toBe('@');
+  });
+
+  it('puts @a, a letter with an accent and marks alone below the minimum, and two characters at it', () => {
+    expect(searched('@a')).toBeLessThan(AGENCY_SEARCH_TERM_MIN_LENGTH);
+    expect(searched('á')).toBeLessThan(AGENCY_SEARCH_TERM_MIN_LENGTH);
+    expect(searched('a\u0301')).toBeLessThan(AGENCY_SEARCH_TERM_MIN_LENGTH);
+    expect(searched('\u0301\u0301\u0301')).toBeLessThan(AGENCY_SEARCH_TERM_MIN_LENGTH);
+    expect(searched('@@')).toBeLessThan(AGENCY_SEARCH_TERM_MIN_LENGTH);
+    expect(searched('@ab')).toBeGreaterThanOrEqual(AGENCY_SEARCH_TERM_MIN_LENGTH);
+    expect(searched('ab')).toBe(AGENCY_SEARCH_TERM_MIN_LENGTH);
+    expect(searched('áb')).toBe(AGENCY_SEARCH_TERM_MIN_LENGTH);
+  });
+});
 
 describe('the term of the search of the agency', () => {
   it('is trimmed, from 2 to 80 characters', () => {

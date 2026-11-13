@@ -768,7 +768,8 @@ describe('the cost of the files query', () => {
     const plan = await planOfFiles(w.agencyA, 'volume');
 
     expect(plan).not.toMatch(/Seq Scan on media_assets/);
-    expect(plan).toMatch(/Index Cond: \(\(?agency_id = /);
+    // Tied to the index of the protected table, by name: `clients` has an index by agency too, so a bare `agency_id = ` condition proves nothing. The planner reads that index plain or as a bitmap.
+    expect(plan).toMatch(/(Index Scan using|Bitmap Index Scan on) media_assets_agency_status_idx/);
   });
 
   it('still finds the file of the agency while another agency holds the volume', async () => {

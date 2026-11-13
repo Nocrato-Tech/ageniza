@@ -5,6 +5,7 @@ import {
   AgencySearchResponseSchema,
   contentDeadline,
   contentIsScheduled,
+  searchedCharacters,
   type AgencySearchClient,
   type AgencySearchContent,
   type AgencySearchFile,
@@ -24,7 +25,7 @@ import type { IdentityStorageClient } from '../identity-storage/storage-client.j
 import { tenantHolds } from '../tenancy/guards.js';
 import { termTooShort, translateDatabaseError } from './errors.js';
 import { SEARCH_PERMISSIONS, SEARCH_RATE_BUCKET, SEARCH_RATE_LIMIT } from './policy.js';
-import { searchAgency, searchedCharacters, type SearchAccess, type SearchClientRow, type SearchContentRow, type SearchFileRow } from './service.js';
+import { searchAgency, type SearchAccess, type SearchClientRow, type SearchContentRow, type SearchFileRow } from './service.js';
 
 export type SearchPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -111,7 +112,7 @@ export const registerSearchModule = (app: FastifyInstance, dependencies: SearchM
     if (tenant === undefined) throw agencyNotFound();
     routeParams(searchDocs, request);
     const { q } = routeQuery(searchDocs, request);
-    // The contract measures what was typed; the database searches what is left once the accents are folded.
+    // The schema measures what was typed; the minimum counts what is searched (the accents folded, the leading `@` dropped).
     if (searchedCharacters(q).length < AGENCY_SEARCH_TERM_MIN_LENGTH) throw termTooShort();
 
     const access: SearchAccess = {

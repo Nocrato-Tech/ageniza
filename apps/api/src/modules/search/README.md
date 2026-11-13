@@ -35,7 +35,7 @@ A resposta é `{ data: { clients, contents, files }, meta: { q } }`, com os trê
 - **O termo é dado, nunca SQL.** Aparado, de 2 a 80 caracteres, sem caractere de controle (`AgencySearchQuerySchema`, `.strict()`); vai
   como parâmetro, e `%`, `_` e a barra invertida são escapados para valerem como texto. O dobramento (sem acento e sem maiúscula) é
   `foldTextSql`, o mesmo da carteira e da Equipe, aplicado à coluna e ao termo. O `@` do começo vale só para o campo do @. O mínimo de
-  2 é medido pela rota **depois** de tirar os acentos e o `@` (`searchedCharacters`): termo de marcas combinantes, `á` e um `@` com marca ficam
+  2 é medido pela rota **depois** de tirar os acentos e o `@` (`searchedCharacters`, de `@ageniza/contracts`, a mesma que a tela usa): termo de marcas combinantes, `á` e um `@` com marca ficam
   abaixo dele e recebem o `400` de um termo curto, em vez de virar um padrão vazio que casa tudo.
 - **O arquivo achado é o confirmado e não removido.** Envio em andamento, recusado e removido não aparecem; mídia sem nome (anterior ao
   nome) não casa. Cliente arquivado e conteúdo cancelado aparecem, com `archived` e `status`.
