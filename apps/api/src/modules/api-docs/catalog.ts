@@ -29,6 +29,8 @@ import {
   NotificationListQuerySchema,
   NotificationListResponseSchema,
   NotificationUnreadCountResponseSchema,
+  AgencySearchQuerySchema,
+  AgencySearchResponseSchema,
   AgencyRolesQuerySchema,
   AgencyRolesResponseSchema,
   AuthEmailVerificationResendRequestSchema,
@@ -226,7 +228,7 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'approval-link' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts' | 'subscriptions' | 'notifications';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'approval-link' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts' | 'subscriptions' | 'notifications' | 'search';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
@@ -301,7 +303,8 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   'email-change': 'Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo.',
   'story-scripts': 'Roteiros de stories de um cliente: a agência cria, edita e envia; o portal lê os enviados de um período e marca como gravado.',
   subscriptions: 'Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar, e as faturas; e, só fora de produção, o cartão de teste, pagar com o provedor simulado e avançar o relógio.',
-  notifications: 'As notificações da pessoa dentro do app: a lista paginada, a contagem de não lidas para o sino e marcar como lida, uma ou todas. Cada pessoa lê só as próprias; quem as cria é o banco, junto do evento.'
+  notifications: 'As notificações da pessoa dentro do app: a lista paginada, a contagem de não lidas para o sino e marcar como lida, uma ou todas. Cada pessoa lê só as próprias; quem as cria é o banco, junto do evento.',
+  search: 'A busca da barra superior da agência: clientes, conteúdos e arquivos pelo nome, em três grupos de até seis. Cada grupo respeita a permissão da leitura que ele atalha, e um grupo que a pessoa não pode ler vem vazio, igual a um grupo sem resultado.'
 };
 
 export const ERROR_MESSAGES: Record<string, string> = {
@@ -5516,6 +5519,68 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
       { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/search',
+    operationId: 'searchAgency',
+    module: 'search',
+    summary: 'Busca clientes, conteúdos e arquivos pelo nome',
+    description: [
+      'Alimenta a busca da barra superior (Ctrl K). `q` tem de 2 a 80 caracteres, aparado e sem caractere de controle; o termo vale sem acento e sem diferenciar maiúsculas,',
+      'e `%` e `_` valem como texto. Clientes casam por nome, razão social e @ (sem o `@`); conteúdos, pelo título, inclusive os cancelados; arquivos, pelo nome,',
+      'só os confirmados e não removidos. Cada grupo traz até 6, o nome mais próximo do começo primeiro (prefixo antes de trecho), depois a ordem alfabética e o `id`.',
+      'Clientes pedem `cliente.visualizar`; conteúdos e arquivos pedem `conteudo.visualizar` (o Owner passa por posse). Sem a permissão de um grupo, a consulta dele',
+      'nem roda e ele vem `[]`, no formato de um grupo sem resultado: a resposta não diz se o grupo existe. A rota não tem permissão única, só o vínculo com a agência;',
+      'quem só tem vínculo com um cliente recebe o 404 da agência. Agência em somente leitura busca normalmente. O termo nunca vai para log, e um termo inválido',
+      'devolve `400` sem repeti-lo. Limite de 60 requisições por minuto por pessoa, com `429` e `Retry-After`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência; cada grupo por permissão própria',
+    permission: null,
+    params: AgencyPathParamsSchema,
+    query: AgencySearchQuerySchema,
+    requestExample: { q: 'padar' },
+    responses: [{
+      status: 200,
+      description: 'Os três grupos, sempre presentes.',
+      schema: AgencySearchResponseSchema,
+      example: {
+        data: {
+          clients: [{ id: clientId, name: 'Padaria Central', photoUrl: null, instagramHandle: 'padariacentral', archived: false }],
+          contents: [{
+            id: contentId,
+            clientId,
+            clientName: 'Padaria Central',
+            title: 'Promoção de pães',
+            format: 'reels',
+            status: 'approved',
+            overdue: false,
+            scheduled: true,
+            publishOn: '2026-11-20'
+          }],
+          files: [{
+            id: assetId,
+            clientId,
+            clientName: 'Padaria Central',
+            folderId,
+            name: 'padaria-fachada.jpg',
+            category: 'image',
+            thumbnailAssetId: assetId
+          }]
+        },
+        meta: { q: 'padar' }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_CONFIRMED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 429, code: 'RATE_LIMITED' }
     ]
   }
 ];

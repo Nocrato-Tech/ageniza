@@ -174,6 +174,15 @@ Ainda não recortado em issues (o dono decidiu, em 2026-11-11, que a onda do red
 
 | task | escopo | depende de |
 |---|---|---|
-| Rota `GET /agencies/:agencyId/search`, contrato e testes de permissão e de oráculo | `api` | o nome do arquivo (decisão da mídia) |
+| Rota `GET /agencies/:agencyId/search`, contrato e testes de permissão e de oráculo | `api` | o nome do arquivo (decisão da mídia) · **feita** na subtarefa W9-S1 (ver abaixo) |
 | Painel de busca, Ctrl K e componente `Kbd` | `web` | a rota |
 | Filtro "Buscar um post" no portal | `web` | a casca do portal |
+
+**Registro da rota (W9-S1, 2026-11-13).** O que o recorte fechou, sem regra de negócio nova:
+
+- O contrato mora em `packages/contracts/src/agency-search.ts` (e não em `search.ts`, que já guarda o filtro de texto de outras listagens e é importado por `clients.ts`: um import de `contents.ts` ali fecharia um ciclo). O módulo é `apps/api/src/modules/search`.
+- "Mais próximo do começo" é: o nome exibido que **começa** com o termo vem antes do que só o **contém**; dentro de cada faixa, o nome dobrado em ordem alfabética (`collate "C"`) e o `id`. Cliente achado só pela razão social ou pelo @ entra na segunda faixa.
+- Os derivados do conteúdo saem como `overdue` e `scheduled`, lidos no relógio de São Paulo pelas mesmas definições do pacote de contratos. A foto do cliente sai como `photoUrl` assinada, só quando a chave é a do avatar daquele cliente.
+- O limite de 60 por minuto é por pessoa e único para todas as agências dela; a recusa da barreira de acesso (404) não conta.
+- A agência **suspensa** (`status = 'suspended'`) é fechada pela guarda de acesso à agência para toda rota, a busca incluída (`404`); só a agência em somente leitura (teste encerrado) busca. Se a intenção da seção 2 era a suspensa buscar também, é decisão de guarda (estrutural), fora desta rota.
+- Sem índice de apoio e sem migration: a medição com volume está no PR (seção 10, gatilho de 200 ms).

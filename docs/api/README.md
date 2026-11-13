@@ -5815,6 +5815,74 @@ Marca como lidas todas as notificações da pessoa na agência.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
+### search — A busca da barra superior da agência: clientes, conteúdos e arquivos pelo nome, em três grupos de até seis. Cada grupo respeita a permissão da leitura que ele atalha, e um grupo que a pessoa não pode ler vem vazio, igual a um grupo sem resultado.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `GET` | `/agencies/:agencyId/search` | Sessão + vínculo com a agência; cada grupo por permissão própria | — | Busca clientes, conteúdos e arquivos pelo nome |
+
+#### `GET /agencies/:agencyId/search`
+
+Busca clientes, conteúdos e arquivos pelo nome.
+
+- Acesso: Sessão + vínculo com a agência; cada grupo por permissão própria.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "q": "padar"
+}
+```
+
+**Resposta `200`** — Os três grupos, sempre presentes.
+
+```json
+{
+  "data": {
+    "clients": [
+      {
+        "id": "77777777-7777-4777-8777-777777777777",
+        "name": "Padaria Central",
+        "photoUrl": null,
+        "instagramHandle": "padariacentral",
+        "archived": false
+      }
+    ],
+    "contents": [
+      {
+        "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "clientId": "77777777-7777-4777-8777-777777777777",
+        "clientName": "Padaria Central",
+        "title": "Promoção de pães",
+        "format": "reels",
+        "status": "approved",
+        "overdue": false,
+        "scheduled": true,
+        "publishOn": "2026-11-20"
+      }
+    ],
+    "files": [
+      {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "clientId": "77777777-7777-4777-8777-777777777777",
+        "clientName": "Padaria Central",
+        "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "name": "padaria-fachada.jpg",
+        "category": "image",
+        "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
+      }
+    ]
+  },
+  "meta": {
+    "q": "padar"
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
 ## Catálogo de códigos de erro
 
 | código | mensagem padrão |
