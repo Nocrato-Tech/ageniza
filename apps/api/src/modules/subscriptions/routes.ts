@@ -25,7 +25,7 @@ import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
-import { chargeNotFound, chargeNotOpen, paymentProviderFailed, translateSubscriptionError } from './errors.js';
+import { chargeNotFound, chargeNotOpen, paymentProviderFailed, translateSubscriptionError, withoutFieldNames } from './errors.js';
 import { listInvoices } from './invoices.js';
 import { SUBSCRIPTION_PERMISSION, isProviderReference } from './policy.js';
 import {
@@ -179,7 +179,7 @@ export const registerSubscriptionModule = (app: FastifyInstance, dependencies: S
 
   app.put('/agencies/:agencyId/subscription/test-card', { preHandler: guards(saveTestCardDocs), config: saveTestCardDocs }, async (request, reply) => {
     routeParams(saveTestCardDocs, request);
-    const submitted = routeBody(saveTestCardDocs, request);
+    const submitted = withoutFieldNames(() => routeBody(saveTestCardDocs, request));
     const card = await asOwner(request, (transaction, agencyId) => saveTestCard(transaction, agencyId, submitted));
     return reply.send(routeResponse(saveTestCardDocs, request, { card }));
   });

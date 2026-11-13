@@ -35,3 +35,25 @@ export const translateSubscriptionError = (error: unknown): HttpError | undefine
     default: return undefined;
   }
 };
+
+const FIELDS_ACCEPTED = 'Só last4, expMonth, expYear e brand são aceitos.';
+
+/**
+ * The generic validation answer names an unknown field, and on the test card the name of a field can be the number of the card. Only
+ * this route swaps that one message for a fixed one: the rest of the answer (path, code, other issues) stays as the plugin built it.
+ */
+export const withoutFieldNames = <TResult>(parse: () => TResult): TResult => {
+  try {
+    return parse();
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.code !== 'VALIDATION_ERROR') throw error;
+    const issues = (error.details as { issues?: unknown } | undefined)?.issues;
+    if (!Array.isArray(issues)) throw error;
+    throw new HttpError({
+      statusCode: error.statusCode,
+      code: error.code,
+      message: error.message,
+      details: { issues: issues.map((issue: { code?: unknown }) => issue.code === 'unrecognized_keys' ? { ...issue, message: FIELDS_ACCEPTED } : issue) }
+    });
+  }
+};

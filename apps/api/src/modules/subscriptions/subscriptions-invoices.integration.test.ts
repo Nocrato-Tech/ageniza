@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildTestApp, type TestApp } from '../auth/test-support/harness.js';
@@ -166,6 +168,23 @@ describe('the pages of the invoices', () => {
     const dates = [...first.data, ...second.data].map((invoice) => invoice.date);
     expect(dates).toEqual([...dates].sort().reverse());
     expect(new Set([...first.data, ...second.data].map((invoice) => invoice.id)).size).toBe(27);
+  });
+
+  it('breaks a tie of the instant by the id, the larger first, so that no charge repeats or goes missing between pages', async () => {
+    const tied = await world.person('inv-tie');
+    const tiedAgency = await world.agency(tied);
+    const createdAt = new Date(Date.now() - 20 * 86_400_000);
+    // Inserted in ascending id order, so that an order left to the table would come out the other way round.
+    const ids = Array.from({ length: 6 }, () => randomUUID()).sort();
+    await world.owner.knex('subscription_charges').insert(ids.map((id, index) => ({
+      id, agency_id: tiedAgency, kind: 'upgrade', status: 'expired', plan_key: 'essencial', extra_clients: 0, extra_storage_gib: 0, amount_cents: 1000 + index,
+      requested_by_user_id: tied.user.id, expires_at: new Date(createdAt.getTime() + 1_800_000), created_at: createdAt
+    })));
+    const expected = [...ids].reverse();
+    expect((await list(tied, tiedAgency)).data.map((invoice) => invoice.id)).toEqual(expected);
+    const paged: string[] = [];
+    for (let page = 1; page <= 6; page += 1) paged.push(...(await list(tied, tiedAgency, `?page=${page}&pageSize=1`)).data.map((invoice) => invoice.id));
+    expect(paged).toEqual(expected);
   });
 
   it('keeps the total when the page is past the end, which comes empty', async () => {
