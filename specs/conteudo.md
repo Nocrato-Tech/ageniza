@@ -74,6 +74,46 @@ O upload é do **conteúdo pronto**; o material bruto fica fora do sistema.
 
 **Colunas e tipos novos (2026-11-11, pendentes de validação).** `media_assets` ganha `file_name` (o nome dado no envio, só rótulo: a chave do objeto não muda), `width` e `height` (gravadas no processamento de foto e vídeo), `alt_text` (até 500 caracteres, editável por `conteudo.operar`), a categoria **PDF**, **áudio** e **logo** (SVG só como logo, nunca servido como página nem inline) e, para o envio do cliente pelo portal, a ligação ao pedido de material e o lado de quem enviou. "Quem enviou" já existe (`created_by_user_id`). A agência **renomeia** e **move** o arquivo para outra pasta do mesmo cliente (a regra 12 vale para mover). Só foto e vídeo entram num conteúdo. Decisões: [metadados](../docs/business/decisions/2026-11-11-estrutural-a-midia-ganha-nome-dimensoes-texto-alternativo-renomear-e-mover.md), [tipos](../docs/business/decisions/2026-11-11-estrutural-a-midia-aceita-pdf-audio-e-svg-como-logo.md), [onde é usada e "Usar em um conteúdo"](../docs/business/decisions/2026-11-11-estrutural-a-midia-mostra-onde-e-usada-e-pode-abrir-um-conteudo.md) e [envio pelo cliente](../docs/business/decisions/2026-11-11-estrutural-o-cliente-envia-material-pelo-portal.md). **Upload pelo portal:** a pessoa ativa envia imagem e áudio **só a um pedido de material aberto do cliente dela**, para a pasta de sistema "Enviados pelo cliente", e só lê o que ela enviou; conta na cota da agência, e a mensagem de cota ou de somente leitura é neutra (nunca fala de plano).
 
+### Material enviado pelo cliente — `media_assets` (colunas novas) e as funções do envio
+
+Camada de banco da decisão [`2026-11-11-estrutural-o-cliente-envia-material-pelo-portal`](../docs/business/decisions/2026-11-11-estrutural-o-cliente-envia-material-pelo-portal.md) (validada pelo dono em 2026-11-12), migration `20261113000100_portal_material_uploads`. Sem backfill: a mídia que existe fica sem pedido e do lado `agency`.
+
+| campo | tipo | obrigatório | regra |
+|---|---|---|---|
+| `material_request_thread_id` | uuid | não | o pedido de material a que o arquivo responde; chave estrangeira `(pedido, cliente)` para `client_threads (id, client_id)`, então o arquivo e o pedido são do mesmo cliente; nenhum grant de escrita à aplicação: só a função de envio o escreve |
+| `uploaded_by_side` | texto | sim | `agency` (padrão) ou `client`; é `client` se, e só se, há pedido (`media_assets_client_upload_shape`); também sem grant de escrita |
+
+**Tetos finais (a proposta da decisão, confirmada).** **25 MiB** (26 214 400 bytes) por arquivo e **20 arquivos** por pedido, somando os confirmados e as reservas dentro da janela de reserva, de todas as pessoas do cliente; recusado, removido e reserva vencida não contam. A recusa de tamanho vem do banco (413), não do corpo da rota: o contrato aceita até 10 GiB, como o envio da agência. Uma cópia de cada valor no banco (`portal_upload_max_bytes`, `portal_upload_max_files`) e uma em `packages/contracts/src/portal-material-uploads.ts`; o teste de integração do banco lê as do contrato.
+
+**Tipos.** Imagem: PNG, JPEG, WebP e GIF. Áudio: MP3 (`audio/mpeg`), M4A (`audio/mp4`, `audio/x-m4a`), WAV (`audio/wav`, `audio/x-wav`, `audio/wave`), WebM e Ogg. Os parâmetros do tipo (`;codecs=opus`) não contam. Nunca SVG, vídeo nem PDF. A chave do objeto e a extensão são montadas no banco, a partir do tipo e dos ids que ele leu; a pessoa não escolhe nenhuma.
+
+**Pasta de sistema "Enviados pelo cliente".** Uma por cliente, criada pelo primeiro envio (não pelo cliente) como pasta `is_default`. É o mínimo que impede a agência de quebrar a regra, sem policy nova: a agência não a cria à mão (sem grant em `is_default`), não a renomeia (a policy de `UPDATE` exclui `is_default`) e não a apaga (`delete_media_folder` responde A0086, e não há `DELETE`). A agência ainda **move** um arquivo dela para outra pasta, como em qualquer mídia.
+
+**Funções (`security definer`, `search_path` vazio, execução só da aplicação, isolamento READ COMMITTED).** O ator vem do `bind_actor` da transação, nunca de `auth.uid()`. Os tetos padrão de cota da implantação e a janela de reserva são parâmetros: moram na configuração da API, e um parâmetro ausente ou não positivo dá 22023.
+
+| função | o que faz |
+|---|---|
+| `start_portal_material_upload(cliente, pedido, tipo, tamanho, nome, cota_bytes_padrão, cota_arquivos_padrão, janela)` | confere a pessoa e o pedido **antes de qualquer trava** (vínculo ativo, cliente ativo, agência ativa, pedido de material do mesmo cliente), depois o tipo e o tamanho; trava a cota da agência, o cliente e o pedido (em `FOR SHARE`) e **relê tudo**: vínculo, pedido aberto, agência que aceita escrita, vaga no pedido e na cota. Grava a linha `pending` e devolve as chaves |
+| `confirm_portal_material_upload(arquivo, tamanho_real, tipo_real, largura, altura, …)` | o arquivo é da pessoa e está `pending`; mesmas travas e releituras; o veredito sobre os bytes (`empty_object`, `content_type_mismatch`, `too_large`, `invalid_dimensions`, `request_full`, `quota_exceeded`) **grava a recusa** e responde `rejected`, para a reserva não ficar pendurada; senão confirma e carimba o instante |
+| `reject_portal_material_upload(arquivo, motivo)` | a pessoa solta a própria reserva (objeto que não chegou); o motivo é um código curto em minúsculas |
+
+Ordem das travas, sempre a mesma: a linha do arquivo (só na confirmação), a trava consultiva `media-quota:<agência>`, o cliente `FOR SHARE` (conflita com o arquivamento) e o pedido `FOR SHARE` (conflita com a resolução). O envio da agência já pega a cota antes do cliente, e nada aqui pega `agency_trial_limits:`, então a ordem das outras funções não muda. A soma de uso do armazenamento tem uma cópia só (`agency_storage_in_use`), que `agency_media_usage` também chama.
+
+**Leitura.** Uma policy de `SELECT`, `media_assets_select_portal_upload`: o arquivo `client` que a própria pessoa enviou a um pedido, `pending` ou `confirmed`, não removido, enquanto ela tiver vínculo ativo com o cliente ativo de uma agência ativa. Nunca o arquivo de outra pessoa, de outro cliente, de outra agência nem a mídia da agência. A pessoa do portal não tem `INSERT`, `UPDATE` nem `DELETE` em `media_assets`. A agência lê os arquivos do cliente pela regra de sempre da biblioteca (`conteudo.visualizar`): quem só tem `cliente.visualizar` (Vendas) vê o comentário do pedido, mas não o arquivo.
+
+| código | HTTP | quando |
+|---|---|---|
+| A0130 | 404 | pedido, arquivo ou vínculo não encontrado: pedido de outro cliente, conversa que não é pedido de material, cliente arquivado, agência suspensa, vínculo removido, arquivo de outra pessoa. **Uma resposta só**, que não revela qual |
+| A0131 | 409 | o pedido está resolvido |
+| A0132 | 413 | o arquivo passa do teto |
+| A0133 | 415 | o tipo não está na lista |
+| A0134 | 409 | o pedido já tem os 20 arquivos |
+| A0135 | 409 | o envio não está mais pendente |
+| A0136 | 409 | a agência não pode receber o arquivo agora (armazenamento): **neutra**, a API mostra a mensagem do portal que não fala de plano, cota nem cobrança |
+| A0090 | 409 | agência em somente leitura: o código que já existe (`AGENCY_READ_ONLY`), com a mesma mensagem neutra |
+
+Fica na API, não no banco: ler os bytes do objeto e deduzir o tipo e as dimensões, copiar do staging para a chave final, assinar as URLs, auditar (`media.upload_initiated`, `media.upload_confirmed`, `media.upload_rejected`) e comentar o pedido ("enviou 3 fotos").
+
 ### Conteúdo — `contents`
 
 | campo | tipo | obrigatório | regra |
@@ -234,7 +274,9 @@ Todas sob `requireSession` e `requireClientAccess`.
 | `GET` | `/clients/:clientId/contents/:contentId` | o post com legenda e mídias a partir de "aguardando aprovação" |
 | `POST` | `/clients/:clientId/contents/:contentId/approve` | aprovado; corpo com `revision` e, opcional, `note` (até 500 caracteres), que vira comentário do cliente na conversa do conteúdo na mesma transação |
 | `GET` | `/clients/:clientId/home-progress` | o progresso do mês (aprovados, total e o próximo a ir ao ar) para a "Boa notícia" do Início; *proposta* |
-| `POST` | `/clients/:clientId/material-requests/:threadId/uploads` | inicia o envio de uma imagem ou áudio a um pedido aberto, pelo mesmo fluxo de upload direto (iniciar, confirmar); *proposta* |
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads` | inicia o envio de uma imagem ou áudio a um pedido aberto, pelo mesmo fluxo de upload direto (iniciar, confirmar), sempre em uma parte só; corpo e resposta em `CreatePortalMaterialUpload*` (`packages/contracts`); recusas na tabela de códigos da seção 3; *proposta* |
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads/:assetId/complete` | confirma o envio depois do `PUT`; sem corpo; devolve o arquivo confirmado, ou a recusa que o banco gravou (`PortalMaterialUploadRejectionReason`); *proposta* |
+| `GET` | `/clients/:clientId/material-requests/:threadId/uploads` | os arquivos que a própria pessoa enviou a este pedido (`pending` e `confirmed`), paginado; *proposta* |
 | `POST` | `/clients/:clientId/contents/:contentId/request-changes` | em ajuste; comentário obrigatório |
 | `GET` | `/clients/:clientId/story-scripts` | roteiros enviados de um período |
 | `POST` | `/clients/:clientId/story-scripts/:scriptId/recorded` | gravado |
@@ -245,12 +287,12 @@ Calendário e a aba Feed em tela cheia consultam por intervalo (`from`, `to`), c
 
 ### Persistência
 
-Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `story_scripts`, `story_script_scenes` e a fila de notificação. Colunas novas: `media_assets.client_id`, `media_assets.folder_id`, `media_assets.removed_at`, `media_assets.purged_at`, `client_threads.content_id`. Permissões novas no catálogo, com os presets da seção 2. Pastas padrão criadas para todos os clientes existentes (backfill) e no cadastro de cada cliente novo.
+Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `story_scripts`, `story_script_scenes` e a fila de notificação. Colunas novas: `media_assets.client_id`, `media_assets.folder_id`, `media_assets.removed_at`, `media_assets.purged_at`, `client_threads.content_id`, e, no envio do cliente pelo portal, `media_assets.material_request_thread_id` e `media_assets.uploaded_by_side` (mais a chave única `(id, client_id)` de `client_threads`, para a chave estrangeira composta). Permissões novas no catálogo, com os presets da seção 2. Pastas padrão criadas para todos os clientes existentes (backfill) e no cadastro de cada cliente novo.
 
 ### RLS
 
 - **Agência:** isolamento por `client_id` → agência, com `app_private.has_agency_permission(agência, 'conteudo.<ação>')`.
-- **Portal:** `is_client_member(client_id)` para conteúdo a partir de "aguardando aprovação" (em produção, só as colunas de planejamento, por função de leitura), roteiro enviado e mídia **lida através do conteúdo** visível.
+- **Portal:** `is_client_member(client_id)` para conteúdo a partir de "aguardando aprovação" (em produção, só as colunas de planejamento, por função de leitura), roteiro enviado e mídia **lida através do conteúdo** visível; o arquivo que a própria pessoa enviou a um pedido de material é lido pela policy `media_assets_select_portal_upload` e escrito só pelas funções do envio (seção 3), sem `INSERT`, `UPDATE` nem `DELETE` do portal.
 - **Nenhuma** tabela de trabalho interno (`content_tasks`) tem policy que um vínculo de cliente satisfaça.
 - Grants por coluna; estado, aprovação e gravação só por função; transições e anulação da aprovação por trigger `BEFORE UPDATE` com `OLD`/`NEW`.
 
