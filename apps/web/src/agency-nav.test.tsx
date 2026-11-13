@@ -190,14 +190,13 @@ describe('agency side navigation (#628)', () => {
     expect(entry.textContent).toBe('Status do serviço');
   });
 
-  it('keeps the places of the search and the bell empty: no control for what has no destination yet', async () => {
+  it('keeps the place of the search empty and puts the bell before Ajuda: no control for what has no destination yet', async () => {
     renderAt(`/agencia/${AGENCY}`);
     await sidebar();
     const bar = document.querySelector<HTMLElement>('.shell-topbar');
     expect(bar).not.toBeNull();
-    expect(within(bar!).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['Ajuda']);
+    expect(within(bar!).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['Notificações', 'Ajuda']);
     expect(screen.queryByRole('searchbox')).toBeNull();
-    expect(screen.queryByRole('button', { name: /Notificações/ })).toBeNull();
   });
 
   it('calls the context "Agência logada" in the account menu too, with the name of the agency', async () => {
@@ -348,6 +347,7 @@ describe('the phone shell (390px)', () => {
     expect(document.querySelector('.agency-sidebar')).toBeNull();
     expect(document.querySelector('.shell-topbar')).toBeNull();
     expect(within(bar).getByRole('link', { name: 'Agência Um' }).getAttribute('href')).toBe('/contextos');
+    expect(within(bar).getByRole('button', { name: 'Notificações' })).toBeTruthy();
     expect(within(bar).getByRole('button', { name: 'Ajuda' })).toBeTruthy();
     expect(within(bar).getByRole('button', { name: 'Conta de Pessoa' })).toBeTruthy();
     fireEvent.click(within(bar).getByRole('link', { name: 'Agência Um' }));
