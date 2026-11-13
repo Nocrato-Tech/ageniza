@@ -51,12 +51,12 @@ const findFolderLink = (name: string) => screen.findByRole('link', { name: new R
 const libraryCalls = (world: World): string[] => world.calls.filter((call) => /\/clients\/[^/]+\/media(\?|$)/.test(call));
 
 describe('the Mídias tab: navigation and the address', () => {
-  it('opens from the tab after Geral, lists the default and own folders of the first level and none of the calendar', async () => {
+  it('opens from its tab after Conteúdos, lists the default and own folders of the first level and none of the calendar', async () => {
     const world = makeWorld();
     const { probe } = open(world, generalUrl);
 
     const tabs = within(await screen.findByRole('navigation', { name: 'Seções do cliente' }));
-    expect(tabs.getAllByRole('link').map((link) => link.textContent).slice(0, 2)).toEqual(['Geral', 'Mídias']);
+    expect(tabs.getAllByRole('link').map((link) => link.textContent?.replace(/\d+$/, '')).slice(0, 3)).toEqual(['Visão geral', 'Conteúdos', 'Mídias']);
     fireEvent.click(tabs.getByRole('link', { name: 'Mídias' }));
     await heading('Pastas');
 
@@ -268,7 +268,7 @@ describe('the Mídias tab: who sees it', () => {
     open(makeWorld({ permissions: ['cliente.visualizar'] }), generalUrl);
 
     const tabs = within(await screen.findByRole('navigation', { name: 'Seções do cliente' }));
-    expect(tabs.getByRole('link', { name: 'Geral' })).toBeTruthy();
+    expect(tabs.getByRole('link', { name: /^Visão geral/ })).toBeTruthy();
     expect(tabs.queryByRole('link', { name: 'Calendário Editorial' })).toBeNull();
     expect(tabs.queryByRole('link', { name: 'Mídias' })).toBeNull();
   });

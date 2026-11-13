@@ -492,9 +492,9 @@ describe('brand study tab (#138)', () => {
     expect(await screen.findByText('6 de 7 preenchidas')).toBeTruthy();
     expect(within(await sectionCard(container, 'Tom de voz')).getByText('editado por Ana · 12/10')).toBeTruthy();
     // The General tab's counter comes from the invalidated detail query, not a page reload.
-    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
+    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
     expect(await screen.findByRole('heading', { name: 'Cadastro' })).toBeTruthy();
-    expect(screen.getByText('6 de 7')).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('6 de 7'));
   });
 
   it('refuses a bad hex without a request, moves the counter and the General tab on save, and sends colors: [] on the last removal', async () => {
@@ -538,12 +538,12 @@ describe('brand study tab (#138)', () => {
     expect(within(await sectionCard(container, 'Cores')).getByText('#112233')).toBeTruthy();
     expect(within(await sectionCard(container, 'Cores')).getByText('editado por Ana · 12/10')).toBeTruthy();
     expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
-    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
-    expect(await screen.findByText('5 de 7')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
+    await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('5 de 7'));
 
     // Back to the study, removing the only row is clearing the section: it travels as colors: []
     // and the counter returns.
-    fireEvent.click(screen.getByRole('link', { name: 'Estudo de marca' }));
+    fireEvent.click(screen.getByRole('link', { name: /^Estudo de marca/ }));
     await screen.findByRole('heading', { name: 'Estudo de marca' });
     fireEvent.click(within(await sectionCard(container, 'Cores')).getByRole('button', { name: 'Editar Cores' }));
     fireEvent.click(within(await sectionCard(container, 'Cores')).getByRole('button', { name: 'Remover a cor 1' }));
@@ -619,8 +619,8 @@ describe('brand study tab (#138)', () => {
     expect(within(await sectionCard(container, 'Arquétipo')).queryByRole('combobox')).toBeNull();
     expect(within(await sectionCard(container, 'Arquétipo')).getByText('editado por Ana · 12/10')).toBeTruthy();
     expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
-    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
-    expect(await screen.findByText('5 de 7')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
+    await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('5 de 7'));
   });
 
   it('puts the focus on the name when the edit of a persona is refused', async () => {
@@ -740,8 +740,8 @@ describe('brand study tab (#138)', () => {
     expect(await screen.findByRole('link', { name: /Dona Maria/ })).toBeTruthy();
     // The counter here and on the General tab follow the invalidated study and detail.
     expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
-    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
-    expect(await screen.findByText('5 de 7')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
+    await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('5 de 7'));
   });
 
   it('keeps the create modal draft on server errors and maps 400, 403 and CLIENT_ARCHIVED', async () => {
@@ -855,8 +855,8 @@ describe('brand study tab (#138)', () => {
     expect(within(archived).getByRole('button', { name: 'Desarquivar Dona Aposentada' })).toBeTruthy();
     // Archiving the last active persona moves the counter, here and on the General tab.
     expect(await screen.findByText('4 de 7 preenchidas')).toBeTruthy();
-    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
-    expect(await screen.findByText('4 de 7')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
+    await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('4 de 7'));
   });
 
   it('keeps the edit draft on a persona save error, with the server message mapped', async () => {
@@ -948,8 +948,8 @@ describe('brand study tab (#138)', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Arquivadas (1)' })).toBeNull());
     // The counter here and on the General tab follow the invalidated study and detail.
     expect(await screen.findByText('5 de 7 preenchidas')).toBeTruthy();
-    fireEvent.click(screen.getByRole('link', { name: 'Geral' }));
-    expect(await screen.findByText('5 de 7')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
+    await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('5 de 7'));
   });
 
   it('draws a skeleton of the seven sections while the study loads', async () => {
@@ -1236,7 +1236,7 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
     const { impl } = makeFetch();
     const { probe } = renderStudy(impl, { pathname: studyUrl, state: { clientListUrl: roster } });
     await screen.findByRole('heading', { name: 'Estudo de marca' });
-    expect(screen.getByRole('link', { name: 'Voltar para Clientes' }).getAttribute('href')).toBe(roster);
+    expect(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }).getAttribute('href')).toBe(roster);
 
     await openSection('Tom de voz');
     expect(probe.search).toBe('?secao=tom-de-voz');
@@ -1246,7 +1246,7 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
     expect(screen.getAllByRole('heading', { level: 3 }).map((element) => element.textContent)).toEqual(['Observações']);
     // Going through the index never drops the address the roster handed over.
     expect(probe.state).toEqual({ clientListUrl: roster });
-    expect(screen.getByRole('link', { name: 'Voltar para Clientes' }).getAttribute('href')).toBe(roster);
+    expect(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }).getAttribute('href')).toBe(roster);
 
     // The browser's back returns to the previous section.
     await act(async () => { probe.navigate(-1); });
@@ -1510,7 +1510,7 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
     fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Arquivar' }));
     await waitFor(() => expect(probe.search).toBe('?secao=personas'));
     expect(probe.state).toEqual({ clientListUrl: roster });
-    expect(screen.getByRole('link', { name: 'Voltar para Clientes' }).getAttribute('href')).toBe(roster);
+    expect(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }).getAttribute('href')).toBe(roster);
 
     // The archived list links to the profile of each one without dropping the address either.
     fireEvent.click(await screen.findByRole('button', { name: 'Arquivadas (2)' }));

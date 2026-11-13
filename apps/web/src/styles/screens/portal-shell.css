@@ -1,14 +1,14 @@
 /* --- Portal do cliente (#141, #686): tema claro, celular primeiro, Pauta ---
-   Peças comuns do portal, para as telas de dentro (#687 post, #688 lista, #689 marca) usarem sem criar as suas:
-   .portal-section / .portal-section__title   um bloco da tela e o seu título
+   PeÃ§as comuns do portal, para as telas de dentro (#687 post, #688 lista, #689 marca) usarem sem criar as suas:
+   .portal-section / .portal-section__title   um bloco da tela e o seu tÃ­tulo
    .portal-headline                           a frase de destaque da tela, em tipografia expandida
-   .portal-block                              o bloco com borda (um roteiro, um formulário)
-   .portal-cover / .portal-cover-link         a capa 4:5 de um post e o link que a leva com título e etiquetas
-   .portal-row                                a linha de lista com capa pequena, título e estado
-   .portal-meta                               a linha de etiqueta e data embaixo de um título
-   .portal-action                             a única ação primária da tela, em largura cheia no celular
+   .portal-block                              o bloco com borda (um roteiro, um formulÃ¡rio)
+   .portal-cover / .portal-cover-link         a capa 4:5 de um post e o link que a leva com tÃ­tulo e etiquetas
+   .portal-row                                a linha de lista com capa pequena, tÃ­tulo e estado
+   .portal-meta                               a linha de etiqueta e data embaixo de um tÃ­tulo
+   .portal-action                             a Ãºnica aÃ§Ã£o primÃ¡ria da tela, em largura cheia no celular
    .portal-error                              o erro de um bloco, com "Tentar de novo"
-   Três tamanhos de texto por tela: --heading-xl, --body-md e --caption. --- */
+   TrÃªs tamanhos de texto por tela: --heading-xl, --body-md e --caption. --- */
 
 /* The shell has two pieces: the navigation (the client, the bar, the person) and the content. On a phone the navigation is the top bar
    and the bottom bar, each a flex item of the shell; from 48rem it is the side column. */
@@ -183,7 +183,7 @@ html:has(.portal-shell) {
 
 .portal-nav ul {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-1);
   margin: 0;
   padding: var(--space-1) var(--space-2);
@@ -242,3 +242,50 @@ html:has(.portal-shell) {
   outline-offset: -2px;
 }
 
+
+/* "Pedidos da agÃƒÂªncia": a short word on the bottom bar of a phone (the full one stays for assistive technology) and the count of open requests as a badge. */
+.portal-nav a {
+  position: relative;
+}
+
+.portal-nav__short {
+  display: none;
+}
+
+.portal-nav__badge {
+  min-width: 1.375rem;
+  padding: 0.0625rem 0.4375rem;
+  border-radius: var(--radius-full);
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+  font: var(--caption);
+  font-weight: 700;
+  text-align: center;
+}
+
+@media (max-width: 47.99rem) {
+  .portal-nav__long {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .portal-nav__short {
+    display: inline;
+  }
+
+  .portal-nav__badge {
+    position: absolute;
+    top: 2px;
+    right: 18%;
+  }
+}
+
+@media (min-width: 48rem) {
+  .portal-nav__badge {
+    margin-left: auto;
+  }
+}

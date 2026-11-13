@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { ChevronsUpDown, House, LayoutGrid, Palette, type LucideIcon } from 'lucide-react';
+import { ChevronsUpDown, House, Inbox, LayoutGrid, Palette, type LucideIcon } from 'lucide-react';
 import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -18,6 +18,7 @@ import { usePhone } from './use-phone.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
 import { PortalReadOnlyNotice } from './plan-notice.js';
+import { usePortalMaterialRequests } from './portal-requests.js';
 import { PortalTour, type PortalTourTarget } from './portal-tour.js';
 import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
@@ -40,10 +41,11 @@ export const usePortalClient = (): PortalClientResponse => {
 /** Same shape the API guard accepts; a malformed id never becomes a request (security review #190). */
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const PORTAL_TABS: readonly { slug: string; label: string; icon: LucideIcon }[] = [
+const PORTAL_TABS: readonly { slug: string; label: string; icon: LucideIcon; short?: string }[] = [
   { slug: 'inicio', label: 'Início', icon: House },
   { slug: 'conteudos', label: 'Conteúdos', icon: LayoutGrid },
-  { slug: 'marca', label: 'Marca', icon: Palette }
+  { slug: 'marca', label: 'Marca', icon: Palette },
+  { slug: 'pedidos', label: 'Pedidos da agência', icon: Inbox, short: 'Pedidos' }
 ];
 
 /** Every access to the portal approves the posts, so the role under the person's name is fixed text. */
@@ -110,12 +112,26 @@ function PortalShellSkeleton() {
   </div>;
 }
 
+/** The number of open requests of the agency, as a badge on its item: a count of work the client owes, not a notification. */
+function RequestsBadge({ clientId }: { clientId: string }) {
+  const requests = usePortalMaterialRequests(clientId);
+  const open = requests.data?.meta.totalItems ?? 0;
+  if (open === 0) return null;
+  return <span className="portal-nav__badge" aria-label={`${open} ${open === 1 ? 'pedido aberto' : 'pedidos abertos'}`}>{open}</span>;
+}
+
 function PortalNav({ clienteId, tourTarget, children }: { clienteId: string; tourTarget: PortalTourTarget | null; children?: React.ReactNode }) {
   return <nav className="portal-nav" aria-label="Navegação do portal">
     <p className="portal-nav__title">Seu espaço</p>
     <ul>
-      {PORTAL_TABS.map(({ slug, label, icon: Icon }) => <li key={slug}>
-        <NavLink end to={`/portal/${clienteId}/${slug}`} data-tour-target={slug === tourTarget ? 'true' : undefined}><Icon aria-hidden="true" /><span>{label}</span></NavLink>
+      {PORTAL_TABS.map(({ slug, label, icon: Icon, short }) => <li key={slug}>
+        <NavLink end to={`/portal/${clienteId}/${slug}`} data-tour-target={slug === tourTarget ? 'true' : undefined}>
+          <Icon aria-hidden="true" />
+          {short === undefined
+            ? <span>{label}</span>
+            : <span><span className="portal-nav__long">{label}</span><span className="portal-nav__short" aria-hidden="true">{short}</span></span>}
+          {slug === 'pedidos' && <RequestsBadge clientId={clienteId} />}
+        </NavLink>
       </li>)}
     </ul>
     {children}
