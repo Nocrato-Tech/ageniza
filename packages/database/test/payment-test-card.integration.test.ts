@@ -141,6 +141,19 @@ describe('the application role cannot write the table (acceptance b)', () => {
     expect(flags[0]).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
   });
 
+  it('hands nothing to PUBLIC, on the table or on a column: the application role is the only grantee besides the owner', async () => {
+    const { rows } = await owner().raw<{ rows: Array<{ grantee: string }> }>(`
+      select distinct grantee from (
+        select case when acl.grantee = 0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end as grantee
+        from pg_class c, aclexplode(c.relacl) acl where c.oid = ?::regclass and acl.grantee <> c.relowner
+        union all
+        select case when acl.grantee = 0 then 'PUBLIC' else pg_get_userbyid(acl.grantee) end as grantee
+        from pg_attribute a, aclexplode(a.attacl) acl where a.attrelid = ?::regclass
+      ) grants order by grantee
+    `, [TABLE, TABLE]);
+    expect(rows.map((row) => row.grantee)).toEqual(['ageniza_app']);
+  });
+
   it('refuses a real INSERT, UPDATE and DELETE of the Owner, by privilege and not by a policy', async () => {
     const { agencyId, ownerId } = await newAgency();
     await save(ownerId, agencyId);
