@@ -1429,7 +1429,7 @@ Edita uma persona.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_READ_ONLY` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/archive`
 
@@ -1466,7 +1466,7 @@ Arquiva uma persona.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_READ_ONLY` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive`
 
@@ -5930,6 +5930,7 @@ Busca clientes, conteúdos e arquivos pelo nome.
 | `CLIENT_NOT_ARCHIVED` | Este cliente já está ativo. |
 | `CLOSING_DATE_NOT_SET` | Este cliente não tem encerramento agendado. |
 | `PERSONA_ARCHIVED` | Persona arquivada: a conversa é somente leitura. |
+| `PERSONA_READ_ONLY` | Esta persona está arquivada. Desarquive-a para editar. |
 | `SECTION_NOT_FILLED` | Esta seção ainda não foi preenchida pela agência. |
 | `CONTENT_PERIOD_TOO_LARGE` | O período tem mais de 500 itens. Consulte um período menor. |
 | `CONTENT_NOT_EDITABLE` | Conteúdo publicado ou cancelado não pode ser editado. |

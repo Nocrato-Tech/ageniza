@@ -196,7 +196,8 @@ As do portal usam `requireSession` e `requireClientAccess`, sem permissão do ca
   cliente da URL, vínculo e cliente ativos na guarda). Pelo portal essa pessoa age só como cliente,
   com qualquer papel na agência; cada rota do portal tem teste com ela.
 - **409**: `CLIENT_ARCHIVED` (cliente arquivado é só leitura), `PERSONA_ARCHIVED` (a agência abrindo,
-  comentando ou resolvendo em persona arquivada) e `SECTION_NOT_FILLED` (o portal abrindo thread em
+  comentando ou resolvendo em persona arquivada), `PERSONA_READ_ONLY` (editar ou arquivar de novo uma
+  persona arquivada; sai do gatilho `A0137` do banco, sem checagem na rota) e `SECTION_NOT_FILLED` (o portal abrindo thread em
   seção que a agência não preencheu; a agência não tem essa restrição). A checagem vem **antes** da
   escrita; se o estado muda entre a checagem e a escrita, a recusa da RLS é relida numa transação
   nova e dá o mesmo 409 (404 no portal, que só sabe que o que via sumiu).

@@ -194,9 +194,11 @@ stateDiagram-v2
 | `GET` | `…/clients/:clientId/brand-study` | `cliente.visualizar` | as sete seções e as personas |
 | `PUT` | `…/clients/:clientId/brand-study/sections/:sectionKey` | `cliente.operar` | grava uma seção |
 | `POST` | `…/clients/:clientId/personas` | `cliente.operar` | cria uma persona |
-| `PATCH` | `…/clients/:clientId/personas/:personaId` | `cliente.operar` | edita uma persona |
-| `POST` | `…/clients/:clientId/personas/:personaId/archive` | `cliente.operar` | arquiva (some do portal) |
+| `PATCH` | `…/clients/:clientId/personas/:personaId` | `cliente.operar` | edita uma persona; persona arquivada responde `409 PERSONA_READ_ONLY` |
+| `POST` | `…/clients/:clientId/personas/:personaId/archive` | `cliente.operar` | arquiva (some do portal); persona já arquivada responde `409 PERSONA_READ_ONLY` |
 | `POST` | `…/clients/:clientId/personas/:personaId/unarchive` | `cliente.operar` | desarquiva |
+
+**Persona arquivada é somente leitura** ([decisão](../../business/decisions/2026-11-13-persona-arquivada-e-somente-leitura.md)): nenhum campo muda enquanto ela está arquivada, e a única ação é **Desarquivar**. Quem abriu a edição antes de outra pessoa arquivar recebe `409 PERSONA_READ_ONLY` ("Esta persona está arquivada. Desarquive-a para editar.") e a persona não muda; o app deve mostrar a mensagem e recarregar a persona.
 
 **Persona (2026-11-11, [campos novos](../../business/decisions/2026-11-11-estrutural-a-persona-ganha-idade-ocupacao-local-tracos-onde-esta-e-tom.md)).** Além de nome, descrição, dores, desejos e objeções, a persona ganha, todos opcionais: **idade** (1 a 120), **ocupação** (até 80), **local** (até 80), **traços** (até 5 chips de até 24 caracteres), **"onde está"** (até 280) e **"tom que funciona"** (até 280). Persona sem eles continua válida. O perfil mostra a linha de apoio "34 anos · gerente de RH · Pinheiros", os chips e as linhas Dor, Desejo, Objeções, Onde está e Tom que funciona, **cada uma com o seu lápis, salvando sozinha** no mesmo `PATCH …/personas/:personaId`. O formulário avisa para não pôr dado de pessoa real. O portal lê os campos novos junto da persona ativa.
 
