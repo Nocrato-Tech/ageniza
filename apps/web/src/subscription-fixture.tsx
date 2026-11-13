@@ -86,7 +86,22 @@ const quoteOf = (world: SubscriptionWorld, body: { planKey: string; extraClients
   const current = world.subscription;
   const currentMonthly = current === null ? 0 : overview(world).subscription!.monthlyCents;
   const effect = current === null ? 'subscribe' : monthly >= currentMonthly ? 'upgrade' : 'downgrade';
-  return { effect, monthlyCents: monthly, amountCents: effect === 'downgrade' ? 0 : monthly - currentMonthly, effectiveAt: '2026-11-10T01:30:00.000Z' };
+  const lines = [
+    { kind: 'plan', quantity: 1, unitCents: plan.monthlyCents, totalCents: plan.monthlyCents },
+    ...(body.extraClients > 0 ? [{ kind: 'extra_clients', quantity: body.extraClients, unitCents: 600, totalCents: body.extraClients * 600 }] : []),
+    ...(body.extraStorageGib > 0 ? [{ kind: 'extra_storage_gib', quantity: body.extraStorageGib, unitCents: 40, totalCents: body.extraStorageGib * 40 }] : [])
+  ];
+  const prorated = effect === 'upgrade';
+  return {
+    effect, monthlyCents: monthly, amountCents: effect === 'downgrade' ? 0 : monthly - currentMonthly, effectiveAt: '2026-11-10T01:30:00.000Z',
+    daysLeft: prorated ? 20 : null, periodDays: prorated ? 30 : null, lines
+  };
+};
+
+/** What opening a charge answers: the quote without the days and the lines, which only the quote carries. */
+const chargeOf = (world: SubscriptionWorld, body: { planKey: string; extraClients: number; extraStorageGib: number }) => {
+  const { effect, monthlyCents, amountCents, effectiveAt } = quoteOf(world, body);
+  return { effect, monthlyCents, amountCents, effectiveAt };
 };
 
 export const makeSubscriptionApi = (world: SubscriptionWorld) => {
@@ -112,7 +127,7 @@ export const makeSubscriptionApi = (world: SubscriptionWorld) => {
       return json(quoteOf(world, body as never));
     }
     if (path === '/subscription/charges') {
-      const quote = quoteOf(world, body as never);
+      const quote = chargeOf(world, body as never);
       if (quote.effect === 'downgrade') return json({ ...quote, chargeId: null }, 201);
       chargeCounter += 1;
       return json({ ...quote, chargeId: `00000000-0000-4000-8000-00000000000${chargeCounter}` }, 201);

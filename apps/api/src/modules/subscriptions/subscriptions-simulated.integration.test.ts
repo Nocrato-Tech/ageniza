@@ -2,7 +2,7 @@ import type { ChargeRequest, ChargeResult, PaymentProvider } from '@ageniza/paym
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildTestApp, TEST_APP_PUBLIC_URL, type TestApp } from '../auth/test-support/harness.js';
-import { createRecorder, createWorld, type Person, type World } from './test-support/world.js';
+import { BILLING_STATEMENT, createRecorder, createWorld, type Person, type World } from './test-support/world.js';
 import { cardDataSnapshot } from './test-support/card-data-snapshot.js';
 
 // Issue #772 and the contracts of the security review of #781: the simulated payment is the only path that confirms a charge here.
@@ -141,19 +141,41 @@ describe('paying', () => {
     expect(requests).toEqual([]);
   });
 
-  it('declines the test card without changing anything, and the same charge can still be paid', async () => {
+  it('declines the test card without changing the plan, records the refusal, and the same charge is not paid again: trying once more is a new charge', async () => {
     const chargeId = await open(owner, agency, { planKey: 'agencia', extraClients: 0, extraStorageGib: 0 });
+    recorder.reset();
     const declined = await world.call(owner, 'POST', payUrl(agency, chargeId), { outcome: 'declined' });
     expect(declined.statusCode).toBe(200);
     expect(declined.json()).toEqual({ status: 'declined' });
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({ testOutcome: 'declined' });
     expect(await statusOf(chargeId)).toBe('pending');
+    expect((await world.owner.knex('subscription_charges').where({ id: chargeId }).first('declined_at')).declined_at).toBeInstanceOf(Date);
     expect(await world.subscriptionOf(agency)).toMatchObject({ plan_key: 'profissional' });
     expect(recorder.running(/confirm_subscription_charge/)).toEqual([]);
 
-    const approved = await world.call(owner, 'POST', payUrl(agency, chargeId), { outcome: 'approved' });
-    expect(approved.json()).toEqual({ status: 'confirmed' });
+    // The refusal is recorded by a transaction of its own, as the person, that runs nothing else of billing.
+    const reading = recorder.running(/from public\.subscription_charges/);
+    const declining = recorder.running(/decline_subscription_charge/);
+    expect(reading).toHaveLength(1);
+    expect(declining).toHaveLength(1);
+    expect(declining[0]).not.toBe(reading[0]);
+    expect(declining[0]!.statements[0]).toMatch(/bind_actor/);
+    expect(declining[0]!.statements.filter((statement) => BILLING_STATEMENT.test(statement))).toHaveLength(1);
+
+    requests.length = 0;
+    for (const outcome of ['approved', 'declined'] as const) {
+      const again = await world.call(owner, 'POST', payUrl(agency, chargeId), { outcome });
+      expect(again.statusCode, outcome).toBe(409);
+      expect(errorCode(again), outcome).toBe('CHARGE_NOT_OPEN');
+    }
+    expect(requests).toEqual([]);
+    expect(await world.subscriptionOf(agency)).toMatchObject({ plan_key: 'profissional' });
+
+    const retry = await open(owner, agency, { planKey: 'agencia', extraClients: 0, extraStorageGib: 0 });
+    expect(retry).not.toBe(chargeId);
+    expect(await statusOf(chargeId)).toBe('expired');
+    expect((await world.call(owner, 'POST', payUrl(agency, retry), { outcome: 'approved' })).json()).toEqual({ status: 'confirmed' });
     expect(await world.subscriptionOf(agency)).toMatchObject({ plan_key: 'agencia' });
   });
 

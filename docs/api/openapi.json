@@ -64,7 +64,7 @@
     },
     {
       "name": "subscriptions",
-      "description": "Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar; e, só fora de produção, pagar com o provedor simulado e avançar o relógio."
+      "description": "Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar, e as faturas; e, só fora de produção, o cartão de teste, pagar com o provedor simulado e avançar o relógio."
     },
     {
       "name": "notifications",
@@ -9548,6 +9548,86 @@
         ],
         "additionalProperties": false
       },
+      "listSubscriptionInvoicesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "date": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "amountCents": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "paid",
+                    "declined",
+                    "open",
+                    "expired"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "date",
+                "description",
+                "amountCents",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "pageSize": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "totalItems": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalPages": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "page",
+              "pageSize",
+              "totalItems",
+              "totalPages"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
       "quoteSubscriptionChangeResponse": {
         "type": "object",
         "properties": {
@@ -9570,13 +9650,67 @@
           "effectiveAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "daysLeft": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "periodDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "plan",
+                    "extra_clients",
+                    "extra_storage_gib"
+                  ]
+                },
+                "quantity": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "unitCents": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "totalCents": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "kind",
+                "quantity",
+                "unitCents",
+                "totalCents"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 3
           }
         },
         "required": [
           "effect",
           "monthlyCents",
           "amountCents",
-          "effectiveAt"
+          "effectiveAt",
+          "daysLeft",
+          "periodDays",
+          "lines"
         ],
         "additionalProperties": false
       },
@@ -9674,6 +9808,82 @@
         },
         "required": [
           "outcome"
+        ],
+        "additionalProperties": false
+      },
+      "getSubscriptionTestCardResponse": {
+        "type": "object",
+        "properties": {
+          "card": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "last4": {
+                "type": "string",
+                "pattern": "^[0-9]{4}$"
+              },
+              "expMonth": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "expYear": {
+                "type": "integer",
+                "minimum": 2000,
+                "maximum": 2099
+              },
+              "brand": {
+                "type": "string",
+                "enum": [
+                  "test"
+                ]
+              }
+            },
+            "required": [
+              "last4",
+              "expMonth",
+              "expYear",
+              "brand"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "card"
+        ],
+        "additionalProperties": false
+      },
+      "saveSubscriptionTestCardRequest": {
+        "type": "object",
+        "properties": {
+          "last4": {
+            "type": "string",
+            "pattern": "^[0-9]{4}$"
+          },
+          "expMonth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "expYear": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2099
+          },
+          "brand": {
+            "type": "string",
+            "enum": [
+              "test"
+            ]
+          }
+        },
+        "required": [
+          "last4",
+          "expMonth",
+          "expYear",
+          "brand"
         ],
         "additionalProperties": false
       },
@@ -33018,11 +33228,205 @@
         }
       }
     },
+    "/agencies/{agencyId}/subscription/invoices": {
+      "get": {
+        "operationId": "listSubscriptionInvoices",
+        "summary": "Lista as faturas da agência",
+        "description": "Cada cobrança da agência é uma fatura: a data (a do pagamento, quando paga; a do pedido, nas outras), a descrição (o plano e os extras, escrita no\nservidor), o valor e o estado. `status` é `declined` (o provedor recusou o pagamento; vale mesmo que a cobrança tenha sido substituída depois),\n`paid`, `open` (aguardando pagamento, dentro dos 30 minutos) ou `expired`. Paginada pelo contrato global de listagem, 20 por página, da mais recente à\nmais antiga (o `id` desempata); `totalItems` vale também para uma página depois do fim, que vem vazia. Existe em qualquer ambiente, sem PDF nem nota fiscal.\nSó o Owner: a pessoa do portal nunca vê a cobrança da agência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "tags": [
+          "subscriptions"
+        ],
+        "x-permission": "assinatura.gerenciar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página das faturas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listSubscriptionInvoicesResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "id": "99999999-9999-4999-8999-999999999999",
+                      "date": "2026-11-12T14:00:00.000Z",
+                      "description": "Plano Profissional + 5 clientes extras",
+                      "amountCents": 22700,
+                      "status": "declined"
+                    },
+                    {
+                      "id": "88888888-8888-4888-8888-888888888888",
+                      "date": "2026-10-12T14:00:00.000Z",
+                      "description": "Plano Profissional",
+                      "amountCents": 19700,
+                      "status": "paid"
+                    }
+                  ],
+                  "meta": {
+                    "page": 1,
+                    "pageSize": 20,
+                    "totalItems": 2,
+                    "totalPages": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TRY_AGAIN",
+                    "message": "Houve um conflito momentâneo. Tente de novo."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agencies/{agencyId}/subscription/quote": {
       "post": {
         "operationId": "quoteSubscriptionChange",
         "summary": "Calcula o que uma mudança de plano ou de extras faz e custa",
-        "description": "O total é calculado no servidor e nada é gravado. `effect` é `subscribe` (primeira assinatura, ou nova depois do fim), `upgrade`\n(sobe agora e cobra o proporcional dos dias que restam do período) ou `downgrade` (vale no próximo período e cobra nada;\n`effectiveAt` é o fim do período). Recusas: `409 SUBSCRIPTION_BELOW_CLIENTS` ou `409 SUBSCRIPTION_BELOW_STORAGE` quando o novo teto fica abaixo do\nuso; `409 SUBSCRIPTION_MIXED_CHANGE` quando sobe um limite e desce outro; `409 SUBSCRIPTION_UNCHANGED` quando nada muda;\n`409 SUBSCRIPTION_NOT_AVAILABLE` quando a agência não pode mudar de plano (isenta, cortesia, sem assinatura da operação ou cancelada);\n`400 SUBSCRIPTION_INVALID` para um plano que não existe.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "description": "O total é calculado no servidor e nada é gravado. `effect` é `subscribe` (primeira assinatura, ou nova depois do fim), `upgrade`\n(sobe agora e cobra o proporcional dos dias que restam do período) ou `downgrade` (vale no próximo período e cobra nada;\n`effectiveAt` é o fim do período). Recusas: `409 SUBSCRIPTION_BELOW_CLIENTS` ou `409 SUBSCRIPTION_BELOW_STORAGE` quando o novo teto fica abaixo do\nuso; `409 SUBSCRIPTION_MIXED_CHANGE` quando sobe um limite e desce outro; `409 SUBSCRIPTION_UNCHANGED` quando nada muda;\n`409 SUBSCRIPTION_NOT_AVAILABLE` quando a agência não pode mudar de plano (isenta, cortesia, sem assinatura da operação ou cancelada);\n`400 SUBSCRIPTION_INVALID` para um plano que não existe. `lines` é de que se compõe o `monthlyCents` (o plano, uma vez, e cada extra comprado, no preço\nde cada unidade), e a soma delas é o `monthlyCents`. `daysLeft` de `periodDays` é a parte do período que a subida cobra agora (o dia que começou\nconta); os dois são `null` na primeira assinatura, que cobra o mês inteiro, e na descida, que não cobra nada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
         "tags": [
           "subscriptions"
         ],
@@ -33065,7 +33469,17 @@
                   "effect": "upgrade",
                   "monthlyCents": 19700,
                   "amountCents": 6800,
-                  "effectiveAt": "2026-11-15T12:00:00.000Z"
+                  "effectiveAt": "2026-11-15T12:00:00.000Z",
+                  "daysLeft": 15,
+                  "periodDays": 30,
+                  "lines": [
+                    {
+                      "kind": "plan",
+                      "quantity": 1,
+                      "unitCents": 19700,
+                      "totalCents": 19700
+                    }
+                  ]
                 }
               }
             }
@@ -33681,7 +34095,7 @@
       "post": {
         "operationId": "payChargeSimulated",
         "summary": "Paga uma cobrança com o provedor simulado (só fora de produção)",
-        "description": "Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). O cartão **nunca** viaja: a tela escolhe `outcome`\n(`approved`, ou `declined` para o número de cartão de teste fixo) e não manda mais nada do cartão. A cobrança precisa ser da agência do Owner que paga e\nestar aberta; a de outra agência responde `404 NOT_FOUND` e continua pendente. Aprovada, o provedor confirma ao banco, e só então o plano e os tetos\nmudam (`confirmed`); recusada (`declined`), nada muda e a cobrança segue aberta até vencer.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "description": "Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). O cartão **nunca** viaja: a tela escolhe `outcome`\n(`approved`, ou `declined` para o número de cartão de teste fixo) e não manda mais nada do cartão. A cobrança precisa ser da agência do Owner que paga e\nestar aberta; a de outra agência responde `404 NOT_FOUND` e continua pendente. Aprovada, o provedor confirma ao banco, e só então o plano e os tetos\nmudam (`confirmed`). Recusada (`declined`), o plano e os tetos não mudam, e a cobrança registra a recusa numa transação própria: ela aparece como\n\"recusada\" nas faturas e **não é paga de novo** (`409 CHARGE_NOT_OPEN`, sem chamar o provedor). Tentar outra vez é pedir uma cobrança nova em\n`POST /charges`, que expira a recusada.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
         "tags": [
           "subscriptions"
         ],
@@ -33999,6 +34413,351 @@
                   "error": {
                     "code": "SUBSCRIPTION_NOT_AVAILABLE",
                     "message": "Esta operação não está disponível para a assinatura da agência neste momento."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/subscription/test-card": {
+      "get": {
+        "operationId": "getSubscriptionTestCard",
+        "summary": "Devolve o cartão de teste da agência (só fora de produção)",
+        "description": "Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). `card` é `null` enquanto a agência não salvou um.\nO cartão é só os quatro últimos dígitos, a validade e a marca `test`: o número, o código de segurança e o nome nunca saem do navegador. Só o Owner.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "tags": [
+          "subscriptions"
+        ],
+        "x-permission": "assinatura.gerenciar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "O cartão de teste, ou `null`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getSubscriptionTestCardResponse"
+                },
+                "example": {
+                  "card": {
+                    "last4": "4242",
+                    "expMonth": 8,
+                    "expYear": 2028,
+                    "brand": "test"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "You do not have permission to perform this action."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TRY_AGAIN",
+                    "message": "Houve um conflito momentâneo. Tente de novo."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveSubscriptionTestCard",
+        "summary": "Salva ou troca o cartão de teste da agência (só fora de produção)",
+        "description": "Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). Um cartão por agência: salvar de novo o troca.\nO corpo são exatamente os quatro valores (`last4`, `expMonth`, `expYear` e `brand` igual a `test`): qualquer outro campo, como `number`, `cvc` ou `name`,\né recusado com `400 VALIDATION_ERROR` sem repetir o que veio, e um valor que não é de um cartão de teste, com `400 TEST_CARD_INVALID`. Nenhuma resposta, log ou\nauditoria leva o número. Só o Owner.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `assinatura.gerenciar`.",
+        "tags": [
+          "subscriptions"
+        ],
+        "x-permission": "assinatura.gerenciar",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/saveSubscriptionTestCardRequest"
+              },
+              "example": {
+                "last4": "4242",
+                "expMonth": 8,
+                "expYear": 2028,
+                "brand": "test"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "O cartão de teste salvo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/getSubscriptionTestCardResponse"
+                },
+                "example": {
+                  "card": {
+                    "last4": "4242",
+                    "expMonth": 8,
+                    "expYear": 2028,
+                    "brand": "test"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed | TEST_CARD_INVALID:",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TRY_AGAIN",
+                    "message": "Houve um conflito momentâneo. Tente de novo."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

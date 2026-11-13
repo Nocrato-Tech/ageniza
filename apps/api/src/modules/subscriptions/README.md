@@ -17,14 +17,17 @@ Todas exigem a permissão `assinatura.gerenciar`, que **só o Owner tem, por pos
 |---|---|
 | `GET /plans` | planos, preços e extras, lidos das tabelas |
 | `GET /` | a assinatura da agência: plano, extras, período, cancelamento, tolerância, uso e provedor |
-| `POST /quote` | o total e o efeito (assinar, subir, descer) de uma mudança, calculados no servidor |
+| `GET /invoices` | as cobranças da agência, 20 por página, com a data, a descrição (plano e extras, escrita no servidor), o valor e o estado: `declined`, `paid`, `open` ou `expired`. Em qualquer ambiente |
+| `POST /quote` | o total e o efeito (assinar, subir, descer) de uma mudança, calculados no servidor, com as linhas da soma (`lines`) e, só numa subida, os dias do período que a cobrança proporcional usa (`daysLeft` de `periodDays`) |
 | `POST /charges` | pede a mudança; sobe ou assina gera uma cobrança pendente, descer só agenda para o próximo período, e uma subida de valor zero (plano mais barato com teto maior) é aplicada na hora, sem cobrança e sem passar pelo provedor |
 | `POST /cancel`, `POST /reactivate` | cancela (vale também na tolerância) e reativa (só até o fim do período) |
 | `POST /simulated-period-advance` | **só dev**: leva o período ao fim, para testar renovação e tolerância |
-| `POST /charges/:chargeId/simulated-payment` | **só dev**: o cartão simulado, `approved` ou `declined` |
+| `POST /charges/:chargeId/simulated-payment` | **só dev**: o cartão simulado, `approved` ou `declined`; a recusa fica registrada na cobrança |
+| `GET /test-card`, `PUT /test-card` | **só dev**: o cartão de teste da agência (`{ card }`, `null` sem cartão); `PUT` salva ou troca |
 
-As duas últimas só são registradas com `PAYMENTS_PROVIDER=simulado` **e** ambiente diferente de produção; fora disso a rota não existe
-(`404`). O inventário de rotas do `api-docs` é o de um app de teste, que as registra; em produção elas não aparecem.
+As quatro últimas só são registradas com `PAYMENTS_PROVIDER=simulado` **e** ambiente diferente de produção; fora disso a rota não existe
+(`404`). O inventário de rotas do `api-docs` é o de um app de teste, que as registra; em produção elas não aparecem. As faturas existem
+em qualquer ambiente.
 
 ## Quem muda o plano
 
@@ -36,9 +39,27 @@ e as recusas (`A0111` abaixo dos clientes em uso, `A0117` abaixo do armazenament
 
 ## O cartão
 
-O cartão simulado **nunca** chega ao servidor como dado de cartão: o corpo de `simulated-payment` é `{ outcome }` e nada mais
-(`.strict()`), e nenhum número nem final de cartão é lido, gravado ou registrado. `declined` representa o cartão de teste recusado,
-para exercitar a tolerância de três dias.
+Decisão 2026-11-11 (que substitui o item 3 da de 2026-10-29): o que se guarda de um cartão são **só os quatro últimos dígitos, a
+validade e a marca `test`**, numa tabela só (`agency_test_cards`), um cartão por agência ("Trocar" o substitui). Número, código de
+segurança e nome **nunca** chegam ao servidor:
+
+- `PUT /test-card` valida o corpo pelo contrato estrito (`{ last4, expMonth, expYear, brand: "test" }`): qualquer outro campo é `400`,
+  e a resposta de erro não repete o que veio. O banco grava pela função `save_agency_test_card` (que confere o Owner e audita sem os
+  dígitos); `A0124` vira `400 TEST_CARD_INVALID` e `42501`, `403`.
+- `GET /test-card` lê sob a RLS, depois do guard do Owner: quem não pode recebe `403`, nunca `card: null`.
+- O corpo de `simulated-payment` continua `{ outcome }` e nada mais (`.strict()`). `declined` representa o cartão de teste recusado,
+  para exercitar a tolerância de três dias.
+- Nenhum log nem evento de auditoria leva o número; o teste `card-data-snapshot.test.ts` define o que não pode aparecer nas cobranças, na
+  assinatura e na auditoria (a única ação com a palavra é `subscription.test_card_saved`, sem valores).
+
+## A recusa (decisão 2026-11-12)
+
+Quando o provedor simulado devolve `declined`, a cobrança registra a recusa (`declined_at`) por `app_private.decline_subscription_charge`,
+**numa transação própria, como a pessoa**, separada da leitura da cobrança, de qualquer pedido e da confirmação: a função só toma a trava da
+agência, e juntá-la a quem toma também a da cota inverteria a ordem. `A0125` (a cobrança não está aberta) vira `409 CHARGE_NOT_OPEN`.
+Uma cobrança recusada fica recusada: a rota de pagar a recusa **antes** de chamar o provedor (`409 CHARGE_NOT_OPEN`), e tentar de novo é
+`POST /charges`, que abre outra cobrança e expira a recusada, que continua "recusada" nas faturas. Falha do provedor e abandono não
+registram recusa.
 
 ## Contratos de segurança (Coruja, #772)
 
