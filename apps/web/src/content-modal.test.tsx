@@ -1492,7 +1492,7 @@ describe('"Usar em um conteúdo": ?midia= opens a new content with that file cho
   const PDF_ID = 'a0a0a0a0-0000-4000-8000-0000000000f1';
   const MISSING = 'a0a0a0a0-0000-4000-8000-0000000000ee';
   const libraryAsset = (found: typeof IMG_2, folderId: string, category: string = found.category) => ({
-    ...found, category, folderId, folderName: 'Pasta', name: null, width: null, height: null, altText: null, uploadedBy: null, usageCount: 0
+    ...found, category, folderId, folderName: 'Pasta', name: null, width: null, height: null, altText: null, uploadedBy: null, uploadedBySide: 'agency', usageCount: 0
   });
   const mediaRead = (assetId: string, body: () => Response) => (call: { method: string; path: string }): Response | undefined =>
     (call.method === 'GET' && call.path === `/agencies/${AGENCY}/clients/${padaria.id}/media/${assetId}` ? body() : undefined);

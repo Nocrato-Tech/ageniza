@@ -415,14 +415,14 @@ stateDiagram-v2
 |---|---|---|---|
 | `POST` | `…/media/uploads` | `midia.enviar` ou `conteudo.operar` | inicia o upload e devolve a URL assinada, simples ou multipart |
 | `POST` | `…/media/uploads/:assetId/parts` | `midia.enviar` ou `conteudo.operar` | URLs das partes do multipart |
-| `POST` | `…/media/uploads/:assetId/complete` | `midia.enviar` ou `conteudo.operar` | confirma o upload e valida o arquivo |
+| `POST` | `…/media/uploads/:assetId/complete` | `midia.enviar` ou `conteudo.operar` | confirma o upload e valida o arquivo; só confirma arquivo da agência: a reserva que o cliente fez pelo portal responde `404`, como um arquivo que não existe (o portal a confirma) |
 | `GET` | `…/media/:assetId/download-url` | `midia.enviar` ou `conteudo.visualizar` | URL assinada de leitura |
 | `GET` | `…/clients/:clientId/media-folders` | `conteudo.visualizar` | pastas do cliente |
 | `POST` | `…/clients/:clientId/media-folders` | `conteudo.operar` | cria uma pasta |
 | `GET` | `…/clients/:clientId/media-folders/:folderId/assets` | `conteudo.visualizar` | mídias da pasta |
 | `POST` | `…/clients/:clientId/media-folders/:folderId/assets/:assetId/remove` | `conteudo.operar` | remove da pasta |
-| `GET` | `…/clients/:clientId/media` | `conteudo.visualizar` | os arquivos do cliente, dos mais novos para os mais antigos, com os filtros `q` (nome), `category` e `folderId` e a paginação de sempre |
-| `GET` | `…/clients/:clientId/media/:assetId` | `conteudo.visualizar` | um arquivo, com nome, tipo, tamanho, largura e altura, texto alternativo e quem enviou |
+| `GET` | `…/clients/:clientId/media` | `conteudo.visualizar` | os arquivos do cliente, dos mais novos para os mais antigos, com os filtros `q` (nome), `category` e `folderId` e a paginação de sempre; cada item traz `uploadedBySide` (`agency` ou `client`: `client` é o arquivo que o cliente enviou pelo portal, e a tela mostra "Enviada por <nome do cliente>") |
+| `GET` | `…/clients/:clientId/media/:assetId` | `conteudo.visualizar` | um arquivo, com nome, tipo, tamanho, largura e altura, texto alternativo, quem enviou e o lado de quem enviou (`uploadedBySide`) |
 | `PATCH` | `…/clients/:clientId/media/:assetId` | `conteudo.operar` **e** `conteudo.visualizar` | renomeia (`name`) e edita o texto alternativo (`altText`, até 500 caracteres); devolve o arquivo |
 | `POST` | `…/clients/:clientId/media/:assetId/move` | `conteudo.operar` **e** `conteudo.visualizar` | move para outra pasta **do mesmo cliente** (`folderId`); `409 MEDIA_IN_USE` se o arquivo está em uso; devolve o arquivo |
 | `GET` | `…/clients/:clientId/media/:assetId/usage` | `conteudo.visualizar` | os conteúdos que usam o arquivo, com título e estado, e se é mídia, capa ou os dois |

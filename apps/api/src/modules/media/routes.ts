@@ -36,11 +36,13 @@ import {
   MEDIA_READ_URL_BUCKET,
   MEDIA_UPLOAD_PERMISSIONS,
   multipartPlan,
+  objectKeyFor,
+  uploadObjectKeyFor,
   usesMultipartUpload,
   type MediaLimits
 } from './policy.js';
 import { registerMediaLibraryRoutes } from './library-routes.js';
-import { judgeUploadedObject, type UploadVerdict } from './upload-inspection.js';
+import { copyAndInspectStagedObject, type UploadVerdict } from './upload-inspection.js';
 import {
   auditMediaEvent,
   findConfirmedAssetWithVariants,
@@ -120,12 +122,6 @@ const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth'
   if (auth === undefined) throw unauthenticated();
   return auth;
 };
-
-const objectKeyFor = (agencyId: string, assetId: string, extension: string): string => `${agencyId}/${assetId}/original.${extension}`;
-// All temporary objects share a leading prefix so R2 lifecycle can expire them without matching
-// canonical originals or generated variants. R2 lifecycle filters support prefixes, not suffixes.
-const uploadObjectKeyFor = (agencyId: string, assetId: string, extension: string): string =>
-  `staging/${agencyId}/${assetId}/upload.${extension}`;
 
 /**
  * A media of a client is a child of it: once the client is archived, no write of the upload goes on (a new URL, a renewed
@@ -340,32 +336,25 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         await storage.completeMultipartUpload({ key: asset.upload_object_key, uploadId: asset.multipart_upload_id!, parts: body.parts! });
       }
 
-      // A still-valid browser URL can mutate only staging. Copy first, then validate the immutable
-      // canonical key so an overwrite between HeadObject and CopyObject cannot smuggle different
-      // bytes past validation. The preliminary staging HEAD preserves the explicit missing-object
+      // The preliminary staging HEAD (inside the shared inspection) preserves the explicit missing-object
       // rejection instead of surfacing an opaque CopyObject error.
-      const stagingHead = await storage.headObject({ key: asset.upload_object_key });
-      if (stagingHead !== undefined) {
-        await storage.copyObject({ sourceKey: asset.upload_object_key, destinationKey: asset.object_key });
-        copiedCanonicalKey = asset.object_key;
-      }
-      // The R2/S3 protocol offers no upload-time size policy for a presigned PUT. This canonical
-      // HeadObject observes exactly the object that will survive confirmation.
-      const head = stagingHead === undefined ? undefined : await storage.headObject({ key: asset.object_key });
+      const inspection = await copyAndInspectStagedObject(storage, config, {
+        stagingKey: asset.upload_object_key,
+        canonicalKey: asset.object_key,
+        declaredContentType: asset.declared_content_type,
+        category: asset.category,
+        onCopied: () => { copiedCanonicalKey = asset.object_key; }
+      });
+      const head = inspection.copied ? inspection.head : undefined;
 
       let rejectionReason: string | undefined;
       let confirmed: Extract<UploadVerdict, { readonly ok: true }> | undefined;
-      if (head === undefined) {
+      if (!inspection.copied || head === undefined) {
         rejectionReason = 'object_not_found';
+      } else if (inspection.verdict.ok) {
+        confirmed = inspection.verdict;
       } else {
-        const verdict = await judgeUploadedObject(storage, config, {
-          key: asset.object_key,
-          declaredContentType: asset.declared_content_type,
-          category: asset.category,
-          head
-        });
-        if (verdict.ok) confirmed = verdict;
-        else rejectionReason = verdict.reason;
+        rejectionReason = inspection.verdict.reason;
       }
       if (head !== undefined && confirmed !== undefined) {
         await lockAgencyStorageQuota(transaction, params.agencyId);
@@ -389,7 +378,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         // records the rejection.
         if (copiedCanonicalKey !== undefined) await storage.deleteObject({ key: copiedCanonicalKey });
         copiedCanonicalKey = undefined;
-        if (stagingHead !== undefined) await storage.deleteObject({ key: asset.upload_object_key });
+        if (inspection.stagingFound) await storage.deleteObject({ key: asset.upload_object_key });
         await markAssetRejected(transaction, asset.id, rejectionReason);
         await auditMediaEvent(transaction, { action: 'media.upload_rejected', actorUserId: auth.userId, agencyId: params.agencyId, targetId: asset.id });
         return { ok: false as const, reason: rejectionReason };

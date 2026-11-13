@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { CommentSchema } from './conversations.js';
 import { MediaFileNameSchema } from './media.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
 import { ClientThreadPathParamsSchema } from './params.js';
@@ -78,7 +79,10 @@ export const CreatePortalMaterialUploadResponseSchema = z.object({
   }).strict()
 }).strict();
 
-/** `POST .../uploads/:assetId/complete`: no body, the object is read from the storage. */
+/**
+ * `POST .../uploads/:assetId/complete`: no body, the object is read from the storage. A file the bytes turn down is not this response: it is
+ * a 422 `UPLOAD_REJECTED` whose `details.reason` is a `PortalMaterialUploadRejectionReason`, and the reservation is gone.
+ */
 export const CompletePortalMaterialUploadRequestSchema = z.object({}).strict();
 
 export const CompletePortalMaterialUploadResponseSchema = z.object({
@@ -90,7 +94,8 @@ export const CompletePortalMaterialUploadResponseSchema = z.object({
 
 /**
  * A file the person sent to the request: pending while the object is on its way, confirmed once the bytes were read. `sizeBytes` is the
- * declared size of a pending one and the real size of a confirmed one.
+ * declared size of a pending one and the real size of a confirmed one. `url` is the signed read of a confirmed file and `null` for a pending
+ * one; the key of the object is never part of it.
  */
 export const PortalMaterialUploadSchema = z.object({
   id: z.string().uuid(),
@@ -101,11 +106,24 @@ export const PortalMaterialUploadSchema = z.object({
   name: z.string().min(1).nullable(),
   width: z.number().int().positive().nullable(),
   height: z.number().int().positive().nullable(),
+  url: z.string().url().nullable(),
   createdAt: z.string().datetime()
 }).strict();
 
 export const PortalMaterialUploadListQuerySchema = PaginationInputSchema;
 export const PortalMaterialUploadListResponseSchema = createPaginatedResponseSchema(PortalMaterialUploadSchema);
+
+/**
+ * `POST .../uploads/announce`: the client tells the request that she sent a batch ("enviou 3 fotos"). Every id must be a file the person
+ * confirmed in this request; any other (someone else's, pending, of another request, unknown) is the same 404. The server writes the text
+ * of the comment and the answer is that comment, which is what notifies the agency.
+ */
+export const AnnouncePortalMaterialUploadsRequestSchema = z.object({
+  assetIds: z.array(z.string().uuid()).min(1).max(PORTAL_MATERIAL_UPLOAD_MAX_FILES)
+    .refine((ids) => new Set(ids).size === ids.length, 'assetIds must not repeat an id')
+}).strict();
+
+export const AnnouncePortalMaterialUploadsResponseSchema = CommentSchema;
 
 export type PortalMaterialUploadCategory = z.infer<typeof PortalMaterialUploadCategorySchema>;
 export type PortalMaterialUploadRejectionReason = z.infer<typeof PortalMaterialUploadRejectionReasonSchema>;
@@ -114,4 +132,5 @@ export type CreatePortalMaterialUploadRequest = z.infer<typeof CreatePortalMater
 export type CreatePortalMaterialUploadResponse = z.infer<typeof CreatePortalMaterialUploadResponseSchema>;
 export type CompletePortalMaterialUploadResponse = z.infer<typeof CompletePortalMaterialUploadResponseSchema>;
 export type PortalMaterialUpload = z.infer<typeof PortalMaterialUploadSchema>;
+export type AnnouncePortalMaterialUploadsRequest = z.infer<typeof AnnouncePortalMaterialUploadsRequestSchema>;
 export type PortalMaterialUploadListResponse = z.infer<typeof PortalMaterialUploadListResponseSchema>;

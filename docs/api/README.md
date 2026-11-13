@@ -832,6 +832,7 @@ Cria uma agência em período de teste.
 | `GET` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Lista os comentários de uma conversa, no portal |
 | `POST` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Comenta uma conversa pelo portal |
 | `GET` | `/clients/:clientId/material-requests` | Sessão + vínculo com o cliente | — | Lista os pedidos de material abertos do cliente, no portal |
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads/announce` | Sessão + vínculo com o cliente | — | Avisa o pedido de que o cliente enviou um lote de arquivos, no portal |
 | `GET` | `/clients/:clientId` | Sessão + vínculo com o cliente | — | Lê o cadastro do próprio cliente e o resumo do Início, no portal |
 | `GET` | `/clients/:clientId/brand-study` | Sessão + vínculo com o cliente | — | Lê o estudo de marca, no portal |
 
@@ -2171,6 +2172,40 @@ Lista os pedidos de material abertos do cliente, no portal.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /clients/:clientId/material-requests/:threadId/uploads/announce`
+
+Avisa o pedido de que o cliente enviou um lote de arquivos, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "assetIds": [
+    "44444444-4444-4444-8444-444444444444"
+  ]
+}
+```
+
+**Resposta `201`** — Comentário gravado.
+
+```json
+{
+  "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "body": "enviou 1 foto",
+  "side": "client",
+  "author": {
+    "name": "Ana, da Padaria Central",
+    "photoUrl": null
+  },
+  "createdAt": "2026-10-07T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 AGENCY_READ_ONLY` · `409 REQUEST_RESOLVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId`
 
@@ -4352,6 +4387,9 @@ Lista os papéis atribuíveis na agência.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads` | Sessão + vínculo com o cliente | — | Inicia o envio de uma foto ou áudio a um pedido de material, no portal |
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads/:assetId/complete` | Sessão + vínculo com o cliente | — | Confirma o envio depois do PUT, no portal |
+| `GET` | `/clients/:clientId/material-requests/:threadId/uploads` | Sessão + vínculo com o cliente | — | Lista o que a própria pessoa enviou a um pedido de material, no portal |
 | `POST` | `/agencies/:agencyId/media/uploads` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Inicia um upload de mídia |
 | `POST` | `/agencies/:agencyId/media/uploads/:assetId/parts` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Pede URLs assinadas de partes do multipart |
 | `POST` | `/agencies/:agencyId/media/uploads/:assetId/complete` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Confirma o upload e valida o objeto |
@@ -4368,6 +4406,110 @@ Lista os papéis atribuíveis na agência.
 | `GET` | `/agencies/:agencyId/clients/:clientId/media-folders/summary` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as pastas de mídia com o que cada uma guarda |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId` | Sessão + vínculo com a agência | `conteudo.operar` | Renomeia uma pasta de mídia do cliente |
 | `DELETE` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId` | Sessão + vínculo com a agência | `conteudo.operar` | Exclui uma pasta de mídia vazia do cliente |
+
+#### `POST /clients/:clientId/material-requests/:threadId/uploads`
+
+Inicia o envio de uma foto ou áudio a um pedido de material, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "fileName": "equipe.jpg",
+  "contentType": "image/jpeg",
+  "declaredSizeBytes": 2404019
+}
+```
+
+**Resposta `201`** — Reserva criada; a URL assinada vale até `expiresAt`.
+
+```json
+{
+  "assetId": "44444444-4444-4444-8444-444444444444",
+  "category": "image",
+  "contentType": "image/jpeg",
+  "upload": {
+    "type": "single",
+    "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+    "expiresAt": "2026-11-13T12:15:00.000Z"
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 AGENCY_READ_ONLY` · `409 REQUEST_FULL` · `409 REQUEST_RESOLVED` · `409 TRY_AGAIN` · `409 UPLOAD_UNAVAILABLE` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `POST /clients/:clientId/material-requests/:threadId/uploads/:assetId/complete`
+
+Confirma o envio depois do PUT, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{}
+```
+
+**Resposta `200`** — Arquivo confirmado.
+
+```json
+{
+  "assetId": "44444444-4444-4444-8444-444444444444",
+  "status": "confirmed",
+  "sizeBytes": 2404019,
+  "contentType": "image/jpeg"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 AGENCY_READ_ONLY` · `409 REQUEST_RESOLVED` · `409 TRY_AGAIN` · `409 UPLOAD_NOT_PENDING` · `422 UPLOAD_REJECTED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/material-requests/:threadId/uploads`
+
+Lista o que a própria pessoa enviou a um pedido de material, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página dos arquivos enviados pela pessoa.
+
+```json
+{
+  "data": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "status": "confirmed",
+      "category": "image",
+      "contentType": "image/jpeg",
+      "sizeBytes": 2404019,
+      "name": "equipe.jpg",
+      "width": 3024,
+      "height": 4032,
+      "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+      "createdAt": "2026-11-13T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 48,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/media/uploads`
 
@@ -4661,6 +4803,7 @@ Lista a biblioteca de mídia de um cliente.
         "membershipId": "22222222-2222-4222-8222-222222222222",
         "name": "Ana Souza"
       },
+      "uploadedBySide": "agency",
       "createdAt": "2026-11-11T12:00:00.000Z",
       "usageCount": 2
     }
@@ -4702,6 +4845,7 @@ Detalha um arquivo da biblioteca.
     "membershipId": "22222222-2222-4222-8222-222222222222",
     "name": "Ana Souza"
   },
+  "uploadedBySide": "agency",
   "createdAt": "2026-11-11T12:00:00.000Z",
   "usageCount": 2
 }
@@ -4744,6 +4888,7 @@ Renomeia um arquivo ou edita o texto alternativo.
     "membershipId": "22222222-2222-4222-8222-222222222222",
     "name": "Ana Souza"
   },
+  "uploadedBySide": "agency",
   "createdAt": "2026-11-11T12:00:00.000Z",
   "usageCount": 2
 }
@@ -4785,6 +4930,7 @@ Move um arquivo para outra pasta do mesmo cliente.
     "membershipId": "22222222-2222-4222-8222-222222222222",
     "name": "Ana Souza"
   },
+  "uploadedBySide": "agency",
   "createdAt": "2026-11-11T12:00:00.000Z",
   "usageCount": 2
 }

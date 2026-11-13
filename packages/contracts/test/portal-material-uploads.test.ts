@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AnnouncePortalMaterialUploadsRequestSchema,
   ClientMaterialRequestUploadAssetPathParamsSchema,
   ClientThreadPathParamsSchema,
   CompletePortalMaterialUploadRequestSchema,
@@ -23,7 +24,7 @@ import {
 const id = '11111111-1111-4111-8111-111111111111';
 const create = { fileName: 'foto.jpg', contentType: 'image/jpeg', declaredSizeBytes: 1_000 };
 const created = { assetId: id, category: 'image', contentType: 'image/jpeg', upload: { type: 'single', url: 'https://storage.example/upload', expiresAt: '2026-11-13T12:00:00.000Z' } };
-const listed = { id, status: 'confirmed', category: 'image', contentType: 'image/jpeg', sizeBytes: 1_000, name: 'foto.jpg', width: 640, height: 480, createdAt: '2026-11-13T12:00:00.000Z' };
+const listed = { id, status: 'confirmed', category: 'image', contentType: 'image/jpeg', sizeBytes: 1_000, name: 'foto.jpg', width: 640, height: 480, url: 'https://storage.example/read', createdAt: '2026-11-13T12:00:00.000Z' };
 
 describe('what the portal may send', () => {
   it('takes 25 MiB a file, twenty files a request, and the folder of the client that keeps them', () => {
@@ -106,11 +107,20 @@ describe('the answers', () => {
     expect(PortalMaterialUploadSchema.parse(listed)).toEqual(listed);
     const audio = { ...listed, category: 'audio', contentType: 'audio/mpeg', name: null, width: null, height: null, status: 'pending' };
     expect(PortalMaterialUploadSchema.parse(audio)).toEqual(audio);
-    for (const patch of [{ status: 'rejected' }, { category: 'video' }, { sizeBytes: 0 }, { name: '' }, { width: 0 }, { createdAt: 'yesterday' }, { objectKey: 'a' }]) {
+    for (const patch of [{ status: 'rejected' }, { category: 'video' }, { sizeBytes: 0 }, { name: '' }, { width: 0 }, { createdAt: 'yesterday' }, { objectKey: 'a' }, { url: 'not a url' }]) {
       expect(PortalMaterialUploadSchema.safeParse({ ...listed, ...patch }).success, JSON.stringify(patch)).toBe(false);
     }
     const page = { data: [listed], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } };
     expect(PortalMaterialUploadListResponseSchema.parse(page)).toEqual(page);
+  });
+
+  it('announces a batch by the ids of the files, one to twenty, none repeated', () => {
+    expect(AnnouncePortalMaterialUploadsRequestSchema.parse({ assetIds: [id] })).toEqual({ assetIds: [id] });
+    const many = Array.from({ length: 20 }, (_, index) => `11111111-1111-4111-8111-${String(index).padStart(12, '0')}`);
+    expect(AnnouncePortalMaterialUploadsRequestSchema.parse({ assetIds: many }).assetIds).toHaveLength(20);
+    for (const body of [{ assetIds: [] }, { assetIds: [id, id] }, { assetIds: [...many, id] }, { assetIds: ['x'] }, { assetIds: [id], text: 'enviou 99 fotos' }, {}]) {
+      expect(AnnouncePortalMaterialUploadsRequestSchema.safeParse(body).success, JSON.stringify(body)).toBe(false);
+    }
   });
 
   it('names the reasons the database records when it turns the bytes down, and none of them speaks of the plan or the storage of the agency', () => {
