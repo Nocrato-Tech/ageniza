@@ -25,6 +25,7 @@ export * from './pagination.js';
 export * from './params.js';
 export * from './portal-approval.js';
 export * from './portal-contents.js';
+export * from './portal-material-uploads.js';
 export * from './profile.js';
 export * from './search.js';
 export * from './sign-up.js';
