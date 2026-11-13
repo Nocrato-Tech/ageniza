@@ -33,10 +33,11 @@ describe('the refusals of the database the portal answers by name (issue #257)',
   });
 
   it('says what each move needs when the state is wrong, and a different thing for each', () => {
-    const messages = (['approve', 'request-changes'] as const).map((action) => translatePortalError(failure('A0062'), action)?.message);
+    const messages = (['approve', 'request-changes', 'link-request-changes'] as const).map((action) => translatePortalError(failure('A0062'), action)?.message);
     expect(messages).toEqual([
       'Só um conteúdo aguardando aprovação é aprovado.',
-      'Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação.'
+      'Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação.',
+      'Só um conteúdo aguardando aprovação recebe um pedido de ajuste.'
     ]);
   });
 

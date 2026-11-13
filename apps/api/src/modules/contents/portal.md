@@ -35,7 +35,8 @@ provou. As decisões estão em `docs/business/decisions/2026-10-11-conteudo-port
 - **O pedido de ajuste vale até a véspera da publicação.** Um conteúdo aprovado aceita o pedido enquanto o dia planejado (`publishOn`) é depois
   de hoje em São Paulo; no dia da publicação, ou depois, e para o publicado, é `409 CONTENT_NOT_AWAITING_APPROVAL` (a mesma resposta do conteúdo
   já em ajuste), com a mensagem "Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação." A regra (estado e dia) é de
-  um auxiliar único do banco, lido da linha travada e do relógio de quando ela foi travada, e o link do e-mail a segue igual.
+  um auxiliar único do banco, lido da linha travada e do relógio de quando ela foi travada. É só do portal, com conta: o link do e-mail decide apenas
+  o que aguarda aprovação (um aprovado é `409` ali, com a mensagem "Só um conteúdo aguardando aprovação recebe um pedido de ajuste.").
 - **Aprovar com recado é tudo ou nada.** `approve_content(uuid, integer, text)` aprova e, com recado, abre (ou acha) a conversa do conteúdo e
   grava o comentário do cliente na mesma transação: um comentário recusado (agência somente leitura) deixa o conteúdo aguardando, e uma
   aprovação recusada não deixa comentário. O recado segue a regra do da agência (`ApprovalNoteSchema`: sem caractere invisível ou de controle,

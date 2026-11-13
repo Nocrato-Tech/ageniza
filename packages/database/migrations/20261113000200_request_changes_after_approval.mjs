@@ -3,11 +3,16 @@
 //
 //  - `app_private.content_accepts_changes_request(status, publish_on)` is the one copy of the rule: a content awaiting approval, or an approved
 //    one whose planned day (`publish_on`) is after today in America/Sao_Paulo. The day of the publication itself is refused. Nobody calls it
-//    but the two functions below, which run as the owner of the schema, so it is closed to PUBLIC and the application role holds no grant.
-//  - `request_content_changes` (the portal) and `request_changes_by_portal_approval` (the link of the e-mail) are the bodies of
-//    20261112000200 with that one test in the place of `status <> 'awaiting_approval'`. The day is read from the row AFTER the lock on the
-//    content, so an agency that moves the date meanwhile is seen, and from the clock after the wait (`clock_timestamp()`, like #304 of
-//    the invitation): a request that waited for the lock across midnight is judged by the day it got the lock. A refusal is still `A0062`.
+//    but the portal function below, which runs as the owner of the schema, so it is closed to PUBLIC and the application role holds no grant.
+//  - `request_content_changes` (the portal, with an account) is the body of 20261112000200 with that one test in the place of
+//    `status <> 'awaiting_approval'`. The day is read from the row AFTER the lock on the content, so an agency that moves the date
+//    meanwhile is seen, and from the clock after the wait (`clock_timestamp()`, like #304 of the invitation): a request that waited for
+//    the lock across midnight is judged by the day it got the lock. A refusal is still `A0062`. After the lock the function also checks
+//    again that the person is still of the portal of the client (`A0060`), as `withdraw_content_approval` does: dropping an approval is
+//    not for someone removed meanwhile.
+//  - `request_changes_by_portal_approval` (the link of the e-mail, no account) keeps the rule it had, `awaiting_approval` only: the link
+//    decides only a content that awaits approval (decisions 2026-10-26 item 4, 2026-10-27 item 6, 2026-11-06). Its body is that of
+//    20261112000200 again, so the helper has one caller.
 //  - `contents_guard` is the body of 20261027090100 with one more transition, `approved -> adjusting`. Entering "adjusting" clears who
 //    approved and when, like entering "awaiting approval", because only "approved" and "published" carry an approval (`contents_state_shape`).
 //    The conversation keeps every comment, the note of the approval included.
@@ -216,6 +221,11 @@ export async function up(knex) {
       where content.id = p_content_id
       for update;
 
+      -- A person removed from the portal while this request waited for the lock is no longer one: the approval it would drop is not hers to drop.
+      if not app_private.is_client_member(v_client_id) then
+        raise exception using errcode = 'A0060', message = 'Content not found.';
+      end if;
+
       if not app_private.content_accepts_changes_request(v_status, v_publish_on) then
         raise exception using errcode = 'A0062', message = 'Only a content awaiting approval, or an approved one planned for after today, gets a request for changes.';
       end if;
@@ -251,7 +261,6 @@ export async function up(knex) {
       v_session record;
       v_status text;
       v_revision integer;
-      v_publish_on date;
       v_thread_id uuid;
     begin
       if app_private.current_user_id() is not null then
@@ -272,7 +281,7 @@ export async function up(knex) {
         raise exception using errcode = 'A0060', message = 'Content not found.';
       end if;
 
-      select content.status, content.revision, content.publish_on into v_status, v_revision, v_publish_on
+      select content.status, content.revision into v_status, v_revision
       from public.contents content
       where content.id = p_content_id and content.client_id = v_session.resolved_client_id
       for update;
@@ -280,8 +289,8 @@ export async function up(knex) {
         raise exception using errcode = 'A0060', message = 'Content not found.';
       end if;
 
-      if not app_private.content_accepts_changes_request(v_status, v_publish_on) then
-        raise exception using errcode = 'A0062', message = 'Only a content awaiting approval, or an approved one planned for after today, gets a request for changes.';
+      if v_status <> 'awaiting_approval' then
+        raise exception using errcode = 'A0062', message = 'Only a content awaiting approval gets a request for changes.';
       end if;
       if p_revision is distinct from v_revision then
         raise exception using errcode = 'A0063', message = 'The content changed since it was read.';

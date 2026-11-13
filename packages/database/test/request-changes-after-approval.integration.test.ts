@@ -12,9 +12,9 @@ import { askedLaterThanTheStart, callAtInstant, type AtInstant } from './support
 
 // Scope redesign-igual, subtask W11-S1 (decision 2026-11-13, "o cliente pede ajuste depois de aprovar até a véspera da publicação"): a content
 // that is APPROVED takes a request for changes while its planned day is after today in São Paulo, and not on the day itself. It goes to
-// "adjusting" like the one that waited for approval, by two doors: the account of the portal (`request_content_changes`) and the link of the
-// e-mail (`request_changes_by_portal_approval`). Both are attacked the same way, as `ageniza_app`; the owner prepares the world and reads what
-// was left. `now()` cannot be pinned, so the day is read from the database (`a.day`) and the edges are tried at fixed instants through a
+// "adjusting" like the one that waited for approval, through the account of the portal (`request_content_changes`) only. The link of the e-mail
+// (`request_changes_by_portal_approval`) keeps deciding only a content that awaits approval, and is tested to refuse the approved one. Both are
+// attacked as `ageniza_app`; the owner prepares the world and reads what was left. `now()` cannot be pinned, so the day is read from the database (`a.day`) and the edges are tried at fixed instants through a
 // stand-in of `app_private.sao_paulo_date` inside a transaction that is rolled back (the way `client-dates` does it).
 const w = createContentWorld('w11s1-changes');
 const { ids } = w;
@@ -135,14 +135,8 @@ const NOT_CLEARED = { approved_by: null, approved_by_portal_access_id: null, app
 
 // ---- the rule, by the day of São Paulo, at the clock of the database -------------------------------------------------------------
 
-describe.each([
-  ['the portal', async (): Promise<Channel> => portalChannel()],
-  ['the approval link', async (): Promise<Channel> => linkChannel()]
-] as const)('%s: a request for changes on a content, state by state and day by day', (_name, make) => {
-  let c: Channel;
-  beforeAll(async () => {
-    c = await make();
-  }, 120_000);
+describe('the portal: a request for changes on a content, state by state and day by day', () => {
+  const c = portalChannel();
 
   it.each([
     ['tomorrow', 1], ['in two days', 2], ['in a month', 30], ['next year', 365]
@@ -246,9 +240,6 @@ describe.each([
       folder_id: await w.folderOf(c.clientId), owner_user_id: ids.productionA, status: 'approved', approved_by: ids.adminA,
       approved_at: new Date('2026-11-01T12:00:00.000Z'), approved_by_agency_reason: 'Aprovado por telefone'
     });
-    if (c.name === 'the approval link') {
-      await owner()('client_portal_approval_link_contents').insert({ link_id: (c as Awaited<ReturnType<typeof linkChannel>>).world.linkId, content_id: id, client_id: c.clientId });
-    }
 
     await c.ask(id);
 
@@ -438,7 +429,9 @@ describe('who may ask for changes on an approved content (the portal), unchanged
   });
 });
 
-describe('who may ask for changes on an approved content (the approval link), unchanged by the new state', () => {
+// The link of the e-mail decides only a content that awaits approval (decisions 2026-10-26 item 4, 2026-10-27 item 6 and 2026-11-06): the
+// rule of "until the eve" is the portal's, for a person with an account.
+describe('the approval link decides only a content that awaits approval, and takes no part in the request after an approval', () => {
   let link: Awaited<ReturnType<typeof linkChannel>>;
   beforeAll(async () => {
     link = await linkChannel();
@@ -447,27 +440,92 @@ describe('who may ask for changes on an approved content (the approval link), un
   const askWith = (sessionHash: string, content: string, revision = 1): Promise<unknown> =>
     asApp((t) => t.raw('select app_private.request_changes_by_portal_approval(?, ?::uuid, ?::integer, ?)', [sessionHash, content, revision, COMMENT]));
 
-  it('writes the comment as the access of the link, with no account, and clears the approval the same link had given', async () => {
-    const content = await link.seed('awaiting_approval', await a.day(3));
-    await asApp((t) => t.raw('select app_private.approve_content_by_portal_approval(?, ?::uuid, 1)', [link.world.sessionHash, content]));
-    expect(await rowOf(content)).toMatchObject({ status: 'approved', approved_by: null, approved_by_portal_access_id: link.world.accessId });
+  const refused = async (content: string, label: string): Promise<void> => {
+    const before = await rowOf(content);
+    const notified = await notificationsOf(content);
+    await expect(link.ask(content), label).rejects.toMatchObject({ code: 'A0062' });
+    expect(await rowOf(content), label).toEqual(before);
+    expect(await threadsOf(content), label).toEqual([]);
+    expect(await commentsOf(content), label).toEqual([]);
+    expect(await notificationsOf(content), label).toEqual(notified);
+  };
 
-    await link.ask(content);
+  it('L1: refuses, with A0062 and no change, the content that the same link approved, on any planned day', async () => {
+    for (const offset of [-1, 0, 1, 30, 365]) {
+      const content = await link.seed('awaiting_approval', await a.day(offset));
+      await asApp((t) => t.raw('select app_private.approve_content_by_portal_approval(?, ?::uuid, 1)', [link.world.sessionHash, content]));
+      expect(await rowOf(content)).toMatchObject({ status: 'approved', approved_by: null, approved_by_portal_access_id: link.world.accessId });
 
-    expect(await rowOf(content)).toMatchObject({ status: 'adjusting', ...NOT_CLEARED });
-    expect(await threadsOf(content)).toMatchObject([{ opened_by: null, opened_by_portal_access_id: link.world.accessId, opened_side: 'client' }]);
-    expect(await commentsOf(content)).toEqual([{ author_side: 'client', body: COMMENT, author_user_id: null, author_portal_access_id: link.world.accessId }]);
+      await refused(content, `L1 ${offset}`);
+      expect(await rowOf(content)).toMatchObject({ status: 'approved', approved_by_portal_access_id: link.world.accessId });
+    }
   });
 
-  it('is judged by the day exactly as the portal judges it: tomorrow and today, side by side', async () => {
+  it('L2: refuses the content that a person of the portal approved with an account, and leaves the approval of that person', async () => {
+    for (const offset of [0, 1, 30]) {
+      const content = await link.seed('approved', await a.day(offset), { approvedBy: ids.portalA1 });
+
+      await refused(content, `L2 ${offset}`);
+      expect(await rowOf(content)).toMatchObject({ status: 'approved', approved_by: ids.portalA1 });
+    }
+  });
+
+  it('L3: refuses the content that the agency approved with a reason, and keeps the reason', async () => {
+    for (const offset of [0, 1, 30]) {
+      const content = await link.seed('awaiting_approval', await a.day(offset));
+      await w.asUser(ids.adminA, (t) => t.raw('select app_private.approve_content_by_agency(?::uuid, ?::integer, ?::text)', [content, 1, 'Aprovado por WhatsApp']));
+      expect(await rowOf(content)).toMatchObject({ status: 'approved', approved_by_agency_reason: 'Aprovado por WhatsApp' });
+
+      await refused(content, `L3 ${offset}`);
+      expect(await rowOf(content)).toMatchObject({ status: 'approved', approved_by: ids.adminA, approved_by_agency_reason: 'Aprovado por WhatsApp' });
+    }
+  });
+
+  it('refuses an approved content on any day while the portal accepts the same content on a later day, side by side', async () => {
     const portal = portalChannel();
-    for (const [offset, accepted] of [[1, true], [0, false], [-1, false]] as const) {
+    for (const offset of [1, 3, 365]) {
       const byLink = await link.seed('approved', await a.day(offset));
       const byPortal = await portal.seed('approved', await a.day(offset));
-      const results = [await attempt(link.ask(byLink)), await attempt(portal.ask(byPortal))];
-      expect(results.map((result) => result.ok), `day ${offset}`).toEqual([accepted, accepted]);
-      if (!accepted) expect(results).toEqual([{ ok: false, code: 'A0062' }, { ok: false, code: 'A0062' }]);
+      expect(await attempt(link.ask(byLink)), `link ${offset}`).toEqual({ ok: false, code: 'A0062' });
+      expect(await attempt(portal.ask(byPortal)), `portal ${offset}`).toEqual({ ok: true });
     }
+  });
+
+  it('keeps asking for changes on a content awaiting approval whatever its day, as the writer of the comment, with no account', async () => {
+    for (const offset of [-30, 0, 1, 365]) {
+      const content = await link.seed('awaiting_approval', await a.day(offset));
+
+      await link.ask(content);
+
+      expect(await rowOf(content), String(offset)).toMatchObject({ status: 'adjusting', ...NOT_CLEARED });
+      expect(await threadsOf(content)).toMatchObject([{ opened_by: null, opened_by_portal_access_id: link.world.accessId, opened_side: 'client' }]);
+      expect(await commentsOf(content)).toEqual([{ author_side: 'client', body: COMMENT, author_user_id: null, author_portal_access_id: link.world.accessId }]);
+    }
+  });
+
+  it('refuses a content in adjustment, published or in production with A0062, whatever its day, and a cancelled one as "not found"', async () => {
+    for (const offset of [-30, 0, 1, 365]) {
+      for (const status of ['adjusting', 'published', 'in_production'] as const) await refused(await link.seed(status, await a.day(offset)), `${status} ${offset}`);
+      await expect(link.ask(await link.seed('cancelled', await a.day(offset)))).rejects.toMatchObject({ code: 'A0060' });
+    }
+  });
+
+  it('judges the state before the revision: an approved content is A0062 even for a revision that is not current', async () => {
+    const content = await link.seed('approved', await a.day(3));
+
+    await expect(link.ask(content, { revision: 99 })).rejects.toMatchObject({ code: 'A0062' });
+  });
+
+  it('refuses a comment that is blank or too long, and a revision that is not current, on a content awaiting approval, as before', async () => {
+    const content = await link.seed('awaiting_approval', await a.day(3));
+
+    for (const body of [null, '', '   ', 'a'.repeat(5001)]) {
+      await expect(link.ask(content, { body }), String(body?.length)).rejects.toMatchObject({ code: 'A0068' });
+    }
+    await expect(link.ask(content, { revision: 99 })).rejects.toMatchObject({ code: 'A0063' });
+
+    expect(await rowOf(content)).toMatchObject({ status: 'awaiting_approval' });
+    expect(await threadsOf(content)).toEqual([]);
   });
 
   it('refuses an approved content that is not in the batch of the link: another content of the client and a content of another client', async () => {
@@ -526,15 +584,9 @@ describe('who may ask for changes on an approved content (the approval link), un
 // ---- the day of São Paulo, at fixed instants ---------------------------------------------------------------------------------------
 // The planned day is far from today, so a function that reads a clock or a zone of its own disagrees with the pinned one and goes red.
 
-describe.each([
-  ['the portal', async (): Promise<Channel> => portalChannel()],
-  ['the approval link', async (): Promise<Channel> => linkChannel()]
-] as const)('%s: the edges of the day, at fixed instants of São Paulo', (_name, make) => {
-  let c: Channel;
+describe('the portal: the edges of the day, at fixed instants of São Paulo', () => {
+  const c = portalChannel();
   const PLANNED = '2031-03-14';
-  beforeAll(async () => {
-    c = await make();
-  }, 120_000);
 
   it.each([
     ['two days before', '2031-03-12T10:00:00-03:00', true],
@@ -584,21 +636,37 @@ describe.each([
 
 // ---- one copy of the rule ---------------------------------------------------------------------------------------------------------------
 
-describe('the rule lives once, and the two functions ask it', () => {
+describe('the rule lives once, and only the portal asks it', () => {
   const sourceOf = async (signature: string): Promise<string> =>
     (await owner().raw<{ rows: Array<{ source: string }> }>('select pg_catalog.pg_get_functiondef(?::regprocedure) as source', [signature])).rows[0]!.source;
 
-  it.each([
-    'app_private.request_content_changes(uuid, integer, text)',
-    'app_private.request_changes_by_portal_approval(text, uuid, integer, text)'
-  ])('%s asks the helper with the state and the day read from the locked row, and keeps no copy of the rule', async (signature) => {
-    const source = await sourceOf(signature);
+  it('the portal asks the helper with the state and the day read from the locked row, and keeps no copy of the rule', async () => {
+    const source = await sourceOf('app_private.request_content_changes(uuid, integer, text)');
     expect(source).toContain('app_private.content_accepts_changes_request(v_status, v_publish_on)');
     expect(source.split('content_accepts_changes_request')).toHaveLength(2);
     expect(source).not.toMatch(/v_status\s*(<>|=|!=)\s*'(awaiting_approval|approved)'/);
     expect(source).not.toMatch(/publish_on\s*(>|<|>=|<=)/);
     expect(source).not.toMatch(/sao_paulo_date|clock_timestamp|now\(\)|current_date|time zone/i);
     expect(source).toMatch(/select content\.status, content\.revision, content\.publish_on into v_status, v_revision, v_publish_on[\s\S]*?for update;/);
+  });
+
+  it('checks the membership of the person again after the lock of the content', async () => {
+    const source = await sourceOf('app_private.request_content_changes(uuid, integer, text)');
+    expect(source).toMatch(/for update;\s*-- [^\n]*\n\s*if not app_private\.is_client_member\(v_client_id\) then\s*raise exception using errcode = 'A0060'/);
+  });
+
+  it('the link of the e-mail does not ask the helper and keeps its old test: awaiting approval, and nothing else, on any day', async () => {
+    const source = await sourceOf('app_private.request_changes_by_portal_approval(text, uuid, integer, text)');
+    expect(source).not.toContain('content_accepts_changes_request');
+    expect(source).toContain("if v_status <> 'awaiting_approval' then");
+    expect(source).not.toMatch(/publish_on|sao_paulo_date|clock_timestamp|now\(\)|current_date|time zone/i);
+  });
+
+  it('has no other caller of the helper in the schema: the portal is the only one', async () => {
+    const { rows } = await owner().raw<{ rows: Array<{ proname: string }> }>(
+      `select proc.proname from pg_catalog.pg_proc proc where proc.prosrc like '%content_accepts_changes_request%' and proc.proname <> 'content_accepts_changes_request'`
+    );
+    expect(rows).toEqual([{ proname: 'request_content_changes' }]);
   });
 
   it('keeps the helper closed: it asks the day from the one function of the zone, with the clock of the decision, and names no zone of its own', async () => {

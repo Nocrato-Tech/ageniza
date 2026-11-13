@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addedKeys, changedKeys, migrateAcross, removedKeys, type MigratedAcross } from './support/catalog-snapshot.js';
 
 // Scope redesign-igual, subtask W11-S1 (acceptance: the catalog before and after the migration that lets the client ask for changes in an
-// approved content). The migration may add one function and replace the bodies of three: it must change the grant, the policy, the RLS flag,
+// approved content). The migration may add one function and replace the bodies of two (the approval link keeps its old one): it must change the grant, the policy, the RLS flag,
 // the owner, the security mode or the search path of nothing, and no table, column, constraint, index or trigger.
 const THIS_MIGRATION = '20261113000200_request_changes_after_approval.mjs';
 const HELPER = '(p_status text, p_publish_on date)';
@@ -43,7 +43,7 @@ describe('what the migration does to the privileges of the catalog', () => {
     expect(changedKeys(migrated.before.privileges, migrated.after.privileges)).toEqual([]);
   });
 
-  it('closes the helper to PUBLIC and to the application role, which reaches it only through the two functions that run as the owner of the schema', () => {
+  it('closes the helper to PUBLIC and to the application role, which reaches it only through the function of the portal, that runs as the owner of the schema', () => {
     const helper = grantsOf(`function app_private.content_accepts_changes_request${HELPER}`);
     expect(helper).toMatchObject({ app: false, public: false, definer: false, config: ['search_path=""'] });
   });
@@ -70,10 +70,9 @@ describe('what the migration does to the objects of the catalog', () => {
     expect(removedKeys(migrated.before.structure, migrated.after.structure)).toEqual([]);
   });
 
-  it('changes the text of three functions that already existed, the guard of the contents and the two that ask for changes, and nothing else', () => {
+  it('changes the text of two functions that already existed, the guard of the contents and the request of the portal, and leaves the link of the e-mail as it was', () => {
     expect(changedKeys(migrated.before.structure, migrated.after.structure)).toEqual([
       'body app_private.contents_guard()',
-      `body app_private.request_changes_by_portal_approval${LINK}`,
       `body app_private.request_content_changes${REQUEST}`
     ]);
   });
@@ -90,16 +89,14 @@ describe('what the migration does to the objects of the catalog', () => {
     expect(after.split("('approved', 'adjusting')")).toHaveLength(2);
   });
 
-  it.each([
-    ['request_content_changes', REQUEST],
-    ['request_changes_by_portal_approval', LINK]
-  ])('gives %s its old body, with the planned day read from the locked row and the one test of the helper in the place of the state test, and nothing else', (name, signature) => {
-    const key = `body app_private.${name}${signature}`;
+  it('gives request_content_changes its old body, with the planned day read from the locked row, the one test of the helper in the place of the state test and the membership checked again after the lock, and nothing else', () => {
+    const key = `body app_private.request_content_changes${REQUEST}`;
     const before = bodyOf('before', key);
     const after = bodyOf('after', key);
     expect(after).not.toBe(before);
     const restored = after
       .replace(/\n[ \t]+v_publish_on date;/, '')
+      .replace(/\n[ \t]+-- A person removed from the portal while[^\n]*\n[ \t]+if not app_private\.is_client_member\(v_client_id\) then\n[^\n]*\n[ \t]+end if;\n/, '')
       .replace(/\n[ \t]+-- The state and the planned day are read from the locked row[^\n]*/, '')
       .replace('content.status, content.revision, content.publish_on into v_status, v_revision, v_publish_on', 'content.status, content.revision into v_status, v_revision')
       .replace('if not app_private.content_accepts_changes_request(v_status, v_publish_on) then', "if v_status <> 'awaiting_approval' then")

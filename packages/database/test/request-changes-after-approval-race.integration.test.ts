@@ -4,14 +4,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { backendPid, createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, waitForBackendsBlockedBy, type DatabaseClient } from '../src/index.js';
 
 import { createApprovalFixtures } from './support/approval-fixtures.js';
-import { createLinkWorld } from './support/approval-link-world.js';
 import { createContentWorld } from './support/content-world.js';
+import { setPortalAccessStatus } from './support/portal-access.js';
 import { askedAtOrAfter, callAtInstant } from './support/pinned-clock.js';
 
 // Scope redesign-igual, subtask W11-S1: the request for changes on an APPROVED content against whatever else moves the same content, with two
-// real transactions, through the two doors (the account of the portal and the link of the e-mail). The function takes the lock of the content
-// (and the portal one, the share lock of the client before it, the order of the archive and of every edit) and adds no lock of its own for the
-// new transition: the one that waited reads the state, the revision and the planned day of the row AFTER the wait, and judges the day by the
+// real transactions, through the portal (the link of the e-mail does not take the new rule). The function takes the share lock of the client and then the lock of the
+// content (the order of the archive and of every edit) and adds no lock of its own for the new transition: the one that waited reads the state, the revision and the planned day of the row AFTER the wait, and judges the day by the
 // clock of that moment. The holder is always the transaction that came first; the one under test is asked to wait for it
 // (`waitForBackendsBlockedBy`), never by a sleep.
 const w = createContentWorld('w11s1-race');
@@ -72,23 +71,6 @@ const portalDoor = (): Door => ({
     transaction.raw('select app_private.request_content_changes(?::uuid, ?::integer, ?::text)', [content, revision, COMMENT])
 });
 
-const linkDoor = async (): Promise<Door> => {
-  const world = await createLinkWorld(w, a, worker);
-  return {
-    name: 'the approval link',
-    actor: null,
-    seedOn: async (day) => {
-      const content = await w.seedContent(world.clientId, { status: 'approved', publishOn: day });
-      await attachVideo(content, world.clientId);
-      await owner()('client_portal_approval_link_contents').insert({ link_id: world.linkId, content_id: content, client_id: world.clientId });
-      return content;
-    },
-    open: () => worker.knex.transaction(),
-    call: (transaction, content, revision) =>
-      transaction.raw('select app_private.request_changes_by_portal_approval(?, ?::uuid, ?::integer, ?)', [world.sessionHash, content, revision, COMMENT])
-  };
-};
-
 const request = async (door: Door, content: string, revision = 1): Promise<void> => {
   const transaction = await door.open();
   try {
@@ -132,16 +114,9 @@ const heldWhile = async (
 const byAgency = (): Promise<Knex.Transaction> => w.openTransactionAs(ids.productionA);
 const today = 'app_private.sao_paulo_date(pg_catalog.now())';
 
-describe.each([
-  ['the portal', async (): Promise<Door> => portalDoor()],
-  ['the approval link', linkDoor]
-] as const)('%s: a request for changes on an approved content, against what else moves the content', (_name, make) => {
-  let door: Door;
+describe('the portal: a request for changes on an approved content, against what else moves the content', () => {
+  const door = portalDoor();
   const approved = async (offset: number): Promise<string> => door.seedOn(await a.day(offset));
-
-  beforeAll(async () => {
-    door = await make();
-  }, 120_000);
 
   it('finds the content published when the publication held the row first: A0062, and no comment, thread or notification', async () => {
     const content = await approved(3);
@@ -234,6 +209,32 @@ describe('the request for changes of the portal on an approved content, against 
     expect(await commentsOf(content)).toEqual([{ body: COMMENT }]);
   });
 
+  it('checks again, after the lock, that the person is still of the portal: removed while the request waited for the row, it answers "not found" and writes nothing', async () => {
+    const content = await door.seedOn(await a.day(3));
+    const holder = await byAgency();
+    const pid = await backendPid(holder);
+    let asking: Promise<unknown> | undefined;
+
+    try {
+      await holder('contents').where({ id: content }).update({ title: 'Título novo' });
+      asking = settle(w.asUser(ids.portalA1Second, (t) => t.raw('select app_private.request_content_changes(?::uuid, ?::integer, ?::text)', [content, 1, COMMENT])));
+      await waitForBackendsBlockedBy(owner(), pid);
+      await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'removed');
+    } finally {
+      await holder.commit();
+    }
+
+    try {
+      expect(await asking).toMatchObject({ code: 'A0060' });
+      expect(await rowOf(content)).toMatchObject({ status: 'approved', title: 'Título novo', approved_by: ids.portalA1 });
+      expect(await threadsOf(content)).toEqual([]);
+      expect(await commentsOf(content)).toEqual([]);
+      expect(await notificationsOf(content)).toEqual([]);
+    } finally {
+      await setPortalAccessStatus(owner(), ids.clientA1, ids.portalA1Second, 'active');
+    }
+  });
+
   it('waits for the archiving of the client, which cancels its contents, then answers "not found" and writes no comment', async () => {
     const content = await w.seedContent(ids.clientA2, { status: 'approved', publishOn: await a.day(3) });
     await attachVideo(content, ids.clientA2);
@@ -255,15 +256,8 @@ describe('the request for changes of the portal on an approved content, against 
   });
 });
 
-describe.each([
-  ['the portal', async (): Promise<Door> => portalDoor()],
-  ['the approval link', linkDoor]
-] as const)('%s: the clock of the day is the one of the moment the request gets the lock', (_name, make) => {
-  let door: Door;
-
-  beforeAll(async () => {
-    door = await make();
-  }, 120_000);
+describe('the portal: the clock of the day is the one of the moment the request gets the lock', () => {
+  const door = portalDoor();
 
   it('asks the day of São Paulo at an instant after the wait, not at the one the transaction began', async () => {
     const content = await door.seedOn('2031-03-14');

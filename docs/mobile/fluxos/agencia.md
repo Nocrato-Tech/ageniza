@@ -309,7 +309,7 @@ Formatos: `image`, `carousel`, `reels`, `long_video` e `vsl`. Plataforma: `insta
 | em produção (`in_production`) | aguardando aprovação | `conteudo.operar` | mídia completa para o formato e todas as subtarefas aprovadas |
 | aguardando aprovação (`awaiting_approval`) | aprovado | pessoa do portal, link de aprovação, ou `conteudo.aprovar_pela_agencia` com motivo | — |
 | aguardando aprovação | em ajuste (`adjusting`) | pessoa do portal ou link de aprovação | comentário obrigatório |
-| aprovado | em ajuste | pessoa do portal ou link de aprovação | comentário obrigatório; só até a véspera da data de publicação, no dia de São Paulo ([decisão de 2026-11-13](../../business/decisions/2026-11-13-o-cliente-pede-ajuste-depois-de-aprovar-ate-a-vespera-da-publicacao.md)); a aprovação cai (quem aprovou, quando e o motivo da aprovação pela agência) |
+| aprovado | em ajuste | pessoa do portal (o link de aprovação não faz isto) | comentário obrigatório; só até a véspera da data de publicação, no dia de São Paulo ([decisão de 2026-11-13](../../business/decisions/2026-11-13-o-cliente-pede-ajuste-depois-de-aprovar-ate-a-vespera-da-publicacao.md)); a aprovação cai (quem aprovou, quando e o motivo da aprovação pela agência) |
 | em ajuste | aguardando aprovação | `conteudo.operar` | reenviar |
 | aprovado (`approved`) | publicado (`published`) | `conteudo.publicar` | data real, não futura |
 | publicado | aprovado | `conteudo.publicar` | só no mesmo dia |

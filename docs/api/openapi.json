@@ -32936,7 +32936,7 @@
       "post": {
         "operationId": "requestPortalApprovalContentChanges",
         "summary": "Pede ajuste de um conteúdo do lote, pelo link",
-        "description": "O mesmo efeito do pedido de ajuste no portal: o conteúdo passa a \"em ajuste\" e o `comment`, obrigatório, entra na conversa do conteúdo\ncomo comentário do cliente (a conversa é aberta se ainda não existe). O comentário e a abertura da conversa são gravados **como aquele\nacesso**. O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de formato, nunca\nvazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. `revision` é a revisão\nque a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Vale para um conteúdo aguardando aprovação e para um aprovado até a véspera da\npublicação, como no portal: o dia da publicação (em São Paulo), um conteúdo já em ajuste e um publicado respondem\n`409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto:\n`404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.\n\nAcesso: Cookie da sessão de aprovação.",
+        "description": "O mesmo efeito do pedido de ajuste no portal: o conteúdo passa a \"em ajuste\" e o `comment`, obrigatório, entra na conversa do conteúdo\ncomo comentário do cliente (a conversa é aberta se ainda não existe). O comentário e a abertura da conversa são gravados **como aquele\nacesso**. O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de formato, nunca\nvazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. `revision` é a revisão\nque a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Vale só para um conteúdo aguardando aprovação, em qualquer data: o link não pede\najuste de um aprovado (isso é do portal, com conta). Um conteúdo aprovado, em ajuste, em produção ou publicado responde\n`409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto:\n`404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.\n\nAcesso: Cookie da sessão de aprovação.",
         "tags": [
           "approval-link"
         ],
@@ -33066,7 +33066,7 @@
             }
           },
           "409": {
-            "description": "CONTENT_NOT_AWAITING_APPROVAL: Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação. | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "description": "CONTENT_NOT_AWAITING_APPROVAL: Só um conteúdo aguardando aprovação recebe um pedido de ajuste. | CONTENT_REVISION_CHANGED: O conteúdo mudou desde que você o leu. Recarregue e confira antes de aprovar. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
             "content": {
               "application/json": {
                 "schema": {
@@ -33075,7 +33075,7 @@
                 "example": {
                   "error": {
                     "code": "CONTENT_NOT_AWAITING_APPROVAL",
-                    "message": "Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação."
+                    "message": "Só um conteúdo aguardando aprovação recebe um pedido de ajuste."
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"
