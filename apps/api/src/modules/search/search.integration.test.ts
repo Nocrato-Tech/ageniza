@@ -30,6 +30,7 @@ const bodyOf = (reply: Reply): Body => {
   expect(reply.statusCode).toBe(200);
   return reply.json<Body>();
 };
+const textOf = (reply: Reply): string => (reply as unknown as { readonly body: string }).body;
 const found = async (cookie: SearchPerson, q: string, agencyId = w.agencyA): Promise<Body['data']> => bodyOf(await search(cookie, q, agencyId)).data;
 const clientNames = (data: Body['data']): string[] => data.clients.map((client) => client.name);
 const titles = (data: Body['data']): string[] => data.contents.map((content) => content.title);
@@ -169,6 +170,19 @@ describe('what a name matches', () => {
     expect((await found(admin.cookie, 'moveis padua ltda')).clients.map((client) => client.id)).toEqual([byLegalName]);
   });
 
+  it('folds the accent and the case of a title and of a file name as well, whichever way the term is written', async () => {
+    const client = await newClient('Gráfica Rápida');
+    const content = await newContent(client, 'Cartão de Visita');
+    const file = await newFile(client, 'Ação Cartão.png');
+
+    for (const term of ['CARTAO', 'cartão', 'CARTÃO', 'Cartão'.normalize('NFD')]) {
+      const data = await found(admin.cookie, term);
+      expect({ term, contents: data.contents.map((item) => item.id), files: data.files.map((item) => item.id) }).toEqual({ term, contents: [content], files: [file] });
+    }
+    expect((await found(admin.cookie, 'acao')).files.map((item) => item.id)).toEqual([file]);
+    expect((await found(admin.cookie, 'RAPIDA')).clients.map((item) => item.id)).toEqual([client]);
+  });
+
   it('takes % and _ and the backslash as text, in each of the three groups', async () => {
     const lots = await newClient('Lote 50%');
     await newClient('Lote 500');
@@ -300,20 +314,22 @@ describe('the order and the ceiling of six', () => {
   });
 
   it('breaks a tie of the name by the id, in every group, and always the same way', async () => {
-    const twinA = await newClient('Gêmeo Cliente');
-    const twinB = await newClient('Gêmeo Cliente', { archived: true });
+    // Six twins of each: the cut of six keeps all of them, so only the id decides their order, and the chance that the order they were
+    // written in is already the order of their ids is 1 in 720.
+    const clients: string[] = [];
+    const contents: string[] = [];
+    const files: string[] = [];
     const carrier = await newClient('Cliente dos Pares');
-    const contents = [await newContent(carrier, 'Gêmeo Título'), await newContent(carrier, 'Gêmeo Título'), await newContent(carrier, 'Gêmeo Título')];
-    const files = [
-      await newFile(carrier, 'gêmeo.png', { folderId: await w.newFolder(carrier, 'G1') }),
-      await newFile(carrier, 'gêmeo.png', { folderId: await w.newFolder(carrier, 'G2') }),
-      await newFile(carrier, 'gêmeo.png', { folderId: await w.newFolder(carrier, 'G3') })
-    ];
+    for (let n = 1; n <= 6; n += 1) {
+      clients.push(await newClient('Gêmeo Cliente', n === 1 ? {} : { archived: true }));
+      contents.push(await newContent(carrier, 'Gêmeo Título'));
+      files.push(await newFile(carrier, 'gêmeo.png', { folderId: await w.newFolder(carrier, `G${n}`) }));
+    }
 
     const first = await found(admin.cookie, 'gemeo');
     const second = await found(admin.cookie, 'gemeo');
 
-    expect(first.clients.map((client) => client.id)).toEqual(sorted([twinA, twinB]));
+    expect(first.clients.map((client) => client.id)).toEqual(sorted(clients));
     expect(first.contents.map((content) => content.id)).toEqual(sorted(contents));
     expect(first.files.map((file) => file.id)).toEqual(sorted(files));
     expect(second).toEqual(first);
@@ -407,13 +423,13 @@ describe('who may read each group', () => {
     const empty = bodyOf(await search(people.admin.cookie, 'zzpermissao-nada'));
     expect(blocked).toEqual(empty);
     expect(Object.keys(blocked.data)).toEqual(Object.keys(empty.data));
-    expect((await search(people.sales.cookie, 'zzpermissao-nada')).body).toBe((await search(people.admin.cookie, 'zzpermissao-nada')).body);
+    expect(textOf(await search(people.sales.cookie, 'zzpermissao-nada'))).toBe(textOf(await search(people.admin.cookie, 'zzpermissao-nada')));
     // And for the term only a content or a file has: the answer of who may not read it is the answer of nothing found.
     const hidden = await search(people.sales.cookie, 'permissao-arquivo');
     const nothing = await search(people.admin.cookie, 'permissao-arquivo-inexistente');
-    expect(JSON.parse(hidden.body).data).toEqual(emptyForSearch);
-    expect(JSON.parse(nothing.body).data).toEqual(emptyForSearch);
-    expect(hidden.body.replace('permissao-arquivo', 'q')).toBe(nothing.body.replace('permissao-arquivo-inexistente', 'q'));
+    expect(JSON.parse(textOf(hidden)).data).toEqual(emptyForSearch);
+    expect(JSON.parse(textOf(nothing)).data).toEqual(emptyForSearch);
+    expect(textOf(hidden).replace('permissao-arquivo', 'q')).toBe(textOf(nothing).replace('permissao-arquivo-inexistente', 'q'));
   });
 
   it('answers 200 with three empty groups to the person who may read neither', async () => {
@@ -453,7 +469,7 @@ describe('who may read each group', () => {
 
 describe('the term', () => {
   let admin: { id: string; cookie: string };
-  const echoes = (reply: Reply, term: string): boolean => reply.body.includes(term);
+  const echoes = (reply: Reply, term: string): boolean => textOf(reply).includes(term);
 
   beforeAll(async () => {
     admin = await freshAdmin('term');
@@ -568,7 +584,7 @@ describe('the rate limit', () => {
     expect(refused.statusCode).toBe(429);
     expect(refused.json().error.code).toBe('RATE_LIMITED');
     expect(Number(refused.headers['retry-after'])).toBeGreaterThan(0);
-    expect(refused.body).not.toContain('limite');
+    expect(textOf(refused)).not.toContain('limite');
   });
 
   it('counts per person and not per address: another person on the same address is not limited, and the person is limited in every agency', async () => {
@@ -659,7 +675,7 @@ describe('what the database may raise', () => {
         w.runBeforeStatement(group, async () => { throw Object.assign(new Error('relation app_private.secret exploded'), { code }); });
         const reply = await search(person.cookie, 'erro');
         expect({ group: String(group), code, status: reply.statusCode, error: reply.json().error.code }).toEqual({ group: String(group), code, status, error });
-        expect(reply.body).not.toMatch(/app_private|exploded|relation/);
+        expect(textOf(reply)).not.toMatch(/app_private|exploded|relation/);
       }
     }
     expect((await search(person.cookie, 'erro')).statusCode).toBe(200);
