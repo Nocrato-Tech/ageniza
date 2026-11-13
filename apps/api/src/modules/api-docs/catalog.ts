@@ -96,6 +96,8 @@ import {
   CollaboratorJobTitlesResponseSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
+  CollaboratorOpenContentsQuerySchema,
+  CollaboratorOpenContentsResponseSchema,
   CollaboratorSchema,
   CompleteMediaUploadRequestSchema,
   CompleteMediaUploadResponseSchema,
@@ -2568,6 +2570,55 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/collaborators/:membershipId/open-contents',
+    operationId: 'listCollaboratorOpenContents',
+    module: 'collaborators',
+    summary: 'Lista os clientes e o que está com um colaborador',
+    description: [
+      'Alimenta o cartão "Clientes e o que está com ele" e o resumo do cabeçalho da página do colaborador.',
+      'Exige `colaborador.visualizar` e também `conteudo.visualizar`: o cartão mostra títulos de conteúdo, e',
+      'sem a segunda permissão a resposta é 403 (o Owner passa por posse). Não existe atribuição de cliente a',
+      'pessoa: o vínculo é o responsável do conteúdo. "Aberto" é em produção, em ajuste, aguardando aprovação',
+      'ou aprovado; `awaiting` é o que aguarda aprovação. Entram só os clientes e os conteúdos que quem olha',
+      'pode ler. `summary` soma todos os clientes; `data` vem por nome do cliente, até 100, e `now` traz até 3',
+      'conteúdos por cliente, do mais próximo de ir ao ar para o mais distante. Sem nenhum conteúdo aberto,',
+      '`summary` zerado e `data` vazio. Um vínculo de outra agência, inexistente, malformado ou removido',
+      'devolve o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.visualizar',
+    params: AgencyCollaboratorPathParamsSchema,
+    query: CollaboratorOpenContentsQuerySchema,
+    responses: [{
+      status: 200,
+      description: 'Os clientes e o que está com o colaborador.',
+      schema: CollaboratorOpenContentsResponseSchema,
+      example: {
+        summary: { clients: 1, contents: 2, awaiting: 1 },
+        data: [{
+          client: { id: clientId, name: 'Casa Aurora' },
+          contents: 2,
+          awaiting: 1,
+          now: [
+            { contentId, title: 'Bastidores da coleção', state: 'awaiting_approval' },
+            { contentId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', title: 'Lançamento de verão', state: 'in_production' }
+          ]
+        }]
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Collaborator not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
 

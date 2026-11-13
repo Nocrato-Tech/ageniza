@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { AuthEmailSchema } from './auth.js';
 import { createPaginatedResponseSchema, PaginationInputSchema } from './pagination.js';
+import { CONTENT_DEADLINE_OPEN_STATUSES } from './content-deadline.js';
 import { createDisplayNameSchema } from './display-name.js';
 import { SearchTextSchema } from './search.js';
 
@@ -136,6 +137,45 @@ export const CollaboratorJobTitlesResponseSchema = z.object({
   data: z.array(z.string().trim().min(1).max(256))
 }).strict();
 
+/** The most clients `GET .../open-contents` lists: a defensive ceiling, `summary` still counts every one. */
+export const COLLABORATOR_OPEN_CONTENTS_MAX_CLIENTS = 100;
+
+/** The most contents `now` carries per client, the ones closest to going live. */
+export const COLLABORATOR_OPEN_CONTENTS_NOW_LIMIT = 3;
+
+/**
+ * Query of `GET /agencies/:agencyId/collaborators/:membershipId/open-contents`. Like the detail, the
+ * route declares no query parameter, and the empty `.strict()` object makes an undeclared one a 400.
+ */
+export const CollaboratorOpenContentsQuerySchema = z.object({}).strict();
+
+/**
+ * What one person has open, per client (decision 2026-11-11, "Clientes e o que está com ele"): the
+ * contents the person owns that are in production, adjusting, awaiting approval or approved. There is
+ * no assignment of a client to a person; the only link is the content's owner.
+ *
+ * `summary` is the header of the page and counts everything the viewer may read, even past the cap of
+ * `data`. `awaiting` is the part of `contents` that waits for the client. `now` holds up to three
+ * contents, from the nearest to go live to the farthest.
+ */
+export const CollaboratorOpenContentsResponseSchema = z.object({
+  summary: z.object({
+    clients: z.number().int().nonnegative(),
+    contents: z.number().int().nonnegative(),
+    awaiting: z.number().int().nonnegative()
+  }).strict(),
+  data: z.array(z.object({
+    client: z.object({ id: z.string().uuid(), name: z.string() }).strict(),
+    contents: z.number().int().positive(),
+    awaiting: z.number().int().nonnegative(),
+    now: z.array(z.object({
+      contentId: z.string().uuid(),
+      title: z.string(),
+      state: z.enum(CONTENT_DEADLINE_OPEN_STATUSES)
+    }).strict()).max(COLLABORATOR_OPEN_CONTENTS_NOW_LIMIT)
+  }).strict()).max(COLLABORATOR_OPEN_CONTENTS_MAX_CLIENTS)
+}).strict();
+
 /**
  * One role of `GET /agencies/:agencyId/roles` (issue #287): a system preset or one of the agency's
  * own custom roles, with the `id` the invitation (#107), the role PATCH (#97) and the reactivation
@@ -168,6 +208,8 @@ export type CollaboratorListResponse = z.infer<typeof CollaboratorListResponseSc
 export type CollaboratorDetailQuery = z.infer<typeof CollaboratorDetailQuerySchema>;
 export type CollaboratorJobTitlesQuery = z.infer<typeof CollaboratorJobTitlesQuerySchema>;
 export type CollaboratorJobTitlesResponse = z.infer<typeof CollaboratorJobTitlesResponseSchema>;
+export type CollaboratorOpenContentsQuery = z.infer<typeof CollaboratorOpenContentsQuerySchema>;
+export type CollaboratorOpenContentsResponse = z.infer<typeof CollaboratorOpenContentsResponseSchema>;
 export type AgencyRole = z.infer<typeof AgencyRoleSchema>;
 export type AgencyRolesQuery = z.infer<typeof AgencyRolesQuerySchema>;
 export type AgencyRolesResponse = z.infer<typeof AgencyRolesResponseSchema>;
