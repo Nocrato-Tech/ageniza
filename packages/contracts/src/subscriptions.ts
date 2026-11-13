@@ -152,8 +152,8 @@ export const SubscriptionTestCardResponseSchema = z.object({
 }).strict();
 
 /**
- * How a charge shows in the list of invoices. `declined` is a payment the provider refused; nothing records that for a charge yet, so
- * the server does not produce it today.
+ * How a charge shows in the list of invoices. `declined` is a payment the provider refused, which the charge records (`declined_at`) and
+ * which wins over the other three, a replaced charge included.
  */
 export const SUBSCRIPTION_INVOICE_STATUSES = ['paid', 'declined', 'open', 'expired'] as const;
 

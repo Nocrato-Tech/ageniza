@@ -12,9 +12,9 @@ import { createHarness } from './support/subscriptions.js';
 const h = createHarness('subscription-invoices');
 const owner = () => h.owner();
 
-// The state of an invoice as the screen shows it. A charge that was never paid and whose time ran out is expired even while its row still says
-// `pending` (the confirmation refuses it: `expires_at <= now()`), and the ones a newer request replaced say `expired`. Nothing records a
-// declined attempt, so there is no state for it here.
+// The state of an invoice as the screen shows it. A charge whose payment was declined says so first, whatever its row says (it stays `pending`
+// until a newer request replaces it, and then `expired`: decision 2026-11-12). A charge that was never paid and whose time ran out is expired
+// even while its row still says `pending` (the confirmation refuses it: `expires_at <= now()`), and the ones a newer request replaced say `expired`.
 const INVOICES_SQL = `
   select charge.id,
          coalesce(charge.confirmed_at, charge.created_at) as occurred_at,
@@ -24,6 +24,7 @@ const INVOICES_SQL = `
          charge.extra_storage_gib,
          charge.amount_cents,
          case
+           when charge.declined_at is not null then 'declined'
            when charge.status = 'confirmed' then 'paid'
            when charge.status = 'pending' and charge.expires_at > now() then 'open'
            else 'expired'
@@ -65,6 +66,7 @@ interface SeedCharge {
   readonly createdAt: Date;
   readonly confirmedAt?: Date;
   readonly expiresAt?: Date;
+  readonly declinedAt?: Date;
 }
 
 const seed = async (input: SeedCharge): Promise<string> => {
@@ -75,7 +77,7 @@ const seed = async (input: SeedCharge): Promise<string> => {
     provider: confirmed ? 'simulado' : null, provider_ref: confirmed ? `ref-${randomUUID()}` : null,
     expires_at: input.expiresAt ?? new Date(input.createdAt.getTime() + 1_800_000),
     period_start: confirmed ? input.createdAt : null, period_end: confirmed ? new Date(input.createdAt.getTime() + 30 * 86_400_000) : null,
-    created_at: input.createdAt, confirmed_at: confirmed ? (input.confirmedAt ?? input.createdAt) : null
+    created_at: input.createdAt, confirmed_at: confirmed ? (input.confirmedAt ?? input.createdAt) : null, declined_at: input.declinedAt ?? null
   }).returning('id');
   return row.id as string;
 };
@@ -169,6 +171,42 @@ describe('the invoices of the agency (acceptance f)', () => {
     const otherId = await seed({ agencyId: mine.other.agencyId, requestedBy: mine.other.ownerId, kind: 'subscribe', status: 'confirmed', createdAt: daysAgo(1) });
     expect((await invoices(mine.other.ownerId, mine.other.agencyId)).map((row) => row.id)).toEqual([otherId]);
     expect(await invoices(mine.other.ownerId, mine.agencyId)).toEqual([]);
+  });
+
+  it('shows a charge whose payment was declined as declined, over open, expired and paid, and the others as they were', async () => {
+    const { agencyId, ownerId } = await world();
+    const paid = await seed({ agencyId, requestedBy: ownerId, kind: 'subscribe', status: 'confirmed', createdAt: daysAgo(30) });
+    const replaced = await seed({ agencyId, requestedBy: ownerId, kind: 'upgrade', status: 'expired', createdAt: daysAgo(20) });
+    const declinedThenReplaced = await seed({ agencyId, requestedBy: ownerId, kind: 'upgrade', status: 'expired', createdAt: daysAgo(10), declinedAt: daysAgo(10) });
+    const declinedAndOpen = await seed({ agencyId, requestedBy: ownerId, kind: 'upgrade', status: 'pending', createdAt: new Date(), declinedAt: new Date(), expiresAt: new Date(Date.now() + 1_800_000) });
+
+    const rows = await invoices(ownerId, agencyId);
+    expect(rows.map((row) => [row.id, row.state])).toEqual([[declinedAndOpen, 'declined'], [declinedThenReplaced, 'declined'], [replaced, 'expired'], [paid, 'paid']]);
+  });
+
+  it('shows a declined charge as declined even when its time ran out while its row still says pending', async () => {
+    const { agencyId, ownerId } = await world();
+    const lapsed = await seed({ agencyId, requestedBy: ownerId, kind: 'subscribe', status: 'pending', createdAt: daysAgo(1), declinedAt: daysAgo(1), expiresAt: new Date(Date.now() - 1_000) });
+    expect((await invoices(ownerId, agencyId)).map((row) => [row.id, row.state])).toEqual([[lapsed, 'declined']]);
+  });
+
+  it('shows what the decline function wrote as declined to the Owner, through the replacement and the payment that follow, and to nobody else', async () => {
+    const built = await world();
+    const { agencyId, ownerId } = built;
+    const declineCharge = (chargeId: string) => h.asUser(ownerId, (t) => t.raw('select app_private.decline_subscription_charge(?::uuid, ?::uuid)', [agencyId, chargeId]));
+
+    const first = (await h.request(ownerId, agencyId, 'essencial')).charge_id!;
+    expect((await invoices(ownerId, agencyId)).map((row) => [row.id, row.state])).toEqual([[first, 'open']]);
+    await declineCharge(first);
+    expect((await invoices(ownerId, agencyId)).map((row) => [row.id, row.state])).toEqual([[first, 'declined']]);
+    for (const { who, user } of built.denied) {
+      expect(await invoices(user, agencyId), `${who} reads the declined charge`).toEqual([]);
+    }
+
+    const second = await h.request(ownerId, agencyId, 'essencial');
+    expect((await invoices(ownerId, agencyId)).map((row) => [row.id, row.state])).toEqual([[second.charge_id, 'open'], [first, 'declined']]);
+    expect(await h.confirm(second.charge_id!, `ref-${randomUUID()}`, second.amount_cents)).toBe(true);
+    expect((await invoices(ownerId, agencyId)).map((row) => [row.id, row.state])).toEqual([[second.charge_id, 'paid'], [first, 'declined']]);
   });
 
   it('keeps what the provider answered and who asked out of the reach of the screen\'s role', async () => {
