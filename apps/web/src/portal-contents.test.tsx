@@ -1254,3 +1254,66 @@ describe('the round the agency opened, on the Conteúdos of the portal (telas-me
     expect(text.querySelector('b, img')).toBeNull();
   });
 });
+
+describe('the search of the portal shell, on Conteúdos', () => {
+  const field = (): HTMLInputElement => screen.getByRole('searchbox', { name: 'Buscar um post' }) as HTMLInputElement;
+  const seedPosts = (world: World): void => {
+    world.api.seed({ title: 'Promoção de Pães', format: 'image', publishOn: '2026-10-12', status: 'approved' });
+    world.api.seed({ title: 'Cardápio de Natal', format: 'carousel', publishOn: '2026-10-15', status: 'in_production' });
+    world.api.seed({ title: 'Reels do forno', format: 'reels', publishOn: '2026-10-20', status: 'approved' });
+  };
+
+  it('filters the loaded month by title, ignoring case and accents, and asks the API for nothing', async () => {
+    const world = makeWorld();
+    seedPosts(world);
+    const { container, probe } = renderPortal(world);
+    await ready();
+    await screen.findByText('Cardápio de Natal');
+    const before = [...world.calls];
+
+    fireEvent.change(field(), { target: { value: 'PAES' } });
+    await waitFor(() => expect(titlesOf(container)).toEqual(['Promoção de Pães']));
+    expect(probe.search).toBe('?busca=PAES');
+
+    fireEvent.change(field(), { target: { value: 'cardapio' } });
+    await waitFor(() => expect(titlesOf(container)).toEqual(['Cardápio de Natal']));
+    expect(world.calls).toEqual(before);
+  });
+
+  it('opens a list already filtered by ?busca=, with the term in the field', async () => {
+    const world = makeWorld();
+    seedPosts(world);
+    const { container } = renderPortal(world, [contentsUrl('?busca=forno')]);
+    await ready();
+    await waitFor(() => expect(titlesOf(container)).toEqual(['Reels do forno']));
+    expect(field().value).toBe('forno');
+  });
+
+  it('says there is no post for the term and clears the search from the button', async () => {
+    const world = makeWorld();
+    seedPosts(world);
+    const { container, probe } = renderPortal(world, [contentsUrl('?busca=xyz')]);
+    await ready();
+    expect(await screen.findByRole('heading', { name: 'Nenhum post encontrado para «xyz»' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar a busca' }));
+    await waitFor(() => expect(titlesOf(container)).toHaveLength(3));
+    expect(probe.search).toBe('');
+    expect(field().value).toBe('');
+  });
+
+  it('takes the person from another screen to Conteúdos with the term in the address', async () => {
+    const world = makeWorld();
+    seedPosts(world);
+    const { container, probe } = renderPortal(world);
+    await ready();
+    act(() => { void probe.navigate(`/portal/${CLIENT_ID}/nada`); });
+    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_ID}/nada`));
+    expect(field().value).toBe('');
+
+    fireEvent.change(field(), { target: { value: 'natal' } });
+    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_ID}/conteudos`));
+    expect(probe.search).toBe('?busca=natal');
+    await waitFor(() => expect(titlesOf(container)).toEqual(['Cardápio de Natal']));
+    expect(field().value).toBe('natal');
+  });
+});

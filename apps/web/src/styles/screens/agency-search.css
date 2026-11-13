@@ -1,0 +1,244 @@
+/* The search of the top bar (specs/busca.md section 7): the pill, the panel of results in groups, and the portal's "Buscar um post". */
+
+.shell-topbar__search {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-topbar .ui-search-field {
+  min-height: 2.75rem;
+}
+
+/* The ring is the pill's (search-field.css); base.css's input:focus-visible would draw a second one on the field inside it. */
+.agency-search .ui-search-field__input:focus-visible,
+.portal-search .ui-search-field__input:focus-visible {
+  outline: none;
+}
+
+.agency-search {
+  position: relative;
+  width: 100%;
+  max-width: 26rem;
+}
+
+.portal-search {
+  width: 26rem;
+  max-width: calc(100vw - 2 * var(--space-8));
+}
+
+.agency-search__panel {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(42rem, calc(100vw - 2 * var(--space-8)));
+  max-height: calc(100vh - 9rem);
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-floating);
+}
+
+.agency-search__head,
+.agency-search__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.agency-search__head {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.agency-search__foot {
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-canvas);
+}
+
+.agency-search__body {
+  overflow-y: auto;
+  padding: 0 0 var(--space-3);
+}
+
+.agency-search__group {
+  padding: var(--space-3) var(--space-3) 0;
+}
+
+.agency-search__group-title {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.agency-search__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 3.25rem;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.agency-search__row:hover {
+  background: var(--bg-hover);
+}
+
+.agency-search__row[aria-selected='true'] {
+  background: var(--bg-tint);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.agency-search__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-md);
+  background: var(--color-slate-100);
+  color: var(--text-secondary);
+}
+
+.agency-search__icon svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.agency-search__icon--content {
+  background: var(--color-violet-100);
+  color: var(--color-violet-800);
+}
+
+.agency-search__icon--file {
+  background: var(--color-teal-100);
+  color: var(--color-teal-800);
+}
+
+.agency-search__main {
+  display: grid;
+  min-width: 0;
+}
+
+.agency-search__name {
+  overflow: hidden;
+  font: var(--label-md);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agency-search__meta {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font: var(--caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agency-search__row mark {
+  padding: 0 1px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-indigo-600) 18%, transparent);
+  color: inherit;
+  font-weight: 700;
+}
+
+.agency-search__tips {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-6);
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.agency-search__tips-title {
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+/* Inside the panel the state is the panel's own content, centred as on the board: no frame of its own. */
+.agency-search__state.ui-empty-state {
+  padding: var(--space-8) var(--space-6);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: center;
+}
+
+.agency-search__state .ui-empty-state__body {
+  justify-items: center;
+}
+
+.agency-search__state .ui-empty-state__action {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.agency-search__skeleton {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+}
+
+.agency-search__skeleton .ui-skeleton {
+  height: 2.25rem;
+}
+
+/* On a phone the search is an icon at the start of the shell's top bar that opens a sheet; the panel is then the sheet's own body. */
+.agency-search__trigger.ui-icon-button {
+  order: -1;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.agency-search__trigger.ui-icon-button:hover,
+.agency-search__trigger.ui-icon-button:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.agency-search__trigger.ui-icon-button svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.agency-search--sheet {
+  display: grid;
+  gap: var(--space-3);
+  max-width: none;
+}
+
+.agency-search--sheet .agency-search__panel {
+  position: static;
+  width: auto;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
