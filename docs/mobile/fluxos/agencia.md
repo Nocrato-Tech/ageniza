@@ -69,14 +69,18 @@ Decisões de 2026-11-11: [busca](../../business/decisions/2026-11-11-busca-na-ag
 
 | método | rota | permissão | o que faz |
 |---|---|---|---|
-| `GET` | `…/search?q=` | vínculo com a agência; cada grupo pela permissão da leitura que ele atalha | `{ data: { clients, contents, files } }`, com os três grupos sempre presentes (*proposta*) |
+| `GET` | `/agencies/:agencyId/search?q=` | vínculo com a agência; cada grupo pela permissão da leitura que ele atalha | `{ data: { clients, contents, files }, meta: { q } }`, com os três grupos sempre presentes |
 
-1. `q` de 2 a 80 caracteres (menos que isso, não chame a API); espere 250 ms depois da última tecla e cancele a chamada anterior. `400 VALIDATION_ERROR` para termo curto, longo ou com caractere de controle; `429 RATE_LIMITED` (proposta: 60 por minuto), e a tela diz para esperar um instante.
-2. Grupos: **Clientes** (`cliente.visualizar`: nome, razão social e @, sem acento nem diferenciar maiúsculas), **Conteúdos** (`conteudo.visualizar`: título) e **Arquivos** (`conteudo.visualizar`: nome do arquivo). No máximo 6 por grupo, por proximidade do começo do nome e depois ordem alfabética.
-3. Quem não tem a permissão de um grupo recebe `[]` nele, **igual a quem tem e não achou nada**: nunca mostre "sem permissão". Vendas e Financeiro só têm Clientes.
-4. Cliente arquivado e conteúdo cancelado aparecem, marcados. Arquivo removido e não confirmado não aparecem. O termo não vai para log nem para métrica.
-5. Um resultado leva ao destino: cliente à Visão geral, conteúdo ao calendário do cliente com o conteúdo aberto, arquivo à aba Mídias, na pasta dele. Esc fecha, setas movem, Enter abre, e o foco volta ao campo que abriu.
-6. **No portal** não há rota: o campo "Buscar um post" filtra, no aparelho, pelo título, os posts do mês que a tela de Conteúdos já carregou. De outra tela, digitar leva a Conteúdos com `?busca=`.
+1. `q` de 2 a 80 caracteres, aparado, o mínimo contado depois de tirar os acentos e o `@` do começo (menos que isso, não chame a API; `á` e `@a` já são curtos demais); espere 250 ms depois da última tecla e cancele a chamada anterior. `400 VALIDATION_ERROR` para termo curto, longo ou com caractere de controle (a resposta nunca repete o valor de nenhum parâmetro; o nome de um parâmetro desconhecido, como em `?x=1`, pode voltar na mensagem, e o app só manda `q`); `429 RATE_LIMITED` com `Retry-After` (60 por minuto por pessoa, somando as agências dela), e a tela diz para esperar um instante. A pessoa do portal não usa a rota: recebe `404`.
+2. Grupos: **Clientes** (`cliente.visualizar`: nome, razão social e @, sem acento nem diferenciar maiúsculas; `%` e `_` valem como texto), **Conteúdos** (`conteudo.visualizar`: título) e **Arquivos** (`conteudo.visualizar`: nome do arquivo). No máximo 6 por grupo: o nome que começa com o termo vem antes do que só o contém, depois a ordem alfabética, e o `id` desempata.
+3. Quem não tem a permissão de um grupo recebe `[]` nele, **igual a quem tem e não achou nada**: nunca mostre "sem permissão". Vendas e Financeiro só têm Clientes. A consulta do grupo sem permissão nem roda.
+4. Cliente arquivado (`archived: true`) e conteúdo cancelado (`status: "cancelled"`) aparecem, marcados. Arquivo removido e não confirmado não aparecem. O termo não vai para log nem para métrica. Agência em somente leitura busca normalmente; a agência suspensa recebe `404`, como em toda rota da agência ([decisão](../../business/decisions/2026-11-13-agencia-suspensa-nao-usa-a-busca.md)).
+5. Campos de cada item:
+   - **Cliente:** `id`, `name`, `photoUrl` (URL assinada ou `null`), `instagramHandle` (sem o `@`, ou `null`) e `archived`.
+   - **Conteúdo:** `id`, `clientId`, `clientName`, `title`, `format`, `status`, `overdue` (atrasado: dia planejado antes de hoje, em São Paulo, e ainda aberto), `scheduled` (agendado: aprovado, com hora, no futuro) e `publishOn`.
+   - **Arquivo:** `id`, `clientId`, `clientName`, `folderId`, `name`, `category` (`image`, `video`, `pdf`, `audio` ou `logo`) e `thumbnailAssetId` (o próprio arquivo quando tem miniatura a mostrar, senão `null`).
+6. Um resultado leva ao destino: cliente à Visão geral, conteúdo ao calendário do cliente com o conteúdo aberto, arquivo à aba Mídias, na pasta dele. Esc fecha, setas movem, Enter abre, e o foco volta ao campo que abriu.
+7. **No portal** não há rota: o campo "Buscar um post" filtra, no aparelho, pelo título, os posts do mês que a tela de Conteúdos já carregou. De outra tela, digitar leva a Conteúdos com `?busca=`.
 
 **Notificações** (o sino com ponto, só na agência)
 

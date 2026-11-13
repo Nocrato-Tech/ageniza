@@ -17,6 +17,7 @@ import { createInvitationTokenLookup, registerInvitationModule, type InvitationM
 import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
 import { registerLegalModule, type LegalModuleDependencies } from './modules/legal/routes.js';
 import { registerNotificationsModule, type NotificationModuleDependencies } from './modules/notifications/routes.js';
+import { registerSearchModule, type SearchModuleDependencies } from './modules/search/routes.js';
 import { registerStoryScriptModule, type StoryScriptModuleDependencies } from './modules/story-scripts/routes.js';
 import { registerProfileModule, type ProfileModuleDependencies } from './modules/profile/routes.js';
 import { registerSubscriptionModule, type SubscriptionModuleDependencies } from './modules/subscriptions/routes.js';
@@ -64,6 +65,8 @@ export interface ApiAppOptions {
   subscriptions?: SubscriptionModuleDependencies;
   /** The notifications of the person inside the app; optional, undefined for tests that never touch them. */
   notifications?: NotificationModuleDependencies;
+  /** The search of the agency's top bar; optional, undefined for tests that never touch it. */
+  search?: SearchModuleDependencies;
   /** Profile dependencies are optional; undefined where identity storage is not configured. */
   profile?: ProfileModuleDependencies;
   /** Legal acceptance dependencies are optional; undefined for tests that never touch the legal routes. */
@@ -226,6 +229,9 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.notifications !== undefined) {
     registerNotificationsModule(app, options.notifications);
+  }
+  if (options.search !== undefined) {
+    registerSearchModule(app, options.search);
   }
   if (options.profile !== undefined) {
     registerProfileModule(app, options.profile);

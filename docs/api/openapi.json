@@ -69,6 +69,10 @@
     {
       "name": "notifications",
       "description": "As notificações da pessoa dentro do app: a lista paginada, a contagem de não lidas para o sino e marcar como lida, uma ou todas. Cada pessoa lê só as próprias; quem as cria é o banco, junto do evento."
+    },
+    {
+      "name": "search",
+      "description": "A busca da barra superior da agência: clientes, conteúdos e arquivos pelo nome, em três grupos de até seis. Cada grupo respeita a permissão da leitura que ele atalha, e um grupo que a pessoa não pode ler vem vazio, igual a um grupo sem resultado."
     }
   ],
   "components": {
@@ -10059,6 +10063,197 @@
         },
         "required": [
           "data"
+        ],
+        "additionalProperties": false
+      },
+      "searchAgencyResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "clients": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "photoUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "instagramHandle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "archived": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "photoUrl",
+                    "instagramHandle",
+                    "archived"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 6
+              },
+              "contents": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "clientId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "clientName": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "format": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "carousel",
+                        "reels",
+                        "long_video",
+                        "vsl"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "in_production",
+                        "awaiting_approval",
+                        "adjusting",
+                        "approved",
+                        "published",
+                        "cancelled"
+                      ]
+                    },
+                    "overdue": {
+                      "type": "boolean"
+                    },
+                    "scheduled": {
+                      "type": "boolean"
+                    },
+                    "publishOn": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "clientId",
+                    "clientName",
+                    "title",
+                    "format",
+                    "status",
+                    "overdue",
+                    "scheduled",
+                    "publishOn"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 6
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "clientId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "clientName": {
+                      "type": "string"
+                    },
+                    "folderId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "video",
+                        "pdf",
+                        "audio",
+                        "logo"
+                      ]
+                    },
+                    "thumbnailAssetId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "clientId",
+                    "clientName",
+                    "folderId",
+                    "name",
+                    "category",
+                    "thumbnailAssetId"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 6
+              }
+            },
+            "required": [
+              "clients",
+              "contents",
+              "files"
+            ],
+            "additionalProperties": false
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "q": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "q"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
         ],
         "additionalProperties": false
       }
@@ -35415,6 +35610,224 @@
                   "error": {
                     "code": "TRY_AGAIN",
                     "message": "Houve um conflito momentâneo. Tente de novo."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agencies/{agencyId}/search": {
+      "get": {
+        "operationId": "searchAgency",
+        "summary": "Busca clientes, conteúdos e arquivos pelo nome",
+        "description": "Alimenta a busca da barra superior (Ctrl K). `q` tem de 2 a 80 caracteres, aparado e sem caractere de controle; o termo vale sem acento e sem diferenciar maiúsculas,\ne `%` e `_` valem como texto. Clientes casam por nome, razão social e @ (sem o `@`); conteúdos, pelo título, inclusive os cancelados; arquivos, pelo nome,\nsó os confirmados e não removidos. Cada grupo traz até 6, o nome mais próximo do começo primeiro (prefixo antes de trecho), depois a ordem alfabética e o `id`.\nClientes pedem `cliente.visualizar`; conteúdos e arquivos pedem `conteudo.visualizar` (o Owner passa por posse). Sem a permissão de um grupo, a consulta dele\nnem roda e ele vem `[]`, no formato de um grupo sem resultado: a resposta não diz se o grupo existe. A rota não tem permissão única, só o vínculo com a agência;\nquem só tem vínculo com um cliente recebe o 404 da agência. Agência em somente leitura busca normalmente. O termo nunca vai para log, e um termo inválido\ndevolve `400` sem repeti-lo. Limite de 60 requisições por minuto por pessoa, com `429` e `Retry-After`.\n\nAcesso: Sessão + vínculo com a agência; cada grupo por permissão própria.",
+        "tags": [
+          "search"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agencyId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 80,
+              "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+            },
+            "required": true,
+            "name": "q",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Os três grupos, sempre presentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/searchAgencyResponse"
+                },
+                "example": {
+                  "data": {
+                    "clients": [
+                      {
+                        "id": "77777777-7777-4777-8777-777777777777",
+                        "name": "Padaria Central",
+                        "photoUrl": null,
+                        "instagramHandle": "padariacentral",
+                        "archived": false
+                      }
+                    ],
+                    "contents": [
+                      {
+                        "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                        "clientId": "77777777-7777-4777-8777-777777777777",
+                        "clientName": "Padaria Central",
+                        "title": "Promoção de pães",
+                        "format": "reels",
+                        "status": "approved",
+                        "overdue": false,
+                        "scheduled": true,
+                        "publishOn": "2026-11-20"
+                      }
+                    ],
+                    "files": [
+                      {
+                        "id": "44444444-4444-4444-8444-444444444444",
+                        "clientId": "77777777-7777-4777-8777-777777777777",
+                        "clientName": "Padaria Central",
+                        "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                        "name": "padaria-fachada.jpg",
+                        "category": "image",
+                        "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
+                      }
+                    ]
+                  },
+                  "meta": {
+                    "q": "padar"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar. | FORBIDDEN: You do not have permission to perform this action. | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "EMAIL_NOT_CONFIRMED",
+                    "message": "Confirme o seu e-mail para entrar."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Agency not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Agency not found."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TRY_AGAIN",
+                    "message": "Houve um conflito momentâneo. Tente de novo."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
                   },
                   "meta": {
                     "requestId": "req-de-exemplo"

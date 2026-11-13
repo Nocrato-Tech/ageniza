@@ -1,4 +1,5 @@
 export * from './agencies.js';
+export * from './agency-search.js';
 export * from './client-access.js';
 export * from './clients.js';
 export * from './collaborators.js';

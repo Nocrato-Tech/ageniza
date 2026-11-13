@@ -33,6 +33,7 @@ import type { MediaModuleDependencies } from '../../media/routes.js';
 import { createMediaStorageClient, type MediaStorageClient } from '../../media/storage-client.js';
 import type { LegalModuleDependencies } from '../../legal/routes.js';
 import type { NotificationModuleDependencies } from '../../notifications/routes.js';
+import type { SearchModuleDependencies } from '../../search/routes.js';
 import type { EmailChangeModuleDependencies } from '../../email-change/routes.js';
 import type { StoryScriptModuleDependencies } from '../../story-scripts/routes.js';
 import type { SubscriptionModuleDependencies } from '../../subscriptions/routes.js';
@@ -347,6 +348,16 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
   };
   const emailChange: EmailChangeModuleDependencies = { database, auth, emailService };
   const notifications: NotificationModuleDependencies = { database, auth, requireAgencyAccess: createRequireAgencyAccess({ database }) };
+  const search: SearchModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    ...(config.identityStorage === undefined
+      ? {}
+      : { identityStorage: (options.wrapIdentityStorage ?? ((storage) => storage))(createIdentityStorageClient(config.identityStorage)) }),
+    photoUrlExpirySeconds: config.identityStorage?.downloadUrlExpirySeconds ?? 300,
+    ...(options.contentsClock === undefined ? {} : { now: options.contentsClock })
+  };
   const storyScripts: StoryScriptModuleDependencies = {
     database,
     auth,
@@ -392,6 +403,7 @@ export const buildTestApp = async (options: TestAppOptions = {}): Promise<TestAp
     legal,
     emailChange,
     notifications,
+    search,
     storyScripts,
     subscriptions,
     onRoute: options.onRoute,
