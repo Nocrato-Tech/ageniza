@@ -17,6 +17,7 @@ import { FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
 import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
 import { PortalContentCover } from './portal-content-cover.js';
+import { foldTitle, PORTAL_SEARCH_PARAM } from './portal-search.js';
 import { PortalStageEmpty, usePortalClient } from './portal.js';
 import { PORTAL_STATUS_LABELS, PORTAL_STATUS_TAGS, portalPostAddress as postAddress, type PortalStatus } from './portal-status.js';
 
@@ -178,7 +179,10 @@ export function PortalContentsPage() {
     setSearchParams(next, { replace: true });
   };
 
-  const shown = contents.data === undefined ? [] : status === '' || vista === 'feed' ? contents.data.data : contents.data.data.filter((content) => content.status === status);
+  // The search of the shell filters what this screen loaded (the open month) by title; it never reaches the API.
+  const term = (searchParams.get(PORTAL_SEARCH_PARAM) ?? '').trim();
+  const found = contents.data === undefined ? [] : term === '' ? contents.data.data : contents.data.data.filter((content) => foldTitle(content.title).includes(foldTitle(term)));
+  const shown = status === '' || vista === 'feed' ? found : found.filter((content) => content.status === status);
 
   return <section className="portal-contents" aria-labelledby="portal-contents-title">
     <h1 id="portal-contents-title" className="portal-headline">Conteúdos</h1>
@@ -206,7 +210,13 @@ export function PortalContentsPage() {
               action={anchor.slice(0, 7) === today.slice(0, 7) ? undefined : <Button variant="secondary" onClick={() => change('data', null)}>Ir para este mês</Button>}
             />
           </PortalStageEmpty>
-          : vista === 'feed'
+          : term !== '' && found.length === 0
+            ? <EmptyState
+              className="portal-empty"
+              title={`Nenhum post encontrado para «${term}»`}
+              action={<Button variant="secondary" onClick={() => change(PORTAL_SEARCH_PARAM, null)}>Limpar a busca</Button>}
+            />
+            : vista === 'feed'
             ? <Feed clientId={clientId} contents={shown} today={today} handle={client.instagramHandle} onBack={() => change('vista', null)} />
             : shown.length === 0
               ? <EmptyState
