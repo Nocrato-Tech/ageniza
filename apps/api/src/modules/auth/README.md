@@ -224,6 +224,18 @@ headers" is on, which is the owner's action in the dashboard**; without it every
   `better-auth.ts` clamps every renewal so `expiresAt` never passes `createdAt + 30 days`.
 - The session cookie is `httpOnly`, `SameSite=Lax`, prefixed `ageniza`, `path=/`, and `Secure` only
   when `environment === 'production'`.
+- **A session that died is deleted 30 days later** (decision 2026-11-12), with its IP, user agent and
+  city. Logout, logout-all, "sign out of the others", a reset and a removal already delete the row;
+  the one that only expired (Better Auth deletes it when that cookie is used again, which may be
+  never) or that the credential replacement left behind (#719) stays until the worker's
+  `sessions.purge-dead` (daily at 04:20 in `America/Sao_Paulo` and at every start) calls
+  `app_private.purge_dead_sessions(now(), 500)` until a batch is not full. A session is dead since the
+  earlier of its `expiresAt` and the last replacement of the credential (the rule of
+  `ACTIVE_SESSION_SQL` in `session-validity.ts`, written again in the function: change one, change
+  both); it goes when that was **more than** 30 days ago. An active session is never a candidate, and
+  one being renewed or revoked at that moment is skipped (`for update skip locked`). The function is
+  `security definer`, refused when a user is bound to the transaction, and uses no tenant context.
+  `audit.events` holds no IP, user agent or city, so nothing there changes.
 
 ## Rate limiting
 

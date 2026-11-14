@@ -64,7 +64,10 @@ Quase tudo já existe. **Uma tabela nova** (`email_change_requests`, issue #80, 
 sem sessão → ativa        # login com credencial válida E ao menos um contexto
 ativa      → ativa        # 7 dias sem uso, renovada a cada 24 h de uso, teto absoluto de 30 dias
 ativa      → encerrada    # logout, logout-all, reset de senha, 7 dias sem uso, ou o teto de 30 dias vencido
+encerrada  → apagada      # a linha some, com IP, agente do navegador e cidade, mais de 30 dias depois de a sessão deixar de valer
 ```
+
+Logout, logout-all, "sair das outras", reset de senha e remoção de acesso já apagam a linha na hora. A **limpeza** é para a que só venceu (ninguém usou o cookie de novo) e para a feita antes da troca da credencial da conta: o worker apaga, uma vez por dia e a cada início, a sessão que deixou de valer **há mais de 30 dias** (contados do `expiresAt` ou da troca da credencial, o que vier primeiro), em lotes. A sessão ativa e a que vence dentro dos 30 dias nunca são tocadas. Decisão: [`2026-11-12-sessoes-vencidas-ha-mais-de-30-dias-sao-apagadas`](../docs/business/decisions/2026-11-12-sessoes-vencidas-ha-mais-de-30-dias-sao-apagadas.md).
 
 Não há refresh token e não há nada em JavaScript: cookie httpOnly, `SameSite=lax`.
 
@@ -559,9 +562,9 @@ Decidida pelo dono do produto e pelo maestro, **pendente de validação**: [`202
 |---|---|---|
 | `GET` | `/auth/sessions` | as sessões ativas **da conta**, da mais recente à mais antiga: `{ id, current, browser, os, city, lastUsedAt, createdAt }` |
 | `DELETE` | `/auth/sessions/:sessionId` | `204`; encerra **uma** sessão da própria conta que **não** é a atual; a atual é `409 USE_LOGOUT`, e a sessão de outra conta (ou inexistente) é `404` |
-| `POST` | `/auth/sessions/revoke-others` | `204`; encerra **todas menos a atual**; devolve o número encerrado |
+| `POST` | `/auth/sessions/revoke-others` | `200 { revoked }`; encerra **todas menos a atual** e devolve em `revoked` quantas sessões abertas encerrou (a atual nunca entra; `0` quando só havia a atual) |
 
-`/auth/logout` e `/auth/logout-all` não mudam. `id` é um **identificador próprio de exibição**, nunca o token da sessão. Corpo e resposta estritos. Sessão **expirada** não é listada.
+`/auth/logout` e `/auth/logout-all` não mudam. A sessão de que a lista deixou de falar não fica para sempre: a limpeza dos 30 dias está na seção 4. `id` é um **identificador próprio de exibição**, nunca o token da sessão. Corpo e resposta estritos. Sessão **expirada** não é listada.
 
 ### Regras invioláveis
 
