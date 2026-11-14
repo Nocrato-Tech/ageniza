@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowRight, Bell, Download, Eye, FileText, FolderInput, ImageIcon, LayoutGrid, List, Pencil, Plus, Store, Trash2, Video } from 'lucide-react';
 import {
-  Avatar, AvatarGroup, BadgeCard, BrandSymbol, Button, ButtonLink, Chip, ChoiceCard, ChoiceRadio, ClientStrip, DatePicker, IconButton, Kbd, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, ErrorSummary, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
+  Avatar, AvatarGroup, BadgeCard, BrandSymbol, Button, ButtonLink, Chip, ChoiceCard, ChoiceRadio, ClientStrip, DatePicker, IconButton, Kbd, Pill, PillAction, RoleTag, ConfirmDialog, Dialog, EmptyState, ErrorSummary, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
   Modal, MilestoneTrail, Pagination, PasswordInput, Popover, ProgressBar, Realce, SearchField, Segmented, Select, Skeleton, Stage3D, StatusTag, Table, Tabs, Textarea, TextInput, Trait,
   type MilestoneStatus, type Stage3DTone, type TableColumn
 } from '@ageniza/ui';
@@ -470,6 +470,19 @@ export const componentEntries: readonly ComponentEntry[] = [
     examples: [
       { label: 'parado', render: (state) => stateOnly(state, ['default'], <span>Você tem <Realce>2 posts</Realce> esperando</span>) },
       { label: 'varrido', render: (state) => stateOnly(state, ['default'], <span>Hoje, dia <Realce sweep>13</Realce></span>) }
+    ]
+  },
+  {
+    id: 'role-tag',
+    name: 'RoleTag',
+    covers: ['RoleTag'],
+    examples: [
+      { label: 'admin', render: (state) => stateOnly(state, ['default'], <RoleTag name="Admin" tone="indigo" />) },
+      { label: 'gestor de conta', render: (state) => stateOnly(state, ['default'], <RoleTag name="Gestor de conta" tone="violet" />) },
+      { label: 'produção', render: (state) => stateOnly(state, ['default'], <RoleTag name="Produção" tone="teal" />) },
+      { label: 'vendas', render: (state) => stateOnly(state, ['default'], <RoleTag name="Vendas" tone="sky" />) },
+      { label: 'sem cor', render: (state) => stateOnly(state, ['default'], <RoleTag name="Financeiro" />) },
+      { label: 'dona da agência', render: (state) => stateOnly(state, ['default'], <RoleTag name="Admin" isOwner />) }
     ]
   },
   {

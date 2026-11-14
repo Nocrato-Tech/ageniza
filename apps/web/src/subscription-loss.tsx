@@ -98,7 +98,7 @@ export function PlanLosses({ plans, extraClientCents, subscription, trial }: {
 }) {
   return <section aria-labelledby="perdas-t" id="perdas">
     <div className="subscription__section-head">
-      <h2 id="perdas-t">O que você perde, em números</h2>
+      <h2 id="perdas-t" tabIndex={-1}>O que você perde, em números</h2>
       <p className="subscription__muted">{subscription === null
         ? 'Antes de deixar o teste acabar, veja o que fica parado na sua agência.'
         : 'Antes de descer de plano ou cancelar, veja o que fica para trás na sua agência.'}</p>
