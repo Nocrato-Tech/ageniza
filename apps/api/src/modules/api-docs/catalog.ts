@@ -2455,8 +2455,10 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'quem aprovou. `note` é o recado opcional para a agência (decisão de 2026-11-11): até 500 caracteres visíveis, com a mesma regra do recado',
       'da agência (aparado, nunca só espaços, sem caractere invisível ou de controle; `400 CONTENT_APPROVAL_NOTE_INVALID` quando em branco ou longo),',
       'e entra na conversa do conteúdo como comentário do cliente, na mesma transação da aprovação: se o recado é recusado, nada é aprovado. Um',
-      'recado em conteúdo que já está aprovado, por quem aprovou ou por outra pessoa, não é gravado e a resposta diz isso: `409',
-      'CONTENT_ALREADY_APPROVED` (decisão de 2026-11-11). Fora de "aguardando aprovação" (em produção, em ajuste, publicado): `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo',
+      'recado em conteúdo que já está aprovado não é gravado e a resposta diz isso: `409',
+      'CONTENT_ALREADY_APPROVED` (decisão de 2026-11-11), salvo o reenvio da mesma requisição: quem aprovou, com a mesma `revision` e o recado',
+      'idêntico ao que a aprovação gravou, recebe a resposta da aprovação, sem segundo comentário nem segunda notificação (decisão de 2026-11-12).',
+      'Fora de "aguardando aprovação" (em produção, em ajuste, publicado): `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo',
       'cancelado, de outro cliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404, também para o colaborador que tem vínculo.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
