@@ -180,7 +180,7 @@ describe('the profile of the persona (decision 2026-11-11)', () => {
   it('is read as a list of traits that is never missing, and the other five as a value or null', () => {
     const persona = {
       id, name: 'Marina', description: null, pains: null, desires: null, objections: null,
-      ...profile, status: 'active', updatedBy: null, updatedAt: null
+      ...profile, messageCount: 12, updatedBy: null, updatedAt: null
     };
     expect(PersonaSchema.safeParse(persona).success).toBe(true);
     expect(PersonaSchema.safeParse({ ...persona, age: null, occupation: null, location: null, traits: [], whereTheyAre: null, toneThatWorks: null }).success).toBe(true);
@@ -189,6 +189,9 @@ describe('the profile of the persona (decision 2026-11-11)', () => {
     }
     expect(PersonaSchema.safeParse({ ...persona, traits: null }).success).toBe(false);
     expect(PersonaSchema.safeParse({ ...persona, age: 34.5 }).success).toBe(false);
+    expect(PersonaSchema.safeParse({ ...persona, messageCount: -1 }).success).toBe(false);
+    expect(PersonaSchema.safeParse({ ...persona, status: 'active' }).success).toBe(false);
+    expect(PersonaSchema.safeParse(without(persona, 'messageCount')).success).toBe(false);
   });
 });
 

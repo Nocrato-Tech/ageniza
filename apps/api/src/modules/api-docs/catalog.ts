@@ -359,8 +359,6 @@ export const ERROR_MESSAGES: Record<string, string> = {
   MEDIA_IN_USE: 'Esta mídia está em um conteúdo enviado para aprovação, aprovado ou publicado e não pode ser removida.',
   CLIENT_NOT_ARCHIVED: 'Este cliente já está ativo.',
   CLOSING_DATE_NOT_SET: 'Este cliente não tem encerramento agendado.',
-  PERSONA_ARCHIVED: 'Persona arquivada: a conversa é somente leitura.',
-  PERSONA_READ_ONLY: 'Esta persona está arquivada. Desarquive-a para editar.',
   SECTION_NOT_FILLED: 'Esta seção ainda não foi preenchida pela agência.',
   CONTENT_PERIOD_TOO_LARGE: 'O período tem mais de 500 itens. Consulte um período menor.',
   CONTENT_NOT_EDITABLE: 'Conteúdo publicado ou cancelado não pode ser editado.',
@@ -661,7 +659,7 @@ const personaExample = {
   desires: 'Reconhecimento da comunidade.',
   objections: 'Preço acima do esperado.',
   ...personaProfileExample,
-  status: 'active',
+  messageCount: 12,
   updatedBy: { id: userId, name: 'Dono da Agência' },
   updatedAt: '2026-09-30T12:00:00.000Z'
 } as const;
@@ -764,7 +762,6 @@ const portalBrandStudyExample = {
     desires: 'Reconhecimento da comunidade.',
     objections: 'Preço acima do esperado.',
     ...personaProfileExample,
-    status: 'active',
     updatedAt: '2026-09-30T12:00:00.000Z'
   }]
 } as const;
@@ -3241,7 +3238,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'createPersona',
     module: 'clients',
     summary: 'Cria uma persona do cliente',
-    description: 'A persona nasce ativa; `updated_by` é o usuário da sessão. Idade (1 a 120), ocupação e local (uma linha de até 80 caracteres), até cinco traços (uma linha de até 24 caracteres cada), onde está e o tom que funciona (até 280 caracteres) são opcionais. Os limites contam caracteres, não unidades UTF-16: um emoji vale um. Cliente arquivado responde 409.',
+    description: 'A persona nasce sem conversa (`messageCount` 0); `updated_by` é o usuário da sessão. Idade (1 a 120), ocupação e local (uma linha de até 80 caracteres), até cinco traços (uma linha de até 24 caracteres cada), onde está e o tom que funciona (até 280 caracteres) são opcionais. Os limites contam caracteres, não unidades UTF-16: um emoji vale um. Cliente arquivado responde 409.',
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.operar',
     params: AgencyClientPathParamsSchema,
@@ -3264,7 +3261,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'updatePersona',
     module: 'clients',
     summary: 'Edita uma persona',
-    description: 'Aceita um subconjunto dos campos; `null` limpa. Persona de outro cliente é o mesmo 404. Persona arquivada é somente leitura: responde 409 `PERSONA_READ_ONLY` e nada muda; para editar, desarquive antes.',
+    description: 'Aceita um subconjunto dos campos; `null` limpa. Persona de outro cliente é o mesmo 404.',
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.operar',
     params: AgencyClientPersonaPathParamsSchema,
@@ -3278,42 +3275,24 @@ path: '/agencies/:agencyId/roles',
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Persona not found.' },
-      { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_READ_ONLY' }
+      { status: 409, code: 'CLIENT_ARCHIVED' }
     ]
   },
   {
-    method: 'post',
-    path: '/agencies/:agencyId/clients/:clientId/personas/:personaId/archive',
-    operationId: 'archivePersona',
+    method: 'delete',
+    path: '/agencies/:agencyId/clients/:clientId/personas/:personaId',
+    operationId: 'deletePersona',
     module: 'clients',
-    summary: 'Arquiva uma persona',
-    description: 'A persona sai do portal e as conversas dela ficam somente leitura; o histórico continua na agência. Arquivar uma persona que já está arquivada não muda o status e responde 409 `PERSONA_READ_ONLY`.',
+    summary: 'Exclui uma persona',
+    description: [
+      'Apaga a persona e, com ela, as conversas e os comentários dela, na mesma transação; não há como desfazer.',
+      'A leitura da persona traz `messageCount`, o número de comentários que saem junto, para a tela dizer antes de perguntar.',
+      'Persona de outro cliente é o mesmo 404. Cliente arquivado responde 409. A exclusão fica no registro de auditoria (`persona.deleted`).'
+    ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.operar',
     params: AgencyClientPersonaPathParamsSchema,
-    responses: [{ status: 200, description: 'Persona arquivada.', schema: PersonaSchema, example: { ...personaExample, status: 'archived' } }],
-    errors: [
-      COMMON_ERRORS.csrf,
-      COMMON_ERRORS.internal,
-      { status: 401, code: 'UNAUTHENTICATED' },
-      { status: 403, code: 'FORBIDDEN' },
-      { status: 404, code: 'NOT_FOUND', message: 'Persona not found.' },
-      { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_READ_ONLY' }
-    ]
-  },
-  {
-    method: 'post',
-    path: '/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive',
-    operationId: 'unarchivePersona',
-    module: 'clients',
-    summary: 'Desarquiva uma persona',
-    description: 'A persona volta a aparecer no portal.',
-    access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.operar',
-    params: AgencyClientPersonaPathParamsSchema,
-    responses: [{ status: 200, description: 'Persona reativada.', schema: PersonaSchema, example: personaExample }],
+    responses: [{ status: 204, description: 'Persona excluída, com a conversa dela.' }],
     errors: [
       COMMON_ERRORS.csrf,
       COMMON_ERRORS.internal,
@@ -3334,8 +3313,7 @@ path: '/agencies/:agencyId/roles',
       'O assunto é obrigatório e é exatamente um: `sectionKey` (uma das sete seções) ou `personaId`; os dois',
       'juntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por',
       'página, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só',
-      'enquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa',
-      'de persona arquivada continua legível para a agência.',
+      'enquanto a resolução é posterior ao último comentário. Persona de outro cliente, ou já excluída, é 404.',
       'Com `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.',
       'Com `materialRequest=true` o assunto são os pedidos de material do cliente, em qualquer estado, e a permissão é `cliente.visualizar`; cada item traz `subject: { materialRequest: true }`, `dueOn`, o prazo (`YYYY-MM-DD`) ou `null`, e `title`, o título do pedido (`null` nos pedidos abertos antes de ele existir).'
     ].join('\n'),
@@ -3367,7 +3345,7 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem',
       'do corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000',
-      'bytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`',
+      'bytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`',
       'e persona de outro cliente 404.',
       'Com `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.',
       'Com `{ materialRequest: true }` a conversa é um pedido de material ao cliente (decisão 2026-11-10): um assunto do próprio cliente, nunca dentro da conversa de um conteúdo, e cada chamada abre um pedido novo. Pede `cliente.operar`, como as conversas do cliente. `title` é obrigatório no pedido novo (uma linha visível de até 80 caracteres, contados como caracteres: um emoji vale um) e com outro assunto é 400 `VALIDATION_ERROR` com o campo `title`. `dueOn` (`YYYY-MM-DD`) é o prazo opcional, de hoje a 90 dias, no fuso de São Paulo; fora disso é 400 `VALIDATION_ERROR` com o campo `dueOn`. `dueOn` com outro assunto também é 400, e o portal nunca abre um pedido.'
@@ -3394,7 +3372,6 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' },
       { status: 409, code: 'CONTENT_NOT_OPEN' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
@@ -3438,7 +3415,7 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na',
       'conversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.',
-      'Cliente arquivado e persona arquivada respondem 409.',
+      'Cliente arquivado responde 409.',
       'Numa conversa de conteúdo, `conteudo.operar` e `conteudo.visualizar`; em produção também pode comentar; com o conteúdo cancelado, 409 `CONTENT_NOT_OPEN`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -3455,7 +3432,6 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' },
       { status: 409, code: 'CONTENT_NOT_OPEN' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
@@ -3489,7 +3465,6 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },
@@ -3773,7 +3748,7 @@ path: '/agencies/:agencyId/roles',
     summary: 'Abre uma conversa pelo portal, com o primeiro comentário',
     description: [
       'Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência',
-      'ainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.',
+      'ainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona de outro cliente, ou excluída, 404.',
       'Com `{ contentId }`, só enquanto o conteúdo está em "aguardando aprovação", "em ajuste", "aprovado" ou "publicado"; fora disso, e para conteúdo de outro cliente, 404. A conversa do conteúdo é uma só: abrir de novo escreve nela.',
       'O portal nunca abre um pedido de material: `{ materialRequest: true }` e `dueOn` são 400 `VALIDATION_ERROR`, e nada é gravado. O pedido é da agência (decisão 2026-11-10).'
     ].join('\n'),
@@ -4063,9 +4038,8 @@ path: '/agencies/:agencyId/roles',
     module: 'clients',
     summary: 'Lê o estudo de marca, no portal',
     description: [
-      'A mesma forma do estudo da agência, com duas diferenças: persona arquivada não vem, nem para o',
-      'colaborador que também tem vínculo de cliente, e `updatedBy` não vem em seção nem em persona, porque',
-      'quem editou por dentro é informação da agência. As sete seções vêm sempre; a que a agência não',
+      'A mesma forma do estudo da agência, com uma diferença: `updatedBy` não vem em seção nem em persona,',
+      'e `messageCount` não vem na persona, porque quem editou por dentro e a conversa da agência são informação dela. As sete seções vêm sempre; a que a agência não',
       'preencheu vem vazia.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',

@@ -57,7 +57,7 @@ export function useAwaitingCounts(clientId: string, personas: readonly Persona[]
   const scope: ConversationScope = { side: 'agency', agencyId: agency.agencyId, clientId };
   const subjects = [
     ...SECTION_ORDER.map((key) => ({ id: `section:${key}`, query: `sectionKey=${key}` })),
-    ...personas.filter((persona) => persona.status === 'active').map((persona) => ({ id: `persona:${persona.id}`, query: `personaId=${persona.id}` }))
+    ...personas.map((persona) => ({ id: `persona:${persona.id}`, query: `personaId=${persona.id}` }))
   ];
   const results = useQueries({
     queries: subjects.map((subject) => ({

@@ -588,7 +588,7 @@ describe('portal Marca (#143)', () => {
     expect(probe.pathname).toBe(marcaUrl(SECOND_ID));
   });
 
-  it('does not show a persona the payload marks as archived: the page fails closed', async () => {
+  it('does not show a persona whose payload still carries a status: the page fails closed', async () => {
     const study = portalStudyBody({ branding: { body: 'Padaria de bairro' } }, [{ ...portalPersona(JOAO_ID, 'Seu João'), status: 'archived' }]);
     const { impl } = makeWorld({ studies: { [CLIENT_ID]: study, [SECOND_ID]: SECOND_STUDY } });
     renderPortal(impl);

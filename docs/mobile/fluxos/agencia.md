@@ -194,11 +194,8 @@ stateDiagram-v2
 | `GET` | `…/clients/:clientId/brand-study` | `cliente.visualizar` | as sete seções e as personas |
 | `PUT` | `…/clients/:clientId/brand-study/sections/:sectionKey` | `cliente.operar` | grava uma seção |
 | `POST` | `…/clients/:clientId/personas` | `cliente.operar` | cria uma persona |
-| `PATCH` | `…/clients/:clientId/personas/:personaId` | `cliente.operar` | edita uma persona; persona arquivada responde `409 PERSONA_READ_ONLY` |
-| `POST` | `…/clients/:clientId/personas/:personaId/archive` | `cliente.operar` | arquiva (some do portal); persona já arquivada responde `409 PERSONA_READ_ONLY` |
-| `POST` | `…/clients/:clientId/personas/:personaId/unarchive` | `cliente.operar` | desarquiva |
-
-**Persona arquivada é somente leitura** ([decisão](../../business/decisions/2026-11-13-persona-arquivada-e-somente-leitura.md)): nenhum campo muda enquanto ela está arquivada, e a única ação é **Desarquivar**. Quem abriu a edição antes de outra pessoa arquivar recebe `409 PERSONA_READ_ONLY` ("Esta persona está arquivada. Desarquive-a para editar.") e a persona não muda; o app deve mostrar a mensagem e recarregar a persona.
+| `PATCH` | `…/clients/:clientId/personas/:personaId` | `cliente.operar` | edita uma persona |
+| `DELETE` | `…/clients/:clientId/personas/:personaId` | `cliente.operar` | exclui a persona e a conversa dela (`204`); `409 CLIENT_ARCHIVED` com o cliente arquivado; `404` se já não existe |
 
 **Persona (2026-11-11, [campos novos](../../business/decisions/2026-11-11-estrutural-a-persona-ganha-idade-ocupacao-local-tracos-onde-esta-e-tom.md)).** Além de nome, descrição, dores, desejos e objeções, a persona ganha, todos opcionais: **idade** (1 a 120), **ocupação** (até 80), **local** (até 80), **traços** (até 5 chips de até 24 caracteres), **"onde está"** (até 280) e **"tom que funciona"** (até 280). Persona sem eles continua válida. O perfil mostra a linha de apoio "34 anos · gerente de RH · Pinheiros", os chips e as linhas Dor, Desejo, Objeções, Onde está e Tom que funciona, **cada uma com o seu lápis, salvando sozinha** no mesmo `PATCH …/personas/:personaId`. O formulário avisa para não pôr dado de pessoa real. O portal lê os campos novos junto da persona ativa.
 
@@ -206,11 +203,11 @@ stateDiagram-v2
 
 A aba do cliente mostra uma seção por vez, com um índice das sete seções ao lado (uma faixa que rola na horizontal no celular). Só a apresentação mudou: as rotas, as permissões, as mensagens e o que cada seção grava são os de sempre.
 
-- **Índice.** Cada item diz se a seção está preenchida e quantas conversas dela aguardam a agência. O cabeçalho mantém "N de 7 preenchidas", que vem do campo `filled` da resposta do estudo; "preenchida" de cada item o app calcula com a mesma regra do servidor (texto sem contar espaços, ao menos uma cor, um arquétipo, ao menos uma persona ativa), porque a API devolve só o total.
-- **"N aguardando".** A API não devolve esse total. O app lê `GET …/threads?sectionKey=<seção>&state=open` (e `personaId=<id>` para cada persona ativa) e conta as conversas abertas cujo último comentário não é da agência, a mesma regra de "aguardando você" da coluna de conversas. Item sem nada aguardando não mostra número.
-- **Personas.** O número do item Personas soma a conversa da própria seção e as conversas das personas **ativas**; as arquivadas não entram. Cada cartão de persona traz o próprio "N aguardando", com a conversa daquela persona.
+- **Índice.** Cada item diz se a seção está preenchida e quantas conversas dela aguardam a agência. O cabeçalho mantém "N de 7 preenchidas", que vem do campo `filled` da resposta do estudo; "preenchida" de cada item o app calcula com a mesma regra do servidor (texto sem contar espaços, ao menos uma cor, um arquétipo, ao menos uma persona), porque a API devolve só o total.
+- **"N aguardando".** A API não devolve esse total. O app lê `GET …/threads?sectionKey=<seção>&state=open` (e `personaId=<id>` para cada persona) e conta as conversas abertas cujo último comentário não é da agência, a mesma regra de "aguardando você" da coluna de conversas. Item sem nada aguardando não mostra número.
+- **Personas.** O número do item Personas soma a conversa da própria seção e as conversas das personas. Cada cartão de persona traz o próprio "N aguardando", com a conversa daquela persona.
 - **Seção aberta.** É um cartão com o título, "editado por … · data" e o botão Editar. As conversas da seção ficam numa coluna própria ao lado (abaixo do cartão em telas estreitas), com "Nova conversa". Seção vazia mostra o estado vazio de primeiro uso, com o botão de preencher.
-- **Personas.** Um cartão por persona (iniciais, nome, descrição curta) e "Nova persona". Abrir uma persona mostra o perfil, com Dores, Desejos e Objeções, Editar, Arquivar (com a mesma confirmação) e as conversas dela; as conversas de uma persona arquivada continuam visíveis. Há um caminho de volta para a lista.
+- **Personas.** Um cartão por persona (iniciais, nome, descrição curta) e "Nova persona". Abrir uma persona mostra o perfil, com Dores, Desejos e Objeções, Editar, Excluir e as conversas dela. **Excluir** pede confirmação dizendo quantas mensagens vão junto (`messageCount`, da própria persona: "A conversa dela, com N mensagens, também será apagada. Não dá para desfazer."), apaga a persona e a conversa dela e volta para a lista. Não há arquivar nem desarquivar persona (2026-11-12): as que estavam arquivadas voltaram a ser normais, e a resposta não traz mais `status`. Há um caminho de volta para a lista.
 - **Endereço.** A seção e a persona abertas ficam na URL: `?secao=<seção>` e `?persona=<id>`.
 
 | `secao` | seção |

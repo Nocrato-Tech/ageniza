@@ -55,7 +55,6 @@ export const portalPersona = (id: string, name: string, fields: Record<string, s
   desires: null,
   objections: null,
   ...emptyPersonaProfile(),
-  status: 'active',
   updatedAt: '2026-10-13T01:30:00.000Z',
   ...fields
 });

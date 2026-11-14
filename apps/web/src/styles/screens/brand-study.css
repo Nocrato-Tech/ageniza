@@ -267,21 +267,6 @@
   overflow-wrap: anywhere;
 }
 
-.brand-personas__archived {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.brand-personas__archived-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-4);
-  padding-block: var(--space-2);
-  border-top: 1px solid var(--border-default);
-}
-
 .brand-persona__fields {
   display: grid;
   gap: var(--space-1);
@@ -548,10 +533,6 @@
   border-color: transparent;
   background: var(--status-waiting-bg);
   color: var(--status-waiting-text);
-}
-
-.brand-personas__archived-item .brand-personas__name {
-  color: var(--text-primary);
 }
 
 /* A persona is a profile: who she is on the left, one card for each long field on the right. */

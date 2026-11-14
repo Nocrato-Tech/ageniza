@@ -196,7 +196,7 @@ export const updateClient = async (
 
 /**
  * Whether a `client_brand_sections` row counts as filled: the one definition the summary count and
- * the portal's "seção não preenchida" rule (#130) share. `personas` has no row; an active persona
+ * the portal's "seção não preenchida" rule (#130) share. `personas` has no row; a persona
  * fills it instead. The alias is a fixed literal chosen in this repository.
  */
 export const sectionFilledSql = (sectionAlias: string): string => `case ${sectionAlias}.section_key
@@ -210,7 +210,7 @@ export const sectionFilledSql = (sectionAlias: string): string => `case ${sectio
 /**
  * How many of the seven sections are filled: the one definition the agency summary and the portal's
  * Início share. Two `?` placeholders, both the client id. `personas` counts as one filled section
- * when at least one persona is active.
+ * when the client has at least one persona.
  */
 export const BRAND_STUDY_FILLED_SQL = `(
         select count(*)
@@ -220,13 +220,13 @@ export const BRAND_STUDY_FILLED_SQL = `(
       ) + (
         case when exists (
           select 1 from public.client_personas persona
-          where persona.client_id = ?::uuid and persona.status = 'active'
+          where persona.client_id = ?::uuid
         ) then 1 else 0 end
       )`;
 
 /**
  * The General tab summary (specs/clientes.md section 6). `personas` counts as one filled section
- * when at least one persona is active; "aguardando a agência" and "com resposta da agência" come
+ * when there is at least one persona; "aguardando a agência" and "com resposta da agência" come
  * from the single thread-state definition, so this count cannot drift from the listing (#125). They count the
  * brand study conversations only: the one of a content is Conteúdo's, and the policy hides it from Sales and Finance, so
  * counting it would give the same client two different badges (#259); a request for material is the agency's own ask and is not counted either.
@@ -637,7 +637,8 @@ export interface PersonaRow {
   readonly traits: readonly string[] | null;
   readonly where_they_are: string | null;
   readonly tone_that_works: string | null;
-  readonly status: 'active' | 'archived';
+  /** The comments of every conversation of the persona, which the deletion takes along. */
+  readonly message_count: number;
   readonly updated_by: string | null;
   readonly updated_by_name: string | null;
   readonly updated_at: Date;
@@ -651,7 +652,12 @@ const BRAND_SECTION_COLUMNS = `
 const PERSONA_COLUMNS = `
   persona.id, persona.name, persona.description, persona.pains, persona.desires, persona.objections,
   persona.age, persona.occupation, persona.location, persona.traits, persona.where_they_are, persona.tone_that_works,
-  persona.status, persona.updated_by,
+  (
+    select count(*) from public.client_thread_comments comment
+    join public.client_threads thread on thread.id = comment.thread_id
+    where thread.persona_id = persona.id
+  )::int as message_count,
+  persona.updated_by,
   ${updaterNameSql('persona.updated_by', 'client.agency_id')} as updated_by_name, persona.updated_at
 `;
 
@@ -662,8 +668,9 @@ export const isRowLevelSecurityViolation = (error: unknown): boolean =>
 /** The trigger of 20261007001400 found the client no longer active after waiting for the archive that held it. */
 export const isClientNoLongerActive = (error: unknown): boolean => databaseErrorCode(error) === 'A0020';
 
-/** The trigger of 20261113000300 refused a write to a persona that is archived (also after waiting for the archive that held it). */
-export const isPersonaReadOnly = (error: unknown): boolean => databaseErrorCode(error) === 'A0137';
+/** The foreign key to the persona or to the thread refused the insert: it was deleted between the check and the write. */
+export const isSubjectGone = (error: unknown): boolean =>
+  databaseErrorCode(error) === '23503' && ['client_threads_persona_id_fkey', 'client_thread_comments_thread_id_fkey'].includes(String((error as { constraint?: unknown }).constraint));
 
 export const loadBrandSections = async (
   transaction: ClientTransaction,
@@ -822,22 +829,17 @@ export const updatePersona = async (
   return result.rows[0] !== undefined;
 };
 
-/** Archive/unarchive; `status` is in the column UPDATE grant, `updated_by` is pinned by the RLS check. */
-export const setPersonaStatus = async (
+/**
+ * Deletes a persona of the client; its conversations and their comments go with it, by the foreign keys of the database
+ * (20261113000400), in the same statement. False means there was no such persona in this client for this caller.
+ */
+export const deletePersona = async (
   transaction: ClientTransaction,
-  input: {
-    readonly clientId: string;
-    readonly personaId: string;
-    readonly actorUserId: string;
-    readonly status: 'active' | 'archived';
-  }
+  input: { readonly clientId: string; readonly personaId: string }
 ): Promise<boolean> => {
   const result = await raw<RawRows<{ id: string }>>(transaction, `
-    update public.client_personas
-    set status = ?, updated_by = ?::uuid, updated_at = now()
-    where id = ?::uuid and client_id = ?::uuid
-    returning id
-  `, [input.status, input.actorUserId, input.personaId, input.clientId]);
+    delete from public.client_personas where id = ?::uuid and client_id = ?::uuid returning id
+  `, [input.personaId, input.clientId]);
   return result.rows[0] !== undefined;
 };
 
@@ -871,7 +873,7 @@ export const personaFromRow = (row: PersonaRow): Persona => ({
   traits: row.traits === null ? [] : [...row.traits],
   whereTheyAre: row.where_they_are,
   toneThatWorks: row.tone_that_works,
-  status: row.status,
+  messageCount: Number(row.message_count),
   updatedBy: updatedByFromRow(row),
   updatedAt: new Date(row.updated_at).toISOString()
 });

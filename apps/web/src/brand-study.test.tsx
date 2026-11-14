@@ -81,7 +81,7 @@ interface PersonaFixture extends PersonaProfileFixture {
   pains: string | null;
   desires: string | null;
   objections: string | null;
-  status: 'active' | 'archived';
+  messageCount: number;
   updatedBy: { id: string; name: string } | null;
   updatedAt: string | null;
 }
@@ -94,7 +94,7 @@ const donaMaria: PersonaFixture = {
   desires: 'Clientes fiéis',
   objections: 'Preço',
   ...emptyPersonaProfile(),
-  status: 'active',
+  messageCount: 3,
   updatedBy: null,
   updatedAt: null
 };
@@ -103,7 +103,7 @@ const donaAposentada: PersonaFixture = {
   id: 'eeeeeeee-2222-4222-8222-222222222222',
   name: 'Dona Aposentada',
   description: 'Persona antiga',
-  status: 'archived'
+  messageCount: 0
 };
 
 /** What the create modal sends for the fields of the profile that were left empty. */
@@ -137,8 +137,7 @@ interface Scenario {
   readonly putSection?: (sectionKey: string, body: unknown) => Response | Promise<Response>;
   readonly createPersona?: (body: unknown) => Response | Promise<Response>;
   readonly patchPersona?: (personaId: string, body: unknown) => Response | Promise<Response>;
-  readonly archivePersona?: (personaId: string) => Response | Promise<Response>;
-  readonly unarchivePersona?: (personaId: string) => Response | Promise<Response>;
+  readonly deletePersona?: (personaId: string) => Response | Promise<Response>;
   /** The conversation routes of #128; an empty one answers when the scenario brings none. */
   readonly conversation?: ReturnType<typeof createConversationApi>;
 }
@@ -165,16 +164,11 @@ const makeFetch = (scenario: Scenario = {}) => {
     }
     const study = /\/agencies\/([^/]+)\/clients\/([^/]+)\/brand-study$/.exec(path);
     if (study !== null) return scenario.study?.() ?? json(studyOf());
-    const personaStatus = /\/agencies\/([^/]+)\/clients\/([^/]+)\/personas\/([^/]+)\/(archive|unarchive)$/.exec(path);
-    if (personaStatus !== null && method === 'POST') {
-      if (personaStatus[4] === 'archive') {
-        if (scenario.archivePersona === undefined) throw new Error(`unexpected archive ${url}`);
-        return scenario.archivePersona(personaStatus[3]!);
-      }
-      if (scenario.unarchivePersona === undefined) throw new Error(`unexpected unarchive ${url}`);
-      return scenario.unarchivePersona(personaStatus[3]!);
-    }
     const persona = /\/agencies\/([^/]+)\/clients\/([^/]+)\/personas\/([^/]+)$/.exec(path);
+    if (persona !== null && method === 'DELETE') {
+      if (scenario.deletePersona === undefined) throw new Error(`unexpected DELETE ${url}`);
+      return scenario.deletePersona(persona[3]!);
+    }
     if (persona !== null && method === 'PATCH') {
       if (scenario.patchPersona === undefined) throw new Error(`unexpected PATCH ${url}`);
       return scenario.patchPersona(persona[3]!, JSON.parse(String(init?.body)));
@@ -657,11 +651,8 @@ describe('brand study tab (#138)', () => {
     }
     expect(within(await sectionCard(container, 'Tom de voz')).getByText('Ainda não preenchida')).toBeTruthy();
 
-    // Reading the archived list is reading: the list opens, the Desarquivar action does not exist.
     await openSection('Personas');
-    fireEvent.click(screen.getByRole('button', { name: 'Arquivadas (1)' }));
     expect(screen.getByText('Dona Aposentada')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Desarquivar/ })).toBeNull();
 
     // Opening a persona is reading, not editing: the profile shows the fields without its actions.
     const profile = await openPersona('Dona Maria');
@@ -670,10 +661,10 @@ describe('brand study tab (#138)', () => {
     await waitFor(() => expect(within(area).getByText('Nenhuma conversa sobre esta parte')).toBeTruthy());
     expect(within(area).queryByRole('button', { name: /Nova conversa/ })).toBeNull();
     expect(within(profile).queryByRole('button', { name: 'Editar' })).toBeNull();
-    expect(within(profile).queryByRole('button', { name: 'Arquivar' })).toBeNull();
+    expect(within(profile).queryByRole('button', { name: 'Excluir' })).toBeNull();
   });
 
-  it('shows no editing control on an archived client, even inside a persona and the archived list', async () => {
+  it('shows no editing control on an archived client, even inside a persona', async () => {
     const { impl } = makeFetch({ client: () => json({ ...padaria, status: 'archived', archivedAt: '2026-10-04T12:00:00.000Z' }) });
     renderStudy(impl);
 
@@ -688,14 +679,12 @@ describe('brand study tab (#138)', () => {
     }
 
     await openSection('Personas');
-    fireEvent.click(screen.getByRole('button', { name: 'Arquivadas (1)' }));
     expect(screen.getByText('Dona Aposentada')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Desarquivar/ })).toBeNull();
 
     const profile = await openPersona('Dona Maria');
     expect(within(profile).getByText('Dona da padaria')).toBeTruthy();
     expect(within(profile).queryByRole('button', { name: 'Editar' })).toBeNull();
-    expect(within(profile).queryByRole('button', { name: 'Arquivar' })).toBeNull();
+    expect(within(profile).queryByRole('button', { name: 'Excluir' })).toBeNull();
   });
 
   it('creates a persona from the modal, refusing an empty name and a name over 120 bytes first', async () => {
@@ -787,11 +776,12 @@ describe('brand study tab (#138)', () => {
     expect((within(dialog).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement).value).toBe('Falha geral');
   });
 
-  it('opens a persona as a profile: identity, one card for each field, edits only what changed and archives with confirmation', async () => {
+  it('opens a persona as a profile: identity, one card for each field, edits only what changed and deletes with confirmation', async () => {
     const patches: unknown[] = [];
     let studyData = studyOf();
-    let detailData = padaria;
+    const detailData = padaria;
     let detailGets = 0;
+    const deletes: string[] = [];
     const { impl } = makeFetch({
       client: () => { detailGets += 1; return json(detailData); },
       study: () => json(studyData),
@@ -801,12 +791,10 @@ describe('brand study tab (#138)', () => {
         studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
         return json(updated);
       },
-      archivePersona: (personaId) => {
-        const updated = { ...donaMaria, status: 'archived' as const };
-        // No active persona is left, so the section stops counting (SPEC §3).
-        studyData = { ...studyData, filled: 4, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
-        detailData = { ...detailData, summary: { ...detailData.summary, brandStudyFilled: 4 } };
-        return json(updated);
+      deletePersona: (personaId) => {
+        deletes.push(personaId);
+        studyData = { ...studyData, personas: studyData.personas.filter((persona) => persona.id !== personaId) };
+        return new Response(null, { status: 204 });
       }
     });
     const { container, probe } = renderStudy(impl);
@@ -839,29 +827,50 @@ describe('brand study tab (#138)', () => {
     expect(probe.search).toBe(`?secao=personas&persona=${donaMaria.id}`);
     await waitFor(() => expect(detailGets).toBeGreaterThan(1));
 
-    // Archiving asks first, saying what happens to the portal and to the conversations; nothing is sent before.
-    fireEvent.click(screen.getByRole('button', { name: 'Arquivar' }));
-    const description = await screen.findByText('Ela some do portal e as conversas dela ficam somente leitura. Você pode desarquivar depois.');
+    // Deleting asks first, saying how many messages go with her; nothing is sent before, and cancelling sends nothing.
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
+    const description = await screen.findByText('A conversa dela, com 3 mensagens, também será apagada. Não dá para desfazer.');
+    expect(screen.getByText('Excluir a persona Dona Maria?')).toBeTruthy();
     const confirm = description.closest('.ui-dialog');
-    if (confirm === null) throw new Error('The archive confirmation was not rendered.');
-    fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Arquivar' }));
+    if (confirm === null) throw new Error('The delete confirmation was not rendered.');
+    fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByText('Excluir a persona Dona Maria?')).toBeNull());
+    expect(deletes).toEqual([]);
 
-    // The profile is gone, back on the grid: the active list loses her and she moves into the collapsed Arquivadas list.
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
+    const again = (await screen.findByText('A conversa dela, com 3 mensagens, também será apagada. Não dá para desfazer.')).closest('.ui-dialog');
+    fireEvent.click(within(again as HTMLElement).getByRole('button', { name: 'Excluir' }));
+
+    // The profile is gone, back on the grid, and the other persona stays; there is no archived list to move her into.
     await waitFor(() => expect(probe.search).toBe('?secao=personas'));
     await waitFor(() => expect(screen.queryByRole('link', { name: /Dona Maria/ })).toBeNull());
+    expect(deletes).toEqual([donaMaria.id]);
     expect(screen.queryByRole('heading', { level: 3, name: 'Dona Maria' })).toBeNull();
-    const archivedToggle = screen.getByRole('button', { name: 'Arquivadas (2)' });
-    expect(archivedToggle.getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(archivedToggle);
-    const archived = container.querySelector<HTMLElement>('.brand-personas__archived');
-    if (archived === null) throw new Error('The archived list was not rendered.');
-    expect(within(archived).getByText('Dona Maria')).toBeTruthy();
-    expect(within(archived).getByRole('button', { name: 'Desarquivar Dona Maria' })).toBeTruthy();
-    expect(within(archived).getByRole('button', { name: 'Desarquivar Dona Aposentada' })).toBeTruthy();
-    // Archiving the last active persona moves the counter, here and on the General tab.
-    expect(await screen.findByText('4 de 7')).toBeTruthy();
-    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
-    await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('4 de 7'));
+    expect(screen.getByRole('link', { name: /Dona Aposentada/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Arquivadas/ })).toBeNull();
+    expect(container.querySelector('.brand-personas__archived')).toBeNull();
+  });
+
+  it('tells a persona with no messages so, and says she is gone when the API answers 404', async () => {
+    let studyData = studyOf();
+    const { impl } = makeFetch({
+      study: () => json(studyData),
+      deletePersona: () => {
+        studyData = { ...studyData, personas: studyData.personas.filter((persona) => persona.id !== donaAposentada.id) };
+        return json({ error: { code: 'NOT_FOUND', message: 'private diagnostic' } }, 404);
+      }
+    });
+    renderStudy(impl);
+    await screen.findByRole('heading', { name: 'Estudo de marca' });
+
+    const profile = await openPersona('Dona Aposentada');
+    fireEvent.click(within(profile).getByRole('button', { name: 'Excluir' }));
+    const confirm = (await screen.findByText('Ela ainda não tem mensagens. Não dá para desfazer.')).closest('.ui-dialog');
+    if (confirm === null) throw new Error('The delete confirmation was not rendered.');
+    fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Excluir' }));
+
+    expect(await screen.findByText('Esta persona não existe mais.')).toBeTruthy();
+    expect(screen.queryByText('private diagnostic')).toBeNull();
   });
 
   it('keeps the edit draft on a persona save error, with the server message mapped', async () => {
@@ -886,75 +895,38 @@ describe('brand study tab (#138)', () => {
     expect(within(profile).getByRole('button', { name: 'Salvar' })).toBeTruthy();
   });
 
-  it('maps an archive refusal and keeps the retry available', async () => {
+  it('maps a delete refusal and keeps the retry available', async () => {
     let attempts = 0;
     let studyData = studyOf();
     const { impl } = makeFetch({
       study: () => json(studyData),
-      archivePersona: (personaId) => {
+      deletePersona: (personaId) => {
         attempts += 1;
         if (attempts === 1) return json({ error: { code: 'CLIENT_ARCHIVED', message: 'private diagnostic' } }, 409);
-        const updated = { ...donaMaria, status: 'archived' as const };
-        studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
-        return json(updated);
+        studyData = { ...studyData, personas: studyData.personas.filter((persona) => persona.id !== personaId) };
+        return new Response(null, { status: 204 });
       }
     });
     renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
 
     const profile = await openPersona('Dona Maria');
-    const confirmArchive = async (): Promise<void> => {
-      fireEvent.click(within(profile).getByRole('button', { name: 'Arquivar' }));
-      const description = await screen.findByText('Ela some do portal e as conversas dela ficam somente leitura. Você pode desarquivar depois.');
+    const confirmDelete = async (): Promise<void> => {
+      fireEvent.click(within(profile).getByRole('button', { name: 'Excluir' }));
+      const description = await screen.findByText('A conversa dela, com 3 mensagens, também será apagada. Não dá para desfazer.');
       const confirm = description.closest('.ui-dialog');
-      if (confirm === null) throw new Error('The archive confirmation was not rendered.');
-      fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Arquivar' }));
+      if (confirm === null) throw new Error('The delete confirmation was not rendered.');
+      fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Excluir' }));
     };
-    await confirmArchive();
+    await confirmDelete();
 
     expect(await within(profile).findByText('Cliente arquivado: o estudo de marca está somente leitura.')).toBeTruthy();
     expect(profile.textContent).not.toContain('private diagnostic');
 
-    // The retry that lands archives the persona.
-    await confirmArchive();
+    // The retry that lands deletes the persona.
+    await confirmDelete();
     await waitFor(() => expect(attempts).toBe(2));
     await waitFor(() => expect(screen.queryByRole('link', { name: /Dona Maria/ })).toBeNull());
-  });
-
-  it('reactivates an archived persona, reports an unarchive failure and moves the counters', async () => {
-    // Only an archived persona: unarchiving it brings the section back to filled (SPEC §3).
-    let studyData = studyOf({ personas: [donaAposentada], filled: 4 });
-    let detailData = { ...padaria, summary: { ...padaria.summary, brandStudyFilled: 4 } };
-    let attempts = 0;
-    const { impl } = makeFetch({
-      client: () => json(detailData),
-      study: () => json(studyData),
-      unarchivePersona: (personaId) => {
-        attempts += 1;
-        if (attempts === 1) return json({ error: { code: 'FORBIDDEN', message: 'private diagnostic' } }, 403);
-        const updated = { ...donaAposentada, status: 'active' as const };
-        studyData = { ...studyData, filled: 5, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
-        detailData = { ...detailData, summary: { ...detailData.summary, brandStudyFilled: 5 } };
-        return json(updated);
-      }
-    });
-    renderStudy(impl);
-    await screen.findByRole('heading', { name: 'Estudo de marca' });
-    expect(screen.getByText('4 de 7')).toBeTruthy();
-    await openSection('Personas');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Arquivadas (1)' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Desarquivar Dona Aposentada' }));
-    expect(await screen.findByText('Você não tem permissão para editar o estudo de marca.')).toBeTruthy();
-    expect(screen.queryByText('private diagnostic')).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Desarquivar Dona Aposentada' }));
-    expect(await screen.findByRole('link', { name: /Dona Aposentada/ })).toBeTruthy();
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Arquivadas (1)' })).toBeNull());
-    // The counter here and on the General tab follow the invalidated study and detail.
-    expect(await screen.findByText('5 de 7')).toBeTruthy();
-    fireEvent.click(screen.getByRole('link', { name: /^Visão geral/ }));
-    await waitFor(() => expect(screen.getByRole('link', { name: /^Estudo de marca/ }).textContent).toContain('5 de 7'));
   });
 
   it('draws a skeleton of the seven sections while the study loads', async () => {
@@ -1312,10 +1284,9 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
     conversation.seed({ sectionKey: 'tone_of_voice' }, [{ side: 'client', body: 'Falta humor', at: NOW_LATE }]);
     conversation.seed({ sectionKey: 'tone_of_voice' }, [{ side: 'client', body: 'Já respondida', at: NOW_LATE }, { side: 'agency', body: 'Ajustamos', at: '2026-10-13T02:30:00.000Z' }]);
     conversation.seed({ sectionKey: 'tone_of_voice' }, [{ side: 'client', body: 'Já resolvida', at: NOW_LATE }], { at: '2026-10-13T03:30:00.000Z', by: null });
-    // Personas: one on the section and one on Dona Maria; none on Seu Joaquim; the archived persona's is not counted.
+    // Personas: one on the section and one on Dona Maria; none on Seu Joaquim.
     conversation.seed({ sectionKey: 'personas' }, [{ side: 'client', body: 'Faltam personas jovens', at: NOW_LATE }]);
     conversation.seed({ personaId: donaMaria.id }, [{ side: 'client', body: 'Ela não compra assim', at: NOW_LATE }]);
-    conversation.seed({ personaId: donaAposentada.id }, [{ side: 'client', body: 'Persona antiga', at: NOW_LATE }]);
     const { impl } = makeFetch({ conversation, study: () => json(twoPersonas()) });
     const { container } = renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
@@ -1346,7 +1317,7 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
 
   it('runs an action on the persona that was opened, never on the other one', async () => {
     const patches: unknown[] = [];
-    const archived: string[] = [];
+    const deleted: string[] = [];
     let studyData = twoPersonas();
     const { impl } = makeFetch({
       study: () => json(studyData),
@@ -1357,12 +1328,10 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
         studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
         return json(updated);
       },
-      archivePersona: (personaId) => {
-        archived.push(personaId);
-        const target = studyData.personas.find((persona) => persona.id === personaId)!;
-        const updated = { ...target, status: 'archived' as const };
-        studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
-        return json(updated);
+      deletePersona: (personaId) => {
+        deleted.push(personaId);
+        studyData = { ...studyData, personas: studyData.personas.filter((persona) => persona.id !== personaId) };
+        return new Response(null, { status: 204 });
       }
     });
     renderStudy(impl);
@@ -1380,49 +1349,18 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
     await waitFor(() => expect(patches).toEqual([{ personaId: donaJoana.id, body: { pains: 'Fila enorme' } }]));
     expect(await screen.findByText('Fila enorme')).toBeTruthy();
 
-    // Archiving from this profile archives her and only her.
-    fireEvent.click(screen.getByRole('button', { name: 'Arquivar' }));
-    expect(screen.getByText('Arquivar Seu Joaquim?')).toBeTruthy();
-    const confirm = screen.getByText('Ela some do portal e as conversas dela ficam somente leitura. Você pode desarquivar depois.').closest('.ui-dialog');
-    if (confirm === null) throw new Error('The archive confirmation was not rendered.');
-    fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Arquivar' }));
-    await waitFor(() => expect(archived).toEqual([donaJoana.id]));
-    // Back on the grid she is gone from the active cards, and the first persona is untouched with her own description.
+    // Deleting from this profile deletes her and only her.
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
+    expect(screen.getByText('Excluir a persona Seu Joaquim?')).toBeTruthy();
+    const confirm = screen.getByText('A conversa dela, com 3 mensagens, também será apagada. Não dá para desfazer.').closest('.ui-dialog');
+    if (confirm === null) throw new Error('The delete confirmation was not rendered.');
+    fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Excluir' }));
+    await waitFor(() => expect(deleted).toEqual([donaJoana.id]));
+    // Back on the grid she is gone from the cards, and the first persona is untouched with her own description.
     const maria = await screen.findByRole('link', { name: /Dona Maria/ });
     expect(screen.queryByRole('link', { name: /Seu Joaquim/ })).toBeNull();
     expect(within(maria).getByText('Dona da padaria')).toBeTruthy();
     expect(patches).toHaveLength(1);
-  });
-
-  it('opens an archived persona by its address as a read-only profile, with her conversations readable', async () => {
-    const conversation = createConversationApi({ side: 'agency', clientId: CLIENT_ID });
-    conversation.seed({ personaId: donaAposentada.id }, [{ side: 'client', body: 'Persona antiga', at: NOW_LATE }]);
-    const { impl } = makeFetch({ conversation });
-    renderStudy(impl, { pathname: studyUrl, search: `?persona=${donaAposentada.id}` });
-
-    const heading = await screen.findByRole('heading', { level: 3, name: 'Dona Aposentada' });
-    const profile = heading.closest<HTMLElement>('.brand-persona');
-    if (profile === null) throw new Error('The persona profile was not rendered.');
-    expect(within(profile).getByText('Arquivada')).toBeTruthy();
-    expect(within(profile).queryByRole('button', { name: 'Editar' })).toBeNull();
-    expect(within(profile).queryByRole('button', { name: 'Arquivar' })).toBeNull();
-    const area = within(profile).getByRole('region', { name: 'Conversas sobre Dona Aposentada' });
-    fireEvent.click(await within(area).findByRole('button', { name: /Persona antiga/ }));
-    const dialog = await screen.findByRole('dialog', { name: 'Dona Aposentada' });
-    expect(within(dialog).getByText('Esta conversa é somente leitura.')).toBeTruthy();
-    expect(within(area).queryByRole('button', { name: /Nova conversa/ })).toBeNull();
-  });
-
-  it('links each archived persona to her profile from the archived list', async () => {
-    const { impl } = makeFetch();
-    renderStudy(impl, { pathname: studyUrl, search: '?secao=personas' });
-    await screen.findByRole('heading', { name: 'Estudo de marca' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Arquivadas (1)' }));
-    const link = screen.getByRole('link', { name: 'Dona Aposentada' });
-    expect(link.getAttribute('href')).toBe(`${studyUrl}?secao=personas&persona=${donaAposentada.id}`);
-    fireEvent.click(link);
-    expect(await screen.findByRole('heading', { level: 3, name: 'Dona Aposentada' })).toBeTruthy();
   });
 
   it('keeps the draft of a persona edit when the person leaves the profile through the index, the way back or the browser', async () => {
@@ -1474,56 +1412,24 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
     expect(painsNow()).toBe('Pouco tempo');
   });
 
-  it('opens as a reading, without the form or a save, a persona archived after the edit was left, and drops the draft', async () => {
-    let studyData = studyOf();
-    const { impl, calls } = makeFetch({ study: () => json(studyData) });
-    const { queryClient } = renderStudy(impl, { pathname: studyUrl, search: `?secao=personas&persona=${donaMaria.id}` });
-    const profile = (await screen.findByRole('heading', { level: 3, name: 'Dona Maria' })).closest<HTMLElement>('.brand-persona')!;
-    fireEvent.click(within(profile).getByRole('button', { name: 'Editar' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Dores' }), { target: { value: 'Fila enorme' } });
-    await openSection('Cores');
-
-    // Someone else archives her; the study is read again.
-    studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === donaMaria.id ? { ...persona, status: 'archived' as const } : persona)) };
-    await act(async () => { await queryClient.invalidateQueries(); });
-    await openSection('Personas');
-    fireEvent.click(await screen.findByRole('button', { name: 'Arquivadas (2)' }));
-    fireEvent.click(screen.getByRole('link', { name: 'Dona Maria' }));
-
-    await screen.findByRole('heading', { level: 3, name: 'Dona Maria' });
-    expect(screen.getByText('Arquivada')).toBeTruthy();
-    expect(screen.queryByRole('textbox', { name: 'Dores' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull();
-    expect(screen.getByText('Pouco tempo')).toBeTruthy();
-    expect(calls.filter((call) => call.startsWith('PATCH'))).toEqual([]);
-  });
-
-  it('keeps the way back to the roster after archiving from the profile and in the link of an archived persona', async () => {
+  it('keeps the way back to the roster after deleting from the profile', async () => {
     let studyData = studyOf();
     const { impl } = makeFetch({
       study: () => json(studyData),
-      archivePersona: (personaId) => {
-        const updated = { ...donaMaria, status: 'archived' as const };
-        studyData = { ...studyData, personas: studyData.personas.map((persona) => (persona.id === personaId ? updated : persona)) };
-        return json(updated);
+      deletePersona: (personaId) => {
+        studyData = { ...studyData, personas: studyData.personas.filter((persona) => persona.id !== personaId) };
+        return new Response(null, { status: 204 });
       }
     });
     const { probe } = renderStudy(impl, { pathname: studyUrl, search: `?secao=personas&persona=${donaMaria.id}`, state: { clientListUrl: roster } });
     await screen.findByRole('heading', { level: 3, name: 'Dona Maria' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Arquivar' }));
-    const confirm = screen.getByText('Ela some do portal e as conversas dela ficam somente leitura. Você pode desarquivar depois.').closest('.ui-dialog');
-    fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Arquivar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
+    const confirm = screen.getByText('A conversa dela, com 3 mensagens, também será apagada. Não dá para desfazer.').closest('.ui-dialog');
+    fireEvent.click(within(confirm as HTMLElement).getByRole('button', { name: 'Excluir' }));
     await waitFor(() => expect(probe.search).toBe('?secao=personas'));
     expect(probe.state).toEqual({ clientListUrl: roster });
     expect(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }).getAttribute('href')).toBe(roster);
-
-    // The archived list links to the profile of each one without dropping the address either.
-    fireEvent.click(await screen.findByRole('button', { name: 'Arquivadas (2)' }));
-    fireEvent.click(screen.getByRole('link', { name: 'Dona Aposentada' }));
-    await screen.findByRole('heading', { level: 3, name: 'Dona Aposentada' });
-    expect(probe.search).toBe(`?secao=personas&persona=${donaAposentada.id}`);
-    expect(probe.state).toEqual({ clientListUrl: roster });
   });
 
   it('blocks every write control with the reason while the plan is read only, and keeps the reading', async () => {
@@ -1541,12 +1447,12 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
 
     fireEvent.click(screen.getByRole('link', { name: /Dona Maria/ }));
     await screen.findByRole('heading', { level: 3, name: 'Dona Maria' });
-    for (const name of ['Editar', 'Arquivar']) {
+    for (const name of ['Editar', 'Excluir']) {
       blocked(within(document.querySelector<HTMLElement>('.brand-persona')!).getByRole('button', { name }));
       fireEvent.click(within(document.querySelector<HTMLElement>('.brand-persona')!).getByRole('button', { name }));
     }
     expect(screen.queryByRole('textbox', { name: 'Dores' })).toBeNull();
-    expect(screen.queryByText('Arquivar Dona Maria?')).toBeNull();
+    expect(screen.queryByText('Excluir a persona Dona Maria?')).toBeNull();
     expect(screen.getByText('Pouco tempo')).toBeTruthy();
 
     await openSection('Branding');
@@ -1586,14 +1492,14 @@ describe('brand study index, address and persona profile (telas-melhorias S13)',
     expect(within(screen.getByRole('navigation', { name: 'Seções do estudo de marca' })).getByRole('link', { name: /^Branding/ }).textContent).toContain('não preenchida');
   });
 
-  it('mounts the conversations of the open section only: one listing per section and per active persona for the counts, plus the open section\'s own pair', async () => {
+  it('mounts the conversations of the open section only: one listing per section and per persona for the counts, plus the open section\'s own pair', async () => {
     const { impl, calls } = makeFetch();
     renderStudy(impl);
     await screen.findByRole('heading', { name: 'Estudo de marca' });
-    await waitFor(() => expect(calls.filter((call) => call.startsWith('GET') && call.endsWith('/threads')).length).toBeGreaterThanOrEqual(10));
+    await waitFor(() => expect(calls.filter((call) => call.startsWith('GET') && call.endsWith('/threads')).length).toBeGreaterThanOrEqual(11));
     await new Promise((resolve) => setTimeout(resolve, 100));
-    // 7 sections + 1 active persona for the counts, plus the open and resolved listings of the open section: 10, not 7 x 2 more.
-    expect(calls.filter((call) => call.startsWith('GET') && call.endsWith('/threads'))).toHaveLength(10);
+    // 7 sections + 2 personas for the counts, plus the open and resolved listings of the open section: 11, not 7 x 2 more.
+    expect(calls.filter((call) => call.startsWith('GET') && call.endsWith('/threads'))).toHaveLength(11);
   });
 
   it('draws an empty section as the first-use state, never as good news or a failure', async () => {
@@ -1698,7 +1604,7 @@ describe('brand study as the board shows it (w5, tela 5.C)', () => {
       ['Onde está', 'Instagram à noite.'],
       ['Tom que funciona', 'Direto e caloroso.']
     ]);
-    for (const name of ['Editar a dor', 'Editar o desejo', 'Editar a objeção', 'Editar onde está', 'Editar o tom', 'Editar', 'Arquivar']) {
+    for (const name of ['Editar a dor', 'Editar o desejo', 'Editar a objeção', 'Editar onde está', 'Editar o tom', 'Editar', 'Excluir']) {
       expect(column.getByRole('button', { name })).toBeTruthy();
     }
   });

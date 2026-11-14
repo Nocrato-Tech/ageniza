@@ -101,7 +101,7 @@ Sete seções **fixas, definidas pelo produto**. Uma linha por seção preenchid
 | `personas` | a seção agrupa as personas (tabela abaixo); não tem texto próprio |
 | `observations` | texto livre |
 
-Cada linha guarda `updated_by` e `updated_at`. **Preenchimento** do estudo é derivado: seções com conteúdo sobre sete, contando `personas` como preenchida quando há ao menos uma persona ativa.
+Cada linha guarda `updated_by` e `updated_at`. **Preenchimento** do estudo é derivado: seções com conteúdo sobre sete, contando `personas` como preenchida quando há ao menos uma persona.
 
 ### Persona — `client_personas`
 
@@ -113,9 +113,9 @@ Cada linha guarda `updated_by` e `updated_at`. **Preenchimento** do estudo é de
 | `occupation` · `location` | texto | — | **novos**: até 80 caracteres cada (a ocupação e o local, cidade ou bairro) |
 | `traits` | lista de textos | — | **novo**: até 5 traços, de até 24 caracteres |
 | `where_found` · `tone_that_works` | texto | — | **novos**: "onde está" e "tom que funciona", até 280 caracteres; edição por linha no perfil |
-| `status` | `active` \| `archived` | ✅ | entidade: arquiva, não exclui |
+| `status` | `active` | ✅ | coluna mantida por compatibilidade das políticas, **sempre `active`** (`CHECK`) e sem `UPDATE` concedido: a persona não se arquiva, **se exclui** |
 
-Os campos novos são opcionais, sem backfill, e o portal os lê junto da persona ativa. O formulário avisa para não pôr dado de pessoa real.
+Os campos novos são opcionais, sem backfill, e o portal os lê junto da persona. O formulário avisa para não pôr dado de pessoa real.
 
 **Pertence a:** cliente. Várias por cliente.
 
@@ -188,12 +188,7 @@ Por isso **comentário novo reabre**, de qualquer lado, sem ninguém precisar al
 
 ### Persona
 
-```
-active   → archived   # cliente.operar; some do portal, threads ficam somente leitura
-archived → active     # cliente.operar
-```
-
-**Persona `archived` é somente leitura** ([decisão de 2026-11-13](../docs/business/decisions/2026-11-13-persona-arquivada-e-somente-leitura.md)): nenhum campo muda, e a única escrita aceita é a que desarquiva. `PATCH` e `archive` numa persona arquivada respondem `409 PERSONA_READ_ONLY` ("Esta persona está arquivada. Desarquive-a para editar."); o banco recusa a escrita (`A0137`), também fora da API.
+A persona não tem estados: **cria-se, edita-se e exclui-se** (`cliente.operar`, cliente ativo). Excluir apaga a persona **e a conversa dela** (`client_threads.persona_id` e os comentários, por cascata de chave estrangeira); a tela confirma mostrando quantas mensagens vão junto. A persona que estava arquivada voltou a ser normal (backfill de `status`). Decisão: [`a-persona-se-exclui-com-a-conversa-e-nao-se-arquiva`](../docs/business/decisions/2026-11-12-estrutural-a-persona-se-exclui-com-a-conversa-e-nao-se-arquiva.md).
 
 ## 5. Regras invioláveis
 
@@ -202,7 +197,7 @@ Garantidas pelo banco — RLS, *grant* ou índice — e não apenas pela rota. C
 1. Pessoa do portal **não lê** cadastro, seções, personas, threads nem comentários de **outro cliente**, nem da mesma agência.
 2. Colaborador sem vínculo de cliente **não** passa em `requireClientAccess`, sendo Admin ou Owner.
 3. Pessoa do portal **não escreve** em `clients`, `client_brand_sections` nem `client_personas`.
-4. Pessoa do portal **não lê** persona `archived`.
+4. Excluir persona exige `cliente.operar` **e** cliente ativo; apaga a conversa dela por cascata e **não deixa thread nem comentário órfão**.
 5. `client_thread_comments` **não tem `UPDATE` nem `DELETE`** concedidos a `ageniza_app`.
 6. Com o cliente `archived`, **nenhuma escrita** é aceita em `clients` (exceto pela função de reativar), seções, personas, threads, comentários e convites daquele cliente.
 7. Dois clientes `active` com o mesmo nome, sem diferenciar maiúsculas, na mesma agência, **violam índice único** — inclusive sob concorrência. Um `archived` com o mesmo nome não viola.
@@ -239,8 +234,7 @@ Todas sob `requireAgencyAccess`, e o cliente de `:clientId` precisa pertencer a 
 | `PUT` | `/agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey` | `cliente.operar` | a seção |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas` | `cliente.operar` | `201` com a persona |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | `cliente.operar` | a persona |
-| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/archive` | `cliente.operar` | a persona `archived` |
-| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive` | `cliente.operar` | a persona `active` |
+| `DELETE` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | `cliente.operar` | `204`; apaga a persona e a conversa dela; `409 CLIENT_ARCHIVED` com o cliente arquivado; `404` se já não existe. A persona traz `messageCount`, as mensagens que vão junto |
 | `GET` | `/agencies/:agencyId/clients/:clientId/threads` | `cliente.visualizar` | threads de um assunto, paginado |
 | `POST` | `/agencies/:agencyId/clients/:clientId/threads` | `cliente.operar` | `201` com a thread e o primeiro comentário |
 | `GET` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | `cliente.visualizar` | comentários, paginado |
@@ -258,11 +252,11 @@ Todas sob `requireSession` e `requireClientAccess` — o mesmo padrão de `POST 
 | método | rota | devolve |
 |---|---|---|
 | `GET` | `/clients/:clientId` | cadastro do próprio cliente, leitura, e o resumo do Início |
-| `GET` | `/clients/:clientId/brand-study` | seções e **personas ativas** |
+| `GET` | `/clients/:clientId/brand-study` | seções e personas |
 | `GET` | `/clients/:clientId/threads` | threads de um assunto, paginado |
 | `POST` | `/clients/:clientId/threads` | `201`; lado `client` |
 | `GET` | `/clients/:clientId/threads/:threadId/comments` | comentários, paginado |
-| `POST` | `/clients/:clientId/threads/:threadId/comments` | `201`; lado `client`; recusado em persona arquivada |
+| `POST` | `/clients/:clientId/threads/:threadId/comments` | `201`; lado `client`; `404` se a persona foi excluída |
 
 ### Rotas que já existem
 
@@ -324,10 +318,10 @@ A última segue o precedente de `accept_invitation`: o *grant* de `UPDATE` em `c
 | tabela | policy |
 |---|---|
 | `clients` | `INSERT`: `cliente.cadastrar`, `status = 'active'`. `UPDATE`: `cliente.operar` e `status = 'active'` no `using` e no `with check`. `SELECT` já existe |
-| `client_brand_sections` | `SELECT`: membro da agência do cliente, ou vínculo de cliente. `INSERT`/`UPDATE`: `cliente.operar` e cliente ativo |
-| `client_personas` | `SELECT`: membro da agência; vínculo de cliente só em `active`. `INSERT`/`UPDATE`: `cliente.operar` e cliente ativo. Gatilho `BEFORE UPDATE`: persona arquivada só aceita a escrita que a desarquiva (`A0137`, 2026-11-13) |
-| `client_threads` | `SELECT`: membro da agência ou vínculo de cliente, por `client_id`. `INSERT`: lado `agency` com `cliente.operar`, lado `client` com vínculo; cliente ativo; persona do assunto ativa. `UPDATE` (resolver): só `cliente.operar`, cliente ativo |
-| `client_thread_comments` | `SELECT`: igual a threads. `INSERT`: mesma regra de lado; cliente ativo; persona ativa. Sem `UPDATE` e sem `DELETE` concedidos |
+| `client_brand_sections` | `SELECT`: membro da agência do cliente, ou vínculo de cliente. `INSERT`/`UPDATE`/`DELETE`: `cliente.operar` e cliente ativo. `status` sem `UPDATE`; o `DELETE` toma o cliente `FOR SHARE` e audita `persona.deleted` |
+| `client_personas` | `SELECT`: membro da agência; vínculo de cliente só em `active`. `INSERT`/`UPDATE`: `cliente.operar` e cliente ativo |
+| `client_threads` | `SELECT`: membro da agência ou vínculo de cliente, por `client_id`. `INSERT`: lado `agency` com `cliente.operar`, lado `client` com vínculo; cliente ativo. `UPDATE` (resolver): só `cliente.operar`, cliente ativo |
+| `client_thread_comments` | `SELECT`: igual a threads. `INSERT`: mesma regra de lado; cliente ativo. Sem `UPDATE` e sem `DELETE` concedidos: somem só pela cascata da persona |
 
 Nenhuma policy de outro módulo é alterada.
 
@@ -339,7 +333,7 @@ Nenhuma policy de outro módulo é alterada.
 | editar cadastro, foto | listagem, detalhe, cliente no portal |
 | agendar ou desmarcar encerramento | listagem, detalhe |
 | arquivar, reativar | listagem, detalhe, convites de portal, contextos do usuário |
-| editar seção, criar, editar, arquivar ou desarquivar persona | estudo de marca, detalhe (preenchimento) |
+| editar seção, criar, editar ou excluir persona | estudo de marca, detalhe (preenchimento) |
 | abrir thread, comentar | threads do assunto, comentários da thread, detalhe (resumo), listagem de clientes (etiqueta, ordem e próxima ação) |
 | resolver | threads do assunto, detalhe (resumo), listagem de clientes |
 | remover, reativar pessoa | pessoas do portal, detalhe (resumo) |
@@ -490,7 +484,7 @@ A lista dos conteúdos do cliente **agrupada por quem precisa agir** (Esperando 
 - **Editar** abre a seção em modo de edição no próprio lugar, só para `cliente.operar`.
 - **Conversa**: lista das threads do assunto, abertas primeiro; abrir uma mostra os comentários, com o lado de cada autor visível — quem é da agência, quem é do cliente — e **Resolver** para `cliente.operar`. Thread resolvida continua legível; comentar nela a reabre.
 - **Persona (2026-11-11):** o cartão tem o nome e o apelido ("Camila, a mãe que corre"), a linha de apoio "34 anos · gerente de RH · Pinheiros" (idade, ocupação e local), os chips de **traços** e as linhas **Dor**, **Desejo**, **Objeções**, **Onde está** e **Tom que funciona**, cada uma com o seu lápis e salvando sozinha no mesmo `PATCH` da persona. "Objeções" continua, mesmo que o quadro não a mostre. Campo vazio aparece como "não informado". Decisão: [`estrutural-a-persona-ganha-…`](../docs/business/decisions/2026-11-11-estrutural-a-persona-ganha-idade-ocupacao-local-tracos-onde-esta-e-tom.md).
-- Personas arquivadas ficam recolhidas, com **Desarquivar**; as conversas delas são só leitura.
+- **Excluir** (no lugar de Arquivar, 2026-11-12): confirma com "A conversa dela, com N mensagens, também será apagada. Não dá para desfazer." e volta para a lista. Não há seção de arquivadas. Decisão: [`a-persona-se-exclui-com-a-conversa-e-nao-se-arquiva`](../docs/business/decisions/2026-11-12-estrutural-a-persona-se-exclui-com-a-conversa-e-nao-se-arquiva.md).
 - Seção vazia: "Ainda não preenchida", com **Preencher** para `cliente.operar`.
 
 ### Aba Acessos
@@ -573,7 +567,7 @@ Barra inferior com quatro itens (**Início, Conteúdos, Marca e Pedidos da agên
 ### Portal — Marca
 
 - As seções em leitura, em linguagem de cliente. A SPEC registra a intenção; os rótulos — "Como sua marca fala" em vez de "Tom de voz" — são do designer.
-- Cada seção e cada persona ativa tem **Sugerir**, que abre uma conversa nova, e mostra as conversas existentes.
+- Cada seção e cada persona tem **Sugerir**, que abre uma conversa nova, e mostra as conversas existentes.
 - Em cada comentário da agência, **nome e foto** de quem respondeu.
 - Seção não preenchida: "Sua agência está preparando esta parte" — nunca um campo vazio exposto, e sem **Sugerir**.
 - Conversa resolvida mostra que a agência a concluiu; o cliente ainda pode comentar, e isso a reabre.
@@ -654,7 +648,7 @@ Em [`docs/business/decisions.md`](../docs/business/decisions.md), 2026-09-26:
 - Permissões de clientes: todos veem todos, e cadastrar é administrativo
 - Preset de clientes: o Gestor opera e cadastra, só o Admin arquiva e gerencia o portal
 - Campos do cliente e forma do estudo de marca
-- Estados de cliente, de acesso ao portal, de thread e de persona
+- Estados de cliente, de acesso ao portal e de thread (a persona não tem estados: exclui-se)
 - Regras invioláveis de clientes, garantidas pelo banco
 - Contrato de cliente termina com aviso prévio, e o conteúdo além da data é cancelado
 - A área de clientes é um painel de triagem, e o detalhe nasce com todas as abas

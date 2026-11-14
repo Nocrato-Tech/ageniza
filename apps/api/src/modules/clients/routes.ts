@@ -54,9 +54,9 @@ import {
   clientFromRow,
   createClient,
   createPersona,
+  deletePersona,
   isActiveClientNameConflict,
   isClientNoLongerActive,
-  isPersonaReadOnly,
   isRowLevelSecurityViolation,
   listClients,
   loadBrandSection,
@@ -70,7 +70,6 @@ import {
   lockActiveClientPhoto,
   personaFromRow,
   setClientPhotoKey,
-  setPersonaStatus,
   updateClient,
   updatePersona,
   upsertBrandSection,
@@ -147,13 +146,7 @@ const clientIdFromRoute = (request: FastifyRequest): string => {
 
 const personaNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Persona not found.' });
 
-const personaReadOnly = (): HttpError => new HttpError({
-  statusCode: 409,
-  code: 'PERSONA_READ_ONLY',
-  message: 'Esta persona está arquivada. Desarquive-a para editar.'
-});
-
-const sectionNotWritable =(): HttpError => new HttpError({
+const sectionNotWritable = (): HttpError => new HttpError({
   statusCode: 400,
   code: 'VALIDATION_ERROR',
   message: 'Request validation failed',
@@ -398,10 +391,10 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     responseStatus: 200,
     schemas: { params: AgencyClientPersonaPathParamsSchema, body: UpdatePersonaRequestSchema, response: PersonaSchema }
   } satisfies DocumentedRouteConfig;
-  const personaStatusDocs = {
+  const deletePersonaDocs = {
     permission: 'cliente.operar',
-    responseStatus: 200,
-    schemas: { params: AgencyClientPersonaPathParamsSchema, response: PersonaSchema }
+    responseStatus: 204,
+    schemas: { params: AgencyClientPersonaPathParamsSchema }
   } satisfies DocumentedRouteConfig;
 
   app.get('/agencies/:agencyId/clients/:clientId/brand-study', authenticated(brandStudyDocs), async (request, reply) => {
@@ -493,7 +486,6 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       try {
         updated = await updatePersona(transaction, { clientId, personaId, actorUserId: auth.userId, changes: body });
       } catch (error) {
-        if (isPersonaReadOnly(error)) return { kind: 'persona-read-only' } as const;
         if (isRowLevelSecurityViolation(error) || isClientNoLongerActive(error)) return { kind: 'archived' } as const;
         throw error;
       }
@@ -505,11 +497,12 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     if (outcome.kind === 'not-found') throw clientNotFound();
     if (outcome.kind === 'archived') throw clientArchived();
     if (outcome.kind === 'persona-not-found') throw personaNotFound();
-    if (outcome.kind === 'persona-read-only') throw personaReadOnly();
     return reply.send(routeResponse(updatePersonaDocs, request, outcome.persona));
   });
 
-  const personaStatusHandler = (status: 'active' | 'archived') => async (request: FastifyRequest, reply: FastifyReply) => {
+  // The persona goes with its conversations and their comments (the foreign keys of 20261113000400); the audit event is written by the
+  // database in the same transaction. A refusal of the policy, or of the lock that waited for an archive, is the same 409 as the others.
+  app.delete('/agencies/:agencyId/clients/:clientId/personas/:personaId', authenticated(deletePersonaDocs), async (request, reply) => {
     const auth = requireAuth(request);
     const tenant = requireTenant(request);
     const clientId = clientIdFromRoute(request);
@@ -519,28 +512,20 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
       if (client === undefined) return { kind: 'not-found' } as const;
       if (client.status === 'archived') return { kind: 'archived' } as const;
-      let updated: boolean;
+      let deleted: boolean;
       try {
-        updated = await setPersonaStatus(transaction, { clientId, personaId, actorUserId: auth.userId, status });
+        deleted = await deletePersona(transaction, { clientId, personaId });
       } catch (error) {
-        if (isPersonaReadOnly(error)) return { kind: 'persona-read-only' } as const;
         if (isRowLevelSecurityViolation(error) || isClientNoLongerActive(error)) return { kind: 'archived' } as const;
         throw error;
       }
-      if (!updated) return { kind: 'persona-not-found' } as const;
-      const persona = await loadPersona(transaction, { agencyId: tenant.agencyId, clientId, personaId });
-      if (persona === undefined) return { kind: 'persona-not-found' } as const;
-      return { kind: 'ok', persona: personaFromRow(persona) } as const;
+      return deleted ? { kind: 'ok' } as const : { kind: 'persona-not-found' } as const;
     });
     if (outcome.kind === 'not-found') throw clientNotFound();
     if (outcome.kind === 'archived') throw clientArchived();
     if (outcome.kind === 'persona-not-found') throw personaNotFound();
-    if (outcome.kind === 'persona-read-only') throw personaReadOnly();
-    return reply.send(routeResponse(personaStatusDocs, request, outcome.persona));
-  };
-
-  app.post('/agencies/:agencyId/clients/:clientId/personas/:personaId/archive', authenticated(personaStatusDocs), personaStatusHandler('archived'));
-  app.post('/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive', authenticated(personaStatusDocs), personaStatusHandler('active'));
+    return reply.status(204).send();
+  });
 
   registerConversationRoutes(app, dependencies);
   registerPortalReadRoutes(app, dependencies);
