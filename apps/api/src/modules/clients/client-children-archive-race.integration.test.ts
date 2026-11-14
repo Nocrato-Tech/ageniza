@@ -227,7 +227,7 @@ describe('CLIENTS routes that write into the children of a client being archived
   // section that already exists (the update half of the upsert), the resolution of a thread, and the reopening of a resolved
   // thread by the comment of the portal. The confirmation of a media is in media-folders.integration.test.ts.
   describe('an UPDATE of a child of the client that waits for the archive (#545)', () => {
-    const personaOf = async (personaId: string): Promise<{ name: string; status: string }> =>
+    const personaOf = async (personaId: string): Promise<{ name: string; status: string } | undefined> =>
       await owner.knex('client_personas').where({ id: personaId }).first('name', 'status');
 
     it('answers 409 CLIENT_ARCHIVED to a persona edited while the client is archived, and edits none', async () => {
@@ -323,6 +323,48 @@ describe('CLIENTS routes that write into the children of a client being archived
         expect(threadsBefore).toBe(1);
       }, 30_000);
     });
+
+    // The UPDATE of the resolution never meets the BEFORE INSERT trigger of the comments above: its row is gone and it matches nothing,
+    // so the service throws ConversationWriteRefused and the route reads the thread back (`thread-not-found`), not a bare 403. The
+    // portal has no resolve route, so there is no portal side of this write.
+    it.each([
+      ['the delete is still open when the UPDATE waits on the row', false],
+      ['the delete was committed between the checks and the UPDATE', true]
+    ] as const)('answers 404 Thread not found, never 403 or 500, to a thread resolved while its persona is deleted: %s', async (_order, committedFirst) => {
+      const clientId = await newClient(`resolver-persona-${committedFirst}`);
+      const personaId = await withPersona(clientId);
+      const threadId = await withThread(clientId, personaId);
+      const holder = await owner.knex.transaction();
+      let released = false;
+      try {
+        if (committedFirst) await holder.raw('lock table public.client_threads in share mode');
+        await holder('client_personas').where({ id: personaId }).delete();
+        const holderPid = await backendPid(holder);
+        const pending = call('POST', `${agencyClient(clientId)}/threads/${threadId}/resolve`, cookies.writer!, undefined);
+        await waitForBackendsBlockedBy(owner.knex, holderPid);
+        await holder.commit();
+        released = true;
+        const reply = await pending;
+        expect(reply.statusCode).toBe(404);
+        expect(reply.json().error).toEqual({ code: 'NOT_FOUND', message: 'Thread not found.' });
+        expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
+      } finally {
+        if (!released) await holder.rollback();
+      }
+      expect(await personaOf(personaId)).toBeUndefined();
+      expect(await owner.knex('client_threads').where({ id: threadId }).first('id')).toBeUndefined();
+      expect(await countOf('client_thread_comments', clientId)).toBe(0);
+    }, 30_000);
+
+    it('gives the portal no way to resolve a thread, and leaves it open', async () => {
+      const clientId = await newClient('portal-resolver');
+      await withPortalPerson(clientId);
+      const threadId = await withThread(clientId, await withPersona(clientId));
+      const reply = await call('POST', `/clients/${clientId}/threads/${threadId}/resolve`, cookies.portal!, undefined);
+
+      expect(reply.statusCode).toBe(404);
+      expect((await owner.knex('client_threads').where({ id: threadId }).first('resolved_at')).resolved_at).toBeNull();
+    }, 30_000);
 
     it('answers 409 CLIENT_ARCHIVED to a brand study section that already exists, rewritten while the client is archived, and keeps the old text', async () => {
       const clientId = await newClient('secao-existente');
