@@ -276,6 +276,11 @@ describe('the panel', () => {
     const filter = within(panel).getByRole('tablist', { name: 'Filtro' });
     expect(within(filter).getByRole('tab', { name: 'Todas' })).toBeTruthy();
     expect(within(filter).getByRole('tab', { name: 'Não lidas 2' })).toBeTruthy();
+    expect(within(filter).getByRole('tab', { name: 'Não lidas 2' }).querySelector('.ui-tabs__count.ui-pill--accent')?.textContent).toBe('2');
+    expect(within(filter).getByRole('tab', { name: 'Todas' }).querySelector('.ui-tabs__count')).toBeNull();
+    const head = panel.querySelector('.notif__head')!;
+    expect(head.contains(within(panel).getByRole('heading', { name: 'Notificações', level: 2 }))).toBe(true);
+    expect(head.nextElementSibling?.contains(filter)).toBe(true);
     await within(panel).findByRole('link', { name: /Rosana aprovou "Promoção de pães"/ });
     for (const group of ['Hoje', 'Ontem']) expect(within(panel).getByRole('heading', { name: group, level: 3 })).toBeTruthy();
     const rows = within(panel).getAllByRole('link').filter((link) => link.classList.contains('notif-row'));

@@ -199,7 +199,7 @@ function NotificationsPanel({ agencyId, actions, unread, sheet, onNavigate }: { 
       onChange={(value) => { setFilter(value as NotificationFilter); }}
       items={[
         { value: 'all', label: 'Todas', content: list },
-        { value: 'unread', label: 'Não lidas', count: unread !== undefined && unread > 0 ? unread : undefined, content: list }
+        { value: 'unread', label: 'Não lidas', count: unread !== undefined && unread > 0 ? unread : undefined, countTone: 'accent', content: list }
       ]}
     />
     <div className="notif__foot">

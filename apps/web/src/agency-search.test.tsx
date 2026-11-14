@@ -210,14 +210,31 @@ describe('the results', () => {
   });
 
   it('says the state of a content as the agency reads it: Atrasado and Agendado come before the status', async () => {
+    vi.setSystemTime(new Date('2026-11-22T12:00:00Z'));
     world.reply = () => json(answerOf({ contents: [{ ...content, overdue: true }, { ...content, id: id(9), scheduled: true, title: 'Outro' }] }));
     renderSearch();
     open();
     type('padar');
     await wait(260);
     const rows = screen.getAllByRole('option').map((row) => row.textContent);
-    expect(rows[0]).toContain('Padaria Central · Reels · Atrasado');
+    expect(rows[0]).toContain('Padaria Central · Reels · Atrasado 2 dias');
     expect(rows[1]).toContain('Padaria Central · Reels · Agendado');
+  });
+
+  it('says how many days late a content is, counted in São Paulo days, each on its own row', async () => {
+    vi.setSystemTime(new Date('2026-11-14T01:30:00Z'));
+    world.reply = () => json(answerOf({ contents: [
+      { ...content, overdue: true, publishOn: '2026-11-12' },
+      { ...content, id: id(9), title: 'Outro', overdue: true, publishOn: '2026-11-11' }
+    ] }));
+    renderSearch();
+    open();
+    type('padar');
+    await wait(260);
+    const rows = screen.getAllByRole('option');
+    expect(rows[0]!.textContent).toContain('Padaria Central · Reels · Atrasado 1 dia');
+    expect(rows[0]!.textContent).not.toContain('Atrasado 1 dias');
+    expect(rows[1]!.textContent).toContain('Padaria Central · Reels · Atrasado 2 dias');
   });
 
   it('draws a name as text, never as markup', async () => {
@@ -308,20 +325,55 @@ describe('the keyboard and the destinations', () => {
     expect(document.activeElement).toBe(field());
   });
 
-  it('closes with Esc, keeps the text and the focus, and Ctrl K opens it again', async () => {
+  it('clears the term with the first Esc, keeping the panel and the focus, and closes with the second', async () => {
     everything();
     renderSearch();
     field().focus();
     type('padar');
     await wait(260);
     expect(screen.getAllByRole('option')).toHaveLength(3);
+    const foot = (): string => document.querySelector('.agency-search__foot')!.textContent!;
+    expect(foot()).toContain('Esc limpar');
     key('Escape');
-    expect(screen.queryByRole('option')).toBeNull();
-    expect(field().value).toBe('padar');
+    expect(field().value).toBe('');
+    expect(screen.getByRole('region', { name: 'Resultados da busca' })).toBeTruthy();
+    expect(document.activeElement).toBe(field());
+    expect(foot()).toContain('Esc fechar');
+    key('Escape');
+    expect(screen.queryByRole('region', { name: 'Resultados da busca' })).toBeNull();
     expect(document.activeElement).toBe(field());
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true });
-    expect(screen.getAllByRole('option')).toHaveLength(3);
+    expect(screen.getByRole('region', { name: 'Resultados da busca' })).toBeTruthy();
     expect(document.activeElement).toBe(field());
+  });
+
+  it('closes the panel with a foot of hints: the keys, and what the search looks in', async () => {
+    everything();
+    renderSearch();
+    open();
+    type('padar');
+    await wait(260);
+    const foot = document.querySelector('.agency-search__foot')!;
+    expect(foot.textContent).toContain('↑↓ navegar');
+    expect(foot.textContent).toContain('Enter abrir');
+    expect(foot.textContent).toContain('Esc limpar');
+    expect(foot.lastElementChild?.textContent).toBe('Clientes, conteúdos e arquivos');
+  });
+
+  it('shows the Enter hint on the active row only, hidden from the screen reader', async () => {
+    everything();
+    renderSearch();
+    open();
+    type('padar');
+    await wait(260);
+    const hints = document.querySelectorAll('.agency-search__enter');
+    expect(hints).toHaveLength(1);
+    expect(hints[0]!.textContent).toBe('Enter');
+    expect(hints[0]!.getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getAllByRole('option')[0]!.contains(hints[0]!)).toBe(true);
+    key('ArrowDown');
+    expect(screen.getAllByRole('option')[1]!.querySelector('.agency-search__enter')).not.toBeNull();
+    expect(screen.getAllByRole('option')[0]!.querySelector('.agency-search__enter')).toBeNull();
   });
 
   it('closes when the person presses outside the search', async () => {

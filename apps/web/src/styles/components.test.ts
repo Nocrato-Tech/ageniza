@@ -242,6 +242,15 @@ describe.each(['light'] as const)('contrast of the new controls in %s', (theme) 
     expect(contrastOf(theme, 'var(--text-primary)', hover.get('background')!)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('fills an accent tab count with the primary action pair, AA, on the closed and the open tab', () => {
+    for (const selector of ['.ui-tabs__count.ui-pill--accent', ".ui-tabs__tab[aria-selected='true'] .ui-tabs__count.ui-pill--accent"]) {
+      const accent = colours(selector);
+
+      expect(accent, selector).toEqual({ fg: 'var(--action-primary-fg)', bg: 'var(--action-primary-bg)' });
+      expect(contrastOf(theme, accent.fg, accent.bg), selector).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it('keeps the focus ring visible over the surfaces (3:1 for non-text)', () => {
     for (const surface of SURFACES) expect(contrastOf(theme, 'var(--focus-ring)', surface)).toBeGreaterThanOrEqual(3);
   });
