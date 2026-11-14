@@ -109,7 +109,7 @@ Sinais de teste fraco:
 - afirma "Page not found" em vez da rota de destino.
 
 ### 5. Publicar
-No fluxo de escopo, a revisão é da onda: uma só cobre todas as subtarefas de nível Alto que a onda junta (branch da onda e commit de cada subtarefa dados pela tarefa, diff contra a integração `feat/<escopo>`). Ela parte do autoataque que cada implementador listou no retorno e se concentra no que ele não cobre. É gravada em arquivo, nunca no worktree do implementador, e o maestro a publica como comentário no PR único do escopo, que é o registro desta revisão. Ver as decisões de [2026-11-06](business/decisions/2026-11-06-um-pr-por-escopo-com-revisao-por-subtarefa.md) e de [2026-11-13](business/decisions/2026-11-13-revisao-de-seguranca-por-onda-com-autoataque-do-implementador.md).
+No fluxo de escopo, a revisão é da onda: uma só cobre todas as subtarefas de nível Alto que a onda junta (branch da onda e commit de cada subtarefa dados pela tarefa, diff contra a integração `feat/<escopo>`). Ela parte do autoataque que cada implementador listou no retorno e se concentra no que ele não cobre. É gravada em arquivo, nunca no worktree do implementador, e o maestro a publica como comentário no PR único do escopo, que é o registro desta revisão. Ver as decisões de [2026-11-06](business/decisions/2026-11-06-um-pr-por-escopo-com-revisao-por-subtarefa.md), de [2026-11-10](business/decisions/2026-11-10-revisao-por-onda-com-perfil-e-esforco-decididos-pelo-maestro-e-revisor.md) e de [2026-11-13](business/decisions/2026-11-13-revisao-de-seguranca-por-onda-com-autoataque-do-implementador.md).
 
 Fora desse fluxo, uma revisão por PR, com `gh pr review <N> --comment` e **nunca** `--approve` ou `--request-changes`, porque o merge é decisão do orquestrador. Em português:
 
