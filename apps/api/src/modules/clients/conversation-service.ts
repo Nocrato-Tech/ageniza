@@ -731,7 +731,7 @@ export const diagnoseConversationRefusal = async (
   if (clientRefusal !== undefined) return clientRefusal;
   if (target.threadId !== undefined) {
     const context = await loadThreadContext(transaction, scope, target.threadId);
-    if (context === undefined) return undefined;
+    if (context === undefined) return 'thread-not-found';
     return context.content_id !== null && !isContentOpenToAgencyWriter(context.content_status) ? 'content-not-open' : undefined;
   }
   if (target.contentId !== undefined) {

@@ -78,8 +78,13 @@ const insertPersonaRow = async (clientId: string): Promise<string> => {
   return id;
 };
 
-/** A conversation of the persona with `comments` messages, written by the owner. */
-const insertPersonaConversation = async (clientId: string, personaId: string, comments: number): Promise<{ threadId: string; commentIds: string[] }> => {
+/** A conversation of the persona with `comments` messages of the agency and `clientComments` of the client, written by the owner. */
+const insertPersonaConversation = async (
+  clientId: string,
+  personaId: string,
+  comments: number,
+  options: { readonly clientComments?: number; readonly resolved?: boolean } = {}
+): Promise<{ threadId: string; commentIds: string[] }> => {
   const threadId = randomUUID();
   await owner.knex('client_threads').insert({ id: threadId, client_id: clientId, persona_id: personaId, opened_by: admin.id, opened_side: 'agency' });
   const commentIds: string[] = [];
@@ -88,6 +93,12 @@ const insertPersonaConversation = async (clientId: string, personaId: string, co
     commentIds.push(id);
     await owner.knex('client_thread_comments').insert({ id, thread_id: threadId, client_id: clientId, author_user_id: admin.id, author_side: 'agency', body: `Mensagem ${index + 1}` });
   }
+  for (let index = 0; index < (options.clientComments ?? 0); index += 1) {
+    const id = randomUUID();
+    commentIds.push(id);
+    await owner.knex('client_thread_comments').insert({ id, thread_id: threadId, client_id: clientId, author_user_id: admin.id, author_side: 'client', body: `Resposta ${index + 1}` });
+  }
+  if (options.resolved === true) await owner.knex('client_threads').where({ id: threadId }).update({ resolved_at: new Date(), resolved_by: admin.id });
   return { threadId, commentIds };
 };
 
@@ -334,13 +345,14 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     const siblingId = await insertPersonaRow(clientId);
     const strangerId = await insertPersonaRow(otherClientId);
     const first = await insertPersonaConversation(clientId, personaId, 3);
-    const second = await insertPersonaConversation(clientId, personaId, 2);
+    // Every message goes with the persona, whoever wrote it and whether the conversation is open or resolved.
+    const second = await insertPersonaConversation(clientId, personaId, 2, { clientComments: 2, resolved: true });
     const sibling = await insertPersonaConversation(clientId, siblingId, 4);
     const stranger = await insertPersonaConversation(otherClientId, strangerId, 1);
     await insertPersonaConversation(clientId, personaId, 0);
 
     const before = (await getStudy(adminCookie, agencyA, clientId)).json<{ personas: { id: string; messageCount: number }[] }>().personas;
-    expect(Object.fromEntries(before.map((persona) => [persona.id, persona.messageCount]))).toEqual({ [personaId]: 5, [siblingId]: 4 });
+    expect(Object.fromEntries(before.map((persona) => [persona.id, persona.messageCount]))).toEqual({ [personaId]: 7, [siblingId]: 4 });
 
     const response = await deletePersona(adminCookie, agencyA, clientId, personaId);
     expect(response.statusCode).toBe(204);
