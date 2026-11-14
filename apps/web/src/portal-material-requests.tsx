@@ -17,6 +17,7 @@ import { CommentItem, Composer, MATERIAL_REQUEST_LABEL, MaterialDue, routesOf, w
 import { useApiClient } from './http.js';
 import { PORTAL_PAUSED_REASON } from './plan-notice.js';
 import { isClientRosterKey } from './portal-brand.js';
+import { PortalUploadActions } from './portal-material-upload.js';
 import { usePortalClient } from './portal.js';
 
 const LIST_PATH = '/clients/:clientId/material-requests';
@@ -95,7 +96,7 @@ export function RequestThread({ clientId, request, onClose }: { clientId: string
   </Modal>;
 }
 
-function Request({ request, today, onOpen }: { request: MaterialRequest; today: string; onOpen: () => void }) {
+function Request({ clientId, request, today, onOpen }: { clientId: string; request: MaterialRequest; today: string; onOpen: () => void }) {
   const id = useId();
   // A request without a title (made before they had one) is told by its text; with a title, the text is the description.
   const described = request.title !== null;
@@ -108,6 +109,7 @@ function Request({ request, today, onOpen }: { request: MaterialRequest; today: 
       {request.dueOn !== null && <p className="portal-request__due">até {dayOfMonthLabel(request.dueOn)}{overdue && <> <LateBadge>venceu</LateBadge></>}</p>}
     </div>
     <div className="portal-request__actions">
+      <PortalUploadActions clientId={clientId} request={request} />
       <Button variant="ghost" id={`${id}-button`} aria-labelledby={`${id}-button ${id}-title`} onClick={onOpen}>Ver o pedido</Button>
     </div>
   </li>;
@@ -154,7 +156,7 @@ export function PortalMaterialRequests({ clientId }: { clientId: string }) {
       <span className="portal-requests__count"><Inbox aria-hidden="true" />{meta.totalItems} {meta.totalItems === 1 ? 'pedido' : 'pedidos'}</span>
     </div>
     <ul className="portal-requests__list">
-      {data.map((request) => <Request key={request.threadId} request={request} today={today} onOpen={() => setOpenId(request.threadId)} />)}
+      {data.map((request) => <Request key={request.threadId} clientId={clientId} request={request} today={today} onOpen={() => setOpenId(request.threadId)} />)}
     </ul>
     {meta.totalItems > data.length && <p className="portal-requests__more">Mostrando {data.length} de {meta.totalItems}</p>}
     {current !== undefined && <RequestThread clientId={clientId} request={current} onClose={() => setOpenId(null)} />}
