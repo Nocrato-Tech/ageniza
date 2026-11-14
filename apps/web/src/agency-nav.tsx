@@ -5,6 +5,7 @@ import { Briefcase, CalendarDays, ChevronsUpDown, House, PanelLeftClose, PanelLe
 import { BrandSymbol, IconButton, Logo, Skeleton } from '@ageniza/ui';
 
 import { AccountMenu } from './account-menu.js';
+import { AgencySearchPhone } from './agency-search.js';
 import { HelpMenu } from './help-menu.js';
 import { NotificationsBell } from './notifications-panel.js';
 import { usePhone } from './use-phone.js';
@@ -81,6 +82,7 @@ export function AgencySidebar({ agenciaId, agencyName, permissions, isOwner, rol
           <span className="agency-mbar__name">{agencyName}</span>
         </Link>
         <div className="agency-mbar__end">
+          <AgencySearchPhone agencyId={agenciaId} />
           <NotificationsBell agencyId={agenciaId} />
           <HelpMenu />
           <AccountMenu variant="compact" activeContext={agencyName} contextLabel="Agência logada" subscriptionTo={subscriptionTo} />

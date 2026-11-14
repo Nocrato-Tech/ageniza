@@ -11,7 +11,7 @@ import {
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
-import { HttpClientError, useApiClient } from './http.js';
+import { HttpClientError, useApiClient, type HttpClient } from './http.js';
 
 /** The folders are read page by page until the last, so no folder is hidden behind a page. */
 const FOLDERS_PAGE_SIZE = 100;
@@ -113,26 +113,29 @@ export interface FolderList {
   readonly total: number;
 }
 
+/** Every folder of a client, page by page; the library and the search read them the same way. */
+export const fetchFolderSummaries = async (httpClient: HttpClient, agencyId: string, clientId: string, signal?: AbortSignal): Promise<FolderList> => {
+  const folders: MediaFolderSummary[] = [];
+  let total = 0;
+  for (let page = 1; page <= MAX_FOLDER_PAGES; page += 1) {
+    const answer = await httpClient.request({
+      path: `${foldersBase(agencyId, clientId)}/summary?page=${page}&pageSize=${FOLDERS_PAGE_SIZE}`,
+      response: MediaFolderSummaryListResponseSchema,
+      signal
+    });
+    folders.push(...answer.data);
+    total = answer.meta.totalItems;
+    if (page >= answer.meta.totalPages) break;
+  }
+  return { folders, total };
+};
+
 export const useFolderSummaries = (clientId: string) => {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   return useQuery<FolderList>({
     queryKey: foldersQueryKey(agency.agencyId, clientId),
-    queryFn: async ({ signal }) => {
-      const folders: MediaFolderSummary[] = [];
-      let total = 0;
-      for (let page = 1; page <= MAX_FOLDER_PAGES; page += 1) {
-        const answer = await httpClient.request({
-          path: `${foldersBase(agency.agencyId, clientId)}/summary?page=${page}&pageSize=${FOLDERS_PAGE_SIZE}`,
-          response: MediaFolderSummaryListResponseSchema,
-          signal
-        });
-        folders.push(...answer.data);
-        total = answer.meta.totalItems;
-        if (page >= answer.meta.totalPages) break;
-      }
-      return { folders, total };
-    }
+    queryFn: ({ signal }) => fetchFolderSummaries(httpClient, agency.agencyId, clientId, signal)
   });
 };
 

@@ -203,7 +203,7 @@ function NotificationsPanel({ agencyId, actions, unread, sheet, onNavigate }: { 
       ]}
     />
     <div className="notif__foot">
-      <ButtonLink as={Link} to={`/agencia/${agencyId}/notificacoes`} state={location.state} variant="secondary" size="sm" onClick={onNavigate}>Ver todas</ButtonLink>
+      <ButtonLink as={Link} to={`/agencia/${agencyId}/notificacoes`} state={location.state} variant="ghost" size="sm" onClick={onNavigate}>Ver todas</ButtonLink>
     </div>
   </div>;
 }
