@@ -199,27 +199,6 @@
   margin: 0;
 }
 
-/* The role's tag takes the colour of a block, like the team badge: the words say the role, the colour only tells roles apart. */
-.collaborator-profile__role--indigo .ui-pill {
-  background: var(--block-indigo-bg);
-  color: var(--block-indigo-fg);
-}
-
-.collaborator-profile__role--violet .ui-pill {
-  background: var(--block-violet-bg);
-  color: var(--block-violet-fg);
-}
-
-.collaborator-profile__role--teal .ui-pill {
-  background: var(--block-teal-bg);
-  color: var(--block-teal-fg);
-}
-
-.collaborator-profile__role--sky .ui-pill {
-  background: var(--block-sky-bg);
-  color: var(--block-sky-fg);
-}
-
 .collaborator-profile__summary {
   margin: var(--space-1) 0 0;
   color: var(--text-primary);

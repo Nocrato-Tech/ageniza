@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { Briefcase, CalendarDays, Camera, Crown, Mail, ShieldCheck, UserMinus } from 'lucide-react';
+import { Briefcase, CalendarDays, Camera, Mail, UserMinus } from 'lucide-react';
 import { z } from 'zod';
 
 import {
@@ -16,7 +16,7 @@ import {
   type Collaborator,
   type UpdateCollaboratorRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, ConfirmDialog, FieldMessage, LiveStatus, Pill, Select, Skeleton, Tabs, TextInput, type BadgeRoleTone } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, FieldMessage, LiveStatus, RoleTag, Select, Skeleton, Tabs, TextInput, type BadgeRoleTone } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
@@ -494,8 +494,8 @@ function CollaboratorHeader({ collaborator, isSelf }: { collaborator: Collaborat
     <div className="collaborator-profile__who">
       <div className="collaborator-profile__name">
         <h1>{collaborator.name}</h1>
-        <span className={`collaborator-profile__role collaborator-profile__role--${tone}`}><Pill icon={<ShieldCheck />}>{collaborator.role.name}</Pill></span>
-        {collaborator.isOwner && <span className="collaborator-profile__role collaborator-profile__role--indigo"><Pill icon={<Crown />}>Dona da agência</Pill></span>}
+        <RoleTag name={collaborator.role.name} tone={tone} />
+        {collaborator.isOwner && <RoleTag name={collaborator.role.name} isOwner />}
       </div>
       <p className="collaborator-detail__meta"><Briefcase aria-hidden="true" /><span>{collaborator.jobTitle ?? 'Cargo não informado'}</span></p>
       <p className="collaborator-detail__meta"><Mail aria-hidden="true" /><span>{collaborator.email}</span></p>
