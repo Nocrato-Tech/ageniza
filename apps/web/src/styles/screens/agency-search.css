@@ -10,12 +10,6 @@
   min-height: 2.75rem;
 }
 
-/* The ring is the pill's (search-field.css); base.css's input:focus-visible would draw a second one on the field inside it. */
-.agency-search .ui-search-field__input:focus-visible,
-.portal-search .ui-search-field__input:focus-visible {
-  outline: none;
-}
-
 .agency-search {
   position: relative;
   width: 100%;
@@ -128,8 +122,24 @@
 }
 
 .agency-search__icon--file {
+  overflow: hidden;
   background: var(--color-teal-100);
   color: var(--color-teal-800);
+}
+
+/* The file's picture fills the tile; while it loads, or when there is none, the shape of the type shows. */
+.agency-search__icon .media-thumbnail {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.agency-search__icon .media-thumbnail svg {
+  width: 1.125rem;
+  height: 1.125rem;
 }
 
 .agency-search__main {

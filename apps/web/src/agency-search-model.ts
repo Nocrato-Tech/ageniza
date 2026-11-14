@@ -4,7 +4,6 @@ import type { QueryClient } from '@tanstack/react-query';
 import {
   AGENCY_SEARCH_TERM_MIN_LENGTH,
   AgencySearchResponseSchema,
-  MediaFolderSummaryListResponseSchema,
   searchedCharacters,
   type AgencySearchClient,
   type AgencySearchContent,
@@ -15,7 +14,7 @@ import {
 import { apiPath } from './api-path.js';
 import { contentsAddress } from './content-address.js';
 import { HttpClientError, useApiClient, type HttpClient } from './http.js';
-import { foldersBase, foldersQueryKey, type FolderList } from './media-library-model.js';
+import { fetchFolderSummaries, foldersQueryKey, type FolderList } from './media-library-model.js';
 
 export const SEARCH_DELAY_MS = 250;
 
@@ -118,29 +117,13 @@ export const itemPath = (agencyId: string, item: SearchItem, folders: readonly {
   }
 };
 
-const FOLDERS_PAGE_SIZE = 100;
-const MAX_FOLDER_PAGES = 10;
-
 /** The folders of a client, from the cache of the library when it is warm; a failure falls back to the Mídias tab at its root. */
 export const loadFolders = async (queryClient: QueryClient, httpClient: HttpClient, agencyId: string, clientId: string): Promise<FolderList['folders']> => {
   try {
     const list = await queryClient.fetchQuery<FolderList>({
       queryKey: foldersQueryKey(agencyId, clientId),
       staleTime: 30_000,
-      queryFn: async () => {
-        const folders: FolderList['folders'][number][] = [];
-        let total = 0;
-        for (let page = 1; page <= MAX_FOLDER_PAGES; page += 1) {
-          const answer = await httpClient.request({
-            path: `${foldersBase(agencyId, clientId)}/summary?page=${page}&pageSize=${FOLDERS_PAGE_SIZE}`,
-            response: MediaFolderSummaryListResponseSchema
-          });
-          folders.push(...answer.data);
-          total = answer.meta.totalItems;
-          if (page >= answer.meta.totalPages) break;
-        }
-        return { folders, total };
-      }
+      queryFn: () => fetchFolderSummaries(httpClient, agencyId, clientId)
     });
     return list.folders;
   } catch {

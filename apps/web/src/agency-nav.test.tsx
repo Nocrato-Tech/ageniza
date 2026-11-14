@@ -353,6 +353,11 @@ describe('the phone shell (390px)', () => {
     expect(within(bar).getByRole('link', { name: 'Agência Um' }).getAttribute('href')).toBe('/contextos');
     expect(within(bar).getByRole('button', { name: 'Notificações' })).toBeTruthy();
     expect(within(bar).getByRole('button', { name: 'Ajuda' })).toBeTruthy();
+    // The search icon is the nav's own control, in the bar's end group before the bell: no portal from the shell's top bar.
+    const end = bar.querySelector('.agency-mbar__end') as HTMLElement;
+    const buttons = within(end).getAllByRole('button').map((button) => button.getAttribute('aria-label'));
+    expect(buttons.slice(0, 3)).toEqual(['Buscar', 'Notificações', 'Ajuda']);
+    expect(within(document.body).getAllByRole('button', { name: 'Buscar' })).toHaveLength(1);
     expect(within(bar).getByRole('button', { name: 'Conta de Pessoa' })).toBeTruthy();
     fireEvent.click(within(bar).getByRole('link', { name: 'Agência Um' }));
     await waitFor(() => expect(probe.pathname).toBe('/contextos'));

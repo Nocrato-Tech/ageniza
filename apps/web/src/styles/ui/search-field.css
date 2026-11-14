@@ -1,4 +1,4 @@
-/* SearchField: the search in a pill. The ring is on the pill, which is what the person sees as the control. */
+/* SearchField: the search in a pill. The ring is on the pill (border and halo), which is what the person sees as the control; the input inside draws none. */
 .ui-search-field {
   display: flex;
   align-items: center;
@@ -27,11 +27,6 @@
   box-shadow: 0 0 0 4px var(--focus-halo);
 }
 
-.ui-search-field:has(.ui-search-field__input:focus-visible) {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 0;
-}
-
 .ui-search-field__input {
   flex: 1;
   min-width: 0;
@@ -41,6 +36,11 @@
   background: transparent;
   color: var(--text-primary);
   font: var(--body-md);
+}
+
+/* base.css's input:focus-visible would draw a second ring inside the pill. */
+.ui-search-field .ui-search-field__input:focus-visible {
+  outline: none;
 }
 
 .ui-search-field__input::placeholder {

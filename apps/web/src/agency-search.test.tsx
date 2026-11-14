@@ -12,6 +12,8 @@ import { markTerm, queryableTerm } from './agency-search-model.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 
+vi.mock('./agency.js', () => ({ useAgencyContext: () => ({ agencyId: '11111111-1111-4111-8111-111111111111' }) }));
+
 const AGENCY = '11111111-1111-4111-8111-111111111111';
 const id = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const CLIENT = id(1);
@@ -39,6 +41,7 @@ interface Call { q: string; signal: AbortSignal | undefined }
 interface World {
   calls: Call[];
   folderCalls: number;
+  thumbnailCalls: string[];
   /** What the search answers; a promise holds the answer until the test lets it go. */
   reply: (call: Call) => Response | Promise<Response>;
 }
@@ -59,7 +62,7 @@ afterAll(() => {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  world = { calls: [], folderCalls: 0, reply: () => json(answerOf({})) };
+  world = { calls: [], folderCalls: 0, thumbnailCalls: [], reply: () => json(answerOf({})) };
   probe = { pathname: '', search: '' };
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -78,6 +81,10 @@ const httpClient = (): HttpClient => new HttpClient('http://127.0.0.1:3001', asy
   if (url.pathname === `/agencies/${AGENCY}/clients/${CLIENT}/media-folders/summary`) {
     world.folderCalls += 1;
     return json({ data: [folder(FOLDER_TOP, null), folder(FOLDER_SUB, FOLDER_TOP)], meta: { page: 1, pageSize: 100, totalItems: 2, totalPages: 1 } });
+  }
+  if (url.pathname === `/agencies/${AGENCY}/media/${id(77)}/download-url`) {
+    world.thumbnailCalls.push(url.search);
+    return json({ url: 'https://storage.test/thumb.jpg', expiresAt: '2099-01-01T00:00:00.000Z' });
   }
   throw new Error(`unexpected ${url.pathname}`);
 });
@@ -371,6 +378,24 @@ describe('the keyboard and the destinations', () => {
     key('Enter');
     await wait(10);
     expect(probe.search).toBe(`?pasta=${FOLDER_TOP}`);
+  });
+});
+
+describe('the thumbnail of a file', () => {
+  const THUMBNAIL_ASSET = id(77);
+
+  it('draws the picture the library uses when the file has one, and the icon of its type when it has none', async () => {
+    world.reply = () => json(answerOf({ files: [{ ...file, thumbnailAssetId: THUMBNAIL_ASSET }, { ...file, id: id(4), name: 'padaria-cardapio.pdf', category: 'pdf', thumbnailAssetId: null }] }));
+    renderSearch();
+    open();
+    type('padar');
+    await wait(260);
+    await wait(10);
+    const [photo, pdf] = screen.getAllByRole('option');
+    expect(photo!.querySelector('.agency-search__icon img')).not.toBeNull();
+    expect(pdf!.querySelector('.agency-search__icon img')).toBeNull();
+    expect(pdf!.querySelector('.agency-search__icon svg')).not.toBeNull();
+    expect(world.thumbnailCalls).toEqual(['?variant=thumbnail']);
   });
 });
 
