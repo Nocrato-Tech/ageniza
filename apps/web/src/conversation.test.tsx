@@ -241,7 +241,6 @@ describe('conversation component (#142)', () => {
 
   it.each([
     [409, 'CLIENT_ARCHIVED', 'Cliente arquivado: a conversa está somente leitura.'],
-    [409, 'PERSONA_ARCHIVED', 'Persona arquivada: a conversa está somente leitura.'],
     [403, 'FORBIDDEN', 'Você não tem permissão para conversar aqui.'],
     [404, 'NOT_FOUND', 'Esta conversa não existe mais.']
   ])('names the failure of a write answered %i %s and keeps the text', async (status, code, message) => {

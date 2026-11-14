@@ -49,7 +49,7 @@ export interface ConversationProps {
   readonly planBlockedReason?: string | undefined;
   /** Called after a write the conversation cannot invalidate itself (client summary, roster badge). */
   readonly onWritten: () => void;
-  /** Called when a write is refused because the subject changed under the person (persona archived, section emptied). */
+  /** Called when a write is refused because the subject changed under the person (persona deleted, section emptied). */
   readonly onStale?: () => void;
   /** The heading level of "Conversas", so it nests under whatever heading holds the area. */
   readonly headingLevel?: 3 | 4;
@@ -166,14 +166,11 @@ const bodyProblem = (body: string): string | undefined => {
 };
 
 const isStaleSubject = (error: unknown): boolean =>
-  error instanceof HttpClientError && (error.code === 'PERSONA_ARCHIVED' || error.code === 'SECTION_NOT_FILLED' || error.code === 'CONTENT_NOT_OPEN');
+  error instanceof HttpClientError && (error.code === 'SECTION_NOT_FILLED' || error.code === 'CONTENT_NOT_OPEN');
 
 export const writeError = (error: unknown, side: ConversationSide): string => {
   if (!(error instanceof HttpClientError)) return 'Não foi possível enviar. Tente de novo.';
   if (error.code === 'CLIENT_ARCHIVED') return 'Cliente arquivado: a conversa está somente leitura.';
-  if (error.code === 'PERSONA_ARCHIVED') {
-    return side === 'client' ? 'Esta parte não está mais disponível para conversa.' : 'Persona arquivada: a conversa está somente leitura.';
-  }
   if (error.code === 'SECTION_NOT_FILLED') {
     return side === 'client' ? 'Sua agência está preparando esta parte.' : 'Esta parte ainda não foi preenchida.';
   }
