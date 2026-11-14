@@ -1,0 +1,356 @@
+/* Client roster: specs/clientes.md section 7. A grid of badges in the server's order; each one carries the triage seal,
+   the three content numbers and the next action. Docs/design-system.md sections 10 and 13 (client badge). */
+.clients {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.clients__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.clients__header h1 {
+  margin: 0;
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+}
+
+.list-refreshing {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+/* The triage sentence over the filters: one surface, the quiet one, so the badges below are what stands out. */
+.clients__panel {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.clients__triage {
+  max-width: 70ch;
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.clients__triage strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.clients__filters {
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+@media (min-width: 40.0625rem) {
+  .clients__filters .ui-filter-bar__item:first-child {
+    flex: 1 1 14rem;
+  }
+}
+
+.clients__section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.clients__section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.clients__section-title h2 {
+  margin: 0;
+  font: var(--heading-lg);
+  letter-spacing: -0.01em;
+}
+
+/* The columns follow the room the badge needs (20rem), not the viewport: with the navigation open a 768 px screen has 456 px for the
+   list and gets one column, a 1440 px screen gets three. No breakpoint of its own. */
+.clients__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  gap: var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The badge of the roster: a rounded card with the client's mark beside the name, the situation and the seal under them, then the numbers and the
+   next action. No `overflow: hidden`: the menu opens over it. The reach of a hand (hover) lifts it, as in the board's rows and cards. */
+.clients__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-base) var(--motion-easing-standard),
+    transform var(--motion-base) var(--motion-easing-standard);
+}
+
+/* Hover feedback by border and shadow, never by background: the attention badge uses `text/link`, and the
+   design system forbids that color over `bg/hover` (docs/design-system.md 20.1). */
+.clients__card:hover {
+  border-color: var(--color-indigo-200);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
+}
+
+.clients__card:has(.clients__card-link:focus-visible) {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clients__card {
+    transition: none;
+  }
+
+  .clients__card:hover {
+    transform: none;
+  }
+}
+
+/* The link holds the mark, the name, the tags and the numbers; the menu and the action are buttons beside it, never inside it. */
+.clients__card-link {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  border-radius: var(--radius-xl);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.clients__card-link:focus-visible {
+  outline: none;
+}
+
+.clients__cover {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding-right: var(--space-12);
+}
+
+/* The mark of a client is a rounded square, not a person's circle: initials in white over the indigo-to-violet ink, or the photo. */
+.clients__cover .ui-avatar {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--client-badge-fade-start), var(--client-badge-fade-end));
+  color: var(--color-white);
+}
+
+.clients__cover .ui-avatar__initials {
+  font: var(--title-md);
+  letter-spacing: 0.02em;
+}
+
+.clients__identity {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.clients__card-name {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--heading-lg);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.clients__card-handle {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.clients__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.clients__situation--active {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  font-weight: 600;
+}
+
+/* A label is written in lower case by the API's words and read that way; the first letter is only drawn as a capital. */
+.clients__words {
+  display: inline-block;
+}
+
+.clients__words::first-letter {
+  text-transform: uppercase;
+}
+
+.clients__menu {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 2;
+}
+
+.clients__menu .ui-menu__trigger {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+}
+
+.clients__menu .ui-menu__trigger:hover,
+.clients__menu .ui-menu__trigger:focus-visible {
+  background: var(--bg-tint);
+  color: var(--text-primary);
+}
+
+.clients__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.clients__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clients__badge {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+/* The triage signal of the MVP, the one that has to stand out (specs/clientes.md section 7). */
+.clients__badge--attention {
+  border-color: var(--focus-ring);
+  color: var(--text-link);
+}
+
+/* The three content numbers, on the canvas colour where `text/muted` and `text/danger` are guaranteed. For who cannot read
+   contents it is the same block with the words only: the area exists and never shows a number. */
+.clients__indicators {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+  color: var(--text-muted);
+  font: var(--caption);
+  list-style: none;
+}
+
+p.clients__indicators {
+  display: block;
+}
+
+.clients__indicators li {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.clients__indicators b {
+  color: var(--text-primary);
+  font: var(--body-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.clients__indicator--late,
+.clients__indicator--late b {
+  color: var(--text-danger);
+}
+
+.clients__footer {
+  display: flex;
+  padding: 0 var(--space-5) var(--space-5);
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.clients__figure {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+}
+
+.clients__figure b {
+  color: var(--text-primary);
+  font: var(--heading-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.clients__figure span {
+  color: var(--text-muted);
+  font: var(--caption);
+}
+
+.clients__action {
+  margin-left: auto;
+}
+
+/* Archived roster: dimmed and without seal, badges, numbers or action; the only destination is the read-only detail. */
+.clients__card--archived {
+  opacity: 0.55;
+}
+
+.clients__card-skeleton {
+  height: 16rem;
+  border-radius: var(--radius-xl);
+}
+
+.clients__empty {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.clients__empty:not(.ui-empty-state--mascot) .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+

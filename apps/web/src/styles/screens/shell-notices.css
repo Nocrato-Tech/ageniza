@@ -1,0 +1,105 @@
+/* One quiet strip for what the shell tells the person: no color, no side border, the icon says what it is. */
+.shell-notice,
+.legal-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 72rem;
+  margin: var(--space-4) auto 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+.shell-notice__icon,
+.legal-notice__icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--text-secondary);
+}
+
+.shell-notice__text {
+  margin: 0;
+}
+
+.legal-notice__body {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.legal-notice__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legal-notice__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.legal-notice__text {
+  margin: 0;
+}
+
+/* The accept button of the other document while one acceptance is pending: it answers nothing (aria-disabled keeps
+   its focus), so it looks as dimmed as a disabled one. The pending button shows the loading state instead. */
+.legal-notice__item .ui-button[aria-disabled='true']:not(.ui-button--loading) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.legal-notice__text a {
+  color: var(--text-link);
+}
+
+.legal-notice__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--text-danger);
+}
+
+.legal-notice__error svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Inside `main`, which already carries the page padding. */
+.app-shell > main > .legal-notice {
+  margin: 0 auto var(--space-6);
+}
+
+/* Inside `main` too: the notice of an invitation already accepted. */
+main > .shell-notice {
+  margin: 0 auto var(--space-6);
+}
+
+@media (max-width: 47.99rem) {
+  .legal-notice {
+    margin-inline: var(--space-4);
+  }
+
+  .shell-notice,
+  .legal-notice {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .shell-notice > .ui-button,
+  .legal-notice > .ui-button {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+

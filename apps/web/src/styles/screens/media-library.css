@@ -1,0 +1,277 @@
+/* The library of a client: the sections on one side and, once a file is chosen, its panel on the other. */
+.media-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.media-files {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* A row of the table: the thumbnail of its type and the name beside it. The colour tells the types apart, and the word is in the next column. */
+.media-table__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.media-table__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.media-table__thumb {
+  flex: none;
+  width: 3rem;
+}
+
+.media-table__thumb .media-thumbnail,
+.quick__thumb .media-thumbnail {
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.media-table__type {
+  display: grid;
+}
+
+.media-table__note {
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.media-table__thumb--pdf .media-thumbnail--placeholder {
+  background: var(--block-red-bg);
+  color: var(--block-red-fg);
+}
+
+.media-table__thumb--video .media-thumbnail--placeholder {
+  background: var(--block-violet-bg);
+  color: var(--block-violet-fg);
+}
+
+.media-table__thumb--logo .media-thumbnail--placeholder {
+  background: var(--block-teal-bg);
+  color: var(--block-teal-fg);
+}
+
+.media-table__thumb--audio .media-thumbnail--placeholder {
+  background: var(--block-sky-bg);
+  color: var(--block-sky-fg);
+}
+
+.media-table__thumb--image .media-thumbnail--placeholder {
+  background: var(--bg-tint);
+  color: var(--block-indigo-fg);
+}
+
+/* The media's thumbnail, wherever it is drawn: the shape and the neutral ground; the row and the panel size it. */
+.media-thumbnail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+/* A photo from a phone is stored as it was shot and says how to turn it in its EXIF: the browser turns it, and it is said here so no rule above undoes it. */
+.media-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-orientation: from-image;
+}
+
+.media-thumbnail--placeholder {
+  color: var(--text-secondary);
+}
+
+.media-thumbnail--placeholder svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  stroke-width: 1.75;
+}
+
+/* The panel of the chosen file. */
+.media-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.media-detail:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.media-detail__top {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.media-detail__preview {
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tint);
+}
+
+.media-detail__preview .media-thumbnail {
+  width: min(100%, 12rem);
+  box-shadow: var(--shadow-floating);
+}
+
+.media-detail__preview .media-thumbnail--placeholder svg {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.content-folders .media-detail__name {
+  font: var(--heading-lg);
+  text-align: center;
+}
+
+.media-detail__sub {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  text-align: center;
+}
+
+.media-detail__tabs {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-5);
+}
+
+.media-detail__tabs > .ui-tabs__panel {
+  justify-self: stretch;
+}
+
+.media-detail__body {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.content-folders .media-detail__heading {
+  margin: 0 0 var(--space-2);
+  font: var(--title-md);
+}
+
+.media-detail__muted {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.media-detail__usage {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.media-detail__usage-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.media-detail__usage-main {
+  display: grid;
+  min-width: 0;
+}
+
+.media-detail__usage-title {
+  font: var(--label-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.media-detail__usage-skeleton {
+  height: 3.25rem;
+  border-radius: var(--radius-lg);
+}
+
+.media-detail__info {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font: var(--body-md);
+}
+
+.media-detail__info dt {
+  color: var(--text-secondary);
+}
+
+.media-detail__info dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.media-detail__alt {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.media-detail__alt .ui-field {
+  width: 100%;
+}
+
+.media-detail__actions {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.media-detail__pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--space-2);
+}
+
+/* Side by side only where the list keeps a table's width; below it the panel is the next block, and it takes the focus when it opens. */
+@media (min-width: 80rem) {
+  .media-layout--detail {
+    grid-template-columns: minmax(0, 1fr) var(--detail-w);
+  }
+
+  .media-layout--detail .media-detail {
+    position: sticky;
+    top: var(--space-4);
+  }
+}
+
+@media (max-width: 40rem) {
+  .media-detail {
+    padding: var(--space-4);
+  }
+
+  .media-detail__actions .ui-button,
+  .media-detail__alt .ui-button--sm {
+    min-height: 2.75rem;
+  }
+}

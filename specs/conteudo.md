@@ -72,6 +72,53 @@ Nunca vê subtarefa, responsável, prazo interno nem roteiro em rascunho.
 
 O upload é do **conteúdo pronto**; o material bruto fica fora do sistema.
 
+**Colunas e tipos novos (2026-11-11, pendentes de validação).** `media_assets` ganha `file_name` (o nome dado no envio, só rótulo: a chave do objeto não muda), `width` e `height` (gravadas no processamento de foto e vídeo), `alt_text` (até 500 caracteres, editável por `conteudo.operar`), a categoria **PDF**, **áudio** e **logo** (SVG só como logo, nunca servido como página nem inline) e, para o envio do cliente pelo portal, a ligação ao pedido de material e o lado de quem enviou. "Quem enviou" já existe (`created_by_user_id`). A agência **renomeia** e **move** o arquivo para outra pasta do mesmo cliente (a regra 12 vale para mover). Só foto e vídeo entram num conteúdo. Decisões: [metadados](../docs/business/decisions/2026-11-11-estrutural-a-midia-ganha-nome-dimensoes-texto-alternativo-renomear-e-mover.md), [tipos](../docs/business/decisions/2026-11-11-estrutural-a-midia-aceita-pdf-audio-e-svg-como-logo.md), [onde é usada e "Usar em um conteúdo"](../docs/business/decisions/2026-11-11-estrutural-a-midia-mostra-onde-e-usada-e-pode-abrir-um-conteudo.md) e [envio pelo cliente](../docs/business/decisions/2026-11-11-estrutural-o-cliente-envia-material-pelo-portal.md). **Upload pelo portal:** a pessoa ativa envia imagem e áudio **só a um pedido de material aberto do cliente dela**, para a pasta de sistema "Enviados pelo cliente", e só lê o que ela enviou; conta na cota da agência, e a mensagem de cota ou de somente leitura é neutra (nunca fala de plano).
+
+### Material enviado pelo cliente — `media_assets` (colunas novas) e as funções do envio
+
+Camada de banco da decisão [`2026-11-11-estrutural-o-cliente-envia-material-pelo-portal`](../docs/business/decisions/2026-11-11-estrutural-o-cliente-envia-material-pelo-portal.md) (validada pelo dono em 2026-11-12), migration `20261113000100_portal_material_uploads`. Sem backfill: a mídia que existe fica sem pedido e do lado `agency`.
+
+| campo | tipo | obrigatório | regra |
+|---|---|---|---|
+| `material_request_thread_id` | uuid | não | o pedido de material a que o arquivo responde; chave estrangeira `(pedido, cliente)` para `client_threads (id, client_id)`, então o arquivo e o pedido são do mesmo cliente; nenhum grant de escrita à aplicação: só a função de envio o escreve |
+| `uploaded_by_side` | texto | sim | `agency` (padrão) ou `client`; é `client` se, e só se, há pedido (`media_assets_client_upload_shape`); também sem grant de escrita |
+
+**Tetos finais (a proposta da decisão, confirmada).** **25 MiB** (26 214 400 bytes) por arquivo e **20 arquivos** por pedido, somando os confirmados e as reservas dentro da janela de reserva, de todas as pessoas do cliente; recusado, removido e reserva vencida não contam. A recusa de tamanho vem do banco (413), não do corpo da rota: o contrato aceita até 10 GiB, como o envio da agência. Uma cópia de cada valor no banco (`portal_upload_max_bytes`, `portal_upload_max_files`) e uma em `packages/contracts/src/portal-material-uploads.ts`; o teste de integração do banco lê as do contrato.
+
+**Tipos.** Imagem: PNG, JPEG, WebP e GIF. Áudio: MP3 (`audio/mpeg`), M4A (`audio/mp4`, `audio/x-m4a`), WAV (`audio/wav`, `audio/x-wav`, `audio/wave`), WebM e Ogg. Os parâmetros do tipo (`;codecs=opus`) não contam. Nunca SVG, vídeo nem PDF. A chave do objeto e a extensão são montadas no banco, a partir do tipo e dos ids que ele leu; a pessoa não escolhe nenhuma.
+
+**Pasta de sistema "Enviados pelo cliente".** Uma por cliente, criada pelo primeiro envio (não pelo cliente) como pasta `is_default`. É o mínimo que impede a agência de quebrar a regra, sem policy nova: a agência não a cria à mão (sem grant em `is_default`), não a renomeia (a policy de `UPDATE` exclui `is_default`) e não a apaga (`delete_media_folder` responde A0086, e não há `DELETE`). A agência ainda **move** um arquivo dela para outra pasta, como em qualquer mídia.
+
+**Funções (`security definer`, `search_path` vazio, execução só da aplicação; as três que escrevem recusam outro isolamento que não READ COMMITTED, com 40001).** O ator vem do `bind_actor` da transação, nunca de `auth.uid()`. Os tetos padrão de cota da implantação e a janela de reserva são parâmetros: moram na configuração da API, e um parâmetro ausente ou não positivo dá 22023.
+
+| função | o que faz |
+|---|---|
+| `start_portal_material_upload(cliente, pedido, tipo, tamanho, nome, cota_bytes_padrão, cota_arquivos_padrão, janela)` | confere a pessoa e o pedido **antes de qualquer trava** (vínculo ativo, cliente ativo, agência ativa, pedido de material do mesmo cliente), depois o tipo e o tamanho; trava a cota da agência, o cliente e o pedido (em `FOR SHARE`) e **relê tudo**: vínculo, pedido aberto, agência que aceita escrita, vaga no pedido e na cota (a vaga na cota pergunta se a agência tem folga para **um arquivo do teto**, 25 MiB, e não para o tamanho declarado: ver abaixo). Grava a linha `pending`, com o tamanho declarado, e devolve as chaves |
+| `confirm_portal_material_upload(arquivo, tamanho_real, tipo_real, largura, altura, …)` | o arquivo é da pessoa e está `pending`; mesmas travas e releituras; o veredito sobre os bytes (`empty_object`, `content_type_mismatch`, `too_large`, `invalid_dimensions`, `request_full`, `agency_unavailable`) **grava a recusa** e responde `rejected`, para a reserva não ficar pendurada; senão confirma e carimba o instante. **Nenhum motivo fala de plano, cota nem armazenamento** (item 5 da decisão): a falta de espaço da agência é `agency_unavailable`, o mesmo sentido do A0136 no início (também com a folga medida contra o teto do arquivo, não contra o tamanho real), e é esse o valor gravado, devolvido e declarado no contrato (`PortalMaterialUploadRejectionReason`) |
+| `reject_portal_material_upload(arquivo, motivo)` | a pessoa solta a própria reserva (objeto que não chegou); o motivo é um código curto em minúsculas. Agência que não aceita escrita responde A0090 neutro, como as outras duas, e não com a mensagem do gatilho da tabela |
+| `list_portal_material_uploads(cliente, pedido, limite, posição)` | a **única leitura** do portal (abaixo): uma página dos arquivos que a própria pessoa enviou àquele pedido, do mais antigo ao mais novo, com o id como desempate. Cada linha traz o total (`total_count`) e só as colunas da listagem: `asset_id`, `status`, `category`, `content_type` e `size_bytes` (o tipo e o tamanho lidos dos bytes quando confirmado, os declarados quando pendente), `file_name`, `width`, `height`, `created_at` e `object_key` (a chave **final**, só de arquivo confirmado, para a API assinar a leitura). Nunca a chave do staging, o id do multipart, o texto alternativo nem a pasta. Uma página além do fim (e um pedido sem arquivo) devolve **uma linha com o total e `asset_id` nulo**, para o total não depender de haver página. Limite de 1 a 100 e posição de 0 em diante, senão 22023 |
+
+**A recusa por falta de espaço não depende de nenhum número que a pessoa controla** (limite defensivo, não regra de produto). No início e na confirmação do portal, a pergunta "cabe?" compara a folga da agência (cota menos o uso) com o teto fixo de 25 MiB por arquivo, nunca com o tamanho declarado nem com o real: folga menor que 25 MiB recusa **qualquer** tamanho (A0136 no início, `agency_unavailable` na confirmação), folga de 25 MiB ou mais aceita qualquer tamanho até o teto. Sem isso, a pessoa variaria o tamanho, soltaria a reserva e leria, byte a byte, o espaço que a agência ainda tem e o tamanho do que ela sobe para outros clientes. Pela mesma razão, o uso dessa pergunta **não soma nenhuma reserva pendente do lado do cliente** (de qualquer pessoa do portal, de qualquer cliente da agência), em bytes nem em contagem: a pessoa as cria, dimensiona e solta à vontade, e somá-las revelaria a folga por tentativa. Contam só os arquivos confirmados e as reservas da própria agência. O custo é o portal parar de aceitar quando faltam menos de 25 MiB, em vez de só quando a cota enche, e as reservas do portal não seguram espaço umas contra as outras: na disputa pela última vaga, a segunda pessoa é recusada na confirmação (`agency_unavailable`). A cota não estoura, porque cada confirmação exige folga de um arquivo do teto sob a trava da cota. O caminho da agência continua contando todas as reservas. A reserva e a contabilidade da cota seguem pelo tamanho (declarado na reserva, real na confirmação), e o envio da agência não muda.
+
+Ordem das travas, sempre a mesma: a linha do arquivo (só na confirmação), a trava consultiva `media-quota:<agência>`, o cliente `FOR SHARE` (conflita com o arquivamento) e o pedido `FOR SHARE` (conflita com a resolução). O envio da agência já pega a cota antes do cliente, e nada aqui pega `agency_trial_limits:`, então a ordem das outras funções não muda. A soma de uso do armazenamento tem uma cópia só (`agency_storage_in_use`), que `agency_media_usage` também chama, e o que diz quem é um pedido do portal também (`require_portal_material_request`: vínculo ativo, pedido de material do mesmo cliente, ou A0130), chamado pelo início do envio e pela leitura.
+
+**Leitura.** Por função, não pela tabela (lição do #383: o portal não lê tabela de mídia direto): o portal **não tem `SELECT`** em `media_assets` (nenhuma policy sua), e `list_portal_material_uploads` devolve o arquivo `client` que a própria pessoa enviou a um pedido, `pending` ou `confirmed`, não removido, enquanto ela tiver vínculo ativo com o cliente ativo de uma agência ativa; fora disso, A0130 (a leitura não exige que o pedido esteja aberto nem que a agência aceite escrita). Nunca o arquivo de outra pessoa, de outro cliente, de outra agência nem a mídia da agência, e nunca `upload_object_key`, `multipart_upload_id`, `alt_text` nem a pasta. A pessoa do portal não tem `INSERT`, `UPDATE` nem `DELETE` em `media_assets`. A agência lê os arquivos do cliente pela regra de sempre da biblioteca (`conteudo.visualizar`): quem só tem `cliente.visualizar` (Vendas) vê o comentário do pedido, mas não o arquivo.
+
+| código | HTTP | quando |
+|---|---|---|
+| A0130 | 404 | pedido, arquivo ou vínculo não encontrado: pedido de outro cliente, conversa que não é pedido de material, cliente arquivado, agência suspensa, vínculo removido, arquivo de outra pessoa. **Uma resposta só**, que não revela qual |
+| A0131 | 409 | o pedido está resolvido |
+| A0132 | 413 | o arquivo passa do teto |
+| A0133 | 415 | o tipo não está na lista |
+| A0134 | 409 | o pedido já tem os 20 arquivos |
+| A0135 | 409 | o envio não está mais pendente |
+| A0136 | 409 | a agência não pode receber o arquivo agora (armazenamento, folga menor que um arquivo do teto): **neutra**, a API mostra a mensagem do portal que não fala de plano, cota nem cobrança. Na confirmação a mesma situação é o motivo `agency_unavailable` |
+| A0090 | 409 | agência em somente leitura: o código que já existe (`AGENCY_READ_ONLY`), com a mesma mensagem neutra, nas três funções que escrevem |
+
+Fica na API, não no banco: ler os bytes do objeto e deduzir o tipo e as dimensões, copiar do staging para a chave final, assinar as URLs, auditar (`media.upload_initiated`, `media.upload_confirmed`, `media.upload_rejected`, com a pessoa do portal como autora) e comentar o pedido ("enviou 3 fotos", pela rota `…/uploads/announce`, ao fim do lote).
+
+**Como a API faz (W12-S1).** A leitura dos bytes é a da agência, uma cópia só (`copyAndInspectStagedObject` e `judgeUploadedObject`, em `media/upload-inspection.ts`), com o teto de 25 MiB para toda categoria: copia o staging para a chave final, lê a cópia e só então fala com o banco. Um objeto de staging acima de 25 MiB é recusado antes de ser copiado. O veredito dos bytes sai como recusa gravada (`confirm_portal_material_upload` quando os bytes passam, `reject_portal_material_upload` quando não passam), nunca como exceção: o motivo é um dos seis do contrato (o objeto que não chegou conta como `empty_object`), a reserva é liberada e **os dois objetos, o da chave final e o do staging, são apagados** (o staging fica quando a falha é do banco ou da agência, para o cliente tentar de novo). A rota responde `422 UPLOAD_REJECTED` com `details.reason`. A confirmação de um arquivo roda numa transação só, com uma trava consultiva por arquivo tomada depois de provar que o arquivo é da pessoa, para duas confirmações do mesmo arquivo não copiarem dois objetos para a mesma chave entre o veredito e a gravação. As duas chaves de um arquivo pendente que a lista da pessoa não traz saem das funções de chave da agência (`objectKeyFor`, `uploadObjectKeyFor`), a partir da agência do vínculo e da extensão do tipo declarado; o teste de integração compara com o que o banco gravou. A rota de confirmar da agência só trava e confirma arquivo `uploaded_by_side = 'agency'`: a reserva do cliente responde o mesmo 404 de um arquivo que não existe. Mensagens: A0130 é o 404 único ("Pedido não encontrado."), e A0136 e A0090 respondem a frase neutra do portal ("A aprovação está pausada no momento. A agência já foi avisada."), em `UPLOAD_UNAVAILABLE` e `AGENCY_READ_ONLY`.
+
 ### Conteúdo — `contents`
 
 | campo | tipo | obrigatório | regra |
@@ -134,6 +181,7 @@ Sem mídia, sem aprovação, sem comentário no MVP.
 em produção ─────────▶ aguardando aprovação   # conteudo.operar; exige mídia completa para o formato e todas as subtarefas aprovadas
 aguardando aprovação ▶ aprovado               # pessoa ativa do portal; ou conteudo.aprovar_pela_agencia com motivo
 aguardando aprovação ▶ em ajuste              # pessoa ativa do portal; exige comentário
+aprovado ────────────▶ em ajuste              # pessoa ativa do portal; exige comentário e revisão lida; só até a véspera da data de publicação; a aprovação cai
 em ajuste ───────────▶ aguardando aprovação   # conteudo.operar (reenviar)
 aprovado ────────────▶ publicado              # conteudo.publicar; data real não futura
 publicado ───────────▶ aprovado               # conteudo.publicar; só no mesmo dia
@@ -143,9 +191,12 @@ aprovado ────────────▶ aguardando aprovação   # auto
 aprovado ────────────▶ aguardando aprovação   # pessoa ativa do portal desfaz a aprovação; exige revisão lida, antes de publicar (#850)
 ```
 
-- Na agência, "aprovado" aparece como **pronto para publicar**; no portal, como **Aprovado**.
+- **O cliente pede ajuste no aprovado até a véspera da publicação** (2026-11-13, [`2026-11-13-o-cliente-pede-ajuste-depois-de-aprovar-ate-a-vespera-da-publicacao`](../docs/business/decisions/2026-11-13-o-cliente-pede-ajuste-depois-de-aprovar-ate-a-vespera-da-publicacao.md)): vale enquanto `publish_on` é depois de hoje em São Paulo; no dia da publicação, ou depois, é recusado. O conteúdo aguardando aprovação aceita o pedido em qualquer data. O link de aprovação do e-mail não muda: só decide o conteúdo que aguarda aprovação (um aprovado responde `409`).
+- **Agência e portal dizem "Aprovado"** (2026-11-11, [`2026-11-11-agendado-e-um-estado-derivado-de-aprovado-com-data-e-hora-futuras`](../docs/business/decisions/2026-11-11-agendado-e-um-estado-derivado-de-aprovado-com-data-e-hora-futuras.md), que substitui o "pronto para publicar" da agência).
+- **Agendado** é derivado: aprovado, com hora de publicação (`publish_at_time`) e o instante `publish_on` + hora (São Paulo) ainda no futuro. Sem hora, é só Aprovado. Não há estado novo nem publicação automática; o portal não usa a palavra Agendado.
 - Mudar data, hora, título, responsável ou subtarefas **mantém** a aprovação. Mover de data vale em todos os estados menos publicado e cancelado.
-- **Atrasado** é derivado: data planejada passada sem publicado nem cancelado. **Prazo em dois dias** também é derivado.
+- **Atrasado** é derivado: data planejada passada sem publicado nem cancelado. **Prazo em dois dias** também é derivado. O bloco "Atrasados" do Início conta pela **data de publicação**, e o prazo de aprovação vencido é "venceu há N dias", outra coisa ([`2026-11-11-atrasado-conta-pela-data-de-publicacao-e-parado-no-cliente-segue-a-ordem-de-envio`](../docs/business/decisions/2026-11-11-atrasado-conta-pela-data-de-publicacao-e-parado-no-cliente-segue-a-ordem-de-envio.md)).
+- **Rodada de aprovação** (2026-11-10 e 2026-11-11): cada envio abre uma rodada com **prazo com hora** (de agora até 90 dias, padrão proposto pela tela de 48 horas, opcional na API: [`2026-11-11-estrutural-o-prazo-de-aprovacao-tem-hora-e-padrao-de-48-horas`](../docs/business/decisions/2026-11-11-estrutural-o-prazo-de-aprovacao-tem-hora-e-padrao-de-48-horas.md)) e recado de até 500 caracteres. O portal vê o **nome, a foto e a data de envio de quem enviou**, nunca o lote, e o cliente pode **aprovar com um recado**, que vira comentário do cliente na conversa do conteúdo ([`2026-11-11-estrutural-a-rodada-de-aprovacao-mostra-ao-cliente-quem-enviou-e-aceita-recado-ao-aprovar`](../docs/business/decisions/2026-11-11-estrutural-a-rodada-de-aprovacao-mostra-ao-cliente-quem-enviou-e-aceita-recado-ao-aprovar.md)).
 
 ### Subtarefa
 
@@ -208,6 +259,10 @@ Todas sob `requireAgencyAccess`; o cliente de `:clientId` precisa pertencer a `:
 | `POST` | `/agencies/:agencyId/clients/:clientId/media-folders` | `conteudo.operar` | `201` com a pasta |
 | `GET` | `…/media-folders/:folderId/assets` | `conteudo.visualizar` | mídias da pasta, paginado |
 | `POST` | `…/media-folders/:folderId/assets/:assetId/remove` | `conteudo.operar` | `409` se usada, como arquivo ou capa, em conteúdo aguardando aprovação, aprovado ou publicado (regra 12) |
+| `PATCH` | `…/media/:assetId` | `conteudo.operar` | renomeia (`name`) e edita o texto alternativo (`altText`); *proposta* |
+| `POST` | `…/media/:assetId/move` | `conteudo.operar` | move para outra pasta do mesmo cliente (`folderId`); `409` se em uso (regra 12); *proposta* |
+| `GET` | `…/media/:assetId/usage` | `conteudo.visualizar` | os conteúdos que usam o arquivo (título e estado); *proposta* |
+| `GET` | `…/clients/:clientId/media?q=` | `conteudo.visualizar` | os arquivos do cliente por ordem de envio, com filtro pelo nome; *proposta* |
 | `POST` | `/agencies/:agencyId/clients/:clientId/story-scripts` | `conteudo.operar` | `201` com o roteiro em rascunho |
 | `GET` | `/agencies/:agencyId/clients/:clientId/story-scripts/:scriptId` | `conteudo.visualizar` | o roteiro, em qualquer estado, com as cenas |
 | `PATCH` | `…/story-scripts/:scriptId` | `conteudo.operar` | o roteiro |
@@ -224,7 +279,12 @@ Todas sob `requireSession` e `requireClientAccess`.
 | `GET` | `/clients/:clientId/contents` | conteúdos de um período, no recorte do portal |
 | `GET` | `/clients/:clientId/contents/awaiting-approval` | o que precisa de você |
 | `GET` | `/clients/:clientId/contents/:contentId` | o post com legenda e mídias a partir de "aguardando aprovação" |
-| `POST` | `/clients/:clientId/contents/:contentId/approve` | aprovado |
+| `POST` | `/clients/:clientId/contents/:contentId/approve` | aprovado; corpo com `revision` e, opcional, `note` (até 500 caracteres), que vira comentário do cliente na conversa do conteúdo na mesma transação; em conteúdo já aprovado, o recado de outra pessoa ou diferente é `409 CONTENT_ALREADY_APPROVED`, mas **reenviar a mesma requisição** (mesma pessoa, mesma `revision`, recado idêntico ao da aprovação, sem contar os espaços das pontas) responde como a aprovação, sem gravar nada de novo ([`2026-11-12-reenviar-o-mesmo-recado-ao-aprovar-conta-como-sucesso`](../docs/business/decisions/2026-11-12-reenviar-o-mesmo-recado-ao-aprovar-conta-como-sucesso.md)) |
+| `GET` | `/clients/:clientId/home-progress` | o progresso do mês (aprovados, total e o próximo a ir ao ar) para a "Boa notícia" do Início; *proposta* |
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads` | inicia o envio de uma imagem ou áudio a um pedido aberto, pelo mesmo fluxo de upload direto (iniciar, confirmar), sempre em uma parte só; corpo e resposta em `CreatePortalMaterialUpload*` (`packages/contracts`); recusas na tabela de códigos da seção 3; *proposta* |
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads/:assetId/complete` | confirma o envio depois do `PUT`; sem corpo; devolve o arquivo confirmado, ou a recusa que o banco gravou (`PortalMaterialUploadRejectionReason`: nenhum valor fala de plano, cota nem armazenamento; a falta de espaço da agência chega como `agency_unavailable`); *proposta* |
+| `GET` | `/clients/:clientId/material-requests/:threadId/uploads` | os arquivos que a própria pessoa enviou a este pedido (`pending` e `confirmed`), paginado, por `list_portal_material_uploads` (seção 3); a rota monta a URL assinada de leitura (`url`, nula no pendente) com `object_key` dos confirmados e não devolve a chave; *proposta* |
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads/announce` | o fim do lote: corpo `{ assetIds }` (de 1 a 20, sem repetir; `AnnouncePortalMaterialUploads*` em `packages/contracts`); cada id tem de ser arquivo **confirmado** da própria pessoa naquele pedido, conferido por `list_portal_material_uploads`, e qualquer outro é o mesmo 404; grava **um** comentário do cliente no pedido, com o texto montado pelo servidor ("enviou 3 fotos", "enviou 1 áudio", "enviou 2 fotos e 1 áudio"), pelo caminho de comentário do portal, que gera a notificação de resposta; `201` com o comentário; pedido resolvido é 409; *proposta* |
 | `POST` | `/clients/:clientId/contents/:contentId/request-changes` | em ajuste; comentário obrigatório |
 | `GET` | `/clients/:clientId/story-scripts` | roteiros enviados de um período |
 | `POST` | `/clients/:clientId/story-scripts/:scriptId/recorded` | gravado |
@@ -235,12 +295,12 @@ Calendário e a aba Feed em tela cheia consultam por intervalo (`from`, `to`), c
 
 ### Persistência
 
-Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `story_scripts`, `story_script_scenes` e a fila de notificação. Colunas novas: `media_assets.client_id`, `media_assets.folder_id`, `media_assets.removed_at`, `media_assets.purged_at`, `client_threads.content_id`. Permissões novas no catálogo, com os presets da seção 2. Pastas padrão criadas para todos os clientes existentes (backfill) e no cadastro de cada cliente novo.
+Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `story_scripts`, `story_script_scenes` e a fila de notificação. Colunas novas: `media_assets.client_id`, `media_assets.folder_id`, `media_assets.removed_at`, `media_assets.purged_at`, `client_threads.content_id`, e, no envio do cliente pelo portal, `media_assets.material_request_thread_id` e `media_assets.uploaded_by_side` (mais a chave única `(id, client_id)` de `client_threads`, para a chave estrangeira composta). Permissões novas no catálogo, com os presets da seção 2. Pastas padrão criadas para todos os clientes existentes (backfill) e no cadastro de cada cliente novo.
 
 ### RLS
 
 - **Agência:** isolamento por `client_id` → agência, com `app_private.has_agency_permission(agência, 'conteudo.<ação>')`.
-- **Portal:** `is_client_member(client_id)` para conteúdo a partir de "aguardando aprovação" (em produção, só as colunas de planejamento, por função de leitura), roteiro enviado e mídia **lida através do conteúdo** visível.
+- **Portal:** `is_client_member(client_id)` para conteúdo a partir de "aguardando aprovação" (em produção, só as colunas de planejamento, por função de leitura), roteiro enviado e mídia **lida através do conteúdo** visível; o arquivo que a própria pessoa enviou a um pedido de material é lido só pela função `list_portal_material_uploads` (o portal não tem `SELECT` em `media_assets`) e escrito só pelas funções do envio (seção 3), sem `INSERT`, `UPDATE` nem `DELETE` do portal.
 - **Nenhuma** tabela de trabalho interno (`content_tasks`) tem policy que um vínculo de cliente satisfaça.
 - Grants por coluna; estado, aprovação e gravação só por função; transições e anulação da aprovação por trigger `BEFORE UPDATE` com `OLD`/`NEW`.
 
@@ -251,13 +311,14 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 | tela | rota | o que mostra | quem acessa |
 |---|---|---|---|
 | Calendário Editorial | `/agencia/:agenciaId/conteudos` | seletor de clientes em stories | `conteudo.visualizar` |
-| Calendário Editorial do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | seletor Mês, Semana e Feed (`?visao=`); no Mês e na Semana, o calendário e, ao lado, o celular com o feed 3×3 | `conteudo.visualizar` |
+| Calendário Editorial do cliente | `/agencia/:agenciaId/conteudos/:clienteId` | seletor Mês, Semana e Feed (`?visao=`); no Mês e na Semana, o calendário na largura toda, com a semana começando no **domingo**, **capa no card** e os chips de filtro (Todos, Em produção, Aguardando, Aprovado, Agendado, Atrasado, Publicado). **Sem o celular ao lado**: o feed é a vista Feed ([`2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco`](../docs/business/decisions/2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco.md)) | `conteudo.visualizar` |
 | Modal do conteúdo | `/agencia/:agenciaId/conteudos/:clienteId/:conteudoId` | abas Geral e Atribuição | `conteudo.visualizar` |
-| Aba Conteúdos do cliente (extinta) | `/agencia/:agenciaId/clientes/:clienteId/conteudos[/novo\|/:conteudoId]` | não há mais aba: o endereço redireciona (com `replace`, mantendo a query e o estado de navegação) para o equivalente em `/conteudos/:clienteId`; o perfil do cliente tem o botão "Abrir no Calendário Editorial" (decisão `2026-11-04-o-perfil-do-cliente-nao-tem-copia-do-calendario`) | `conteudo.visualizar` (sem ela, "não encontrado") |
+| Aba Conteúdos do cliente | `/agencia/:agenciaId/clientes/:clienteId/conteudos` | **a aba volta** (2026-11-11, [`2026-11-11-o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta`](../docs/business/decisions/2026-11-11-o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta.md), que substitui o item 1 de `2026-11-04-o-perfil-do-cliente-nao-tem-copia-do-calendario`): não é um calendário, é a lista dos conteúdos do cliente **por quem precisa agir** (Esperando o cliente, Atrasado, Em produção, Aprovado e agendado), por data ou por formato, com capa, formato, data, quem cuida e estado; "Nova publicação" e "Abrir no Calendário Editorial" levam ao calendário, que segue com um endereço só. `…/conteudos/novo` e `…/conteudos/:conteudoId` continuam redirecionando (com `replace`) para `/conteudos/:clienteId` | `conteudo.visualizar` (sem ela, "não encontrado") |
 | Aba Mídias do cliente | `/agencia/:agenciaId/clientes/:clienteId/midias` | as pastas e as mídias do cliente, com o envio; o endereço antigo `…/conteudos/:clienteId?vista=pastas` leva para cá | `conteudo.visualizar` (escrever: `conteudo.operar`) |
 | Portal — Conteúdos | `/portal/:clienteId/conteudos` | o que precisa de você, calendário, feed | pessoa do portal |
-| Portal — post | `/portal/:clienteId/conteudos/:conteudoId` | post em tela cheia, Aprovar, Pedir ajuste, conversa | pessoa do portal |
-| Portal — Início | `/portal/:clienteId` | "N posts esperando sua aprovação", o roteiro de hoje e "Nesta semana" | pessoa do portal |
+| Portal — post | `/portal/:clienteId/conteudos/:conteudoId` | post em tela cheia com a trilha "Início > título", "Sua resposta" (prazo com hora, "Falta N dias"), o recado da agência com **quem enviou**, "Seu recado para a agência", "Aprovar o post", "Pedir ajuste" e a **conversa recolhida** abaixo | pessoa do portal |
+| Portal — Início | `/portal/:clienteId` | data e "Olá, <nome>", até **três capas** dos posts que esperam, "Revisar os N posts" (abre o que vence primeiro e encadeia o próximo), "A agência pediu"; sem pendência, a "Boa notícia" com o progresso do mês. **Sem "Nesta semana"**; o bloco compacto **"Roteiro de hoje" com "Já gravei" continua abaixo do quadro**, quando há roteiro enviado ou gravado do dia ([`2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post`](../docs/business/decisions/2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post.md)) | pessoa do portal |
+| Portal — Pedidos da agência | `/portal/:clienteId/pedidos` | os pedidos de material abertos, com título, prazo, "Responder", "Enviar fotos" e "Gravar depoimento" | pessoa do portal |
 | Link de aprovação | `/aprovar#<token>` (fora da casca; o fragmento é apagado ao abrir) | o lote do e-mail: o celular de cada post, Aprovar, Pedir ajuste (comentário obrigatório) e "Criar conta para ver o portal" com o e-mail preenchido | quem tem o link (7 dias), sem conta |
 
 ### Esboço — agência
@@ -268,28 +329,29 @@ Tabelas novas: `media_folders`, `contents`, `content_media`, `content_tasks`, `s
 ┌───────────────────────────────────────────────────────────────────┐
 │ ( ◉ )  ( ◉ )  ( ○ )  ( ○ )  ( ○ )   ← clientes em stories         │
 │ Padaria Ótica  Café   Moda   Pet       anel = algo pedindo ação   │
-├──────────────────────────────────────┬────────────────────────────┤
-│ ‹ Outubro 2026 ›  [Mês|Semana|Feed]  │  @padariacentral           │
-│ [+ Criar conteúdo]                   │ ┌──┬──┬──┐                 │
-│                                      │ │  │  │  │  feed 3×3       │
-│ seg  ter  qua  qui  sex  sáb  dom    │ ├──┼──┼──┤  mais recente   │
-│      ┌─────┐       ┌─────┐           │ │  │  │  │  primeiro;      │
-│      │título│      │título│  +       │ ├──┼──┼──┤  futuros com    │
-│      │reels │       │reels │         │ │  │  │  │  marca de       │
-│      │18:30 │       │⚠ 2/4 │         │ └──┴──┴──┘  planejado      │
-│      └─────┘       └─────┘           │                            │
-│                             stories ●│                            │
-└──────────────────────────────────────┴────────────────────────────┘
+├───────────────────────────────────────────────────────────────────┤
+│ ‹ Outubro 2026 ›  [Mês|Semana|Feed]            [+ Novo conteúdo]  │
+│ [Todos 16] [Em produção 5] [Aguardando 2] [Aprovado 4] [Agendado 2]│
+│ [Atrasado 1] [Publicado 2]                                         │
+│                                                                   │
+│ dom  seg  ter  qua  qui  sex  sáb      (semana começa no domingo) │
+│      ┌─────┐       ┌─────┐                                        │
+│      │ capa │      │ capa │  +                                    │
+│      │título│      │título│                                       │
+│      │reels │       │⚠ 2/4 │                                      │
+│      └─────┘       └─────┘                         stories ●      │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 | elemento | função |
 |---|---|
 | Clientes em stories | foto ou ícone e nome; ordem da carteira; anel destacado quando há em ajuste, atraso ou prazo em dois dias; só ativos |
 | Calendário | seletor **Mês, Semana e Feed** (`?visao=semana` e `?visao=feed`; o mês é o padrão); criar pelo botão ou pelo **+** do dia (Conteúdo ou Roteiro de stories); arrastar o card para outra data |
-| Card | compacto e **sem capa**: título, formato, data e hora, status, alerta de prazo ou atraso, percentual das subtarefas; um toque em qualquer ponto abre o conteúdo e o dia cheio mostra **+N** (decisão `2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga`) |
+| Card | **com capa** (a miniatura; sem capa, o ícone do formato), ícone do formato, título e a etiqueta de estado; o alerta de prazo ou atraso e o percentual das subtarefas ficam no cartão do passar do mouse; um toque em qualquer ponto abre o conteúdo e o dia cheio mostra **+N**. Substitui o "sem capa" do item 3 de `2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga` ([`2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco`](../docs/business/decisions/2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco.md)); a legenda sob o calendário diz "O formato tinge o card; o estado fica na etiqueta" |
+| Chips de filtro | Todos, Em produção (que inclui Em ajuste), Aguardando, Aprovado, Agendado, Atrasado e Publicado, com a contagem; Atrasado atravessa os outros |
 | Detalhe ao passar o mouse | começo da legenda, responsável, resumo das subtarefas, última mensagem da conversa |
-| Feed | o celular ao lado do calendário, desenhado como um aparelho, com a grade de **3 colunas** dos conteúdos de feed não cancelados do **cliente inteiro, sem relação com o mês ou a semana abertos no calendário** (decisão `2026-11-04-o-celular-do-calendario-mostra-o-feed-inteiro-do-cliente`): abre no post mais recente, como um perfil real, e rola de verdade (roda, toque e teclado) dentro da tela do aparelho, que tem altura fixa; os próximos nove carregam ao chegar perto do fim, e a última linha pode ficar incompleta, sem quadro vazio. As setas **para cima e para baixo** movem uma tela (nove posts, três linhas) com rolagem suave (sem animação com `prefers-reduced-motion`) e só ficam travadas no começo ou no fim reais do feed. Os contadores do perfil (posts, prontos, aguardando) contam o feed inteiro e vêm da API. Vídeo longo e VSL só no calendário. Criar, editar, mover de data e cancelar atualizam o feed. O celular só aparece a partir de 48 rem de largura; abaixo disso fica escondido e o caminho é a vista **Feed** do seletor, que mostra o período em tela cheia, trinta por página (decisão `2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga`, que traz a vista Feed de volta e substitui nesse ponto a de 2026-10-16) |
-| Mídias | a biblioteca do cliente fica na aba Mídias do detalhe do cliente (`specs/clientes.md`, seção 7); subir mídia antes de existir o post (ensaio fotográfico) |
+| Feed | **O celular ao lado do calendário saiu** (2026-11-11, `2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco`, que substitui o item 4 de `2026-11-04-calendario-editorial-…` e `2026-11-04-o-celular-do-calendario-mostra-o-feed-inteiro-do-cliente` nesse ponto): o feed é a vista **Feed** do seletor, e o aparelho com os nove quadros é o desenho dessa vista no celular do cliente (moldura com @, avatar, "N no período / N prontos / N aguardando" e a legenda "Como ler o feed"). O texto abaixo descreve o aparelho e a rota de leitura do feed, que continuam. Antes, o celular ao lado do calendário, desenhado como um aparelho, com a grade de **3 colunas** dos conteúdos de feed não cancelados do **cliente inteiro, sem relação com o mês ou a semana abertos no calendário** (decisão `2026-11-04-o-celular-do-calendario-mostra-o-feed-inteiro-do-cliente`): abre no post mais recente, como um perfil real, e rola de verdade (roda, toque e teclado) dentro da tela do aparelho, que tem altura fixa; os próximos nove carregam ao chegar perto do fim, e a última linha pode ficar incompleta, sem quadro vazio. As setas **para cima e para baixo** movem uma tela (nove posts, três linhas) com rolagem suave (sem animação com `prefers-reduced-motion`) e só ficam travadas no começo ou no fim reais do feed. Os contadores do perfil (posts, prontos, aguardando) contam o feed inteiro e vêm da API. Vídeo longo e VSL só no calendário. Criar, editar, mover de data e cancelar atualizam o feed. O celular só aparece a partir de 48 rem de largura; abaixo disso fica escondido e o caminho é a vista **Feed** do seletor, que mostra o período em tela cheia, trinta por página (decisão `2026-11-04-calendario-editorial-tem-mes-semana-e-feed-card-sem-capa-e-celular-so-na-tela-larga`, que traz a vista Feed de volta e substitui nesse ponto a de 2026-10-16) |
+| Mídias | a biblioteca do cliente fica na aba Mídias do detalhe do cliente (`specs/clientes.md`, seção 7); subir mídia antes de existir o post (ensaio fotográfico). Em 2026-11-11 a mídia ganhou nome, dimensões e texto alternativo, renomear e mover, PDF, áudio e SVG (logo), "onde é usada" e "Usar em um conteúdo", e o cliente passou a enviar material pelo portal (seção 3) |
 
 ### Esboço — modal do conteúdo
 
@@ -330,13 +392,15 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 │ 15 sex  Carrossel · Em ajuste
 │ 18 seg  Post · Em produção│
 ├───────────────────────────┤
-│ Início  Conteúdos  Marca  Relatórios
+│ Início  Conteúdos  Marca  Pedidos(2)
 └───────────────────────────┘
 ```
 
 - Card: capa, título, a etiqueta do formato e a etiqueta da situação (aprovado, aguardando aprovação, em ajuste, em produção, publicado), tingido pelo formato como o do calendário da agência; o dia é o rótulo do grupo. Sem capa, o ícone do formato. Filtro por status.
 - Post em tela cheia: legenda inteira, mídias navegáveis, **Pedir ajuste** (pede comentário), **Aprovar** e a conversa. Os dois botões ficam numa barra fixa no pé da tela, que no celular toma o lugar da barra inferior de quatro itens; o caminho de volta é o link "Conteúdos" no topo (decisão `2026-10-15-post-do-portal-troca-as-abas-pela-barra-de-decisao`). Em produção, só título, data e formato.
-- Início: "N posts esperando sua aprovação", o roteiro de stories de hoje, com **Já gravei**, e "Nesta semana" (os conteúdos de segunda a domingo, sem os que esperam aprovação).
+- Início (2026-11-11): até **três** capas dos posts que esperam, "Revisar os N posts" e "A agência pediu"; sem pendência, a "Boa notícia" ("Seu feed de novembro já está 70% aprovado", N de M, o próximo post a ir ao ar). **Sai** "Nesta semana". **O roteiro de stories de hoje, com o "Já gravei", fica** num bloco compacto abaixo do quadro, só quando há roteiro do dia. A semana do portal também começa no domingo. A navegação passa a ser Início, Conteúdos, Marca e **Pedidos da agência** (com o selo de pedidos abertos); **Relatórios sai**. A busca do portal é o filtro "Buscar um post" ([`busca.md`](busca.md)).
+- A **conversa continua no post**, recolhida abaixo; ali o cliente lê as respostas da agência e o recado que deu ao aprovar. A barra de ação fixa no pé (Aprovar o post como a principal, Pedir ajuste) vale também no celular.
+- **Roteiro de stories no portal:** o "Roteiro de hoje" continua no Início, abaixo do quadro (decidido em 2026-11-11: tirar o "Já gravei" seria perda de função), com as regras de [`2026-10-11-portal-inicio-aprovacoes-e-roteiro-de-hoje`](../docs/business/decisions/2026-10-11-portal-inicio-aprovacoes-e-roteiro-de-hoje.md): cenas em ordem, rascunho nunca aparece, "Já gravei" nos enviados e "Gravado por {nome} em dd/mm" nos gravados.
 
 ### Variação por papel
 
@@ -346,7 +410,7 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 | Gestor de conta | tudo |
 | Produção | opera e publica; sem Aprovar pela agência, sem Cancelar |
 | Vendas, Financeiro | o item Calendário Editorial, a aba Mídias e o botão "Abrir no Calendário Editorial" do perfil não existem; carteira sem indicadores de conteúdo |
-| Pessoa do portal | aprova, pede ajuste, comenta a partir de aguardando aprovação, marca roteiro como gravado |
+| Pessoa do portal | aprova (com recado opcional), pede ajuste, comenta a partir de aguardando aprovação; envia material ao pedido aberto da agência. marca o roteiro de hoje como gravado, no Início |
 
 ### Estados da tela
 
@@ -392,7 +456,8 @@ Modal próprio: data, cenas ordenadas (texto e orientação), adicionar e reorde
 | Outras plataformas | a primeira agência precisar planejar outra rede | Pedro Vidal |
 | Publicação automática e métricas | a decisão de publicar pela plataforma (integração com a Meta) | Pedro Vidal |
 | Versões do post, banco de legendas, aprovação em várias etapas | o primeiro cliente ou agência pedir | Pedro Vidal |
-| Preferências de notificação e notificação dentro do produto | o segundo tipo de notificação entrar na fila | Pedro Vidal |
+| Preferências de notificação por tipo, e e-mail ou push | a primeira pessoa pedir para silenciar um tipo, ou para ser avisada fora do app (a notificação **dentro do app** passou a existir em 2026-11-11: [`notificacoes.md`](notificacoes.md)) | Pedro Vidal |
+| Atrasados e "Aprovados no mês" com histórico (hoje é a contagem de agora) | o primeiro pedido de ver o mês fechado | Pedro Vidal |
 | Fuso por agência (#153) | a primeira agência fora de `America/Sao_Paulo` | Pedro Vidal |
 
 ## 11. Decisões registradas
@@ -409,6 +474,8 @@ Em [decisions.md](../docs/business/decisions.md), todas de 2026-10-01:
 - Conteúdo: impacto estrutural
 
 Herdadas: publicar e medir decidem juntos (2026-09-26); conteúdo além do encerramento é cancelado (2026-09-26); tarefa e prazo interno nunca são dados do portal (2026-09-26); a conversa com o cliente é uma tabela de threads por cliente (2026-09-26); arquivar cliente é função de escopo único (2026-09-26); cliente na mídia fica para Conteúdo (2026-09-26).
+
+Registradas em 2026-11-11 (todas **pendentes de validação do dono**; o quadro do redesenho): [Agendado derivado e "Aprovado"](../docs/business/decisions/2026-11-11-agendado-e-um-estado-derivado-de-aprovado-com-data-e-hora-futuras.md), [prazo com hora](../docs/business/decisions/2026-11-11-estrutural-o-prazo-de-aprovacao-tem-hora-e-padrao-de-48-horas.md), [atrasado e ordem de "Parado no cliente"](../docs/business/decisions/2026-11-11-atrasado-conta-pela-data-de-publicacao-e-parado-no-cliente-segue-a-ordem-de-envio.md), [remetente e recado ao aprovar](../docs/business/decisions/2026-11-11-estrutural-a-rodada-de-aprovacao-mostra-ao-cliente-quem-enviou-e-aceita-recado-ao-aprovar.md), [notificações](../docs/business/decisions/2026-11-11-estrutural-notificacoes-so-dentro-do-app-com-cinco-eventos.md), [busca](../docs/business/decisions/2026-11-11-busca-na-agencia-e-no-portal.md), [abas do cliente](../docs/business/decisions/2026-11-11-o-perfil-do-cliente-tem-cinco-abas-e-a-aba-conteudos-volta.md), [visual](../docs/business/decisions/2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco.md), as quatro de mídia (metadados, tipos, uso, envio pelo cliente), [Início do portal](../docs/business/decisions/2026-11-11-o-inicio-do-portal-segue-o-quadro-e-a-conversa-continua-no-post.md) e [Início da agência](../docs/business/decisions/2026-11-11-o-inicio-da-agencia-mostra-aprovados-no-mes-agendados-e-passos-com-data-e-nome.md).
 
 Registrada depois, em 2026-10-11: [SPEC de Conteúdo aprovada, com o recorte de implementação](../docs/business/decisions/2026-10-11-spec-de-conteudo-aprovada-com-o-recorte.md). Ela registra a aprovação desta SPEC e está pendente de validação do dono.
 

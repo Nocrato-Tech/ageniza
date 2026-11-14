@@ -32,8 +32,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthInstance } from '../auth/better-auth.js';
 import type { EmailService } from '../auth/email-service.js';
 import { createRequireSession } from '../auth/session-guard.js';
+import { tenantHolds } from '../tenancy/guards.js';
 import { registerAccessRoutes } from './access-routes.js';
-import { registerConversationRoutes } from './conversation-routes.js';
+import { registerConversationRoutes, type PortalUploadsPort } from './conversation-routes.js';
 import { registerLifecycleRoutes } from './lifecycle-routes.js';
 import { registerPortalReadRoutes } from './portal-routes.js';
 import { buildClientAvatarKeyPrefix, isClientAvatarKey } from '../identity-storage/policy.js';
@@ -43,7 +44,7 @@ import {
   type IdentityStorageClient,
   type UploadedIdentityImage
 } from '../identity-storage/storage-client.js';
-import { createClientPhotoUrlSigner } from './photo-url.js';
+import { createClientPhotoUrlSigner, createPhotoUrlSigner } from './photo-url.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
 import { routeBody, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
 import { CLIENT_PHOTO_RATE_LIMIT, clientPhotoBodyLimitBytes } from './policy.js';
@@ -53,6 +54,7 @@ import {
   clientFromRow,
   createClient,
   createPersona,
+  deletePersona,
   isActiveClientNameConflict,
   isClientNoLongerActive,
   isRowLevelSecurityViolation,
@@ -61,12 +63,13 @@ import {
   loadBrandSections,
   loadClient,
   loadClientSummary,
+  loadClientTabCounts,
+  loadClientWorkers,
   loadPersona,
   loadPersonas,
   lockActiveClientPhoto,
   personaFromRow,
   setClientPhotoKey,
-  setPersonaStatus,
   updateClient,
   updatePersona,
   upsertBrandSection,
@@ -91,6 +94,8 @@ export interface ClientModuleDependencies {
   readonly requirePermission: (key: string) => ClientPreHandler;
   /** Injected by the tenancy module; the portal conversation routes are authorized by the client link alone. */
   readonly requireClientAccess: ClientPreHandler;
+  /** Injected at the composition by the media module's owner; absent, the route that announces a batch of files is not registered. */
+  readonly portalUploads?: PortalUploadsPort;
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -126,7 +131,7 @@ const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth'
 };
 
 // The agency guard already rejected a missing tenant; this keeps the handler total and indistinct.
-const requireTenant = (request: FastifyRequest): { readonly agencyId: string } => {
+const requireTenant = (request: FastifyRequest): NonNullable<FastifyRequest['tenant']> => {
   const tenant = request.tenant;
   if (tenant === undefined) throw clientNotFound();
   return tenant;
@@ -186,6 +191,10 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
   const signPhotoUrl = createClientPhotoUrlSigner(dependencies, {
     code: 'CLIENT_PHOTO_URL_FAILED',
     message: 'Could not sign the client photo URL; returning null'
+  });
+  const signWorkerPhoto = createPhotoUrlSigner(dependencies, {
+    code: 'CLIENT_WORKER_PHOTO_URL_FAILED',
+    message: 'Could not sign the photo URL of a person who works on the client; returning null'
   });
 
   const authenticated = (docs: DocumentedRouteConfig & { permission: string }) => ({
@@ -287,7 +296,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     let row;
     try {
       row = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
-        createClient(transaction, { agencyId: tenant.agencyId, name: body.name }));
+        createClient(transaction, { agencyId: tenant.agencyId, name: body.name, city: body.city }));
     } catch (error) {
       if (isActiveClientNameConflict(error)) throw clientNameInUse();
       throw error;
@@ -300,19 +309,34 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     const tenant = requireTenant(request);
     const clientId = clientIdFromRoute(request);
 
+    // Conteúdo's counts and the people who work on the client are its rows: omitted, never zeroed, without `conteudo.visualizar`.
+    const readsContent = tenantHolds(tenant, 'conteudo.visualizar');
     const result = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, async (transaction) => {
       const row = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
       if (row === undefined) return undefined;
       const summary = await loadClientSummary(transaction, clientId);
-      return { row, summary };
+      if (!readsContent) return { row, summary, content: undefined };
+      const counts = await loadClientTabCounts(transaction, { clientId, asOf: new Date() });
+      const workers = await loadClientWorkers(transaction, { agencyId: tenant.agencyId, clientId });
+      return { row, summary, content: { counts, workers } };
     });
     if (result === undefined) throw clientNotFound();
 
     const photoUrl = await signPhotoUrl(request, { agencyId: result.row.agency_id, clientId: result.row.id }, result.row.photo_key);
-    return reply.send(routeResponse(detailDocs, request, {
-      ...clientFromRow(result.row, photoUrl),
-      summary: result.summary
-    }));
+    const content = result.content;
+    const summary = content === undefined
+      ? result.summary
+      : {
+          ...result.summary,
+          ...content.counts,
+          workers: await Promise.all(content.workers.shown.map(async (worker) => ({
+            membershipId: worker.membership_id,
+            name: worker.name,
+            photoUrl: await signWorkerPhoto(request, worker.photo_key)
+          }))),
+          workersMore: content.workers.more
+        };
+    return reply.send(routeResponse(detailDocs, request, { ...clientFromRow(result.row, photoUrl), summary }));
   });
 
   app.patch('/agencies/:agencyId/clients/:clientId', authenticated(updateDocs), async (request, reply) => {
@@ -367,10 +391,10 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     responseStatus: 200,
     schemas: { params: AgencyClientPersonaPathParamsSchema, body: UpdatePersonaRequestSchema, response: PersonaSchema }
   } satisfies DocumentedRouteConfig;
-  const personaStatusDocs = {
+  const deletePersonaDocs = {
     permission: 'cliente.operar',
-    responseStatus: 200,
-    schemas: { params: AgencyClientPersonaPathParamsSchema, response: PersonaSchema }
+    responseStatus: 204,
+    schemas: { params: AgencyClientPersonaPathParamsSchema }
   } satisfies DocumentedRouteConfig;
 
   app.get('/agencies/:agencyId/clients/:clientId/brand-study', authenticated(brandStudyDocs), async (request, reply) => {
@@ -476,7 +500,9 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     return reply.send(routeResponse(updatePersonaDocs, request, outcome.persona));
   });
 
-  const personaStatusHandler = (status: 'active' | 'archived') => async (request: FastifyRequest, reply: FastifyReply) => {
+  // The persona goes with its conversations and their comments (the foreign keys of 20261113000400); the audit event is written by the
+  // database in the same transaction. A refusal of the policy, or of the lock that waited for an archive, is the same 409 as the others.
+  app.delete('/agencies/:agencyId/clients/:clientId/personas/:personaId', authenticated(deletePersonaDocs), async (request, reply) => {
     const auth = requireAuth(request);
     const tenant = requireTenant(request);
     const clientId = clientIdFromRoute(request);
@@ -486,26 +512,20 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       const client = await loadClient(transaction, { agencyId: tenant.agencyId, clientId });
       if (client === undefined) return { kind: 'not-found' } as const;
       if (client.status === 'archived') return { kind: 'archived' } as const;
-      let updated: boolean;
+      let deleted: boolean;
       try {
-        updated = await setPersonaStatus(transaction, { clientId, personaId, actorUserId: auth.userId, status });
+        deleted = await deletePersona(transaction, { clientId, personaId });
       } catch (error) {
         if (isRowLevelSecurityViolation(error) || isClientNoLongerActive(error)) return { kind: 'archived' } as const;
         throw error;
       }
-      if (!updated) return { kind: 'persona-not-found' } as const;
-      const persona = await loadPersona(transaction, { agencyId: tenant.agencyId, clientId, personaId });
-      if (persona === undefined) return { kind: 'persona-not-found' } as const;
-      return { kind: 'ok', persona: personaFromRow(persona) } as const;
+      return deleted ? { kind: 'ok' } as const : { kind: 'persona-not-found' } as const;
     });
     if (outcome.kind === 'not-found') throw clientNotFound();
     if (outcome.kind === 'archived') throw clientArchived();
     if (outcome.kind === 'persona-not-found') throw personaNotFound();
-    return reply.send(routeResponse(personaStatusDocs, request, outcome.persona));
-  };
-
-  app.post('/agencies/:agencyId/clients/:clientId/personas/:personaId/archive', authenticated(personaStatusDocs), personaStatusHandler('archived'));
-  app.post('/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive', authenticated(personaStatusDocs), personaStatusHandler('active'));
+    return reply.status(204).send();
+  });
 
   registerConversationRoutes(app, dependencies);
   registerPortalReadRoutes(app, dependencies);

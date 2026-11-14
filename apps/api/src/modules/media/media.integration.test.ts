@@ -14,6 +14,7 @@ import {
   type TestApp,
   type TestUserFixture
 } from '../auth/test-support/harness.js';
+import { pngBytes } from './test-support/files.js';
 
 // Issue #21 acceptance tests. Runs against the real local LocalStack started by
 // `pnpm storage:start` -- see apps/api/src/modules/media/README.md.
@@ -60,7 +61,7 @@ const putToPresignedUrl = async (url: string, body: Uint8Array, contentType?: st
   return eTag;
 };
 
-const smallPng = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+const smallPng = pngBytes();
 
 describe('media upload HTTP module (issue #21)', () => {
   beforeAll(async () => {

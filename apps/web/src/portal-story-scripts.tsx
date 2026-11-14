@@ -3,13 +3,13 @@ import { Check } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { PortalStoryScriptPeriodResponseSchema, PortalStoryScriptSchema, type PortalStoryScript } from '@ageniza/contracts';
-import { Button, FieldMessage, Skeleton } from '@ageniza/ui';
+import { Button, EmptyState, FieldMessage, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth } from './client-detail.js';
 import { todayInSaoPaulo } from './content-dates.js';
 import { HttpClientError, useApiClient } from './http.js';
-import { PLAN_RENEWAL_REASON } from './plan-notice.js';
+import { PORTAL_PAUSED_REASON } from './plan-notice.js';
 import { usePortalClient } from './portal.js';
 
 const LIST_PATH = '/clients/:clientId/story-scripts';
@@ -18,6 +18,7 @@ const RECORDED_PATH = '/clients/:clientId/story-scripts/:scriptId/recorded';
 /** The words of each refusal of "marcar como gravado", in the client's language: what the server wrote is never shown. */
 export const recordRefusal = (error: unknown): string => {
   if (error instanceof HttpClientError) {
+    if (error.code === 'AGENCY_READ_ONLY') return PORTAL_PAUSED_REASON;
     if (error.status === 409 && error.code === 'TRY_AGAIN') return 'Outra alteração aconteceu ao mesmo tempo. Tente de novo.';
     if (error.status === 409) return 'Este roteiro mudou e a tela foi atualizada com o que há agora.';
     if (error.status === 404) return 'Este roteiro não existe mais.';
@@ -48,7 +49,7 @@ function Script({ script, number, several, sending, onRecord }: {
         aria-label={several ? `Já gravei o roteiro ${number}` : undefined}
         loading={sending === script.id}
         disabled={sending !== null}
-        blockedReason={readOnly ? PLAN_RENEWAL_REASON : undefined}
+        blockedReason={readOnly ? PORTAL_PAUSED_REASON : undefined}
         leadingIcon={<Check />}
         onClick={() => onRecord(script)}
       >Já gravei</Button>
@@ -100,16 +101,13 @@ export function PortalTodayScripts({ clientId }: { clientId: string }) {
     }
   };
 
-  if (scripts.isPending) {
+  if (scripts.isPending && scripts.errorUpdateCount === 0) {
     return <div className="portal-today" aria-hidden="true"><Skeleton className="portal-today__skeleton" /></div>;
   }
-  if (scripts.isError && scripts.data === undefined) {
+  if (scripts.data === undefined) {
     return <section className="portal-section portal-today" aria-labelledby="portal-today-title">
       <h2 id="portal-today-title" className="portal-section__title">Roteiro de hoje</h2>
-      <div className="portal-error" role="alert">
-        <p>Não foi possível carregar o roteiro de hoje.</p>
-        <Button variant="secondary" loading={scripts.isFetching} onClick={() => { void scripts.refetch(); }}>Tentar de novo</Button>
-      </div>
+      <EmptyState kind="failure" className="portal-empty" headingLevel={3} title="Não foi possível carregar o roteiro de hoje." retrying={scripts.isFetching} onRetry={() => { void scripts.refetch(); }} />
     </section>;
   }
   const list = scripts.data?.data ?? [];

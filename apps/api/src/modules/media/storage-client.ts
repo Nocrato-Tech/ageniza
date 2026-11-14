@@ -42,7 +42,19 @@ export interface MediaStorageClient {
   headObject(input: { readonly key: string }): Promise<HeadObjectResult | undefined>;
   deleteObject(input: { readonly key: string }): Promise<void>;
   copyObject(input: { readonly sourceKey: string; readonly destinationKey: string }): Promise<void>;
-  presignGetObject(input: { readonly key: string; readonly expiresInSeconds: number }): Promise<string>;
+  /**
+   * The signed GET of an object. `responseContentType` and `responseContentDisposition` are signed into the URL and replace what is
+   * stored on the object: they are how a file that must never be opened as a page (an SVG, a PDF) is served as a download of the type
+   * the server confirmed, whatever the stored metadata says.
+   */
+  presignGetObject(input: {
+    readonly key: string;
+    readonly expiresInSeconds: number;
+    readonly responseContentType?: string;
+    readonly responseContentDisposition?: string;
+  }): Promise<string>;
+  /** The first `length` bytes of an object (fewer when it is shorter): what a confirmation reads to know what the file really is. */
+  readObjectStart(input: { readonly key: string; readonly length: number }): Promise<Uint8Array>;
 }
 
 export const createMediaStorageClient = (config: StorageConfig): MediaStorageClient => {
@@ -131,9 +143,20 @@ export const createMediaStorageClient = (config: StorageConfig): MediaStorageCli
       }));
     },
 
-    async presignGetObject({ key, expiresInSeconds }) {
-      const command = new GetObjectCommand({ Bucket: config.bucket, Key: key });
+    async presignGetObject({ key, expiresInSeconds, responseContentType, responseContentDisposition }) {
+      const command = new GetObjectCommand({
+        Bucket: config.bucket,
+        Key: key,
+        ...(responseContentType === undefined ? {} : { ResponseContentType: responseContentType }),
+        ...(responseContentDisposition === undefined ? {} : { ResponseContentDisposition: responseContentDisposition })
+      });
       return getSignedUrl(presignClient, command, { expiresIn: expiresInSeconds });
+    },
+
+    async readObjectStart({ key, length }) {
+      const result = await internalClient.send(new GetObjectCommand({ Bucket: config.bucket, Key: key, Range: `bytes=0-${length - 1}` }));
+      if (result.Body === undefined) throw new Error('GetObject did not return a body.');
+      return result.Body.transformToByteArray();
     }
   };
 };

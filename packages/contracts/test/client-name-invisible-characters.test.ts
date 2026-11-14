@@ -184,3 +184,25 @@ describe('createDisplayNameSchema keeps the owner decision of 2026-10-08 (#427, 
     }
   });
 });
+
+describe('the limit of a display name counts UTF-16 units, unless the column checks characters', () => {
+  const camera = text(0x1f4f8);
+
+  it('keeps the older flows on the count their columns bound in bytes: a letter and 40 emoji of an 80 limit are 81 units', () => {
+    expect(createDisplayNameSchema(80).safeParse(`a${camera.repeat(39)}`).success).toBe(true);
+    expect(createDisplayNameSchema(80).safeParse(`a${camera.repeat(40)}`).success).toBe(false);
+    expect(createDisplayNameSchema(80, { emojiSequences: true }).safeParse(`a${camera.repeat(40)}`).success).toBe(false);
+    expect(DisplayNameSchema.safeParse(`a${camera.repeat(59)}`).success).toBe(true);
+    expect(DisplayNameSchema.safeParse(`a${camera.repeat(60)}`).success).toBe(false);
+  });
+
+  it('counts characters when the column does: a letter and 79 emoji are 80, one more is 81', () => {
+    const characters = createDisplayNameSchema(80, { countCharacters: true });
+    expect(characters.safeParse(`a${camera.repeat(79)}`).success).toBe(true);
+    expect(characters.safeParse(`a${camera.repeat(80)}`).success).toBe(false);
+    expect(createDisplayNameSchema(80, { emojiSequences: true, countCharacters: true }).safeParse(`a${camera.repeat(79)}`).success).toBe(true);
+    expect(characters.safeParse('').success).toBe(false);
+    expect(characters.safeParse('   ').success).toBe(false);
+    expect(characters.safeParse(`  ${'a'.repeat(80)}  `).success).toBe(true);
+  });
+});

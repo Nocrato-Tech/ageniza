@@ -1,27 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronsUpDown, LogOut } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, ChevronsUpDown, Crown, LogOut, Plus, UserRound, WalletCards } from 'lucide-react';
 
 import {
-  AuthLogoutAllResponseSchema,
-  AuthLogoutResponseSchema,
   MeContextsResponseSchema,
   PutLastContextResponseSchema,
   type AuthUser,
   type Context
 } from '@ageniza/contracts';
-import { Avatar, Button, ConfirmDialog, IconButton, Menu, MenuItem, MenuSeparator, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, Menu, MenuItem, MenuSeparator, Skeleton } from '@ageniza/ui';
 
+import { useActiveSessions } from './account-sessions.js';
 import { useAuthSession, useOptionalAuthSessionStore, type AuthSessionStore } from './auth.js';
 import { contextDestination, targetFromDestination, type ContextTarget } from './context-destination.js';
 import { contextDescription, contextKey, contextTitle } from './context-labels.js';
 import { CREATE_AGENCY_LABEL, CreateAgencyDialog } from './create-agency.js';
-import { EmailChangeDialog } from './email-change.js';
-import { forgetGoogleInvite } from './google-sign-in.js';
-import { HttpClientError, useApiClient } from './http.js';
+import { useApiClient } from './http.js';
+import { useLogout, type LogoutAction } from './use-logout.js';
 
-type LogoutAction = 'logout' | 'logout-all';
 type AccountMenuPanel = 'root' | 'switch';
 
 const fallbackAuthSnapshot = { status: 'ready' as const, isAuthenticated: false, user: null };
@@ -39,7 +36,6 @@ const contextsErrorMessage = 'N\u00e3o foi poss\u00edvel carregar seus contextos
 const switchErrorMessage = 'N\u00e3o foi poss\u00edvel trocar de contexto. Tente de novo.';
 const logoutAllLabel = 'Sair de todas as sess\u00f5es';
 const switchLabel = 'Trocar de contexto';
-const emailChangeLabel = 'Pedir troca de e-mail';
 
 /** Whether a context is the one the route is currently showing, derived from the address, not a name. */
 const isCurrentContext = (context: Context, target: ContextTarget | null): boolean => {
@@ -50,19 +46,18 @@ const isCurrentContext = (context: Context, target: ContextTarget | null): boole
 
 export interface AccountMenuProps {
   activeContext?: string;
-  /** Offered only where a tour exists to review (the client portal); it reopens the tour and calls nothing. */
-  onReviewTour?: () => void;
+  /** What the active context is called in the menu: "Agência logada" in the agency, the generic one where the context is a client portal. */
+  contextLabel?: string;
   user?: AuthUser | null;
-  /** `sidebar` is the foot of the agency navigation: the person as the trigger and Sair beside it. */
-  variant?: 'header' | 'sidebar';
-  /**
-   * Whether this menu is the one that reopens the e-mail change when the person comes back from Google. The menus of the loading
-   * skeletons say no: they are gone as soon as the area loads, and one that spent the mark would leave the real menu without it.
-   */
-  reopensEmailChange?: boolean;
+  /** `sidebar` is the foot of the agency navigation: the person as the trigger. `compact` is the avatar alone, in a phone's top bar. */
+  variant?: 'header' | 'sidebar' | 'compact';
+  /** What the person is in this context, under the name: the Owner is not a role, so it carries its own mark. */
+  role?: { label: string; owner?: boolean };
+  /** The phone's bottom bar has no room for Assinatura: the menu carries it. */
+  subscriptionTo?: string;
 }
 
-export function AccountMenu({ activeContext, onReviewTour, user: userOverride, variant = 'header', reopensEmailChange = true }: AccountMenuProps) {
+export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', user: userOverride, variant = 'header', role, subscriptionTo }: AccountMenuProps) {
   const httpClient = useApiClient();
   const authStore = useOptionalAuthSessionStore();
   const session = useAuthSession(userOverride === undefined ? (authStore ?? fallbackAuthStore) : fallbackAuthStore);
@@ -72,12 +67,8 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
   const [menuOpen, setMenuOpen] = useState(false);
   const [panel, setPanel] = useState<AccountMenuPanel>('root');
   const [confirmOpen, setConfirmOpen] = useState(false);
-  // Coming back from the Google confirmation of an e-mail change (`GoogleLandingPage`): the dialog reopens in its Google mode.
-  const [reopenedViaGoogle, setReopenedViaGoogle] = useState(() => reopensEmailChange && (location.state as { reopenEmailChange?: unknown } | null)?.reopenEmailChange === true);
-  const [emailChangeOpen, setEmailChangeOpen] = useState(reopenedViaGoogle);
   const [createAgencyOpen, setCreateAgencyOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<LogoutAction | null>(null);
-  const [failedAction, setFailedAction] = useState<LogoutAction | null>(null);
+  const { logout, pendingAction, failedAction, clearFailure } = useLogout();
 
   const user = userOverride === undefined ? session.user : userOverride;
 
@@ -87,6 +78,10 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
     queryFn: () => httpClient.request({ path: '/me/contexts', response: MeContextsResponseSchema }),
     enabled: menuOpen && user !== null
   });
+
+  // The same query as the Conta page: "Sair de todas" is offered only with 2 or more sessions, and on a failure the menu keeps only "Sair".
+  const sessions = useActiveSessions(menuOpen && user !== null);
+  const canLogoutAll = sessions.data !== undefined && sessions.data.sessions.length >= 2;
 
   const switchContext = useMutation({
     mutationFn: (context: Context) => httpClient.request({
@@ -106,65 +101,47 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
   });
 
   const currentTarget = targetFromDestination(location.pathname);
-
-  // The marker is spent on arrival, so a reload or a later visit to the same entry does not reopen the dialog.
-  useEffect(() => {
-    if (reopenedViaGoogle) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
-  }, []);
+  // The Conta page lives under the area the person is in; outside one (the context list) there is no page to open.
+  const accountTo = currentTarget === null
+    ? null
+    : currentTarget.type === 'agency' ? `/agencia/${currentTarget.agencyId}/conta` : `/portal/${currentTarget.clientId}/conta`;
 
   if (user === null || (userOverride === undefined && session.status === 'loading')) {
     return <Skeleton className='account-menu__skeleton' />;
   }
 
   const startLogout = async (action: LogoutAction): Promise<void> => {
-    setFailedAction(null);
-    setPendingAction(action);
-    try {
-      await httpClient.request({
-        path: action === 'logout' ? '/auth/logout' : '/auth/logout-all',
-        method: 'POST',
-        response: action === 'logout' ? AuthLogoutResponseSchema : AuthLogoutAllResponseSchema
-      });
-      queryClient.clear();
-      forgetGoogleInvite();
-      authStore?.end();
-      navigate('/entrar', { replace: true });
-    } catch (error: unknown) {
-      // A session revoked elsewhere answers 401; the person asked to leave, so that is the outcome
-      // they wanted. Finish the sign-out without state, over the destination the session-ended
-      // redirect saved, so the next account is not sent back to the previous one's address.
-      if (error instanceof HttpClientError && error.status === 401) {
-        queryClient.clear();
-        forgetGoogleInvite();
-        authStore?.end();
-        navigate('/entrar', { replace: true });
-        return;
-      }
-      setFailedAction(action);
-      if (action === 'logout-all') setConfirmOpen(false);
-    } finally {
-      setPendingAction(null);
-    }
+    const out = await logout(action);
+    if (!out && action === 'logout-all') setConfirmOpen(false);
   };
 
   const failedMessage = failedAction === 'logout-all' ? logoutAllErrorMessage : logoutErrorMessage;
   const canSwitch = contexts.data !== undefined && contexts.data.contexts.length > 1;
 
   const sidebar = variant === 'sidebar';
+  const compact = variant === 'compact';
 
   return (
-    <div className={sidebar ? 'account-menu account-menu--sidebar' : 'account-menu'}>
+    <div className={sidebar ? 'account-menu account-menu--sidebar' : compact ? 'account-menu account-menu--compact' : 'account-menu'}>
       <Menu
         label='Menu da conta'
+        triggerLabel={compact ? `Conta de ${user.name}` : undefined}
         activePanel={panel}
         onOpenChange={(open) => { setMenuOpen(open); if (!open) setPanel('root'); }}
-        trigger={sidebar
-          ? <>
-              <Avatar name={user.name} size='sm' />
-              <span className='account-menu__name'>{user.name}</span>
-              <ChevronsUpDown className='account-menu__chevron' aria-hidden='true' />
-            </>
-          : <><span>{user.name}</span><ChevronDown className='account-menu__caret' aria-hidden='true' /></>}
+        trigger={compact
+          ? <Avatar name={user.name} size='sm' />
+          : sidebar
+            ? <>
+                <Avatar name={user.name} size='sm' />
+                <span className='account-menu__text'>
+                  <span className='account-menu__name'>{user.name}</span>
+                  {role !== undefined && <span className={role.owner === true ? 'account-menu__role account-menu__role--owner' : 'account-menu__role'}>
+                    {role.owner === true && <Crown aria-hidden='true' />}{role.label}
+                  </span>}
+                </span>
+                <ChevronsUpDown className='account-menu__chevron' aria-hidden='true' />
+              </>
+            : <><span>{user.name}</span><ChevronDown className='account-menu__caret' aria-hidden='true' /></>}
       >
         {panel === 'root' ? <>
           <div className='account-menu__identity' role='group' aria-label='Conta'>
@@ -172,8 +149,8 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
             <span>{user.email}</span>
           </div>
           {activeContext !== undefined && (
-            <div className='account-menu__context' role='group' aria-label='Contexto ativo'>
-              <span className='account-menu__context-label'>Contexto ativo</span>
+            <div className='account-menu__context' role='group' aria-label={contextLabel}>
+              <span className='account-menu__context-label'>{contextLabel}</span>
               <strong>{activeContext}</strong>
             </div>
           )}
@@ -185,21 +162,23 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
             </div>
           )}
           {canSwitch && (
-            <MenuItem onClick={(event) => { event.preventDefault(); setPanel('switch'); }}>
+            <MenuItem icon={<ArrowLeftRight />} onClick={(event) => { event.preventDefault(); setPanel('switch'); }}>
               {switchLabel} <span aria-hidden='true'>{'\u203A'}</span>
             </MenuItem>
           )}
           {contexts.data?.canCreateAgency === true && (
-            <MenuItem onClick={() => { setCreateAgencyOpen(true); }}>{CREATE_AGENCY_LABEL}</MenuItem>
+            <MenuItem icon={<Plus />} onClick={() => { setCreateAgencyOpen(true); }}>{CREATE_AGENCY_LABEL}</MenuItem>
           )}
-          {onReviewTour !== undefined && <MenuItem onClick={onReviewTour}>Rever o tour</MenuItem>}
-          <MenuItem onClick={() => { setEmailChangeOpen(true); }}>{emailChangeLabel}</MenuItem>
+          {accountTo !== null && <MenuItem icon={<UserRound />} onClick={() => { navigate(accountTo); }}>Minha conta</MenuItem>}
+          {subscriptionTo !== undefined &&<MenuItem icon={<WalletCards />} onClick={() => { navigate(subscriptionTo); }}>Assinatura</MenuItem>}
           <MenuSeparator />
-          <MenuItem onClick={() => { void startLogout('logout'); }}>Sair</MenuItem>
-          <MenuSeparator />
-          <MenuItem variant='destructive' onClick={() => { setFailedAction(null); setConfirmOpen(true); }}>
-            {logoutAllLabel}
-          </MenuItem>
+          <MenuItem icon={<LogOut />} onClick={() => { void startLogout('logout'); }}>Sair</MenuItem>
+          {canLogoutAll && <>
+            <MenuSeparator />
+            <MenuItem variant='destructive' icon={<LogOut />} onClick={() => { clearFailure(); setConfirmOpen(true); }}>
+              {logoutAllLabel}
+            </MenuItem>
+          </>}
         </> : <>
           <MenuItem onClick={(event) => { event.preventDefault(); setPanel('root'); }}>
             <span aria-hidden='true'>{'\u2039'}</span> {switchLabel}
@@ -234,22 +213,12 @@ export function AccountMenu({ activeContext, onReviewTour, user: userOverride, v
           )}
         </>}
       </Menu>
-      {sidebar && (
-        <IconButton
-          className='account-menu__leave'
-          label='Sair'
-          icon={<LogOut />}
-          loading={pendingAction === 'logout'}
-          onClick={() => { void startLogout('logout'); }}
-        />
-      )}
       {failedAction !== null && (
         <div className='account-menu__error' role='alert'>
           <span>{failedMessage}</span>
           <Button size='sm' variant='ghost' onClick={() => { void startLogout(failedAction); }}>Tentar de novo</Button>
         </div>
       )}
-      {emailChangeOpen && <EmailChangeDialog viaGoogle={reopenedViaGoogle} returnTo={`${location.pathname}${location.search}`}onClose={() => { setEmailChangeOpen(false); setReopenedViaGoogle(false); }} />}
       {createAgencyOpen && <CreateAgencyDialog onClose={() => { setCreateAgencyOpen(false); }} />}
       <ConfirmDialog
         open={confirmOpen}

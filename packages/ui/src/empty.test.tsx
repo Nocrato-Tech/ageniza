@@ -99,8 +99,56 @@ describe('EmptyState', () => {
 
     expect(screen.getByTestId('empty').className).toBe('ui-empty-state clients__empty');
   });
-});
 
+  it('is first use by default: no icon, no alert role and no retry', () => {
+    const { container } = render(<EmptyState title="Cadastre o primeiro cliente" onRetry={() => undefined} />);
+
+    expect(container.querySelector('.ui-empty-state__icon')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
+  });
+
+  it('says good news with its own icon next to the words, and offers no retry', () => {
+    const { container } = render(<EmptyState kind="good-news" title="Nada pendente" description="Nenhuma aprovação está esperando." onRetry={() => undefined} />);
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Nada pendente' })).toBeTruthy();
+    expect(screen.getByText('Nenhuma aprovação está esperando.')).toBeTruthy();
+    expect(container.querySelector('.ui-empty-state--good-news .ui-empty-state__icon svg')).not.toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
+  });
+
+  it('says a failure as an alert with its own icon, and retries on the button', () => {
+    const onRetry = vi.fn();
+    const { container } = render(<EmptyState kind="failure" title="Não foi possível carregar" description="A consulta não respondeu." onRetry={onRetry} />);
+
+    expect(screen.getByRole('alert').textContent).toContain('Não foi possível carregar');
+    expect(container.querySelector('.ui-empty-state--failure .ui-empty-state__icon svg')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('turns the retry busy while it repeats, and a click on it runs nothing', () => {
+    const onRetry = vi.fn();
+    const { rerender } = render(<EmptyState kind="failure" title="Falhou" onRetry={onRetry} />);
+    expect(screen.getByRole('button', { name: 'Tentar de novo' }).getAttribute('aria-busy')).toBeNull();
+
+    rerender(<EmptyState kind="failure" title="Falhou" onRetry={onRetry} retrying />);
+    const retry = screen.getByRole('button', { name: 'Tentar de novo' });
+    expect(retry.getAttribute('aria-busy')).toBe('true');
+    fireEvent.click(retry);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it('shows no retry on a failure without onRetry, and keeps the screen action beside it when both come', () => {
+    const { rerender } = render(<EmptyState kind="failure" title="Falhou" />);
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
+
+    rerender(<EmptyState kind="failure" title="Falhou" onRetry={() => undefined} action={<Button variant="ghost">Voltar</Button>} />);
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['Tentar de novo', 'Voltar']);
+  });
+});
 type LinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & { to: string };
 const RouterLink = forwardRef<HTMLAnchorElement, LinkProps>(function RouterLink({ to, ...props }, ref) {
   return <a ref={ref} href={`/app${to}`} data-router="yes" {...props} />;

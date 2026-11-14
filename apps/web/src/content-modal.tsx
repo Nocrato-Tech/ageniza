@@ -6,6 +6,7 @@ import { Pencil, Save } from 'lucide-react';
 import {
   CalendarDaySchema,
   ContentDetailSchema,
+  MediaLibraryAssetSchema,
   type ContentDetail,
   type ContentFormat,
   type ContentStatus,
@@ -32,12 +33,14 @@ import {
   type ContentFormValues
 } from './content-form.js';
 import { ContentActions } from './content-action-bar.js';
+import { ContentClientView } from './content-client-view.js';
 import { FORMAT_LABELS, FORMAT_TONES, isClosed, STATUS_LABELS, STATUS_TAGS } from './content-labels.js';
 import { ContentAssignment } from './content-assignment.js';
 import { CoverField, FolderField, MediaField, useFreshFolder } from './content-media.js';
 import { Conversation } from './conversation.js';
 import { captionCounter, ContentPreview } from './content-preview.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { mediaBase } from './media-library-model.js';
 
 /** What the client page hands the modal it renders in its `Outlet`: the rules that belong to the client, not to the content. */
 export interface ContentsOutletContext {
@@ -81,13 +84,21 @@ const useCloseTo = (clientId: string): (() => void) => {
   };
 };
 
-function ContentEditor({ context, initial, initialDay, onBusyChange, onDirtyChange, onClose, onDone }: {
+/** A file chosen in the media library ("Usar em um conteúdo"): the new content starts in its folder, with it as the media. */
+interface PickedMedia {
+  readonly assetId: string;
+  readonly folderId: string;
+  readonly format: ContentFormat;
+}
+
+function ContentEditor({ context, initial, initialDay, picked, onBusyChange, onDirtyChange, onDone }: {
   context: ContentsOutletContext;
   initial: ContentDetail | null;
   initialDay: string;
+  picked?: PickedMedia | undefined;
   onBusyChange: (busy: boolean) => void;
   onDirtyChange: (dirty: boolean) => void;
-  onClose: () => void;
+  /** Closes after a success: it never asks, because nothing is left to lose. */
   onDone: () => void;
 }) {
   const httpClient = useApiClient();
@@ -104,7 +115,7 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDirtyChan
   const [born, setBorn] = useState<ContentDetail | null>(null);
   const saved = initial ?? born;
   const [form, setForm] = useState<ContentFormValues>(() => initial === null
-    ? { title: '', format: 'image', publishOn: initialDay, publishAtTime: '', folderId: '', caption: '', mediaAssetIds: [], coverAssetId: null }
+    ? { title: '', format: picked?.format ?? 'image', publishOn: initialDay, publishAtTime: '', folderId: picked?.folderId ?? '', caption: '', mediaAssetIds: picked === undefined ? [] : [picked.assetId], coverAssetId: null }
     : valuesOf(initial));
   const initialForm = useRef(form);
   const [errors, setErrors] = useState<ContentFieldErrors>({});
@@ -261,6 +272,9 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDirtyChan
   const captionError = errors.caption;
   const formId = `${ids}-form`;
   const conversation = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  // "Fechar" is Esc: the dialog owns the question about what was typed, so the button asks it the way the platform does.
+  const requestClose = (): void => { root.current?.closest('dialog')?.dispatchEvent(new Event('cancel', { cancelable: true })); };
   const seeConversation = (): void => {
     conversation.current?.scrollIntoView?.({ block: 'start' });
     conversation.current?.focus({ preventScroll: true });
@@ -304,11 +318,11 @@ function ContentEditor({ context, initial, initialDay, onBusyChange, onDirtyChan
   };
 
   const formActions = <div className="content-modal__form-actions">
-    <Button variant="ghost" disabled={busy || sendingFile} onClick={onClose}>Fechar</Button>
+    <Button variant="ghost" disabled={busy || sendingFile} onClick={requestClose}>Fechar</Button>
     {editable && <Button type="submit" form={formId} variant={dirty ? 'primary' : 'secondary'} leadingIcon={<Save />} loading={busy} disabled={busy || inheriting || folderUnread || sendingFile || (!dirty && blocked === undefined)} blockedReason={blocked}>{saved === null ? 'Criar conteúdo' : 'Salvar'}</Button>}
   </div>;
 
-  return <div className="content-modal">
+  return <div className="content-modal" ref={root}>
     {saved?.status === 'adjusting' && <div className="content-modal__adjustment" role="note">
       <Pencil aria-hidden="true" />
       <p><strong>O cliente pediu ajuste.</strong> O pedido está na conversa; reenvie para aprovação quando o conteúdo estiver pronto.</p>
@@ -416,48 +430,49 @@ function ContentTags({ content }: { content: ContentDetail }) {
 }
 
 /**
- * The modal around the editor: the tabs and a close that waits for a write. Geral stays mounted while Atribuição is open, so what was typed
- * in the form is still there when the person comes back. Atribuição exists once there is a content to attribute (`assignment`).
+ * The modal around the editor: the tabs and a close that waits for a write. Geral stays mounted while the other tabs are open, so what was typed
+ * in the form is still there when the person comes back. Atribuição and "Como o cliente vê" exist once there is a content to attribute and to show.
+ * A close with something typed asks first, by the dialog's own `confirmDiscard`; a close after a success never does.
  */
-function ContentDialog({ title, onClose, busy, summary, assignment, confirmation, children }: {
+function ContentDialog({ title, onClose, busy, dirty, summary, assignment, clientView, children }: {
   title: string;
   onClose: () => void;
   busy: boolean;
-  confirmation?: ReactNode;
+  dirty: boolean;
   summary?: ReactNode;
   assignment?: ReactNode;
+  clientView?: ReactNode;
   children: ReactNode;
 }) {
-  const [tab, setTab] = useState<'general' | 'assignment'>('general');
-  const shown = assignment === undefined ? 'general' : tab;
+  const [tab, setTab] = useState<'general' | 'assignment' | 'client-view'>('general');
+  const shown = (tab === 'assignment' && assignment !== undefined) || (tab === 'client-view' && clientView !== undefined) ? tab : 'general';
   // Closing in the middle of a write would leave its success to close whatever is open by then.
-  return <Dialog title={title} closeLabel="Fechar conteúdo" size="lg" onClose={() => { if (!busy) onClose(); }}>
+  return <Dialog
+    title={title}
+    closeLabel="Fechar conteúdo"
+    size="lg"
+    onClose={() => { if (!busy) onClose(); }}
+    confirmDiscard={{
+      dirty: dirty && !busy,
+      title: 'Descartar alterações?',
+      description: 'As alterações não salvas serão perdidas. Continue editando para salvá-las.',
+      keepLabel: 'Continuar editando',
+      discardLabel: 'Descartar alterações',
+      closeLabel: 'Fechar confirmação de descarte'
+    }}
+  >
     {summary}
     <Tabs
       label="Seções do conteúdo"
       value={shown}
-      onChange={(value) => setTab(value === 'assignment' ? 'assignment' : 'general')}
+      onChange={(value) => setTab(value === 'assignment' || value === 'client-view' ? value : 'general')}
       items={[
         { value: 'general', label: 'Geral', keepMounted: true, content: children },
-        { value: 'assignment', label: 'Atribuição', disabled: assignment === undefined, content: assignment }
+        { value: 'assignment', label: 'Atribuição', disabled: assignment === undefined, content: assignment },
+        { value: 'client-view', label: 'Como o cliente vê', disabled: clientView === undefined, content: clientView }
       ]}
     />
-    {confirmation}
   </Dialog>;
-}
-
-function useContentCloseGuard(close: () => void, busy: boolean) {
-  const [dirty, setDirty] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const requestClose = () => { if (busy) return; if (dirty) setConfirming(true); else close(); };
-  const confirmation = confirming ? <Dialog
-    title="Descartar alterações?"
-    closeLabel="Fechar confirmação de descarte"
-    description="As alterações não salvas serão perdidas. Continue editando para salvá-las."
-    onClose={() => setConfirming(false)}
-    actions={<><Button variant="secondary" onClick={() => setConfirming(false)}>Continuar editando</Button><Button variant="destructive" onClick={close}>Descartar alterações</Button></>}
-  /> : null;
-  return { requestClose, setDirty, confirmation };
 }
 
 /** `/agencia/:agenciaId/conteudos/:clienteId/:conteudoId`: one content, read when it is opened and edited in place. */
@@ -468,7 +483,7 @@ export function ContentModalRoute() {
   const { conteudoId = '' } = useParams();
   const close = useCloseTo(context.clientId);
   const [busy, setBusy] = useState(false);
-  const { requestClose, setDirty, confirmation } = useContentCloseGuard(close, busy);
+  const [dirty, setDirty] = useState(false);
   const contentId = conteudoId.toLowerCase();
   const validId = ContentDetailSchema.shape.id.safeParse(contentId).success;
 
@@ -492,7 +507,7 @@ export function ContentModalRoute() {
     || (content.data !== undefined && data === undefined);
 
   const assignment = data === undefined || !context.ready ? undefined : <ContentAssignment clientId={context.clientId} content={data} archived={context.archived} />;
-  return <ContentDialog title={data?.title ?? 'Conteúdo'} onClose={requestClose} busy={busy} confirmation={confirmation} summary={data === undefined ? undefined : <ContentTags content={data} />} assignment={assignment}>
+  return <ContentDialog title={data?.title ?? 'Conteúdo'} onClose={close} busy={busy} dirty={dirty} clientView={data === undefined ? undefined : <ContentClientView content={data} />} summary={data === undefined ? undefined : <ContentTags content={data} />} assignment={assignment}>
     {hidden
       ? <div className="form-stack content-modal__notice" role="alert">
         <p>Este conteúdo não existe mais ou você não tem acesso a ele.</p>
@@ -508,8 +523,31 @@ export function ContentModalRoute() {
         </div>
         : data === undefined || !context.ready
           ? <div className="content-modal__loading" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
-          : <ContentEditor key={data.id} context={context} initial={data} initialDay={data.publishOn} onBusyChange={setBusy} onDirtyChange={setDirty} onClose={requestClose} onDone={close} />}
+          : <ContentEditor key={data.id} context={context} initial={data} initialDay={data.publishOn} onBusyChange={setBusy} onDirtyChange={setDirty} onDone={close} />}
   </ContentDialog>;
+}
+
+/**
+ * The file in `?midia=`, read from the library of the client of the address. Anything that is not a usable photo or video of this
+ * client (unknown id, another type, a failed read) is no file at all: the modal opens as it would without the parameter.
+ */
+function usePickedMedia(context: ContentsOutletContext, param: string | null): { pending: boolean; media: PickedMedia | undefined } {
+  const httpClient = useApiClient();
+  const agency = useAgencyContext();
+  const id = MediaLibraryAssetSchema.shape.id.safeParse(param?.toLowerCase());
+  const asset = useQuery({
+    queryKey: ['agency', agency.agencyId, 'contents', context.clientId, 'picked-media', id.success ? id.data : ''],
+    queryFn: ({ signal }) => httpClient.request({ path: `${mediaBase(agency.agencyId, context.clientId)}/${encodeURIComponent(id.success ? id.data : '')}`, response: MediaLibraryAssetSchema, signal }),
+    enabled: id.success && context.ready && context.canEdit,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false
+  });
+  if (!id.success || !context.ready || !context.canEdit || asset.isError) return { pending: false, media: undefined };
+  if (asset.data === undefined) return { pending: true, media: undefined };
+  if (asset.data.category !== 'image' && asset.data.category !== 'video') return { pending: false, media: undefined };
+  return { pending: false, media: { assetId: asset.data.id, folderId: asset.data.folderId, format: asset.data.category === 'image' ? 'image' : 'reels' } };
 }
 
 /** `/agencia/:agenciaId/conteudos/:clienteId/novo?dia=AAAA-MM-DD`: a new content, born in production on the day of the "+" or today. */
@@ -518,13 +556,14 @@ export function ContentCreateRoute() {
   const [searchParams] = useSearchParams();
   const close = useCloseTo(context.clientId);
   const [busy, setBusy] = useState(false);
-  const { requestClose, setDirty, confirmation } = useContentCloseGuard(close, busy);
+  const [dirty, setDirty] = useState(false);
   const day = CalendarDaySchema.safeParse(searchParams.get('dia'));
-  return <ContentDialog title="Novo conteúdo" onClose={requestClose} busy={busy} confirmation={confirmation}>
-    {!context.ready
+  const picked = usePickedMedia(context, searchParams.get('midia'));
+  return <ContentDialog title="Novo conteúdo" onClose={close} busy={busy} dirty={dirty}>
+    {!context.ready || picked.pending
       ? <div className="content-modal__loading" aria-hidden="true"><Skeleton /><Skeleton /><Skeleton /></div>
       : context.canEdit
-      ? <ContentEditor context={context} initial={null} initialDay={day.success ? day.data : todayInSaoPaulo()} onBusyChange={setBusy} onDirtyChange={setDirty} onClose={requestClose} onDone={close} />
+      ? <ContentEditor context={context} initial={null} initialDay={day.success ? day.data : todayInSaoPaulo()} picked={picked.media} onBusyChange={setBusy} onDirtyChange={setDirty} onDone={close} />
       : <div className="form-stack content-modal__notice" role="alert">
         <p>{context.archived ? 'Este cliente está arquivado: não recebe conteúdo novo.' : 'Você não tem permissão para criar conteúdos.'}</p>
         <div className="form-actions"><Button variant="secondary" onClick={close}>Fechar</Button></div>

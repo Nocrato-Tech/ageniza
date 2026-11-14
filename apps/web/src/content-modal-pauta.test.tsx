@@ -30,7 +30,7 @@ describe('the tags under the title', () => {
     ['in_production', 'Em produção', 'production'],
     ['awaiting_approval', 'Aguardando aprovação', 'waiting'],
     ['adjusting', 'Em ajuste', 'adjust'],
-    ['approved', 'Pronto para publicar', 'ready'],
+    ['approved', 'Aprovado', 'ready'],
     ['published', 'Publicado', 'published'],
     ['cancelled', 'Cancelado', 'production']
   ] as const)('a %s content wears the outlined tag "%s" with the %s icon', async (status, label, tone) => {
@@ -163,10 +163,10 @@ describe('the dialog', () => {
     expect(within(dialog()).getByRole('heading', { level: 2, name: 'Cardápio de outono' })).toBeTruthy();
   });
 
-  it('keeps one tab list, named, with Atribuição after Geral', async () => {
+  it('keeps one tab list, named, with Atribuição and Como o cliente vê after Geral', async () => {
     await openContent(stored());
     const list = within(dialog()).getByRole('tablist', { name: 'Seções do conteúdo' });
 
-    expect(within(list).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Geral', 'Atribuição']);
+    expect(within(list).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Geral', 'Atribuição', 'Como o cliente vê']);
   });
 });

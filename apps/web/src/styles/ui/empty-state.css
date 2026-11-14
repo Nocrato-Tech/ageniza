@@ -1,0 +1,116 @@
+/* Mascot and EmptyState: what a list shows when it has nothing yet. The owl is decorative and only beside an action. */
+.ui-mascot {
+  display: block;
+  flex: none;
+  max-width: 100%;
+  height: auto;
+}
+
+.ui-empty-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-12);
+  padding: var(--space-8);
+  border: 1.5px dashed var(--color-indigo-200);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, var(--color-indigo-50), var(--bg-surface) 70%);
+}
+
+/* Good news and a failure are not an invitation: a solid frame, teal wash for the first and the plain surface for the second. */
+.ui-empty-state--good-news {
+  border: 1px solid var(--color-teal-100);
+  background: linear-gradient(180deg, var(--block-teal-bg), var(--bg-surface) 80%);
+}
+
+.ui-empty-state--failure {
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+
+.ui-empty-state__body {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 28.75rem;
+}
+
+.ui-empty-state__title {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--heading-lg);
+  overflow-wrap: anywhere;
+}
+
+.ui-empty-state__icon {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.ui-empty-state__icon .ui-icon,
+.ui-empty-state__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ui-empty-state--good-news .ui-empty-state__icon {
+  color: var(--status-ready-fg);
+}
+
+.ui-empty-state--failure .ui-empty-state__icon {
+  color: var(--status-late-fg);
+}
+
+.ui-empty-state--mascot .ui-empty-state__title {
+  font: var(--heading-xl);
+}
+
+.ui-empty-state__description {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+.ui-empty-state__action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+/* On a phone the owl sits above the text, which gets the room and a smaller title. */
+@media (max-width: 40rem) {
+  .ui-empty-state {
+    gap: var(--space-6);
+    padding: var(--space-4);
+  }
+
+  .ui-empty-state--mascot .ui-empty-state__title {
+    font: var(--heading-lg);
+  }
+}
+
+
+/* A failure with the serious owl: one centred column, the way the other two empty states read on the board. */
+.ui-empty-state--serious {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.ui-empty-state--serious .ui-empty-state__body {
+  justify-items: center;
+}
+
+.ui-empty-state--serious .ui-empty-state__action {
+  justify-content: center;
+}
+
+.ui-empty-state__code {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}

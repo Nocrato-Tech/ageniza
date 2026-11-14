@@ -51,6 +51,18 @@ export interface IdentityStorageClient {
   uploadIdentityImage(input: { readonly keyPrefix: string; readonly body: Uint8Array }): Promise<UploadedIdentityImage>;
   deleteObject(input: { readonly key: string }): Promise<void>;
   presignGetObject(input: { readonly key: string; readonly expiresInSeconds: number }): Promise<string>;
+  /**
+   * Reads an image through the API, for a reader that must not be handed an address of the bucket (an address names the object, and the key
+   * names the account). The content type is the one the bytes say (`detectIdentityImageType`), never the one stored on the object. `undefined`
+   * for an object that is not there or whose bytes are no image this deployment accepts; an object over `maxImageBytes` throws
+   * `IdentityImageTooLargeError` before it is read into memory.
+   */
+  readImage(input: { readonly key: string }): Promise<ReadIdentityImage | undefined>;
+}
+
+export interface ReadIdentityImage {
+  readonly body: Uint8Array;
+  readonly contentType: string;
 }
 
 export const createIdentityStorageClient = (config: IdentityStorageConfig): IdentityStorageClient => {
@@ -72,6 +84,22 @@ export const createIdentityStorageClient = (config: IdentityStorageConfig): Iden
 
     async deleteObject({ key }) {
       await internalClient.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: key }));
+    },
+
+    async readImage({ key }) {
+      let output;
+      try {
+        output = await internalClient.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
+      } catch (error) {
+        if (error instanceof Error && (error.name === 'NoSuchKey' || error.name === 'NotFound')) return undefined;
+        throw error;
+      }
+      if (output.Body === undefined) return undefined;
+      if (output.ContentLength !== undefined && output.ContentLength > config.maxImageBytes) throw new IdentityImageTooLargeError(output.ContentLength, config.maxImageBytes);
+      const body = await output.Body.transformToByteArray();
+      if (body.length > config.maxImageBytes) throw new IdentityImageTooLargeError(body.length, config.maxImageBytes);
+      const detected = detectIdentityImageType(body);
+      return detected === undefined ? undefined : { body, contentType: detected.contentType };
     },
 
     async presignGetObject({ key, expiresInSeconds }) {

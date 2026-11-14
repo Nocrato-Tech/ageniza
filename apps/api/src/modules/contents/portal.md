@@ -7,12 +7,13 @@ provou. As decisões estão em `docs/business/decisions/2026-10-11-conteudo-port
 | método | rota | o que faz |
 |---|---|---|
 | `GET` | `/clients/:clientId/contents?from=&to=` | os conteúdos de um período, `{ data, meta: { from, to, count } }` |
-| `GET` | `/clients/:clientId/contents/awaiting-approval` | o que espera a aprovação, paginado |
+| `GET` | `/clients/:clientId/contents/awaiting-approval` | o que espera a aprovação, paginado, na ordem do prazo (com a hora) |
+| `GET` | `/clients/:clientId/contents/progress` | o progresso do mês ("Boa notícia") e o próximo post a ir ao ar |
 | `GET` | `/clients/:clientId/contents/:contentId` | o post: legenda, `revision` e mídia a partir de "aguardando aprovação" |
 | `GET` | `/clients/:clientId/contents/:contentId/media/:assetId/url?variant=` | a URL assinada da capa ou de um item da mídia (#584) |
-| `POST` | `/clients/:clientId/contents/:contentId/approve` | `{ revision }`: aguardando aprovação → aprovado |
+| `POST` | `/clients/:clientId/contents/:contentId/approve` | `{ revision, note? }`: aguardando aprovação → aprovado; o `note` (recado à agência, até 500 caracteres) vira comentário do cliente na conversa, na mesma transação |
 | `POST` | `/clients/:clientId/contents/:contentId/withdraw-approval` | `{ revision }`: aprovado → aguardando aprovação, com vínculo próprio ativo e evento `content.approval_withdrawn`; publicado é conflito |
-| `POST` | `/clients/:clientId/contents/:contentId/request-changes` | `{ revision, comment }`: aguardando aprovação → em ajuste, e o comentário entra na conversa |
+| `POST` | `/clients/:clientId/contents/:contentId/request-changes` | `{ revision, comment }`: aguardando aprovação → em ajuste; aprovado → em ajuste (a aprovação cai) até a véspera da publicação; o comentário entra na conversa |
 
 ## Onde cada regra mora
 
@@ -29,13 +30,39 @@ provou. As decisões estão em `docs/business/decisions/2026-10-11-conteudo-port
 - **O estado é do banco.** `approve_content` e `request_content_changes` decidem o estado, quem agiu (a sessão) e quando. A rota lê o
   conteúdo pelo recorte do portal antes (outro cliente, cancelado e inexistente são o mesmo `404 Content not found.`, também para quem lê
   os dois clientes), recusa o que está em produção com `409 CONTENT_NOT_AWAITING_APPROVAL` e chama a função, que o recusa de novo por dentro.
-- **Aprovar é idempotente, pedir ajuste não.** Aprovar o que já está aprovado é `200` e a primeira pessoa continua sendo quem aprovou;
-  pedir ajuste de um conteúdo já em ajuste é `409`, porque cada pedido é um comentário.
+- **Aprovar é idempotente, pedir ajuste não.** Aprovar o que já está aprovado é `200` e a primeira pessoa continua sendo quem aprovou, sem
+  um segundo recado; pedir ajuste de um conteúdo já em ajuste é `409`, porque cada pedido é um comentário.
+- **O pedido de ajuste vale até a véspera da publicação.** Um conteúdo aprovado aceita o pedido enquanto o dia planejado (`publishOn`) é depois
+  de hoje em São Paulo; no dia da publicação, ou depois, e para o publicado, é `409 CONTENT_NOT_AWAITING_APPROVAL` (a mesma resposta do conteúdo
+  já em ajuste), com a mensagem "Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação." A regra (estado e dia) é de
+  um auxiliar único do banco, lido da linha travada e do relógio de quando ela foi travada. É só do portal, com conta: o link do e-mail decide apenas
+  o que aguarda aprovação (um aprovado é `409` ali, com a mensagem "Só um conteúdo aguardando aprovação recebe um pedido de ajuste.").
+- **Aprovar com recado é tudo ou nada.** `approve_content(uuid, integer, text)` aprova e, com recado, abre (ou acha) a conversa do conteúdo e
+  grava o comentário do cliente na mesma transação: um comentário recusado (agência somente leitura) deixa o conteúdo aguardando, e uma
+  aprovação recusada não deixa comentário. O recado segue a regra do da agência (`ApprovalNoteSchema`: sem caractere invisível ou de controle,
+  aparado, nunca vazio, até 500 caracteres); em branco ou acima do limite é `400` (o contrato barra antes, `A0068` do banco é a segunda barreira,
+  `400 CONTENT_APPROVAL_NOTE_INVALID`). Pedir ajuste continua exigindo o comentário (`CONTENT_COMMENT_INVALID`).
 - **Cada item da mídia diz o que é.** `media[]` leva `kind` (`image` ou `video`), lido da categoria do arquivo pela mesma função do portal; a tela escolhe `<img>` ou `<video>` por ele. A capa não é item: o card pede `thumbnailAssetId` como `variant=thumbnail`, que é sempre imagem.
 - **A agência lê quem aprovou, o portal não.** A agência vê `approvedBy: { name, side: 'client' }` (sem id); a resposta do portal não
   tem esse campo.
+- **A rodada que o portal lê** (decisões de 2026-11-10 e 2026-11-11): `approval: { dueAt, dueOn, note, sentAt, sentBy }`. `dueAt` é o prazo como
+  instante e `dueOn` o dia dele em São Paulo; `sentBy` é `{ name, photoUrl }` de quem da agência enviou a rodada, nada mais da pessoa: nem
+  e-mail, nem id, nem papel, nem vínculo (o lote também não sai). Tudo vem de `app_private.portal_contents`, que lê a rodada mais recente e o
+  remetente por dentro, então o portal segue sem `SELECT` em rodadas nem em contas. A foto é a chave que a conta guarda
+  (`users/<id>/avatar/<versão>.<ext>`), assinada aqui (`signSenderPhotos`, uma assinatura local, sem conexão) só quando é de fato uma chave de
+  avatar: qualquer outro texto, a falta de armazenamento ou uma assinatura que falha dão `photoUrl: null`, com o nome, e um log de código fixo
+  (`PORTAL_SENDER_PHOTO_URL_FAILED`). O endereço assinado carrega a chave no caminho, como o das fotos de autor da conversa. A resposta de
+  aprovar, pedir ajuste e desfazer leva o mesmo `approval`. O link de aprovação do e-mail não passa por aqui e responde `dueAt`, `sentAt` e
+  `sentBy` nulos.
+- **"O que precisa de você" segue o prazo.** A lista do que espera aprovação vem na ordem do instante do prazo da rodada mais recente (a hora
+  desempata o dia), depois o dia e a hora da publicação; sem prazo, ou sem rodada, vem por último.
+- **O progresso do mês** (`GET .../contents/progress`, `loadPortalProgress`): do mês de hoje em São Paulo, `total` são os conteúdos que não
+  foram cancelados e `approved` os aprovados ou publicados; `next` é o aprovado mais cedo, a partir de hoje, cuja hora ainda não chegou (sem
+  hora, vale o dia inteiro), ou `null`. Lê só por `app_private.portal_contents`, então vale o mesmo recorte do resto do portal. Um instante só
+  (`clock-sql.ts`) dá o dia, o mês e a hora; o `now` da dependência o fixa nos testes.
 - **O pedido de ajuste é uma função só.** Abre (ou acha) a conversa do conteúdo, grava o comentário como o cliente e leva o conteúdo a
-  "em ajuste", na mesma transação: um comentário recusado não deixa conversa nem estado. O comentário segue a regra única de texto livre
+  "em ajuste", na mesma transação (de um aprovado, limpa também quem aprovou e quando; o recado da aprovação continua na conversa): um comentário
+  recusado não deixa conversa nem estado. O comentário segue a regra única de texto livre
   das conversas (`CommentBodySchema`): só espaço, só caractere invisível e só caractere de controle são vazios.
 
 ## A URL assinada da mídia (issue #584)
@@ -58,12 +85,14 @@ está configurado (como o módulo `media`), e não tem migration.
 ## A corrida
 
 As duas funções travam o cliente ativo (`FOR SHARE`) antes do conteúdo (`FOR UPDATE`). Aprovar e pedir ajuste do mesmo conteúdo ao
-mesmo tempo: um ganha e o outro é `409`. A agência que cancela enquanto o pedido espera: `404` (a rota relê o recorte do portal
+mesmo tempo: um ganha e o outro é `409`. Pedir ajuste de um aprovado contra a publicação, ou contra a agência que muda a data para hoje:
+quem pega a linha primeiro ganha e o outro é `409`, porque o estado e a data são lidos depois da espera. A agência que cancela enquanto o pedido espera: `404` (a rota relê o recorte do portal
 quando o banco responde `A0062`). A agência que edita a legenda enquanto a aprovação espera: `409 CONTENT_REVISION_CHANGED`. O arquivamento
 do cliente, nas duas janelas (em curso e já confirmado), é `404`, sem gravar nada; o portal nunca fica sabendo que o cliente foi arquivado.
 
 ## Erros do banco
 
 `translatePortalError` (`portal-errors.ts`): `A0060`, `A0061` e `A0020` são `404`; `A0062`, `409 CONTENT_NOT_AWAITING_APPROVAL`; `A0063`,
-`409 CONTENT_REVISION_CHANGED`; `A0068`, `400 CONTENT_COMMENT_INVALID`; `40P01` e `40001`, `409 TRY_AGAIN`; `42501` é relido numa transação
+`409 CONTENT_REVISION_CHANGED`; `A0068`, `400 CONTENT_APPROVAL_NOTE_INVALID` ao aprovar e `400 CONTENT_COMMENT_INVALID` nos outros movimentos (o
+link do e-mail, que não leva recado, segue com este); `40P01` e `40001`, `409 TRY_AGAIN`; `42501` é relido numa transação
 nova (o vínculo ainda vale: `403`, senão `404`). Nenhum erro do banco chega como `500`, e nenhuma resposta leva a mensagem dele.

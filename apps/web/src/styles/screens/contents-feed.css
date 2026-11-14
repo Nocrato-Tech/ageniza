@@ -1,0 +1,477 @@
+/* The feed view: the phone of the board on the left and the guide on the right; below 64rem the guide goes under the phone. */
+.content-feed-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-8);
+  align-items: start;
+}
+
+@media (min-width: 64rem) {
+  .content-feed-layout {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
+
+  .content-feed-guide {
+    position: sticky;
+    top: var(--space-6);
+  }
+}
+
+.content-feed {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.content-feed__handle {
+  margin: 0;
+  padding: var(--space-3) var(--space-3) 0;
+  color: var(--text-primary);
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.content-feed-layout .content-feed__handle {
+  padding: 0;
+  font-weight: 700;
+}
+
+.content-feed__profile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.content-feed__name {
+  margin: 0;
+  font: var(--label-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.content-feed__counters {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.content-feed__counters div {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.content-feed__counters dd {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--heading-lg);
+}
+
+.content-feed__counters dt {
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+/* The circles of the stories, where Instagram keeps the destaques: the day in the ring, the state in words below it. */
+.content-feed__stories {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0 0 var(--space-1);
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: none;
+}
+
+.content-feed__stories::-webkit-scrollbar {
+  display: none;
+}
+
+.content-feed__story {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  min-width: 3.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--caption);
+  cursor: pointer;
+}
+
+.content-feed__story .story-ring {
+  --story-size: 3.25rem;
+}
+
+.content-feed__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-feed-layout .content-feed__grid {
+  gap: var(--space-1);
+}
+
+.content-feed__tile {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--bg-hover);
+}
+
+.content-feed-layout .content-feed__tile {
+  aspect-ratio: 3 / 4;
+}
+
+/* On the portal a tile that is still planned says so in a pill. */
+.content-feed__planned {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--caption);
+  white-space: nowrap;
+}
+
+/* The tile is the link to its content: a press anywhere on it opens it. */
+.content-feed__link {
+  position: absolute;
+  inset: 0;
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.content-feed__link:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+/* What is still planned (a day ahead) is outlined with a dashed line inside the tile, so the grid reads as the finished profile and its plan. */
+.content-feed__tile[data-planned] .content-feed__link::after {
+  content: '';
+  position: absolute;
+  inset: 0.1875rem;
+  border: 1.5px dashed var(--color-white);
+  pointer-events: none;
+}
+
+.content-feed__date {
+  position: absolute;
+  top: var(--space-1);
+  left: var(--space-1);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.content-feed__format {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--color-white);
+  filter: drop-shadow(0 0 2px var(--scrim)) drop-shadow(0 0 1px var(--scrim));
+}
+
+.content-feed__state {
+  position: absolute;
+  bottom: var(--space-1);
+  left: var(--space-1);
+  max-width: calc(100% - 2 * var(--space-1));
+}
+
+.content-feed__state .ui-status-tag,
+.content-feed__state .ui-late-badge {
+  min-height: 1.125rem;
+  padding: 0 var(--space-1);
+  font: var(--caption);
+}
+
+.content-feed__state .ui-status-tag {
+  border-color: transparent;
+  background: var(--bg-surface);
+}
+
+.content-feed__state svg {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
+.content-feed__empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) 0;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.content-feed__empty p {
+  margin: 0;
+}
+
+/* The panel that reads the feed: two cards on the surface, with the words of the board. */
+.content-feed-guide {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.content-feed-guide__card {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.content-feed-guide__card p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.content-feed-guide__title {
+  margin: 0;
+  font: var(--title-md);
+}
+
+.content-feed-guide__legend {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-feed-guide__legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+}
+
+.content-feed-guide__legend .ui-status-tag {
+  flex: none;
+}
+
+.content-feed-guide__dashed {
+  flex: none;
+  width: 2.25rem;
+  height: 1.5rem;
+  border: 1.5px dashed var(--color-slate-500);
+  border-radius: var(--radius-sm);
+}
+
+.content-feed-guide__card .content-feed-guide__note {
+  font: var(--caption);
+}
+
+.content-feed__cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+
+.content-feed__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.content-feed__cover--placeholder {
+  color: var(--text-secondary);
+  font: var(--heading-md);
+}
+
+.content-card-anchor {
+  display: block;
+  min-width: 0;
+}
+
+/* The floating card sits on bg/elevated: only text, tags and the hint, no link, no danger text, no field. */
+.content-hover {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  width: min(20rem, calc(100vw - var(--space-8)));
+  font: var(--body-md);
+}
+
+.content-hover__cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+}
+
+.content-hover__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.content-hover__cover--bare {
+  display: none;
+}
+
+.content-hover__cover--placeholder {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font: var(--heading-md);
+}
+
+.content-hover__title,
+.content-hover__when,
+.content-hover__note,
+.content-hover__hint,
+.content-hover__detail,
+.content-hover__detail dd {
+  margin: 0;
+}
+
+.content-hover__title {
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.content-hover__when {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.content-hover__when .ui-icon > svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.content-hover__detail {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.content-hover__detail dt {
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+.content-hover__detail dd {
+  overflow-wrap: anywhere;
+}
+
+.content-hover__note,
+.content-hover__hint {
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.content-hover__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.content-phone {
+  width: min(100%, 22rem);
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: calc(var(--radius-xl) * 2);
+  background: var(--color-ink-900);
+}
+
+/* On the agency's calendar the device is the light one of the board; the portal's approval link keeps the ink bezel. */
+.contents .content-phone {
+  background: var(--bg-surface);
+}
+
+.content-phone__screen {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-height: 42rem;
+  padding: var(--space-12) var(--space-4) var(--space-8);
+  border-radius: calc(var(--radius-xl) * 2 - var(--space-2));
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.contents .content-phone__screen {
+  border: 1px solid var(--border-subtle);
+}
+
+.content-phone__island {
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  width: 5.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-ink-900);
+  transform: translateX(-50%);
+}
+
+.content-phone__home {
+  position: absolute;
+  bottom: var(--space-3);
+  left: 50%;
+  width: 7rem;
+  height: 0.25rem;
+  border-radius: var(--radius-full);
+  background: var(--border-control);
+  transform: translateX(-50%);
+}
+
+
+/* The phone of the board: a bezel, the camera island and the home bar around a screen with room. The approval link of the portal draws its post on it too. */
+.content-feed-layout .content-phone {
+  width: min(100%, 23.5rem);
+  margin-inline: auto;
+}
+
+.content-phone .content-feed {
+  gap: var(--space-4);
+}
+
+.content-feed__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.content-feed__range {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.content-feed__pager .ui-button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}

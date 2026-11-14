@@ -1,0 +1,41 @@
+.ui-text-input {
+  min-height: 3rem;
+  width: 100%;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  font: var(--body-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.ui-password-field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.ui-password-input {
+  position: relative;
+}
+
+.ui-password-input > .ui-text-input {
+  padding-inline-end: var(--space-12);
+}
+
+.ui-password-input__toggle {
+  padding: 0;
+  position: absolute;
+  inset-inline-end: 0;
+  top: 0;
+  height: 100%;
+}
+
+.ui-field-message {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+  font: var(--caption);
+  color: var(--text-danger);
+}
+

@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -16,6 +14,7 @@ import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
+import { readGlobalCss } from './styles/read-css';
 
 afterEach(cleanup);
 
@@ -316,6 +315,15 @@ const renderCollaborators = (impl: typeof fetch, entry = `/agencia/${AGENCY_A}/c
   return { container: rendered.container, probe, queryClient };
 };
 
+/** The profile of the person on the page: what the modal used to be, found by the heading with the name. */
+const profileOf = async (name: string): Promise<HTMLElement> => {
+  const heading = await screen.findByRole('heading', { level: 1, name });
+  return heading.closest<HTMLElement>('.collaborator-page__main')!;
+};
+
+/** The panel of the open tab: the fields, apart from the header, which repeats the cargo, the role and the e-mail. */
+const details = (profile: HTMLElement) => within(profile.querySelector<HTMLElement>('[role="tabpanel"]')!);
+
 const badgeNames = (container: HTMLElement): (string | null)[] =>
   Array.from(container.querySelectorAll('.ui-badge-card__name')).map((element) => element.textContent);
 
@@ -347,6 +355,13 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     renderCollaborators(impl);
 
     expect(await screen.findByText('24 de 61 pessoas')).toBeTruthy();
+  });
+
+  it('says "N de M pessoas" under the grid when everyone fits on one page', async () => {
+    const { impl } = makeFetch({ collaborators: () => json({ data: [anaPrado], meta: meta(1, 1, 1) }) });
+    renderCollaborators(impl);
+
+    expect(await screen.findByText('1 de 1 pessoas')).toBeTruthy();
   });
 
   it('shows the invite button only with colaborador.convidar', async () => {
@@ -427,7 +442,7 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     const { impl } = makeFetch({ collaborators: () => new Promise<Response>(() => undefined) });
     const { container } = renderCollaborators(impl);
 
-    await screen.findByRole('link', { name: 'Agência Um' });
+    await screen.findByRole('link', { name: /Agência Um/ });
     expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(24);
   });
 
@@ -511,7 +526,7 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
 
     await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/colaboradores`); });
 
-    await screen.findByRole('link', { name: 'Agência Dois' });
+    await screen.findByRole('link', { name: /Agência Dois/ });
     expect(screen.queryByText('Ana Prado')).toBeNull();
     expect(container.querySelectorAll('.ui-badge-card__skeleton')).toHaveLength(24);
   });
@@ -530,8 +545,14 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
 
     const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
     expect(alert.textContent).toContain('Não foi possível carregar a equipe.');
-    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    // The failure kind, never the empty state of a search or of a status that merely has nobody.
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(screen.queryByText(/Nenhuma pessoa encontrada/)).toBeNull();
+    expect(screen.queryByText('Ninguém foi removido desta agência')).toBeNull();
+    const attemptsBeforeRetry = attempts;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
     await screen.findByText('Ana Prado');
+    expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
   });
 
   it('disables the job-title filter when the job-titles route fails, without breaking the grid', async () => {
@@ -604,136 +625,117 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
   });
 });
 
-describe('collaborator detail (#103)', () => {
+describe('collaborator page (#103)', () => {
   const listUrl = `/agencia/${AGENCY_A}/colaboradores`;
-  const detailUrl = (id = anaPrado.membershipId) => `${listUrl}?colaborador=${encodeURIComponent(id)}`;
+  const pageUrl = (id = anaPrado.membershipId) => `${listUrl}/${encodeURIComponent(id)}`;
   const detailCalls = (calls: string[]) => calls.filter((call) => /\/collaborators\/(?!job-titles)/.test(call));
 
-  it('opens the selected badge with its own API detail and disabled future tabs', async () => {
+  it('opens the selected badge on its own page, with its API detail and disabled future tabs', async () => {
     const { impl, calls } = makeFetch();
     const { probe } = renderCollaborators(impl);
     fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Mário Costa' }));
 
-    const modal = await screen.findByRole('dialog', { name: 'Mário Costa' });
-    expect(probe.search).toContain(`colaborador=${marioCosta.membershipId}`);
+    const profile = await profileOf('Mário Costa');
+    expect(probe.pathname).toBe(pageUrl(marioCosta.membershipId));
     expect(detailCalls(calls)).toEqual([`GET /agencies/${AGENCY_A}/collaborators/${marioCosta.membershipId}`]);
-    expect(within(modal).getAllByText('mario@example.test')).toHaveLength(2);
-    expect(within(modal).getByText('13/03/2026')).toBeTruthy();
-    expect(within(modal).getByText('A troca de e-mail é feita pela operação.')).toBeTruthy();
-    expect(within(modal).getByRole('tab', { name: 'Detalhes' }).getAttribute('aria-selected')).toBe('true');
-    for (const name of ['Performance', 'Entregas']) expect(within(modal).getByRole('tab', { name }).hasAttribute('disabled')).toBe(true);
-    expect(within(modal).getAllByText('Ainda não disponível.')).toHaveLength(2);
-    expect(within(modal).queryByRole('textbox')).toBeNull();
-    expect(modal.textContent).not.toMatch(/salário|remuneração|salvar|remover/i);
+    expect(within(profile).getAllByText('mario@example.test')).toHaveLength(2);
+    expect(within(profile).getByText('13/03/2026')).toBeTruthy();
+    expect(within(profile).getByText('A troca de e-mail é feita pela operação.')).toBeTruthy();
+    expect(within(profile).getByRole('tab', { name: 'Detalhes' }).getAttribute('aria-selected')).toBe('true');
+    for (const name of ['Performance', 'Entregas']) expect(within(profile).getByRole('tab', { name }).hasAttribute('disabled')).toBe(true);
+    expect(within(profile).getAllByText('Ainda não disponível.')).toHaveLength(2);
+    expect(within(profile).queryByRole('textbox')).toBeNull();
+    expect(profile.textContent).not.toMatch(/salário|remuneração|salvar|remover/i);
   });
 
-  it('preserves page and all filters when closing, going back, and going forward', async () => {
+  it('gives the way back to the list the person came from, with page and filters, in the trail and in history', async () => {
     const { impl } = makeFetch({ collaborators: () => json({ data: [anaPrado], meta: meta(2, 60, 3) }) });
     const original = '?q=ana&role=production&jobTitle=Editora&page=2';
     const { probe } = renderCollaborators(impl, listUrl + original);
-    const badge = await screen.findByRole('link', { name: 'Ver detalhes de Ana Prado' });
-    badge.focus();
-    fireEvent.click(badge);
-    await screen.findByRole('dialog', { name: 'Ana Prado' });
+    fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Ana Prado' }));
+    await profileOf('Ana Prado');
+    const trail = screen.getByRole('navigation', { name: 'Você está em' });
+    expect(within(trail).getByRole('link', { name: 'Equipe' }).getAttribute('href')).toBe(listUrl + original);
+    expect(within(trail).getByText('Ana Prado').getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: 'Voltar à equipe' }).getAttribute('href')).toBe(listUrl + original);
+
     await act(async () => { await probe.navigate(-1); });
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(probe.search).toBe(original);
-    expect(document.activeElement).toBe(badge);
-    await act(async () => { await probe.navigate(1); });
-    await screen.findByRole('dialog', { name: 'Ana Prado' });
-    fireEvent.click(screen.getByRole('button', { name: 'Fechar detalhe do colaborador' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(probe.search).toBe(original);
-  });
-
-  it('opens a copied URL without list history and closes into that filtered list', async () => {
-    const { impl } = makeFetch();
-    const { probe } = renderCollaborators(impl, detailUrl() + '&role=production');
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
-    fireEvent(modal, new Event('cancel', { bubbles: false, cancelable: true }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(probe.pathname).toBe(listUrl);
-    expect(probe.search).toBe('?role=production');
-  });
-
-  it('closes the modal opened from the list by going back, leaving the detail ahead in history (#357)', async () => {
-    const { impl } = makeFetch();
-    const { probe } = renderCollaborators(impl);
-    fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Mário Costa' }));
-    await screen.findByRole('dialog', { name: 'Mário Costa' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Fechar detalhe do colaborador' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    // A close that replaced the entry or added another would leave nothing ahead to reopen.
+    expect(probe.search).toBe(original);
     await act(async () => { await probe.navigate(1); });
-    expect(await screen.findByRole('dialog', { name: 'Mário Costa' })).toBeTruthy();
+    await profileOf('Ana Prado');
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Equipe' }));
+    await screen.findByRole('heading', { level: 1, name: 'Colaboradores' });
+    expect(probe.pathname).toBe(listUrl);
+    expect(probe.search).toBe(original);
   });
 
-  it('shows the agency entry date on the own profile modal, as the wireframe draws it (#357)', async () => {
-    const { impl } = makeFetch({ detail: () => json(anaSelf) });
-    renderCollaborators(impl, detailUrl());
-    const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
-
-    expect(within(dialog).getByText(/Na agência desde/)).toBeTruthy();
-    expect(within(dialog).getByText('12/03/2026')).toBeTruthy();
-  });
-
-  it('only closes on a gesture that both starts and ends outside the modal', async () => {
+  it('sends the old ?colaborador=<id> address to the page, replacing the entry and keeping the other filters for the way back', async () => {
     const { impl } = makeFetch();
-    renderCollaborators(impl, detailUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
-    vi.spyOn(modal, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 400, 400));
-    const pointerDown = (x: number) => fireEvent(modal, new MouseEvent('pointerdown', { bubbles: true, clientX: x, clientY: x }));
-    pointerDown(150);
-    fireEvent.click(modal, { clientX: 150, clientY: 150 });
-    expect(screen.getByRole('dialog')).toBeTruthy();
-    pointerDown(150);
-    fireEvent.click(modal, { clientX: 5, clientY: 5 });
-    expect(screen.getByRole('dialog')).toBeTruthy();
-    pointerDown(5);
-    fireEvent.click(modal, { clientX: 5, clientY: 5 });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const { probe } = renderCollaborators(impl, `${listUrl}?colaborador=${anaPrado.membershipId}&role=production`);
+    await profileOf('Ana Prado');
+    expect(probe.pathname).toBe(pageUrl());
+    expect(probe.search).toBe('');
+    expect(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Equipe' }).getAttribute('href')).toBe(`${listUrl}?role=production`);
+    // The redirect replaced the old entry: going back leaves the app's start, never to the old address again.
+    await act(async () => { await probe.navigate(-1); });
+    expect(probe.search).not.toContain('colaborador=');
   });
 
-  it('shows skeletons inside the modal while its request is pending', async () => {
+  it('shows the list when the old parameter is empty, with no detail request', async () => {
+    const { impl, calls } = makeFetch();
+    renderCollaborators(impl, `${listUrl}?colaborador=`);
+    await screen.findByText('Ana Prado');
+    expect(detailCalls(calls)).toEqual([]);
+  });
+
+  it('shows the agency entry date on the own profile (#357)', async () => {
+    const { impl } = makeFetch({ detail: () => json(anaSelf) });
+    renderCollaborators(impl, pageUrl());
+    const profile = await profileOf('Ana Prado');
+
+    expect(within(profile).getByText(/Na agência desde/)).toBeTruthy();
+    expect(within(profile).getByText('12/03/2026')).toBeTruthy();
+  });
+
+  it('shows skeletons in the profile while its request is pending', async () => {
     let finish: (value: Response) => void = () => undefined;
     const response = new Promise<Response>((resolve) => { finish = resolve; });
     const { impl } = makeFetch({ detail: () => response });
-    renderCollaborators(impl, detailUrl());
-    const modal = await screen.findByRole('dialog');
-    expect(await within(modal).findByText('Carregando colaborador…')).toBeTruthy();
-    expect(modal.querySelectorAll('.ui-skeleton')).toHaveLength(2);
+    renderCollaborators(impl, pageUrl());
+    const status = (await screen.findByText('Carregando colaborador…')).closest<HTMLElement>('.collaborator-detail__status')!;
+    expect(status.querySelectorAll('.ui-skeleton')).toHaveLength(2);
     await act(async () => { finish(json(anaPrado)); });
-    await screen.findByRole('dialog', { name: 'Ana Prado' });
+    await profileOf('Ana Prado');
   });
 
-  it('keeps an error inside the modal and retries without closing it', async () => {
+  it('keeps an error in the profile and retries without leaving the page', async () => {
     let attempts = 0;
     const { impl } = makeFetch({ detail: () => ++attempts <= 2
       ? json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, 500)
       : json(anaPrado) });
-    renderCollaborators(impl, detailUrl());
-    const modal = await screen.findByRole('dialog');
-    await within(modal).findByRole('alert', undefined, { timeout: 5000 });
-    expect(modal.textContent).not.toContain('private diagnostic');
-    fireEvent.click(within(modal).getByRole('button', { name: 'Tentar de novo' }));
-    expect(await screen.findByRole('dialog', { name: 'Ana Prado' })).toBe(modal);
+    const { probe } = renderCollaborators(impl, pageUrl());
+    const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
+    expect(document.body.textContent).not.toContain('private diagnostic');
+    fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
+    await profileOf('Ana Prado');
+    expect(probe.pathname).toBe(pageUrl());
   });
 
   it.each([403, 404])('renders %i as the same not-found state, with a return to the list', async (status) => {
     const { impl } = makeFetch({ detail: () => json({ error: { code: status === 403 ? 'FORBIDDEN' : 'NOT_FOUND', message: 'sensitive detail' } }, status) });
-    const { probe } = renderCollaborators(impl, detailUrl());
-    const modal = await screen.findByRole('dialog');
-    await within(modal).findByText('Colaborador não encontrado.');
-    expect(within(modal).queryByRole('tablist')).toBeNull();
-    expect(modal.textContent).not.toContain('sensitive detail');
-    fireEvent.click(within(modal).getByRole('button', { name: 'Voltar à lista' }));
-    expect(probe.search).toBe('');
+    const { probe } = renderCollaborators(impl, pageUrl());
+    await screen.findByText('Colaborador não encontrado.');
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(document.body.textContent).not.toContain('sensitive detail');
+    fireEvent.click(screen.getByRole('link', { name: 'Voltar à lista' }));
+    await screen.findByRole('heading', { level: 1, name: 'Colaboradores' });
+    expect(probe.pathname).toBe(listUrl);
   });
 
-  it.each(['', '../me', '..%2Fme', 'not-a-uuid', 'x?role=admin#fragment'])('refuses a malformed membership id (%s) without a detail request', async (id) => {
+  it.each(['../me', 'not-a-uuid', 'x?role=admin#fragment'])('refuses a malformed membership id (%s) without a detail request', async (id) => {
     const { impl, calls } = makeFetch();
-    renderCollaborators(impl, detailUrl(id));
+    renderCollaborators(impl, pageUrl(id));
     await screen.findByText('Colaborador não encontrado.');
     expect(detailCalls(calls)).toEqual([]);
   });
@@ -741,10 +743,10 @@ describe('collaborator detail (#103)', () => {
   it('does not load or reveal a detail without permission or an authenticated session', async () => {
     for (const scenario of [{ permissions: [] }, { authenticated: false }]) {
       const { impl, calls } = makeFetch(scenario);
-      renderCollaborators(impl, detailUrl());
+      renderCollaborators(impl, pageUrl());
       if (scenario.authenticated === false) await screen.findByRole('heading', { name: 'Área indisponível' });
       else await screen.findByRole('heading', { name: 'Página não encontrada' });
-      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByRole('heading', { level: 1, name: 'Ana Prado' })).toBeNull();
       expect(detailCalls(calls)).toEqual([]);
       cleanup();
     }
@@ -752,23 +754,24 @@ describe('collaborator detail (#103)', () => {
 
   it('does not render another membership returned by a mismatched response', async () => {
     const { impl } = makeFetch({ detail: () => json(marioCosta) });
-    renderCollaborators(impl, detailUrl());
-    const modal = await screen.findByRole('dialog');
-    await within(modal).findByRole('alert');
-    expect(modal.textContent).not.toContain('Mário');
+    renderCollaborators(impl, pageUrl());
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).not.toContain('Mário');
+    expect(screen.queryByRole('heading', { level: 1, name: 'Mário Costa' })).toBeNull();
   });
 
   it('never reuses a cached detail across agencies, even with the same membership id in the URL', async () => {
     let finish: (value: Response) => void = () => undefined;
     const delayed = new Promise<Response>((resolve) => { finish = resolve; });
     const { impl, calls } = makeFetch({ detail: (_id, agencyId) => agencyId === AGENCY_A ? json(anaPrado) : delayed });
-    const { probe } = renderCollaborators(impl, detailUrl());
-    await screen.findByRole('dialog', { name: 'Ana Prado' });
-    await act(async () => { await probe.navigate(`/agencia/${AGENCY_B}/colaboradores?colaborador=${anaPrado.membershipId}`); });
-    const modal = await screen.findByRole('dialog', { name: 'Detalhe do colaborador' });
-    expect(modal.textContent).not.toContain(anaPrado.email);
+    const { probe } = renderCollaborators(impl, pageUrl());
+    await profileOf('Ana Prado');
+    await act(async () => { await probe.navigate(`/agencia/${AGENCY_B}/colaboradores/${anaPrado.membershipId}`); });
+    await screen.findByText('Carregando colaborador…');
+    expect(screen.queryByRole('heading', { level: 1, name: 'Ana Prado' })).toBeNull();
+    expect(document.body.textContent).not.toContain(anaPrado.email);
     await act(async () => { finish(json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404)); });
-    await within(modal).findByText('Colaborador não encontrado.');
+    await screen.findByText('Colaborador não encontrado.');
     expect(detailCalls(calls)).toContain(`GET /agencies/${AGENCY_B}/collaborators/${anaPrado.membershipId}`);
   });
 
@@ -777,28 +780,27 @@ describe('collaborator detail (#103)', () => {
     const delayed = new Promise<Response>((resolve) => { finish = resolve; });
     let requests = 0;
     const { impl } = makeFetch({ detail: () => ++requests === 1 ? json(anaPrado) : delayed });
-    const { queryClient } = renderCollaborators(impl, detailUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const { queryClient } = renderCollaborators(impl, pageUrl());
+    const profile = await profileOf('Ana Prado');
     act(() => { void queryClient.invalidateQueries({ queryKey: ['agency', AGENCY_A, 'collaborators', 'detail'] }); });
     await waitFor(() => expect(requests).toBe(2));
-    expect(modal.querySelector('.ui-skeleton')).toBeNull();
-    expect(within(modal).getByRole('tab', { name: 'Detalhes' })).toBeTruthy();
+    expect(profile.querySelector('.ui-skeleton')).toBeNull();
+    expect(within(profile).getByRole('tab', { name: 'Detalhes' })).toBeTruthy();
     await act(async () => { finish(json({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403)); });
-    await within(modal).findByText('Colaborador não encontrado.');
-    expect(modal.textContent).not.toContain(anaPrado.email);
-    expect(within(modal).queryByRole('tablist')).toBeNull();
+    await within(profile).findByText('Colaborador não encontrado.');
+    expect(profile.textContent).not.toContain(anaPrado.email);
+    expect(within(profile).queryByRole('tablist')).toBeNull();
   });
 
   it('renders untrusted identity fields as text', async () => {
     const hostile = '<img src=x onerror=alert(1)>';
     const { impl } = makeFetch({ detail: () => json({ ...anaPrado, name: hostile, jobTitle: hostile }) });
-    renderCollaborators(impl, detailUrl());
-    const modal = await screen.findByRole('dialog', { name: hostile });
-    expect(modal.querySelector('img')).toBeNull();
-    expect(modal.querySelector('[onerror]')).toBeNull();
+    renderCollaborators(impl, pageUrl());
+    const profile = await profileOf(hostile);
+    expect(profile.querySelector('img')).toBeNull();
+    expect(profile.querySelector('[onerror]')).toBeNull();
   });
 });
-
 describe('collaborator admin actions (#104)', () => {
   const detailUrl = (id: string) => `/agencia/${AGENCY_A}/colaboradores?colaborador=${id}`;
   const OWNER_PERMISSIONS = ['colaborador.visualizar', 'colaborador.alterar_funcao', 'colaborador.alterar_papel', 'colaborador.remover', 'colaborador.atribuir_admin'];
@@ -811,14 +813,14 @@ describe('collaborator admin actions (#104)', () => {
   const openMario = async (scenario: Scenario) => {
     const fetch = makeFetch(scenario);
     renderCollaborators(fetch.impl, detailUrl(marioCosta.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
     return { ...fetch, dialog };
   };
 
   it('offers the Admin role only to the Owner, even if the roles response leaks it', async () => {
     const owner = makeFetch({ isOwner: true, permissions: OWNER_PERMISSIONS });
     renderCollaborators(owner.impl, detailUrl(marioCosta.membershipId));
-    const ownerDialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const ownerDialog = await profileOf('Mário Costa');
     await within(ownerDialog).findByRole('option', { name: 'Admin' });
     expect(Array.from((within(ownerDialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement).options).map((option) => option.textContent))
       .toEqual(['Selecione', 'Gestor de conta', 'Admin', 'Financeiro', 'Produção', 'Vendas']);
@@ -828,7 +830,7 @@ describe('collaborator admin actions (#104)', () => {
     // response deliberately leaks it.
     const leaked = makeFetch({ permissions: ADMIN_PERMISSIONS, roles: () => json({ data: SYSTEM_ROLES }) });
     renderCollaborators(leaked.impl, detailUrl(marioCosta.membershipId));
-    const adminDialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const adminDialog = await profileOf('Mário Costa');
     await within(adminDialog).findByRole('option', { name: 'Gestor de conta' });
     const adminSelect = within(adminDialog).getByRole('combobox', { name: 'Papel' }) as HTMLSelectElement;
     expect(Array.from(adminSelect.options).map((option) => option.textContent))
@@ -847,11 +849,11 @@ describe('collaborator admin actions (#104)', () => {
       }
     });
     renderCollaborators(impl, detailUrl(marioCosta.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
 
     expect((within(dialog).getByRole('textbox', { name: 'Cargo' }) as HTMLInputElement).value).toBe('Copywriter');
     expect(within(dialog).queryByRole('combobox')).toBeNull();
-    expect(within(dialog).getByText('Produção')).toBeTruthy();
+    expect(details(dialog).getByText('Produção')).toBeTruthy();
     expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
 
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editora' } });
@@ -867,7 +869,7 @@ describe('collaborator admin actions (#104)', () => {
   ] as const)('shows the e-mail as read-only with its note in the %s editing modal (#357)', async (_label, permissions) => {
     const { impl } = makeFetch({ permissions });
     renderCollaborators(impl, detailUrl(marioCosta.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
 
     expect(within(dialog).getByText('A troca de e-mail é feita pela operação.')).toBeTruthy();
     expect(within(dialog).queryByRole('textbox', { name: 'E-mail' })).toBeNull();
@@ -880,7 +882,7 @@ describe('collaborator admin actions (#104)', () => {
   ])('shows everything read-only for %s, without a save button', async (roleKey, roleName) => {
     const { impl } = makeFetch({ role: { key: roleKey, name: roleName }, permissions: VIEWER_PERMISSIONS });
     renderCollaborators(impl, detailUrl(marioCosta.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
 
     expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
     expect(within(dialog).queryByRole('combobox')).toBeNull();
@@ -901,12 +903,13 @@ describe('collaborator admin actions (#104)', () => {
       }
     });
     renderCollaborators(impl, detailUrl(marioCosta.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
 
     expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
-    expect(within(dialog).getByText('Copywriter')).toBeTruthy();
+    expect(details(dialog).getByText('Copywriter')).toBeTruthy();
     expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
 
+    await within(dialog).findByRole('option', { name: 'Financeiro' });
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleIdOf('finance') } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
 
@@ -927,12 +930,12 @@ describe('collaborator admin actions (#104)', () => {
       }
     });
     renderCollaborators(impl, detailUrl(marioCosta.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
 
     expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
     expect(within(dialog).queryByRole('combobox')).toBeNull();
-    expect(within(dialog).getByText('Copywriter')).toBeTruthy();
-    expect(within(dialog).getByText('Produção')).toBeTruthy();
+    expect(details(dialog).getByText('Copywriter')).toBeTruthy();
+    expect(details(dialog).getByText('Produção')).toBeTruthy();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Remover do quadro' }));
     fireEvent.click(within(await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).getByRole('button', { name: 'Remover' }));
@@ -951,10 +954,10 @@ describe('collaborator admin actions (#104)', () => {
       }
     });
     renderCollaborators(impl, detailUrl(marioCosta.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
 
     expect(within(dialog).queryByRole('combobox')).toBeNull();
-    expect(within(dialog).getByText('Produção')).toBeTruthy();
+    expect(details(dialog).getByText('Produção')).toBeTruthy();
     expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
 
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editora' } });
@@ -983,12 +986,13 @@ describe('collaborator admin actions (#104)', () => {
       }
     });
     renderCollaborators(impl, detailUrl(marioCosta.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
 
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editora' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editora' }]));
 
+    await within(dialog).findByRole('option', { name: 'Financeiro' });
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleIdOf('finance') } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editora' }, { roleId: roleIdOf('finance') }]));
@@ -1002,7 +1006,7 @@ describe('collaborator admin actions (#104)', () => {
       detail: () => json(anaSelf)
     });
     renderCollaborators(impl, detailUrl(anaPrado.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const dialog = await profileOf('Ana Prado');
 
     expect(within(dialog).getByRole('textbox', { name: 'Nome' })).toBeTruthy();
     expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
@@ -1020,7 +1024,7 @@ describe('collaborator admin actions (#104)', () => {
       detail: () => json(anaPrado)
     });
     renderCollaborators(impl, detailUrl(anaPrado.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const dialog = await profileOf('Ana Prado');
 
     expect(within(dialog).queryByRole('textbox', { name: 'Nome' })).toBeNull();
     expect(dialog.querySelector('input[type="file"]')).toBeNull();
@@ -1035,7 +1039,7 @@ describe('collaborator admin actions (#104)', () => {
       detail: () => json(anaSelf)
     });
     renderCollaborators(impl, detailUrl(anaPrado.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const dialog = await profileOf('Ana Prado');
 
     expect(within(dialog).getByRole('textbox', { name: 'Nome' })).toBeTruthy();
     expect(dialog.querySelector('input[type="file"]')).not.toBeNull();
@@ -1051,13 +1055,13 @@ describe('collaborator admin actions (#104)', () => {
       detail: () => json(ownerTarget)
     });
     renderCollaborators(impl, detailUrl(ownerTarget.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
 
     expect(within(dialog).queryByRole('combobox')).toBeNull();
     expect(within(dialog).queryByRole('button', { name: 'Remover do quadro' })).toBeNull();
     // The API refuses the Owner's cargo with a 403 (#410), so the modal shows it as text for everyone.
     expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
-    expect(within(dialog).getByText('Copywriter')).toBeTruthy();
+    expect(details(dialog).getByText('Copywriter')).toBeTruthy();
   });
 
   // The account manager holds only `colaborador.alterar_funcao` (one permission); the Admin holds the
@@ -1074,10 +1078,10 @@ describe('collaborator admin actions (#104)', () => {
       detail: () => json(target)
     });
     renderCollaborators(impl, detailUrl(target.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
 
     expect(within(dialog).queryByRole('textbox', { name: 'Cargo' }) !== null).toBe(editable);
-    if (!editable) expect(within(dialog).getByText('Copywriter')).toBeTruthy();
+    if (!editable) expect(details(dialog).getByText('Copywriter')).toBeTruthy();
   });
 
   it('keeps the cargo of the Owner read-only when the Owner opens the own link', async () => {
@@ -1089,10 +1093,10 @@ describe('collaborator admin actions (#104)', () => {
       detail: () => json(ownerSelf)
     });
     renderCollaborators(impl, detailUrl(ownerSelf.membershipId));
-    const dialog = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const dialog = await profileOf('Ana Prado');
 
     expect(within(dialog).queryByRole('textbox', { name: 'Cargo' })).toBeNull();
-    expect(within(dialog).getByText('Editora')).toBeTruthy();
+    expect(details(dialog).getByText('Editora')).toBeTruthy();
   });
 
   it('saves cargo and papel and updates the badge behind without reloading', async () => {
@@ -1117,22 +1121,22 @@ describe('collaborator admin actions (#104)', () => {
     });
     const { container, probe } = renderCollaborators(impl);
     fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Mário Costa' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
 
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Cargo' }), { target: { value: 'Editor de Vídeo' } });
+    await within(dialog).findByRole('option', { name: 'Financeiro' });
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleIdOf('finance') } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
 
     await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editor de Vídeo', roleId: roleIdOf('finance') }]));
-    // The modal header reflects the new values at once.
-    expect(await within(dialog).findByText('Editor de Vídeo · Financeiro')).toBeTruthy();
-    // And the badge behind, without a reload.
+    // The profile header reflects the new values at once.
+    expect(await within(dialog).findByText('Editor de Vídeo')).toBeTruthy();
+    expect(dialog.querySelector('.collaborator-profile__name .ui-role-tag')?.textContent).toBe('Financeiro');
+    // And the list beside it, without a reload.
     await waitFor(() => {
-      const badge = container.querySelector('.collaborators__grid .ui-badge-card');
-      expect(badge?.querySelector('.ui-badge-card__job')?.textContent).toBe('Editor de Vídeo');
-      expect(badge?.querySelector('.ui-badge-card__role')?.textContent).toBe('Financeiro');
+      expect(container.querySelector('.collaborator-page__person-job')?.textContent).toBe('Editor de Vídeo');
     });
-    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`);
+    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores/${marioCosta.membershipId}`);
   });
 
   it('asks for confirmation explaining the consequence before removing, and takes the person out of the list', async () => {
@@ -1150,7 +1154,7 @@ describe('collaborator admin actions (#104)', () => {
     });
     const { container, probe } = renderCollaborators(impl);
     fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Mário Costa' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Remover do quadro' }));
     const confirmation = await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' });
@@ -1160,20 +1164,18 @@ describe('collaborator admin actions (#104)', () => {
     fireEvent.click(within(confirmation).getByRole('button', { name: 'Cancelar' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).toBeNull());
     expect(removed).toEqual([]);
-    // The badge behind is the only place the name may appear twice with the modal heading, so the
-    // grid is read directly.
     const badgeNames = (): (string | null)[] =>
       Array.from(container.querySelectorAll('.collaborators__grid .ui-badge-card__name')).map((element) => element.textContent);
-    expect(badgeNames()).toContain('Mário Costa');
+    expect(Array.from(container.querySelectorAll('.collaborator-page__person-name')).map((element) => element.textContent)).toContain('Mário Costa');
 
-    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Mário Costa' })).getByRole('button', { name: 'Remover do quadro' }));
+    fireEvent.click(within(await profileOf('Mário Costa')).getByRole('button', { name: 'Remover do quadro' }));
     fireEvent.click(within(await screen.findByRole('dialog', { name: 'Remover Mário Costa do quadro?' })).getByRole('button', { name: 'Remover' }));
 
     await waitFor(() => expect(removed).toEqual([marioCosta.membershipId]));
-    // The modal closes and the badge leaves the default list, without a reload.
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Mário Costa' })).toBeNull());
-    await waitFor(() => expect(badgeNames()).not.toContain('Mário Costa'));
-    expect(badgeNames()).toContain('Júlia Reis');
+    // The page gives way to the team list, and the badge leaves the default list, without a reload.
+    await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`));
+    await waitFor(() => expect(badgeNames()).toContain('Júlia Reis'));
+    expect(badgeNames()).not.toContain('Mário Costa');
     expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`);
   });
 
@@ -1226,6 +1228,7 @@ describe('collaborator admin actions (#104)', () => {
       permissions: ADMIN_PERMISSIONS,
       updateCollaborator: () => json({ error: { code: 'INVALID_ROLE', message: 'private diagnostic' } }, 400)
     });
+    await within(dialog).findByRole('option', { name: 'Financeiro' });
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: roleIdOf('finance') } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }));
 
@@ -1262,7 +1265,7 @@ describe('collaborator admin actions (#104)', () => {
     expect(await within(dialog).findByText('Este colaborador já foi removido.')).toBeTruthy();
     expect(dialog.textContent).not.toContain('private diagnostic');
     // The server already holds the removal; the list behind stops showing the person.
-    await waitFor(() => expect(document.querySelector('.collaborators__grid')?.textContent).not.toContain('Mário Costa'));
+    await waitFor(() => expect(document.querySelector('.collaborator-page__list')?.textContent).not.toContain('Mário Costa'));
   });
 
   it('shows the not-found message when the removal answers 404', async () => {
@@ -1378,9 +1381,15 @@ describe('pending invitations (#106)', () => {
     const alert = await within(region).findByRole('alert', undefined, { timeout: 5000 });
     expect(alert.textContent).toContain('Não foi possível carregar os convites.');
     expect(region.textContent).not.toContain('private diagnostic');
+    // A list that did not answer is a failure, never "nenhum convite" nor its good news.
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(region.querySelector('.ui-empty-state--good-news')).toBeNull();
+    expect(within(region).queryByText('Nenhum convite aguardando aceite')).toBeNull();
+    const attemptsBeforeRetry = attempts;
 
     fireEvent.click(within(region).getByRole('button', { name: 'Tentar de novo' }));
     expect(await within(region).findByText('ana@exemplo.com')).toBeTruthy();
+    expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
   });
 
   it.each([403, 404])('stays out of the screen when the API answers %i', async (status) => {
@@ -1798,6 +1807,28 @@ describe('invite collaborator modal (#107)', () => {
     expect(within(region).queryByRole('button', { name: 'Copiar link' })).toBeNull();
   });
 
+  it.each([
+    ['Esc', (dialog: HTMLElement) => { fireEvent(dialog, new Event('cancel', { bubbles: true, cancelable: true })); }],
+    ['the X', (dialog: HTMLElement) => { fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar convite de colaborador' })); }]
+  ])('closes at once on %s while the form is empty, and asks before discarding a typed e-mail', async (_name, close) => {
+    const { impl } = makeFetch();
+    const { container } = renderCollaborators(impl);
+    await screen.findByText('Ana Prado');
+
+    close(await openInvite(container));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    const dialog = await openInvite(container);
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'E-mail' }), { target: { value: 'nova@exemplo.com' } });
+    close(dialog);
+    const confirmation = await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' });
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Continuar editando' }));
+    expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).value).toBe('nova@exemplo.com');
+
+    close(dialog);
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).getByRole('button', { name: 'Descartar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
   it('opens with the e-mail and role fields, the role hint and no cargo or remuneration', async () => {
     const { impl } = makeFetch();
     const { container } = renderCollaborators(impl);
@@ -1923,6 +1954,37 @@ describe('invite collaborator modal (#107)', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('on the trial collaborator limit the Owner gets the limit with the way to plans and extras, and the typed e-mail stays', async () => {
+    const { impl } = makeFetch({
+      isOwner: true,
+      permissions: ['colaborador.visualizar', 'colaborador.convidar', 'convite.reenviar', 'convite.cancelar', 'assinatura.gerenciar'],
+      createInvitation: () => json({ error: { code: 'TRIAL_COLLABORATOR_LIMIT', message: 'x' } }, 409)
+    });
+    const { container } = renderCollaborators(impl);
+    await invitesRegion();
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toContain('O período de teste permite até 3 colaboradores, contando quem criou a agência e os convites pendentes. Suba de plano ou compre extras para continuar.');
+    expect(within(dialog).getByRole('link', { name: 'Ver planos e extras' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/assinatura`);
+    expect((within(dialog).getByRole('textbox', { name: 'E-mail' }) as HTMLInputElement).value).toBe('nova@exemplo.com');
+  });
+
+  it('on the trial collaborator limit an Admin is told whom to ask and gets no link', async () => {
+    const { impl } = makeFetch({ createInvitation: () => json({ error: { code: 'TRIAL_COLLABORATOR_LIMIT', message: 'x' } }, 409) });
+    const { container } = renderCollaborators(impl);
+    await invitesRegion();
+    const dialog = await openInvite(container);
+    await fillInvite(dialog, 'nova@exemplo.com');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar convite' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toContain('Peça a quem criou a agência para subir o plano ou comprar extras.');
+    expect(within(dialog).queryByRole('link')).toBeNull();
   });
 
   it('warns from the response that the previous pending invitation stopped working, even when it is not on the loaded page', async () => {
@@ -2200,14 +2262,14 @@ describe('self profile editing (#108)', () => {
   it('renders the own profile editable, with role fields read-only and their notes', async () => {
     const { impl } = makeSelfFetch();
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
     expect(name.value).toBe('Ana Prado');
     expect(within(modal).getByRole('button', { name: 'Trocar foto' })).toBeTruthy();
     expect(within(modal).getByRole('button', { name: 'Salvar' })).toBeTruthy();
-    expect(within(modal).getByText('Editora')).toBeTruthy();
-    expect(within(modal).getByText('Produção')).toBeTruthy();
-    expect(within(modal).getByText('ana@example.test')).toBeTruthy();
+    expect(details(modal).getByText('Editora')).toBeTruthy();
+    expect(details(modal).getByText('Produção')).toBeTruthy();
+    expect(details(modal).getByText('ana@example.test')).toBeTruthy();
     expect(within(modal).getByText('Quem administra a agência define o cargo.')).toBeTruthy();
     expect(within(modal).getByText('A troca de e-mail é feita pela operação.')).toBeTruthy();
     expect(within(modal).getByText('Esta foto aparece nos seus crachás em todas as agências.')).toBeTruthy();
@@ -2220,7 +2282,7 @@ describe('self profile editing (#108)', () => {
   it('shows the own name once, in the modal heading, without repeating it under the photo', async () => {
     const { impl } = makeSelfFetch();
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
 
     expect(within(modal).getByRole('heading', { name: 'Ana Prado' })).toBeTruthy();
     expect(within(modal).getAllByText('Ana Prado')).toHaveLength(1);
@@ -2230,7 +2292,7 @@ describe('self profile editing (#108)', () => {
   it('labels the read-only fields with the profile class, not the Select internal one', async () => {
     const { impl } = makeSelfFetch();
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
 
     expect(Array.from(modal.querySelectorAll('.self-profile__label')).map((element) => element.textContent))
       .toEqual(['Cargo', 'Papel', 'E-mail']);
@@ -2240,7 +2302,7 @@ describe('self profile editing (#108)', () => {
   it('does not send a blank or oversized name and shows the field error', async () => {
     const { impl, profileBodies } = makeSelfFetch();
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
     fireEvent.change(name, { target: { value: '   ' } });
     fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
@@ -2257,7 +2319,7 @@ describe('self profile editing (#108)', () => {
   it('refuses a name with a character the display-name rules forbid, without sending it', async () => {
     const { impl, profileBodies } = makeSelfFetch();
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
     const hostile = `Ana${String.fromCharCode(7)}Prado`;
     fireEvent.change(name, { target: { value: hostile } });
@@ -2273,7 +2335,7 @@ describe('self profile editing (#108)', () => {
       updateProfileResponse: () => json({ error: { code: 'INTERNAL_ERROR', message: 'private diagnostic' } }, status)
     });
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
     fireEvent.change(name, { target: { value: 'Ana Nova' } });
     fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
@@ -2287,7 +2349,7 @@ describe('self profile editing (#108)', () => {
   it('follows an external name change while untouched and keeps a typed draft when dirty', async () => {
     const { impl } = makeSelfFetch();
     const { queryClient } = renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
     const detailKey = ['agency', AGENCY_A, 'collaborators', 'detail', anaPrado.membershipId];
 
@@ -2304,25 +2366,25 @@ describe('self profile editing (#108)', () => {
   it('saves a new name that shows in the modal, the badge and the account menu at once', async () => {
     const { impl, profileBodies } = makeSelfFetch();
     const { container } = renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
     fireEvent.change(name, { target: { value: 'Ana Prado Silva' } });
     fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
-    expect(await screen.findByRole('dialog', { name: 'Ana Prado Silva' })).toBe(modal);
+    expect(await profileOf('Ana Prado Silva')).toBe(modal);
     await waitFor(() => expect(profileBodies).toContainEqual({ name: 'Ana Prado Silva' }));
     // The modal heading is the only place the name appears inside the dialog.
     expect(within(modal).getByRole('heading', { name: 'Ana Prado Silva' })).toBeTruthy();
-    const badgeName = (): string | null | undefined =>
-      container.querySelector('.collaborators__grid .ui-badge-card__name')?.textContent;
-    await waitFor(() => expect(badgeName()).toBe('Ana Prado Silva'));
+    const listedNames = (): (string | null)[] =>
+      Array.from(container.querySelectorAll('.collaborator-page__person-name')).map((element) => element.textContent);
+    await waitFor(() => expect(listedNames()).toContain('Ana Prado Silva'));
     // The app header reads the name from the session, so it must be fresh too.
-    expect(await screen.findByRole('button', { name: 'Ana Prado Silva' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Ana Prado Silva/ })).toBeTruthy();
   });
 
   it('refuses a file outside the image allowlist without sending anything', async () => {
     const { impl, photoBodies } = makeSelfFetch();
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     fireEvent.change(modalFileInput(modal), {
       target: { files: [new File(['<html>'], 'pagina.html', { type: 'text/html' })] }
     });
@@ -2333,7 +2395,7 @@ describe('self profile editing (#108)', () => {
   it('refuses a file above the accepted size without sending anything', async () => {
     const { impl, photoBodies } = makeSelfFetch();
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     fireEvent.change(modalFileInput(modal), {
       target: { files: [new File([new Uint8Array(PROFILE_PHOTO_MAX_BYTES + 1)], 'grande.png', { type: 'image/png' })] }
     });
@@ -2344,7 +2406,7 @@ describe('self profile editing (#108)', () => {
   it('uploads a file the browser reported no type for, letting the API decide by the bytes', async () => {
     const { impl, calls, photoBodies } = makeSelfFetch();
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     const untagged = new File([pngBytes], 'foto', { type: '' });
     expect(untagged.type).toBe('');
 
@@ -2361,7 +2423,7 @@ describe('self profile editing (#108)', () => {
     const newPhoto = 'https://storage.test/ana-2026.png';
     const { impl, calls, photoBodies, person } = makeSelfFetch({ uploadResponse: () => deferred });
     const { probe } = renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     fireEvent.change(modalFileInput(modal), {
       target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
     });
@@ -2379,10 +2441,10 @@ describe('self profile editing (#108)', () => {
       person().photoUrl = newPhoto;
     });
     await waitFor(() => expect(modal.querySelector('img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto));
-    await waitFor(() => expect(document.querySelector('.collaborators__grid img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto));
+    await waitFor(() => expect(document.querySelector('.collaborator-page__list img.ui-avatar__photo')?.getAttribute('src')).toBe(newPhoto));
     // The photo travelled only the global route, never an agency-scoped one, and nothing reloaded.
     expect(calls.filter((call) => call.startsWith('POST /'))).toEqual(['POST /me/photo']);
-    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`);
+    expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores/${anaPrado.membershipId}`);
     expect(screen.queryByText(/nesta agência/i)).toBeNull();
   });
 
@@ -2394,7 +2456,7 @@ describe('self profile editing (#108)', () => {
       uploadResponse: () => json({ error: { code, message: 'the api private message' } }, status)
     });
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     fireEvent.change(modalFileInput(modal), {
       target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
     });
@@ -2440,7 +2502,7 @@ describe('self profile editing (#108)', () => {
     // Back to A, upload a photo from the own profile without touching the name.
     await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/colaboradores`); });
     fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Ana Prado' }));
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     fireEvent.change(modal.querySelector('input[type="file"]') as HTMLInputElement, {
       target: { files: [new File([pngBytes], 'foto.png', { type: 'image/png' })] }
     });
@@ -2486,10 +2548,10 @@ describe('self profile editing (#108)', () => {
     // Back to A, save a new name without uploading a photo.
     await act(async () => { probe.navigate(`/agencia/${AGENCY_A}/colaboradores`); });
     fireEvent.click(await screen.findByRole('link', { name: 'Ver detalhes de Ana Prado' }));
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     fireEvent.change(within(modal).getByRole('textbox', { name: 'Nome' }), { target: { value: 'Ana Prado Silva' } });
     fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
-    await screen.findByRole('dialog', { name: 'Ana Prado Silva' });
+    await profileOf('Ana Prado Silva');
 
     // B's cache predates the save; the name must be there without a reload. No photo was uploaded,
     // so only the name invalidation can have carried anything across.
@@ -2501,7 +2563,7 @@ describe('self profile editing (#108)', () => {
   it('keeps another person\'s name and photo read-only', async () => {
     const { impl } = makeFetch();
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     expect(within(modal).queryByRole('textbox')).toBeNull();
     expect(within(modal).queryByRole('button', { name: 'Trocar foto' })).toBeNull();
     expect(within(modal).queryByRole('button', { name: 'Salvar' })).toBeNull();
@@ -2512,7 +2574,7 @@ describe('self profile editing (#108)', () => {
     const hostile = '<img src=x onerror=alert(1)>';
     const { impl } = makeSelfFetch();
     renderCollaborators(impl, selfUrl());
-    const modal = await screen.findByRole('dialog', { name: 'Ana Prado' });
+    const modal = await profileOf('Ana Prado');
     const name = within(modal).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
     fireEvent.change(name, { target: { value: hostile } });
     fireEvent.click(within(modal).getByRole('button', { name: 'Salvar' }));
@@ -2522,36 +2584,40 @@ describe('self profile editing (#108)', () => {
   });
 });
 
-// Issue #228: the grid must close in 3 and 4 columns. The shell's `.agency-content` is 840px at its
-// widest (72rem minus the 16rem nav, the gap and the padding), so the badge minimum has to let four
-// columns fit. jsdom has no layout, so the test reads the real CSS value and applies the same math
-// `repeat(auto-fill, minmax(..., 1fr))` does.
+// Issue #228 and decision 2026-11-11: three columns from 64rem, and a page of 24 (a multiple of 3) never leaves a broken row
+// (specs/colaboradores.md section 6). jsdom has no layout, so the test reads the rules and applies the same math the grid does.
 describe('collaborators grid columns (#228)', () => {
-  const globalsCss = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+  const globalsCss = readGlobalCss().replace(/\r\n/g, '\n');
+  const GAP_PX = 16;
+  const REM_PX = 16;
+  const MINIMUM_PX = 12 * REM_PX;
+  const WIDE_FROM_PX = 64 * REM_PX;
 
-  const gridMinRem = (): number => {
-    const match = /\.collaborators__grid\s*\{[^}]*minmax\(([\d.]+)rem,\s*1fr\)/.exec(globalsCss);
-    if (match === null) throw new Error('The collaborators grid min width was not found in globals.css.');
-    return Number(match[1]);
-  };
+  /** The columns of a row of `widthPx` inside a viewport of `viewportPx`, as the two rules declare them. */
+  const columnsFor = (widthPx: number, viewportPx: number): number =>
+    viewportPx >= WIDE_FROM_PX ? 3 : Math.max(1, Math.floor((widthPx + GAP_PX) / (MINIMUM_PX + GAP_PX)));
 
-  const columnsFor = (availableWidthPx: number, minRem: number, gapRem = 1, rootFontSizePx = 16): number => {
-    const minPx = minRem * rootFontSizePx;
-    const gapPx = gapRem * rootFontSizePx;
-    return Math.max(1, Math.floor((availableWidthPx + gapPx) / (minPx + gapPx)));
-  };
+  it('declares a 12rem minimum below 64rem and three columns from it', () => {
+    expect(globalsCss).toMatch(/\.collaborators__grid \{[^}]*grid-template-columns: repeat\(auto-fill, minmax\(min\(100%, 12rem\), 1fr\)\);/);
+    expect(globalsCss).toMatch(/@media \(min-width: 64rem\) \{\s*\.collaborators__grid \{\s*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+  });
 
-  it('fits four columns in the 840px content area and three in a narrower one', () => {
-    const minRem = gridMinRem();
-    expect(columnsFor(840, minRem)).toBe(4);
-    expect(columnsFor(700, minRem)).toBe(3);
+  it('opens 3 columns on a desktop, 2 on a middle width and 1 on a phone', () => {
+    expect(columnsFor(1000, 1440)).toBe(3);
+    expect(columnsFor(600, 900)).toBe(2);
+    expect(columnsFor(358, 390)).toBe(1);
+  });
+
+  it('never leaves a broken last row for a page of 24 on a desktop, nor opens more than 3 columns below it', () => {
+    for (let viewport = 1024; viewport <= 2400; viewport += 8) expect(24 % columnsFor(viewport - 300, viewport), `${viewport}px`).toBe(0);
+    // Below 64rem the largest row is the viewport minus the side navigation (16rem) and the gutters.
+    for (let viewport = 768; viewport < WIDE_FROM_PX; viewport += 8) expect(columnsFor(viewport - 16 * REM_PX - 64, viewport), `${viewport}px`).toBeLessThanOrEqual(3);
   });
 
   it('keeps the gap on the spacing scale', () => {
     expect(globalsCss).toMatch(/\.collaborators__grid\s*\{[^}]*gap:\s*var\(--space-4\)/);
   });
 });
-
 // Issue #105: removed links are a filter of the same grid, and reactivation starts with no role.
 describe('removed filter and reactivation (#105)', () => {
   const reactivatePermissions = ['colaborador.visualizar', 'colaborador.remover', 'colaborador.alterar_papel'];
@@ -2756,6 +2822,27 @@ describe('removed filter and reactivation (#105)', () => {
     expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/colaboradores`);
   });
 
+  it('reactivating over the trial collaborator limit shows the limit with the way to plans, not the stale-list message', async () => {
+    const { impl } = makeFetch({
+      isOwner: true,
+      permissions: [...reactivatePermissions, 'assinatura.gerenciar'],
+      collaborators: (query) => listResponse(removedOnly(query)),
+      roles: () => rolesFor(false),
+      reactivate: () => json({ error: { code: 'TRIAL_COLLABORATOR_LIMIT', message: 'x' } }, 409)
+    });
+    renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?status=removed`);
+    await screen.findByText('Paulo Lima');
+    fireEvent.click(screen.getByRole('button', { name: 'Reativar Paulo Lima' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reativar Paulo Lima' });
+    await within(dialog).findByRole('option', { name: 'Produção' });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Papel' }), { target: { value: PRODUCTION_ROLE_ID } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reativar' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toContain('O período de teste permite até 3 colaboradores');
+    expect(within(dialog).getByRole('link', { name: 'Ver planos e extras' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/assinatura`);
+  });
+
   it('gives the removed filter its own empty state, not the search one', async () => {
     const { impl } = makeFetch({
       permissions: reactivatePermissions,
@@ -2900,14 +2987,10 @@ describe('removed filter and reactivation (#105)', () => {
 
 // Issue #638: the team in the Pauta language. The markup the older tests pin did not change; these pin what the redesign added.
 describe('team screens in the Pauta language (#638)', () => {
-  const globalsCss = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+  const globalsCss = readGlobalCss().replace(/\r\n/g, '\n');
   const invitesRegion = () => screen.findByRole('region', { name: 'Convites aguardando aceite' });
   const PERMISSIONS = ['colaborador.visualizar', 'colaborador.convidar', 'convite.reenviar', 'convite.cancelar', 'colaborador.remover', 'colaborador.alterar_papel', 'colaborador.alterar_funcao'];
   const headerOf = (container: HTMLElement): HTMLElement => container.querySelector('.collaborators__header') as HTMLElement;
-
-  it('closes the grid in three columns from 64rem, so a page of 24 never leaves a broken row', () => {
-    expect(globalsCss).toMatch(/@media \(min-width: 64rem\) \{\s*\.collaborators__grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
-  });
 
   it('reacts to the pointer by border, never by background, over the badge', () => {
     const hover = /\.collaborators__badge-link:hover \.ui-badge-card \{([^}]*)\}/.exec(globalsCss);
@@ -2921,9 +3004,9 @@ describe('team screens in the Pauta language (#638)', () => {
     expect(globalsCss).toMatch(/\.collaborator-detail__photo \.ui-button \{[^}]*white-space: nowrap;/);
   });
 
-  it('lays the filters out as a grid with the search on its own row, above the selects', () => {
-    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \{[^}]*display: grid;/);
-    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \.ui-filter-bar__item:first-child \{[^}]*grid-column: 1 \/ -1;/);
+  it('lays the filters out in one wrapping row, the search first and growing, then the selects', () => {
+    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \{[^}]*display: flex;[^}]*flex-wrap: wrap;/);
+    expect(globalsCss).toMatch(/\.ui-filter-bar\.collaborators__filters \.ui-filter-bar__item:first-child \{[^}]*flex: 1 1 16rem;/);
   });
 
   it('writes the invite action with an icon, not a plus character', async () => {
@@ -2973,7 +3056,8 @@ describe('team screens in the Pauta language (#638)', () => {
       const rows = Array.from(region.querySelectorAll('.invites__item'));
       expect(rows).toHaveLength(2);
       const [pending, expired] = rows as [Element, Element];
-      expect(pending.querySelector('.invites__role .ui-pill')?.textContent).toBe('Produção');
+      expect(pending.querySelector('.invites__role .ui-role-tag')?.textContent).toBe('Produção');
+      expect(pending.querySelector('.invites__role .ui-role-tag--teal')).not.toBeNull();
       expect(pending.querySelector('.invites__expiry svg')).not.toBeNull();
       expect(pending.querySelector('.invites__expiry')?.textContent).toBe('expira em 5 dias');
       expect(pending.querySelector('.invites__expiry--expired')).toBeNull();
@@ -2987,6 +3071,8 @@ describe('team screens in the Pauta language (#638)', () => {
       let region = await invitesRegion();
       await within(region).findByText('Nenhum convite aguardando aceite');
       expect(region.querySelector('.ui-empty-state--mascot img')).not.toBeNull();
+      // The team's first visit invites to start: first-use, not the good news of a full team.
+      expect(region.querySelector('.ui-empty-state--good-news')).toBeNull();
       cleanup();
 
       const team = makeFetch({ invitations: empty });
@@ -2997,6 +3083,8 @@ describe('team screens in the Pauta language (#638)', () => {
       expect(region.querySelector('.ui-empty-state')).not.toBeNull();
       expect(region.querySelector('.ui-empty-state--mascot')).toBeNull();
       expect(region.querySelector('img')).toBeNull();
+      // With a full team, no invitation waiting is good news, with its check.
+      expect(region.querySelector('.ui-empty-state--good-news svg')).not.toBeNull();
       cleanup();
 
       // A search that happens to find one person is not a new team.
@@ -3075,7 +3163,7 @@ describe('team screens in the Pauta language (#638)', () => {
     it('is a real tab set: the open panel is named by its tab, and the disabled tabs are skipped by the arrows', async () => {
       const { impl } = makeFetch();
       renderCollaborators(impl, detailUrl);
-      const modal = await screen.findByRole('dialog', { name: 'Mário Costa' });
+      const modal = await profileOf('Mário Costa');
 
       const details = within(modal).getByRole('tab', { name: 'Detalhes' });
       const panel = within(modal).getByRole('tabpanel', { name: 'Detalhes' });
@@ -3089,7 +3177,7 @@ describe('team screens in the Pauta language (#638)', () => {
     it('says in words why each future tab is off, next to its name', async () => {
       const { impl } = makeFetch();
       renderCollaborators(impl, detailUrl);
-      const modal = await screen.findByRole('dialog', { name: 'Mário Costa' });
+      const modal = await profileOf('Mário Costa');
 
       const reasons = Array.from(modal.querySelectorAll('.collaborator-detail__soon > div')).map((row) => [row.querySelector('dt')?.textContent, row.querySelector('dd')?.textContent]);
       expect(reasons).toEqual([
@@ -3098,23 +3186,24 @@ describe('team screens in the Pauta language (#638)', () => {
       ]);
     });
 
-    it('shows the job title and role as the headline of the identity', async () => {
+    it('shows the role as a coloured tag beside the name, and the job title and e-mail under it', async () => {
       const { impl } = makeFetch();
       renderCollaborators(impl, detailUrl);
-      const modal = await screen.findByRole('dialog', { name: 'Mário Costa' });
-      expect(modal.querySelector('.collaborator-detail__headline')?.textContent).toBe('Copywriter · Produção');
+      const modal = await profileOf('Mário Costa');
+      expect(modal.querySelector('.collaborator-profile__name .ui-role-tag--teal')?.textContent).toBe('Produção');
+      expect(Array.from(modal.querySelectorAll('.collaborator-profile__who .collaborator-detail__meta')).map((line) => line.textContent)).toEqual(['Copywriter', 'mario@example.test', 'Na agência desde 13/03/2026']);
     });
 
     it('offers the destructive action and the photo change with their icons', async () => {
       const admin = makeFetch({ permissions: PERMISSIONS });
       renderCollaborators(admin.impl, detailUrl);
-      const modal = await screen.findByRole('dialog', { name: 'Mário Costa' });
+      const modal = await profileOf('Mário Costa');
       expect(within(modal).getByRole('button', { name: 'Remover do quadro' }).querySelector('svg')).not.toBeNull();
       cleanup();
 
       const self = makeSelfFetch();
       renderCollaborators(self.impl, `/agencia/${AGENCY_A}/colaboradores?colaborador=${anaPrado.membershipId}`);
-      const own = await screen.findByRole('dialog', { name: 'Ana Prado' });
+      const own = await profileOf('Ana Prado');
       expect(within(own).getByRole('button', { name: 'Trocar foto' }).querySelector('svg')).not.toBeNull();
     });
   });
@@ -3159,7 +3248,7 @@ describe('a read-only agency (issue #714, decision 2026-10-27)', () => {
       removeCollaborator: (membershipId) => { removed.push(membershipId); return json({ ...marioCosta, status: 'removed' }); }
     });
     renderCollaborators(impl, `/agencia/${AGENCY_A}/colaboradores?colaborador=${marioCosta.membershipId}`);
-    const dialog = await screen.findByRole('dialog', { name: 'Mário Costa' });
+    const dialog = await profileOf('Mário Costa');
     expectBlocked(await within(dialog).findByRole('button', { name: 'Salvar' }));
     const remove = within(dialog).getByRole('button', { name: 'Remover do quadro' });
     expectEnabled(remove);

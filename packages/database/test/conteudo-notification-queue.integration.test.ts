@@ -268,6 +268,7 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
       where table_schema = 'public' and table_name = 'notification_queue' order by column_name collate "C"
     `);
     expect(rows).toEqual([
+      { column_name: 'approval_round_id', data_type: 'uuid', is_nullable: 'YES' },
       { column_name: 'attempts', data_type: 'integer', is_nullable: 'NO' },
       { column_name: 'claim_token', data_type: 'uuid', is_nullable: 'YES' },
       { column_name: 'claimed_at', data_type: 'timestamp with time zone', is_nullable: 'YES' },
@@ -338,14 +339,18 @@ describe('the queue is reachable only through its functions (issue #252)', () =>
 describe('the catalog of the queue (issue #252)', () => {
   const WORKER_FUNCTIONS = [
     'app_private.claim_notification_batch(integer)',
+    'app_private.enqueue_approval_reminders()',
     'app_private.mark_notifications_sent(uuid[], uuid)',
     'app_private.fail_notifications(uuid[], uuid, text)',
     'app_private.recheck_notifications(uuid[], uuid)',
     // The approval link of an e-mail is issued from the items a claim holds (#712): it reads the queue to prove the e-mail exists.
     'app_private.issue_portal_approval_link(uuid[], uuid, text)'
   ];
+  // The reminders reach the queue through enqueue_approval_reminders_at, which only the owner executes: this entrance names no table.
+  const DELEGATING = ['app_private.enqueue_approval_reminders()'];
   const INTERNAL = [
     'app_private.contents_enqueue_notification()',
+    'app_private.enqueue_approval_reminders_at(timestamptz)',
     'app_private.notification_max_wait(text)',
     'app_private.notification_group_ready(text, uuid, text)',
     'app_private.notification_address(uuid)',
@@ -380,15 +385,17 @@ describe('the catalog of the queue (issue #252)', () => {
          and has_function_privilege('ageniza_app', p.oid, 'execute')
        order by p.oid::regprocedure::text collate "C"`
     );
-    expect(rows.map((row) => row.signature)).toEqual(WORKER_FUNCTIONS.map((signature) => signature.replaceAll(', ', ',')).sort());
+    expect(rows.map((row) => row.signature)).toEqual(
+      WORKER_FUNCTIONS.filter((signature) => !DELEGATING.includes(signature)).map((signature) => signature.replaceAll(', ', ',')).sort()
+    );
   });
 
-  it('keeps the enqueue out of reach of a request: the only writer of the queue is a trigger', async () => {
+  it('keeps the enqueue out of reach of a request: the only writers of the queue are the trigger and the worker reminders', async () => {
     await expect(w.asUser(ids.adminA, (t) => t.raw('select app_private.contents_enqueue_notification()'))).rejects.toMatchObject({ code: '42501' });
     const writers = await owner().raw<{ rows: Array<{ proname: string }> }>(
       `select p.proname from pg_proc p where p.pronamespace = 'app_private'::regnamespace and p.prosrc ilike '%insert into public.notification_queue%' order by p.proname`
     );
-    expect(writers.rows).toEqual([{ proname: 'contents_enqueue_notification' }]);
+    expect(writers.rows).toEqual([{ proname: 'contents_enqueue_notification' }, { proname: 'enqueue_approval_reminders_at' }]);
   });
 
   it('fires the enqueue after any update of a content that changes its status, and not only when the column is named', async () => {

@@ -1,0 +1,89 @@
+.account-menu {
+  position: relative;
+}
+
+/* The avatar alone, in a phone's top bar: the menu opens down from it. */
+.account-menu--compact .ui-menu__trigger {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-radius: var(--radius-full);
+}
+
+.account-menu__skeleton {
+  width: 8rem;
+  height: 2.75rem;
+}
+
+.account-menu__identity,
+.account-menu__context {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+}
+
+.account-menu__identity span,
+.account-menu__context-label {
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
+.account-menu__error {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: max-content;
+  max-width: min(24rem, calc(100vw - var(--space-8)));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.account-menu__loading {
+  padding: var(--space-2) var(--space-3);
+}
+
+.account-menu__loading .ui-skeleton {
+  height: 2.75rem;
+}
+
+.account-menu__menu-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-danger);
+  font: var(--body-md);
+}
+
+.account-menu__context-option {
+  display: grid;
+  grid-template-columns: var(--space-4) 1fr;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.account-menu__context-check {
+  grid-row: span 2;
+  font: var(--label-md);
+}
+
+.account-menu__context-name {
+  font: var(--label-md);
+}
+
+.account-menu__context-description {
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+

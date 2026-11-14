@@ -7,7 +7,7 @@ import { translateDatabaseError } from './errors.js';
 export type TransitionAction = 'submit' | 'approve-by-agency' | 'publish' | 'unpublish' | 'cancel' | 'reschedule';
 
 const STATE_MESSAGES: Record<TransitionAction, string> = {
-  submit: 'Só um conteúdo em produção ou em ajuste é enviado para aprovação.',
+  submit: 'Só um conteúdo em produção ou em ajuste é enviado para aprovação. Um conteúdo que já aguarda aprovação não muda de prazo nem de recado.',
   'approve-by-agency': 'Só um conteúdo aguardando aprovação é aprovado.',
   publish: 'Só um conteúdo aprovado é marcado como publicado.',
   unpublish: 'Só um conteúdo publicado volta a aprovado.',
@@ -65,6 +65,30 @@ export const reasonInvalid = (): HttpError => new HttpError({
   message: 'Informe o motivo da aprovação, com até 5000 bytes.'
 });
 
+export const approvalDueInvalid = (): HttpError => new HttpError({
+  statusCode: 400,
+  code: 'CONTENT_APPROVAL_DUE_INVALID',
+  message: 'O prazo de aprovação é um momento entre agora e 90 dias à frente.'
+});
+
+export const approvalNoteInvalid = (): HttpError => new HttpError({
+  statusCode: 400,
+  code: 'CONTENT_APPROVAL_NOTE_INVALID',
+  message: 'O recado ao cliente tem até 500 caracteres e não pode ser só espaços. Deixe em branco para enviar sem recado.'
+});
+
+export const batchInvalid = (): HttpError => new HttpError({
+  statusCode: 400,
+  code: 'CONTENT_BATCH_INVALID',
+  message: 'O envio em lote é de 1 a 30 conteúdos, cada um uma vez.'
+});
+
+export const batchMixedClients = (): HttpError => new HttpError({
+  statusCode: 400,
+  code: 'CONTENT_BATCH_MIXED_CLIENTS',
+  message: 'Os conteúdos de um envio em lote são de um cliente só.'
+});
+
 /**
  * What the database answers to a transition, by name, so none of its refusals is a 500. `A0065` is the generic answer: the route
  * first reads the media to tell one still uploading apart. A refusal of the row-level policy (42501) is not here, because
@@ -78,7 +102,11 @@ export const translateTransitionError = (error: unknown, action: TransitionActio
     case 'A0065': return mediaNotComplete();
     case 'A0066': return tasksNotApproved();
     case 'A0067': return publishedOnInvalid();
-    case 'A0068': return reasonInvalid();
+    // The same code is the reason of an approval outside the platform and the note of a round: the move says which.
+    case 'A0068': return action === 'submit' ? approvalNoteInvalid() : reasonInvalid();
+    case 'A0120': return approvalDueInvalid();
+    case 'A0121': return batchInvalid();
+    case 'A0122': return batchMixedClients();
     default: return translateDatabaseError(error, { movesFolder: false });
   }
 };

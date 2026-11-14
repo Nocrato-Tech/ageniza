@@ -13,6 +13,7 @@ import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { CopyInvitationLinkButton } from './copy-invitation-link.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { PlanLimitNotice, planLimitOf, type PlanLimit } from './plan-limit.js';
 
 const EMAIL_REQUIRED = 'Informe o e-mail.';
 const EMAIL_INVALID = 'Informe um e-mail válido.';
@@ -72,6 +73,7 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
   const [emailError, setEmailError] = useState<string | undefined>();
   const [roleError, setRoleError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
+  const [limit, setLimit] = useState<PlanLimit | undefined>();
   const [sent, setSent] = useState<SentInvite | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -99,6 +101,8 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
 
   const applyError = (error: unknown): void => {
     if (!(error instanceof HttpClientError)) { setFormError(SEND_FAILED); return; }
+    const reached = planLimitOf(error);
+    if (reached !== undefined) { setLimit(reached); return; }
     if (error.code === 'MEMBERSHIP_EXISTS') { setEmailError(EMAIL_ALREADY_MEMBER); return; }
     if (error.code === 'INVALID_ROLE') { setRoleError(ROLE_INVALID); return; }
     if (error.code === 'FORBIDDEN' || error.status === 403) { setFormError(NO_PERMISSION); return; }
@@ -158,6 +162,7 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
     size="sm"
     description="Informe o e-mail e o papel. A pessoa recebe um link para entrar na equipe."
     onClose={onClose}
+    confirmDiscard={{ dirty: (email !== '' || roleId !== '') && !send.isPending }}
     actions={<Button type="submit" form={formId} disabled={!canSubmit} loading={send.isPending}>Enviar convite</Button>}
   >
     <form ref={formRef} id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
@@ -192,6 +197,7 @@ export function InviteCollaboratorDialog({ onClose }: { onClose: () => void }) {
       </div>}
 
       {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
+      {limit !== undefined && <PlanLimitNotice limit={limit} />}
     </form>
   </Modal>;
 }

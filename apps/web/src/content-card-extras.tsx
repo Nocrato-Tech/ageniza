@@ -3,14 +3,14 @@ import { CalendarDays } from 'lucide-react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
 import { ContentDetailSchema, ThreadListResponseSchema, type ContentListItem, type ConversationSide, type ThreadListResponse } from '@ageniza/contracts';
-import { FormatTag, StatusTag } from '@ageniza/ui';
+import { FormatTag, LateBadge, StatusTag } from '@ageniza/ui';
 
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { formatAgencyDayMonth } from './client-detail.js';
 import { ContentCover } from './content-cover.js';
 import { dayMonthNameLabel } from './content-dates.js';
-import { FORMAT_LABELS, FORMAT_TONES, PLATFORM_LABELS, STATUS_LABELS, STATUS_TAGS } from './content-labels.js';
+import { DEADLINE_LABELS, deadlineAlert, CARD_FORMAT_LABELS, FORMAT_TONES, PLATFORM_LABELS, STATUS_LABELS, STATUS_TAGS } from './content-labels.js';
 import { useApiClient } from './http.js';
 
 const CAPTION_EXCERPT_LENGTH = 140;
@@ -41,18 +41,21 @@ const lastMessageRow = (query: LastMessage): ReactNode => {
  * cover, the title, the day, the tags and the hint come from the list; the caption, the subtasks and the conversation are
  * read only while the card is open, once per content.
  */
-export function ContentHoverCard({ content, clientId, movable }: { content: ContentListItem; clientId: string; movable: boolean }) {
+export function ContentHoverCard({ content, clientId, today, movable }: { content: ContentListItem; clientId: string; today: string; movable: boolean }) {
+  const alert = deadlineAlert(content, today);
   return <div className="content-hover">
     <ContentCover assetId={content.thumbnailAssetId} format={content.format} className="content-hover__cover" bare={content.thumbnailAssetId === null} />
-    <p className="content-hover__title">{`${FORMAT_LABELS[content.format]}: ${content.title}`}</p>
+    <p className="content-hover__title">{`${CARD_FORMAT_LABELS[content.format]}: ${content.title}`}</p>
     <p className="content-hover__when">
       <span className="ui-icon" aria-hidden="true"><CalendarDays /></span>
       <span>{dayMonthNameLabel(content.publishOn)} · {PLATFORM_LABELS[content.platform]}{content.publishAtTime === null ? '' : ` · ${content.publishAtTime}`}</span>
     </p>
     <ContentHoverDetail clientId={clientId} contentId={content.id} />
     <ul className="content-hover__tags">
-      <li><FormatTag format={FORMAT_TONES[content.format]}>{FORMAT_LABELS[content.format]}</FormatTag></li>
+      <li><FormatTag format={FORMAT_TONES[content.format]}>{CARD_FORMAT_LABELS[content.format]}</FormatTag></li>
       <li><StatusTag status={STATUS_TAGS[content.status]}>{STATUS_LABELS[content.status]}</StatusTag></li>
+      {alert === 'overdue' && <li><LateBadge>{DEADLINE_LABELS.overdue}</LateBadge></li>}
+      {alert === 'due-soon' && <li className="content-hover__meta">{DEADLINE_LABELS['due-soon']}</li>}
     </ul>
     {movable && <p className="content-hover__hint">Arraste para outro dia</p>}
   </div>;

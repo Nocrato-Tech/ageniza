@@ -1,6 +1,7 @@
-import type { PortalContentDetail, PortalContentInProduction, PortalContentListItem, PortalContentOpenListItem } from '@ageniza/contracts';
+import type { PortalContentApproval, PortalContentDetail, PortalContentInProduction, PortalContentListItem, PortalContentOpenListItem } from '@ageniza/contracts';
 import { raw } from '@ageniza/database';
 
+import { CLOCK_CTES } from './clock-sql.js';
 import type { ContentTransaction } from './service.js';
 
 interface RawRows<TResult> {
@@ -22,7 +23,53 @@ export interface PortalContentRow {
   readonly cover_asset_id: string | null;
   readonly thumbnail_asset_id: string | null;
   readonly published_on: string | null;
+  /** The function answers a round only for a content that left production; `has_approval` is false for one with no round (sent before the rounds existed). */
+  readonly has_approval: boolean;
+  readonly approval_due_on: string | null;
+  readonly approval_note: string | null;
+  readonly approval_due_at: Date | null;
+  readonly approval_sent_at: Date | null;
+  readonly approval_sent_by_name: string | null;
+  readonly approval_sent_by_photo_key: string | null;
 }
+
+/**
+ * Where the portal gets the photo of who sent a round: a route of its own (`GET .../contents/:contentId/sender-photo`), under the guard of
+ * the client, never an address of the storage, which would carry the key of the object and so the id of the account. `null` for a deployment
+ * with no identity storage. The JSON carries only this relative path.
+ */
+export type SenderPhotoPath = (contentId: string) => string | null;
+
+/** The account stores the photo as a key of the identity bucket: `users/<id>/avatar/<version>.<ext>`. Anything else is data, not a key to read. */
+export const USER_AVATAR_KEY = /^users\/[0-9a-f-]{36}\/avatar\/[0-9a-f-]{36}\.[a-z0-9]+$/i;
+
+export const senderPhotoPathOf = (clientId: string): SenderPhotoPath => (contentId) => `/clients/${clientId}/contents/${contentId}/sender-photo`;
+
+/** The columns of a round the approval link also reads, and the ones only the person's own portal reads: a row without them is a round that says less. */
+type ApprovalRow = Pick<PortalContentRow, 'has_approval' | 'approval_due_on' | 'approval_note'>
+  & Partial<Pick<PortalContentRow, 'approval_due_at' | 'approval_sent_at' | 'approval_sent_by_name' | 'approval_sent_by_photo_key'>>;
+
+const instantOf = (value: Date | null | undefined): string | null => value === null || value === undefined ? null : new Date(value).toISOString();
+
+/**
+ * What the agency asked of the client and who asked (decision 2026-11-11): the deadline as an instant and as its day, the note, when it was
+ * sent and the sender as a name and the path of the photo. The batch, the e-mail, the role and the id of the sender never reach the portal.
+ * The approval link reads fewer columns of the same round: its answer has the day and the note, and the rest `null`. `photoUrl` is given only
+ * for a sender whose key is that of an avatar: the route that serves the photo answers 404 for anything else.
+ */
+export const portalApprovalOf = (row: ApprovalRow, photoUrl: string | null = null): PortalContentApproval | null => {
+  if (!row.has_approval) return null;
+  const photoKey = row.approval_sent_by_photo_key ?? null;
+  return {
+    dueAt: instantOf(row.approval_due_at),
+    dueOn: row.approval_due_on,
+    note: row.approval_note,
+    sentAt: instantOf(row.approval_sent_at),
+    sentBy: row.approval_sent_by_name == null
+      ? null
+      : { name: row.approval_sent_by_name, photoUrl: photoKey !== null && USER_AVATAR_KEY.test(photoKey) ? photoUrl : null }
+  };
+};
 
 /*
  * Every read of the portal goes through `app_private.portal_contents` and `app_private.portal_content_media`
@@ -38,6 +85,8 @@ const PORTAL_COLUMNS = `
   content.id, content.title, content.platform, content.format, content.publish_on::text as publish_on, content.status,
   content.revision, to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.caption, content.cover_asset_id,
   content.published_on::text as published_on,
+  (content.approval_sent_at is not null) as has_approval, content.approval_due_on::text as approval_due_on, content.approval_note,
+  content.approval_due_at, content.approval_sent_at, content.approval_sent_by_name, content.approval_sent_by_photo_key,
   (
     select media.asset_id
     from app_private.portal_content_media(content.id) media
@@ -72,7 +121,11 @@ export interface AwaitingPage {
 
 const AWAITING_FROM = `from app_private.portal_contents(?::uuid, null::date, null::date, array['awaiting_approval']::text[], null::uuid) content`;
 
-/** What waits for the person: the contents awaiting approval, the nearest day first. `count(*) over ()` rides the page's own snapshot. */
+// What the person answers first is what is due first (decision 2026-11-11): the deadline of the approval, with its hour; a content with no
+// deadline (sent before the rounds) comes after every deadline, in the order of the calendar.
+const AWAITING_ORDER = 'order by content.approval_due_at asc nulls last, content.publish_on, content.publish_at_time, content.id';
+
+/** What waits for the person: the contents awaiting approval, the deadline that comes first first. `count(*) over ()` rides the page's own snapshot. */
 export const listAwaitingContents = async (
   transaction: ContentTransaction,
   clientId: string,
@@ -81,7 +134,7 @@ export const listAwaitingContents = async (
   const result = await raw<RawRows<PortalContentRow & { readonly total: string | number }>>(transaction, `
     select ${PORTAL_COLUMNS}, count(*) over () as total
     ${AWAITING_FROM}
-    ${PORTAL_ORDER}
+    ${AWAITING_ORDER}
     limit ? offset ?
   `, [clientId, pagination.pageSize, pagination.offset]);
   if (result.rows.length > 0) return { items: result.rows, totalItems: Number(result.rows[0]?.total ?? 0) };
@@ -166,7 +219,10 @@ const inProductionFrom = (row: PortalContentRow & { readonly status: 'in_product
   status: row.status
 });
 
-const openDetailBaseFrom = (row: PortalContentRow & { readonly status: PortalContentOpenListItem['status'] }): Omit<PortalContentOpenListItem, 'thumbnailAssetId'> => ({
+const openDetailBaseFrom = (
+  row: PortalContentRow & { readonly status: PortalContentOpenListItem['status'] },
+  senderPhotoPath: SenderPhotoPath
+): Omit<PortalContentOpenListItem, 'thumbnailAssetId'> => ({
   id: row.id,
   title: row.title,
   platform: row.platform,
@@ -175,32 +231,102 @@ const openDetailBaseFrom = (row: PortalContentRow & { readonly status: PortalCon
   publishAtTime: row.publish_at_time,
   status: row.status,
   coverAssetId: row.cover_asset_id,
-  publishedOn: row.published_on
+  publishedOn: row.published_on,
+  approval: portalApprovalOf(row, senderPhotoPath(row.id))
 });
 
+const NO_SENDER_PHOTO: SenderPhotoPath = () => null;
+
 /** `thumbnailAssetId` is the file that serves as the cover of the card: the function's first row, the chosen cover before the media. */
-export const openListItemFrom = (row: PortalContentRow & { readonly status: PortalContentOpenListItem['status'] }): PortalContentOpenListItem => ({
-  ...openDetailBaseFrom(row),
+export const openListItemFrom = (
+  row: PortalContentRow & { readonly status: PortalContentOpenListItem['status'] },
+  senderPhotoPath: SenderPhotoPath = NO_SENDER_PHOTO
+): PortalContentOpenListItem => ({
+  ...openDetailBaseFrom(row, senderPhotoPath),
   thumbnailAssetId: row.thumbnail_asset_id
 });
 
-export const listItemFrom = (row: PortalContentRow): PortalContentListItem =>
-  row.status === 'in_production' ? inProductionFrom({ ...row, status: row.status }) : openListItemFrom({ ...row, status: row.status });
+export const listItemFrom = (row: PortalContentRow, senderPhotoPath: SenderPhotoPath = NO_SENDER_PHOTO): PortalContentListItem =>
+  row.status === 'in_production' ? inProductionFrom({ ...row, status: row.status }) : openListItemFrom({ ...row, status: row.status }, senderPhotoPath);
 
-export const detailFrom = async (transaction: ContentTransaction, row: PortalContentRow): Promise<PortalContentDetail> => {
+export const detailFrom = async (transaction: ContentTransaction, row: PortalContentRow, senderPhotoPath: SenderPhotoPath = NO_SENDER_PHOTO): Promise<PortalContentDetail> => {
   if (row.status === 'in_production') return inProductionFrom({ ...row, status: row.status });
   if (row.revision === null) throw new Error('A content open to the client reached the portal without a revision.');
   return {
-    ...openDetailBaseFrom({ ...row, status: row.status }),
+    ...openDetailBaseFrom({ ...row, status: row.status }, senderPhotoPath),
     caption: row.caption,
     revision: row.revision,
     media: await loadPortalMedia(transaction, row.id)
   };
 };
 
-/** `app_private.approve_content`: only an active person of the client's portal; idempotent, the first person to approve stays. */
-export const approveContent = async (transaction: ContentTransaction, input: { readonly contentId: string; readonly revision: number }): Promise<void> => {
-  await raw(transaction, 'select app_private.approve_content(?::uuid, ?::integer)', [input.contentId, input.revision]);
+/**
+ * `app_private.approve_content`: only an active person of the client's portal; idempotent, the first person to approve stays. The note,
+ * when there is one, enters the conversation of the content as a comment of the client in the same transaction as the approval: the
+ * function judges it (500 visible characters, like the note of the agency) after the door and writes it, or the approval is undone.
+ */
+export const approveContent = async (
+  transaction: ContentTransaction,
+  input: { readonly contentId: string; readonly revision: number; readonly note?: string | undefined }
+): Promise<void> => {
+  await raw(transaction, 'select app_private.approve_content(?::uuid, ?::integer, ?::text)', [input.contentId, input.revision, input.note ?? null]);
+};
+
+export interface PortalProgress {
+  readonly month: string;
+  readonly approved: number;
+  readonly total: number;
+  readonly next: { readonly id: string; readonly title: string; readonly publishOn: string; readonly publishAtTime: string | null } | null;
+}
+
+/**
+ * "Boa notícia" of the portal's Início (decision 2026-11-11): of the contents of the month of today in São Paulo that are not cancelled
+ * (the function leaves the cancelled out), how many are approved or published; and the next post to go on air, the earliest approved
+ * content whose day has not passed and, when it has an hour, whose hour has not. Both come from `portal_contents`, the one door of the
+ * portal to a content, so the count is of what this person reads and of nothing else.
+ */
+export const loadPortalProgress = async (
+  transaction: ContentTransaction,
+  input: { readonly clientId: string; readonly now: Date | undefined }
+): Promise<PortalProgress> => {
+  const result = await raw<RawRows<{
+    month: string;
+    approved: string | number;
+    total: string | number;
+    next_id: string | null;
+    next_title: string | null;
+    next_publish_on: string | null;
+    next_publish_at_time: string | null;
+  }>>(transaction, `
+    with ${CLOCK_CTES},
+    month_rows as (
+      select content.status
+      from clock, app_private.portal_contents(?::uuid, clock.month_start, clock.next_month_start - 1, null::text[], null::uuid) content
+    )
+    select to_char(clock.month_start, 'YYYY-MM') as month,
+      (select count(*) filter (where month_rows.status in ('approved', 'published')) from month_rows) as approved,
+      (select count(*) from month_rows) as total,
+      upcoming.id as next_id, upcoming.title as next_title, upcoming.publish_on as next_publish_on, upcoming.publish_at_time as next_publish_at_time
+    from clock
+    left join lateral (
+      select content.id, content.title, content.publish_on::text as publish_on, to_char(content.publish_at_time, 'HH24:MI') as publish_at_time
+      from app_private.portal_contents(?::uuid, clock.today, null::date, array['approved']::text[], null::uuid) content
+      where content.publish_on > clock.today or content.publish_at_time is null or content.publish_at_time > clock.local_time
+      order by content.publish_on, content.publish_at_time, content.id
+      limit 1
+    ) upcoming on true
+  `, [input.now?.toISOString() ?? null, input.clientId, input.clientId]);
+
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('The progress of the month returned no row.');
+  return {
+    month: row.month,
+    approved: Number(row.approved),
+    total: Number(row.total),
+    next: row.next_id === null || row.next_title === null || row.next_publish_on === null
+      ? null
+      : { id: row.next_id, title: row.next_title, publishOn: row.next_publish_on, publishAtTime: row.next_publish_at_time }
+  };
 };
 
 export const withdrawContentApproval = async (transaction: ContentTransaction, input: { readonly contentId: string; readonly revision: number }): Promise<void> => {

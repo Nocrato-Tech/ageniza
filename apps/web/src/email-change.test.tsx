@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { EmailChangeConfirmRequestSchema, EmailChangeRequestSchema } from '@ageniza/contracts';
 
-import { AccountMenu } from './account-menu.js';
+import { AccountPage } from './account-page.js';
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
@@ -96,7 +96,7 @@ const renderMenu = (impl: typeof fetch) => {
       <QueryClientProvider client={createQueryClient()}>
         <ApiClientProvider client={client}>
           <MemoryRouter initialEntries={[`/agencia/${AGENCY}`]}>
-            <AccountMenu activeContext='Agência Um' />
+            <AccountPage />
           </MemoryRouter>
         </ApiClientProvider>
       </QueryClientProvider>
@@ -105,8 +105,7 @@ const renderMenu = (impl: typeof fetch) => {
 };
 
 const openDialog = async (): Promise<HTMLElement> => {
-  fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Pedir troca de e-mail' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Pedir troca de e-mail' }));
   return screen.findByRole('dialog', { name: 'Pedir troca de e-mail' });
 };
 

@@ -1,5 +1,7 @@
 import {
   AgencyClientPathParamsSchema,
+  AnnouncePortalMaterialUploadsRequestSchema,
+  AnnouncePortalMaterialUploadsResponseSchema,
   AgencyClientThreadPathParamsSchema,
   ClientPathParamsSchema,
   ClientThreadPathParamsSchema,
@@ -9,6 +11,9 @@ import {
   CreateCommentRequestSchema,
   CreateThreadRequestSchema,
   CreateThreadResponseSchema,
+  MaterialRequestListQuerySchema,
+  MaterialRequestListResponseSchema,
+  PortalCreateThreadRequestSchema,
   ThreadListQuerySchema,
   ThreadListResponseSchema,
   ThreadSchema,
@@ -35,27 +40,48 @@ import {
   addComment,
   authorOf,
   diagnoseConversationRefusal,
+  isMaterialRequestThread,
   listComments,
+  listOpenMaterialRequests,
   listThreads,
   loadAuthors,
   loadComment,
   loadThreadRow,
+  materialRequestDatabaseRefusal,
   openThread,
   resolveThread,
   threadFromRow,
   type CommentRow,
   type ConversationAuthors,
   type ConversationRefusal,
-  type ConversationScope
+  type ConversationScope,
+  type MaterialRequestDatabaseRefusal
 } from './conversation-service.js';
+import { announcementBody } from './material-upload-announcement.js';
 import { createPhotoUrlSigner } from './photo-url.js';
 import { COMMENT_DEFAULT_PAGE_SIZE, CONVERSATION_READ_PERMISSIONS, CONVERSATION_WRITE_PERMISSIONS, THREAD_DEFAULT_PAGE_SIZE } from './policy.js';
-import { isClientNoLongerActive, isRowLevelSecurityViolation, type ClientTransaction } from './service.js';
+import { isClientNoLongerActive, isRowLevelSecurityViolation, isSubjectGone, type ClientTransaction } from './service.js';
 
 type PreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
+/**
+ * What the announcement of a batch of files needs from the module that owns them, injected at the composition (this module never imports
+ * the media module): the files the person confirmed in a request, and the answers of its refusals, which say nothing about the agency's plan.
+ */
+export interface PortalUploadsPort {
+  readonly listOwnUploads: (
+    transaction: ClientTransaction,
+    input: { readonly clientId: string; readonly threadId: string }
+  ) => Promise<readonly { readonly id: string; readonly status: 'pending' | 'confirmed'; readonly category: 'image' | 'audio' }[]>;
+  readonly translateError: (error: unknown) => HttpError | undefined;
+  readonly requestNotFound: () => HttpError;
+  readonly requestResolved: () => HttpError;
+}
+
 export interface ConversationRouteDependencies {
   readonly database: DatabaseClient;
+  /** Absent where the media module is not wired; then the announcement route is not registered. */
+  readonly portalUploads?: PortalUploadsPort;
   readonly auth: AuthInstance;
   readonly identityStorage?: IdentityStorageClient;
   readonly photoUrlExpirySeconds: number;
@@ -79,13 +105,29 @@ const refusalError = (refusal: ConversationRefusal): HttpError => {
     case 'subject-not-found': return notFound('Subject not found.');
     case 'client-archived':
       return new HttpError({ statusCode: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
-    case 'persona-archived':
-      return new HttpError({ statusCode: 409, code: 'PERSONA_ARCHIVED', message: 'Persona arquivada: a conversa é somente leitura.' });
     case 'section-not-filled':
       return new HttpError({ statusCode: 409, code: 'SECTION_NOT_FILLED', message: 'Esta seção ainda não foi preenchida pela agência.' });
     case 'content-not-open':
       return new HttpError({ statusCode: 409, code: 'CONTENT_NOT_OPEN', message: 'A conversa não aceita comentários enquanto o conteúdo está cancelado.' });
     case 'forbidden': return forbidden();
+  }
+};
+
+const fieldRefused = (path: 'dueOn' | 'title', message: string): HttpError => new HttpError({
+  statusCode: 400,
+  code: 'VALIDATION_ERROR',
+  message: 'Request validation failed',
+  details: { issues: [{ path, code: 'custom', message }] }
+});
+
+/** The refusals of the database about a request for material, as the errors the person can act on: 400 for the date and the title, 403 for the portal. */
+const materialRequestError = (refusal: MaterialRequestDatabaseRefusal): HttpError => {
+  switch (refusal) {
+    case 'due-on-out-of-range': return fieldRefused('dueOn', 'the deadline is from today to 90 days ahead');
+    case 'due-on-without-request': return fieldRefused('dueOn', 'only a request for material has a deadline');
+    case 'title-without-request': return fieldRefused('title', 'only a request for material has a title');
+    case 'title-invalid': return fieldRefused('title', 'the title must be one visible line of up to 80 characters');
+    case 'portal-cannot-request': return forbidden();
   }
 };
 
@@ -110,7 +152,7 @@ const subjectOfQuery = (query: ThreadListQuery): ConversationSubject => {
       statusCode: 400,
       code: 'VALIDATION_ERROR',
       message: 'Request validation failed',
-      details: { issues: [{ path: 'sectionKey', code: 'custom', message: 'exactly one of sectionKey, personaId and contentId is required' }] }
+      details: { issues: [{ path: 'sectionKey', code: 'custom', message: 'exactly one of sectionKey, personaId, contentId and materialRequest is required' }] }
     });
   }
   return subject;
@@ -131,8 +173,11 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     message: 'Could not sign a comment author photo URL; returning null'
   });
 
-  const commentFrom = async (request: FastifyRequest, row: CommentRow, threadId: string, authors: ConversationAuthors): Promise<ThreadComment> => {
-    const author = authorOf(authors, threadId, row.author_side, row.author_user_id, row.author_portal_access_id);
+  /** `agencyHidden`: the portal reading a request for material, where the agency has no name (decision 2026-11-11). */
+  const commentFrom = async (request: FastifyRequest, row: CommentRow, threadId: string, authors: ConversationAuthors, agencyHidden = false): Promise<ThreadComment> => {
+    const author = agencyHidden && row.author_side === 'agency'
+      ? undefined
+      : authorOf(authors, threadId, row.author_side, row.author_user_id, row.author_portal_access_id);
     return {
       id: row.id,
       body: row.body,
@@ -160,6 +205,10 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
       if (isRetryableConflict(error)) throw tryAgain();
       // The archive won the race for the client; the portal never learns that, an archived client is "not found" there.
       if (isClientNoLongerActive(error)) throw refusalError(scope.side === 'agency' ? 'client-archived' : 'client-not-found');
+      // The persona was deleted with its conversation after the checks: what the person was looking at is gone.
+      if (isSubjectGone(error)) throw refusalError(target.threadId === undefined ? 'subject-not-found' : 'thread-not-found');
+      const materialRequestRefusal = materialRequestDatabaseRefusal(error);
+      if (materialRequestRefusal !== undefined) throw materialRequestError(materialRequestRefusal);
       if (!isRowLevelSecurityViolation(error) && !(error instanceof ConversationWriteRefused)) throw error;
       const refusal = await withAuthenticatedUserTransaction(dependencies.database, auth.claims, (transaction) =>
         diagnoseConversationRefusal(transaction, scope, target));
@@ -230,14 +279,19 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     if (outcome.kind !== 'ok') throw refusalError(outcome.kind);
 
     return reply.send(routeResponse(docs, request, {
-      data: outcome.page.items.map((row) => threadFromRow(row, outcome.authors)),
+      data: outcome.page.items.map((row) => threadFromRow(row, outcome.authors, { side: scope.side })),
       meta: buildPaginationMetadata(pagination, outcome.page.totalItems)
     }));
   };
 
   const openThreadHandler = (
     scopeOf: (request: FastifyRequest) => ConversationScope,
-    docs: { readonly schemas: { readonly body: typeof CreateThreadRequestSchema; readonly response: typeof CreateThreadResponseSchema } }
+    docs: {
+      readonly schemas: {
+        readonly body: typeof CreateThreadRequestSchema | typeof PortalCreateThreadRequestSchema;
+        readonly response: typeof CreateThreadResponseSchema;
+      };
+    }
   ) => async (request: FastifyRequest, reply: FastifyReply) => {
     const scope = scopeOf(request);
     const body = routeBody(docs, request);
@@ -255,7 +309,7 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     if (outcome.kind !== 'ok') throw refusalError(outcome.kind);
 
     return reply.status(201).send(routeResponse(docs, request, {
-      thread: threadFromRow(outcome.thread, outcome.authors),
+      thread: threadFromRow(outcome.thread, outcome.authors, { side: scope.side }),
       comment: await commentFrom(request, outcome.comment, outcome.thread.id, outcome.authors)
     }));
   };
@@ -272,12 +326,17 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     const outcome = await read(request, async (transaction) => {
       const result = await listComments(transaction, scope, threadId, pagination);
       if (result.kind !== 'ok') return result;
-      return { kind: 'ok' as const, page: result.page, authors: await loadAuthors(transaction, [threadId]) };
+      return {
+        kind: 'ok' as const,
+        page: result.page,
+        authors: await loadAuthors(transaction, [threadId]),
+        agencyHidden: scope.side === 'client' && await isMaterialRequestThread(transaction, threadId)
+      };
     });
     if (outcome.kind !== 'ok') throw refusalError(outcome.kind);
 
     return reply.send(routeResponse(docs, request, {
-      data: await Promise.all(outcome.page.items.map((row) => commentFrom(request, row, threadId, outcome.authors))),
+      data: await Promise.all(outcome.page.items.map((row) => commentFrom(request, row, threadId, outcome.authors, outcome.agencyHidden))),
       meta: buildPaginationMetadata(pagination, outcome.page.totalItems)
     }));
   };
@@ -351,7 +410,7 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     });
     if (outcome.kind !== 'ok') throw refusalError(outcome.kind);
 
-    return reply.send(routeResponse(agencyResolveDocs, request, threadFromRow(outcome.thread, outcome.authors)));
+    return reply.send(routeResponse(agencyResolveDocs, request, threadFromRow(outcome.thread, outcome.authors, { side: 'agency' })));
   });
 
   // --- The portal side (#130): the same service, the side fixed to `client`, and no resolve -----
@@ -364,7 +423,7 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
   const portalOpenThreadDocs = {
     permission: null,
     responseStatus: 201,
-    schemas: { params: ClientPathParamsSchema, body: CreateThreadRequestSchema, response: CreateThreadResponseSchema }
+    schemas: { params: ClientPathParamsSchema, body: PortalCreateThreadRequestSchema, response: CreateThreadResponseSchema }
   } satisfies DocumentedRouteConfig;
   const portalListCommentsDocs = {
     permission: null,
@@ -377,8 +436,80 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
     schemas: { params: ClientThreadPathParamsSchema, body: CreateCommentRequestSchema, response: CommentSchema }
   } satisfies DocumentedRouteConfig;
 
+  const portalListMaterialRequestsDocs = {
+    permission: null,
+    responseStatus: 200,
+    schemas: { params: ClientPathParamsSchema, query: MaterialRequestListQuerySchema, response: MaterialRequestListResponseSchema }
+  } satisfies DocumentedRouteConfig;
+
   app.get('/clients/:clientId/threads', portalGuards(portalListThreadsDocs), listThreadsHandler(portalScope, portalListThreadsDocs));
   app.post('/clients/:clientId/threads', portalGuards(portalOpenThreadDocs), openThreadHandler(portalScope, portalOpenThreadDocs));
   app.get('/clients/:clientId/threads/:threadId/comments', portalGuards(portalListCommentsDocs), listCommentsHandler(portalScope, portalListCommentsDocs));
   app.post('/clients/:clientId/threads/:threadId/comments', portalGuards(portalAddCommentDocs), addCommentHandler(portalScope, portalAddCommentDocs));
+
+  const portalUploads = dependencies.portalUploads;
+  if (portalUploads !== undefined) {
+    const announceDocs = {
+      permission: null,
+      responseStatus: 201,
+      schemas: { params: ClientThreadPathParamsSchema, body: AnnouncePortalMaterialUploadsRequestSchema, response: AnnouncePortalMaterialUploadsResponseSchema }
+    } satisfies DocumentedRouteConfig;
+
+    // The client says she sent a batch: one comment of hers on the request, worded here from the files she confirmed, and that comment is
+    // what notifies the agency. Nothing marks a file as announced, so the same batch announced twice is two comments.
+    app.post('/clients/:clientId/material-requests/:threadId/uploads/announce', portalGuards(announceDocs), async (request, reply) => {
+      const scope = portalScope(request);
+      const threadId = uuidFromRoute(request, 'threadId', 'Thread not found.');
+      const body = routeBody(announceDocs, request);
+
+      const outcome = await write(request, scope, { threadId }, async (transaction) => {
+        const files = await portalUploads.listOwnUploads(transaction, { clientId: scope.clientId, threadId });
+        const thread = await loadThreadRow(transaction, { clientId: scope.clientId, threadId });
+        if (thread === undefined) return { kind: 'thread-not-found' as const };
+        if (!thread.is_open) return { kind: 'request-resolved' as const };
+        const confirmed = new Map(files.filter((file) => file.status === 'confirmed').map((file) => [file.id, file]));
+        const picked = body.assetIds.map((id) => confirmed.get(id));
+        if (picked.some((file) => file === undefined)) return { kind: 'files-not-found' as const };
+
+        const text = announcementBody({
+          images: picked.filter((file) => file?.category === 'image').length,
+          audios: picked.filter((file) => file?.category === 'audio').length
+        });
+        const added = await addComment(transaction, scope, { threadId, body: text });
+        if (added.kind !== 'ok') return added;
+        const comment = await loadComment(transaction, { clientId: scope.clientId, threadId, commentId: added.commentId });
+        const authors = await loadAuthors(transaction, [threadId]);
+        if (comment === undefined) throw new Error('The comment that was just written could not be read back.');
+        return { kind: 'ok' as const, comment, authors };
+      }).catch((error: unknown) => {
+        throw portalUploads.translateError(error) ?? error;
+      });
+      if (outcome.kind === 'files-not-found') throw portalUploads.requestNotFound();
+      if (outcome.kind === 'request-resolved') throw portalUploads.requestResolved();
+      if (outcome.kind !== 'ok') throw refusalError(outcome.kind);
+
+      return reply.status(201).send(routeResponse(announceDocs, request, await commentFrom(request, outcome.comment, threadId, outcome.authors)));
+    });
+  }
+
+  app.get('/clients/:clientId/material-requests', portalGuards(portalListMaterialRequestsDocs), async (request, reply) => {
+    const scope = portalScope(request);
+    if (scope.side !== 'client') throw notFound('Client not found.');
+    const query = routeQuery(portalListMaterialRequestsDocs, request);
+    const pagination = resolvePagination(query, THREAD_DEFAULT_PAGE_SIZE);
+
+    const page = await read(request, (transaction) => listOpenMaterialRequests(transaction, scope, pagination));
+
+    return reply.send(routeResponse(portalListMaterialRequestsDocs, request, {
+      data: page.items.map((row) => ({
+        threadId: row.thread_id,
+        title: row.title,
+        body: row.body,
+        dueOn: row.due_on,
+        createdAt: isoOf(row.created_at),
+        state: 'open' as const
+      })),
+      meta: buildPaginationMetadata(pagination, page.totalItems)
+    }));
+  });
 };

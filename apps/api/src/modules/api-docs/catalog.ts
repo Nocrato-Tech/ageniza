@@ -6,6 +6,7 @@ import { MEDIA_READ_PERMISSIONS, MEDIA_UPLOAD_PERMISSIONS } from '../media/polic
 import type { RoutePermission } from '../../plugins/infra/route-metadata.js';
 import {
   AcceptLegalDocumentRequestSchema,
+  AgencyClientMediaAssetPathParamsSchema,
   AgencyClientMediaFolderAssetPathParamsSchema,
   AgencyClientMediaFolderPathParamsSchema,
   AgencyClientInvitationPathParamsSchema,
@@ -16,6 +17,15 @@ import {
   AgencyClientPersonaPathParamsSchema,
   AgencyClientStoryScriptPathParamsSchema,
   AgencyClientThreadPathParamsSchema,
+  AnnouncePortalMaterialUploadsRequestSchema,
+  AnnouncePortalMaterialUploadsResponseSchema,
+  ClientMaterialRequestUploadAssetPathParamsSchema,
+  CompletePortalMaterialUploadRequestSchema,
+  CompletePortalMaterialUploadResponseSchema,
+  CreatePortalMaterialUploadRequestSchema,
+  CreatePortalMaterialUploadResponseSchema,
+  PortalMaterialUploadListQuerySchema,
+  PortalMaterialUploadListResponseSchema,
   AgencyClientSectionPathParamsSchema,
   AgencyCollaboratorPathParamsSchema,
   AgencyInvitationPathParamsSchema,
@@ -23,7 +33,13 @@ import {
   CreateAgencyRequestSchema,
   CreateAgencyResponseSchema,
   AgencyMediaAssetPathParamsSchema,
+  AgencyNotificationPathParamsSchema,
   AgencyPathParamsSchema,
+  NotificationListQuerySchema,
+  NotificationListResponseSchema,
+  NotificationUnreadCountResponseSchema,
+  AgencySearchQuerySchema,
+  AgencySearchResponseSchema,
   AgencyRolesQuerySchema,
   AgencyRolesResponseSchema,
   AuthEmailVerificationResendRequestSchema,
@@ -38,6 +54,11 @@ import {
   AuthPasswordForgotRequestSchema,
   AuthPasswordForgotResponseSchema,
   AuthPasswordResetRequestSchema,
+  AuthRevokeOtherSessionsRequestSchema,
+  AuthRevokeOtherSessionsResponseSchema,
+  AuthRevokeSessionRequestSchema,
+  AuthSessionListResponseSchema,
+  AuthSessionPathParamsSchema,
   AuthSessionResponseSchema,
   AuthSignUpRequestSchema,
   AuthSignUpResponseSchema,
@@ -63,6 +84,8 @@ import {
   ApproveContentByAgencyRequestSchema,
   ContentDetailSchema,
   ContentFeedQuerySchema,
+  ContentActivationResponseSchema,
+  ContentSummaryResponseSchema,
   ContentFeedResponseSchema,
   ContentPeriodQuerySchema,
   ContentPeriodResponseSchema,
@@ -71,6 +94,10 @@ import {
   encodeContentFeedCursor,
   CreateContentTaskRequestSchema,
   ContentMoveRequestSchema,
+  AwaitingClientResponseSchema,
+  SubmitContentRequestSchema,
+  SubmitContentsBatchRequestSchema,
+  SubmitContentsBatchResponseSchema,
   PublishContentRequestSchema,
   RescheduleContentRequestSchema,
   ReturnContentTaskRequestSchema,
@@ -80,6 +107,8 @@ import {
   CollaboratorJobTitlesResponseSchema,
   CollaboratorListQuerySchema,
   CollaboratorListResponseSchema,
+  CollaboratorOpenContentsQuerySchema,
+  CollaboratorOpenContentsResponseSchema,
   CollaboratorSchema,
   CompleteMediaUploadRequestSchema,
   CompleteMediaUploadResponseSchema,
@@ -114,7 +143,15 @@ import {
   MediaFolderListQuerySchema,
   MediaFolderListResponseSchema,
   MediaFolderSchema,
+  MediaFolderSummaryListQuerySchema,
+  MediaFolderSummaryListResponseSchema,
+  MediaLibraryAssetSchema,
+  MediaLibraryListQuerySchema,
+  MediaLibraryListResponseSchema,
+  MediaUsageListQuerySchema,
+  MediaUsageListResponseSchema,
   MediaDownloadUrlResponseSchema,
+  MoveMediaAssetRequestSchema,
   PaginationInputSchema,
   PortalApprovalApproveRequestSchema,
   PortalApprovalBatchSchema,
@@ -128,6 +165,7 @@ import {
   PortalApprovalNoQuerySchema,
   PortalApprovalRequestChangesRequestSchema,
   PortalApproveContentRequestSchema,
+  PortalApproveContentWithNoteRequestSchema,
   PortalContentAwaitingQuerySchema,
   PortalContentAwaitingResponseSchema,
   PortalContentDetailSchema,
@@ -137,6 +175,7 @@ import {
   PortalContentPathParamsSchema,
   PortalContentPeriodQuerySchema,
   PortalContentPeriodResponseSchema,
+  PortalContentProgressResponseSchema,
   PortalRequestContentChangesRequestSchema,
   PortalStoryScriptPeriodResponseSchema,
   PortalStoryScriptSchema,
@@ -148,13 +187,18 @@ import {
   PublicInvitationTokenPathParamsSchema,
   PutLastContextRequestSchema,
   SetClientClosingRequestSchema,
+  MaterialRequestListQuerySchema,
+  MaterialRequestListResponseSchema,
+  PortalCreateThreadRequestSchema,
   ThreadListQuerySchema,
   ThreadListResponseSchema,
   ThreadSchema,
   RemoveMediaAssetResponseSchema,
+  RenameMediaFolderRequestSchema,
   RequestMediaUploadPartsRequestSchema,
   RequestMediaUploadPartsResponseSchema,
   UpdateClientRequestSchema,
+  UpdateMediaAssetRequestSchema,
   ReactivateCollaboratorRequestSchema,
   UpdateCollaboratorRequestSchema,
   UpdateMyProfileRequestSchema,
@@ -169,14 +213,18 @@ import {
   UpdateContentTaskRequestSchema,
   UploadMyPhotoRequestSchema,
   UploadMyPhotoResponseSchema,
+  SaveSubscriptionTestCardRequestSchema,
   SimulatedPaymentRequestSchema,
   SimulatedPaymentResponseSchema,
   SubscriptionChangeRequestSchema,
   SubscriptionChargePathParamsSchema,
   SubscriptionChargeResponseSchema,
+  SubscriptionInvoiceListQuerySchema,
+  SubscriptionInvoiceListResponseSchema,
   SubscriptionOverviewResponseSchema,
   SubscriptionPlansResponseSchema,
-  SubscriptionQuoteResponseSchema
+  SubscriptionQuoteResponseSchema,
+  SubscriptionTestCardResponseSchema
 } from '@ageniza/contracts';
 
 /**
@@ -189,7 +237,7 @@ import {
  * schema at generation time; secret-shaped values are angle-bracket placeholders on purpose.
  */
 
-export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'approval-link' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts' | 'subscriptions';
+export type ApiModule = 'system' | 'auth' | 'invitations' | 'contexts' | 'agencies' | 'clients' | 'contents' | 'approval-link' | 'collaborators' | 'media' | 'profile' | 'legal' | 'email-change' | 'story-scripts' | 'subscriptions' | 'notifications' | 'search';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
@@ -250,7 +298,7 @@ export const API_DOCUMENT_INFO = {
 
 export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   system: 'Saúde e prontidão do processo.',
-  auth: 'Cadastro e confirmação do e-mail, login, sessão, logout e recuperação de senha.',
+  auth: 'Cadastro e confirmação do e-mail, login, sessão, logout, as sessões ativas da conta e recuperação de senha.',
   invitations: 'Convite de colaborador e de pessoa do portal, aceite e administração dos pendentes.',
   contexts: 'Listagem, resolução e troca de contexto, e o primeiro acesso ao portal do cliente.',
   agencies: 'Dados do contexto de agência, incluindo as permissões efetivas.',
@@ -263,13 +311,17 @@ export const MODULE_DESCRIPTIONS: Record<ApiModule, string> = {
   legal: 'Versão dos Termos e da Privacidade que a conta aceitou, e o aceite de um documento por vez.',
   'email-change': 'Pedido de troca do e-mail da conta, aprovado pela operação, e a confirmação pelo link enviado ao e-mail novo.',
   'story-scripts': 'Roteiros de stories de um cliente: a agência cria, edita e envia; o portal lê os enviados de um período e marca como gravado.',
-  subscriptions: 'Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar; e, só fora de produção, pagar com o provedor simulado e avançar o relógio.'
+  subscriptions: 'Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar, e as faturas; e, só fora de produção, o cartão de teste, pagar com o provedor simulado e avançar o relógio.',
+  notifications: 'As notificações da pessoa dentro do app: a lista paginada, a contagem de não lidas para o sino e marcar como lida, uma ou todas. Cada pessoa lê só as próprias; quem as cria é o banco, junto do evento.',
+  search: 'A busca da barra superior da agência: clientes, conteúdos e arquivos pelo nome, em três grupos de até seis. Cada grupo respeita a permissão da leitura que ele atalha, e um grupo que a pessoa não pode ler vem vazio, igual a um grupo sem resultado.'
 };
 
 export const ERROR_MESSAGES: Record<string, string> = {
   VALIDATION_ERROR: 'Request validation failed',
   UNAUTHENTICATED: 'Authentication is required.',
   SESSION_EXPIRED: 'Session has expired.',
+  SESSION_NOT_FOUND: 'Sessão não encontrada.',
+  USE_LOGOUT: 'Esta é a sessão deste aparelho. Para sair dela, use "Sair".',
   INVALID_CREDENTIALS: 'Credenciais inválidas.',
   FORBIDDEN: 'You do not have permission to perform this action.',
   NO_CONTEXT_ACCESS: 'Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite.',
@@ -307,7 +359,6 @@ export const ERROR_MESSAGES: Record<string, string> = {
   MEDIA_IN_USE: 'Esta mídia está em um conteúdo enviado para aprovação, aprovado ou publicado e não pode ser removida.',
   CLIENT_NOT_ARCHIVED: 'Este cliente já está ativo.',
   CLOSING_DATE_NOT_SET: 'Este cliente não tem encerramento agendado.',
-  PERSONA_ARCHIVED: 'Persona arquivada: a conversa é somente leitura.',
   SECTION_NOT_FILLED: 'Esta seção ainda não foi preenchida pela agência.',
   CONTENT_PERIOD_TOO_LARGE: 'O período tem mais de 500 itens. Consulte um período menor.',
   CONTENT_NOT_EDITABLE: 'Conteúdo publicado ou cancelado não pode ser editado.',
@@ -358,6 +409,7 @@ const commentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const folderId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const storyScriptId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const storySceneId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const sessionId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 
 const storyScriptExample = {
   id: storyScriptId,
@@ -405,7 +457,15 @@ const contentExample = {
   approvedByAgencyReason: null,
   publishedOn: null,
   cancelledAt: null,
-  createdAt: '2026-10-11T12:00:00.000Z'
+  createdAt: '2026-10-11T12:00:00.000Z',
+  approval: null
+} as const;
+
+const contentApprovalExample = {
+  sentAt: '2026-10-14T12:00:00.000Z',
+  dueAt: '2026-10-18T21:00:00.000Z',
+  dueOn: '2026-10-18',
+  note: 'Preciso da sua resposta até sábado para publicar na segunda.'
 } as const;
 
 const contentTaskExample = {
@@ -427,25 +487,28 @@ const contentDetailExample = {
   conversation: { threadId: null, commentCount: 0, lastCommentAt: null }
 } as const;
 
+const contentListItemExample = {
+  id: contentId,
+  title: 'Lançamento da coleção de outono',
+  platform: 'instagram',
+  format: 'reels',
+  publishOn: '2026-10-20',
+  publishAtTime: '18:30',
+  status: 'in_production',
+  owner: { membershipId, name: 'Ana Souza' },
+  coverAssetId: null,
+  thumbnailAssetId: assetId,
+  revision: 1,
+  publishedOn: null,
+  tasksTotal: 3,
+  tasksApproved: 1,
+  approval: null
+} as const;
+
 const contentPeriodExample = {
   data: {
-    contents: [{
-      id: contentId,
-      title: 'Lançamento da coleção de outono',
-      platform: 'instagram',
-      format: 'reels',
-      publishOn: '2026-10-20',
-      publishAtTime: '18:30',
-      status: 'in_production',
-      owner: { membershipId, name: 'Ana Souza' },
-      coverAssetId: null,
-      thumbnailAssetId: assetId,
-      revision: 1,
-      publishedOn: null,
-      tasksTotal: 3,
-      tasksApproved: 1
-    }],
-    storyScripts: [{ id: storyScriptId, scriptOn: '2026-10-21', status: 'draft' }]
+    contents: [contentListItemExample],
+    storyScripts: [{ id: storyScriptId, scriptOn: '2026-10-21', status: 'draft', sceneCount: 4 }]
   },
   meta: { from: '2026-10-01', to: '2026-10-31', count: 2 }
 } as const;
@@ -468,7 +531,23 @@ const portalContentOpenExample = {
   publishAtTime: '18:30',
   status: 'awaiting_approval',
   coverAssetId: null,
-  publishedOn: null
+  publishedOn: null,
+  approval: {
+    dueAt: contentApprovalExample.dueAt,
+    dueOn: contentApprovalExample.dueOn,
+    note: contentApprovalExample.note,
+    sentAt: contentApprovalExample.sentAt,
+    sentBy: { name: 'João Pereira', photoUrl: `/clients/${clientId}/contents/${contentId}/sender-photo` }
+  }
+} as const;
+
+// The approval link answers the day and the note of the round: the instant, the send date and the sender are `null` there.
+const portalLinkApprovalExample = {
+  dueAt: null,
+  dueOn: contentApprovalExample.dueOn,
+  note: contentApprovalExample.note,
+  sentAt: null,
+  sentBy: null
 } as const;
 
 const portalContentOpenListExample = { ...portalContentOpenExample, thumbnailAssetId: assetId } as const;
@@ -491,7 +570,7 @@ const portalApprovalBatchExample = {
   personEmail: 'maria@padariacentral.exemplo.test',
   sessionExpiresAt: '2026-10-27T14:00:00.000Z',
   linkExpiresAt: '2026-11-03T12:00:00.000Z',
-  contents: [{ ...portalContentDetailExample, canDecide: true }]
+  contents: [{ ...portalContentDetailExample, approval: portalLinkApprovalExample, canDecide: true }]
 } as const;
 
 const agencyContextExample = {
@@ -513,6 +592,37 @@ const legalAcceptancesExample = {
 
 const signedStorageUrl ='https://storage.exemplo.test/arquivo.png?assinatura=ficticia';
 
+const libraryAssetExample = {
+  id: assetId,
+  folderId,
+  folderName: 'Imagens',
+  category: 'image',
+  contentType: 'image/jpeg',
+  sizeBytes: 4_404_019,
+  name: 'vitrine-outubro.jpg',
+  width: 3024,
+  height: 4032,
+  altText: 'Vitrine da padaria com pães recém-saídos do forno',
+  videoProcessingStatus: 'not_applicable',
+  uploadedBy: { membershipId, name: 'Ana Souza' },
+  uploadedBySide: 'agency',
+  createdAt: '2026-11-11T12:00:00.000Z',
+  usageCount: 2
+} as const;
+
+const portalUploadExample = {
+  id: assetId,
+  status: 'confirmed',
+  category: 'image',
+  contentType: 'image/jpeg',
+  sizeBytes: 2_404_019,
+  name: 'equipe.jpg',
+  width: 3024,
+  height: 4032,
+  url: signedStorageUrl,
+  createdAt: '2026-11-13T12:00:00.000Z'
+} as const;
+
 const clientExample = {
   id: clientId,
   name: 'Padaria Central',
@@ -521,13 +631,24 @@ const clientExample = {
   legalName: 'Padaria Central Ltda',
   taxId: '12345678000190',
   segment: 'Alimentação',
+  city: 'Campinas',
   website: 'https://padariacentral.exemplo.test',
   instagramHandle: 'padariacentral',
   contactName: 'Maria Souza',
   contactPhone: '+55 11 90000-0000',
   contactEmail: 'maria@padariacentral.exemplo.test',
   closingDate: null,
+  createdAt: '2026-09-02T12:00:00.000Z',
   archivedAt: null
+} as const;
+
+const personaProfileExample = {
+  age: 58,
+  occupation: 'Dona de casa',
+  location: 'Campinas, SP',
+  traits: ['Prática', 'Desconfiada'],
+  whereTheyAre: 'Instagram e grupos de bairro no WhatsApp.',
+  toneThatWorks: 'Próximo, direto e sem jargão.'
 } as const;
 
 const personaExample = {
@@ -537,7 +658,8 @@ const personaExample = {
   pains: 'Pouco tempo para pesquisar.',
   desires: 'Reconhecimento da comunidade.',
   objections: 'Preço acima do esperado.',
-  status: 'active',
+  ...personaProfileExample,
+  messageCount: 12,
   updatedBy: { id: userId, name: 'Dono da Agência' },
   updatedAt: '2026-09-30T12:00:00.000Z'
 } as const;
@@ -558,7 +680,18 @@ const threadExample = {
   lastComment: { side: 'client', at: '2026-10-07T12:00:00.000Z', excerpt: 'Podemos aproximar o tom de voz do que usamos nas redes?' },
   commentCount: 1,
   resolvedBy: null,
-  resolvedAt: null
+  resolvedAt: null,
+  dueOn: null,
+  title: null
+} as const;
+
+const materialRequestExample = {
+  threadId,
+  title: 'Fotos da equipe',
+  body: 'Envie 3 fotos da equipe',
+  dueOn: '2026-10-20',
+  createdAt: '2026-10-07T12:00:00.000Z',
+  state: 'open'
 } as const;
 
 const brandSectionExample = {
@@ -601,10 +734,14 @@ const clientMemberExample = {
   email: 'maria@padariacentral.exemplo.test',
   status: 'active',
   entered: true,
+  lastEnteredAt: '2026-11-08T14:30:00.000Z',
   since: '2026-09-02T12:00:00.000Z'
 } as const;
 
-const clientMemberNotEnteredExample = { ...clientMemberExample, name: null, entered: false } as const;
+const clientMemberNotEnteredExample = { ...clientMemberExample, name: null, entered: false, lastEnteredAt: null } as const;
+
+// Opened the approval link and nothing else: not "entered" with the account, and the last entry is the one of the link.
+const clientMemberOpenedLinkExample = { ...clientMemberNotEnteredExample, email: 'joao@padariacentral.exemplo.test', lastEnteredAt: '2026-11-09T10:15:00.000Z' } as const;
 
 const portalBrandStudyExample = {
   filled: 3,
@@ -624,7 +761,7 @@ const portalBrandStudyExample = {
     pains: 'Pouco tempo para pesquisar.',
     desires: 'Reconhecimento da comunidade.',
     objections: 'Preço acima do esperado.',
-    status: 'active',
+    ...personaProfileExample,
     updatedAt: '2026-09-30T12:00:00.000Z'
   }]
 } as const;
@@ -887,6 +1024,92 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       }
     }],
     errors: [COMMON_ERRORS.internal, { status: 401, code: 'UNAUTHENTICATED' }, { status: 401, code: 'SESSION_EXPIRED' }]
+  },
+  {
+    method: 'get',
+    path: '/auth/sessions',
+    operationId: 'getAuthSessions',
+    module: 'auth',
+    summary: 'Lista as sessões ativas da conta',
+    description: [
+      'As sessões ativas **da própria conta**, da criada há menos tempo para a mais antiga (no máximo 100: a sessão da requisição, que sempre aparece, e as 99 mais recentes das outras); não entra a sessão expirada nem a criada antes da última troca da senha, que a requisição dela já recusa com 401.',
+      '`id` identifica a sessão em `DELETE /auth/sessions/:sessionId` e nunca é o token; `current` marca a sessão do cookie da requisição.',
+      '`browser` e `os` são lidos do `User-Agent` no servidor, de uma lista fechada, e são `null` quando ele não diz.',
+      '`city` é a cidade aproximada que o cabeçalho de localização do Cloudflare (`cf-ipcity`) trouxe **na criação da sessão** (de 1 a 80 caracteres, contados por ponto de código), ou `null`;',
+      'só informa, nenhuma decisão de segurança depende dela. O IP, o token e o `User-Agent` bruto nunca saem da API.',
+      'O cabeçalho `cf-ipcity` só chega com a regra "Add visitor location headers" ligada no Cloudflare (ação do dono); desligada, `city` é sempre `null`.',
+      '`lastUsedAt` é a última renovação da sessão (no máximo a cada 24 horas de uso): vale como o dia, não como a hora.',
+      'A resposta não é guardada em cache (`Cache-Control: no-store`).'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    responses: [{
+      status: 200,
+      description: 'As sessões ativas da conta.',
+      schema: AuthSessionListResponseSchema,
+      example: {
+        sessions: [
+          { id: sessionId, current: true, browser: 'Chrome', os: 'Windows', city: 'São Paulo', lastUsedAt: '2026-11-12T12:00:00.000Z', createdAt: '2026-11-10T08:30:00.000Z' },
+          { id: userId, current: false, browser: 'Safari', os: 'iOS', city: null, lastUsedAt: '2026-11-09T21:15:00.000Z', createdAt: '2026-11-05T19:00:00.000Z' }
+        ]
+      }
+    }],
+    errors: [COMMON_ERRORS.internal, { status: 401, code: 'UNAUTHENTICATED' }, { status: 401, code: 'SESSION_EXPIRED' }, { status: 429, code: 'RATE_LIMITED' }]
+  },
+  {
+    method: 'delete',
+    path: '/auth/sessions/:sessionId',
+    operationId: 'deleteAuthSession',
+    module: 'auth',
+    summary: 'Encerra uma das outras sessões da conta',
+    description: [
+      'Encerra uma sessão ativa **da própria conta** que não é a atual: a próxima chamada do cookie dela responde 401.',
+      'A sessão atual responde 409 `USE_LOGOUT` (ela sai por `POST /auth/logout`). A sessão de outra conta, uma que não existe,',
+      'uma que já expirou e um identificador malformado respondem o mesmo 404 `SESSION_NOT_FOUND`, sem dizer qual dos quatro.',
+      'Não aceita corpo.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    params: AuthSessionPathParamsSchema,
+    body: AuthRevokeSessionRequestSchema,
+    responses: [{ status: 204, description: 'Sessão encerrada.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'SESSION_NOT_FOUND' },
+      { status: 409, code: 'USE_LOGOUT' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/auth/sessions/revoke-others',
+    operationId: 'postAuthSessionsRevokeOthers',
+    module: 'auth',
+    summary: 'Encerra todas as sessões da conta, menos a atual',
+    description: [
+      'Encerra toda sessão da conta que não é a do cookie da requisição, que **nunca** é encerrada; a próxima chamada de cada uma responde 401.',
+      'Responde 200 com o número de sessões ativas encerradas, e zero é uma resposta válida. A SPEC (seção 14) pede 204 "e devolve o número":',
+      'um 204 não tem corpo, então a resposta é 200 com `{ revoked }`. Não aceita corpo.'
+    ].join('\n'),
+    access: 'Sessão',
+    permission: null,
+    body: AuthRevokeOtherSessionsRequestSchema,
+    responses: [{
+      status: 200,
+      description: 'Quantas sessões foram encerradas.',
+      schema: AuthRevokeOtherSessionsResponseSchema,
+      example: { revoked: 2 }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
   },
   {
     method: 'post',
@@ -1283,7 +1506,10 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       '(93 passa, 94 não). Sem paginação: a resposta traz um vetor por tipo de item em `data`, e',
       '`meta.count` soma os dois. Acima de 500 itens a resposta é `400 CONTENT_PERIOD_TOO_LARGE`, sem',
       'truncar. Ordem: data, hora (sem hora por último) e id. O conteúdo vem sem legenda e sem mídia;',
-      '`tasksTotal` e `tasksApproved` dão o percentual das subtarefas. Cancelados vêm com o estado',
+      '`tasksTotal` e `tasksApproved` dão o percentual das subtarefas. `approval` traz `sentAt`, `dueAt` (o prazo da aprovação como instante, com hora),',
+      '`dueOn` (o dia de São Paulo desse instante) e `note` da rodada do conteúdo que',
+      'aguarda aprovação, e é `null` nos demais (e no que aguardava antes das rodadas). Cada roteiro de stories traz `status` (`recorded` é "gravado")',
+      'e `sceneCount`, quantas cenas tem. Cancelados vêm com o estado',
       '`cancelled`. Cliente arquivado também responde: o conteúdo dele é só leitura.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -1334,6 +1560,143 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     ]
   },
   {
+    method: 'get',
+    path: '/agencies/:agencyId/contents/awaiting-client',
+    operationId: 'listContentsAwaitingClient',
+    module: 'contents',
+    summary: 'Lista o que está parado no cliente, para o Início da agência',
+    description: [
+      'Os conteúdos que aguardam a decisão do cliente, agrupados por cliente, com até 50 conteúdos ao todo (`meta.truncated` diz que havia',
+      'mais; o corte tira o mais novo). Do enviado há mais tempo para o mais novo (`sentAt`); o sem data de envio (anterior às rodadas) vem por',
+      'último, pelo dia de publicação, e os clientes seguem a ordem do primeiro conteúdo deles. O prazo da aprovação não ordena a lista: `dueAt`',
+      '(instante, com hora) e `dueOn` (o dia dele) são a segunda informação da linha. `daysToDue` conta os dias até `dueOn` (negativo',
+      'depois que venceu), `daysWaiting` os dias desde `sentAt` e `daysLate` os dias desde o dia de publicação, só quando esse dia passou,',
+      'todos no dia de São Paulo; cada um é nulo quando a data dele é (conteúdo enviado antes das rodadas não traz data de envio nem prazo).',
+      '`thumbnailAssetId` é o arquivo que serve de capa. `approvers` são os nomes das pessoas ativas do portal do cliente que já entraram',
+      '(só o nome, na ordem em que receberam o acesso, até 50) e é `null` para quem não tem `cliente.convidar_usuario`: essa pessoa vê o',
+      'cliente apenas. Cliente arquivado não entra. É leitura sob a mesma política do calendário: o que a pessoa não pode ler não entra.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'O que está parado no cliente.',
+      schema: AwaitingClientResponseSchema,
+      example: {
+        data: [{
+          clientId,
+          clientName: 'Padaria Central',
+          approvers: ['Rosana Teixeira'],
+          contents: [{
+            id: contentId,
+            title: 'Lançamento da coleção de outono',
+            format: 'reels',
+            publishOn: '2026-10-20',
+            thumbnailAssetId: assetId,
+            sentAt: contentApprovalExample.sentAt,
+            dueAt: contentApprovalExample.dueAt,
+            dueOn: contentApprovalExample.dueOn,
+            daysWaiting: 2,
+            daysToDue: 2,
+            daysLate: null
+          }]
+        }],
+        meta: { truncated: false }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/contents/activation',
+    operationId: 'readContentActivation',
+    module: 'contents',
+    summary: 'Lê os fatos do caminho de ativação da agência',
+    description: [
+      'O Início da agência nova mostra o caminho de ativação (decisão de 2026-11-06) e lê aqui o que falta saber: se a agência tem algum',
+      'conteúdo (`hasContent`), se algum já saiu da produção para o cliente (`sentForApproval`), se algum foi postado (`published`) e se algum foi aprovado por',
+      'uma pessoa do cliente (`approvedByClient`; a aprovação fora da plataforma, que sempre traz motivo, não conta). Cada passo já dado traz',
+      'também o instante e um nome em `steps` (decisão de 2026-11-11): `firstClient` (o primeiro cliente), `firstContent` (o primeiro conteúdo, com o',
+      'título), `firstSent` (o primeiro envio: o nome da primeira pessoa ativa do portal do cliente que já entrou, `others` com quantas',
+      'outras há, e o nome do cliente quando não há pessoa conhecida ou a pessoa não tem `cliente.convidar_usuario`, caso em que `others` é 0) e',
+      '`firstApproved` (a primeira aprovação, com o nome de quem aprovou). Cada passo é `null` quando não foi dado ou quando nada o data (o',
+      'conteúdo enviado antes das rodadas não tem data de envio). É leitura sob a mesma política do calendário: o que a pessoa não pode ler',
+      'não entra. Nenhum conteúdo sai por aqui, só o título do primeiro.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Os fatos e os passos.',
+      schema: ContentActivationResponseSchema,
+      example: {
+        data: {
+          hasContent: true,
+          sentForApproval: true,
+          approvedByClient: false,
+          published: false,
+          steps: {
+            firstClient: { at: '2026-10-03T12:00:00.000Z', name: 'Padaria Central' },
+            firstContent: { at: '2026-10-11T12:00:00.000Z', name: 'Lançamento da coleção de outono' },
+            firstSent: { at: contentApprovalExample.sentAt, name: 'Rosana Teixeira', others: 1 },
+            firstApproved: null
+          }
+        }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/contents/summary',
+    operationId: 'readContentSummary',
+    module: 'contents',
+    summary: 'Lê os contadores do Início da agência',
+    description: [
+      'Os contadores do Início (decisões de 2026-11-11), numa leitura só, sobre os conteúdos dos clientes ativos da agência que a pessoa lê.',
+      '`awaitingClient` é o que aguarda o cliente e `overdueAwaitingClient`, desses, os que passaram do dia de publicação (dia de São Paulo).',
+      '`approvedThisMonth` e `approvedLastMonth` contam os conteúdos aprovados ou publicados pelo dia de São Paulo da aprovação, no mês de hoje',
+      'e no mês anterior; é a contagem de hoje de cada mês, não um histórico, e a aprovação fora da plataforma também conta.',
+      '`scheduled.count` são os conteúdos aprovados com hora cujo instante de publicação ainda não passou, e `scheduled.lastPublishOn` o dia do',
+      'último deles (`null` sem nenhum). Cancelado e cliente arquivado não entram. É leitura sob a mesma política do calendário.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'Os contadores.',
+      schema: ContentSummaryResponseSchema,
+      example: {
+        data: {
+          awaitingClient: 5,
+          overdueAwaitingClient: 1,
+          approvedThisMonth: 12,
+          approvedLastMonth: 9,
+          scheduled: { count: 6, lastPublishOn: '2026-10-30' }
+        }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND' }
+    ]
+  },
+  {
     method: 'post',
     path: '/agencies/:agencyId/clients/:clientId/contents',
     operationId: 'createContent',
@@ -1380,7 +1743,8 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa',
     description: [
       'O conteúdo inteiro, mais `media` (id e posição, em ordem), `tasks` (só leitura aqui) e',
-      '`conversation` (`threadId` nulo enquanto ninguém comentou, `commentCount` e `lastCommentAt`).',
+      '`conversation` (`threadId` nulo enquanto ninguém comentou, `commentCount` e `lastCommentAt`). `approval` é a rodada do conteúdo que',
+      'aguarda aprovação (`sentAt`, `dueAt`, `dueOn`, `note`) e `null` nos demais.',
       'Um conteúdo de outro cliente, de outra agência ou que não existe responde o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -1443,7 +1807,13 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     summary: 'Envia o conteúdo para aprovação',
     description: [
       'Conteúdo em produção ou em ajuste passa a aguardar aprovação e entra na fila de e-mail do cliente (uma vez por pessoa',
-      'ativa do portal). Repetir o envio de um conteúdo que já aguarda não muda nada e não é erro. Exige `conteudo.operar` e',
+      'ativa do portal). O corpo é opcional (`{}` vale): `dueAt` é o prazo da decisão do cliente, um instante com o deslocamento',
+      '(`2026-10-18T18:00:00-03:00`), de agora até 90 dias à frente (`400 CONTENT_APPROVAL_DUE_INVALID` fora disso, também no instante que já passou). A tela',
+      'propõe 48 horas, mas a API aceita o envio sem prazo. `dueOn` (`AAAA-MM-DD`) continua aceito e vale o fim desse dia em São Paulo (23:59); os dois',
+      'juntos são `400 VALIDATION_ERROR`. `note` é o recado ao cliente, de 1 a 500',
+      'caracteres (`400 CONTENT_APPROVAL_NOTE_INVALID` quando em branco ou longo). Cada envio abre uma rodada, e `approval` do conteúdo',
+      'devolvido traz `sentAt`, `dueAt`, `dueOn` (o dia de São Paulo do instante) e `note`. Repetir o mesmo envio (o mesmo prazo, ao segundo, e o mesmo recado) de um conteúdo que já aguarda não',
+      'muda nada e não é erro; pedir outro prazo ou outro recado para quem já aguarda é `409 CONTENT_STATE`. Exige `conteudo.operar` e',
       '`conteudo.visualizar`. Recusa com `409` o conteúdo sem mídia completa para o formato (`CONTENT_MEDIA_INCOMPLETE`, também',
       'quando a capa foi removida da pasta), com mídia que ainda não terminou de subir (`CONTENT_MEDIA_NOT_CONFIRMED`) e com',
       'subtarefa que não está aprovada (`CONTENT_TASKS_NOT_APPROVED`). Cliente arquivado responde `409 CLIENT_ARCHIVED`,',
@@ -1452,18 +1822,75 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     access: 'Sessão + vínculo com a agência',
     permission: 'conteudo.operar',
     params: AgencyClientContentPathParamsSchema,
-    body: ContentMoveRequestSchema,
-    requestExample: {},
-    responses: [{ status: 200, description: 'Conteúdo aguardando aprovação.', schema: ContentDetailSchema, example: { ...contentDetailExample, status: 'awaiting_approval' } }],
+    body: SubmitContentRequestSchema,
+    requestExample: { dueAt: '2026-10-18T18:00:00-03:00', note: contentApprovalExample.note },
+    responses: [{
+      status: 200,
+      description: 'Conteúdo aguardando aprovação.',
+      schema: ContentDetailSchema,
+      example: { ...contentDetailExample, status: 'awaiting_approval', approval: contentApprovalExample }
+    }],
     errors: [
       COMMON_ERRORS.csrf,
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_APPROVAL_DUE_INVALID' },
+      { status: 400, code: 'CONTENT_APPROVAL_NOTE_INVALID' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'CONTENT_STATE', message: 'Só um conteúdo em produção ou em ajuste é enviado para aprovação.' },
+      { status: 409, code: 'CONTENT_STATE', message: 'Só um conteúdo em produção ou em ajuste é enviado para aprovação. Um conteúdo que já aguarda aprovação não muda de prazo nem de recado.' },
+      { status: 409, code: 'CONTENT_MEDIA_INCOMPLETE', message: 'A mídia ou a capa do conteúdo não está completa para este formato: falta mídia, ou a mídia ou a capa foi removida da pasta.' },
+      { status: 409, code: 'CONTENT_MEDIA_NOT_CONFIRMED' },
+      { status: 409, code: 'CONTENT_TASKS_NOT_APPROVED' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/contents/submit',
+    operationId: 'submitContentsBatch',
+    module: 'contents',
+    summary: 'Envia vários conteúdos de um cliente para aprovação, de uma vez',
+    description: [
+      'De 1 a 30 conteúdos, cada um uma vez, todos do cliente do caminho: ou todos passam a aguardar aprovação ou nenhum passa. Compartilham',
+      'o mesmo `dueAt` (um instante com o deslocamento, de agora até 90 dias à frente; ou `dueOn`, que vale o fim do dia em São Paulo, nunca os dois)',
+      'e o mesmo `note` (de 1 a 500 caracteres), ambos opcionais,',
+      'e um `batchId`. Cada conteúdo abre a própria rodada, e a resposta traz os conteúdos como a consulta por período os lista, com `approval`.',
+      'Cada conteúdo segue as regras do envio individual (mídia completa, subtarefas aprovadas, em produção ou em ajuste); um que as',
+      'descumpre, ou que já aguarda, recusa o lote inteiro com o mesmo código do envio individual. Um conteúdo de outro cliente, de outra',
+      'agência ou inexistente responde `404 NOT_FOUND`. Mais de 30, repetido ou vazio é `400 VALIDATION_ERROR`. Exige `conteudo.operar` e `conteudo.visualizar`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientPathParamsSchema,
+    body: SubmitContentsBatchRequestSchema,
+    requestExample: { contentIds: [contentId], dueAt: '2026-10-18T18:00:00-03:00', note: contentApprovalExample.note },
+    responses: [{
+      status: 200,
+      description: 'O lote enviado.',
+      schema: SubmitContentsBatchResponseSchema,
+      example: {
+        data: {
+          batchId: '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e',
+          contents: [{ ...contentListItemExample, status: 'awaiting_approval', approval: contentApprovalExample }]
+        }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_APPROVAL_DUE_INVALID' },
+      { status: 400, code: 'CONTENT_APPROVAL_NOTE_INVALID' },
+      { status: 400, code: 'CONTENT_BATCH_INVALID' },
+      { status: 400, code: 'CONTENT_BATCH_MIXED_CLIENTS' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'CONTENT_STATE', message: 'Só um conteúdo em produção ou em ajuste é enviado para aprovação. Um conteúdo que já aguarda aprovação não muda de prazo nem de recado.' },
       { status: 409, code: 'CONTENT_MEDIA_INCOMPLETE', message: 'A mídia ou a capa do conteúdo não está completa para este formato: falta mídia, ou a mídia ou a capa foi removida da pasta.' },
       { status: 409, code: 'CONTENT_MEDIA_NOT_CONFIRMED' },
       { status: 409, code: 'CONTENT_TASKS_NOT_APPROVED' },
@@ -1808,9 +2235,10 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     description: [
       'Consulta por período, sem paginação: `from` e `to` inclusivos (`AAAA-MM-DD`), no máximo 93 dias (93 passa, 94 dá 400) e 500',
       'itens (acima disso, `400 CONTENT_PERIOD_TOO_LARGE`, sem truncar). Do dia mais antigo ao mais novo. Um conteúdo em produção traz',
-      'só o título, o dia e o formato; a partir de "aguardando aprovação" traz também a plataforma, a hora, a capa e o dia real da',
-      'publicação, sem a legenda nem a mídia (essas vêm da leitura do conteúdo). Conteúdo cancelado nunca vem. Nenhuma resposta do',
-      'portal traz subtarefa, responsável, prazo interno ou o id de uma pessoa, nem para o colaborador que também tem vínculo com o cliente.'
+      'só o título, o dia e o formato; a partir de "aguardando aprovação" traz também a plataforma, a hora, a capa, o dia real da',
+      'publicação e `approval` (o prazo da agência como instante, `dueAt`, e como dia, `dueOn`; o recado; quando foi enviado, `sentAt`; e quem enviou, `sentBy`,',
+      'só o nome e o caminho da foto, que é uma rota do próprio portal, ou nulo; tudo nulo no conteúdo enviado antes das rodadas), sem a legenda nem a mídia (essas vêm da leitura do conteúdo). Conteúdo cancelado nunca vem. Nenhuma resposta do',
+      'portal traz subtarefa, responsável, prazo interno, o lote do envio, o e-mail, o papel ou o id de uma pessoa, nem para o colaborador que também tem vínculo com o cliente.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -1844,8 +2272,9 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     module: 'contents',
     summary: 'Lista o que espera a aprovação da pessoa, no portal',
     description: [
-      'Os conteúdos do cliente em "aguardando aprovação", do dia mais próximo ao mais distante, paginados pelo contrato global de',
-      'listagem (20 por página). A página além do fim responde o total real.'
+      'Os conteúdos do cliente em "aguardando aprovação", o que vence primeiro primeiro (`approval.dueAt`, com a hora; o sem prazo depois de todos,',
+      'pelo dia de publicação), paginados pelo contrato global de',
+      'listagem (20 por página). Cada um traz `approval` com o prazo, o recado e quem enviou. A página além do fim responde o total real.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -1867,13 +2296,50 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
   },
   {
     method: 'get',
+    path: '/clients/:clientId/contents/progress',
+    operationId: 'readPortalContentProgress',
+    module: 'contents',
+    summary: 'Lê o progresso do mês, no portal ("Boa notícia")',
+    description: [
+      'O progresso do mês de hoje (dia de São Paulo) para o Início do portal (decisão de 2026-11-11): `total` são os conteúdos do mês que não foram',
+      'cancelados e `approved`, desses, os aprovados ou publicados. `next` é o próximo post a ir ao ar: o aprovado, ainda não publicado, de dia',
+      'e hora mais próximos que não passaram (`publishAtTime` é nulo para o aprovado sem hora), ou `null` sem nenhum. É o que a pessoa lê pela',
+      'consulta do portal, e nada além do título, do dia e da hora do post: nenhuma legenda, subtarefa, responsável ou prazo interno.',
+      'Cliente de outra agência, sem vínculo ativo ou arquivado responde o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'O progresso do mês.',
+      schema: PortalContentProgressResponseSchema,
+      example: {
+        data: {
+          month: '2026-10',
+          approved: 7,
+          total: 10,
+          next: { id: contentId, title: 'Lançamento da coleção de outono', publishOn: '2026-10-20', publishAtTime: '18:30' }
+        }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'get',
     path: '/clients/:clientId/contents/:contentId',
     operationId: 'getPortalContent',
     module: 'contents',
     summary: 'Lê um conteúdo, no portal',
     description: [
       'A partir de "aguardando aprovação", o post com a legenda, a mídia (o id e o lugar de cada arquivo, em ordem) e a `revision` que',
-      'a pessoa lê e devolve ao aprovar ou pedir ajuste. Um conteúdo em produção traz só o título, o dia e o formato. Conteúdo',
+      'a pessoa lê e devolve ao aprovar ou pedir ajuste, e `approval` com o prazo (`dueAt`, o instante, e `dueOn`, o dia), o recado (`note`), o instante',
+      'do envio (`sentAt`) e quem enviou (`sentBy`: só o nome e o caminho da foto, que é uma rota do próprio portal, ou nulo) que a agência deu ao enviar (nulo',
+      'para o conteúdo enviado antes das rodadas). Um conteúdo em produção traz só o título, o dia e o formato. Conteúdo',
       'cancelado, de outro cliente (mesmo de um cliente que a pessoa também lê), de outra agência, inexistente ou com id inválido',
       'devolve o mesmo 404, e o colaborador que também tem vínculo recebe o mesmo recorte que qualquer pessoa do portal.'
     ].join('\n'),
@@ -1885,6 +2351,32 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       COMMON_ERRORS.internal,
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/contents/:contentId/sender-photo',
+    operationId: 'getPortalContentSenderPhoto',
+    module: 'contents',
+    summary: 'Lê a foto de quem da agência enviou a rodada, no portal',
+    description: [
+      'Devolve os bytes da imagem (`image/png`, `image/jpeg`, `image/webp` ou `image/gif`, pelo que os bytes dizem, nunca pelo que o objeto',
+      'declara) da foto da pessoa da agência que enviou a rodada do conteúdo. É o caminho que `approval.sentBy.photoUrl` traz, relativo à',
+      'API: nenhum endereço do armazenamento sai do portal, porque a chave do objeto nomeia a conta de quem enviou. A resposta leva',
+      '`Cache-Control: private`, `X-Content-Type-Options: nosniff` e `Content-Disposition: inline`. Conteúdo em produção, cancelado, de outro',
+      'cliente (mesmo de um que a pessoa também lê), de outra agência ou inexistente, rodada sem remetente, remetente sem foto e armazenamento',
+      'que não responde devolvem o mesmo 404, sem dizer qual. Cada pessoa pede até 600 fotos a cada 5 minutos; o pedido seguinte é 429',
+      '`RATE_LIMITED` com `Retry-After`. A rota só existe onde o armazenamento de identidade está configurado.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: PortalContentPathParamsSchema,
+    responses: [{ status: 200, description: 'Os bytes da imagem, com o tipo que eles dizem (`image/png`, `image/jpeg`, `image/webp` ou `image/gif`).' }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Photo not found.' },
+      { status: 429, code: 'RATE_LIMITED' }
     ]
   },
   {
@@ -1959,24 +2451,32 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       'Qualquer pessoa ativa do portal do cliente aprova um conteúdo que aguarda aprovação: o conteúdo passa a aprovado. Quem aprovou e',
       'quando são do banco, tirados da sessão, nunca do corpo (`.strict()`); a agência lê quem aprovou como `{ name, side: "client" }`, sem',
       'id. `revision` é a revisão que a pessoa leu: se a legenda, a capa, o formato ou a mídia mudou desde então, `409',
-      'CONTENT_REVISION_CHANGED` e nada é aprovado. Aprovar um conteúdo já aprovado não muda nada, e a primeira pessoa continua sendo',
-      'quem aprovou. Fora de "aguardando aprovação" (em produção, em ajuste, publicado): `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo',
+      'CONTENT_REVISION_CHANGED` e nada é aprovado. Aprovar sem recado um conteúdo já aprovado não muda nada, e a primeira pessoa continua sendo',
+      'quem aprovou. `note` é o recado opcional para a agência (decisão de 2026-11-11): até 500 caracteres visíveis, com a mesma regra do recado',
+      'da agência (aparado, nunca só espaços, sem caractere invisível ou de controle; `400 CONTENT_APPROVAL_NOTE_INVALID` quando em branco ou longo),',
+      'e entra na conversa do conteúdo como comentário do cliente, na mesma transação da aprovação: se o recado é recusado, nada é aprovado. Um',
+      'recado em conteúdo que já está aprovado não é gravado e a resposta diz isso: `409',
+      'CONTENT_ALREADY_APPROVED` (decisão de 2026-11-11), salvo o reenvio da mesma requisição: quem aprovou, com a mesma `revision` e o recado',
+      'idêntico ao que a aprovação gravou (aparado, como a rota o grava), recebe a resposta da aprovação, sem segundo comentário nem segunda notificação (decisão de 2026-11-12).',
+      'Fora de "aguardando aprovação" (em produção, em ajuste, publicado): `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo',
       'cancelado, de outro cliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404, também para o colaborador que tem vínculo.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
     params: PortalContentPathParamsSchema,
-    body: PortalApproveContentRequestSchema,
-    requestExample: { revision: 1 },
+    body: PortalApproveContentWithNoteRequestSchema,
+    requestExample: { revision: 1, note: 'Ficou ótimo, pode publicar!' },
     responses: [{ status: 200, description: 'Conteúdo aprovado.', schema: PortalContentDetailSchema, example: { ...portalContentDetailExample, status: 'approved' } }],
     errors: [
       COMMON_ERRORS.csrf,
       COMMON_ERRORS.internal,
       { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'CONTENT_APPROVAL_NOTE_INVALID' },
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
       { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação é aprovado.' },
+      { status: 409, code: 'CONTENT_ALREADY_APPROVED', message: 'Este conteúdo já foi aprovado. Seu recado não foi enviado.' },
       { status: 409, code: 'CONTENT_REVISION_CHANGED' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
@@ -1988,13 +2488,14 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
     module: 'contents',
     summary: 'Pede ajuste de um conteúdo, no portal',
     description: [
-      'Qualquer pessoa ativa do portal do cliente pede ajuste de um conteúdo que aguarda aprovação: o conteúdo passa a "em ajuste" e o',
+      'Qualquer pessoa ativa do portal do cliente pede ajuste de um conteúdo que aguarda aprovação, ou de um já aprovado até a véspera da',
+      'publicação (o dia da publicação, em São Paulo, já não aceita): o conteúdo passa a "em ajuste", a aprovação cai e o',
       '`comment`, obrigatório, entra na conversa do conteúdo como comentário do cliente (a conversa é aberta se ainda não existe, e é a',
       'mesma que a agência abre). O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de',
       'formato, nunca vazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. Quem',
-      'pediu é a pessoa da sessão. `revision` é a revisão que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de "aguardando',
-      'aprovação", inclusive um conteúdo que já está em ajuste: `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo cancelado, de outro',
-      'cliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404.'
+      'pediu é a pessoa da sessão. `revision` é a revisão que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Um conteúdo aprovado cuja',
+      'publicação é hoje ou já passou, um que já está em ajuste e um publicado: `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo cancelado, de',
+      'outro cliente, inexistente ou de cliente arquivado durante a chamada: o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -2010,7 +2511,7 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Content not found.' },
-      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Só um conteúdo aguardando aprovação recebe um pedido de ajuste.' },
+      { status: 409, code: 'CONTENT_NOT_AWAITING_APPROVAL', message: 'Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação.' },
       { status: 409, code: 'CONTENT_REVISION_CHANGED' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
@@ -2100,6 +2601,55 @@ export const DOCUMENTED_ROUTES: readonly DocumentedRoute[] = [
       { status: 401, code: 'UNAUTHENTICATED' },
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' }
+    ]
+  },
+
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/collaborators/:membershipId/open-contents',
+    operationId: 'listCollaboratorOpenContents',
+    module: 'collaborators',
+    summary: 'Lista os clientes e o que está com um colaborador',
+    description: [
+      'Alimenta o cartão "Clientes e o que está com ele" e o resumo do cabeçalho da página do colaborador.',
+      'Exige `colaborador.visualizar` e também `conteudo.visualizar`: o cartão mostra títulos de conteúdo, e',
+      'sem a segunda permissão a resposta é 403 (o Owner passa por posse). Não existe atribuição de cliente a',
+      'pessoa: o vínculo é o responsável do conteúdo. "Aberto" é em produção, em ajuste, aguardando aprovação',
+      'ou aprovado; `awaiting` é o que aguarda aprovação. Entram só os clientes e os conteúdos que quem olha',
+      'pode ler. `summary` soma todos os clientes; `data` vem por nome do cliente, até 100, e `now` traz até 3',
+      'conteúdos por cliente, do mais próximo de ir ao ar para o mais distante. Sem nenhum conteúdo aberto,',
+      '`summary` zerado e `data` vazio. Um vínculo de outra agência, inexistente, malformado ou removido',
+      'devolve o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'colaborador.visualizar',
+    params: AgencyCollaboratorPathParamsSchema,
+    query: CollaboratorOpenContentsQuerySchema,
+    responses: [{
+      status: 200,
+      description: 'Os clientes e o que está com o colaborador.',
+      schema: CollaboratorOpenContentsResponseSchema,
+      example: {
+        summary: { clients: 1, contents: 2, awaiting: 1 },
+        data: [{
+          client: { id: clientId, name: 'Casa Aurora' },
+          contents: 2,
+          awaiting: 1,
+          now: [
+            { contentId, title: 'Bastidores da coleção', state: 'awaiting_approval' },
+            { contentId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', title: 'Lançamento de verão', state: 'in_production' }
+          ]
+        }]
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Collaborator not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
     ]
   },
 
@@ -2326,7 +2876,7 @@ path: '/agencies/:agencyId/roles',
       'Paulo, sem publicado nem cancelado) vem antes de todos. `pendingInvitations` só vem para quem tem',
       '`cliente.convidar_usuario` e `contentIndicators` (`pending`, `inReview`, `overdue`, `adjusting`, `dueSoon`) só para quem',
       'tem `conteudo.visualizar`; para os demais o campo é omitido, não zerado, e a ordem não muda. As',
-      'conversas de conteúdo não entram em `threadsAwaitingAgency`.'
+      'conversas de conteúdo e os pedidos de material não entram em `threadsAwaitingAgency`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.visualizar',
@@ -2367,7 +2917,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'createClient',
     module: 'clients',
     summary: 'Cadastra um cliente',
-    description: 'Só o nome. O nome é aparado, exige ao menos uma letra ou número e recusa caracteres de controle, invisíveis e overrides bidi (a regra compartilhada de nome de exibição). Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.',
+    description: 'O nome e, se a agência já a tem, a cidade (uma linha visível de até 80 caracteres). O nome é aparado, exige ao menos uma letra ou número e recusa caracteres de controle, invisíveis e overrides bidi (a regra compartilhada de nome de exibição). Nome já ativo na agência, mesmo com outra caixa ou espaços, responde 409 pela violação do índice único.',
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.cadastrar',
     params: AgencyPathParamsSchema,
@@ -2393,7 +2943,10 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404. O resumo',
       'conta o estudo preenchido (0 a 7, com personas só quando ativas) e as conversas aguardando',
-      'resposta, pela mesma definição que a listagem e o portal usam.'
+      'resposta, pela mesma definição que a listagem e o portal usam.',
+      'As abas do perfil trazem os conteúdos do mês (dia de São Paulo, cancelados fora), os arquivos e as pastas de mídia e quem trabalha',
+      'no cliente (`workers`, até cinco pessoas que respondem por conteúdos abertos, e `workersMore`, as que passam disso; só nome e foto).',
+      'Esses cinco campos são do Conteúdo: sem `conteudo.visualizar` eles não vêm, em vez de vir zerados.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.visualizar',
@@ -2404,7 +2957,17 @@ path: '/agencies/:agencyId/roles',
       schema: ClientDetailResponseSchema,
       example: {
         ...clientExample,
-        summary: { brandStudyFilled: 3, threadsAwaitingAgency: 1, threadsAnsweredByAgency: 2, activePortalMembers: 3 }
+        summary: {
+          brandStudyFilled: 3,
+          threadsAwaitingAgency: 1,
+          threadsAnsweredByAgency: 2,
+          activePortalMembers: 3,
+          contentsThisMonth: 4,
+          mediaFiles: 38,
+          mediaFolders: 5,
+          workers: [{ membershipId, name: 'Dono da Agência', photoUrl: null }],
+          workersMore: 0
+        }
       }
     }],
     errors: [
@@ -2677,7 +3240,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'createPersona',
     module: 'clients',
     summary: 'Cria uma persona do cliente',
-    description: 'A persona nasce ativa; `updated_by` é o usuário da sessão. Cliente arquivado responde 409.',
+    description: 'A persona nasce sem conversa (`messageCount` 0); `updated_by` é o usuário da sessão. Idade (1 a 120), ocupação e local (uma linha de até 80 caracteres), até cinco traços (uma linha de até 24 caracteres cada), onde está e o tom que funciona (até 280 caracteres) são opcionais. Os limites contam caracteres, não unidades UTF-16: um emoji vale um. Cliente arquivado responde 409.',
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.operar',
     params: AgencyClientPathParamsSchema,
@@ -2718,36 +3281,20 @@ path: '/agencies/:agencyId/roles',
     ]
   },
   {
-    method: 'post',
-    path: '/agencies/:agencyId/clients/:clientId/personas/:personaId/archive',
-    operationId: 'archivePersona',
+    method: 'delete',
+    path: '/agencies/:agencyId/clients/:clientId/personas/:personaId',
+    operationId: 'deletePersona',
     module: 'clients',
-    summary: 'Arquiva uma persona',
-    description: 'A persona sai do portal e as conversas dela ficam somente leitura; o histórico continua na agência.',
+    summary: 'Exclui uma persona',
+    description: [
+      'Apaga a persona e, com ela, as conversas e os comentários dela, na mesma transação; não há como desfazer.',
+      'A leitura da persona traz `messageCount`, o número de comentários que saem junto, para a tela dizer antes de perguntar.',
+      'Persona de outro cliente é o mesmo 404. Cliente arquivado responde 409. A exclusão fica no registro de auditoria (`persona.deleted`).'
+    ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.operar',
     params: AgencyClientPersonaPathParamsSchema,
-    responses: [{ status: 200, description: 'Persona arquivada.', schema: PersonaSchema, example: { ...personaExample, status: 'archived' } }],
-    errors: [
-      COMMON_ERRORS.csrf,
-      COMMON_ERRORS.internal,
-      { status: 401, code: 'UNAUTHENTICATED' },
-      { status: 403, code: 'FORBIDDEN' },
-      { status: 404, code: 'NOT_FOUND', message: 'Persona not found.' },
-      { status: 409, code: 'CLIENT_ARCHIVED' }
-    ]
-  },
-  {
-    method: 'post',
-    path: '/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive',
-    operationId: 'unarchivePersona',
-    module: 'clients',
-    summary: 'Desarquiva uma persona',
-    description: 'A persona volta a aparecer no portal.',
-    access: 'Sessão + vínculo com a agência',
-    permission: 'cliente.operar',
-    params: AgencyClientPersonaPathParamsSchema,
-    responses: [{ status: 200, description: 'Persona reativada.', schema: PersonaSchema, example: personaExample }],
+    responses: [{ status: 204, description: 'Persona excluída, com a conversa dela.' }],
     errors: [
       COMMON_ERRORS.csrf,
       COMMON_ERRORS.internal,
@@ -2768,9 +3315,9 @@ path: '/agencies/:agencyId/roles',
       'O assunto é obrigatório e é exatamente um: `sectionKey` (uma das sete seções) ou `personaId`; os dois',
       'juntos, ou nenhum, são 400. `state` filtra por `open` ou `resolved`; sem ele vêm todas. Vinte por',
       'página, a de atividade mais recente primeiro. O estado é derivado: a conversa está resolvida só',
-      'enquanto a resolução é posterior ao último comentário. Persona de outro cliente é 404; a conversa',
-      'de persona arquivada continua legível para a agência.',
-      'Com `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.'
+      'enquanto a resolução é posterior ao último comentário. Persona de outro cliente, ou já excluída, é 404.',
+      'Com `contentId` o assunto é um conteúdo, que tem uma conversa só, e a permissão é `conteudo.visualizar`. Conteúdo de outro cliente, de outra agência ou inexistente é 404.',
+      'Com `materialRequest=true` o assunto são os pedidos de material do cliente, em qualquer estado, e a permissão é `cliente.visualizar`; cada item traz `subject: { materialRequest: true }`, `dueOn`, o prazo (`YYYY-MM-DD`) ou `null`, e `title`, o título do pedido (`null` nos pedidos abertos antes de ele existir).'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: CONVERSATION_READ_PERMISSIONS,
@@ -2800,9 +3347,10 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Cria a conversa e o primeiro comentário na mesma transação, com o lado `agency`. O lado nunca vem',
       'do corpo: um campo `side` é 400. O comentário é aparado, não pode ficar vazio e limita a 5.000',
-      'bytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`, persona arquivada 409 `PERSONA_ARCHIVED`',
+      'bytes. Cliente arquivado responde 409 `CLIENT_ARCHIVED`',
       'e persona de outro cliente 404.',
-      'Com `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.'
+      'Com `{ contentId }` a conversa é a do conteúdo, que é uma só: abrir de novo escreve nela. A agência precisa de `conteudo.operar` e `conteudo.visualizar`, pode escrever em produção e recebe 409 `CONTENT_NOT_OPEN` se o conteúdo estiver cancelado.',
+      'Com `{ materialRequest: true }` a conversa é um pedido de material ao cliente (decisão 2026-11-10): um assunto do próprio cliente, nunca dentro da conversa de um conteúdo, e cada chamada abre um pedido novo. Pede `cliente.operar`, como as conversas do cliente. `title` é obrigatório no pedido novo (uma linha visível de até 80 caracteres, contados como caracteres: um emoji vale um) e com outro assunto é 400 `VALIDATION_ERROR` com o campo `title`. `dueOn` (`YYYY-MM-DD`) é o prazo opcional, de hoje a 90 dias, no fuso de São Paulo; fora disso é 400 `VALIDATION_ERROR` com o campo `dueOn`. `dueOn` com outro assunto também é 400, e o portal nunca abre um pedido.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: CONVERSATION_WRITE_PERMISSIONS,
@@ -2826,7 +3374,6 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' },
       { status: 409, code: 'CONTENT_NOT_OPEN' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
@@ -2870,7 +3417,7 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Grava o comentário com o lado `agency`; comentar numa conversa resolvida a reabre, sem escrever na',
       'conversa, porque o estado é derivado. Não existe rota de editar nem de apagar comentário.',
-      'Cliente arquivado e persona arquivada respondem 409.',
+      'Cliente arquivado responde 409.',
       'Numa conversa de conteúdo, `conteudo.operar` e `conteudo.visualizar`; em produção também pode comentar; com o conteúdo cancelado, 409 `CONTENT_NOT_OPEN`.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -2887,7 +3434,6 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' },
       { status: 409, code: 'CONTENT_NOT_OPEN' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
@@ -2902,7 +3448,8 @@ path: '/agencies/:agencyId/roles',
       'Grava `resolved_at` e `resolved_by`. Resolver uma conversa que já está resolvida não escreve nada.',
       'Não existe rota de reabrir: um comentário novo reabre. Só quem tem `cliente.operar` resolve; a',
       'pessoa do portal nunca.',
-      'Na conversa de um conteúdo, `conteudo.operar` e `conteudo.visualizar`.'
+      'Na conversa de um conteúdo, `conteudo.operar` e `conteudo.visualizar`.',
+      'É assim que a agência encerra um pedido de material: ele sai da lista de pedidos abertos do portal, e um comentário do cliente o reabre.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: CONVERSATION_WRITE_PERMISSIONS,
@@ -2920,7 +3467,6 @@ path: '/agencies/:agencyId/roles',
       { status: 403, code: 'FORBIDDEN' },
       { status: 404, code: 'NOT_FOUND', message: 'Thread not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
-      { status: 409, code: 'PERSONA_ARCHIVED' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },
@@ -2931,12 +3477,14 @@ path: '/agencies/:agencyId/roles',
     module: 'clients',
     summary: 'Lista as pessoas com acesso ao portal de um cliente',
     description: [
-      'Vinte por página, por nome (o e-mail, enquanto a pessoa não entrou), sem diferenciar maiúsculas nem acento.',
+      'Vinte por página, por nome (o e-mail, quando não há nome), sem diferenciar maiúsculas nem acento.',
       '`status` é `active` (padrão) ou `removed`. Cada pessoa é um acesso dado a um e-mail, com conta ou sem ela:',
       '`accessId` é o id que as rotas de Remover e Reativar usam, `email` é o endereço como foi gravado e `entered` é',
-      '`false` ("ainda não entrou") até uma conta com aquele e-mail verificado entrar. `name` é o da conta e só vem',
-      'depois disso. A lista nunca diz se um e-mail tem conta no Ageniza. Cliente arquivado continua legível;',
-      'cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
+      '`false` ("ainda não entrou com a conta") até uma conta com aquele e-mail verificado entrar. `name` é o que a agência digitou ao',
+      'adicionar a pessoa (ou `null`) até ela entrar, e o nome da conta depois disso; o nome da conta nunca aparece antes. A lista nunca',
+      'diz se um e-mail tem conta no Ageniza.',
+      '`lastEnteredAt` é o último acesso daquele cliente: a última vez que a pessoa entrou no portal com a conta ou abriu o link de aprovação do e-mail, ou `null` se nunca. Pode vir preenchido com `entered: false`: quem só abriu o link ainda não entrou com a conta, e o reenvio das boas-vindas continua valendo para essa pessoa. Só quem já lê esta lista o recebe.',
+      'Cliente arquivado continua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'cliente.convidar_usuario',
@@ -2947,7 +3495,7 @@ path: '/agencies/:agencyId/roles',
       status: 200,
       description: 'Página de pessoas do portal.',
       schema: ClientMemberListResponseSchema,
-      example: { data: [clientMemberExample, clientMemberNotEnteredExample], meta: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 } }
+      example: { data: [clientMemberExample, clientMemberOpenedLinkExample, clientMemberNotEnteredExample], meta: { page: 1, pageSize: 20, totalItems: 3, totalPages: 1 } }
     }],
     errors: [
       COMMON_ERRORS.internal,
@@ -2964,7 +3512,7 @@ path: '/agencies/:agencyId/roles',
     module: 'clients',
     summary: 'Adiciona uma pessoa ao portal do cliente',
     description: [
-      'Só o e-mail. O acesso vale na hora, sem conta e sem aceite, e a pessoa recebe um e-mail de boas-vindas com',
+      'O e-mail e, se a agência quiser, o nome da pessoa (uma linha visível de até 120 caracteres): é o nome que a lista mostra até ela entrar, e nunca vem da conta. O acesso vale na hora, sem conta e sem aceite, e a pessoa recebe um e-mail de boas-vindas com',
       '"Entrar no portal". Ter um endereço com conta no Ageniza não muda nada aqui: o acesso passa à conta no login,',
       'quando uma conta com aquele e-mail verificado entra, e nunca nesta rota. Adicionar de novo um e-mail removido',
       'reativa a mesma linha (a geração dos links de aprovação continua onde a remoção a deixou). Se a conta que',
@@ -3173,7 +3721,8 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Mesmos parâmetros, paginação e forma da lista da agência, pelo mesmo serviço. Persona arquivada',
       'não é assunto válido no portal: responde 404 como se não existisse.',
-      'Com `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.'
+      'Com `contentId`, só enquanto o conteúdo está aberto ao cliente; fora disso, e para conteúdo de outro cliente, 404.',
+      'Com `materialRequest=true`, os pedidos de material do próprio cliente, em qualquer estado, com `dueOn`; os pedidos abertos, para o Início, vêm da rota própria `/clients/:clientId/material-requests`. Nesses pedidos o portal não sabe quem da agência abriu, respondeu ou resolveu: `openedBy.name`, `resolvedBy.name` e o autor dos comentários da agência vêm `null`.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -3201,13 +3750,14 @@ path: '/agencies/:agencyId/roles',
     summary: 'Abre uma conversa pelo portal, com o primeiro comentário',
     description: [
       'Grava a conversa e o primeiro comentário com o lado `client`, que a rota fixa. Seção que a agência',
-      'ainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona arquivada ou de outro cliente, 404.',
-      'Com `{ contentId }`, só enquanto o conteúdo está em "aguardando aprovação", "em ajuste", "aprovado" ou "publicado"; fora disso, e para conteúdo de outro cliente, 404. A conversa do conteúdo é uma só: abrir de novo escreve nela.'
+      'ainda não preencheu responde 409 `SECTION_NOT_FILLED`; persona de outro cliente, ou excluída, 404.',
+      'Com `{ contentId }`, só enquanto o conteúdo está em "aguardando aprovação", "em ajuste", "aprovado" ou "publicado"; fora disso, e para conteúdo de outro cliente, 404. A conversa do conteúdo é uma só: abrir de novo escreve nela.',
+      'O portal nunca abre um pedido de material: `{ materialRequest: true }` e `dueOn` são 400 `VALIDATION_ERROR`, e nada é gravado. O pedido é da agência (decisão 2026-11-10).'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
     params: ClientPathParamsSchema,
-    body: CreateThreadRequestSchema,
+    body: PortalCreateThreadRequestSchema,
     requestExample: { subject: { sectionKey: 'tone_of_voice' }, body: 'Podemos aproximar o tom de voz do que usamos nas redes?' },
     responses: [{
       status: 201,
@@ -3259,7 +3809,8 @@ path: '/agencies/:agencyId/roles',
     description: [
       'Grava o comentário com o lado `client`; comentar numa conversa resolvida a reabre. Não existe',
       'rota de resolver no portal: só a agência resolve.',
-      'A conversa de um conteúdo que não está aberto ao cliente é 404.'
+      'A conversa de um conteúdo que não está aberto ao cliente é 404.',
+      'É a rota com que o cliente responde a um pedido de material, aberto ou já resolvido; o pedido de outro cliente da mesma pessoa é 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
     permission: null,
@@ -3278,6 +3829,174 @@ path: '/agencies/:agencyId/roles',
   },
   {
     method: 'get',
+    path: '/clients/:clientId/material-requests',
+    operationId: 'listPortalMaterialRequests',
+    module: 'clients',
+    summary: 'Lista os pedidos de material abertos do cliente, no portal',
+    description: [
+      'Os pedidos que a agência fez ao cliente e ainda não resolveu (decisão 2026-11-10), para o Início do portal: `threadId` (o id da conversa, para responder pela rota de comentários), `title` (o título, ou `null` no pedido aberto antes de ele existir), `body` (o primeiro comentário, o que a agência pediu),',
+      '`dueOn` (o prazo, ou `null`), `createdAt` e `state`, sempre `open`. O prazo mais próximo vem primeiro e os sem prazo por último. Vinte por página.',
+      'A lista é só do cliente da rota, mesmo para quem tem vínculo com vários clientes. O estado é o de toda conversa: quando a agência resolve, o pedido sai da lista, e um comentário do cliente o traz de volta.',
+      'Só a conversa de pedido entra aqui: a conversa de um conteúdo em produção nunca chega ao portal por esta rota. Outro cliente, cliente arquivado, agência suspensa e vínculo removido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientPathParamsSchema,
+    query: MaterialRequestListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de pedidos de material abertos.',
+      schema: MaterialRequestListResponseSchema,
+      example: { data: [materialRequestExample], meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/clients/:clientId/material-requests/:threadId/uploads',
+    operationId: 'startPortalMaterialUpload',
+    module: 'media',
+    summary: 'Inicia o envio de uma foto ou áudio a um pedido de material, no portal',
+    description: [
+      'Decisão 2026-11-11 ("o cliente envia material pelo portal"). A pessoa do portal envia **imagem** (PNG, JPEG, WebP, GIF) ou **áudio** (MP3, M4A, WAV, WebM, Ogg; o parâmetro `;codecs=opus` de uma gravação não conta) a um pedido de material **aberto** do cliente dela, até 25 MiB por arquivo e 20 arquivos por pedido.',
+      'Nunca SVG, vídeo nem PDF. O fluxo é o do upload da agência, sempre em uma parte só: esta rota reserva o arquivo e devolve a URL assinada de `PUT` (com o `Content-Type` devolvido em `contentType`); depois do `PUT`, `…/uploads/:assetId/complete` lê os bytes e confirma.',
+      'O tipo e o tamanho declarados não são confiados: a recusa de tipo (415) e de tamanho (413) vem do banco, e os bytes são lidos na confirmação. O arquivo cai na pasta "Enviados pelo cliente" do cliente e conta no armazenamento da agência.',
+      'Nenhuma resposta fala de plano, cota, armazenamento nem cobrança: a agência que não pode receber o arquivo agora (`UPLOAD_UNAVAILABLE`) e a agência em somente leitura (`AGENCY_READ_ONLY`) respondem a mesma frase neutra do portal. Pedido de outro cliente, que não é de material, cliente arquivado, agência suspensa e vínculo removido são o mesmo 404.',
+      'Limitada por endereço, como o upload da agência. A chave do objeto nunca é devolvida.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientThreadPathParamsSchema,
+    body: CreatePortalMaterialUploadRequestSchema,
+    requestExample: { fileName: 'equipe.jpg', contentType: 'image/jpeg', declaredSizeBytes: 2_404_019 },
+    responses: [{
+      status: 201,
+      description: 'Reserva criada; a URL assinada vale até `expiresAt`.',
+      schema: CreatePortalMaterialUploadResponseSchema,
+      example: { assetId, category: 'image', contentType: 'image/jpeg', upload: { type: 'single', url: signedStorageUrl, expiresAt: '2026-11-13T12:15:00.000Z' } }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Pedido não encontrado.' },
+      { status: 409, code: 'REQUEST_RESOLVED' },
+      { status: 409, code: 'REQUEST_FULL' },
+      { status: 409, code: 'UPLOAD_UNAVAILABLE', message: 'A aprovação está pausada no momento. A agência já foi avisada.' },
+      { status: 409, code: 'AGENCY_READ_ONLY', message: 'A aprovação está pausada no momento. A agência já foi avisada.' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/clients/:clientId/material-requests/:threadId/uploads/:assetId/complete',
+    operationId: 'completePortalMaterialUpload',
+    module: 'media',
+    summary: 'Confirma o envio depois do PUT, no portal',
+    description: [
+      'Sem corpo. Só a pessoa que fez a reserva a confirma (o arquivo de outra pessoa, do mesmo cliente ou de outro, é o mesmo 404 de um id que não existe). A API lê o objeto do armazenamento com o mesmo código da agência: copia do staging para a chave final e confere o tipo real pelos primeiros bytes, o tamanho (até 25 MiB, antes de copiar) e as dimensões de uma foto; um SVG nunca é aceito. A confirmação é uma por arquivo, em série.',
+      'A recusa por causa dos bytes é **422 `UPLOAD_REJECTED`** com `details.reason` em `empty_object`, `content_type_mismatch`, `too_large`, `invalid_dimensions`, `request_full` ou `agency_unavailable` (a falta de espaço da agência chega assim, sem falar de plano nem de cota). A recusa fica gravada, a reserva é liberada e os objetos (a chave final e o staging) são apagados: o cliente começa de novo pela rota de iniciar.',
+      'Pedido resolvido, agência em somente leitura e agência sem vínculo seguem as respostas da rota de iniciar, e o arquivo continua pendente.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientMaterialRequestUploadAssetPathParamsSchema,
+    body: CompletePortalMaterialUploadRequestSchema,
+    requestExample: {},
+    responses: [{
+      status: 200,
+      description: 'Arquivo confirmado.',
+      schema: CompletePortalMaterialUploadResponseSchema,
+      example: { assetId, status: 'confirmed', sizeBytes: 2_404_019, contentType: 'image/jpeg' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Pedido não encontrado.' },
+      { status: 409, code: 'REQUEST_RESOLVED' },
+      { status: 409, code: 'UPLOAD_NOT_PENDING' },
+      { status: 409, code: 'AGENCY_READ_ONLY', message: 'A aprovação está pausada no momento. A agência já foi avisada.' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 422, code: 'UPLOAD_REJECTED' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/clients/:clientId/material-requests/:threadId/uploads',
+    operationId: 'listPortalMaterialUploads',
+    module: 'media',
+    summary: 'Lista o que a própria pessoa enviou a um pedido de material, no portal',
+    description: [
+      'Só os arquivos que **a própria pessoa** enviou àquele pedido, `pending` e `confirmed`, do mais antigo ao mais novo; o arquivo de outra pessoa, de outro cliente ou da agência nunca aparece. Quarenta e oito por página, e uma página além do fim traz só o total.',
+      '`url` é a URL assinada de leitura do arquivo confirmado (o áudio sai como download) e `null` no pendente. Nunca devolve a chave do objeto, a do staging nem o id do multipart. A leitura não exige que o pedido esteja aberto: o cliente continua vendo o que enviou.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientThreadPathParamsSchema,
+    query: PortalMaterialUploadListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página dos arquivos enviados pela pessoa.',
+      schema: PortalMaterialUploadListResponseSchema,
+      example: { data: [portalUploadExample], meta: { page: 1, pageSize: 48, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Pedido não encontrado.' },
+      { status: 429, code: 'RATE_LIMITED' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/clients/:clientId/material-requests/:threadId/uploads/announce',
+    operationId: 'announcePortalMaterialUploads',
+    module: 'clients',
+    summary: 'Avisa o pedido de que o cliente enviou um lote de arquivos, no portal',
+    description: [
+      'Chamada no fim do lote. Cada id de `assetIds` (de 1 a 20, sem repetir) tem de ser um arquivo **confirmado** da própria pessoa **naquele pedido**; qualquer outro (de outra pessoa, pendente, recusado, de outro pedido ou inexistente) é o mesmo 404, sem dizer qual, e nada é gravado.',
+      'Grava **um** comentário do cliente no pedido, pelo caminho de comentário do portal, com o texto montado pelo servidor ("enviou 3 fotos", "enviou 1 áudio", "enviou 2 fotos e 1 áudio"); é esse comentário que gera a notificação de resposta. Nada marca o arquivo como avisado: avisar o mesmo lote duas vezes são dois comentários.',
+      'Pedido resolvido é 409 `REQUEST_RESOLVED`, e a agência em somente leitura responde a frase neutra do portal.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com o cliente',
+    permission: null,
+    params: ClientThreadPathParamsSchema,
+    body: AnnouncePortalMaterialUploadsRequestSchema,
+    requestExample: { assetIds: [assetId] },
+    responses: [{
+      status: 201,
+      description: 'Comentário gravado.',
+      schema: AnnouncePortalMaterialUploadsResponseSchema,
+      example: { ...commentExample, body: 'enviou 1 foto' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 404, code: 'NOT_FOUND', message: 'Pedido não encontrado.' },
+      { status: 409, code: 'REQUEST_RESOLVED' },
+      { status: 409, code: 'AGENCY_READ_ONLY', message: 'A aprovação está pausada no momento. A agência já foi avisada.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
     path: '/clients/:clientId',
     operationId: 'getPortalClient',
     module: 'clients',
@@ -3287,7 +4006,8 @@ path: '/agencies/:agencyId/roles',
       'vínculo de quem chama (nunca o de outra pessoa do mesmo cliente) e `home`: as conversas abertas com',
       'resposta da agência, só as que o portal enxerga, o preenchimento do estudo e `contentsAwaitingApproval`,',
       'os conteúdos do próprio cliente em "aguardando aprovação". A conversa de um conteúdo não entra em',
-      '`threadsAnsweredByAgency`. Outro cliente, cliente arquivado, agência suspensa, vínculo removido e',
+      '`threadsAnsweredByAgency`, nem o pedido de material, que tem a contagem própria `materialRequestsOpen` (os pedidos abertos, o número de',
+      '"Pedidos da agência" no menu). Outro cliente, cliente arquivado, agência suspensa, vínculo removido e',
       'colaborador sem vínculo de cliente (Owner inclusive) devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
@@ -3302,7 +4022,7 @@ path: '/agencies/:agencyId/roles',
         ...clientExample,
         agencyName: 'Agência Exemplo',
         onboardingSeenAt: '2026-10-01T12:00:00.000Z',
-        home: { threadsAnsweredByAgency: 2, brandStudyFilled: 3, contentsAwaitingApproval: 2 },
+        home: { threadsAnsweredByAgency: 2, brandStudyFilled: 3, contentsAwaitingApproval: 2, materialRequestsOpen: 1 },
         agencyReadOnly: false
       }
     }],
@@ -3320,9 +4040,8 @@ path: '/agencies/:agencyId/roles',
     module: 'clients',
     summary: 'Lê o estudo de marca, no portal',
     description: [
-      'A mesma forma do estudo da agência, com duas diferenças: persona arquivada não vem, nem para o',
-      'colaborador que também tem vínculo de cliente, e `updatedBy` não vem em seção nem em persona, porque',
-      'quem editou por dentro é informação da agência. As sete seções vêm sempre; a que a agência não',
+      'A mesma forma do estudo da agência, com uma diferença: `updatedBy` não vem em seção nem em persona,',
+      'e `messageCount` não vem na persona, porque quem editou por dentro e a conversa da agência são informação dela. As sete seções vêm sempre; a que a agência não',
       'preencheu vem vazia.'
     ].join('\n'),
     access: 'Sessão + vínculo com o cliente',
@@ -3348,7 +4067,12 @@ path: '/agencies/:agencyId/roles',
       'Devolve a URL assinada de PUT ou o plano de multipart; o tipo real é validado no fim, pelo conteúdo.',
       'Sem `clientId` e `folderId` a mídia é da agência e exige `midia.enviar`. Com os dois, é a mídia de uma pasta do',
       'cliente e exige `conteudo.operar` **e** `conteudo.visualizar`: o servidor confere que a pasta é do cliente e o',
-      'cliente é da agência (cliente de outra agência e pasta de outro cliente dão o mesmo 404), e a cota soma a agência inteira.'
+      'cliente é da agência (cliente de outra agência e pasta de outro cliente dão o mesmo 404), e a cota soma a agência inteira.',
+      'Tipos aceitos: foto (PNG, JPEG, WebP, GIF), vídeo (MP4, MOV, WebM), PDF, áudio (MP3, M4A, WAV, WebM, Ogg) e logo, que é',
+      'uma imagem PNG, JPEG ou WebP enviada com `asLogo: true` ou um SVG (que só é aceito como logo, com `asLogo: true`).',
+      'PDF, áudio e logo só entram na biblioteca de um cliente (com `clientId`); qualquer outra combinação é 415.',
+      '`fileName` é só o rótulo do arquivo (uma linha de até 255 caracteres, sem `/`, `\\` nem caracteres de controle): a chave do',
+      'objeto nunca vem dele. O teto do SVG é 256 KiB, o do PDF 100 MiB e o do áudio 200 MiB, e nenhum passa do teto do vídeo.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: MEDIA_UPLOAD_PERMISSIONS,
@@ -3416,7 +4140,14 @@ path: '/agencies/:agencyId/roles',
     operationId: 'completeMediaUpload',
     module: 'media',
     summary: 'Confirma o upload e valida o objeto',
-    description: 'Valida tipo e tamanho pelo conteúdo observado no armazenamento; rejeição vira 422 e fica registrada.',
+    description: [
+      'Valida tipo e tamanho pelo conteúdo observado no armazenamento; rejeição vira 422 e fica registrada, e o objeto é apagado.',
+      'O tipo do objeto tem de ser o declarado e os primeiros bytes têm de ser os desse tipo (`details.reason`: `content_type_mismatch`);',
+      'uma foto traz as dimensões do cabeçalho (`invalid_dimensions` quando passam de 100000). Um SVG é lido inteiro e é recusado',
+      '(`svg_rejected`) se tiver script, manipulador de evento (`on…`), `foreignObject`, referência externa, `data:`, `javascript:`,',
+      'entidade ou instrução de processamento. Outras razões: `too_large`, `empty_object`, `object_not_found` e `quota_exceeded`.',
+      'Só confirma arquivo da agência: a reserva que o cliente fez pelo portal responde o mesmo 404 de um arquivo que não existe, e é o portal quem a confirma.'
+    ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: MEDIA_UPLOAD_PERMISSIONS,
     params: AgencyMediaAssetPathParamsSchema,
@@ -3447,7 +4178,7 @@ path: '/agencies/:agencyId/roles',
     operationId: 'getMediaDownloadUrl',
     module: 'media',
     summary: 'Emite uma URL assinada de leitura',
-    description: 'Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem devolve o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. Só o pedido do original grava a auditoria `media.download_url_issued`. Cada pessoa pede até 600 URLs a cada 5 minutos (qualquer agência, qualquer variante); o pedido seguinte é 429 `RATE_LIMITED` com `Retry-After`, e o limite de uma pessoa não conta para outra.',
+    description: 'Válida por poucos minutos, só GET, e apenas para um objeto confirmado e não removido da agência. A mídia sem cliente exige `midia.enviar`; a de um cliente exige `conteudo.visualizar` (a que o papel não lê é o mesmo 404). Em `variant=thumbnail`, a imagem e o logo devolvem o próprio original e o vídeo devolve a miniatura quando processada, senão 409 `VARIANT_NOT_READY`. O original de um PDF, de um áudio e de um SVG sai assinado com o tipo confirmado pelo servidor e `Content-Disposition: attachment` (nunca é aberto como página; um `<img>` carrega o SVG sem executar script). Só o pedido do original grava a auditoria `media.download_url_issued`. Cada pessoa pede até 600 URLs a cada 5 minutos (qualquer agência, qualquer variante); o pedido seguinte é 429 `RATE_LIMITED` com `Retry-After`, e o limite de uma pessoa não conta para outra.',
     access: 'Sessão + vínculo com a agência',
     permission: MEDIA_READ_PERMISSIONS,
     params: AgencyMediaAssetPathParamsSchema,
@@ -3544,7 +4275,8 @@ path: '/agencies/:agencyId/roles',
     module: 'media',
     summary: 'Lista as mídias de uma pasta',
     description: [
-      'Só a mídia confirmada e não removida, a mais recente primeiro; quarenta e oito por página. Nunca devolve chave de',
+      'Só a foto e o vídeo confirmados e não removidos (os que um conteúdo aceita; PDF, áudio e logo estão em `GET .../media`),',
+      'a mais recente primeiro; quarenta e oito por página. Nunca devolve chave de',
       'objeto. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
@@ -3598,6 +4330,283 @@ path: '/agencies/:agencyId/roles',
       { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
       { status: 409, code: 'CLIENT_ARCHIVED' },
       { status: 409, code: 'MEDIA_IN_USE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media',
+    operationId: 'listClientMedia',
+    module: 'media',
+    summary: 'Lista a biblioteca de mídia de um cliente',
+    description: [
+      'Os arquivos confirmados e não removidos do cliente em todas as pastas, o mais recente primeiro (a tabela "enviados',
+      'recentemente"); quarenta e oito por página. `q` busca pelo nome, sem diferenciar maiúsculas nem acento (um `%` ou `_`',
+      'digitado vale como o próprio caractere; o arquivo enviado antes de o nome ser guardado não casa), `category` filtra por tipo',
+      '(`image`, `video`, `pdf`, `audio`, `logo`) e `folderId` por pasta. Cada item traz nome, dimensões, texto alternativo, quem',
+      'enviou (`uploadedBy`, `null` para quem não tem vínculo com a agência; `uploadedBySide`, `client` para o arquivo que o cliente mandou pelo portal, que a tela mostra como "Enviada por <nome do cliente>") e em quantos conteúdos é usado (`usageCount`, só os que a pessoa lê).',
+      'Nunca devolve chave de objeto. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientPathParamsSchema,
+    query: MediaLibraryListQuerySchema,
+    requestExample: { q: 'vitrine', category: 'image', page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de arquivos.',
+      schema: MediaLibraryListResponseSchema,
+      example: { data: [libraryAssetExample], meta: { page: 1, pageSize: 48, totalItems: 1, totalPages: 1 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media/:assetId',
+    operationId: 'getClientMedia',
+    module: 'media',
+    summary: 'Detalha um arquivo da biblioteca',
+    description: 'O arquivo confirmado e não removido do cliente, com nome, dimensões, texto alternativo, pasta, quem enviou e quando. Cliente de outra agência, arquivo de outro cliente, removido ou inexistente e id inválido devolvem o mesmo 404.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientMediaAssetPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'O arquivo.',
+      schema: MediaLibraryAssetSchema,
+      example: libraryAssetExample
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' }
+    ]
+  },
+  {
+    method: 'patch',
+    path: '/agencies/:agencyId/clients/:clientId/media/:assetId',
+    operationId: 'updateClientMedia',
+    module: 'media',
+    summary: 'Renomeia um arquivo ou edita o texto alternativo',
+    description: [
+      'Qualquer um dos dois campos. `name` é só o rótulo (a chave do objeto no armazenamento não muda): uma linha de até 255',
+      'caracteres, sem `/`, `\\`, caracteres de controle, bidi ou invisíveis, e não só pontos. `altText` tem até 500 caracteres numa linha;',
+      'vazio ou `null` apaga. Exige `conteudo.operar` e também `conteudo.visualizar`; cliente arquivado devolve 409 `CLIENT_ARCHIVED` e',
+      'agência somente leitura 409 `AGENCY_READ_ONLY`. Grava a auditoria `media.renamed` e `media.alt_text_changed` quando o valor muda.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientMediaAssetPathParamsSchema,
+    body: UpdateMediaAssetRequestSchema,
+    requestExample: { name: 'vitrine-outubro.jpg', altText: 'Vitrine da padaria com pães recém-saídos do forno' },
+    responses: [{
+      status: 200,
+      description: 'O arquivo com a edição.',
+      schema: MediaLibraryAssetSchema,
+      example: libraryAssetExample
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/clients/:clientId/media/:assetId/move',
+    operationId: 'moveClientMedia',
+    module: 'media',
+    summary: 'Move um arquivo para outra pasta do mesmo cliente',
+    description: [
+      'A pasta de destino tem de ser do mesmo cliente (a de outro cliente ou de outra agência é o mesmo 404 "Folder not found."), de',
+      'qualquer nível, inclusive uma pasta padrão. Mover para a pasta em que o arquivo já está não é erro. Recusa (409 `MEDIA_IN_USE`)',
+      'o arquivo que algum conteúdo usa, como mídia ou como capa, em qualquer estado: o conteúdo guarda a pasta do arquivo, que não muda sob ele.',
+      'Exige `conteudo.operar` e também `conteudo.visualizar`; cliente arquivado devolve 409 `CLIENT_ARCHIVED` e agência somente leitura',
+      '409 `AGENCY_READ_ONLY`. Grava a auditoria `media.moved` quando o arquivo mudou de pasta.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientMediaAssetPathParamsSchema,
+    body: MoveMediaAssetRequestSchema,
+    requestExample: { folderId },
+    responses: [{
+      status: 200,
+      description: 'O arquivo na pasta nova.',
+      schema: MediaLibraryAssetSchema,
+      example: libraryAssetExample
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'MEDIA_IN_USE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media/:assetId/usage',
+    operationId: 'listClientMediaUsage',
+    module: 'media',
+    summary: 'Lista os conteúdos que usam um arquivo',
+    description: 'Título e estado de cada conteúdo do cliente que tem o arquivo como mídia (`asMedia`) ou como capa (`asCover`), do dia de publicação mais recente ao mais antigo; só os que a pessoa lê (a regra de acesso de Conteúdo vale aqui). Cliente de outra agência, arquivo de outro cliente e id inválido devolvem o mesmo 404.',
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientMediaAssetPathParamsSchema,
+    query: MediaUsageListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de usos.',
+      schema: MediaUsageListResponseSchema,
+      example: {
+        data: [{ contentId, title: 'Lançamento da vitrine', status: 'approved', asMedia: true, asCover: false }],
+        meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Media asset not found.' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders/summary',
+    operationId: 'listClientMediaFolderSummaries',
+    module: 'media',
+    summary: 'Lista as pastas de mídia com o que cada uma guarda',
+    description: [
+      'As mesmas pastas e a mesma ordem de `GET .../media-folders`, cada uma com a quantidade de arquivos por tipo (`counts`), o',
+      'tamanho total, a última alteração (a criação da pasta ou um arquivo gravado ou removido nela) e quem enviou o arquivo mais novo',
+      '(`lastUploadedBy`). `inUseNow` é `true` em no máximo uma pasta: a que não é padrão e teve arquivo gravado mais recentemente',
+      '(um envio, uma renomeação ou um arquivo movido para ela), se foi nos últimos 30 dias; sem pasta assim, todas vêm `false` e a',
+      'tela omite o bloco "em uso agora". É leitura derivada dos arquivos; nenhuma coluna da pasta guarda isso. Cliente arquivado',
+      'continua legível; cliente de outra agência, inexistente ou `:clientId` inválido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.visualizar',
+    params: AgencyClientPathParamsSchema,
+    query: MediaFolderSummaryListQuerySchema,
+    requestExample: { page: 1 },
+    responses: [{
+      status: 200,
+      description: 'Página de pastas com o resumo.',
+      schema: MediaFolderSummaryListResponseSchema,
+      example: {
+        data: [{
+          id: folderId,
+          parentId: null,
+          name: 'Imagens',
+          isDefault: true,
+          createdAt: '2026-10-07T12:00:00.000Z',
+          counts: { image: 96, video: 0, pdf: 9, audio: 0, logo: 1 },
+          assetCount: 106,
+          totalSizeBytes: 482_344_960,
+          lastChangedAt: '2026-11-11T12:00:00.000Z',
+          lastUploadedBy: { membershipId, name: 'Ana Souza' },
+          inUseNow: false
+        }],
+        meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' }
+    ]
+  },
+  {
+    method: 'patch',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders/:folderId',
+    operationId: 'renameClientMediaFolder',
+    module: 'media',
+    summary: 'Renomeia uma pasta de mídia do cliente',
+    description: [
+      'Só o nome, com as mesmas regras da criação (até 80 caracteres, sem controle nem invisíveis). As quatro pastas padrão não se',
+      'renomeiam (409 `DEFAULT_FOLDER_IMMUTABLE`). Exige `conteudo.operar` e também `conteudo.visualizar`; cliente arquivado devolve',
+      '409 `CLIENT_ARCHIVED`. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientMediaFolderPathParamsSchema,
+    body: RenameMediaFolderRequestSchema,
+    requestExample: { name: 'Lançamento de novembro' },
+    responses: [{
+      status: 200,
+      description: 'Pasta renomeada.',
+      schema: MediaFolderSchema,
+      example: { id: '12121212-1212-4121-8121-121212121212', parentId: folderId, name: 'Lançamento de novembro', isDefault: false, createdAt: '2026-10-07T12:00:00.000Z' }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'DEFAULT_FOLDER_IMMUTABLE' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'delete',
+    path: '/agencies/:agencyId/clients/:clientId/media-folders/:folderId',
+    operationId: 'deleteClientMediaFolder',
+    module: 'media',
+    summary: 'Exclui uma pasta de mídia vazia do cliente',
+    description: [
+      'Só a pasta que não é padrão e está vazia: as quatro pastas padrão não se excluem (409 `DEFAULT_FOLDER_IMMUTABLE`). Pasta com',
+      'arquivo (ou com um envio que começou há menos de um dia) é recusada com 409 `FOLDER_NOT_EMPTY` e a mensagem "Mova ou exclua os',
+      'arquivos antes"; pasta com subpasta ou com conteúdo ligado a ela também é 409 `FOLDER_NOT_EMPTY`, com a mensagem própria. Os',
+      'arquivos já removidos e os envios rejeitados ou abandonados que ainda apontavam para a pasta ficam sem pasta, com a linha',
+      'guardada. Mesma permissão de renomear a pasta: exige `conteudo.operar` e também `conteudo.visualizar`; cliente arquivado',
+      'devolve 409 `CLIENT_ARCHIVED`. Cliente de outra agência, pasta de outro cliente, pasta inexistente e id inválido devolvem o',
+      'mesmo 404. Grava o evento de auditoria `media.folder_deleted`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'conteudo.operar',
+    params: AgencyClientMediaFolderPathParamsSchema,
+    responses: [{ status: 204, description: 'Pasta excluída.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Client not found.' },
+      { status: 404, code: 'NOT_FOUND', message: 'Folder not found.' },
+      { status: 409, code: 'CLIENT_ARCHIVED' },
+      { status: 409, code: 'DEFAULT_FOLDER_IMMUTABLE' },
+      { status: 409, code: 'FOLDER_NOT_EMPTY' },
       { status: 409, code: 'TRY_AGAIN' }
     ]
   },
@@ -4021,7 +5030,9 @@ path: '/agencies/:agencyId/roles',
       'Os conteúdos do lote daquele e-mail, no estado de agora, com a legenda e a mídia da prévia de celular, na ordem do dia e da hora. Só o',
       'lote: nada da marca, da conversa geral nem de outro conteúdo do cliente, e um conteúdo cancelado some. O que já foi decidido, por esta ou',
       'por outra pessoa, aparece com o estado atual e `canDecide: false`; o que voltou a aguardar aprovação continua no lote enquanto o link',
-      'vale. Um conteúdo em produção traz só título, dia e formato. `canDecide` é o que manda desenhar Aprovar e Pedir ajuste: verdadeiro',
+      'vale. `approval` traz o dia do prazo (`dueOn`) e o recado (`note`) que a agência deu ao enviar, e é nulo no conteúdo enviado antes das rodadas;',
+      'o link não traz o instante do prazo, a data do envio nem quem enviou (`dueAt`, `sentAt` e `sentBy` são nulos) e não leva recado ao aprovar.',
+      'Um conteúdo em produção traz só título, dia e formato. `canDecide` é o que manda desenhar Aprovar e Pedir ajuste: verdadeiro',
       'exatamente quando o conteúdo aguarda aprovação. `personEmail` é o endereço que recebeu o acesso, para o link "Criar conta para ver o',
       'portal" levar a `/criar-conta` com ele preenchido; a resposta nunca diz se o endereço já tem conta. Sem o cookie, ou com o link morto: `404',
       'APPROVAL_LINK_INVALID`. Ler não decide nada. `Cache-Control: no-store`.'
@@ -4109,8 +5120,10 @@ path: '/agencies/:agencyId/roles',
       'como comentário do cliente (a conversa é aberta se ainda não existe). O comentário e a abertura da conversa são gravados **como aquele',
       'acesso**. O comentário segue a regra única de texto livre das conversas: sem caractere de controle, invisível ou de formato, nunca',
       'vazio, até 5000 bytes (`400 VALIDATION_ERROR`), e um pedido recusado não deixa conversa, comentário nem estado. `revision` é a revisão',
-      'que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Fora de "aguardando aprovação": `409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do',
-      'lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto: `404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.'
+      'que a pessoa leu (`409 CONTENT_REVISION_CHANGED`). Vale só para um conteúdo aguardando aprovação, em qualquer data: o link não pede',
+      'ajuste de um aprovado (isso é do portal, com conta). Um conteúdo aprovado, em ajuste, em produção ou publicado responde',
+      '`409 CONTENT_NOT_AWAITING_APPROVAL`. Conteúdo fora do lote, cancelado ou inexistente: `404 NOT_FOUND`. Link morto:',
+      '`404 APPROVAL_LINK_INVALID`. Os mesmos limites de Aprovar.'
     ].join('\n'),
     access: 'Cookie da sessão de aprovação',
     permission: null,
@@ -4217,6 +5230,45 @@ path: '/agencies/:agencyId/roles',
     ]
   },
   {
+    method: 'get',
+    path: '/agencies/:agencyId/subscription/invoices',
+    operationId: 'listSubscriptionInvoices',
+    module: 'subscriptions',
+    summary: 'Lista as faturas da agência',
+    description: [
+      'Cada cobrança da agência é uma fatura: a data (a do pagamento, quando paga; a do pedido, nas outras), a descrição (o plano e os extras, escrita no',
+      'servidor), o valor e o estado. `status` é `declined` (o provedor recusou o pagamento; vale mesmo que a cobrança tenha sido substituída depois),',
+      '`paid`, `open` (aguardando pagamento, dentro dos 30 minutos) ou `expired`. Paginada pelo contrato global de listagem, 20 por página, da mais recente à',
+      'mais antiga (o `id` desempata); `totalItems` vale também para uma página depois do fim, que vem vazia. Existe em qualquer ambiente, sem PDF nem nota fiscal.',
+      'Só o Owner: a pessoa do portal nunca vê a cobrança da agência.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    query: SubscriptionInvoiceListQuerySchema,
+    requestExample: { page: 1, pageSize: 20 },
+    responses: [{
+      status: 200,
+      description: 'Página das faturas.',
+      schema: SubscriptionInvoiceListResponseSchema,
+      example: {
+        data: [
+          { id: '99999999-9999-4999-8999-999999999999', date: '2026-11-12T14:00:00.000Z', description: 'Plano Profissional + 5 clientes extras', amountCents: 22700, status: 'declined' },
+          { id: '88888888-8888-4888-8888-888888888888', date: '2026-10-12T14:00:00.000Z', description: 'Plano Profissional', amountCents: 19700, status: 'paid' }
+        ],
+        meta: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
     method: 'post',
     path: '/agencies/:agencyId/subscription/quote',
     operationId: 'quoteSubscriptionChange',
@@ -4228,7 +5280,9 @@ path: '/agencies/:agencyId/roles',
       '`effectiveAt` é o fim do período). Recusas: `409 SUBSCRIPTION_BELOW_CLIENTS` ou `409 SUBSCRIPTION_BELOW_STORAGE` quando o novo teto fica abaixo do',
       'uso; `409 SUBSCRIPTION_MIXED_CHANGE` quando sobe um limite e desce outro; `409 SUBSCRIPTION_UNCHANGED` quando nada muda;',
       '`409 SUBSCRIPTION_NOT_AVAILABLE` quando a agência não pode mudar de plano (isenta, cortesia, sem assinatura da operação ou cancelada);',
-      '`400 SUBSCRIPTION_INVALID` para um plano que não existe.'
+      '`400 SUBSCRIPTION_INVALID` para um plano que não existe. `lines` é de que se compõe o `monthlyCents` (o plano, uma vez, e cada extra comprado, no preço',
+      'de cada unidade), e a soma delas é o `monthlyCents`. `daysLeft` de `periodDays` é a parte do período que a subida cobra agora (o dia que começou',
+      'conta); os dois são `null` na primeira assinatura, que cobra o mês inteiro, e na descida, que não cobra nada.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'assinatura.gerenciar',
@@ -4239,7 +5293,15 @@ path: '/agencies/:agencyId/roles',
       status: 200,
       description: 'O que a mudança faz.',
       schema: SubscriptionQuoteResponseSchema,
-      example: { effect: 'upgrade', monthlyCents: 19700, amountCents: 6800, effectiveAt: '2026-11-15T12:00:00.000Z' }
+      example: {
+        effect: 'upgrade',
+        monthlyCents: 19700,
+        amountCents: 6800,
+        effectiveAt: '2026-11-15T12:00:00.000Z',
+        daysLeft: 15,
+        periodDays: 30,
+        lines: [{ kind: 'plan', quantity: 1, unitCents: 19700, totalCents: 19700 }]
+      }
     }],
     errors: [
       COMMON_ERRORS.csrf,
@@ -4361,7 +5423,9 @@ path: '/agencies/:agencyId/roles',
       'Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). O cartão **nunca** viaja: a tela escolhe `outcome`',
       '(`approved`, ou `declined` para o número de cartão de teste fixo) e não manda mais nada do cartão. A cobrança precisa ser da agência do Owner que paga e',
       'estar aberta; a de outra agência responde `404 NOT_FOUND` e continua pendente. Aprovada, o provedor confirma ao banco, e só então o plano e os tetos',
-      'mudam (`confirmed`); recusada (`declined`), nada muda e a cobrança segue aberta até vencer.'
+      'mudam (`confirmed`). Recusada (`declined`), o plano e os tetos não mudam, e a cobrança registra a recusa numa transação própria: ela aparece como',
+      '"recusada" nas faturas e **não é paga de novo** (`409 CHARGE_NOT_OPEN`, sem chamar o provedor). Tentar outra vez é pedir uma cobrança nova em',
+      '`POST /charges`, que expira a recusada.'
     ].join('\n'),
     access: 'Sessão + vínculo com a agência',
     permission: 'assinatura.gerenciar',
@@ -4411,6 +5475,256 @@ path: '/agencies/:agencyId/roles',
       { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
       { status: 409, code: 'SUBSCRIPTION_NOT_AVAILABLE' },
       { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/subscription/test-card',
+    operationId: 'getSubscriptionTestCard',
+    module: 'subscriptions',
+    summary: 'Devolve o cartão de teste da agência (só fora de produção)',
+    description: [
+      'Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). `card` é `null` enquanto a agência não salvou um.',
+      'O cartão é só os quatro últimos dígitos, a validade e a marca `test`: o número, o código de segurança e o nome nunca saem do navegador. Só o Owner.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'O cartão de teste, ou `null`.',
+      schema: SubscriptionTestCardResponseSchema,
+      example: { card: { last4: '4242', expMonth: 8, expYear: 2028, brand: 'test' } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'put',
+    path: '/agencies/:agencyId/subscription/test-card',
+    operationId: 'saveSubscriptionTestCard',
+    module: 'subscriptions',
+    summary: 'Salva ou troca o cartão de teste da agência (só fora de produção)',
+    description: [
+      'Só existe com `PAYMENTS_PROVIDER=simulado` fora de produção; em produção a rota não existe (`404`). Um cartão por agência: salvar de novo o troca.',
+      'O corpo são exatamente os quatro valores (`last4`, `expMonth`, `expYear` e `brand` igual a `test`): qualquer outro campo, como `number`, `cvc` ou `name`,',
+      'é recusado com `400 VALIDATION_ERROR` sem repetir o que veio, e um valor que não é de um cartão de teste, com `400 TEST_CARD_INVALID`. Nenhuma resposta, log ou',
+      'auditoria leva o número. Só o Owner.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: 'assinatura.gerenciar',
+    params: AgencyPathParamsSchema,
+    body: SaveSubscriptionTestCardRequestSchema,
+    requestExample: { last4: '4242', expMonth: 8, expYear: 2028, brand: 'test' },
+    responses: [{
+      status: 200,
+      description: 'O cartão de teste salvo.',
+      schema: SubscriptionTestCardResponseSchema,
+      example: { card: { last4: '4242', expMonth: 8, expYear: 2028, brand: 'test' } }
+    }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      COMMON_ERRORS.payloadTooLarge,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 400, code: 'TEST_CARD_INVALID' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/notifications',
+    operationId: 'listNotifications',
+    module: 'notifications',
+    summary: 'Lista as notificações da pessoa na agência',
+    description: [
+      'Paginada pelo contrato global de listagem, 20 por página, da mais recente à mais antiga (o `id` desempata). Cada pessoa lê só as próprias:',
+      'a de outra pessoa, nem do Owner ou de um Admin, aparece aqui, e a notificação de um assunto cuja permissão a pessoa perdeu deixa de aparecer.',
+      '`unread=true` lista só as não lidas. Sem permissão própria: basta o vínculo com a agência, e quem só tem vínculo com um cliente recebe 404.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: null,
+    params: AgencyPathParamsSchema,
+    query: NotificationListQuerySchema,
+    requestExample: { page: 1, pageSize: 20, unread: 'true' },
+    responses: [{
+      status: 200,
+      description: 'Página das notificações da pessoa.',
+      schema: NotificationListResponseSchema,
+      example: {
+        data: [
+          {
+            id: invitationId,
+            kind: 'content_approved',
+            summary: 'Rosana aprovou "Promoção de pães"',
+            createdAt: '2026-11-12T14:00:00.000Z',
+            readAt: null,
+            destination: { type: 'content', clientId, contentId }
+          },
+          {
+            id: assetId,
+            kind: 'invitation_accepted',
+            summary: 'Ana aceitou o seu convite',
+            createdAt: '2026-11-10T12:00:00.000Z',
+            readAt: '2026-11-10T13:00:00.000Z',
+            destination: { type: 'collaborators' }
+          }
+        ],
+        meta: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_CONFIRMED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/notifications/unread-count',
+    operationId: 'countUnreadNotifications',
+    module: 'notifications',
+    summary: 'Conta as notificações não lidas da pessoa',
+    description: 'Quantas notificações a pessoa ainda não leu nesta agência, só as que ela ainda pode ler. É o ponto do sino.',
+    access: 'Sessão + vínculo com a agência',
+    permission: null,
+    params: AgencyPathParamsSchema,
+    responses: [{
+      status: 200,
+      description: 'A contagem.',
+      schema: NotificationUnreadCountResponseSchema,
+      example: { data: { count: 3 } }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_CONFIRMED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/notifications/:notificationId/read',
+    operationId: 'readNotification',
+    module: 'notifications',
+    summary: 'Marca uma notificação como lida',
+    description: [
+      'Só a pessoa destinatária marca a própria; o instante da leitura é do banco e a primeira leitura é a que vale (ler de novo não é erro).',
+      'A notificação de outra pessoa, de outra agência, de um assunto cuja permissão se perdeu, inexistente ou com id malformado devolve o mesmo 404 (o malformado, 400 de validação), sem revelar o que existe.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência',
+    permission: null,
+    params: AgencyNotificationPathParamsSchema,
+    responses: [{ status: 204, description: 'Notificação marcada como lida.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_CONFIRMED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Notification not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'post',
+    path: '/agencies/:agencyId/notifications/read-all',
+    operationId: 'readAllNotifications',
+    module: 'notifications',
+    summary: 'Marca como lidas todas as notificações da pessoa na agência',
+    description: 'Marca só as não lidas da própria pessoa nesta agência que ela ainda pode ler; as de outra pessoa e as de outra agência não mudam. Sem nenhuma não lida, também é 204.',
+    access: 'Sessão + vínculo com a agência',
+    permission: null,
+    params: AgencyPathParamsSchema,
+    responses: [{ status: 204, description: 'Notificações marcadas como lidas.' }],
+    errors: [
+      COMMON_ERRORS.csrf,
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_CONFIRMED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' }
+    ]
+  },
+  {
+    method: 'get',
+    path: '/agencies/:agencyId/search',
+    operationId: 'searchAgency',
+    module: 'search',
+    summary: 'Busca clientes, conteúdos e arquivos pelo nome',
+    description: [
+      'Alimenta a busca da barra superior (Ctrl K). `q` tem de 2 a 80 caracteres, aparado e sem caractere de controle; o termo vale sem acento e sem diferenciar maiúsculas,',
+      'e `%` e `_` valem como texto. Clientes casam por nome, razão social e @ (sem o `@`); conteúdos, pelo título, inclusive os cancelados; arquivos, pelo nome,',
+      'só os confirmados e não removidos. Cada grupo traz até 6, o nome mais próximo do começo primeiro (prefixo antes de trecho), depois a ordem alfabética e o `id`.',
+      'Clientes pedem `cliente.visualizar`; conteúdos e arquivos pedem `conteudo.visualizar` (o Owner passa por posse). Sem a permissão de um grupo, a consulta dele',
+      'nem roda e ele vem `[]`, no formato de um grupo sem resultado: a resposta não diz se o grupo existe. A rota não tem permissão única, só o vínculo com a agência;',
+      'quem só tem vínculo com um cliente recebe o 404 da agência. Agência em somente leitura busca normalmente. O termo nunca vai para log, e um termo inválido',
+      'devolve `400` sem repeti-lo. Limite de 60 requisições por minuto por pessoa, com `429` e `Retry-After`.'
+    ].join('\n'),
+    access: 'Sessão + vínculo com a agência; cada grupo por permissão própria',
+    permission: null,
+    params: AgencyPathParamsSchema,
+    query: AgencySearchQuerySchema,
+    requestExample: { q: 'padar' },
+    responses: [{
+      status: 200,
+      description: 'Os três grupos, sempre presentes.',
+      schema: AgencySearchResponseSchema,
+      example: {
+        data: {
+          clients: [{ id: clientId, name: 'Padaria Central', photoUrl: null, instagramHandle: 'padariacentral', archived: false }],
+          contents: [{
+            id: contentId,
+            clientId,
+            clientName: 'Padaria Central',
+            title: 'Promoção de pães',
+            format: 'reels',
+            status: 'approved',
+            overdue: false,
+            scheduled: true,
+            publishOn: '2026-11-20'
+          }],
+          files: [{
+            id: assetId,
+            clientId,
+            clientName: 'Padaria Central',
+            folderId,
+            name: 'padaria-fachada.jpg',
+            category: 'image',
+            thumbnailAssetId: assetId
+          }]
+        },
+        meta: { q: 'padar' }
+      }
+    }],
+    errors: [
+      COMMON_ERRORS.internal,
+      { status: 400, code: 'VALIDATION_ERROR' },
+      { status: 401, code: 'UNAUTHENTICATED' },
+      { status: 403, code: 'EMAIL_NOT_CONFIRMED' },
+      { status: 403, code: 'FORBIDDEN' },
+      { status: 404, code: 'NOT_FOUND', message: 'Agency not found.' },
+      { status: 409, code: 'TRY_AGAIN' },
+      { status: 429, code: 'RATE_LIMITED' }
     ]
   }
 ];

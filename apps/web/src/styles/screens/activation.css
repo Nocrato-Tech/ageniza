@@ -1,0 +1,127 @@
+/* Journey "Até a primeira aprovação" of a new agency's Início (decisions 2026-11-06 and 2026-11-10): the rocket and the count on a tinted side, the four steps on the milestone trail. */
+.activation {
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.34fr) minmax(0, 1fr);
+  margin-top: calc(var(--space-8) + var(--space-2));
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.activation__intro {
+  --ui-stage-bg: var(--bg-tint);
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+}
+
+.activation__intro > .ui-stage {
+  margin: -4.5rem 0 var(--space-3) calc(var(--space-2) * -1);
+}
+
+.activation__eyebrow,
+.activation__count {
+  margin: 0;
+}
+
+.activation__eyebrow {
+  font: var(--label-md);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.activation__count {
+  color: var(--text-secondary);
+  font: var(--heading-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.activation__count strong {
+  color: var(--text-primary);
+  font: var(--display-lg);
+  letter-spacing: -0.02em;
+}
+
+.activation__progress {
+  appearance: none;
+  width: 100%;
+  height: 0.625rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  accent-color: var(--color-indigo-600);
+}
+
+.activation__progress::-webkit-progress-bar {
+  background: var(--bg-surface);
+}
+
+.activation__progress::-webkit-progress-value {
+  border-radius: var(--radius-full);
+  background: var(--color-indigo-600);
+}
+
+.activation__progress::-moz-progress-bar {
+  border-radius: var(--radius-full);
+  background: var(--color-indigo-600);
+}
+
+.activation__steps {
+  min-width: 0;
+  padding: var(--space-6) var(--space-8);
+}
+
+/* "Feito" tag, then the name and the day of the step. */
+.activation__when {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.activation__lead {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+@media (max-width: 80rem) {
+  .activation {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .activation__intro {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--space-6);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+
+  .activation__intro > .ui-stage {
+    grid-row: 1 / span 3;
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .activation__intro {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-6) var(--space-4) var(--space-4);
+  }
+
+  .activation__intro > .ui-stage {
+    grid-row: auto;
+  }
+
+  .activation__steps {
+    padding: var(--space-4);
+  }
+}
+

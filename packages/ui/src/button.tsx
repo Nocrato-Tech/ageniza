@@ -2,7 +2,8 @@ import { forwardRef, useId, type ButtonHTMLAttributes, type ReactNode } from 're
 
 import { IconSlot } from './icon.js';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'destructive';
+/** `danger-quiet` is the discreet danger: red text on no fill, for a destructive action that must not compete with the one primary (the filled `destructive` stays for the confirmation). */
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'destructive' | 'danger-quiet';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -63,21 +64,24 @@ export type IconButtonProps = Omit<ButtonProps, 'children' | 'leadingIcon' | 'tr
   /** Names the button for assistive technology and, as a tooltip, for everyone else. */
   label: string;
   icon: ReactNode;
+  /** A notification dot on the corner. The text says what it means ("3 não lidas") and joins the name, so the dot is never only colour. */
+  dot?: string;
 };
 
 /** A square button with only an icon: the label is mandatory because the glyph has no text. */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { label, icon, variant = 'ghost', className, ...props },
+  { label, icon, dot, variant = 'ghost', className, ...props },
   ref
 ) {
+  const name = dot === undefined ? label : `${label}, ${dot}`;
   return (
     <Button
       ref={ref}
       variant={variant}
-      aria-label={label}
-      title={label}
-      leadingIcon={icon}
-      className={['ui-icon-button', className].filter(Boolean).join(' ')}
+      aria-label={name}
+      title={name}
+      leadingIcon={dot === undefined ? icon : <>{icon}<span className="ui-icon-button__dot" aria-hidden="true" /></>}
+      className={['ui-icon-button', dot !== undefined && 'ui-icon-button--dot', className].filter(Boolean).join(' ')}
       {...props}
     />
   );

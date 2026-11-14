@@ -89,57 +89,56 @@ describe('/design-system in development', { timeout: 30_000 }, () => {
     await renderAt('/design-system');
     expect(await screen.findByRole('heading', { level: 1, name: 'Design system' })).toBeTruthy();
     const page = document.body.textContent ?? '';
-    const files = ['tokens/primitives.css', 'tokens/semantic.css', 'tokens/typography.css', 'tokens/motion.css', 'themes/dark.css'];
+    const files = ['tokens/primitives.css', 'tokens/semantic.css', 'tokens/typography.css', 'tokens/motion.css'];
     for (const name of files.flatMap(declared)) expect(page, name).toContain(name);
   });
 
-  it('shows each semantic token in both themes and marks what the dark theme overrides', async () => {
+  it('shows each semantic token once, with the value the stylesheet gives it, in the single theme', async () => {
     await renderAt('/design-system');
-    const light = within(await screen.findByTestId('semantic-light'));
-    const dark = within(await screen.findByTestId('semantic-dark'));
-    for (const name of declared('tokens/semantic.css').filter((token) => !token.startsWith('--shadow-'))) {
-      expect(light.getAllByText(name).length, name).toBe(1);
-      expect(dark.getAllByText(name).length, name).toBe(1);
-    }
-    expect(dark.getAllByText('sobrescrito no escuro').length).toBe(declared('themes/dark.css').filter((name) => !name.startsWith('--shadow-')).length);
-    expect(light.queryByText('sobrescrito no escuro')).toBeNull();
-  });
-
-  it.each(['light', 'dark'] as const)('shows in the %s panel the value the theme gives each semantic token', async (theme) => {
-    await renderAt('/design-system');
-    const panel = within(await screen.findByTestId(`semantic-${theme}`));
-    const light = declaredValues('tokens/semantic.css');
-    const dark = declaredValues('themes/dark.css');
-    for (const [name, lightValue] of light) {
+    const panel = within(await screen.findByTestId('semantic'));
+    for (const [name, value] of declaredValues('tokens/semantic.css')) {
       if (name.startsWith('--shadow-')) continue;
-      const expected = theme === 'dark' ? dark.get(name) ?? lightValue : lightValue;
-      const shown = panel.getByText(name).closest('li')!.querySelector('.ds-token__value')!.textContent;
-      expect(shown, `${theme} ${name}`).toBe(expected);
-    }
-    expect(dark.get('--bg-canvas')).not.toBe(light.get('--bg-canvas'));
-  });
-
-  it('shows the elevation of each theme with its own value', async () => {
-    await renderAt('/design-system');
-    const light = declaredValues('tokens/semantic.css').get('--shadow-floating')!;
-    const dark = declaredValues('themes/dark.css').get('--shadow-floating') ?? light;
-    for (const [theme, expected] of [['light', light], ['dark', dark]] as const) {
-      const shown = within(await screen.findByTestId(`elevation-${theme}`)).getByText('--shadow-floating').closest('li')!.querySelector('.ds-token__value')!.textContent;
-      expect(shown, theme).toBe(expected);
+      expect(panel.getAllByText(name).length, name).toBe(1);
+      expect(panel.getByText(name).closest('li')!.querySelector('.ds-token__value')!.textContent, name).toBe(value);
     }
   });
 
-  it('switches the theme of the components', async () => {
+  it('has no theme to switch and paints nothing dark', async () => {
     await renderAt('/design-system');
-    const panel = await screen.findByTestId('components-panel');
-    expect(panel.getAttribute('data-theme')).toBe('light');
-    const dark = screen.getByRole('button', { name: 'Escuro', pressed: false });
-    fireEvent.click(dark);
-    expect(panel.getAttribute('data-theme')).toBe('dark');
-    expect(screen.getByRole('button', { name: 'Escuro' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Claro' }).getAttribute('aria-pressed')).toBe('false');
+    await screen.findByTestId('components-panel');
+    expect(screen.queryByRole('button', { name: 'Escuro' })).toBeNull();
+    expect(document.querySelector('[data-theme]')).toBeNull();
   });
 
+  it('shows the elevation with its own value', async () => {
+    await renderAt('/design-system');
+    const expected = declaredValues('tokens/semantic.css').get('--shadow-floating')!;
+    const shown = within(await screen.findByTestId('elevation')).getByText('--shadow-floating').closest('li')!.querySelector('.ds-token__value')!.textContent;
+    expect(shown).toBe(expected);
+  });
+
+  it('shows the colour blocks of the families, each with its icon on the stage and the fill the stage mixes with', async () => {
+    await renderAt('/design-system');
+    const blocks = [...(await screen.findByTestId('blocks')).querySelectorAll<HTMLElement>('li')];
+    expect(blocks.map((block) => block.querySelector('code')!.textContent)).toEqual(
+      ['indigo', 'violet', 'teal', 'sky', 'red', 'slate'].map((tone) => `--block-${tone}-bg`)
+    );
+    for (const block of blocks) {
+      expect(block.querySelector('.ui-stage img')!.getAttribute('src')).toMatch(/^\/3d\/[a-z-]+\.png$/);
+      expect(block.style.getPropertyValue('--ui-stage-bg')).toMatch(/^var\(--block-[a-z]+-bg\)$/);
+    }
+  });
+
+  it('shows the milestone trail and lets the person reach the next step', async () => {
+    await renderAt('/design-system');
+    const panel = within(await screen.findByTestId('components-panel'));
+    // A wide component repeats its default render in the Padrão, Hover and Foco rows.
+    const trail = panel.getAllByRole('list', { name: 'Primeiros passos de exemplo' })[0]!;
+    const statuses = () => [...trail.querySelectorAll<HTMLElement>('li')].map((item) => item.dataset.status);
+    expect(statuses()).toEqual(['done', 'current', 'upcoming']);
+    fireEvent.click(within(trail).getByRole('button', { name: 'Concluir passo' }));
+    expect(statuses()).toEqual(['done', 'done', 'current']);
+  });
   it('puts each component in a table whose columns are its states', async () => {
     await renderAt('/design-system');
     const panel = within(await screen.findByTestId('components-panel'));

@@ -1,0 +1,212 @@
+/* MilestoneTrail: docs/design-system.md, "Marco e recompensa". Done is a filled dot with a check and the line up to it filled; current is a ring
+   with a calm pulse; upcoming is an empty dot. The fill, the check and the line are transitions of the status class, so a step that changes
+   status plays them by itself. */
+.ui-trail {
+  --node: 2rem;
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ui-trail--sm {
+  --node: 1.75rem;
+}
+
+.ui-trail__item {
+  display: grid;
+  grid-template-columns: var(--node) minmax(0, 1fr);
+  column-gap: var(--space-4);
+}
+
+.ui-trail__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ui-trail__node {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--node);
+  height: var(--node);
+  border: 2px solid var(--text-muted);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  transition:
+    background-color 0.3s var(--motion-easing-standard),
+    border-color 0.3s var(--motion-easing-standard);
+}
+
+.ui-trail__check {
+  width: 56%;
+  height: 56%;
+  fill: none;
+  stroke: var(--color-white);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  transition: stroke-dashoffset 0.4s var(--motion-easing-standard) 0.25s;
+}
+
+.ui-trail__item--done .ui-trail__node {
+  border-color: var(--status-ready-fg);
+  background: var(--status-ready-fg);
+}
+
+.ui-trail__item--done .ui-trail__check {
+  stroke-dashoffset: 0;
+}
+
+.ui-trail__item--current .ui-trail__node {
+  border: 3px solid var(--focus-ring);
+  transition-delay: 0.45s;
+  animation: ui-trail-pulse 2.4s ease-out 1s infinite;
+}
+
+.ui-trail__item--current .ui-trail__node::before {
+  content: '';
+  position: absolute;
+  inset: 24%;
+  border-radius: var(--radius-full);
+  background: var(--focus-ring);
+}
+
+@keyframes ui-trail-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--focus-ring) 35%, transparent);
+  }
+
+  70%,
+  100% {
+    box-shadow: 0 0 0 0.625rem color-mix(in srgb, var(--focus-ring) 0%, transparent);
+  }
+}
+
+.ui-trail__line {
+  position: relative;
+  flex: 1;
+  width: 3px;
+  min-height: 1.5rem;
+  margin: var(--space-1) 0;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-slate-300);
+}
+
+.ui-trail__line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--status-ready-fg);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 0.6s var(--motion-easing-standard);
+}
+
+.ui-trail__item:has(+ .ui-trail__item--done) .ui-trail__line::after,
+.ui-trail__item:has(+ .ui-trail__item--current) .ui-trail__line::after {
+  transform: scaleY(1);
+}
+
+.ui-trail__item:last-child .ui-trail__line {
+  display: none;
+}
+
+.ui-trail__body {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0.25rem 0 var(--space-5);
+}
+
+.ui-trail__item:last-child .ui-trail__body {
+  padding-bottom: 0;
+}
+
+.ui-trail__status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ui-trail__title {
+  margin: 0;
+  font: var(--title-md);
+}
+
+.ui-trail__item--done .ui-trail__title {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.ui-trail__when,
+.ui-trail__desc {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.ui-trail__when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ui-trail__item--current .ui-trail__desc {
+  color: var(--text-primary);
+}
+
+.ui-trail__act {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.ui-trail__item--current .ui-trail__body {
+  margin: 0 calc(var(--space-4) * -1) var(--space-4) 0;
+  padding: var(--space-4);
+  border: 1.5px solid var(--color-indigo-200);
+  border-radius: var(--radius-lg);
+  background: var(--bg-hover);
+}
+
+.ui-trail__item--current .ui-trail__title {
+  font: var(--heading-lg);
+}
+
+.ui-trail__item--current .ui-trail__rail {
+  padding-top: var(--space-4);
+}
+
+.ui-trail__item--current:last-child .ui-trail__body {
+  margin-bottom: 0;
+}
+
+@media (max-width: 47.99rem) {
+  .ui-trail__item--current .ui-trail__body {
+    margin-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-trail__node,
+  .ui-trail__check,
+  .ui-trail__line::after {
+    transition: none;
+  }
+
+  .ui-trail__item--current .ui-trail__node {
+    animation: none;
+  }
+}

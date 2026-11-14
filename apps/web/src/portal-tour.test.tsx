@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
@@ -14,6 +12,7 @@ import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { createSessionEndSignal, SessionEndRedirect } from './session-end.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
+import { readGlobalCss } from './styles/read-css';
 
 afterEach(cleanup);
 
@@ -82,6 +81,10 @@ const makeWorld = (scenario: Scenario = {}) => {
     const method = init?.method ?? 'GET';
     calls.push(`${method} ${path}`);
     if (path.endsWith('/auth/session')) return json({ user: person, session: sessionBody.session });
+    if (path.endsWith('/auth/sessions')) {
+      const row = (id: string, current: boolean) => ({ id, current, browser: 'Chrome', os: 'Windows', city: null, lastUsedAt: '2026-11-11T01:30:00.000Z', createdAt: '2026-11-10T01:30:00.000Z' });
+      return json({ sessions: [row('44444444-4444-4444-8444-444444444444', true), row('55555555-5555-4555-8555-555555555555', false)] });
+    }
     if (path.endsWith('/auth/logout') && method === 'POST') {
       return scenario.logoutStatus === 401
         ? json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' } }, 401)
@@ -165,8 +168,8 @@ const targetsOf = (): string[] =>
 const click = (name: string): void => { fireEvent.click(screen.getByRole('button', { name })); };
 
 const openReview = async (): Promise<void> => {
-  fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
-  const menu = await screen.findByRole('menu');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Ajuda' })[0]!);
+  const menu = await screen.findByRole('menu', { name: 'Ajuda' });
   fireEvent.click(within(menu).getByRole('menuitem', { name: 'Rever o tour' }));
 };
 
@@ -335,10 +338,9 @@ describe('portal tour (#144)', () => {
     const world = makeWorld({ seen: [CLIENT_ID] });
     renderPortal(world.impl);
     await screen.findByRole('heading', { name: 'Olá, Maria' });
-    // The home reads the scripts and the contents after the heading is on screen: the count is taken once both requests have left, or one lands after it (issue #767).
+    // The home reads the scripts after the heading is on screen: the count is taken once that request has left, or it lands after it (issue #767).
     await waitFor(() => {
       expect(world.calls).toContain(`GET /clients/${CLIENT_ID}/story-scripts`);
-      expect(world.calls).toContain(`GET /clients/${CLIENT_ID}/contents`);
     });
     const before = world.calls.length;
 
@@ -366,7 +368,7 @@ describe('portal tour (#144)', () => {
     expect(world.calls.slice(before).filter((call) => call.startsWith('POST') || call.startsWith('PUT') || call.startsWith('PATCH'))).toEqual([]);
   });
 
-  it('keeps a review to the client it was asked in, and hands focus back to the account menu when it closes', async () => {
+  it('keeps a review to the client it was asked in, and hands focus back to Ajuda when it closes', async () => {
     const world = makeWorld({ seen: [CLIENT_ID, SECOND_ID], alsoCollaborator: true });
     const { probe } = renderPortal(world.impl);
     await screen.findByRole('heading', { name: 'Olá, Maria' });
@@ -379,7 +381,7 @@ describe('portal tour (#144)', () => {
 
     act(() => { probe.navigate(portalUrl('inicio', CLIENT_ID)); });
     await screen.findByRole('heading', { name: 'Olá, Maria' });
-    const trigger = screen.getByRole('button', { name: /Maria/ });
+    const trigger = screen.getAllByRole('button', { name: 'Ajuda' })[0]!;
     await openReview();
     fireEvent.keyDown(await tour(WELCOME), { key: 'Escape' });
     await waitFor(() => { expect(queryTour()).toBeNull(); });
@@ -392,9 +394,12 @@ describe('portal tour (#144)', () => {
     renderPortal(world.impl);
     await tour(WELCOME);
 
-    fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
-    const menu = await screen.findByRole('menu');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ajuda' })[0]!);
+    const menu = await screen.findByRole('menu', { name: 'Ajuda' });
     expect(within(menu).queryByRole('menuitem', { name: 'Rever o tour' })).toBeNull();
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
+    expect(within(await screen.findByRole('menu', { name: 'Menu da conta' })).queryByRole('menuitem', { name: 'Rever o tour' })).toBeNull();
   });
 
   it('shows the tour in each client the first time, and seeing it in one does not mark the other', async () => {
@@ -428,9 +433,8 @@ describe('portal tour (#144)', () => {
     click('Começar');
     await tour('Início');
 
-    fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
-    const menu = await screen.findByRole('menu');
-    expect(await within(menu).findByRole('menuitem', { name: /Trocar de contexto/ })).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ajuda' })[0]!);
+    const menu = await screen.findByRole('menu', { name: 'Ajuda' });
     expect(within(menu).queryByRole('menuitem', { name: 'Rever o tour' })).toBeNull();
   });
 
@@ -630,7 +634,7 @@ describe('portal tour (#144)', () => {
     const dialog = await tour(WELCOME);
     expect(nav().contains(dialog)).toBe(true);
 
-    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+    const css = readGlobalCss();
     const rule = (selector: string): string => {
       const start = css.indexOf(`
 ${selector} {`);
@@ -722,7 +726,7 @@ ${selector} {`);
     renderPortal(world.impl);
     await tour(WELCOME);
     fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
-    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: /todas as sessões/i }));
+    fireEvent.click(await within(await screen.findByRole('menu')).findByRole('menuitem', { name: /todas as sessões/i }));
     const confirm = await screen.findByRole('dialog', { name: /todas as sessões/i });
     fireEvent.keyDown(within(confirm).getByRole('button', { name: 'Cancelar' }), { key: 'Escape' });
 

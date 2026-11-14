@@ -1,0 +1,81 @@
+.agency-home {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.agency-home__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.agency-home__head-text {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.agency-home__eyebrow,
+.agency-home__subtitle {
+  margin: 0;
+}
+
+.agency-home__eyebrow {
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.agency-home h1 {
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.agency-home__subtitle {
+  color: var(--text-secondary);
+  font: var(--body-lg);
+}
+
+.agency-home__empty {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.agency-home__empty .ui-empty-state__body {
+  justify-items: center;
+  text-align: center;
+}
+
+.agency-home__panels {
+  display: grid;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.agency-home__panels:has(> .agency-milestones) {
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+}
+
+@media (max-width: 80rem) {
+  .agency-home__panels:has(> .agency-milestones) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .agency-home__head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .agency-home h1 {
+    font-size: 1.625rem;
+    line-height: 2rem;
+  }
+}

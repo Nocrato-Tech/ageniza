@@ -9,8 +9,38 @@ import type { ContentTransaction } from './service.js';
  * nothing the function decides: it passes the ids and what the body carries.
  */
 
-export const submitContent = async (transaction: ContentTransaction, contentId: string): Promise<void> => {
-  await raw(transaction, 'select app_private.submit_content(?::uuid)', [contentId]);
+type RoundInput = {
+  /** The deadline as an instant with its offset. */
+  readonly dueAt?: string | undefined;
+  /** The deadline as a day: the end of that day in São Paulo, by the one function of the database that turns a day into an instant. */
+  readonly dueOn?: string | undefined;
+  readonly note?: string | undefined;
+};
+
+// The contract holds the two apart; the database keeps the one instant and checks it (from now to 90 days ahead) with the note, and writes the round.
+const DEADLINE_SQL = 'coalesce(?::timestamptz, app_private.sao_paulo_end_of_day(?::date))';
+
+export const submitContent = async (transaction: ContentTransaction, contentId: string, round: RoundInput = {}): Promise<void> => {
+  await raw(
+    transaction,
+    `select app_private.submit_content(?::uuid, ${DEADLINE_SQL}, ?::text)`,
+    [contentId, round.dueAt ?? null, round.dueOn ?? null, round.note ?? null]
+  );
+};
+
+/** All or nothing, of one client, under one batch id the function returns; the ids are UUIDs the contract already checked. */
+export const submitContents = async (
+  transaction: ContentTransaction,
+  input: RoundInput & { readonly contentIds: readonly string[] }
+): Promise<string> => {
+  const result = await raw<{ rows: Array<{ batch_id: string }> }>(
+    transaction,
+    `select app_private.submit_contents(?::uuid[], ${DEADLINE_SQL}, ?::text) as batch_id`,
+    [`{${input.contentIds.join(',')}}`, input.dueAt ?? null, input.dueOn ?? null, input.note ?? null]
+  );
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('The batch send returned no batch.');
+  return row.batch_id;
 };
 
 export const approveContentByAgency = async (
@@ -56,15 +86,15 @@ export const saoPauloDay = async (transaction: ContentTransaction, instant?: Dat
   return row.day;
 };
 
-/** Whether a media of the content has not finished uploading: a pending media is no media for a post the client will see. */
-export const hasUnconfirmedMedia = async (transaction: ContentTransaction, contentId: string): Promise<boolean> => {
+/** Whether a media of one of the contents has not finished uploading: a pending media is no media for a post the client will see. */
+export const hasUnconfirmedMedia = async (transaction: ContentTransaction, contentIds: readonly string[]): Promise<boolean> => {
   const result = await raw<{ rows: Array<{ pending: boolean }> }>(transaction, `
     select exists (
       select 1
       from public.content_media item
       join public.media_assets asset on asset.id = item.asset_id
-      where item.content_id = ?::uuid and asset.status <> 'confirmed'
+      where item.content_id = any(?::uuid[]) and asset.status <> 'confirmed'
     ) as pending
-  `, [contentId]);
+  `, [`{${contentIds.join(',')}}`]);
   return result.rows[0]?.pending === true;
 };

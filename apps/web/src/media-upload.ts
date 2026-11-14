@@ -78,6 +78,8 @@ export interface UploadRequest {
   readonly clientId: string;
   readonly folderId: string;
   readonly file: File;
+  /** The agency marks an image as the client's logo; an SVG is accepted only as one. */
+  readonly asLogo?: boolean;
   /** Whole bytes already sent, from 0 to the file size. */
   readonly onProgress: (sentBytes: number) => void;
   readonly signal: AbortSignal;
@@ -87,14 +89,14 @@ export interface UploadRequest {
  * The direct upload of the media API: reserve, send to the storage (one PUT, or the parts of a multipart one) and confirm.
  * Everything that can fail ends as an `UploadError`, so the screen words it and keeps the chosen file.
  */
-export const uploadMedia = async ({ httpClient, agencyId, clientId, folderId, file, onProgress, signal }: UploadRequest): Promise<string> => {
+export const uploadMedia = async ({ httpClient, agencyId, clientId, folderId, file, asLogo = false, onProgress, signal }: UploadRequest): Promise<string> => {
   if (file.size === 0) throw new UploadError('empty');
   if (file.type === '') throw new UploadError('unsupported-type');
   try {
     const reserved = await httpClient.request({
       path: apiPath('/agencies/:agencyId/media/uploads', { agencyId }),
       method: 'POST',
-      body: { fileName: file.name, contentType: file.type, declaredSizeBytes: file.size, clientId, folderId },
+      body: { fileName: file.name, contentType: file.type, declaredSizeBytes: file.size, ...(asLogo ? { asLogo: true } : {}), clientId, folderId },
       response: CreateMediaUploadResponseSchema,
       signal
     });

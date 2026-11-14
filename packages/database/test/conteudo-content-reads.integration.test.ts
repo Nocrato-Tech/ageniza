@@ -175,7 +175,8 @@ describe('the portal reads a content through app_private.portal_contents (issue 
 
     expect(production).toEqual({
       id: content.in_production, title: expect.any(String), platform: 'instagram', format: 'reels', publish_on: expect.any(Date), status: 'in_production',
-      revision: null, publish_at_time: null, caption: null, cover_asset_id: null, published_on: null
+      revision: null, publish_at_time: null, caption: null, cover_asset_id: null, published_on: null,
+      approval_sent_at: null, approval_due_on: null, approval_note: null, approval_due_at: null, approval_sent_by_name: null, approval_sent_by_photo_key: null
     });
     expect(await w.getOwner().knex('contents').where({ id: content.in_production }).first('publish_at_time')).toEqual({ publish_at_time: '18:30:00' });
   });
@@ -193,6 +194,7 @@ describe('the portal reads a content through app_private.portal_contents (issue 
     const [row] = await portal(ids.portalA1, ids.clientA1, { contentId: content.approved });
 
     expect(Object.keys(row ?? {}).sort()).toEqual([
+      'approval_due_at', 'approval_due_on', 'approval_note', 'approval_sent_at', 'approval_sent_by_name', 'approval_sent_by_photo_key',
       'caption', 'cover_asset_id', 'format', 'id', 'platform', 'publish_at_time', 'publish_on', 'published_on', 'revision', 'status', 'title'
     ]);
   });

@@ -54,13 +54,22 @@ export interface VideoProcessingResult {
   readonly durationSeconds: number;
   readonly thumbnailSizeBytes: number;
   readonly previewSizeBytes: number;
+  readonly width?: number | undefined;
+  readonly height?: number | undefined;
 }
+
+/** The column holds 1..100000 and a size is written together or not at all (media_assets_dimensions_shape). */
+const isStorableDimension = (value: number | undefined): value is number =>
+  value !== undefined && Number.isInteger(value) && value >= 1 && value <= 100_000;
 
 export const markVideoProcessingReady = async (
   transaction: Parameters<typeof raw>[0],
   assetId: string,
   result: VideoProcessingResult
 ): Promise<void> => {
+  const dimensions = isStorableDimension(result.width) && isStorableDimension(result.height)
+    ? { width: result.width, height: result.height }
+    : { width: null, height: null };
   await raw(transaction, `
     update public.media_assets
     set
@@ -70,13 +79,15 @@ export const markVideoProcessingReady = async (
       video_duration_seconds = ?,
       video_thumbnail_size_bytes = ?,
       video_preview_size_bytes = ?,
+      width = coalesce(width, ?::integer),
+      height = coalesce(height, ?::integer),
       video_processing_error = null,
       video_processed_at = now(),
       updated_at = now()
     where id = ?::uuid
   `, [
     result.thumbnailObjectKey, result.previewObjectKey, result.durationSeconds,
-    result.thumbnailSizeBytes, result.previewSizeBytes, assetId
+    result.thumbnailSizeBytes, result.previewSizeBytes, dimensions.width, dimensions.height, assetId
   ]);
 };
 

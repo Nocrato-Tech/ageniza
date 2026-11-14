@@ -315,6 +315,7 @@ export function EditClientDialog({ client, onClose }: { client: ClientDetailResp
     closeLabel="Fechar edição do cliente"
     description="Só os campos que você mudar são salvos."
     onClose={onClose}
+    confirmDiscard={{ dirty: hasChanges && !save.isPending }}
     actions={<Button type="submit" form={formId} disabled={!hasChanges} loading={save.isPending}>Salvar</Button>}
   >
     <div className="edit-client__photo">

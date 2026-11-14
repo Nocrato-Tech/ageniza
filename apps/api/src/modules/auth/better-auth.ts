@@ -11,6 +11,8 @@ import { recordAuthAuditEventSafely, type AuthAuditRecorder } from './audit.js';
 import type { EmailService } from './email-service.js';
 import { createGoogleUserInfo } from './google.js';
 import { AUTH_SESSION_MAX_AGE_MS } from './policy.js';
+import { cleanSessionCity, SESSION_CITY_HEADER } from './session-city.js';
+import { SESSION_AFTER_CREDENTIAL_SQL } from './session-validity.js';
 
 export interface CreateAuthDependencies {
   readonly pool: Pool;
@@ -61,7 +63,10 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
-      cookieCache: { enabled: false }
+      cookieCache: { enabled: false },
+      // The approximate city of the sign-in (specs/auth.md section 14), written when the session is created and never changed
+      // (the column cannot be updated by the application role). Informational: nothing decides on it.
+      additionalFields: { city: { type: 'string', required: false, input: false } }
     },
     user: {
       // The day the credential of the account was last replaced (a reset, Google taking an account over): a session
@@ -102,6 +107,13 @@ const buildAuth = (dependencies: CreateAuthDependencies) => {
         }
       },
       session: {
+        create: {
+          // The city comes from the one header the edge sets, cleaned here and nowhere else; a header that is not a city is no city,
+          // and the sign-in never fails for it.
+          before: async (_session, context) => ({
+            data: { city: cleanSessionCity(context?.headers?.get(SESSION_CITY_HEADER)) }
+          })
+        },
         update: {
           // B8: the absolute session lifetime must not depend solely on `session-guard.ts`
           // rejecting an over-age session at request time. This clamps every renewal (including
@@ -190,6 +202,21 @@ export const createAuth = (dependencies: CreateAuthDependencies): AuthInstance =
   const auth = buildAuth(dependencies);
   poolsByAuth.set(auth, dependencies.pool);
   return auth;
+};
+
+/**
+ * Whether the session was made at or before the last time the credential of its account was replaced (issue #719), by the same rule
+ * the list of sessions applies (`session-validity.ts`). A failure is thrown, never answered: the guard must not let a request through
+ * on a rule it could not read.
+ */
+export const sessionPredatesCredentialChange = async (auth: AuthInstance, sessionId: string): Promise<boolean> => {
+  const pool = poolsByAuth.get(auth);
+  if (pool === undefined) throw new Error('The session guard needs an auth instance made by createAuth.');
+  const result = await pool.query<{ outdated: boolean }>(
+    `select not (${SESSION_AFTER_CREDENTIAL_SQL}) as outdated from auth."session" as "session" where "session".id = $1::uuid`,
+    [sessionId]
+  );
+  return result.rows[0]?.outdated === true;
 };
 
 /**

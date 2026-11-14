@@ -135,8 +135,9 @@ describe('what ageniza_app may write on the three tables (issue #249)', () => {
   });
 
   it('opens to ageniza_app only the functions the API calls, and none of them to PUBLIC', async () => {
+    // One row per overload: `approve_content` is there twice, with the note of the client and without it.
     const callable = [
-      'approve_content', 'approve_content_by_agency', 'approve_content_task', 'cancel_content', 'content_open_to_client',
+      'approve_content', 'approve_content', 'approve_content_by_agency', 'approve_content_task', 'cancel_content', 'content_open_to_client',
       'deliver_content_task', 'portal_content_media', 'portal_contents', 'publish_content', 'reschedule_content',
       'return_content_task', 'sao_paulo_date', 'set_content_media', 'submit_content', 'unpublish_content'
     ];
@@ -451,7 +452,7 @@ describe('the trigger holds the transitions of §4 for every writer (issue #249,
     ['in_production', 'adjusting'], ['in_production', 'approved'], ['in_production', 'published'],
     ['awaiting_approval', 'in_production'], ['awaiting_approval', 'published'],
     ['adjusting', 'in_production'], ['adjusting', 'approved'], ['adjusting', 'published'],
-    ['approved', 'in_production'], ['approved', 'adjusting'],
+    ['approved', 'in_production'],
     ['published', 'in_production'], ['published', 'awaiting_approval'], ['published', 'adjusting'], ['published', 'cancelled'],
     ['cancelled', 'awaiting_approval'], ['cancelled', 'adjusting'], ['cancelled', 'approved'], ['cancelled', 'published']
   ];

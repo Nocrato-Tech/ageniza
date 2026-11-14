@@ -64,7 +64,10 @@ Quase tudo já existe. **Uma tabela nova** (`email_change_requests`, issue #80, 
 sem sessão → ativa        # login com credencial válida E ao menos um contexto
 ativa      → ativa        # 7 dias sem uso, renovada a cada 24 h de uso, teto absoluto de 30 dias
 ativa      → encerrada    # logout, logout-all, reset de senha, 7 dias sem uso, ou o teto de 30 dias vencido
+encerrada  → apagada      # a linha some, com IP, agente do navegador e cidade, mais de 30 dias depois de a sessão deixar de valer
 ```
+
+Logout, logout-all, "sair das outras", reset de senha e remoção de acesso já apagam a linha na hora. A **limpeza** é para a que só venceu (ninguém usou o cookie de novo) e para a feita antes da troca da credencial da conta: o worker apaga, uma vez por dia e a cada início, a sessão que deixou de valer **há mais de 30 dias** (contados do `expiresAt` ou da troca da credencial, o que vier primeiro), em lotes. A sessão ativa e a que vence dentro dos 30 dias nunca são tocadas. Decisão: [`2026-11-12-sessoes-vencidas-ha-mais-de-30-dias-sao-apagadas`](../docs/business/decisions/2026-11-12-sessoes-vencidas-ha-mais-de-30-dias-sao-apagadas.md).
 
 Não há refresh token e não há nada em JavaScript: cookie httpOnly, `SameSite=lax`.
 
@@ -538,3 +541,61 @@ A API do Google está pronta (rotas `/auth/providers`, `/auth/google/start` e `/
 ### O que fica igual
 
 As regras invioláveis 1, 2, 3a, 4 a 6, 8a, 9, 10 e 13 a 17. A regra 8a vale também para a redefinição que assume uma conta não confirmada: ela não cria sessão, e a pessoa entra com a senha nova; a resposta igual para e-mail existente e inexistente, agora também no cadastro e no reenvio da confirmação; o convite de uso único, com só o hash no banco; o teto de sessão.
+
+## 14. Sessões ativas (2026-11-11, issue #893)
+
+Decidida pelo dono do produto e pelo maestro, **pendente de validação**: [`2026-11-11-estrutural-sessoes-ativas-na-conta-com-cidade-do-cabecalho-do-cloudflare`](../docs/business/decisions/2026-11-11-estrutural-sessoes-ativas-na-conta-com-cidade-do-cabecalho-do-cloudflare.md). Onde ela contradiz as seções 1 a 12, vale esta seção.
+
+### O que muda
+
+- A pessoa **lista as próprias sessões**, sai de **uma** e sai de **todas as outras**. "Sair de todas" (a sessão atual inclusive) continua, mas **só aparece no menu com 2 ou mais sessões**.
+- A sessão guarda a **cidade aproximada**, vinda do cabeçalho de localização do Cloudflare (`cf-ipcity`) **na criação da sessão**. Sem o cabeçalho, sem cidade. Não há serviço externo de geolocalização.
+- A página **Conta** (`/agencia/:agenciaId/conta` e `/portal/:clienteId/conta`, a mesma tela) mostra avatar, nome, e-mail, "Pedir troca de e-mail" e as sessões.
+
+### Entidade
+
+`auth."session"` ganha **uma coluna**: `city` (texto, anulável, até 80 caracteres, sem caractere de controle). **Sem backfill.** O `ipAddress` e o `userAgent` que já existem **não saem da API**: o navegador e o sistema são lidos do `userAgent` no servidor.
+
+### Rotas
+
+| método | rota | devolve |
+|---|---|---|
+| `GET` | `/auth/sessions` | as sessões ativas **da conta**, da mais recente à mais antiga: `{ id, current, browser, os, city, lastUsedAt, createdAt }` |
+| `DELETE` | `/auth/sessions/:sessionId` | `204`; encerra **uma** sessão da própria conta que **não** é a atual; a atual é `409 USE_LOGOUT`, e a sessão de outra conta (ou inexistente) é `404` |
+| `POST` | `/auth/sessions/revoke-others` | `200 { revoked }`; encerra **todas menos a atual** e devolve em `revoked` quantas sessões abertas encerrou (a atual nunca entra; `0` quando só havia a atual) |
+
+`/auth/logout` e `/auth/logout-all` não mudam. A sessão de que a lista deixou de falar não fica para sempre: a limpeza dos 30 dias está na seção 4. `id` é um **identificador próprio de exibição**, nunca o token da sessão. Corpo e resposta estritos. Sessão **expirada** não é listada.
+
+### Regras invioláveis
+
+1. A lista, o encerramento de uma e o "sair das outras" só alcançam sessões **da própria conta**; um `sessionId` de outra conta responde exatamente como um inexistente (`404`).
+2. "Sair das outras" **nunca encerra a atual**.
+3. A API **nunca devolve** o IP, o token nem o `userAgent` bruto.
+4. A `city` só é gravada **na criação** da sessão, vem de **um** cabeçalho, é limpa (aparada, sem controle, no máximo 80 caracteres) e é informativa: nenhuma decisão de segurança depende dela. Um cabeçalho forjado só altera o que a pessoa vê da própria sessão.
+5. Encerrar uma sessão **invalida a sessão na próxima chamada** (o `401` de sempre), como o logout.
+6. A remoção de colaborador ou de acesso do portal continua encerrando **todas** as sessões (regra 8 das decisões de 2026-10-08); a redefinição de senha também.
+7. A conta de convite só tem a sessão do aceite (decisão de 2026-10-27): a lista a mostra como qualquer outra.
+
+### Telas
+
+- **Conta.** Cabeçalho (avatar, nome, e-mail, "Pedir troca de e-mail") e o bloco "Sessões ativas · N aparelhos": uma linha por sessão (navegador e sistema, cidade aproximada quando houver, "Este aparelho" na atual ou "usando agora" e, nas outras, "último uso <dia>"), com "Sair deste aparelho" nas outras. Abaixo, o cartão de perigo "Sair de todas as outras", **só com 2 ou mais sessões**, com confirmação.
+- **Menu de conta.** Passa a ter o contexto ativo, "Trocar de contexto", **"Minha conta"** (a página acima), "Sair" e, **só com 2 ou mais sessões**, "Sair de todas as sessões". "Pedir troca de e-mail" e "Rever o tour" **saem** do menu (o primeiro vai para a página Conta, o segundo para a Ajuda: [`2026-11-11-ajuda-e-um-menu-com-rever-o-tour-e-o-status-do-sistema`](../docs/business/decisions/2026-11-11-ajuda-e-um-menu-com-rever-o-tour-e-o-status-do-sistema.md)). A contagem vem de `GET /auth/sessions`.
+- **"Último uso".** A sessão se renova no máximo a cada 24 horas de uso: o dia mostrado pode estar até um dia defasado; a tela diz o **dia**, nunca a hora.
+- **Estados.** Carregando em skeleton; erro com "Tentar de novo" (e o menu volta a mostrar só "Sair", que sempre funciona); a lista de uma só sessão mostra só "Este aparelho" e nenhum botão de sair.
+
+### Impacto estrutural
+
+- [x] altera tabela que já existe (`auth."session"`)
+- [ ] muda formato de resposta que outras rotas copiam
+- [ ] mexe em RLS de mais de um módulo
+- [x] muda como a autorização é avaliada (o encerramento por `sessionId` confere o dono da sessão)
+- [ ] exigiria backfill
+
+**Risco Alto** (autenticação, sessão e dado pessoal): pede revisão de segurança independente, com ataque real: o `sessionId` de outra conta, a revogação da atual por "sair das outras", o cabeçalho de cidade com controle e com 10 mil caracteres, e a sessão de um usuário removido.
+
+### Em aberto
+
+| ponto | gatilho | quem decide |
+|---|---|---|
+| Avisar por e-mail um login novo de aparelho desconhecido | o primeiro pedido de alerta de segurança | Pedro Vidal |
+| Nomear um aparelho ("iPhone da Ana") | o primeiro pedido de identificar uma sessão | Pedro Vidal |

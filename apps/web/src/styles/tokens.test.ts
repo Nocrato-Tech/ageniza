@@ -2,9 +2,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { readGlobalCss } from './read-css';
+
 const STYLES = __dirname;
 const FONTS = join(STYLES, '..', '..', 'node_modules', '@fontsource-variable');
-const read = (file: string) => readFileSync(join(STYLES, file), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
+const read = (file: string) => (file === 'globals.css' ? readGlobalCss() : readFileSync(join(STYLES, file), 'utf8')).replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
 
 const declarations = (css: string, selector: string) => {
   const start = css.indexOf(`${selector} {`);
@@ -14,10 +16,8 @@ const declarations = (css: string, selector: string) => {
 };
 
 const primitives = declarations(read('tokens/primitives.css'), ':root');
-const darkOverrides = declarations(read('themes/dark.css'), "[data-theme='dark']");
-const light = new Map([...primitives, ...declarations(read('tokens/semantic.css'), ":root,\n[data-theme='light']")]);
-const dark = new Map([...light, ...darkOverrides]);
-const themes = { light, dark } as const;
+const light = new Map([...primitives, ...declarations(read('tokens/semantic.css'), ':root')]);
+const themes = { light } as const;
 
 type Rgb = [number, number, number];
 
@@ -71,28 +71,38 @@ const fontFaces = (css: string) =>
     };
   });
 
-describe('Pauta tokens', () => {
-  it('keeps hex colours in primitives.css only, with violet/400 and teal/700 as the only new primitives', () => {
-    const offenders = ['globals.css', 'tokens/semantic.css', 'tokens/typography.css', 'tokens/motion.css', 'tokens/fonts.css', 'themes/dark.css', 'themes/light.css'].filter(
+describe('design tokens (one light theme)', () => {
+  it('keeps hex colours in primitives.css only', () => {
+    const offenders = ['globals.css', 'tokens/semantic.css', 'tokens/typography.css', 'tokens/motion.css', 'tokens/fonts.css'].filter(
       (file) => /#[0-9a-f]{3,8}\b/i.test(read(file))
     );
     expect(offenders).toEqual([]);
-    expect(primitives.get('--color-violet-400')).toBe('#a78bfa');
-    expect(primitives.get('--color-teal-700')).toBe('#0f766e');
     expect([...primitives.keys()].filter((name) => name.startsWith('--color-')).sort()).toEqual(
       [
-        'ink-900', 'ink-800', 'ink-700', 'ink-600', 'indigo-600', 'indigo-550', 'indigo-400', 'violet-600', 'violet-400', 'teal-500', 'teal-700',
-        'slate-600', 'slate-500', 'slate-400', 'slate-300', 'mist-200', 'mist-100', 'cloud-50', 'white', 'red-700', 'red-400'
+        'ink-900', 'ink-600', 'slate-700', 'slate-600', 'slate-500', 'slate-400', 'slate-300', 'slate-100',
+        'mist-200', 'mist-100', 'cloud-100', 'white',
+        'indigo-50', 'indigo-100', 'indigo-200', 'indigo-600', 'indigo-700', 'indigo-800',
+        'violet-100', 'violet-600', 'violet-800', 'teal-100', 'teal-500', 'teal-700', 'teal-800',
+        'sky-100', 'sky-600', 'sky-800', 'red-100', 'red-700', 'red-800', 'orange-400', 'pink-500',
+        'stage-indigo', 'stage-indigo-deep', 'stage-violet', 'stage-violet-deep', 'stage-teal', 'stage-teal-deep',
+        'stage-sky', 'stage-sky-deep', 'stage-red', 'stage-red-deep'
       ]
         .map((name) => `--color-${name}`)
         .sort()
     );
   });
 
-  it('sets the radius scale, the easing and the floating shadow', () => {
-    expect(['sm', 'md', 'lg', 'xl'].map((size) => primitives.get(`--radius-${size}`))).toEqual(['0.375rem', '0.625rem', '0.875rem', '1.25rem']);
+  it('has no dark theme left: no stylesheet, no override, no attribute selector', () => {
+    expect(existsSync(join(STYLES, 'themes', 'dark.css'))).toBe(false);
+    for (const file of ['globals.css', 'tokens/semantic.css', 'tokens/primitives.css']) expect(read(file), file).not.toContain('data-theme');
+    expect(readGlobalCss()).not.toContain('themes/');
+  });
+
+  it('sets the radius scale, the easing and the two shadows', () => {
+    expect(['sm', 'md', 'lg', 'xl'].map((size) => primitives.get(`--radius-${size}`))).toEqual(['0.5rem', '0.75rem', '1.25rem', '1.75rem']);
     expect(declarations(read('tokens/motion.css'), ':root').get('--motion-easing-standard')).toBe('cubic-bezier(0.16, 1, 0.3, 1)');
-    expect(light.get('--shadow-floating')).toBe('0 24px 48px -12px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.35)');
+    expect(light.get('--shadow-floating')).toBe('0 24px 48px -16px rgb(17 24 39 / 0.22), 0 2px 8px rgb(17 24 39 / 0.08)');
+    expect(light.get('--shadow-raised')).toBe('0 1px 2px rgb(17 24 39 / 0.04), 0 8px 24px -12px rgb(55 48 163 / 0.18)');
   });
 
   it('sets the type scale on Archivo for titles and Geist for the interface', () => {
@@ -100,6 +110,7 @@ describe('Pauta tokens', () => {
     expect(type.get('--display-lg')).toBe('800 3rem/3.25rem var(--font-brand)');
     expect(type.get('--heading-xl')).toBe('800 2rem/2.375rem var(--font-brand)');
     expect(type.get('--heading-lg')).toBe('700 1.375rem/1.75rem var(--font-brand-md)');
+    expect(type.get('--stat-lg')).toBe('800 2.25rem/2.5rem var(--font-brand)');
     expect(type.get('--title-md')).toBe('600 1rem/1.5rem var(--font-ui)');
     expect(type.get('--body-md')).toBe('400 0.875rem/1.3125rem var(--font-ui)');
     expect(type.get('--caption')).toBe('500 0.75rem/1rem var(--font-ui)');
@@ -130,63 +141,75 @@ describe('Pauta tokens', () => {
     for (const file of files) expect(existsSync(join(FONTS, 'archivo', 'files', file))).toBe(true);
   });
 
-  it('declares every status and format token in both themes with a dark value of its own', () => {
-    const lightNames = themed(light.keys());
-    expect(themed(darkOverrides.keys())).toEqual(lightNames);
-    expect(lightNames.filter((name) => dark.get(name) === light.get(name))).toEqual([]);
-    expect(darkOverrides.has('--calendar-today-bg')).toBe(true);
+  it('gives every status a soft fill and a text, besides the icon colour, and every format its own pair', () => {
+    for (const status of ['production', 'adjust', 'waiting', 'ready', 'scheduled', 'late']) {
+      for (const part of ['fg', 'bg', 'text']) expect(light.has(`--status-${status}-${part}`), `${status} ${part}`).toBe(true);
+    }
+    for (const format of ['carousel', 'reels', 'static']) {
+      for (const part of ['bg', 'fg', 'tag-bg', 'tag-fg']) expect(light.has(`--format-${format}-${part}`), `${format} ${part}`).toBe(true);
+    }
   });
 
-  it('pins the status and format tokens of the canvas in the light theme', () => {
-    expect(themedValues(light)).toEqual({
+  it('pins the status families of the board: violet waits for the client, teal is approved, sky is scheduled, red is late, indigo is the agency', () => {
+    expect(themedValues(light)).toMatchObject({
+      '--status-waiting-bg': 'var(--color-violet-100)',
+      '--status-waiting-text': 'var(--color-violet-800)',
+      '--status-ready-bg': 'var(--color-teal-100)',
+      '--status-ready-text': 'var(--color-teal-800)',
+      '--status-scheduled-bg': 'var(--color-sky-100)',
+      '--status-scheduled-text': 'var(--color-sky-800)',
+      '--status-late-bg': 'var(--color-red-700)',
+      '--status-late-text': 'var(--color-white)',
+      '--status-adjust-bg': 'var(--color-indigo-100)',
+      '--status-adjust-text': 'var(--color-indigo-800)',
+      '--status-production-bg': 'var(--color-slate-100)',
+      '--status-production-text': 'var(--color-slate-700)',
       '--status-ready-fg': 'var(--color-teal-700)',
       '--status-waiting-fg': 'var(--color-violet-600)',
       '--status-adjust-fg': 'var(--color-indigo-600)',
+      '--status-scheduled-fg': 'var(--color-sky-600)',
       '--status-late-fg': 'var(--color-red-700)',
       '--status-published-fg': 'var(--color-slate-600)',
       '--status-production-fg': 'var(--color-slate-500)',
-      '--format-carousel-bg': 'color-mix(in srgb, var(--color-teal-500) 10%, var(--color-white))',
-      '--format-carousel-fg': 'var(--color-teal-700)',
+      '--format-carousel-bg': 'var(--color-teal-100)',
+      '--format-carousel-fg': 'var(--color-teal-800)',
       '--format-carousel-tag-bg': 'var(--color-teal-700)',
-      '--format-carousel-tag-fg': 'var(--color-white)',
-      '--format-reels-bg': 'color-mix(in srgb, var(--color-violet-600) 7%, var(--color-white))',
-      '--format-reels-fg': 'var(--color-violet-600)',
+      '--format-reels-bg': 'var(--color-violet-100)',
+      '--format-reels-fg': 'var(--color-violet-800)',
       '--format-reels-tag-bg': 'var(--color-violet-600)',
-      '--format-reels-tag-fg': 'var(--color-white)',
-      '--format-static-bg': 'var(--color-mist-100)',
-      '--format-static-fg': 'var(--color-ink-900)',
-      '--format-static-tag-bg': 'var(--color-slate-600)',
-      '--format-static-tag-fg': 'var(--color-white)'
+      '--format-static-bg': 'var(--color-slate-100)',
+      '--format-static-fg': 'var(--color-slate-700)',
+      '--format-static-tag-bg': 'var(--color-slate-600)'
     });
   });
 
-  it('pins the status and format tokens of the canvas in the dark theme', () => {
-    expect(themedValues(dark)).toEqual({
-      '--status-ready-fg': 'var(--color-teal-500)',
-      '--status-waiting-fg': 'var(--color-violet-400)',
-      '--status-adjust-fg': 'var(--color-indigo-400)',
-      '--status-late-fg': 'var(--color-red-400)',
-      '--status-published-fg': 'var(--color-slate-400)',
-      '--status-production-fg': 'var(--color-slate-400)',
-      '--format-carousel-bg': 'color-mix(in srgb, var(--color-teal-500) 12%, var(--color-ink-800))',
-      '--format-carousel-fg': 'color-mix(in srgb, var(--color-teal-500) 70%, var(--color-cloud-50))',
-      '--format-carousel-tag-bg': 'var(--color-teal-500)',
-      '--format-carousel-tag-fg': 'var(--color-ink-900)',
-      '--format-reels-bg': 'color-mix(in srgb, var(--color-violet-400) 12%, var(--color-ink-800))',
-      '--format-reels-fg': 'color-mix(in srgb, var(--color-violet-400) 70%, var(--color-cloud-50))',
-      '--format-reels-tag-bg': 'var(--color-violet-400)',
-      '--format-reels-tag-fg': 'var(--color-ink-900)',
-      '--format-static-bg': 'color-mix(in srgb, var(--color-slate-400) 8%, var(--color-ink-800))',
-      '--format-static-fg': 'var(--color-slate-300)',
-      '--format-static-tag-bg': 'var(--color-slate-300)',
-      '--format-static-tag-fg': 'var(--color-ink-900)'
-    });
+  it('maps the board palette on the semantic tokens that already existed, with no parallel names', () => {
+    expect(light.get('--bg-canvas')).toBe('var(--color-cloud-100)');
+    expect(light.get('--bg-surface')).toBe('var(--color-white)');
+    expect(light.get('--bg-hover')).toBe('var(--color-indigo-50)');
+    expect(light.get('--bg-tint')).toBe('var(--color-indigo-100)');
+    expect(light.get('--action-primary-bg')).toBe('var(--color-indigo-600)');
+    expect(light.get('--action-primary-hover')).toBe('var(--color-indigo-700)');
+    expect(light.get('--action-secondary-bg')).toBe('var(--color-indigo-100)');
+    expect(light.get('--action-secondary-fg')).toBe('var(--color-indigo-800)');
+    expect(light.get('--action-disabled-bg')).toBe('var(--color-mist-100)');
+    expect(light.get('--focus-ring')).toBe('var(--color-indigo-600)');
+  });
+
+  it('declares the stage of the 3D icon: a tone and a deeper tone per family, four sizes, a tilt and a float', () => {
+    for (const family of ['indigo', 'violet', 'teal', 'sky', 'red', 'slate']) {
+      expect(light.has(`--stage-${family}-tone`), family).toBe(true);
+      expect(light.has(`--stage-${family}-deep`), family).toBe(true);
+    }
+    expect(['sm', 'md', 'lg', 'xl'].map((size) => light.get(`--stage-size-${size}`))).toEqual(['2.75rem', '4.5rem', '6.25rem', '8.5rem']);
+    expect(light.get('--stage-tilt')).toBe('-6deg');
+    expect(light.get('--stage-float-duration')).toBe('4.2s');
   });
 
   const STATUS = ['ready', 'waiting', 'adjust', 'late', 'published', 'production'];
   const FORMATS = ['carousel', 'reels', 'static'];
 
-  for (const theme of ['light', 'dark'] as const) {
+  for (const theme of ['light'] as const) {
     describe(`contrast in ${theme}`, () => {
       for (const status of STATUS) {
         for (const surface of ['bg-canvas', 'bg-surface']) {
@@ -214,29 +237,58 @@ describe('Pauta tokens', () => {
     });
   }
 
-  it('keeps the new primitives at the contrast the canvas states', () => {
-    expect(contrast('dark', 'color-violet-400', 'bg-surface')).toBeGreaterThanOrEqual(5.3);
+  it('keeps the teal of the ready state at the contrast the canvas states', () => {
     expect(contrast('light', 'color-teal-700', 'bg-surface')).toBeGreaterThanOrEqual(5.4);
+  });
+
+  it('is AA for every soft tag and every summary block, text on its own fill', () => {
+    for (const status of ['production', 'adjust', 'waiting', 'ready', 'scheduled', 'late']) {
+      expect(contrast('light', `status-${status}-text`, `status-${status}-bg`), status).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const family of ['indigo', 'violet', 'teal', 'sky', 'red', 'slate']) {
+      expect(contrast('light', `block-${family}-fg`, `block-${family}-bg`), family).toBeGreaterThanOrEqual(4.5);
+      expect(contrast('light', 'text-primary', `block-${family}-bg`), `primary on ${family}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('is AA for the actions on their fill and on their hover', () => {
+    expect(contrast('light', 'action-primary-fg', 'action-primary-bg')).toBeGreaterThanOrEqual(4.5);
+    expect(contrast('light', 'action-primary-fg', 'action-primary-hover')).toBeGreaterThanOrEqual(4.5);
+    expect(contrast('light', 'action-secondary-fg', 'action-secondary-bg')).toBeGreaterThanOrEqual(4.5);
+    expect(contrast('light', 'action-secondary-fg', 'action-secondary-hover')).toBeGreaterThanOrEqual(4.5);
+    expect(contrast('light', 'action-danger-fg', 'action-danger-bg')).toBeGreaterThanOrEqual(4.5);
+    expect(contrast('light', 'action-disabled-fg', 'action-disabled-bg')).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('keeps text, link and the control edge readable on the surfaces they sit on: canvas, surface and hover', () => {
+    for (const surface of ['bg-canvas', 'bg-surface', 'bg-hover']) {
+      expect(contrast('light', 'text-secondary', surface), `secondary on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast('light', 'text-muted', surface), `muted on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast('light', 'text-link', surface), `link on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast('light', 'text-danger', surface), `danger on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast('light', 'focus-ring', surface), `ring on ${surface}`).toBeGreaterThanOrEqual(3);
+      expect(contrast('light', 'border-control', surface), `edge on ${surface}`).toBeGreaterThanOrEqual(3);
+    }
+    expect(contrast('light', 'text-secondary', 'bg-tint')).toBeGreaterThanOrEqual(4.5);
   });
 
   it('derives the badge fade and the today cell from existing tokens', () => {
     expect(light.get('--client-badge-fade-start')).toBe('color-mix(in srgb, var(--color-indigo-600) 60%, var(--color-ink-900))');
     expect(light.get('--client-badge-fade-end')).toBe('color-mix(in srgb, var(--color-violet-600) 60%, var(--color-ink-900))');
     expect(light.get('--calendar-today-bg')).toBe('color-mix(in srgb, var(--action-primary-bg) 14%, var(--bg-surface))');
-    expect(darkOverrides.get('--calendar-today-bg')).toBe(light.get('--calendar-today-bg'));
   });
 
   it('keeps white text on both ends of the client badge fade at 9.5:1 or more', () => {
     for (const end of ['start', 'end']) {
-      expect(contrast('dark', 'color-white', `client-badge-fade-${end}`)).toBeGreaterThanOrEqual(9.5);
+      expect(contrast('light', 'color-white', `client-badge-fade-${end}`)).toBeGreaterThanOrEqual(9.5);
     }
   });
 
   it('keeps the handle on the client badge fade and the content numbers on the canvas readable', () => {
     for (const end of ['start', 'end']) {
-      expect(contrast('dark', 'color-slate-300', `client-badge-fade-${end}`)).toBeGreaterThanOrEqual(6.3);
+      expect(contrast('light', 'color-slate-300', `client-badge-fade-${end}`)).toBeGreaterThanOrEqual(6.3);
     }
-    for (const theme of ['light', 'dark'] as const) {
+    for (const theme of ['light'] as const) {
       expect(contrast(theme, 'text-muted', 'bg-canvas')).toBeGreaterThanOrEqual(4.5);
       expect(contrast(theme, 'text-danger', 'bg-canvas')).toBeGreaterThanOrEqual(4.5);
     }
@@ -271,20 +323,17 @@ describe('contrast table of docs/design-system.md 20.1', () => {
     .split('\n')
     .filter((line) => line.startsWith('|'))
     .map((line) => line.split('|').slice(1, -1).map((cell) => cell.trim()))
-    .flatMap(([pair, lightCell, darkCell]) => {
+    .flatMap(([pair, cell]) => {
       const match = foreground(pair!);
       if (!match) return [];
       const backgrounds = backgroundsOf(match.backgrounds);
-      return (['light', 'dark'] as const).map((theme) => {
-        const cell = (theme === 'light' ? lightCell : darkCell)!;
-        const stated = [...cell.matchAll(/(\d+\.\d+):1/g)].map((value) => Number(value[1]));
-        return { pair: pair!, theme, fg: match.fg, backgrounds, stated };
-      });
+      const stated = [...cell!.matchAll(/(\d+\.\d+):1/g)].map((value) => Number(value[1]));
+      return [{ pair: pair!, theme: 'light' as const, fg: match.fg, backgrounds, stated }];
     })
     .filter((row) => row.stated.length > 0);
 
   it('reads the pairs of every table', () => {
-    expect(rows).toHaveLength(68);
+    expect(rows).toHaveLength(46);
   });
 
   it.each(rows)('states for $pair in $theme the ratio the stylesheets give', ({ theme, fg, backgrounds, stated }) => {

@@ -11,8 +11,10 @@ import { ApiClientProvider, HttpClient } from './http.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 import { contentsError, createPortalContentsApi } from './portal-contents-fixture.js';
 import { portalClientBody } from './portal-fixture.js';
+import { gateReads, retryWhileHeld, serverFailure } from './portal-retry-fixture.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
+import { readGlobalCss } from './styles/read-css';
 
 afterEach(cleanup);
 
@@ -178,7 +180,7 @@ describe('the portal Conteúdos (#269)', () => {
       const world = makeWorld();
       const { probe } = renderPortal(world, [`/portal/${CLIENT_ID}/inicio`]);
       await screen.findByRole('heading', { name: 'Olá, Maria' });
-      expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca', 'Relatórios']);
+      expect(within(nav()).getAllByRole('link').map((link) => link.textContent)).toEqual(['Início', 'Conteúdos', 'Marca', 'Pedidos da agênciaPedidos']);
       expect(within(nav()).queryByRole('link', { name: 'Calendário' })).toBeNull();
 
       fireEvent.click(within(nav()).getByRole('link', { name: 'Conteúdos' }));
@@ -387,7 +389,7 @@ describe('the portal Conteúdos (#269)', () => {
 
       expect(cardOf('Post em produção').textContent).toBe('Post em produçãoImagemEm produção');
       expect(shapeOf(cardOf('Post em produção'))).toBe('image');
-      expect(container.querySelector('img')).toBeNull();
+      expect(container.querySelector('img:not(.ui-logo, .ui-stage__icon)')).toBeNull();
       expect(container.textContent).not.toMatch(/LEGENDA INTERNA|10:00/);
       expect(within(days(container)).getByText('22 qui')).toBeTruthy();
       expect(mediaCalls(world)).toEqual([]);
@@ -493,7 +495,7 @@ describe('the portal Conteúdos (#269)', () => {
       expect(cardOf('Sem capa').querySelector('img')).toBeNull();
       expect(shapeOf(cardOf('Sem capa'))).toBe('clapperboard');
       expect(cardOf('Com capa').querySelector('.format-shape')).toBeNull();
-      expect(container.querySelectorAll('img')).toHaveLength(1);
+      expect(container.querySelectorAll('img:not(.ui-logo, .ui-stage__icon)')).toHaveLength(1);
     });
 
     it('draws the first media of a post that has no chosen cover, in the month and in what waits, as the thumbnail (issue #606)', async () => {
@@ -541,7 +543,7 @@ describe('the portal Conteúdos (#269)', () => {
       await screen.findByText('Ainda processando');
       await waitFor(() => expect(mediaCalls(world)).toHaveLength(3));
 
-      expect(container.querySelectorAll('img')).toHaveLength(0);
+      expect(container.querySelectorAll('img:not(.ui-logo, .ui-stage__icon)')).toHaveLength(0);
       expect(shapeOf(cardOf('Recusada'))).toBe('gallery-vertical');
       expect(shapeOf(cardOf('Ainda processando'))).toBe('clapperboard');
       expect(shapeOf(cardOf('Endereço estranho'))).toBe('image');
@@ -618,14 +620,31 @@ describe('the portal Conteúdos (#269)', () => {
       expect(within(block).queryByText('Esperando 7')).toBeNull();
     });
 
-    it('is not there when nothing awaits approval, and says nothing about it', async () => {
+    it('says it as good news, with the icon and the words, when the read answered and nothing awaits approval', async () => {
       const world = makeWorld();
       world.api.seed({ title: 'Aprovado', publishOn: '2026-10-12', status: 'approved' });
       renderPortal(world);
       await ready();
       await screen.findByText('Aprovado');
-      expect(screen.queryByRole('region', { name: /O que precisa de você/ })).toBeNull();
-      expect(screen.queryByText(/precisa de você/)).toBeNull();
+      const block = await screen.findByRole('region', { name: 'O que precisa de você' });
+      const good = block.querySelector('.ui-empty-state--good-news') as HTMLElement;
+      expect(within(good).getByRole('heading', { level: 3, name: 'Nada para aprovar' })).toBeTruthy();
+      expect(within(good).getByText('Quando a agência enviar um post para aprovação, ele aparece aqui.')).toBeTruthy();
+      expect(good.querySelector('.ui-empty-state__icon')).toBeTruthy();
+      expect(within(block).queryByRole('heading', { name: /\(\d+\)/ })).toBeNull();
+      expect(within(block).queryByRole('alert')).toBeNull();
+      // The 3D stage of the good news is the Início's: here the line stays small, so an empty month keeps the one stage that is its subject.
+      expect(block.querySelector('.ui-stage')).toBeNull();
+    });
+
+    it('never says nothing awaits while something does', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'Para aprovar', publishOn: '2026-10-14', status: 'awaiting_approval' });
+      renderPortal(world);
+      await ready();
+      await screen.findByRole('heading', { name: 'O que precisa de você (1)' });
+      expect(screen.queryByText('Nada para aprovar')).toBeNull();
+      expect(document.querySelector('.ui-empty-state--good-news')).toBeNull();
     });
 
     it('says it could not load, keeps the month, and tries again', async () => {
@@ -636,6 +655,9 @@ describe('the portal Conteúdos (#269)', () => {
       await ready();
       expect(await screen.findByText('Não foi possível carregar o que precisa de você.', undefined, { timeout: 5000 })).toBeTruthy();
       expect(await within(days(container)).findByText('Para aprovar')).toBeTruthy();
+      // A read that did not answer is a failure, never "nothing awaits".
+      expect(screen.queryByText('Nada para aprovar')).toBeNull();
+      expect(document.querySelector('.ui-empty-state--good-news')).toBeNull();
 
       world.api.state.failAwaiting = null;
       fireEvent.click(within(screen.getByRole('region', { name: 'O que precisa de você' })).getByRole('button', { name: 'Tentar de novo' }));
@@ -949,15 +971,16 @@ describe('the portal Conteúdos (#269)', () => {
       expect(screen.getByRole('heading', { level: 2, name: 'Outubro 2026' }).classList.contains('portal-contents__period-title')).toBe(true);
       const block = await screen.findByRole('region', { name: 'O que precisa de você' }, { timeout: 5000 });
       expect(within(block).getByRole('heading', { level: 2 }).classList.contains('portal-section__title')).toBe(true);
-      expect(within(block).getByRole('alert').classList.contains('portal-error')).toBe(true);
+      expect(within(block).getByRole('alert').classList.contains('ui-empty-state--failure')).toBe(true);
     });
 
-    it('says what is missing in an empty month, with the owl, and offers no way out in the month of today', async () => {
+    it('says what is missing in an empty month, with the 3D icon on its stage, and offers no way out in the month of today', async () => {
       renderPortal(makeWorld());
       await ready();
-      expect(await screen.findByRole('heading', { name: 'Nenhum conteúdo planejado para este mês' })).toBeTruthy();
+      const heading = await screen.findByRole('heading', { name: 'Nenhum conteúdo planejado para este mês' });
       expect(screen.getByText('Quando a agência planejar, os posts aparecem aqui.')).toBeTruthy();
-      expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(1);
+      expect(heading.closest('.portal-stage-empty')?.querySelectorAll('.ui-stage')).toHaveLength(1);
+      expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(0);
       expect(screen.queryByRole('button', { name: 'Ir para este mês' })).toBeNull();
     });
 
@@ -966,8 +989,8 @@ describe('the portal Conteúdos (#269)', () => {
       world.api.seed({ title: 'De outubro', publishOn: '2026-10-12' });
       const { probe } = renderPortal(world, [contentsUrl('?data=2026-12-10')]);
       await ready();
-      expect(await screen.findByRole('heading', { name: 'Nenhum conteúdo planejado para este mês' })).toBeTruthy();
-      expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(1);
+      const heading = await screen.findByRole('heading', { name: 'Nenhum conteúdo planejado para este mês' });
+      expect(heading.closest('.portal-stage-empty')?.querySelectorAll('.ui-stage')).toHaveLength(1);
 
       fireEvent.click(screen.getByRole('button', { name: 'Ir para este mês' }));
       expect(await screen.findByText('De outubro')).toBeTruthy();
@@ -975,12 +998,13 @@ describe('the portal Conteúdos (#269)', () => {
       expect(screen.getByRole('heading', { name: 'Outubro 2026' })).toBeTruthy();
     });
 
-    it('offers to clear the filter when no content of the month has that status, without the owl', async () => {
+    it('offers to clear the filter when no content of the month has that status, without the stage', async () => {
       const world = makeWorld();
       world.api.seed({ title: 'Aprovado de outubro', publishOn: '2026-10-12', status: 'approved' });
       const { probe } = renderPortal(world, [contentsUrl('?situacao=adjusting')]);
       await ready();
-      expect(await screen.findByRole('heading', { name: 'Nenhum conteúdo nesta situação neste mês' })).toBeTruthy();
+      const heading = await screen.findByRole('heading', { name: 'Nenhum conteúdo nesta situação neste mês' });
+      expect(heading.closest('.portal-stage-empty')).toBeNull();
       expect(document.querySelectorAll('.ui-empty-state--mascot')).toHaveLength(0);
 
       fireEvent.click(screen.getByRole('button', { name: 'Limpar o filtro' }));
@@ -1009,14 +1033,47 @@ describe('the portal Conteúdos (#269)', () => {
       const { container } = renderPortal(world);
       await ready();
       expect(await screen.findByText('Não foi possível carregar os conteúdos. Tente de novo.', undefined, { timeout: 5000 })).toBeTruthy();
-      const retry = within(container.querySelector('.portal-error[role="alert"]') as HTMLElement).getByRole('button', { name: 'Tentar de novo' });
+      const failure = container.querySelector('.ui-empty-state--failure[role="alert"]') as HTMLElement;
+      const retry = within(failure).getByRole('button', { name: 'Tentar de novo' });
       expect(retry.classList.contains('ui-button--secondary')).toBe(true);
+      // The month that did not load is not an empty month, and says nothing is fine.
+      expect(screen.queryByText('Nenhum conteúdo planejado para este mês')).toBeNull();
+      expect(container.querySelector('.ui-empty-state--mascot')).toBeNull();
       expect(container.querySelectorAll('.ui-button--primary')).toHaveLength(0);
     });
   });
 
+  describe('Tentar de novo keeps its button while the read repeats', () => {
+    it('keeps it in "O que precisa de você" and then shows what waits', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'Para aprovar', publishOn: '2026-10-14', status: 'awaiting_approval' });
+      const { impl, gate } = gateReads(world.impl, (url) => url.pathname.endsWith('/contents/awaiting-approval'));
+      gate.fail = serverFailure;
+      renderPortal({ ...world, impl });
+      await ready();
+      const block = await screen.findByRole('region', { name: 'O que precisa de você' }, { timeout: 5000 });
+      await retryWhileHeld(within(block).getByRole('alert'), gate);
+      expect(await screen.findByRole('heading', { name: 'O que precisa de você (1)' })).toBeTruthy();
+      expect(within(awaitingBlock()).queryByRole('alert')).toBeNull();
+    });
+
+    it('keeps it in the month, in place of a skeleton, and then shows the month', async () => {
+      const world = makeWorld();
+      world.api.seed({ title: 'De outubro', publishOn: '2026-10-12', status: 'approved' });
+      const { impl, gate } = gateReads(world.impl, (url) => url.pathname === `/clients/${CLIENT_ID}/contents`);
+      gate.fail = serverFailure;
+      const { container } = renderPortal({ ...world, impl });
+      await ready();
+      const failure = await screen.findByText('Não foi possível carregar os conteúdos. Tente de novo.', undefined, { timeout: 5000 });
+      await retryWhileHeld(failure.closest('[role="alert"]') as HTMLElement, gate);
+      expect(container.querySelector('.portal-contents__skeleton')).toBeNull();
+      expect(await screen.findByText('De outubro')).toBeTruthy();
+      expect(screen.queryByText('Não foi possível carregar os conteúdos. Tente de novo.')).toBeNull();
+    });
+  });
+
   describe('on a phone', () => {
-    const css = (): string => readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+    const css = (): string => readGlobalCss().replace(/\r\n/g, '\n');
     /** The block that opens with `selector`, not one that merely ends with it (a line of a longer selector list). */
     const rule = (selector: string): string => {
       const text = css();
@@ -1027,19 +1084,24 @@ describe('the portal Conteúdos (#269)', () => {
       throw new Error(`${selector} was not found in globals.css.`);
     };
 
-    it('keeps the bottom bar the last piece of the shell with a short month, and the content taking the rest', async () => {
+    it('keeps the bar in the navigation piece of the shell with a short month, and the content taking the rest', async () => {
       const world = makeWorld();
       const { container } = renderPortal(world);
       await ready();
       await screen.findByText('Nenhum conteúdo planejado para este mês');
       const shell = container.querySelector('.portal-shell') as HTMLElement;
-      expect(Array.from(shell.children).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'header', 'main', 'nav']);
-      expect(shell.lastElementChild).toBe(nav());
+      expect(Array.from(shell.children).filter((child) => !child.classList.contains('shell-topbar')).map((child) => child.tagName.toLowerCase())).toEqual(['a', 'div', 'main']);
+      expect((shell.querySelector('.portal-sidebar') as HTMLElement).lastElementChild).toBe(nav());
       // jsdom has no layout: the rules that put the bar at the bottom of a 360x780 phone with a short page are read from the stylesheet.
       expect(rule('.portal-shell')).toMatch(/min-height:\s*100dvh;/);
       expect(rule('.portal-shell > .portal-content')).toMatch(/flex:\s*1;/);
       expect(rule('.portal-nav')).toMatch(/position:\s*sticky;/);
       expect(rule('.portal-nav')).toMatch(/bottom:\s*0;/);
+      // The bar is the last piece on a phone only because of these: the sidebar's own box does not take part in the layout, and the bar is ordered after the content.
+      expect(rule('.portal-sidebar')).toMatch(/display:\s*contents;/);
+      expect(rule('.portal-nav')).toMatch(/order:\s*2;/);
+      expect(rule('.portal-shell > .portal-content')).toMatch(/order:\s*1;/);
+      expect(rule('.portal-header')).toMatch(/order:\s*0;/);
     });
 
     it('lets every box shrink and every text wrap, with no fixed width that could push a 390 px screen sideways', () => {
@@ -1093,14 +1155,14 @@ describe('the portal Conteúdos (#269)', () => {
       expect(rule('.portal-awaiting__cover--placeholder,\n.portal-card__cover--placeholder')).toContain('--format-shape-size: 1.5rem;');
     });
 
-    it('keeps the screen to the three sizes of text of the Pauta: the title of the page, the line and the caption', () => {
+    it('keeps the screen to four sizes of text: the title of the page, the title of a block, the line and the caption', () => {
       const text = css();
       const start = text.indexOf('/* --- Portal: Conteúdos (#269, #688)');
       const end = text.indexOf('/* --- Portal: post em tela cheia');
       expect(start).toBeGreaterThan(-1);
       expect(end).toBeGreaterThan(start);
       const fonts = new Set(Array.from(text.slice(start, end).matchAll(/\n\s*font: var\(--([a-z-]+)\)/g), (match) => match[1]));
-      expect([...fonts].sort()).toEqual(['body-md', 'caption']);
+      expect([...fonts].sort()).toEqual(['body-md', 'caption', 'display-lg', 'heading-lg']);
       expect(rule('.portal-contents .portal-empty .ui-empty-state__title')).toContain('font: var(--body-md);');
     });
 
@@ -1123,5 +1185,135 @@ describe('the portal Conteúdos (#269)', () => {
       expect(rule('.portal-contents__skeleton .ui-skeleton')).toMatch(/border-radius:\s*var\(--radius-md\);/);
     });
 
+  });
+});
+
+describe('the round the agency opened, on the Conteúdos of the portal (telas-melhorias S8)', () => {
+  const ROUND = { dueOn: '2026-10-14', note: 'Confira a legenda do Reels.\nObrigada!' };
+  const dueOf = (scope: HTMLElement): string | undefined => scope.querySelector('.approval-round__due')?.textContent ?? undefined;
+
+  it('says until when the content waits for the person, on the São Paulo day (01:30Z is still the 11th), and the note signed by the agency', async () => {
+    const world = makeWorld();
+    world.api.seed({ title: 'Carrossel da semana', format: 'carousel', publishOn: '2026-10-15', status: 'awaiting_approval', approval: ROUND });
+    renderPortal(world);
+    await ready();
+    const block = await waitFor(() => awaitingBlock());
+    expect(await within(block).findByText('qua, 14/10')).toBeTruthy();
+    expect(dueOf(block)).toBe('Aprovar até qua, 14/10 · vence em 3 dias');
+    expect(within(block).getByText('Recado de Agência Um')).toBeTruthy();
+    expect(block.querySelector('.approval-round__text')?.textContent).toBe('Confira a legenda do Reels.\nObrigada!');
+  });
+
+  it.each([
+    ['2026-10-11', 'vence hoje'],
+    ['2026-10-12', 'vence amanhã'],
+    ['2026-10-10', 'venceu há 1 dia'],
+    ['2026-10-08', 'venceu há 3 dias']
+  ])('words the deadline %s as "%s", counted from the day of São Paulo and not from UTC', async (dueOn, wording) => {
+    const world = makeWorld();
+    world.api.seed({ title: 'Post', publishOn: '2026-10-15', status: 'awaiting_approval', approval: { dueOn, note: null } });
+    renderPortal(world);
+    await ready();
+    const block = await waitFor(() => awaitingBlock());
+    await waitFor(() => expect(dueOf(block)).toContain(wording));
+  });
+
+  it('shows no deadline for a content with no round, and only the note when there is no deadline', async () => {
+    const world = makeWorld();
+    world.api.seed({ title: 'Antigo', publishOn: '2026-10-15', status: 'awaiting_approval', approval: null });
+    world.api.seed({ title: 'Só o recado', publishOn: '2026-10-16', status: 'awaiting_approval', approval: { dueOn: null, note: 'Sem pressa.' } });
+    renderPortal(world);
+    await ready();
+    const block = await waitFor(() => awaitingBlock());
+    expect(await within(block).findByText('Sem pressa.')).toBeTruthy();
+    expect(within(block).queryByText(/Aprovar até/)).toBeNull();
+    expect(block.querySelectorAll('.approval-round')).toHaveLength(1);
+  });
+
+  it('puts the deadline, not the note, on the card of the month, and only for what waits', async () => {
+    const world = makeWorld();
+    world.api.seed({ title: 'Esperando', publishOn: '2026-10-15', status: 'awaiting_approval', approval: ROUND });
+    world.api.seed({ title: 'Ajustando', publishOn: '2026-10-16', status: 'adjusting', approval: ROUND });
+    renderPortal(world);
+    await ready();
+    await screen.findByText('Ajustando');
+    expect(dueOf(cardOf('Esperando'))).toBe('Aprovar até qua, 14/10 · vence em 3 dias');
+    expect(within(cardOf('Esperando')).queryByText(/Recado de/)).toBeNull();
+    expect(cardOf('Ajustando').querySelector('.approval-round')).toBeNull();
+  });
+
+  it('draws the note as text, never as markup', async () => {
+    const world = makeWorld();
+    const note = '<img src=x onerror="window.hacked = 1"><b>negrito</b>';
+    world.api.seed({ title: 'Post', publishOn: '2026-10-15', status: 'awaiting_approval', approval: { dueOn: null, note } });
+    renderPortal(world);
+    await ready();
+    const block = await waitFor(() => awaitingBlock());
+    const text = await waitFor(() => block.querySelector('.approval-round__text') as HTMLElement);
+    expect(text.textContent).toBe(note);
+    expect(text.querySelector('b, img')).toBeNull();
+  });
+});
+
+describe('the search of the portal shell, on Conteúdos', () => {
+  const field = (): HTMLInputElement => screen.getByRole('searchbox', { name: 'Buscar um post' }) as HTMLInputElement;
+  const seedPosts = (world: World): void => {
+    world.api.seed({ title: 'Promoção de Pães', format: 'image', publishOn: '2026-10-12', status: 'approved' });
+    world.api.seed({ title: 'Cardápio de Natal', format: 'carousel', publishOn: '2026-10-15', status: 'in_production' });
+    world.api.seed({ title: 'Reels do forno', format: 'reels', publishOn: '2026-10-20', status: 'approved' });
+  };
+
+  it('filters the loaded month by title, ignoring case and accents, and asks the API for nothing', async () => {
+    const world = makeWorld();
+    seedPosts(world);
+    const { container, probe } = renderPortal(world);
+    await ready();
+    await screen.findByText('Cardápio de Natal');
+    const before = [...world.calls];
+
+    fireEvent.change(field(), { target: { value: 'PAES' } });
+    await waitFor(() => expect(titlesOf(container)).toEqual(['Promoção de Pães']));
+    expect(probe.search).toBe('?busca=PAES');
+
+    fireEvent.change(field(), { target: { value: 'cardapio' } });
+    await waitFor(() => expect(titlesOf(container)).toEqual(['Cardápio de Natal']));
+    expect(world.calls).toEqual(before);
+  });
+
+  it('opens a list already filtered by ?busca=, with the term in the field', async () => {
+    const world = makeWorld();
+    seedPosts(world);
+    const { container } = renderPortal(world, [contentsUrl('?busca=forno')]);
+    await ready();
+    await waitFor(() => expect(titlesOf(container)).toEqual(['Reels do forno']));
+    expect(field().value).toBe('forno');
+  });
+
+  it('says there is no post for the term and clears the search from the button', async () => {
+    const world = makeWorld();
+    seedPosts(world);
+    const { container, probe } = renderPortal(world, [contentsUrl('?busca=xyz')]);
+    await ready();
+    expect(await screen.findByRole('heading', { name: 'Nenhum post encontrado para «xyz»' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar a busca' }));
+    await waitFor(() => expect(titlesOf(container)).toHaveLength(3));
+    expect(probe.search).toBe('');
+    expect(field().value).toBe('');
+  });
+
+  it('takes the person from another screen to Conteúdos with the term in the address', async () => {
+    const world = makeWorld();
+    seedPosts(world);
+    const { container, probe } = renderPortal(world);
+    await ready();
+    act(() => { void probe.navigate(`/portal/${CLIENT_ID}/nada`); });
+    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_ID}/nada`));
+    expect(field().value).toBe('');
+
+    fireEvent.change(field(), { target: { value: 'natal' } });
+    await waitFor(() => expect(probe.pathname).toBe(`/portal/${CLIENT_ID}/conteudos`));
+    expect(probe.search).toBe('?busca=natal');
+    await waitFor(() => expect(titlesOf(container)).toEqual(['Cardápio de Natal']));
+    expect(field().value).toBe('natal');
   });
 });

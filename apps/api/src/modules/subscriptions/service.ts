@@ -8,6 +8,8 @@ import {
 } from '@ageniza/contracts';
 import { raw, type DatabaseClient } from '@ageniza/database';
 
+import { quoteFromRow, type QuoteRow } from './quote.js';
+
 export type SubscriptionTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 
 interface RawRows<TResult> {
@@ -91,26 +93,23 @@ export const loadSubscription = async (transaction: SubscriptionTransaction, age
   };
 };
 
-interface QuoteRow {
-  readonly effect: SubscriptionQuoteResponse['effect'];
-  readonly monthly_cents: number;
-  readonly amount_cents: number;
-  readonly effective_at: Date;
-}
-
 export const quoteChange = async (transaction: SubscriptionTransaction, agencyId: string, change: SubscriptionChangeRequest): Promise<SubscriptionQuoteResponse> => {
   const result = await raw<RawRows<QuoteRow>>(
     transaction,
-    'select effect, monthly_cents, amount_cents, effective_at from app_private.quote_subscription_change(?::uuid, ?, ?::integer, ?::integer)',
+    'select effect, monthly_cents, amount_cents, effective_at, days_left, period_days from app_private.quote_subscription_change(?::uuid, ?, ?::integer, ?::integer)',
     [agencyId, change.planKey, change.extraClients, change.extraStorageGib]
   );
   const row = result.rows[0];
   if (row === undefined) throw new Error('The quote returned no row.');
-  return { effect: row.effect, monthlyCents: row.monthly_cents, amountCents: row.amount_cents, effectiveAt: new Date(row.effective_at).toISOString() };
+  return quoteFromRow(row, change, await loadPlans(transaction));
 };
 
-interface ChargeRow extends QuoteRow {
+interface ChargeRow {
   readonly charge_id: string | null;
+  readonly effect: SubscriptionChargeResponse['effect'];
+  readonly monthly_cents: number;
+  readonly amount_cents: number;
+  readonly effective_at: Date;
 }
 
 export const requestChange = async (transaction: SubscriptionTransaction, agencyId: string, change: SubscriptionChangeRequest): Promise<SubscriptionChargeResponse> => {
@@ -141,6 +140,8 @@ export interface OwnCharge {
   readonly id: string;
   readonly amountCents: number;
   readonly status: 'pending' | 'confirmed' | 'expired';
+  /** The provider refused the payment of this charge; it is never paid afterwards. */
+  readonly declined: boolean;
 }
 
 /**
@@ -148,11 +149,20 @@ export interface OwnCharge {
  * only the Owner of the charge's agency read it, so another agency's charge answers nothing.
  */
 export const loadOwnCharge = async (transaction: SubscriptionTransaction, agencyId: string, chargeId: string): Promise<OwnCharge | undefined> => {
-  const result = await raw<RawRows<{ id: string; amount_cents: number; status: OwnCharge['status'] }>>(
-    transaction, 'select id, amount_cents, status from public.subscription_charges where id = ?::uuid and agency_id = ?::uuid', [chargeId, agencyId]
+  const result = await raw<RawRows<{ id: string; amount_cents: number; status: OwnCharge['status']; declined_at: Date | null }>>(
+    transaction, 'select id, amount_cents, status, declined_at from public.subscription_charges where id = ?::uuid and agency_id = ?::uuid', [chargeId, agencyId]
   );
   const row = result.rows[0];
-  return row === undefined ? undefined : { id: row.id, amountCents: row.amount_cents, status: row.status };
+  return row === undefined ? undefined : { id: row.id, amountCents: row.amount_cents, status: row.status, declined: row.declined_at !== null };
+};
+
+/**
+ * Records that the provider refused the payment of the charge, as the person who pays. It takes only the lock of the agency, so it runs
+ * alone in its transaction: never joined to the reading of the charge, a request, a confirmation or a renewal, which take the storage lock
+ * first.
+ */
+export const declineCharge = async (transaction: SubscriptionTransaction, agencyId: string, chargeId: string): Promise<void> => {
+  await raw(transaction, 'select app_private.decline_subscription_charge(?::uuid, ?::uuid)', [agencyId, chargeId]);
 };
 
 /** Runs with no person bound: the database refuses a confirmation that comes with one. */

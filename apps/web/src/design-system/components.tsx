@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react';
-import { ArrowRight, LayoutGrid, List, Plus, Store } from 'lucide-react';
+import { ArrowRight, Bell, Download, Eye, FileText, FolderInput, ImageIcon, LayoutGrid, List, Pencil, Plus, Store, Trash2, Video } from 'lucide-react';
 import {
-  Avatar, BadgeCard, BrandSymbol, Button, ButtonLink, ChoiceCard, ClientStrip, DatePicker, IconButton, Pill, PillAction, ConfirmDialog, Dialog, EmptyState, ErrorSummary, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
-  Modal, Pagination, PasswordInput, Popover, Realce, Segmented, Select, Skeleton, StatusTag, Tabs, Textarea, TextInput
+  Avatar, AvatarGroup, BadgeCard, BrandSymbol, Button, ButtonLink, Chip, ChoiceCard, ChoiceRadio, ClientStrip, DatePicker, IconButton, Kbd, Pill, PillAction, RoleTag, ConfirmDialog, Dialog, EmptyState, ErrorSummary, Field, FieldMessage, FilterBar, FilterBarItem, FilterBarSelect, FormatTag, LateBadge, Logo, LiveStatus, Mascot, Menu, MenuItem, MenuSeparator,
+  Modal, MilestoneTrail, Pagination, PasswordInput, Popover, ProgressBar, Realce, SearchField, Segmented, Select, Skeleton, Stage3D, StatusTag, Table, Tabs, Textarea, TextInput, Trait,
+  type MilestoneStatus, type Stage3DTone, type TableColumn
 } from '@ageniza/ui';
 
 /** `hover` and `focus` are real interactions on the default render, so they are not states a component implements. */
@@ -43,9 +44,9 @@ function SelectDemo({ disabled }: { disabled: boolean }) {
     options={[{ value: 'a', label: 'Cliente A' }, { value: 'b', label: 'Cliente B' }]} />;
 }
 
-function CounterFieldDemo({ disabled, loading }: { disabled: boolean; loading: boolean }) {
+function CounterFieldDemo({ disabled, loading, format }: { disabled: boolean; loading: boolean; format?: 'of' }) {
   const [caption, setCaption] = useState('Pão de fermentação natural, 48 horas de espera.');
-  return <Field label="Legenda" hint="Aparece no feed" loading={loading} counter={{ count: caption.length, max: 80 }}>
+  return <Field label="Legenda" hint="Aparece no feed" loading={loading} counter={{ count: caption.length, max: 80, ...(format === undefined ? {} : { format }) }}>
     {(control) => <Textarea {...control} value={caption} onChange={(event) => setCaption(event.target.value)} disabled={disabled} />}
   </Field>;
 }
@@ -68,11 +69,63 @@ function FilterBarDemo({ disabled, loading }: { disabled: boolean; loading: bool
   </FilterBar>;
 }
 
-function DatePickerDemo({ disabled }: { disabled: boolean }) {
+const MARKED_DAYS = ['2026-10-17', '2026-10-20', '2026-10-22'] as const;
+
+function DatePickerDemo({ disabled, marked = false }: { disabled: boolean; marked?: boolean }) {
   const [day, setDay] = useState('2026-10-20');
   return <Field label="Dia dos stories" error={day === '' ? 'Informe o dia dos stories.' : undefined}>
-    {(control) => <DatePicker {...control} today="2026-10-16" value={day} onChange={setDay} disabled={disabled} />}
+    {(control) => <DatePicker {...control} today="2026-10-16" value={day} onChange={setDay} disabled={disabled} {...(marked ? { markedDates: MARKED_DAYS } : {})} />}
   </Field>;
+}
+
+function ChipsDemo() {
+  const [chosen, setChosen] = useState('all');
+  return <span className="ds-row">
+    {([['all', 'Todos', 16], ['reels', 'Reels', 5], ['carousel', 'Carrossel', 5]] as const).map(([value, label, count]) => <Chip key={value} selected={chosen === value} count={count} onClick={() => setChosen(value)}>{label}</Chip>)}
+  </span>;
+}
+
+function SearchDemo({ disabled, shortcut }: { disabled: boolean; shortcut: boolean }) {
+  const [text, setText] = useState('');
+  return <SearchField label="Buscar" placeholder="Buscar cliente, conteúdo ou arquivo" value={text} onChange={setText} shortcut={shortcut} disabled={disabled} />;
+}
+
+interface FileRow { id: string; name: string; kind: string; usedIn: string; sent: string; icon: ReactNode }
+const FILE_ROWS: readonly FileRow[] = [
+  { id: 'f1', name: 'fachada-natal.jpg', kind: 'Foto', usedIn: 'Cardápio de Natal', sent: '10 nov', icon: <ImageIcon /> },
+  { id: 'f2', name: 'cardapio-natal-2026.pdf', kind: 'PDF', usedIn: '2 posts', sent: '10 nov', icon: <FileText /> },
+  { id: 'f3', name: 'forno-novo.mp4', kind: 'Vídeo', usedIn: 'Pão de fermentação', sent: '9 nov', icon: <Video /> }
+];
+const FILE_COLUMNS: readonly TableColumn<FileRow>[] = [
+  { key: 'name', header: 'Nome', width: 'minmax(0, 2.2fr)', render: (row) => <><span className="ds-thumb" aria-hidden="true">{row.icon}</span><span>{row.name}</span></> },
+  { key: 'kind', header: 'Tipo', width: '6rem', render: (row) => row.kind },
+  { key: 'used', header: 'Usado em', width: 'minmax(0, 1.3fr)', render: (row) => row.usedIn },
+  { key: 'sent', header: 'Enviado', width: '6rem', keepOnPhone: true, render: (row) => row.sent }
+];
+
+function TableDemo({ selectable, empty = false }: { selectable: boolean; empty?: boolean }) {
+  const [selected, setSelected] = useState<string | null>('f2');
+  return <Table<FileRow>
+    label={selectable ? 'Arquivos recentes, escolha um' : 'Arquivos recentes'}
+    columns={FILE_COLUMNS}
+    rows={empty ? [] : FILE_ROWS}
+    rowKey={(row) => row.id}
+    empty="Nenhum arquivo enviado ainda."
+    {...(selectable ? { selectedKey: selected, onSelect: (row: FileRow) => setSelected(row.id) } : {})}
+    actions={(row) => <Menu label={`Ações de ${row.name}`} triggerLabel={`Ações de ${row.name}`} trigger="⋮">
+      <MenuItem icon={<Eye />}>Abrir</MenuItem><MenuItem icon={<Download />}>Baixar</MenuItem><MenuItem icon={<FolderInput />}>Mover para</MenuItem><MenuItem icon={<Pencil />}>Renomear</MenuItem>
+      <MenuSeparator /><MenuItem variant="destructive" icon={<Trash2 />}>Excluir</MenuItem>
+    </Menu>}
+  />;
+}
+
+function ChoiceRadiosDemo({ disabled }: { disabled: boolean }) {
+  const [value, setValue] = useState('approve');
+  return <fieldset className="ds-fieldset" disabled={disabled}>
+    <legend>O que fazer com o post</legend>
+    <ChoiceRadio name="ds-decision" value="approve" checked={value === 'approve'} onChange={() => setValue('approve')} title="Aprovar como está" description="A agência já pode agendar a publicação." />
+    <ChoiceRadio name="ds-decision" value="adjust" checked={value === 'adjust'} onChange={() => setValue('adjust')} title="Pedir ajuste" description="Conte o que mudar no recado." />
+  </fieldset>;
 }
 
 function SegmentedDemo({ disabled, loading }: { disabled: boolean; loading: boolean }) {
@@ -91,7 +144,40 @@ function TabsDemo({ disabled, loading }: { disabled: boolean; loading: boolean }
     ]} />;
 }
 
-const stateOnly = (state: RenderedState, only: readonly RenderedState[], node: ReactNode): ReactNode => only.includes(state) ? node : null;
+function DiscardDialogExample({ close }: { close: () => void }) {
+  const [note, setNote] = useState('');
+  return <Dialog title="Novo lembrete" closeLabel="Fechar" onClose={close} size="sm" confirmDiscard={{ dirty: note !== '' }}
+    description="Digite algo e feche com Esc, clicando fora ou no X: o diálogo pergunta antes de descartar."
+    actions={<Button onClick={close}>Salvar</Button>}>
+    <Field label="Lembrete">{(control) => <TextInput {...control} value={note} onChange={(event) => setNote(event.target.value)} />}</Field>
+  </Dialog>;
+}
+const TRAIL_TITLES = ['Conta criada', 'Primeiro cliente', 'Primeira aprovação'] as const;
+const TRAIL_WHEN = ['Hoje, às 09:12', 'Hoje, às 09:40', 'Hoje, às 10:05'] as const;
+
+function trailSteps(statuses: readonly MilestoneStatus[], action: ReactNode) {
+  return TRAIL_TITLES.map((title, index) => ({
+    id: `step-${index}`,
+    title,
+    status: statuses[index] ?? 'upcoming',
+    when: TRAIL_WHEN[index],
+    description: index === 1 ? 'Cadastre quem vai receber o calendário.' : 'Aparece aqui quando o cliente aprovar.',
+    action: index === 1 ? action : undefined
+  }));
+}
+
+/** Reaching a step is a change of status only, so the fill, the check and the line play on their own. */
+function TrailDemo({ size }: { size: 'md' | 'sm' }) {
+  const [reached, setReached] = useState(1);
+  const statuses = TRAIL_TITLES.map((_, index): MilestoneStatus => (index < reached ? 'done' : index === reached ? 'current' : 'upcoming'));
+  return <div>
+    <MilestoneTrail aria-label="Primeiros passos de exemplo" size={size} steps={trailSteps(statuses, <Button size="sm" onClick={() => setReached((value) => (value + 1) % (TRAIL_TITLES.length + 1))}>Concluir passo</Button>)} />
+  </div>;
+}
+
+const STAGE_TONES: readonly [Stage3DTone, string][] = [['indigo', 'rocket'], ['violet', 'trophy'], ['teal', 'thumb-up'], ['sky', 'calender'], ['red', 'bell'], ['slate', 'folder']];
+
+const stateOnly =(state: RenderedState, only: readonly RenderedState[], node: ReactNode): ReactNode => only.includes(state) ? node : null;
 
 /**
  * Add a component by appending an entry: the page renders its states and tells the person when one does not apply.
@@ -102,7 +188,7 @@ export const componentEntries: readonly ComponentEntry[] = [
     id: 'button',
     name: 'Button',
     covers: ['Button'],
-    examples: (['primary', 'secondary', 'ghost', 'destructive'] as const).map((variant) => ({
+    examples: (['primary', 'secondary', 'ghost', 'destructive', 'danger-quiet'] as const).map((variant) => ({
       label: variant,
       render: (state: RenderedState) => <Button variant={variant} disabled={state === 'disabled'} loading={state === 'loading'}>Salvar</Button>
     }))
@@ -124,7 +210,8 @@ export const componentEntries: readonly ComponentEntry[] = [
       { label: 'ícone antes', render: (state) => <Button leadingIcon={<Plus />} disabled={state === 'disabled'} loading={state === 'loading'}>Novo</Button> },
       { label: 'ícone depois', render: (state) => <Button variant="secondary" trailingIcon={<ArrowRight />} disabled={state === 'disabled'} loading={state === 'loading'}>Abrir</Button> },
       { label: 'só ícone', render: (state) => <IconButton label="Adicionar" icon={<Plus />} disabled={state === 'disabled'} loading={state === 'loading'} /> },
-      { label: 'só ícone, secundário', render: (state) => <IconButton variant="secondary" label="Adicionar" icon={<Plus />} disabled={state === 'disabled'} loading={state === 'loading'} /> }
+      { label: 'só ícone, secundário', render: (state) => <IconButton variant="secondary" label="Adicionar" icon={<Plus />} disabled={state === 'disabled'} loading={state === 'loading'} /> },
+      { label: 'com ponto de notificação', render: (state) => <IconButton label="Notificações" dot="3 não lidas" icon={<Bell />} disabled={state === 'disabled'} loading={state === 'loading'} /> }
     ]
   },
   {
@@ -165,6 +252,20 @@ export const componentEntries: readonly ComponentEntry[] = [
     examples: [{ label: 'com contagem e aba desativada', render: (state) => <TabsDemo disabled={state === 'disabled'} loading={state === 'loading'} /> }]
   },
   {
+    id: 'table',
+    name: 'Table',
+    covers: ['Table'],
+    wide: true,
+    examples: [{
+      label: 'com linha escolhida e ações por linha, só leitura e sem linhas; em caixa estreita (celular) cada uma vira lista',
+      render: (state) => stateOnly(state, ['default'], <div className="ds-stack ds-floating-room">
+        <TableDemo selectable />
+        <TableDemo selectable={false} />
+        <TableDemo selectable={false} empty />
+      </div>)
+    }]
+  },
+  {
     id: 'field',
     name: 'Field',
     covers: ['Field'],
@@ -181,7 +282,14 @@ export const componentEntries: readonly ComponentEntry[] = [
           {(control) => <TextInput {...control} defaultValue="maria@" />}
         </Field>)
       },
-      { label: 'com contador, passe de 80 para ver o limite', render: (state) => <CounterFieldDemo disabled={state === 'disabled'} loading={state === 'loading'} /> }
+      { label: 'com contador, passe de 80 para ver o limite', render: (state) => <CounterFieldDemo disabled={state === 'disabled'} loading={state === 'loading'} /> },
+      { label: 'contador "N de M"', render: (state) => <CounterFieldDemo disabled={state === 'disabled'} loading={state === 'loading'} format="of" /> },
+      {
+        label: 'com unidade',
+        render: (state) => <Field label="Prazo para o cliente" suffix="horas" loading={state === 'loading'}>
+          {(control) => <TextInput {...control} inputMode="numeric" defaultValue="48" disabled={state === 'disabled'} />}
+        </Field>
+      }
     ]
   },
   {
@@ -217,7 +325,10 @@ export const componentEntries: readonly ComponentEntry[] = [
     id: 'date-picker',
     name: 'DatePicker',
     covers: ['DatePicker'],
-    examples: [{ label: 'dia digitado ou escolhido no calendário (apague para ver o erro)', render: (state) => stateOnly(state, ['default', 'disabled'], <DatePickerDemo disabled={state === 'disabled'} />) }]
+    examples: [
+      { label: 'dia digitado ou escolhido no calendário (apague para ver o erro)', render: (state) => stateOnly(state, ['default', 'disabled'], <DatePickerDemo disabled={state === 'disabled'} />) },
+      { label: 'com pontos nos dias que já têm conteúdo (17, 20 e 22), legenda e "Hoje"', render: (state) => stateOnly(state, ['default', 'disabled'], <DatePickerDemo disabled={state === 'disabled'} marked />) }
+    ]
   },
   {
     id: 'select',
@@ -236,6 +347,54 @@ export const componentEntries: readonly ComponentEntry[] = [
     ]
   },
   {
+    id: 'choice-radio',
+    name: 'ChoiceRadio',
+    covers: ['ChoiceRadio'],
+    wide: true,
+    examples: [{ label: 'duas opções em cartão, com a escolhida marcada', render: (state) => stateOnly(state, ['default', 'disabled'], <ChoiceRadiosDemo disabled={state === 'disabled'} />) }]
+  },
+  {
+    id: 'chip',
+    name: 'Chip',
+    covers: ['Chip'],
+    wide: true,
+    examples: [
+      { label: 'filtros com contagem, um escolhido', render: (state) => stateOnly(state, ['default'], <ChipsDemo />) },
+      { label: 'desativado', render: (state) => stateOnly(state, ['disabled'], <Chip count={5} disabled>Reels</Chip>) }
+    ]
+  },
+  {
+    id: 'trait',
+    name: 'Trait',
+    covers: ['Trait'],
+    examples: [{ label: 'traços da persona', render: (state) => stateOnly(state, ['default'], <span className="ds-row"><Trait>Rotina corrida</Trait><Trait>Compra por impulso</Trait><Trait>Instagram e WhatsApp</Trait></span>) }]
+  },
+  {
+    id: 'kbd',
+    name: 'Kbd',
+    covers: ['Kbd'],
+    examples: [{ label: 'atalho', render: (state) => stateOnly(state, ['default'], <Kbd>Ctrl K</Kbd>) }]
+  },
+  {
+    id: 'search-field',
+    name: 'SearchField',
+    covers: ['SearchField'],
+    wide: true,
+    examples: [
+      { label: 'em pílula, com atalho Ctrl K (Esc limpa o texto)', render: (state) => stateOnly(state, ['default', 'disabled'], <SearchDemo disabled={state === 'disabled'} shortcut />) },
+      { label: 'sem atalho', render: (state) => stateOnly(state, ['default', 'disabled'], <SearchDemo disabled={state === 'disabled'} shortcut={false} />) }
+    ]
+  },
+  {
+    id: 'progress-bar',
+    name: 'ProgressBar',
+    covers: ['ProgressBar'],
+    examples: [
+      { label: 'índigo, 75%', render: (state) => stateOnly(state, ['default'], <span className="ds-progress"><ProgressBar label="Aprovação do mês" value={75} /></span>) },
+      { label: 'verde-água, 40 de 50', render: (state) => stateOnly(state, ['default'], <span className="ds-progress"><ProgressBar label="Conteúdos publicados" value={40} max={50} tone="teal" /></span>) }
+    ]
+  },
+  {
     id: 'messages',
     name: 'FieldMessage e LiveStatus',
     covers: ['FieldMessage', 'LiveStatus'],
@@ -251,6 +410,16 @@ export const componentEntries: readonly ComponentEntry[] = [
     examples: [
       ...(['sm', 'md', 'lg'] as const).map((size) => ({ label: size, render: (state: RenderedState) => stateOnly(state, ['default'], <Avatar name="Maria Souza" size={size} />) })),
       { label: 'com anel de atenção', render: (state: RenderedState) => stateOnly(state, ['default'], <Avatar name="Padaria Central" size="lg" attention="em ajuste, em atraso" />) }
+    ]
+  },
+  {
+    id: 'avatar-group',
+    name: 'AvatarGroup',
+    covers: ['AvatarGroup'],
+    examples: [
+      { label: 'três pessoas', render: (state) => stateOnly(state, ['default'], <AvatarGroup label="Responsáveis" people={[{ name: 'Marina Bastos' }, { name: 'João Pereira' }, { name: 'Rafael Teixeira' }]} />) },
+      { label: 'cinco pessoas: "+2"', render: (state) => stateOnly(state, ['default'], <AvatarGroup label="Responsáveis" people={['Marina Bastos', 'João Pereira', 'Rafael Teixeira', 'Júlia Prado', 'Paula Ramos'].map((name) => ({ name }))} />) },
+      { label: 'médio', render: (state) => stateOnly(state, ['default'], <AvatarGroup size="md" label="Responsáveis" people={['Marina Bastos', 'João Pereira', 'Rafael Teixeira', 'Júlia Prado'].map((name) => ({ name }))} />) }
     ]
   },
   {
@@ -281,9 +450,12 @@ export const componentEntries: readonly ComponentEntry[] = [
     id: 'status-tag',
     name: 'StatusTag',
     covers: ['StatusTag'],
-    examples: ([
-      ['ready', 'Pronto para publicar'], ['waiting', 'Aguardando'], ['adjust', 'Em ajuste'], ['published', 'Publicado'], ['production', 'Em produção']
-    ] as const).map(([status, label]) => ({ label: status, render: (state: RenderedState) => stateOnly(state, ['default'], <StatusTag status={status}>{label}</StatusTag>) }))
+    examples: [
+      ...([
+        ['ready', 'Aprovado'], ['waiting', 'Aguardando'], ['adjust', 'Em ajuste'], ['published', 'Publicado'], ['production', 'Em produção'], ['scheduled', 'Agendado']
+      ] as const).map(([status, label]) => ({ label: status as string, render: (state: RenderedState) => stateOnly(state, ['default'], <StatusTag status={status}>{label}</StatusTag>) })),
+      { label: 'grande', render: (state: RenderedState) => stateOnly(state, ['default'], <StatusTag status="waiting" size="lg">Aguardando aprovação</StatusTag>) }
+    ]
   },
   {
     id: 'late-badge',
@@ -301,12 +473,27 @@ export const componentEntries: readonly ComponentEntry[] = [
     ]
   },
   {
+    id: 'role-tag',
+    name: 'RoleTag',
+    covers: ['RoleTag'],
+    examples: [
+      { label: 'admin', render: (state) => stateOnly(state, ['default'], <RoleTag name="Admin" tone="indigo" />) },
+      { label: 'gestor de conta', render: (state) => stateOnly(state, ['default'], <RoleTag name="Gestor de conta" tone="violet" />) },
+      { label: 'produção', render: (state) => stateOnly(state, ['default'], <RoleTag name="Produção" tone="teal" />) },
+      { label: 'vendas', render: (state) => stateOnly(state, ['default'], <RoleTag name="Vendas" tone="sky" />) },
+      { label: 'sem cor', render: (state) => stateOnly(state, ['default'], <RoleTag name="Financeiro" />) },
+      { label: 'dona da agência', render: (state) => stateOnly(state, ['default'], <RoleTag name="Admin" isOwner />) }
+    ]
+  },
+  {
     id: 'badge-card',
     name: 'BadgeCard',
     covers: ['BadgeCard'],
     examples: [
       { label: 'ativo', render: (state) => stateOnly(state, ['default'], <BadgeCard name="Maria Souza" jobTitle="Social media" role="Editor" />) },
-      { label: 'removido', render: (state) => stateOnly(state, ['default'], <BadgeCard name="João Lima" role="Editor" removed />) }
+      { label: 'removido', render: (state) => stateOnly(state, ['default'], <BadgeCard name="João Lima" role="Editor" removed />) },
+      { label: 'dona da agência', render: (state) => stateOnly(state, ['default'], <BadgeCard name="Marina Bastos" jobTitle="Fundadora" role="Admin" isOwner />) },
+      { label: 'cor por papel', render: (state) => stateOnly(state, ['default'], <BadgeCard name="Bianca Torres" jobTitle="Comercial" role="Vendas" roleTone="sky" />) }
     ]
   },
   {
@@ -332,13 +519,41 @@ export const componentEntries: readonly ComponentEntry[] = [
     ]
   },
   {
+    id: 'stage',
+    name: 'Stage3D',
+    covers: ['Stage3D'],
+    wide: true,
+    examples: [
+      { label: 'tamanhos sm, md, lg e xl', render: (state) => stateOnly(state, ['default'], <span className="ds-row" data-stage-host>
+        {(['sm', 'md', 'lg', 'xl'] as const).map((size) => <Stage3D key={size} src="/3d/rocket.png" size={size} />)}
+      </span>) },
+      { label: 'tom da família do cartão', render: (state) => stateOnly(state, ['default'], <span className="ds-row" data-stage-host>
+        {STAGE_TONES.map(([tone, icon]) => <Stage3D key={tone} src={`/3d/${icon}.png`} tone={tone} size="md" />)}
+      </span>) }
+    ]
+  },
+  {
+    id: 'milestone-trail',
+    name: 'MilestoneTrail',
+    covers: ['MilestoneTrail'],
+    wide: true,
+    examples: [
+      { label: 'médio: clique em "Concluir passo" para ver o preenchimento, o traço e a linha', render: (state) => stateOnly(state, ['default'], <TrailDemo size="md" />) },
+      { label: 'pequeno', render: (state) => stateOnly(state, ['default'], <MilestoneTrail aria-label="Trilha pequena de exemplo" size="sm" steps={trailSteps(['done', 'current', 'upcoming'], null)} />) }
+    ]
+  },
+  {
     id: 'empty-state',
     name: 'EmptyState',
     covers: ['EmptyState'],
     wide: true,
     examples: [
       { label: 'com mascote e ação', render: (state) => stateOnly(state, ['default'], <EmptyState mascot headingLevel={4} title="Cadastre o primeiro cliente" description="Com o cliente cadastrado você monta o calendário do mês." action={<Button leadingIcon={<Plus />}>Cadastrar cliente</Button>} />) },
-      { label: 'sem mascote (busca sem resultado)', render: (state) => stateOnly(state, ['default'], <EmptyState headingLevel={4} title="Nenhum cliente encontrado" description="Tente outro nome ou tire um filtro." action={<Button variant="secondary">Limpar filtros</Button>} />) }
+      { label: 'sem mascote (busca sem resultado)', render: (state) => stateOnly(state, ['default'], <EmptyState headingLevel={4} title="Nenhum cliente encontrado" description="Tente outro nome ou tire um filtro." action={<Button variant="secondary">Limpar filtros</Button>} />) },
+      { label: 'boa notícia (a consulta respondeu e não há pendência)', render: (state) => stateOnly(state, ['default'], <EmptyState kind="good-news" headingLevel={4} title="Nada esperando por você" description="Nenhum conteúdo aguarda aprovação ou ajuste." />) },
+      { label: 'falha (a consulta não respondeu)', render: (state) => stateOnly(state, ['default'], <EmptyState kind="failure" headingLevel={4} title="Não foi possível carregar os conteúdos" description="Não dá para afirmar que não há nada pendente. Tente de novo." onRetry={() => undefined} />) },
+      { label: 'falha com o mascote sério, código e segunda ação', render: (state) => stateOnly(state, ['default'], <EmptyState kind="failure" mascot headingLevel={4} title="Não foi possível carregar as mídias" description="A conexão caiu antes de a lista chegar. Seus arquivos continuam guardados." onRetry={() => undefined} secondaryAction={<Button variant="ghost">Avisar o suporte</Button>} code="Código 503 · 11 nov, 10h42" />) },
+      { label: 'falha repetindo (o botão fica ocupado)', render: (state) => stateOnly(state, ['default'], <EmptyState kind="failure" headingLevel={4} title="Não foi possível carregar os conteúdos" description="Repetindo a consulta." onRetry={() => undefined} retrying />) }
     ]
   },
   {
@@ -360,13 +575,18 @@ export const componentEntries: readonly ComponentEntry[] = [
       render: (state) => stateOnly(state, ['default'], <Menu label="Ações de exemplo" trigger="Ações">
         <MenuItem>Editar</MenuItem><MenuItem disabled>Duplicar</MenuItem><MenuSeparator /><MenuItem variant="destructive">Excluir</MenuItem>
       </Menu>)
+    }, {
+      label: 'com ícones e item de perigo',
+      render: (state) => stateOnly(state, ['default'], <div className="ds-floating-room ds-floating-room--tall"><Menu label="Ações do arquivo" trigger="Ações do arquivo">
+        <MenuItem icon={<Eye />}>Abrir</MenuItem><MenuItem icon={<Download />}>Baixar</MenuItem><MenuItem icon={<Pencil />}>Renomear</MenuItem><MenuSeparator /><MenuItem variant="destructive" icon={<Trash2 />}>Excluir</MenuItem>
+      </Menu></div>)
     }]
   },
   {
     id: 'dialog',
     name: 'Dialog',
     covers: ['Dialog'],
-    examples: (['sm', 'md', 'lg'] as const).map((size) => ({
+    examples: [...(['sm', 'md', 'lg'] as const).map((size) => ({
       label: size,
       render: (state: RenderedState) => stateOnly(state, ['default', 'loading'], <Opener label={`Abrir ${size}`}>
         {(close) => <Dialog title="Arquivar cliente" closeLabel="Fechar" onClose={close} size={size} loading={state === 'loading'}
@@ -375,7 +595,12 @@ export const componentEntries: readonly ComponentEntry[] = [
           <p>Conteúdo de exemplo.</p>
         </Dialog>}
       </Opener>)
-    }))
+    })), {
+      label: 'com descarte (pede confirmação ao fechar com dado digitado)',
+      render: (state: RenderedState) => stateOnly(state, ['default'], <Opener label="Abrir formulário">
+        {(close) => <DiscardDialogExample close={close} />}
+      </Opener>)
+    }]
   },
   {
     id: 'popover',

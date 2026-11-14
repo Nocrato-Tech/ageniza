@@ -19,7 +19,7 @@ import { databaseErrorCode, raw, type DatabaseClient, type SqlBinding } from '@a
 
 import { foldTextSql } from '../../plugins/infra/sql-text.js';
 import { contentDeadlineSql } from '../contents/deadline-sql.js';
-import { latestCommentSideSql, openThreadSql } from './thread-state.js';
+import { brandStudyThreadSql, latestCommentSideSql, openThreadSql } from './thread-state.js';
 
 export type ClientTransaction = Parameters<Parameters<DatabaseClient['transaction']>[0]>[0];
 
@@ -34,12 +34,14 @@ export interface ClientRow {
   readonly legal_name: string | null;
   readonly tax_id: string | null;
   readonly segment: string | null;
+  readonly city: string | null;
   readonly website: string | null;
   readonly instagram_handle: string | null;
   readonly contact_name: string | null;
   readonly contact_phone: string | null;
   readonly contact_email: string | null;
   readonly closing_date: string | null;
+  readonly created_at: Date;
   readonly archived_at: Date | null;
 }
 
@@ -55,8 +57,8 @@ interface RawRows<TResult> {
 }
 
 const CLIENT_COLUMNS = `
-  id, agency_id, name, status, photo_key, legal_name, tax_id, segment, website, instagram_handle,
-  contact_name, contact_phone, contact_email, closing_date::text as closing_date, archived_at
+  id, agency_id, name, status, photo_key, legal_name, tax_id, segment, city, website, instagram_handle,
+  contact_name, contact_phone, contact_email, closing_date::text as closing_date, created_at, archived_at
 `;
 
 /** Body field -> column, the only columns a PATCH may write. Order fixes the bind order. */
@@ -65,6 +67,7 @@ const UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof UpdateClientRequest, stri
   ['legalName', 'legal_name'],
   ['taxId', 'tax_id'],
   ['segment', 'segment'],
+  ['city', 'city'],
   ['website', 'website'],
   ['instagramHandle', 'instagram_handle'],
   ['contactName', 'contact_name'],
@@ -85,13 +88,13 @@ export const isActiveClientNameConflict = (error: unknown): boolean =>
 
 export const createClient = async (
   transaction: ClientTransaction,
-  input: { readonly agencyId: string; readonly name: string }
+  input: { readonly agencyId: string; readonly name: string; readonly city?: string | null }
 ): Promise<ClientRow> => {
   const result = await raw<RawRows<ClientRow>>(transaction, `
-    insert into public.clients (agency_id, name)
-    values (?::uuid, ?)
+    insert into public.clients (agency_id, name, city)
+    values (?::uuid, ?, ?)
     returning ${CLIENT_COLUMNS}
-  `, [input.agencyId, input.name]);
+  `, [input.agencyId, input.name, input.city ?? null]);
   const row = result.rows[0];
   if (row === undefined) throw new Error('Client insert did not return a row.');
   return row;
@@ -193,7 +196,7 @@ export const updateClient = async (
 
 /**
  * Whether a `client_brand_sections` row counts as filled: the one definition the summary count and
- * the portal's "seção não preenchida" rule (#130) share. `personas` has no row; an active persona
+ * the portal's "seção não preenchida" rule (#130) share. `personas` has no row; a persona
  * fills it instead. The alias is a fixed literal chosen in this repository.
  */
 export const sectionFilledSql = (sectionAlias: string): string => `case ${sectionAlias}.section_key
@@ -207,7 +210,7 @@ export const sectionFilledSql = (sectionAlias: string): string => `case ${sectio
 /**
  * How many of the seven sections are filled: the one definition the agency summary and the portal's
  * Início share. Two `?` placeholders, both the client id. `personas` counts as one filled section
- * when at least one persona is active.
+ * when the client has at least one persona.
  */
 export const BRAND_STUDY_FILLED_SQL = `(
         select count(*)
@@ -217,16 +220,16 @@ export const BRAND_STUDY_FILLED_SQL = `(
       ) + (
         case when exists (
           select 1 from public.client_personas persona
-          where persona.client_id = ?::uuid and persona.status = 'active'
+          where persona.client_id = ?::uuid
         ) then 1 else 0 end
       )`;
 
 /**
  * The General tab summary (specs/clientes.md section 6). `personas` counts as one filled section
- * when at least one persona is active; "aguardando a agência" and "com resposta da agência" come
+ * when there is at least one persona; "aguardando a agência" and "com resposta da agência" come
  * from the single thread-state definition, so this count cannot drift from the listing (#125). They count the
  * brand study conversations only: the one of a content is Conteúdo's, and the policy hides it from Sales and Finance, so
- * counting it would give the same client two different badges (#259).
+ * counting it would give the same client two different badges (#259); a request for material is the agency's own ask and is not counted either.
  */
 export const loadClientSummary = async (transaction: ClientTransaction, clientId: string): Promise<ClientSummary> => {
   const result = await raw<RawRows<SummaryRow>>(transaction, `
@@ -235,14 +238,14 @@ export const loadClientSummary = async (transaction: ClientTransaction, clientId
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
-          and thread.content_id is null
+          and ${brandStudyThreadSql('thread')}
           and ${openThreadSql('thread')}
           and ${latestCommentSideSql('thread')} = 'client'
       ) as threads_awaiting_agency,
       (
         select count(*) from public.client_threads thread
         where thread.client_id = ?::uuid
-          and thread.content_id is null
+          and ${brandStudyThreadSql('thread')}
           and ${openThreadSql('thread')}
           and ${latestCommentSideSql('thread')} = 'agency'
       ) as threads_answered_by_agency,
@@ -258,6 +261,100 @@ export const loadClientSummary = async (transaction: ClientTransaction, clientId
     threadsAwaitingAgency: Number(row.threads_awaiting_agency),
     threadsAnsweredByAgency: Number(row.threads_answered_by_agency),
     activePortalMembers: Number(row.active_portal_members)
+  };
+};
+
+export interface ClientTabCounts {
+  readonly contentsThisMonth: number;
+  readonly mediaFiles: number;
+  readonly mediaFolders: number;
+}
+
+/**
+ * The counts of the tabs Conteúdos and Mídias, read by SQL here and not through the modules that own those tables (the agency summary
+ * is the client's, and a module imports another only through what it exports). Contents of the month: planned in the current month of
+ * America/Sao_Paulo at `asOf`, cancelled ones left out. Files: confirmed and not removed. Folders: all of the client's, the default
+ * ones included. The policies of `contents`, `media_assets` and `media_folders` answer `conteudo.visualizar` alone, so the route calls
+ * this only for a caller who holds it and omits the fields for one who does not.
+ */
+export const loadClientTabCounts = async (
+  transaction: ClientTransaction,
+  input: { readonly clientId: string; readonly asOf: Date }
+): Promise<ClientTabCounts> => {
+  const result = await raw<RawRows<{ contents_this_month: string | number; media_files: string | number; media_folders: string | number }>>(transaction, `
+    with month as (
+      select date_trunc('month', app_private.sao_paulo_date(?::timestamptz)::timestamp)::date as first_day
+    )
+    select
+      (
+        select count(*) from public.contents content
+        where content.client_id = ?::uuid
+          and content.status <> 'cancelled'
+          and content.publish_on >= (select first_day from month)
+          and content.publish_on < ((select first_day from month)::timestamp + interval '1 month')::date
+      ) as contents_this_month,
+      (
+        select count(*) from public.media_assets asset
+        where asset.client_id = ?::uuid and asset.status = 'confirmed' and asset.removed_at is null
+      ) as media_files,
+      (
+        select count(*) from public.media_folders folder where folder.client_id = ?::uuid
+      ) as media_folders
+  `, [input.asOf.toISOString(), input.clientId, input.clientId, input.clientId]);
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('Client tab counts query returned no row.');
+  return {
+    contentsThisMonth: Number(row.contents_this_month),
+    mediaFiles: Number(row.media_files),
+    mediaFolders: Number(row.media_folders)
+  };
+};
+
+/** How many people the avatar row of "quem trabalha neste cliente" shows before the "+N". */
+export const CLIENT_WORKERS_SHOWN = 5;
+
+export interface ClientWorkerRow {
+  readonly membership_id: string;
+  readonly name: string;
+  readonly photo_key: string | null;
+}
+
+export interface ClientWorkers {
+  readonly shown: readonly ClientWorkerRow[];
+  /** The people in charge beyond the ones shown. */
+  readonly more: number;
+}
+
+const OPEN_CONTENT_STATUSES = contentDeadlineSql('current_date').openStatuses;
+
+/**
+ * "Quem trabalha neste cliente" (decision 2026-11-11): derived, never assigned (there is no assignment of a client to a person). They are
+ * the people in charge of the client's open contents (the statuses of the one definition of an open content), the one with most contents
+ * first, then by name. The person is read through the agency link, active, and nothing but the link, the name and the photo key leaves the
+ * query: `auth."user"` has no row-level security, so the link to the client's own agency is what keeps another tenant's name out, and the
+ * e-mail is never selected. An Owner with no link is not named, as in Conteúdo (`ContentPerson`).
+ */
+export const loadClientWorkers = async (
+  transaction: ClientTransaction,
+  input: { readonly agencyId: string; readonly clientId: string }
+): Promise<ClientWorkers> => {
+  const result = await raw<RawRows<ClientWorkerRow & { readonly total: string | number }>>(transaction, `
+    select link.id as membership_id, account.name as name, account.image as photo_key, count(*) over () as total
+    from (
+      select content.owner_user_id, count(*) as owned
+      from public.contents content
+      where content.client_id = ?::uuid and content.status in (${OPEN_CONTENT_STATUSES})
+      group by content.owner_user_id
+    ) owners
+    join public.agency_memberships link on link.agency_id = ?::uuid and link.user_id = owners.owner_user_id and link.status = 'active'
+    join auth."user" account on account.id = link.user_id
+    order by owners.owned desc, ${foldTextSql('account.name')} collate "C" asc, link.id asc
+    limit ?
+  `, [input.clientId, input.agencyId, CLIENT_WORKERS_SHOWN]);
+  const total = Number(result.rows[0]?.total ?? 0);
+  return {
+    shown: result.rows.map((row) => ({ membership_id: row.membership_id, name: row.name, photo_key: row.photo_key })),
+    more: Math.max(0, total - result.rows.length)
   };
 };
 
@@ -449,7 +546,7 @@ export const listClients = async (
           select count(*)
           from public.client_threads thread
           where thread.client_id = client.id
-            and thread.content_id is null
+            and ${brandStudyThreadSql('thread')}
             and ${openThreadSql('thread')}
             and ${latestCommentSideSql('thread')} = 'client'
         ) as threads_awaiting_agency,
@@ -533,7 +630,15 @@ export interface PersonaRow {
   readonly pains: string | null;
   readonly desires: string | null;
   readonly objections: string | null;
-  readonly status: 'active' | 'archived';
+  readonly age: number | null;
+  readonly occupation: string | null;
+  readonly location: string | null;
+  /** A `jsonb` array of strings, or null for none: the driver already parsed it. */
+  readonly traits: readonly string[] | null;
+  readonly where_they_are: string | null;
+  readonly tone_that_works: string | null;
+  /** The comments of every conversation of the persona, which the deletion takes along. */
+  readonly message_count: number;
   readonly updated_by: string | null;
   readonly updated_by_name: string | null;
   readonly updated_at: Date;
@@ -546,7 +651,13 @@ const BRAND_SECTION_COLUMNS = `
 
 const PERSONA_COLUMNS = `
   persona.id, persona.name, persona.description, persona.pains, persona.desires, persona.objections,
-  persona.status, persona.updated_by,
+  persona.age, persona.occupation, persona.location, persona.traits, persona.where_they_are, persona.tone_that_works,
+  (
+    select count(*) from public.client_thread_comments comment
+    join public.client_threads thread on thread.id = comment.thread_id
+    where thread.persona_id = persona.id
+  )::int as message_count,
+  persona.updated_by,
   ${updaterNameSql('persona.updated_by', 'client.agency_id')} as updated_by_name, persona.updated_at
 `;
 
@@ -556,6 +667,17 @@ export const isRowLevelSecurityViolation = (error: unknown): boolean =>
 
 /** The trigger of 20261007001400 found the client no longer active after waiting for the archive that held it. */
 export const isClientNoLongerActive = (error: unknown): boolean => databaseErrorCode(error) === 'A0020';
+
+/**
+ * The persona or the thread was deleted between the check and the write. While the delete is still open the foreign key refuses the
+ * insert (23503); once it is committed the BEFORE INSERT triggers that compare the thread with its client and persona answer first
+ * (A0010 on a thread, A0011 on a comment), because they find nothing to compare with.
+ */
+export const isSubjectGone = (error: unknown): boolean => {
+  const code = databaseErrorCode(error);
+  if (code === 'A0010' || code === 'A0011') return true;
+  return code === '23503' && ['client_threads_persona_id_fkey', 'client_thread_comments_thread_id_fkey'].includes(String((error as { constraint?: unknown }).constraint));
+};
 
 export const loadBrandSections = async (
   transaction: ClientTransaction,
@@ -649,23 +771,36 @@ export const createPersona = async (
   input: { readonly clientId: string; readonly actorUserId: string; readonly body: CreatePersonaRequest }
 ): Promise<string | undefined> => {
   const result = await raw<RawRows<{ id: string }>>(transaction, `
-    insert into public.client_personas (client_id, name, description, pains, desires, objections, updated_by)
-    values (?::uuid, ?, ?, ?, ?, ?, ?::uuid)
+    insert into public.client_personas (
+      client_id, name, description, pains, desires, objections, age, occupation, location, traits, where_they_are, tone_that_works, updated_by
+    )
+    values (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?::uuid)
     returning id
   `, [
     input.clientId, input.body.name,
     input.body.description ?? null, input.body.pains ?? null, input.body.desires ?? null, input.body.objections ?? null,
+    input.body.age ?? null, input.body.occupation ?? null, input.body.location ?? null, traitsBinding(input.body.traits),
+    input.body.whereTheyAre ?? null, input.body.toneThatWorks ?? null,
     input.actorUserId
   ]);
   return result.rows[0]?.id;
 };
 
-const PERSONA_UPDATABLE_COLUMNS: ReadonlyArray<readonly [keyof UpdatePersonaRequest, string]> = [
+/** The traits as the `jsonb` column takes them: an empty list is stored as no traits, and the text is bound, never built into the SQL. */
+const traitsBinding = (traits: readonly string[] | undefined): string | null =>
+  traits === undefined || traits.length === 0 ? null : JSON.stringify(traits);
+
+const PERSONA_UPDATABLE_COLUMNS: ReadonlyArray<readonly [Exclude<keyof UpdatePersonaRequest, 'traits'>, string]> = [
   ['name', 'name'],
   ['description', 'description'],
   ['pains', 'pains'],
   ['desires', 'desires'],
-  ['objections', 'objections']
+  ['objections', 'objections'],
+  ['age', 'age'],
+  ['occupation', 'occupation'],
+  ['location', 'location'],
+  ['whereTheyAre', 'where_they_are'],
+  ['toneThatWorks', 'tone_that_works']
 ];
 
 /** A persona PATCH; false means the persona does not belong to this client (or is not there). */
@@ -687,6 +822,10 @@ export const updatePersona = async (
       bindings.push(value);
     }
   }
+  if (input.changes.traits !== undefined) {
+    assignments.push('traits = ?::jsonb');
+    bindings.push(traitsBinding(input.changes.traits));
+  }
   bindings.push(input.personaId, input.clientId);
   const result = await raw<RawRows<{ id: string }>>(transaction, `
     update public.client_personas
@@ -697,22 +836,17 @@ export const updatePersona = async (
   return result.rows[0] !== undefined;
 };
 
-/** Archive/unarchive; `status` is in the column UPDATE grant, `updated_by` is pinned by the RLS check. */
-export const setPersonaStatus = async (
+/**
+ * Deletes a persona of the client; its conversations and their comments go with it, by the foreign keys of the database
+ * (20261113000400), in the same statement. False means there was no such persona in this client for this caller.
+ */
+export const deletePersona = async (
   transaction: ClientTransaction,
-  input: {
-    readonly clientId: string;
-    readonly personaId: string;
-    readonly actorUserId: string;
-    readonly status: 'active' | 'archived';
-  }
+  input: { readonly clientId: string; readonly personaId: string }
 ): Promise<boolean> => {
   const result = await raw<RawRows<{ id: string }>>(transaction, `
-    update public.client_personas
-    set status = ?, updated_by = ?::uuid, updated_at = now()
-    where id = ?::uuid and client_id = ?::uuid
-    returning id
-  `, [input.status, input.actorUserId, input.personaId, input.clientId]);
+    delete from public.client_personas where id = ?::uuid and client_id = ?::uuid returning id
+  `, [input.personaId, input.clientId]);
   return result.rows[0] !== undefined;
 };
 
@@ -740,7 +874,13 @@ export const personaFromRow = (row: PersonaRow): Persona => ({
   pains: row.pains,
   desires: row.desires,
   objections: row.objections,
-  status: row.status,
+  age: row.age,
+  occupation: row.occupation,
+  location: row.location,
+  traits: row.traits === null ? [] : [...row.traits],
+  whereTheyAre: row.where_they_are,
+  toneThatWorks: row.tone_that_works,
+  messageCount: Number(row.message_count),
   updatedBy: updatedByFromRow(row),
   updatedAt: new Date(row.updated_at).toISOString()
 });
@@ -764,11 +904,13 @@ export const clientFromRow = (row: ClientRow, photoUrl: string | null): Client =
   legalName: row.legal_name,
   taxId: row.tax_id,
   segment: row.segment,
+  city: row.city,
   website: row.website,
   instagramHandle: row.instagram_handle,
   contactName: row.contact_name,
   contactPhone: row.contact_phone,
   contactEmail: row.contact_email,
   closingDate: row.closing_date,
+  createdAt: new Date(row.created_at).toISOString(),
   archivedAt: row.archived_at === null ? null : new Date(row.archived_at).toISOString()
 });

@@ -416,75 +416,6 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
     await getOwner().knex('client_threads').where({ id: archivedThreadId }).delete();
   });
 
-  it('keeps the comments of two threads of the same client apart: a thread the portal cannot read exposes no comment and takes none (#479)', async () => {
-    // Both threads belong to clientA1, so a policy that matched the comment by client_id instead of
-    // thread_id would still find a readable thread (the open one) and let the other thread's comment
-    // through. Only a hidden thread and a readable one of the SAME client tell the two apart.
-    const personaId = randomUUID();
-    await getOwner().knex('client_personas').insert({ id: personaId, client_id: clientA1, name: 'Persona of the hidden thread' });
-    const openThreadId = randomUUID();
-    const hiddenThreadId = randomUUID();
-    const openCommentId = randomUUID();
-    const hiddenCommentId = randomUUID();
-    await getOwner().knex('client_threads').insert([
-      { id: openThreadId, client_id: clientA1, section_key: 'observations', opened_by: portalA1, opened_side: 'client' },
-      { id: hiddenThreadId, client_id: clientA1, persona_id: personaId, opened_by: portalA1, opened_side: 'client' }
-    ]);
-    await getOwner().knex('client_thread_comments').insert([
-      { id: openCommentId, thread_id: openThreadId, client_id: clientA1, author_user_id: portalA1, author_side: 'client', body: 'On the open thread' },
-      { id: hiddenCommentId, thread_id: hiddenThreadId, client_id: clientA1, author_user_id: portalA1, author_side: 'client', body: 'On the hidden thread' }
-    ]);
-    await getOwner().knex('client_personas').where({ id: personaId }).update({ status: 'archived' });
-
-    const commentIdsOf = (userId: string, where: Record<string, string>) =>
-      asUser(userId, (transaction) => transaction('client_thread_comments').where(where).select('id')).then((rows) => rows.map((row) => row.id as string).sort());
-    const storedOn = async (threadId: string) =>
-      Number((await getOwner().knex('client_thread_comments').where({ thread_id: threadId }).count({ total: '*' }))[0]!.total);
-
-    await expect(asUser(portalA1, (transaction) => transaction('client_threads').where({ client_id: clientA1 }).whereIn('id', [openThreadId, hiddenThreadId]).select('id'))).resolves.toEqual([{ id: openThreadId }]);
-    await expect(commentIdsOf(portalA1, { client_id: clientA1 })).resolves.toEqual([openCommentId]);
-    await expect(commentIdsOf(portalA1, { thread_id: openThreadId })).resolves.toEqual([openCommentId]);
-    await expect(commentIdsOf(portalA1, { thread_id: hiddenThreadId })).resolves.toEqual([]);
-    await expect(commentIdsOf(portalA1, { id: hiddenCommentId })).resolves.toEqual([]);
-    // The agency keeps both, each under its own thread.
-    await expect(commentIdsOf(adminA, { thread_id: openThreadId })).resolves.toEqual([openCommentId]);
-    await expect(commentIdsOf(adminA, { thread_id: hiddenThreadId })).resolves.toEqual([hiddenCommentId]);
-    await expect(commentIdsOf(adminA, { client_id: clientA1 })).resolves.toEqual([openCommentId, hiddenCommentId].sort());
-
-    const commentOn = (threadId: string, userId: string, side: 'agency' | 'client') =>
-      asUser(userId, (transaction) =>
-        transaction('client_thread_comments').insert({ id: randomUUID(), thread_id: threadId, client_id: clientA1, author_user_id: userId, author_side: side, body: `Comment by ${userId}` })
-      );
-    await expect(commentOn(hiddenThreadId, portalA1, 'client')).rejects.toThrow(/row-level security/);
-    await expect(commentOn(hiddenThreadId, managerA, 'agency')).rejects.toThrow(/row-level security/);
-    await expect(storedOn(hiddenThreadId)).resolves.toBe(1);
-
-    // A collaborator who also holds the client's portal link reads the hidden thread through the agency branch
-    // of the thread policy, so the portal's own filter never hides it from them: only the persona clause of the
-    // comment policy stops a comment written as the client. The pure portal member above cannot prove that clause.
-    await getOwner().knex('client_memberships').insert({ client_id: clientA1, user_id: productionA });
-    try {
-      await expect(
-        asUser(productionA, (transaction) => transaction('client_threads').whereIn('id', [openThreadId, hiddenThreadId]).select('id'))
-      ).resolves.toHaveLength(2);
-      await expect(commentOn(hiddenThreadId, productionA, 'client')).rejects.toThrow(/row-level security/);
-      await expect(storedOn(hiddenThreadId)).resolves.toBe(1);
-      await commentOn(openThreadId, productionA, 'client');
-    } finally {
-      await getOwner().knex('client_memberships').where({ client_id: clientA1, user_id: productionA }).delete();
-    }
-
-    // The same writers comment on the readable thread of that client: the refusal above is the thread's, not the client's.
-    await commentOn(openThreadId, portalA1, 'client');
-    await commentOn(openThreadId, managerA, 'agency');
-    await expect(storedOn(openThreadId)).resolves.toBe(4);
-    await expect(storedOn(hiddenThreadId)).resolves.toBe(1);
-
-    await getOwner().knex('client_thread_comments').whereIn('thread_id', [openThreadId, hiddenThreadId]).delete();
-    await getOwner().knex('client_threads').whereIn('id', [openThreadId, hiddenThreadId]).delete();
-    await getOwner().knex('client_personas').where({ id: personaId }).delete();
-  });
-
   it('hides a sibling client of the same agency from a portal member, and blocks their writes on it', async () => {
     const sectionId = { client_id: clientA2, section_key: 'branding' as const };
     await getOwner().knex('client_brand_sections').insert({ ...sectionId, body: 'Client A2 branding', updated_by: adminA });
@@ -528,32 +459,6 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
     await getOwner().knex('client_threads').where({ id: threadId }).delete();
     await getOwner().knex('client_personas').where({ id: personaId }).delete();
     await getOwner().knex('client_brand_sections').where(sectionId).delete();
-  });
-
-  it('hides an archived persona from the portal, while writes to it stay agency-only regardless', async () => {
-    const activePersonaId = randomUUID();
-    const archivedPersonaId = randomUUID();
-    await getOwner().knex('client_personas').insert([
-      { id: activePersonaId, client_id: clientA1, name: 'Active persona' },
-      { id: archivedPersonaId, client_id: clientA1, name: 'Archived persona', status: 'archived' }
-    ]);
-
-    await expect(asUser(portalA1, (transaction) => transaction('client_personas').where({ client_id: clientA1 }).orderBy('name').select('id'))).resolves.toEqual([
-      { id: activePersonaId }
-    ]);
-    await expect(asUser(adminA, (transaction) => transaction('client_personas').where({ client_id: clientA1 }).select('id'))).resolves.toEqual(
-      expect.arrayContaining([{ id: activePersonaId }, { id: archivedPersonaId }])
-    );
-
-    // client_personas' UPDATE grant is column-restricted (name/description/pains/desires/
-    // objections/status/updated_by/updated_at), but the portal fails earlier than that: the USING
-    // clause requires cliente.operar, which no vínculo de cliente ever satisfies, so this is a
-    // policy denial (0 matching rows), not a column privilege one.
-    await expect(
-      asUser(portalA1, (transaction) => transaction('client_personas').where({ id: activePersonaId }).update({ name: 'Renamed by portal' }))
-    ).resolves.toBe(0);
-
-    await getOwner().knex('client_personas').whereIn('id', [activePersonaId, archivedPersonaId]).delete();
   });
 
   it('lets threads and comments open only on the side the credential actually holds', async () => {
@@ -732,63 +637,6 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
     await getOwner().knex('client_threads').where({ id: threadId }).delete();
   });
 
-  it('refuses to resolve a thread whose persona has been archived', async () => {
-    const personaId = randomUUID();
-    await getOwner().knex('client_personas').insert({ id: personaId, client_id: clientA1, name: 'Will be archived before resolve' });
-    const threadId = randomUUID();
-    await getOwner().knex('client_threads').insert({ id: threadId, client_id: clientA1, persona_id: personaId, opened_by: adminA, opened_side: 'agency' });
-    await getOwner().knex('client_personas').where({ id: personaId }).update({ status: 'archived' });
-
-    await expect(
-      asUser(managerA, (transaction) => transaction('client_threads').where({ id: threadId }).update({ resolved_at: new Date(), resolved_by: managerA }))
-    ).resolves.toBe(0);
-
-    await getOwner().knex('client_threads').where({ id: threadId }).delete();
-    await getOwner().knex('client_personas').where({ id: personaId }).delete();
-  });
-
-  it('refuses a new thread opened on an already-archived persona, from either side', async () => {
-    const personaId = randomUUID();
-    await getOwner().knex('client_personas').insert({ id: personaId, client_id: clientA1, name: 'Already archived', status: 'archived' });
-
-    await expect(
-      asUser(managerA, (transaction) =>
-        transaction('client_threads').insert({ id: randomUUID(), client_id: clientA1, persona_id: personaId, opened_by: managerA, opened_side: 'agency' })
-      )
-    ).rejects.toThrow(/row-level security/);
-    await expect(
-      asUser(portalA1, (transaction) =>
-        transaction('client_threads').insert({ id: randomUUID(), client_id: clientA1, persona_id: personaId, opened_by: portalA1, opened_side: 'client' })
-      )
-    ).rejects.toThrow(/row-level security/);
-
-    await getOwner().knex('client_personas').where({ id: personaId }).delete();
-  });
-
-  it('hides the portal from a thread and its comments once their persona is archived', async () => {
-    const personaId = randomUUID();
-    await getOwner().knex('client_personas').insert({ id: personaId, client_id: clientA1, name: 'Persona for read visibility' });
-    const threadId = randomUUID();
-    const commentId = randomUUID();
-    await getOwner().knex('client_threads').insert({ id: threadId, client_id: clientA1, persona_id: personaId, opened_by: portalA1, opened_side: 'client' });
-    await getOwner().knex('client_thread_comments').insert({ id: commentId, thread_id: threadId, client_id: clientA1, author_user_id: portalA1, author_side: 'client', body: 'Before archiving' });
-
-    await expect(asUser(portalA1, (transaction) => transaction('client_threads').where({ id: threadId }).select('id'))).resolves.toEqual([{ id: threadId }]);
-    await expect(asUser(portalA1, (transaction) => transaction('client_thread_comments').where({ id: commentId }).select('id'))).resolves.toEqual([{ id: commentId }]);
-
-    await getOwner().knex('client_personas').where({ id: personaId }).update({ status: 'archived' });
-
-    await expect(asUser(portalA1, (transaction) => transaction('client_threads').where({ id: threadId }).select('id'))).resolves.toEqual([]);
-    await expect(asUser(portalA1, (transaction) => transaction('client_thread_comments').where({ id: commentId }).select('id'))).resolves.toEqual([]);
-    // The agency side keeps the full history regardless of persona status.
-    await expect(asUser(adminA, (transaction) => transaction('client_threads').where({ id: threadId }).select('id'))).resolves.toEqual([{ id: threadId }]);
-    await expect(asUser(adminA, (transaction) => transaction('client_thread_comments').where({ id: commentId }).select('id'))).resolves.toEqual([{ id: commentId }]);
-
-    await getOwner().knex('client_thread_comments').where({ id: commentId }).delete();
-    await getOwner().knex('client_threads').where({ id: threadId }).delete();
-    await getOwner().knex('client_personas').where({ id: personaId }).delete();
-  });
-
   it('rejects a thread persona from another client (A0010) and a comment client mismatched with its thread (A0011)', async () => {
     const foreignPersonaId = randomUUID();
     await getOwner().knex('client_personas').insert({ id: foreignPersonaId, client_id: clientA2, name: 'Belongs to A2' });
@@ -844,28 +692,6 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
         .insert({ id: randomUUID(), client_id: clientA1, opened_by: adminA, opened_side: 'agency' })
     ).rejects.toThrow(/violates check constraint/);
 
-    await getOwner().knex('client_personas').where({ id: personaId }).delete();
-  });
-
-  it('rejects a comment on a thread whose persona was archived, from both sides', async () => {
-    const personaId = randomUUID();
-    await getOwner().knex('client_personas').insert({ id: personaId, client_id: clientA1, name: 'Will be archived' });
-    const threadId = randomUUID();
-    await getOwner().knex('client_threads').insert({ id: threadId, client_id: clientA1, persona_id: personaId, opened_by: portalA1, opened_side: 'client' });
-    await getOwner().knex('client_personas').where({ id: personaId }).update({ status: 'archived' });
-
-    await expect(
-      asUser(managerA, (transaction) =>
-        transaction('client_thread_comments').insert({ id: randomUUID(), thread_id: threadId, client_id: clientA1, author_user_id: managerA, author_side: 'agency', body: 'Denied' })
-      )
-    ).rejects.toThrow(/row-level security/);
-    await expect(
-      asUser(portalA1, (transaction) =>
-        transaction('client_thread_comments').insert({ id: randomUUID(), thread_id: threadId, client_id: clientA1, author_user_id: portalA1, author_side: 'client', body: 'Denied' })
-      )
-    ).rejects.toThrow(/row-level security/);
-
-    await getOwner().knex('client_threads').where({ id: threadId }).delete();
     await getOwner().knex('client_personas').where({ id: personaId }).delete();
   });
 
@@ -954,15 +780,11 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
     const writes = async (clientId: string) => {
       const sectionBody = { client_id: clientId, section_key: 'branding' as const };
       const activePersonaId = randomUUID();
-      const archivedPersonaId = randomUUID();
       const threadId = randomUUID();
       await getOwner().knex('client_brand_sections').insert({ ...sectionBody, body: 'Original' });
-      await getOwner().knex('client_personas').insert([
-        { id: activePersonaId, client_id: clientId, name: 'Original active' },
-        { id: archivedPersonaId, client_id: clientId, name: 'Original archived', status: 'archived' }
-      ]);
+      await getOwner().knex('client_personas').insert({ id: activePersonaId, client_id: clientId, name: 'Original active' });
       await getOwner().knex('client_threads').insert({ id: threadId, client_id: clientId, section_key: 'observations', opened_by: adminA, opened_side: 'agency' });
-      return { sectionBody, activePersonaId, archivedPersonaId, threadId };
+      return { sectionBody, activePersonaId, threadId };
     };
     const archived = await writes(clientArchived);
     const active = await writes(clientA1);
@@ -976,14 +798,7 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
         asUser(managerA, (transaction) =>
           transaction('client_personas').where({ id: rows.activePersonaId }).update({ name: 'Edited', updated_by: managerA })
         ),
-      archivePersona: () =>
-        asUser(managerA, (transaction) =>
-          transaction('client_personas').where({ id: rows.activePersonaId }).update({ status: 'archived', updated_by: managerA })
-        ),
-      unarchivePersona: () =>
-        asUser(managerA, (transaction) =>
-          transaction('client_personas').where({ id: rows.archivedPersonaId }).update({ status: 'active', updated_by: managerA })
-        ),
+      deletePersona: () => asUser(managerA, (transaction) => transaction('client_personas').where({ id: rows.activePersonaId }).delete()),
       resolveThread: () =>
         asUser(managerA, (transaction) =>
           transaction('client_threads').where({ id: rows.threadId }).update({ resolved_at: new Date(), resolved_by: managerA })
@@ -1003,8 +818,7 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
       const accepted = attempt(clientA1, active);
       await expect(accepted.editSection()).resolves.toBe(1);
       await expect(accepted.renamePersona()).resolves.toBe(1);
-      await expect(accepted.archivePersona()).resolves.toBe(1);
-      await expect(accepted.unarchivePersona()).resolves.toBe(1);
+      await expect(accepted.deletePersona()).resolves.toBe(1);
       await expect(accepted.resolveThread()).resolves.toBe(1);
       await expect(accepted.insertSection()).resolves.toHaveLength(1);
       await expect(accepted.insertPersona()).resolves.toHaveLength(1);
@@ -1012,8 +826,7 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
       const denied = attempt(clientArchived, archived);
       await expect(denied.editSection()).resolves.toBe(0);
       await expect(denied.renamePersona()).resolves.toBe(0);
-      await expect(denied.archivePersona()).resolves.toBe(0);
-      await expect(denied.unarchivePersona()).resolves.toBe(0);
+      await expect(denied.deletePersona()).resolves.toBe(0);
       await expect(denied.resolveThread()).resolves.toBe(0);
       await expect(denied.insertSection()).rejects.toThrow(/row-level security/);
       await expect(denied.insertPersona()).rejects.toThrow(/row-level security/);
@@ -1021,16 +834,12 @@ describe('CLIENTS module database schema, RLS and permissions (#122)', () => {
       const knex = getOwner().knex;
       await expect(knex('client_brand_sections').where(archived.sectionBody).first('body', 'updated_by')).resolves.toEqual({ body: 'Original', updated_by: null });
       await expect(knex('client_personas').where({ id: archived.activePersonaId }).first('name', 'status')).resolves.toEqual({ name: 'Original active', status: 'active' });
-      await expect(knex('client_personas').where({ id: archived.archivedPersonaId }).first('name', 'status')).resolves.toEqual({
-        name: 'Original archived',
-        status: 'archived'
-      });
       await expect(knex('client_threads').where({ id: archived.threadId }).first('resolved_at', 'resolved_by')).resolves.toEqual({
         resolved_at: null,
         resolved_by: null
       });
       await expect(knex('client_brand_sections').where({ client_id: clientArchived }).select('section_key')).resolves.toEqual([{ section_key: 'branding' }]);
-      await expect(knex('client_personas').where({ client_id: clientArchived }).count({ total: '*' }).first()).resolves.toEqual({ total: '2' });
+      await expect(knex('client_personas').where({ client_id: clientArchived }).count({ total: '*' }).first()).resolves.toEqual({ total: '1' });
     } finally {
       await getOwner().transaction(async (transaction) => {
         await transaction('client_threads').whereIn('client_id', [clientArchived, clientA1]).delete();

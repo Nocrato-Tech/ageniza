@@ -43,7 +43,7 @@ Administrar quem faz parte da agência: quem entra, com que papel, em que cargo,
 
 ¹ já existe no catálogo e já é concedida ao `admin`.
 
-² A API recusa a edição do **próprio** cargo e a do cargo do **Owner** (`403`), como já recusa a do papel: o modal mostra o cargo como leitura nos dois casos. Decisão do dono em 2026-10-08 (`docs/business/decisions/2026-10-08-cargo-proprio-e-do-owner-nao-se-edita.md`), que substitui o item 7 da decisão de 2026-10-07 do `PATCH` do vínculo.
+² A API recusa a edição do **próprio** cargo e a do cargo do **Owner** (`403`), como já recusa a do papel: o perfil mostra o cargo como leitura nos dois casos. Decisão do dono em 2026-10-08 (`docs/business/decisions/2026-10-08-cargo-proprio-e-do-owner-nao-se-edita.md`), que substitui o item 7 da decisão de 2026-10-07 do `PATCH` do vínculo.
 
 ³ Além deles, o Owner, por posse. O critério é a tarefa, não o nome do papel: quem remove ou reativa precisa encontrar a pessoa, e uma agência pode montar um papel personalizado de administração do quadro sem usar o preset `admin`. É um desvio deliberado de "apenas para Admin e Owner" (2026-09-24): o `account_manager`, que edita cargo mas não papel, **não** vê removidos. **Pendente de validação** (2026-10-07).
 
@@ -135,6 +135,7 @@ Convite pendente **não é um estado do vínculo**: é uma linha em `invitations
 | `GET` | `/agencies/:agencyId/collaborators` | `colaborador.visualizar` | `{ data, meta }` paginado |
 | `GET` | `/agencies/:agencyId/collaborators/:membershipId` | `colaborador.visualizar` | o detalhe de uma pessoa |
 | `GET` | `/agencies/:agencyId/collaborators/job-titles` | `colaborador.visualizar` | `{ data: string[] }` com os cargos que existem na agência |
+| `GET` | `/agencies/:agencyId/collaborators/:membershipId/open-contents` | `colaborador.visualizar` **e** `conteudo.visualizar` | `{ summary, data }` com os clientes e o que está com a pessoa |
 | `GET` | `/agencies/:agencyId/roles` | `colaborador.convidar` **ou** `colaborador.alterar_papel` | `{ data: { id, key, name }[] }` com os papéis atribuíveis |
 | `PATCH` | `/agencies/:agencyId/collaborators/:membershipId` | `alterar_papel` e/ou `alterar_funcao` | o vínculo atualizado |
 | `POST` | `/agencies/:agencyId/collaborators/:membershipId/remove` | `colaborador.remover` | o vínculo em `removed` |
@@ -142,6 +143,8 @@ Convite pendente **não é um estado do vínculo**: é uma linha em `invitations
 | `GET` | `/agencies/:agencyId/invitations` | `colaborador.convidar` | convites pendentes, paginado |
 | `PATCH` | `/me/profile` | — (identidade) | nome atualizado |
 | `POST` | `/me/photo` | — (identidade) | a foto do usuário |
+
+**`open-contents`** (2026-11-12, decisão de 2026-11-11) é a leitura do cartão "Clientes e o que está com ele" (seção 7): os conteúdos abertos cujo `owner_user_id` é o usuário daquele vínculo, por cliente, lidos como quem olha sob a RLS, com a agência e o responsável repetidos no `WHERE`. Sem `conteudo.visualizar` é `403`; a ordem das recusas é a do detalhe, e o vínculo removido é o mesmo `404`.
 
 As rotas de perfil **não são escopadas por agência**: o usuário é global, e escopá-las sugeriria que a pessoa tem um nome por tenant.
 
@@ -244,16 +247,16 @@ O **transporte** (presigned como na mídia, ou upload pelo servidor, dado que av
 
 | elemento | função |
 |---|---|
-| Crachá | identificação rápida. Quatro informações e nada mais: foto, nome, cargo, papel |
+| Crachá | identificação rápida. Quatro informações e nada mais: foto, nome, cargo, papel. Desde 2026-11-11 o papel é uma etiqueta **colorida por papel** (com o nome, nunca só a cor) e a dona da agência (Owner) tem uma coroa e "Dona da agência" ([`o-visual-segue-o-quadro-r0-…`](../docs/business/decisions/2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco.md), item 5) |
 | Foto ou iniciais | quem não enviou foto aparece com as iniciais do nome, nunca com um ícone genérico |
-| Papel visível para todos | a equipe precisa saber a quem pedir o que; esconder faria as pessoas descobrirem por tentativa |
+| Papel visível para todos | a equipe precisa saber a quem pedir o que; esconder faria as pessoas descobrirem por tentativa. A cor do papel só identifica: não diz de quem é a vez |
 | Busca | por nome **e** e-mail, porque quem procura às vezes só lembra do e-mail |
 | Filtros | papel e cargo. Cargo é texto livre, então o filtro lista os valores que existem naquela agência (a rota `job-titles`, seção 6) |
 | Ordem | por nome, sem distinguir acento nem maiúsculas (seção 6) |
 | Convidar | ação primária, visível só para quem tem `colaborador.convidar` |
 | Contagem | `totalItems` do contrato de listagem |
 
-**24 por página**, grade de 3 ou 4 colunas conforme a largura — 24 é múltiplo dos dois e nunca deixa linha quebrada.
+**24 por página**, grade de **3 colunas** a partir de 64 rem, que se ajusta abaixo (2026-11-11: vale o design system, e a frase "3 ou 4 colunas" saiu) — 24 é múltiplo de 3 e nunca deixa linha quebrada.
 
 **A lista não tem estado vazio:** quem olha está nela, e uma agência recém-ativada tem o Owner.
 
@@ -264,39 +267,43 @@ O **transporte** (presigned como na mídia, ou upload pelo servidor, dado que av
 │  [ limpar busca ]                                        │
 ```
 
-### Detalhe — modal sobre a lista
+### Detalhe — página com a lista ao lado (desde 2026-11-11)
 
-Abre ao clicar no crachá. A URL reflete a pessoa aberta, para o link ser compartilhável e o "voltar" fechar o modal.
+> **Era um modal sobre a lista** (decisão `2026-09-24-escopo-do-modulo-de-colaboradores`, item 7). Em 2026-11-11 passou a ser uma **página**, com a lista de pessoas ao lado ([`o-colaborador-tem-pagina-propria-e-mostra-os-clientes-que-estao-com-ele`](../docs/business/decisions/2026-11-11-o-colaborador-tem-pagina-propria-e-mostra-os-clientes-que-estao-com-ele.md), pendente de validação do dono, que substitui esse item). Abre ao clicar no crachá, em `/agencia/:agenciaId/colaboradores/:membershipId`; o endereço antigo `?colaborador=<id>` redireciona para ela. Tudo o que vale abaixo para "o modal" (cabeçalho, abas, nota do e-mail, Salvar, Remover e as permissões) vale para a página.
 
 ```
-┌────────────────────────────────────────────────────────┐
-│  ( foto )   Nome                                   ✕   │
-│             Cargo · Papel                              │
-│             pessoa@exemplo.com                         │
-│             Na agência desde 12/03/2026                │
-├────────────────────────────────────────────────────────┤
-│  [ Detalhes ]  [ Performance ]  [ Entregas ]           │
-├────────────────────────────────────────────────────────┤
-│                                                        │
-│   Cargo        [ Editor de Vídeo............]          │
-│   Papel        [ Produção ▾               ]            │
-│                                                        │
-│                          [ Salvar ]                    │
-│                                                        │
-│   ─────────────────────────────────────────            │
-│   Remover do quadro                                    │
-└────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  Equipe > Nome                                                       │
+├───────────────────┬──────────────────────────────────────────────────┤
+│ [ buscar......]   │  ( foto )   Nome  [Produção] [coroa]             │
+│ ▸ Ana    Gestor   │             Cargo · pessoa@exemplo.com           │
+│ ▸ Bruno  Produção │             Na agência desde 12/03/2026          │
+│ ▸ Carla  Admin    │  3 clientes · 6 conteúdos · 2 aguardando         │
+│                   │ ──────────────────────────────────────────────── │
+│                   │  [ Detalhes ]  [ Performance ]  [ Entregas ]     │
+│                   │   Cargo [ Editor de Vídeo....]  Papel [ Produção ▾ ] │
+│                   │                              [ Salvar ]          │
+│                   │  Clientes e o que está com ele                   │
+│                   │   Padaria Central · 4 conteúdos · 1 aguardando   │
+│                   │   Com ele agora: Promoção de pães (Em produção)  │
+│                   │  ─────────────────────────────────────────────── │
+│                   │  Remover do quadro                               │
+└───────────────────┴──────────────────────────────────────────────────┘
 ```
 
-**A data "Na agência desde"** aparece no cabeçalho do modal **para todos**, inclusive quando a pessoa abre o **próprio** perfil (2026-10-07, #357, pendente de validação). Ela vem de `joinedAt`, que é `agency_memberships.created_at`.
+**Em tela estreita** a lista é uma tela e o perfil, outra; o "voltar" leva à lista.
+
+**"Clientes e o que está com ele" é derivado.** Lista, por cliente, os conteúdos **abertos** (em produção, em ajuste, aguardando aprovação, aprovado) cujo **responsável é aquela pessoa**, com a contagem de conteúdos e a de "aguardando"; o resumo do cabeçalho soma clientes, conteúdos e aguardando. **Não existe atribuição de cliente a pessoa** (`ClientAssignment` continua inexistente) e a decisão não a cria. O cartão só aparece para quem tem `conteudo.visualizar` (e só mostra os clientes que a pessoa pode ver); a própria pessoa também precisa dessa permissão. Sem a permissão, o cartão não existe. É uma leitura nova, sob a RLS de conteúdo, sem tabela nova.
+
+**A data "Na agência desde"** aparece no cabeçalho **para todos**, inclusive quando a pessoa abre o **próprio** perfil (2026-10-07, #357, pendente de validação). Ela vem de `joinedAt`, que é `agency_memberships.created_at`.
 
 **Quem é a própria pessoa** a tela sabe por `isSelf` no item de colaborador (seção 6), nunca comparando e-mails.
 
-**Abas.** `Detalhes` no MVP; **`Performance` e `Entregas` existem desabilitadas**, com a razão visível — elas dependem do módulo Conteúdo (entregas e subtarefas), que atribui o trabalho a pessoas (2026-10-07, pendente de validação). Declarar a estrutura agora evita que o modal seja redesenhado quando aquele módulo chegar; o conteúdo das abas é definido por uma issue aberta quando o Conteúdo existir, a partir dos dados reais — seção 10.
+**Abas.** `Detalhes` no MVP; **`Performance` e `Entregas` existem desabilitadas**, com a razão visível — elas dependem do módulo Conteúdo (entregas e subtarefas), que atribui o trabalho a pessoas (2026-10-07, pendente de validação). Declarar a estrutura agora evita que o perfil seja redesenhado quando aquele módulo chegar; o conteúdo das abas é definido por uma issue aberta quando o Conteúdo existir, a partir dos dados reais — seção 10.
 
 **Variação por quem olha**
 
-| quem | o que pode neste modal |
+| quem | o que pode nesta página |
 |---|---|
 | **Admin** e **Owner** | editam cargo e papel; removem. O Owner é o único que pode conceder `admin` |
 | **Gestor de conta** | edita **cargo**; o papel aparece como leitura |
@@ -306,7 +313,7 @@ Abre ao clicar no crachá. A URL reflete a pessoa aberta, para o link ser compar
 
 **E-mail** aparece como leitura em todos os casos, com a nota de que a troca é feita pela operação — nunca um campo desabilitado sem explicação.
 
-**Remover** fica separado do resto, ao pé do modal, e pede confirmação dizendo o que acontece: a pessoa perde o acesso àquela agência e o registro permanece.
+**Remover** fica separado do resto, ao pé da página, e pede confirmação dizendo o que acontece: a pessoa perde o acesso àquela agência e o registro permanece.
 
 ### Convites pendentes — seção separada
 
@@ -445,6 +452,12 @@ E, 2026-10-08, validadas pelo dono (#359):
 - O nome no aceite do convite tem o limite do perfil: 120 caracteres (#409; substitui a de 2026-09-30)
 - A API recusa editar o próprio cargo e o cargo do Owner (#410; substitui o item 7 da de 2026-10-07 do `PATCH` do vínculo)
 - Remover colaborador ou acesso ao portal encerra todas as sessões da pessoa (#411; substitui a decisão 3 de 2026-10-07 de remover e reativar)
+
+E, 2026-11-11 (**pendentes de validação do dono**), em `docs/business/decisions/`:
+
+- [`o-colaborador-tem-pagina-propria-e-mostra-os-clientes-que-estao-com-ele`](../docs/business/decisions/2026-11-11-o-colaborador-tem-pagina-propria-e-mostra-os-clientes-que-estao-com-ele.md): o perfil vira página com a lista ao lado (substitui o item 7 de `2026-09-24-escopo-do-modulo-de-colaboradores`), o cartão "Clientes e o que está com ele" é derivado dos responsáveis e a grade tem três colunas
+- [`o-visual-segue-o-quadro-r0-…`](../docs/business/decisions/2026-11-11-o-visual-segue-o-quadro-r0-semana-no-domingo-capa-no-card-e-uma-primaria-por-bloco.md): o papel tem cor e a dona tem coroa
+- [`busca-na-agencia-e-no-portal`](../docs/business/decisions/2026-11-11-busca-na-agencia-e-no-portal.md): a busca da barra não procura pessoas da equipe (a da própria Equipe segue por nome e e-mail)
 
 Herdadas de [`autorizacao.md`](autorizacao.md): o vocabulário `archived`/`removed`, a reativação que não herda autorização, o contrato de listagem, e as convenções de tela.
 

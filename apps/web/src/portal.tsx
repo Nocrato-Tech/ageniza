@@ -1,20 +1,24 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { CalendarDays, ChartColumn, House, MessageCircle, type LucideIcon } from 'lucide-react';
-import { NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
+import { ChevronsUpDown, House, Inbox, LayoutGrid, Palette, type LucideIcon } from 'lucide-react';
+import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AuthNoContentResponseSchema, PortalClientResponseSchema, type PortalClientResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
 import { isTermsNotAccepted, TermsRedirect } from './acceptance.js';
-import { Avatar, Button, EmptyState, Skeleton } from '@ageniza/ui';
+import { Avatar, Button, Logo, Skeleton, Stage3D, type Stage3DTone } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { useAuthSession, useAuthSessionStore } from './auth.js';
 import { useDocumentTitle } from './document-title.js';
+import { HelpMenu } from './help-menu.js';
+import { ShellTopbar } from './shell-topbar.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { usePhone } from './use-phone.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
 import { PortalReadOnlyNotice } from './plan-notice.js';
+import { usePortalMaterialRequests } from './portal-requests.js';
 import { PortalTour, type PortalTourTarget } from './portal-tour.js';
 import { NotFoundHomeContext, NotFoundPage } from './status-pages.js';
 
@@ -37,12 +41,15 @@ export const usePortalClient = (): PortalClientResponse => {
 /** Same shape the API guard accepts; a malformed id never becomes a request (security review #190). */
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const PORTAL_TABS: readonly { slug: string; label: string; icon: LucideIcon }[] = [
+const PORTAL_TABS: readonly { slug: string; label: string; icon: LucideIcon; short?: string }[] = [
   { slug: 'inicio', label: 'Início', icon: House },
-  { slug: 'conteudos', label: 'Conteúdos', icon: CalendarDays },
-  { slug: 'marca', label: 'Marca', icon: MessageCircle },
-  { slug: 'relatorios', label: 'Relatórios', icon: ChartColumn }
+  { slug: 'conteudos', label: 'Conteúdos', icon: LayoutGrid },
+  { slug: 'marca', label: 'Marca', icon: Palette },
+  { slug: 'pedidos', label: 'Pedidos da agência', icon: Inbox, short: 'Pedidos' }
 ];
+
+/** Every access to the portal approves the posts, so the role under the person's name is fixed text. */
+const PORTAL_ROLE = { label: 'Aprova os posts' };
 
 const isNotFound = (error: unknown): boolean => error instanceof HttpClientError && error.status === 404;
 
@@ -62,21 +69,42 @@ function PortalUnavailable({ onRetry }: { onRetry: () => void }) {
 function PortalContextlessShell({ children }: { children: React.ReactNode }) {
   return <div className="app-shell portal-shell">
     <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-    <header className="portal-header"><AccountMenu /></header>
+    <div className="portal-sidebar">
+      <header className="portal-header"><PortalBrand /><AccountMenu variant="sidebar" /></header>
+    </div>
     <main className="portal-content" id="main-content">{children}</main>
+  </div>;
+}
+
+/** The mark of the shell, on a wide screen only: a phone's top bar is the client and the person's menu. */
+function PortalBrand() {
+  return <span className="portal-header__brand"><Logo variant="on-light" height={30} /></span>;
+}
+
+/**
+ * An empty state with its 3D icon on the stage, loose in the middle (docs/design-system.md, "Ícone 3D: o palco"): good news and the
+ * first use. The failure never has one. The state's own line icon is hidden here, so the stage is the only mark.
+ */
+export function PortalStageEmpty({ icon, tone, children }: { icon: string; tone: Stage3DTone; children: React.ReactNode }) {
+  return <div className={`portal-stage-empty portal-stage-empty--${tone}`} data-stage-host>
+    <Stage3D src={`/3d/${icon}.png`} tone={tone} size="xl" />
+    {children}
   </div>;
 }
 
 function PortalShellSkeleton() {
   // The Início skeleton: the header identity, the greeting block and the next action's card.
   return <div className="app-shell portal-shell">
-    <header className="portal-header">
-      <div className="portal-header__identity">
-        <Skeleton className="portal-header__avatar-skeleton" />
-        <div className="portal-header__labels"><Skeleton className="portal-header__name-skeleton" /><Skeleton /></div>
-      </div>
-      <AccountMenu reopensEmailChange={false} />
-    </header>
+    <div className="portal-sidebar">
+      <header className="portal-header">
+        <PortalBrand />
+        <div className="portal-header__identity">
+          <Skeleton className="portal-header__avatar-skeleton" />
+          <div className="portal-header__labels"><Skeleton className="portal-header__name-skeleton" /><Skeleton /></div>
+        </div>
+        <AccountMenu variant="sidebar" />
+      </header>
+    </div>
     <main className="portal-content" id="main-content">
       <Skeleton className="portal-home__title-skeleton" />
       <Skeleton className="portal-home__action-skeleton" />
@@ -84,11 +112,26 @@ function PortalShellSkeleton() {
   </div>;
 }
 
+/** The number of open requests of the agency, as a badge on its item: a count of work the client owes, not a notification. */
+function RequestsBadge({ clientId }: { clientId: string }) {
+  const requests = usePortalMaterialRequests(clientId);
+  const open = requests.data?.meta.totalItems ?? 0;
+  if (open === 0) return null;
+  return <span className="portal-nav__badge" aria-label={`${open} ${open === 1 ? 'pedido aberto' : 'pedidos abertos'}`}>{open}</span>;
+}
+
 function PortalNav({ clienteId, tourTarget, children }: { clienteId: string; tourTarget: PortalTourTarget | null; children?: React.ReactNode }) {
   return <nav className="portal-nav" aria-label="Navegação do portal">
+    <p className="portal-nav__title">Seu espaço</p>
     <ul>
-      {PORTAL_TABS.map(({ slug, label, icon: Icon }) => <li key={slug}>
-        <NavLink end to={`/portal/${clienteId}/${slug}`} data-tour-target={slug === tourTarget ? 'true' : undefined}><Icon aria-hidden="true" /><span>{label}</span></NavLink>
+      {PORTAL_TABS.map(({ slug, label, icon: Icon, short }) => <li key={slug}>
+        <NavLink end to={`/portal/${clienteId}/${slug}`} data-tour-target={slug === tourTarget ? 'true' : undefined}>
+          <Icon aria-hidden="true" />
+          {short === undefined
+            ? <span>{label}</span>
+            : <span><span className="portal-nav__long">{label}</span><span className="portal-nav__short" aria-hidden="true">{short}</span></span>}
+          {slug === 'pedidos' && <RequestsBadge clientId={clienteId} />}
+        </NavLink>
       </li>)}
     </ul>
     {children}
@@ -101,6 +144,7 @@ export function PortalAreaLayout() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const session = useAuthSession(useAuthSessionStore());
+  const phone = usePhone();
   // The tour is per person and per client: what was closed here is remembered by client, and a
   // failed "seen" write is deliberately not remembered past this visit (specs/clientes.md §7).
   const [closedTours, setClosedTours] = useState<ReadonlySet<string>>(new Set());
@@ -143,6 +187,8 @@ export function PortalAreaLayout() {
     : data.onboardingSeenAt === null && !closedTours.has(clienteId) ? 'first'
       : null;
 
+  const reviewTour = tourMode === null ? () => { setReviewingClientId(clienteId); } : undefined;
+
   const closeTour = (): void => {
     if (tourMode === 'review') { setReviewingClientId(null); return; }
     setClosedTours((previous) => new Set(previous).add(clienteId));
@@ -159,44 +205,40 @@ export function PortalAreaLayout() {
   return <PortalClientContext.Provider value={data}>
     <div className="app-shell portal-shell">
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-      <header className="portal-header">
-        <div className="portal-header__identity">
-          <Avatar name={data.name} photoUrl={data.photoUrl} size="md" />
-          <div className="portal-header__labels">
-            <p className="portal-header__name">{data.name}</p>
-            <p className="portal-header__agency">por {data.agencyName}</p>
-          </div>
-        </div>
-        {/* The account menu (#70) lives here; the active context is the client this portal is. */}
-        <AccountMenu activeContext={data.name} onReviewTour={tourMode === null ? () => { setReviewingClientId(clienteId); } : undefined} />
-      </header>
-      <LegalNotice />
-      {data.agencyReadOnly && <PortalReadOnlyNotice agencyName={data.agencyName} />}
-      <main className="portal-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/portal/${data.id}/inicio`}><Outlet /></NotFoundHomeContext.Provider></main>
-      {/* The card lives in the bar so it sits right above it, whatever the bar's height becomes. */}
-      <PortalNav clienteId={clienteId} tourTarget={tourTarget}>
-        {tourMode !== null && <PortalTour
-          key={`${clienteId}:${tourMode}`}
-          personName={session.user?.name ?? ''}
-          clientName={data.name}
-          agencyName={data.agencyName}
-          onClose={closeTour}
-          onTargetChange={setTourTarget}
-        />}
-      </PortalNav>
+      <div className="portal-sidebar">
+        <header className="portal-header">
+          <PortalBrand />
+          <Link className="portal-header__identity" to="/contextos">
+            <Avatar name={data.name} photoUrl={data.photoUrl} size="sm" />
+            <span className="portal-header__labels">
+              <span className="portal-header__agency">Com a {data.agencyName}</span>
+              <span className="portal-header__name">{data.name}</span>
+            </span>
+            <ChevronsUpDown className="portal-header__chevron" aria-hidden="true" />
+          </Link>
+          {phone && <HelpMenu onReviewTour={reviewTour} />}
+          {/* The account menu (#70) lives here; the active context is the client this portal is. */}
+          <AccountMenu variant="sidebar" activeContext={data.name} role={PORTAL_ROLE}/>
+        </header>
+        {/* The card lives in the bar so it sits right above it, whatever the bar's height becomes. */}
+        <PortalNav clienteId={clienteId} tourTarget={tourTarget}>
+          {tourMode !== null && <PortalTour
+            key={`${clienteId}:${tourMode}`}
+            personName={session.user?.name ?? ''}
+            clientName={data.name}
+            agencyName={data.agencyName}
+            onClose={closeTour}
+            onTargetChange={setTourTarget}
+          />}
+        </PortalNav>
+      </div>
+      <ShellTopbar onReviewTour={reviewTour} />
+      <main className="portal-content" id="main-content">
+        <LegalNotice />
+        {data.agencyReadOnly && <PortalReadOnlyNotice agencyName={data.agencyName} />}
+        <InvitationNotice />
+        <NotFoundHomeContext.Provider value={`/portal/${data.id}/inicio`}><Outlet /></NotFoundHomeContext.Provider>
+      </main>
     </div>
   </PortalClientContext.Provider>;
-}
-
-/**
- * A reserved area of the portal shell (`docs/design-system.md` §23): it says what will come, in the
- * client's language, and offers no control and no fake data. Relatórios waits for its module.
- */
-export function PortalSkeletonPage({ title, description }: { title: string; description: string }) {
-  const titleId = `portal-${title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}-title`;
-  useDocumentTitle(`${title} — Portal do cliente — Ageniza`);
-  return <section className="portal-skeleton" aria-labelledby={titleId}>
-    <h1 id={titleId}>{title}</h1>
-    <EmptyState mascot className="portal-empty" title="Ainda não há resultados para mostrar" description={description} />
-  </section>;
 }

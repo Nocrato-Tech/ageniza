@@ -112,6 +112,57 @@ describe('plans and prices', () => {
   });
 });
 
+describe('what a quote is made of (decision 2026-11-11, item 4)', () => {
+  const quote = async (who: Person, agencyId: string, change: Record<string, unknown>) => {
+    const response = await world.call(who, 'POST', `${base(agencyId)}/quote`, change);
+    expect(response.statusCode).toBe(200);
+    return response.json<{
+      effect: string; monthlyCents: number; amountCents: number; daysLeft: number | null; periodDays: number | null;
+      lines: Array<{ kind: string; quantity: number; unitCents: number; totalCents: number }>;
+    }>();
+  };
+
+  it('tells the days of the period only for a raise, and the plan and the extras the monthly price is made of', async () => {
+    const owner = await world.person('sub-quote-owner');
+    const agency = await world.agency(owner);
+
+    const first = await quote(owner, agency, { planKey: 'essencial', extraClients: 3, extraStorageGib: 10 });
+    expect(first).toMatchObject({ effect: 'subscribe', monthlyCents: 9700 + 3 * 600 + 10 * 40, daysLeft: null, periodDays: null });
+    expect(first.lines).toEqual([
+      { kind: 'plan', quantity: 1, unitCents: 9700, totalCents: 9700 },
+      { kind: 'extra_clients', quantity: 3, unitCents: 600, totalCents: 1800 },
+      { kind: 'extra_storage_gib', quantity: 10, unitCents: 40, totalCents: 400 }
+    ]);
+
+    await pay(owner, agency, essencial);
+    const raise = await quote(owner, agency, { planKey: 'profissional', extraClients: 3, extraStorageGib: 10 });
+    expect(raise.effect).toBe('upgrade');
+    expect(raise.periodDays).toBeGreaterThanOrEqual(28);
+    expect(raise.periodDays).toBeLessThanOrEqual(31);
+    expect(raise.daysLeft).toBeGreaterThanOrEqual(1);
+    expect(raise.daysLeft).toBeLessThanOrEqual(raise.periodDays!);
+    expect(raise.lines.map((line) => line.kind)).toEqual(['plan', 'extra_clients', 'extra_storage_gib']);
+    expect(raise.lines.reduce((sum, line) => sum + line.totalCents, 0)).toBe(raise.monthlyCents);
+    // The days shown are the days charged: the difference of the monthly prices, prorated by them.
+    expect(Math.abs(raise.amountCents - (raise.monthlyCents - 9700) * raise.daysLeft! / raise.periodDays!)).toBeLessThanOrEqual(0.5);
+
+    await pay(owner, agency, { planKey: 'profissional', extraClients: 0, extraStorageGib: 0 });
+    const lower = await quote(owner, agency, essencial);
+    expect(lower).toMatchObject({ effect: 'downgrade', amountCents: 0, daysLeft: null, periodDays: null });
+    expect(lower.lines).toEqual([{ kind: 'plan', quantity: 1, unitCents: 9700, totalCents: 9700 }]);
+  });
+
+  it('charges what it quotes: the amount of the charge opened by the request is the amount of the quote', async () => {
+    const owner = await world.person('sub-quote-same');
+    const agency = await world.agency(owner);
+    await pay(owner, agency, essencial);
+    const change = { planKey: 'profissional', extraClients: 2, extraStorageGib: 0 };
+    const quoted = await quote(owner, agency, change);
+    const requested = await world.call(owner, 'POST', `${base(agency)}/charges`, change);
+    expect(requested.json()).toMatchObject({ effect: 'upgrade', amountCents: quoted.amountCents, monthlyCents: quoted.monthlyCents });
+  });
+});
+
 describe('subscribing, upgrading, downgrading and canceling', () => {
   let agency: string;
   let owner: Person;

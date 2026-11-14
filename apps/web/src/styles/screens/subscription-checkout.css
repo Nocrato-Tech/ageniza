@@ -1,0 +1,611 @@
+/* Assinatura, faturas and the purchase screen, in the look of the redesign board (agencia-assinatura, -faturas, -checkout). */
+.subscription__head--actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.subscription__head-text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.subscription__crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+.subscription__crumbs a,
+.subscription__crumb-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-link);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.subscription__crumb-button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.subscription .subscription__muted {
+  color: var(--text-secondary);
+}
+
+.subscription__price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.subscription__stat {
+  font: var(--stat-lg);
+  letter-spacing: -0.02em;
+}
+
+.subscription__section-head {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+
+.subscription__plans {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.subscription__benefits {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.subscription__benefits li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.subscription__benefits svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.2rem;
+  color: var(--status-ready-fg);
+}
+
+.subscription__sum {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.subscription__sum li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.subscription__sum-total {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+/* The note under a sum: a bordered box on the card, with no tint behind the text. */
+.subscription .subscription__summary {
+  border: 1px solid var(--border-default);
+  background: var(--bg-canvas);
+}
+
+.subscription .subscription__state,
+.plan-includes {
+  border: 1px solid var(--border-default);
+  background: var(--bg-canvas);
+}
+
+/* The recommendation of the board: what the use says about the plan, with the way to the plans and to what a downgrade costs.
+   It is the tinted block of the screen, with the trophy at the end of the row; on a narrow screen the trophy goes. */
+.plan-rec {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-xl);
+  background: var(--bg-tint);
+  color: var(--block-indigo-fg);
+}
+
+.plan-rec__body {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.plan-rec__art {
+  align-self: end;
+}
+
+.plan-rec__cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+@media (max-width: 47.99rem) {
+  .plan-rec {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-5);
+  }
+
+  .plan-rec .plan-rec__art {
+    display: none;
+  }
+}
+
+.plan-rec__eyebrow {
+  color: var(--block-indigo-fg);
+  font-weight: 600;
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.plan-rec__title {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--heading-lg);
+  overflow-wrap: anywhere;
+}
+
+.plan-rec__text {
+  max-width: 48rem;
+  font: var(--body-lg);
+}
+
+.plan-rec__why {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.plan-rec__why li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--block-indigo-fg);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.plan-rec__why svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+
+/* What a plan card says besides its price: who it is for, what it unlocks and a worked example. */
+.plan-card__tagline,
+.plan-card__per {
+  color: var(--text-secondary);
+}
+
+.plan-card__section {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.plan-card__label,
+.checkout__label {
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.plan-card__limits li {
+  align-items: flex-start;
+}
+
+.plan-card__limits svg {
+  margin-top: 0.2rem;
+}
+
+.plan-card__gain {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+.plan-card__gain strong {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.plan-card__gain svg,
+.plan-card__note svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.2rem;
+}
+
+.plan-card__gain span,
+.plan-card__gain small {
+  color: var(--text-secondary);
+}
+
+.plan-card__note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+
+.plan-card__note--warn {
+  color: var(--text-danger);
+}
+
+/* The card the agency saved ("final 4242 · vence 08/2028") and the row of the invoices beside it. */
+.subscription-test-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.subscription-test-card__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-tint);
+  color: var(--text-primary);
+}
+
+.subscription-test-card__icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.subscription-test-card__main {
+  display: grid;
+  min-width: 0;
+}
+
+.subscription-test-card__main span {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.subscription-test-card__form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.subscription-test-card__note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.subscription-test-card__note svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.subscription-test-card__brand,
+.subscription-test-card__failure {
+  color: var(--text-secondary);
+}
+
+/* Invoices: one line per charge; on a narrow screen the line stacks and keeps every value. */
+.subscription-invoices__list {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subscription-invoices__row {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr) auto 7.5rem;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--border-default);
+}
+
+.subscription-invoices__date {
+  color: var(--text-secondary);
+}
+
+.subscription-invoices__what {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.subscription-invoices__amount {
+  font: var(--label-md);
+  text-align: right;
+}
+
+@media (max-width: 47.99rem) {
+  .subscription-invoices__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2) var(--space-4);
+  }
+
+  .subscription-invoices__what {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .subscription-invoices__status {
+    grid-column: 1;
+    grid-row: 3;
+  }
+}
+
+/* The purchase: the plan and the card on the left, the sum and what is paid now on the right. */
+.checkout__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.checkout__main {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+@media (max-width: 47.99rem) {
+  .checkout__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.checkout__plan-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.checkout__lead {
+  color: var(--text-secondary);
+}
+
+.checkout__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+  font: var(--label-md);
+}
+
+.checkout__tag svg,
+.checkout__period svg,
+.checkout__testnote svg,
+.checkout__note svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+
+.checkout__gain {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.checkout__gain li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.checkout__gain svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.2rem;
+  color: var(--status-ready-fg);
+}
+
+.checkout__period,
+.checkout__note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+
+.subscription .checkout__note {
+  font: var(--caption);
+}
+
+.checkout__testnote {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.checkout__lines {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.checkout__lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.checkout__lines small {
+  display: block;
+  color: var(--text-secondary);
+}
+
+.checkout__line--total {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-default);
+  font: var(--label-md);
+}
+
+.checkout__due {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.checkout__due strong {
+  font: var(--stat-lg);
+  letter-spacing: -0.02em;
+}
+
+.checkout__due small {
+  color: var(--text-secondary);
+}
+
+.checkout__state {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.checkout__state--bad {
+  border-color: transparent;
+  background: var(--block-red-bg);
+  color: var(--block-red-fg);
+}
+
+.checkout__state svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.checkout__ok {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 40rem;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.checkout__ok p {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.checkout__ok-title {
+  font: var(--heading-lg);
+}
+
+/* The three steps of the purchase. From the narrow breakpoint on, one step at a time; wide, everything shows and the steps are not offered. */
+.checkout__steps,
+.checkout__nav {
+  display: none;
+}
+
+.checkout__choice {
+  display: grid;
+  gap: var(--space-3);
+}
+
+@media (max-width: 47.99rem) {
+  .checkout__steps {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .checkout__steps-bar {
+    display: grid;
+    flex: 1;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-2);
+  }
+
+  .checkout__steps-bar span {
+    height: 0.375rem;
+    border-radius: var(--radius-full);
+    background: var(--border-default);
+  }
+
+  .checkout__steps-bar span.is-on {
+    background: var(--color-indigo-600);
+  }
+
+  .checkout__steps-label {
+    font: var(--label-md);
+    font-weight: 600;
+  }
+
+  .checkout__step[data-current='false'] {
+    display: none;
+  }
+
+  .checkout__main {
+    display: contents;
+  }
+
+  .checkout__nav {
+    display: flex;
+    gap: var(--space-3);
+  }
+
+  .checkout__nav > * {
+    flex: 1;
+  }
+}

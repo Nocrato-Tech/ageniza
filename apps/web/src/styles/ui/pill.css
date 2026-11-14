@@ -1,0 +1,54 @@
+/* Pill: a counter or the next action of a card; the only full-radius control besides the avatar. */
+.ui-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 1.5rem;
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-pill--neutral {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.ui-pill--accent {
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+
+.ui-pill--action {
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  font: var(--button-md);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast),
+    color var(--motion-fast);
+}
+
+.ui-pill--action.ui-pill--neutral {
+  border-color: var(--border-default);
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.ui-pill--action.ui-pill--neutral:hover:not(:disabled):not(.ui-pill--loading) {
+  background: var(--bg-hover);
+}
+
+.ui-pill--action.ui-pill--accent:hover:not(:disabled):not(.ui-pill--loading) {
+  filter: brightness(0.94);
+}
+
+.ui-pill--action:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+

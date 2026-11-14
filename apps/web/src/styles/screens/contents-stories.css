@@ -1,0 +1,239 @@
+/* The ring of a story: the day (or the scenes, or the "+") in a circle whose edge tells the state: dashed for a draft, violet for a sent
+   script, teal for a recorded one. The word is always beside it, so the state is never colour alone. The ring is decoration; its button has the name. */
+.story-ring {
+  --story-ring: var(--color-slate-300);
+
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--story-size, 3.5rem);
+  height: var(--story-size, 3.5rem);
+  padding: 3px;
+  border-radius: var(--radius-full);
+  background: var(--story-ring);
+}
+
+.story-ring__in {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border: 2px solid var(--bg-surface);
+  border-radius: inherit;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.story-ring[data-status='draft'] {
+  background: transparent;
+  border: 2px dashed var(--color-slate-500);
+}
+
+.story-ring[data-status='sent'] {
+  --story-ring: var(--color-violet-600);
+}
+
+.story-ring[data-status='recorded'] {
+  --story-ring: var(--color-teal-700);
+}
+
+.story-ring[data-status='new'] {
+  background: transparent;
+  border: 2px solid var(--color-indigo-600);
+}
+
+.story-ring[data-status='new'] .story-ring__in {
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+}
+
+.story-ring svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* "Stories do mês": the scripts of the period as a strip of circles above the calendar, "Novo" first. */
+.story-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.story-list__title {
+  margin: 0;
+  font: var(--title-md);
+}
+
+.story-list__none {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.story-list__items {
+  display: flex;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-1) var(--space-4) var(--space-2) var(--space-1);
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: var(--space-1);
+}
+
+.story-list__items > li {
+  scroll-snap-align: start;
+}
+
+.story-list__open {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 4.5rem;
+  min-height: 2.75rem;
+  padding: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--caption);
+  text-align: center;
+  cursor: pointer;
+}
+
+.story-list__open:hover {
+  color: var(--text-primary);
+}
+
+.story-list__open:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.story-list__when {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.story-list__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  list-style: none;
+}
+
+.story-list__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.story-ring--legend {
+  --story-size: 1rem;
+
+  padding: 0;
+}
+
+.story-ring--legend[data-status='sent'],
+.story-ring--legend[data-status='recorded'] {
+  background: var(--story-ring);
+}
+
+.story-ring--legend[data-status='draft'] {
+  padding: 0;
+}
+
+.story-script__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.story-script__day {
+  margin: 0;
+}
+
+.story-script__scenes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.story-script__scene {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
+}
+
+.story-script__scene-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.story-script__scene-title {
+  margin: 0;
+  font: var(--label-md);
+}
+
+.story-script__moves {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.story-script__text,
+.story-script__guidance {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.story-script__guidance {
+  color: var(--text-secondary);
+}
+
+.story-script__add {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.story-script__loading {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.story-script .form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
