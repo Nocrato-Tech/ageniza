@@ -131,7 +131,7 @@ A agência pode pedir material ao cliente, com prazo opcional (decisão: [pedido
 
 ## Estudo de marca
 
-É só leitura. Personas arquivadas não aparecem. Desde 2026-11-11 a persona traz também idade, ocupação, local, traços, "onde está" e "tom que funciona" (todos opcionais), lidos como o resto da persona ativa.
+É só leitura. A persona excluída pela agência deixa de existir, com a conversa dela, e não há mais persona arquivada. A persona não traz `status` nem a contagem de mensagens da agência. Desde 2026-11-11 a persona traz também idade, ocupação, local, traços, "onde está" e "tom que funciona" (todos opcionais), lidos como o resto da persona.
 
 ## Roteiros de stories
 

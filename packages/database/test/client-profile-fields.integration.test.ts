@@ -188,7 +188,7 @@ describe('the profile of the persona', () => {
       expect(updates, column).toContain(column);
     }
     expect([...updates].sort()).toEqual([
-      'age', 'description', 'desires', 'location', 'name', 'objections', 'occupation', 'pains', 'status', 'tone_that_works', 'traits',
+      'age', 'description', 'desires', 'location', 'name', 'objections', 'occupation', 'pains', 'tone_that_works', 'traits',
       'updated_at', 'updated_by', 'where_they_are'
     ]);
   });

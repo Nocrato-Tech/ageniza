@@ -813,8 +813,7 @@ Cria uma agência em período de teste.
 | `PUT` | `/agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey` | Sessão + vínculo com a agência | `cliente.operar` | Grava uma seção do estudo de marca (upsert) |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas` | Sessão + vínculo com a agência | `cliente.operar` | Cria uma persona do cliente |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | Sessão + vínculo com a agência | `cliente.operar` | Edita uma persona |
-| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/archive` | Sessão + vínculo com a agência | `cliente.operar` | Arquiva uma persona |
-| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive` | Sessão + vínculo com a agência | `cliente.operar` | Desarquiva uma persona |
+| `DELETE` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | Sessão + vínculo com a agência | `cliente.operar` | Exclui uma persona |
 | `GET` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.visualizar` ou `conteudo.visualizar` | Lista as conversas de um assunto do cliente |
 | `POST` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.operar` ou `conteudo.operar` | Abre uma conversa pela agência, com o primeiro comentário |
 | `GET` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.visualizar` ou `conteudo.visualizar` | Lista os comentários de uma conversa |
@@ -1289,7 +1288,7 @@ Lê o estudo de marca com as sete seções e as personas.
       ],
       "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
       "toneThatWorks": "Próximo, direto e sem jargão.",
-      "status": "active",
+      "messageCount": 12,
       "updatedBy": {
         "id": "55555555-5555-4555-8555-555555555555",
         "name": "Dono da Agência"
@@ -1375,7 +1374,7 @@ Cria uma persona do cliente.
   ],
   "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
   "toneThatWorks": "Próximo, direto e sem jargão.",
-  "status": "active",
+  "messageCount": 12,
   "updatedBy": {
     "id": "55555555-5555-4555-8555-555555555555",
     "name": "Dono da Agência"
@@ -1421,7 +1420,7 @@ Edita uma persona.
   ],
   "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
   "toneThatWorks": "Próximo, direto e sem jargão.",
-  "status": "active",
+  "messageCount": 12,
   "updatedBy": {
     "id": "55555555-5555-4555-8555-555555555555",
     "name": "Dono da Agência"
@@ -1430,79 +1429,16 @@ Edita uma persona.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_READ_ONLY` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
-#### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/archive`
+#### `DELETE /agencies/:agencyId/clients/:clientId/personas/:personaId`
 
-Arquiva uma persona.
+Exclui uma persona.
 
 - Acesso: Sessão + vínculo com a agência.
 - Permissão: `cliente.operar`.
 
-**Resposta `200`** — Persona arquivada.
-
-```json
-{
-  "id": "88888888-8888-4888-8888-888888888888",
-  "name": "Dona Maria",
-  "description": "Dona de casa, 58 anos.",
-  "pains": "Pouco tempo para pesquisar.",
-  "desires": "Reconhecimento da comunidade.",
-  "objections": "Preço acima do esperado.",
-  "age": 58,
-  "occupation": "Dona de casa",
-  "location": "Campinas, SP",
-  "traits": [
-    "Prática",
-    "Desconfiada"
-  ],
-  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
-  "toneThatWorks": "Próximo, direto e sem jargão.",
-  "status": "archived",
-  "updatedBy": {
-    "id": "55555555-5555-4555-8555-555555555555",
-    "name": "Dono da Agência"
-  },
-  "updatedAt": "2026-09-30T12:00:00.000Z"
-}
-```
-
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_READ_ONLY` · `500 INTERNAL_ERROR`
-
-#### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive`
-
-Desarquiva uma persona.
-
-- Acesso: Sessão + vínculo com a agência.
-- Permissão: `cliente.operar`.
-
-**Resposta `200`** — Persona reativada.
-
-```json
-{
-  "id": "88888888-8888-4888-8888-888888888888",
-  "name": "Dona Maria",
-  "description": "Dona de casa, 58 anos.",
-  "pains": "Pouco tempo para pesquisar.",
-  "desires": "Reconhecimento da comunidade.",
-  "objections": "Preço acima do esperado.",
-  "age": 58,
-  "occupation": "Dona de casa",
-  "location": "Campinas, SP",
-  "traits": [
-    "Prática",
-    "Desconfiada"
-  ],
-  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
-  "toneThatWorks": "Próximo, direto e sem jargão.",
-  "status": "active",
-  "updatedBy": {
-    "id": "55555555-5555-4555-8555-555555555555",
-    "name": "Dono da Agência"
-  },
-  "updatedAt": "2026-09-30T12:00:00.000Z"
-}
-```
+**Resposta `204`** — Persona excluída, com a conversa dela.
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
@@ -1616,7 +1552,7 @@ Abre uma conversa pela agência, com o primeiro comentário.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/threads/:threadId/comments`
 
@@ -1690,7 +1626,7 @@ Comenta uma conversa pela agência.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/threads/:threadId/resolve`
 
@@ -1727,7 +1663,7 @@ Resolve uma conversa.
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/members`
 
@@ -2333,7 +2269,6 @@ Lê o estudo de marca, no portal.
       ],
       "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
       "toneThatWorks": "Próximo, direto e sem jargão.",
-      "status": "active",
       "updatedAt": "2026-09-30T12:00:00.000Z"
     }
   ]
@@ -6075,8 +6010,6 @@ Busca clientes, conteúdos e arquivos pelo nome.
 | `MEDIA_IN_USE` | Esta mídia está em um conteúdo enviado para aprovação, aprovado ou publicado e não pode ser removida. |
 | `CLIENT_NOT_ARCHIVED` | Este cliente já está ativo. |
 | `CLOSING_DATE_NOT_SET` | Este cliente não tem encerramento agendado. |
-| `PERSONA_ARCHIVED` | Persona arquivada: a conversa é somente leitura. |
-| `PERSONA_READ_ONLY` | Esta persona está arquivada. Desarquive-a para editar. |
 | `SECTION_NOT_FILLED` | Esta seção ainda não foi preenchida pela agência. |
 | `CONTENT_PERIOD_TOO_LARGE` | O período tem mais de 500 itens. Consulte um período menor. |
 | `CONTENT_NOT_EDITABLE` | Conteúdo publicado ou cancelado não pode ser editado. |

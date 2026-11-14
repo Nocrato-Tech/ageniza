@@ -72,10 +72,23 @@ const createClient = async (agencyId: string, status: 'active' | 'archived' = 'a
   return id;
 };
 
-const insertPersonaRow = async (clientId: string, status: 'active' | 'archived' = 'active'): Promise<string> => {
+const insertPersonaRow = async (clientId: string): Promise<string> => {
   const id = randomUUID();
-  await owner.knex('client_personas').insert({ id, client_id: clientId, name: `Persona ${id}`, status });
+  await owner.knex('client_personas').insert({ id, client_id: clientId, name: `Persona ${id}` });
   return id;
+};
+
+/** A conversation of the persona with `comments` messages, written by the owner. */
+const insertPersonaConversation = async (clientId: string, personaId: string, comments: number): Promise<{ threadId: string; commentIds: string[] }> => {
+  const threadId = randomUUID();
+  await owner.knex('client_threads').insert({ id: threadId, client_id: clientId, persona_id: personaId, opened_by: admin.id, opened_side: 'agency' });
+  const commentIds: string[] = [];
+  for (let index = 0; index < comments; index += 1) {
+    const id = randomUUID();
+    commentIds.push(id);
+    await owner.knex('client_thread_comments').insert({ id, thread_id: threadId, client_id: clientId, author_user_id: admin.id, author_side: 'agency', body: `Mensagem ${index + 1}` });
+  }
+  return { threadId, commentIds };
 };
 
 interface InjectResponse {
@@ -95,8 +108,8 @@ const postPersona = async (cookie: string, agencyId: string, clientId: string, p
 const patchPersona = async (cookie: string, agencyId: string, clientId: string, personaId: string, payload: Record<string, unknown>): Promise<InjectResponse> =>
   (await app.app.inject({ method: 'PATCH', url: `/agencies/${agencyId}/clients/${clientId}/personas/${personaId}`, headers: { ...origin, cookie }, payload })) as unknown as InjectResponse;
 
-const personaStatus = async (cookie: string, agencyId: string, clientId: string, personaId: string, action: 'archive' | 'unarchive'): Promise<InjectResponse> =>
-  (await app.app.inject({ method: 'POST', url: `/agencies/${agencyId}/clients/${clientId}/personas/${personaId}/${action}`, headers: { ...origin, cookie } })) as unknown as InjectResponse;
+const deletePersona = async (cookie: string, agencyId: string, clientId: string, personaId: string): Promise<InjectResponse> =>
+  (await app.app.inject({ method: 'DELETE', url: `/agencies/${agencyId}/clients/${clientId}/personas/${personaId}`, headers: { ...origin, cookie } })) as unknown as InjectResponse;
 
 /**
  * An app whose transaction rejects any write starting with `failingStatement` with the 42501
@@ -298,36 +311,64 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     }
   });
 
-  it('counts an active persona in filled and stops counting it when archived', async () => {
+  it('counts a persona in filled and stops counting it when it is deleted', async () => {
     const clientId = await createClient(agencyA);
     await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'Marca' });
     expect((await getStudy(adminCookie, agencyA, clientId)).json<{ filled: number }>().filled).toBe(1);
 
     const created = await postPersona(adminCookie, agencyA, clientId, { name: 'Dona Maria' });
     expect(created.statusCode).toBe(201);
-    const personaId = created.json<{ id: string; status: string }>().id;
-    expect(created.json<{ status: string }>().status).toBe('active');
+    const personaId = created.json<{ id: string }>().id;
+    expect(created.json()).toMatchObject({ messageCount: 0 });
+    expect(created.json()).not.toHaveProperty('status');
     expect((await getStudy(adminCookie, agencyA, clientId)).json<{ filled: number }>().filled).toBe(2);
 
-    expect((await personaStatus(adminCookie, agencyA, clientId, personaId, 'archive')).statusCode).toBe(200);
+    expect((await deletePersona(adminCookie, agencyA, clientId, personaId)).statusCode).toBe(204);
     expect((await getStudy(adminCookie, agencyA, clientId)).json<{ filled: number }>().filled).toBe(1);
-
-    expect((await personaStatus(adminCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(200);
-    expect((await getStudy(adminCookie, agencyA, clientId)).json<{ filled: number }>().filled).toBe(2);
   });
 
-  it('keeps an archived persona in the agency GET and returns it on unarchive', async () => {
+  it('serves the count of messages of each persona, and deletes the persona with its conversation and nothing of the others (#891)', async () => {
     const clientId = await createClient(agencyA);
-    const personaId = await insertPersonaRow(clientId, 'active');
-    await personaStatus(adminCookie, agencyA, clientId, personaId, 'archive');
+    const otherClientId = await createClient(agencyA);
+    const personaId = await insertPersonaRow(clientId);
+    const siblingId = await insertPersonaRow(clientId);
+    const strangerId = await insertPersonaRow(otherClientId);
+    const first = await insertPersonaConversation(clientId, personaId, 3);
+    const second = await insertPersonaConversation(clientId, personaId, 2);
+    const sibling = await insertPersonaConversation(clientId, siblingId, 4);
+    const stranger = await insertPersonaConversation(otherClientId, strangerId, 1);
+    await insertPersonaConversation(clientId, personaId, 0);
 
-    const archived = await getStudy(adminCookie, agencyA, clientId);
-    expect(archived.json<{ personas: { id: string; status: string }[] }>().personas).toContainEqual(
-      expect.objectContaining({ id: personaId, status: 'archived' })
-    );
+    const before = (await getStudy(adminCookie, agencyA, clientId)).json<{ personas: { id: string; messageCount: number }[] }>().personas;
+    expect(Object.fromEntries(before.map((persona) => [persona.id, persona.messageCount]))).toEqual({ [personaId]: 5, [siblingId]: 4 });
 
-    const restored = await personaStatus(adminCookie, agencyA, clientId, personaId, 'unarchive');
-    expect(restored.json()).toMatchObject({ id: personaId, status: 'active' });
+    const response = await deletePersona(adminCookie, agencyA, clientId, personaId);
+    expect(response.statusCode).toBe(204);
+
+    const after = (await getStudy(adminCookie, agencyA, clientId)).json<{ personas: { id: string; messageCount: number }[] }>().personas;
+    expect(after).toEqual([expect.objectContaining({ id: siblingId, messageCount: 4 })]);
+    expect(await owner.knex('client_personas').where({ id: personaId }).first('id')).toBeUndefined();
+    for (const thread of [first, second]) {
+      expect(await owner.knex('client_threads').where({ id: thread.threadId }).first('id')).toBeUndefined();
+      expect(await owner.knex('client_thread_comments').whereIn('id', thread.commentIds).count({ total: '*' }).first()).toEqual({ total: '0' });
+    }
+    for (const thread of [sibling, stranger]) {
+      expect(await owner.knex('client_threads').where({ id: thread.threadId }).first('id')).toBeDefined();
+      expect(await owner.knex('client_thread_comments').whereIn('id', thread.commentIds).count({ total: '*' }).first()).toEqual({ total: String(thread.commentIds.length) });
+    }
+    expect(await owner.knex('audit.events').where({ action: 'persona.deleted', target_id: personaId }).select('actor_user_id', 'agency_id')).toEqual([
+      { actor_user_id: admin.id, agency_id: agencyA }
+    ]);
+  });
+
+  it('answers 404 to a second delete of the same persona, and to a conversation that was deleted with it', async () => {
+    const clientId = await createClient(agencyA);
+    const personaId = await insertPersonaRow(clientId);
+    await insertPersonaConversation(clientId, personaId, 1);
+
+    expect((await deletePersona(adminCookie, agencyA, clientId, personaId)).statusCode).toBe(204);
+    expect((await deletePersona(adminCookie, agencyA, clientId, personaId)).statusCode).toBe(404);
+    expect((await patchPersona(adminCookie, agencyA, clientId, personaId, { name: 'x' })).statusCode).toBe(404);
   });
 
   it('edits a persona and clears a field with null', async () => {
@@ -338,56 +379,6 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     const edited = await patchPersona(adminCookie, agencyA, clientId, personaId, { name: 'Lucas Silva', description: null });
     expect(edited.statusCode).toBe(200);
     expect(edited.json()).toMatchObject({ name: 'Lucas Silva', description: null });
-  });
-
-  it('answers 409 PERSONA_READ_ONLY to a PATCH of an archived persona and changes nothing (#891)', async () => {
-    const clientId = await createClient(agencyA);
-    const personaId = await insertPersonaRow(clientId, 'archived');
-    const before = await owner.knex('client_personas').where({ id: personaId }).first();
-
-    const response = await patchPersona(adminCookie, agencyA, clientId, personaId, { name: 'Renomeada', pains: 'Novas dores' });
-
-    expect(response.statusCode).toBe(409);
-    expect(response.json<{ error: { code: string; message: string } }>().error).toMatchObject({
-      code: 'PERSONA_READ_ONLY',
-      message: 'Esta persona está arquivada. Desarquive-a para editar.'
-    });
-    expect(await owner.knex('client_personas').where({ id: personaId }).first()).toEqual(before);
-  });
-
-  it('refuses to archive an archived persona, and takes the unarchive and the edit that follows (#891)', async () => {
-    const clientId = await createClient(agencyA);
-    const personaId = await insertPersonaRow(clientId, 'archived');
-
-    const again = await personaStatus(adminCookie, agencyA, clientId, personaId, 'archive');
-    expect(again.statusCode).toBe(409);
-    expect(again.json<{ error: { code: string } }>().error.code).toBe('PERSONA_READ_ONLY');
-
-    expect((await personaStatus(adminCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(200);
-    const edited = await patchPersona(adminCookie, agencyA, clientId, personaId, { name: 'De volta' });
-    expect(edited.statusCode).toBe(200);
-    expect(edited.json()).toMatchObject({ name: 'De volta', status: 'active' });
-  });
-
-  it('answers 409 PERSONA_READ_ONLY, never 500, to an edit open while the persona was archived (#891)', async () => {
-    const clientId = await createClient(agencyA);
-    const personaId = await insertPersonaRow(clientId, 'active');
-    const racing = await owner.knex.transaction();
-    let response: Promise<InjectResponse> | undefined;
-    try {
-      await racing('client_personas').where({ id: personaId }).update({ status: 'archived' });
-      response = patchPersona(adminCookie, agencyA, clientId, personaId, { name: 'Perdeu a corrida' });
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    } finally {
-      await racing.commit();
-    }
-
-    const result = await response!;
-    expect(result.statusCode).toBe(409);
-    expect(result.json<{ error: { code: string } }>().error.code).toBe('PERSONA_READ_ONLY');
-    expect((await owner.knex('client_personas').where({ id: personaId }).first('name', 'status'))).toEqual({
-      name: `Persona ${personaId}`, status: 'archived'
-    });
   });
 
   it('rejects an empty persona PATCH body', async () => {
@@ -406,8 +397,8 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect((await putSection(productionCookie, agencyA, clientId, 'branding', { body: 'x' })).statusCode).toBe(403);
     expect((await postPersona(productionCookie, agencyA, clientId, { name: 'x' })).statusCode).toBe(403);
     expect((await patchPersona(productionCookie, agencyA, clientId, personaId, { name: 'x' })).statusCode).toBe(403);
-    expect((await personaStatus(productionCookie, agencyA, clientId, personaId, 'archive')).statusCode).toBe(403);
-    expect((await personaStatus(productionCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(403);
+    expect((await deletePersona(productionCookie, agencyA, clientId, personaId)).statusCode).toBe(403);
+    expect(await owner.knex('client_personas').where({ id: personaId }).first('id')).toBeDefined();
   });
 
   it('answers 409 on every write to an archived client, and still reads it', async () => {
@@ -418,8 +409,8 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'x' })).statusCode).toBe(409);
     expect((await postPersona(adminCookie, agencyA, clientId, { name: 'x' })).statusCode).toBe(409);
     expect((await patchPersona(adminCookie, agencyA, clientId, personaId, { name: 'x' })).statusCode).toBe(409);
-    expect((await personaStatus(adminCookie, agencyA, clientId, personaId, 'archive')).statusCode).toBe(409);
-    expect((await personaStatus(adminCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(409);
+    expect((await deletePersona(adminCookie, agencyA, clientId, personaId)).statusCode).toBe(409);
+    expect(await owner.knex('client_personas').where({ id: personaId }).first('id')).toBeDefined();
 
     await expect(owner.knex('client_brand_sections').where({ client_id: clientId }).select('section_key')).resolves.toEqual([]);
   });
@@ -460,24 +451,16 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
       payload: { name: 'Corrida' }
     },
     {
-      label: 'archive persona',
-      failingStatement: 'update public.client_personas',
+      label: 'DELETE persona',
+      failingStatement: 'delete from public.client_personas',
       initialStatus: 'active' as const,
-      method: 'POST' as const,
-      path: (clientId: string, personaId: string) => `/agencies/${agencyA}/clients/${clientId}/personas/${personaId}/archive`,
-      payload: undefined
-    },
-    {
-      label: 'unarchive persona',
-      failingStatement: 'update public.client_personas',
-      initialStatus: 'archived' as const,
-      method: 'POST' as const,
-      path: (clientId: string, personaId: string) => `/agencies/${agencyA}/clients/${clientId}/personas/${personaId}/unarchive`,
+      method: 'DELETE' as const,
+      path: (clientId: string, personaId: string) => `/agencies/${agencyA}/clients/${clientId}/personas/${personaId}`,
       payload: undefined
     }
   ])('answers 409, never 500, when an archive races $label (RLS violation)', async (testCase) => {
     const clientId = await createClient(agencyA);
-    const personaId = testCase.initialStatus === null ? '' : await insertPersonaRow(clientId, testCase.initialStatus);
+    const personaId = testCase.initialStatus === null ? '' : await insertPersonaRow(clientId);
     const before = testCase.initialStatus === null
       ? undefined
       : await owner.knex('client_personas').where({ id: personaId }).first('name', 'status', 'updated_at');
@@ -542,8 +525,8 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect((await putSection(adminCookie, agencyA, clientB, 'branding', { body: 'x' })).statusCode).toBe(404);
     expect((await postPersona(adminCookie, agencyA, clientB, { name: 'x' })).statusCode).toBe(404);
     expect((await patchPersona(adminCookie, agencyA, clientB, personaOfA, { name: 'x' })).statusCode).toBe(404);
-    expect((await personaStatus(adminCookie, agencyA, clientB, personaOfA, 'archive')).statusCode).toBe(404);
-    expect((await personaStatus(adminCookie, agencyA, clientB, personaOfA, 'unarchive')).statusCode).toBe(404);
+    expect((await deletePersona(adminCookie, agencyA, clientB, personaOfA)).statusCode).toBe(404);
+    expect(await owner.knex('client_personas').where({ id: personaOfA }).first('id')).toBeDefined();
     // A member of agency B reaching agency A's route is the same 404 as everywhere.
     expect((await getStudy(otherAdminCookie, agencyA, clientA)).statusCode).toBe(404);
   });
@@ -558,18 +541,17 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     for (const personaId of [personaOfA2, personaOfB]) {
       const before = await owner.knex('client_personas').where({ id: personaId }).first('name', 'status', 'updated_at');
       expect((await patchPersona(adminCookie, agencyA, clientA1, personaId, { name: 'Renomeada' })).statusCode).toBe(404);
-      expect((await personaStatus(adminCookie, agencyA, clientA1, personaId, 'archive')).statusCode).toBe(404);
-      expect((await personaStatus(adminCookie, agencyA, clientA1, personaId, 'unarchive')).statusCode).toBe(404);
+      expect((await deletePersona(adminCookie, agencyA, clientA1, personaId)).statusCode).toBe(404);
 
       // The 404 alone would also come back after a write that reached the wrong persona: the row
       // itself has to be intact. Without `client_id` in the WHERE, the same-agency persona (A2)
-      // is renamed and archived even though the response says 404.
+      // is renamed and deleted even though the response says 404.
       const after = await owner.knex('client_personas').where({ id: personaId }).first('name', 'status', 'updated_at');
       expect(after).toMatchObject({ name: before?.name, status: before?.status });
       expect(new Date(after?.updated_at as Date).getTime()).toBe(new Date(before?.updated_at as Date).getTime());
     }
     expect((await patchPersona(adminCookie, agencyA, clientA1, 'not-a-uuid', { name: 'x' })).statusCode).toBe(404);
-    expect((await personaStatus(adminCookie, agencyA, clientA1, 'not-a-uuid', 'archive')).statusCode).toBe(404);
+    expect((await deletePersona(adminCookie, agencyA, clientA1, 'not-a-uuid')).statusCode).toBe(404);
     expect((await getStudy(adminCookie, agencyA, 'not-a-uuid')).statusCode).toBe(404);
     expect((await putSection(adminCookie, agencyA, 'not-a-uuid', 'branding', { body: 'x' })).statusCode).toBe(404);
     expect((await postPersona(adminCookie, agencyA, 'not-a-uuid', { name: 'x' })).statusCode).toBe(404);
@@ -580,6 +562,7 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'x', colors: [] })).statusCode).toBe(400);
     expect((await putSection(adminCookie, agencyA, clientId, 'branding', { body: 'Nul\u0000byte' })).statusCode).toBe(400);
     expect((await postPersona(adminCookie, agencyA, clientId, { name: 'x', status: 'archived' })).statusCode).toBe(400);
+    expect((await postPersona(adminCookie, agencyA, clientId, { name: 'x', messageCount: 9 })).statusCode).toBe(400);
     expect((await postPersona(adminCookie, agencyA, clientId, { name: 'x', updatedBy: admin.id })).statusCode).toBe(400);
     expect((await postPersona(adminCookie, agencyA, clientId, { name: 'Tab\tName' })).statusCode).toBe(400);
     const personaId = await insertPersonaRow(clientId);
@@ -674,8 +657,8 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect((await putSection(viewerCookie, agencyA, clientId, 'branding', { body: 'x' })).statusCode).toBe(403);
     expect((await postPersona(viewerCookie, agencyA, clientId, { name: 'x' })).statusCode).toBe(403);
     expect((await patchPersona(viewerCookie, agencyA, clientId, personaId, { name: 'x' })).statusCode).toBe(403);
-    expect((await personaStatus(viewerCookie, agencyA, clientId, personaId, 'archive')).statusCode).toBe(403);
-    expect((await personaStatus(viewerCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(403);
+    expect((await deletePersona(viewerCookie, agencyA, clientId, personaId)).statusCode).toBe(403);
+    expect(await owner.knex('client_personas').where({ id: personaId }).first('id')).toBeDefined();
   });
 
   it('enforces BFLA with a one-permission custom role: operar writes, the read is 403', async () => {
@@ -687,7 +670,7 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect(created.statusCode).toBe(201);
     const personaId = created.json<{ id: string }>().id;
     expect((await patchPersona(operatorCookie, agencyA, clientId, personaId, { name: 'Editada' })).statusCode).toBe(200);
-    expect((await personaStatus(operatorCookie, agencyA, clientId, personaId, 'archive')).statusCode).toBe(200);
-    expect((await personaStatus(operatorCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(200);
+    expect((await deletePersona(operatorCookie, agencyA, clientId, personaId)).statusCode).toBe(204);
+    expect(await owner.knex('client_personas').where({ id: personaId }).first('id')).toBeUndefined();
   });
 });

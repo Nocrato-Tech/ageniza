@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode, type Ref } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArrowLeft, ChevronDown, ChevronRight, Clock, Frown, Heart, MapPin, MessageCircleWarning, Mic, Pencil, Plus } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Clock, Frown, Heart, MapPin, MessageCircleWarning, Mic, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import {
+  AuthNoContentResponseSchema,
   PERSONA_TRAIT_MAX_LENGTH,
   PERSONA_TRAITS_MAX,
   PersonaAgeSchema,
@@ -38,7 +39,7 @@ import { HttpClientError, useApiClient } from './http.js';
 const NAME_REQUIRED = 'Informe o nome da persona.';
 const NAME_INVALID = 'O nome contém caracteres que não são aceitos.';
 const NAME_TOO_LONG = 'O nome da persona pode ter no máximo 120 bytes.';
-const PERSONA_ARCHIVE_DESCRIPTION = 'Ela some do portal e as conversas dela ficam somente leitura. Você pode desarquivar depois.';
+const PERSONA_GONE = 'Esta persona não existe mais.';
 const PERSONA_NAME_MAX_BYTES = 120;
 
 interface PersonaDraft {
@@ -243,6 +244,13 @@ const PROFILE_ROWS = [
   ['toneThatWorks', 'Tom que funciona', Mic, 'o tom']
 ] as const;
 
+/** What the confirmation says goes with the persona: her conversation, by the number of messages the API counted. */
+const deleteDescription = (persona: Persona): string => {
+  const count = persona.messageCount;
+  if (count === 0) return 'Ela ainda não tem mensagens. Não dá para desfazer.';
+  return `A conversa dela, com ${count === 1 ? '1 mensagem' : `${count} mensagens`}, também será apagada. Não dá para desfazer.`;
+};
+
 /** "34 anos · gerente de RH · Pinheiros": whatever of the three is known. */
 const personaRole = (persona: Persona): string => [persona.age === null ? null : `${persona.age} anos`, persona.occupation, persona.location]
   .filter((part): part is string => part !== null && part !== '')
@@ -250,7 +258,7 @@ const personaRole = (persona: Persona): string => [persona.age === null ? null :
 
 /**
  * The profile of one persona beside the list: who she is, then one row for each field with the pencil that edits it,
- * then the persona's conversations. Editing swaps the column for the form; archiving asks first and goes back to the list.
+ * then the persona's conversations. Editing swaps the column for the form; deleting asks first, says how many messages go with her, and goes back to the list.
  */
 function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft, onDraft, list }: {
   client: ClientDetailResponse;
@@ -270,10 +278,9 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
   const { formRef, summary } = useFormErrors();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const archived = persona.status === 'archived';
   const [nameError, setNameError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
-  const [confirmingArchive, setConfirmingArchive] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [shown, setShown] = useState<ProfileProblems>({});
   const [focusField, setFocusField] = useState<string | null>(null);
 
@@ -300,24 +307,26 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
     }
   });
 
-  const archive = useMutation({
+  const remove = useMutation({
     mutationFn: () => httpClient.request({
-      path: apiPath('/agencies/:agencyId/clients/:clientId/personas/:personaId/archive', {
+      path: apiPath('/agencies/:agencyId/clients/:clientId/personas/:personaId', {
         agencyId: agency.agencyId,
         clientId: client.id,
         personaId: persona.id
       }),
-      method: 'POST',
-      response: PersonaSchema
+      method: 'DELETE',
+      response: AuthNoContentResponseSchema
     }),
     onSuccess: () => {
-      setConfirmingArchive(false);
+      setConfirmingDelete(false);
       invalidateStudyWrites(queryClient, agency.agencyId, client.id);
+      void queryClient.invalidateQueries({ queryKey: ['conversation'] });
       void navigate({ search: sectionSearch('personas') }, { replace: true, state: backState });
     },
     onError: (error: unknown) => {
-      setConfirmingArchive(false);
-      setFormError(sectionMutationError(error));
+      setConfirmingDelete(false);
+      if (error instanceof HttpClientError && error.status === 404) invalidateStudyWrites(queryClient, agency.agencyId, client.id);
+      setFormError(error instanceof HttpClientError && error.status === 404 ? PERSONA_GONE : sectionMutationError(error));
     }
   });
 
@@ -339,9 +348,9 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
     {SECTION_LABELS.personas}
   </Link>;
 
-  const editing = draft !== null && canEdit && !archived && blocked === undefined;
+  const editing = draft !== null && canEdit && blocked === undefined;
 
-  // A draft kept while the persona was left can outlive the right to edit her (archived, client archived, plan or permission lost).
+  // A draft kept while the persona was left can outlive the right to edit her (client archived, plan or permission lost).
   useEffect(() => {
     if (draft !== null && !editing) onDraft(() => null);
   }, [draft, editing, onDraft]);
@@ -392,15 +401,14 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
         <div className="brand-persona__identity">
           <Avatar name={persona.name} size="lg" className="brand-persona__avatar" />
           <h3 ref={headingRef} tabIndex={-1} className="brand-persona__name">{persona.name}</h3>
-          {archived && <Pill>Arquivada</Pill>}
           {role !== '' && <p className="brand-persona__role">{role}</p>}
           <p className="brand-persona__description">{persona.description ?? NOT_INFORMED}</p>
           {persona.traits.length > 0 && <div className="brand-persona__traits">
             {persona.traits.map((trait) => <Trait key={trait}>{trait}</Trait>)}
           </div>}
-          {canEdit && !archived && <div className="brand-persona__actions">
+          {canEdit && <div className="brand-persona__actions">
             <Button size="sm" variant="secondary" leadingIcon={<Pencil />} blockedReason={blocked} onClick={() => startEditing(null)}>Editar</Button>
-            <Button size="sm" variant="ghost" leadingIcon={<Archive />} blockedReason={blocked} onClick={() => { setFormError(undefined); setConfirmingArchive(true); }}>Arquivar</Button>
+            <Button size="sm" variant="danger-quiet" leadingIcon={<Trash2 />} blockedReason={blocked} onClick={() => { setFormError(undefined); setConfirmingDelete(true); }}>Excluir</Button>
           </div>}
           {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
         </div>
@@ -411,30 +419,29 @@ function PersonaProfile({ client, persona, canEdit, backState, headingRef, draft
               <h4>{label}</h4>
               <p className="brand-section__body">{persona[field] ?? NOT_INFORMED}</p>
             </div>
-            {canEdit && !archived && <IconButton label={`Editar ${what}`} icon={<Pencil />} blockedReason={blocked} onClick={() => startEditing(field)} />}
+            {canEdit && <IconButton label={`Editar ${what}`} icon={<Pencil />} blockedReason={blocked} onClick={() => startEditing(field)} />}
           </div>)}
         </div>
       </aside>
     </div>
     <div className="brand-persona__conversations">
-      <StudyConversation client={client} subject={{ personaId: persona.id }} subjectLabel={persona.name} readOnly={archived} headingLevel={4} />
+      <StudyConversation client={client} subject={{ personaId: persona.id }} subjectLabel={persona.name} readOnly={false} headingLevel={4} />
     </div>
     <ConfirmDialog
-      open={confirmingArchive}
-      title={`Arquivar ${persona.name}?`}
-      description={PERSONA_ARCHIVE_DESCRIPTION}
-      confirmLabel="Arquivar"
+      open={confirmingDelete}
+      title={`Excluir a persona ${persona.name}?`}
+      description={deleteDescription(persona)}
+      confirmLabel="Excluir"
       cancelLabel="Cancelar"
-      busy={archive.isPending}
-      onConfirm={() => archive.mutate()}
-      onCancel={() => { if (!archive.isPending) setConfirmingArchive(false); }}
+      busy={remove.isPending}
+      onConfirm={() => remove.mutate()}
+      onCancel={() => { if (!remove.isPending) setConfirmingDelete(false); }}
     />
   </div>;
 }
 
 /**
- * The personas section: a grid of the active ones with the way to add another, the collapsed archived list
- * with Desarquivar, and the profile of one persona when the address names it.
+ * The personas section: a grid of the personas with the way to add another, and the profile of one persona when the address names it.
  */
 export function PersonasSection({ client, personas, canEdit, active, selectedId, awaiting, lastMissing }: {
   client: ClientDetailResponse;
@@ -448,34 +455,12 @@ export function PersonasSection({ client, personas, canEdit, active, selectedId,
   awaiting: AwaitingCounts;
 }) {
   const blocked = useWriteBlocked();
-  const agency = useAgencyContext();
-  const httpClient = useApiClient();
-  const queryClient = useQueryClient();
   const location = useLocation();
   const [creating, setCreating] = useState(false);
-  const [archivedOpen, setArchivedOpen] = useState(false);
   const [drafts, setDrafts] = useState<ReadonlyMap<string, PersonaDraft>>(() => new Map());
-  const [error, setError] = useState<string | undefined>();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const previousSelected = useRef(selectedId);
-
-  const unarchive = useMutation({
-    mutationFn: (personaId: string) => httpClient.request({
-      path: apiPath('/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive', {
-        agencyId: agency.agencyId,
-        clientId: client.id,
-        personaId
-      }),
-      method: 'POST',
-      response: PersonaSchema
-    }),
-    onSuccess: () => {
-      setError(undefined);
-      invalidateStudyWrites(queryClient, agency.agencyId, client.id);
-    },
-    onError: (archiveError: unknown) => { setError(sectionMutationError(archiveError)); }
-  });
 
   // Opening a profile puts the focus on its name; coming back puts it on the card just left, so the keyboard keeps its place.
   useEffect(() => {
@@ -487,15 +472,13 @@ export function PersonasSection({ client, personas, canEdit, active, selectedId,
     card?.focus();
   }, [active, selectedId]);
 
-  const activePersonas = personas.filter((persona) => persona.status === 'active');
-  const archivedPersonas = personas.filter((persona) => persona.status === 'archived');
   const selected = selectedId === null ? null : personas.find((persona) => persona.id === selectedId) ?? null;
 
   const newPersona = <Button size="sm" variant="secondary" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setCreating(true)}>Nova persona</Button>;
   const createDialog = creating && <CreatePersonaDialog client={client} onClose={() => setCreating(false)} />;
 
   const cards = (current: string | null) => <ul className="brand-personas__list">
-    {activePersonas.map((persona) => {
+    {personas.map((persona) => {
       const role = personaRole(persona);
       return <li key={persona.id}>
         <Link
@@ -523,7 +506,7 @@ export function PersonasSection({ client, personas, canEdit, active, selectedId,
 
   const listHeader = <header className="brand-personas__header">
     <h3>{SECTION_LABELS.personas}</h3>
-    {canEdit && activePersonas.length > 0 && newPersona}
+    {canEdit && personas.length > 0 && newPersona}
   </header>;
 
   if (selected !== null) {
@@ -550,7 +533,7 @@ export function PersonasSection({ client, personas, canEdit, active, selectedId,
     <div className="brand-personas" ref={gridRef}>
       {listHeader}
       <p className="brand-personas__intro">{`Para quem ${client.name} escreve. Cada post deve ter uma delas em mente.`}</p>
-      {activePersonas.length === 0
+      {personas.length === 0
         ? <EmptyState
           className="brand-section__empty"
           headingLevel={4}
@@ -570,29 +553,6 @@ export function PersonasSection({ client, personas, canEdit, active, selectedId,
         </div>
       </div>}
 
-      {archivedPersonas.length > 0 && (archivedOpen
-        ? <section className="brand-personas__archived" aria-label="Personas arquivadas">
-          <header className="brand-personas__header">
-            <h4 className="brand-personas__archived-title">{`Arquivadas (${archivedPersonas.length})`}</h4>
-            <Button size="sm" variant="ghost" onClick={() => setArchivedOpen(false)}>Ocultar</Button>
-          </header>
-          <ul className="brand-personas__list">
-            {archivedPersonas.map((persona) => <li key={persona.id} className="brand-personas__archived-item">
-              <Link className="brand-personas__name" to={{ search: personaSearch(persona.id) }} state={location.state}>{persona.name}</Link>
-              {canEdit && <Button
-                size="sm"
-                variant="secondary"
-                aria-label={`Desarquivar ${persona.name}`}
-                blockedReason={blocked}
-                loading={unarchive.isPending && unarchive.variables === persona.id}
-                onClick={() => unarchive.mutate(persona.id)}
-              >Desarquivar</Button>}
-            </li>)}
-          </ul>
-        </section>
-        : <Button variant="ghost" aria-expanded={archivedOpen} trailingIcon={<ChevronDown />} onClick={() => setArchivedOpen(true)}>{`Arquivadas (${archivedPersonas.length})`}</Button>)}
-
-      {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
       {createDialog}
     </div>
   </PanelLayout>;

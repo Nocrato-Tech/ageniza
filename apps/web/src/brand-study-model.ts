@@ -71,7 +71,7 @@ export const resolveSelection = (params: URLSearchParams, personas: readonly { r
 
 /** The §3 rule of "filled", per section, as `sectionFilledSql` in the API defines it (the response carries only the total, in `filled`). */
 export const isSectionFilled = (key: SectionKey, study: BrandStudyResponse): boolean => {
-  if (key === 'personas') return study.personas.some((persona) => persona.status === 'active');
+  if (key === 'personas') return study.personas.length > 0;
   const section = study.sections.find((item) => item.key === key);
   if (section === undefined) return false;
   if (key === 'colors') return section.colors !== null && section.colors.length > 0;

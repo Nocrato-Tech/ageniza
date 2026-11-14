@@ -32,7 +32,6 @@ export type ConversationRefusal =
   | 'client-not-found'
   | 'client-archived'
   | 'subject-not-found'
-  | 'persona-archived'
   | 'section-not-filled'
   | 'thread-not-found'
   | 'content-not-open'
@@ -240,35 +239,19 @@ export const loadThreadRow = async (
   return result.rows[0];
 };
 
-interface SubjectPersonaRow {
-  readonly id: string;
-  readonly status: 'active' | 'archived';
-}
-
-/**
- * The persona of a subject, inside the client. On the portal side an archived persona is "not found",
- * exactly like a persona of another client, and that is filtered here and not left to row-level
- * security: a collaborator who also has a client link reads archived personas through the agency
- * branch of the policy, so the policy alone would show them one on the portal. The agency sees it and
- * tells the two apart by `status`.
- */
-const loadSubjectPersona = async (
-  transaction: ClientTransaction,
-  scope: ConversationScope,
-  personaId: string
-): Promise<SubjectPersonaRow | undefined> => {
-  const result = await raw<RawRows<SubjectPersonaRow>>(transaction, `
-    select id, status from public.client_personas
-    where id = ?::uuid and client_id = ?::uuid${scope.side === 'client' ? " and status = 'active'" : ''}
+/** The persona of a subject, inside the client: a persona of another client is "not found", like an absent one. */
+const loadSubjectPersona = async (transaction: ClientTransaction, scope: ConversationScope, personaId: string): Promise<{ readonly id: string } | undefined> => {
+  const result = await raw<RawRows<{ id: string }>>(transaction, `
+    select id from public.client_personas where id = ?::uuid and client_id = ?::uuid
   `, [personaId, scope.clientId]);
   return result.rows[0];
 };
 
-/** `personas` is filled by an active persona; every other section by its own row, per `sectionFilledSql`. */
+/** `personas` is filled by a persona; every other section by its own row, per `sectionFilledSql`. */
 const isSectionFilled = async (transaction: ClientTransaction, clientId: string, sectionKey: BrandSectionKey): Promise<boolean> => {
   if (sectionKey === 'personas') {
     const result = await raw<RawRows<{ filled: boolean }>>(transaction, `
-      select exists (select 1 from public.client_personas persona where persona.client_id = ?::uuid and persona.status = 'active') as filled
+      select exists (select 1 from public.client_personas persona where persona.client_id = ?::uuid) as filled
     `, [clientId]);
     return result.rows[0]?.filled === true;
   }
@@ -334,9 +317,7 @@ const checkSubject = async (
     return options.forWrite && !isContentOpenToAgencyWriter(content.status) ? 'content-not-open' : undefined;
   }
   if ('personaId' in subject) {
-    const persona = await loadSubjectPersona(transaction, scope, subject.personaId);
-    if (persona === undefined) return 'subject-not-found';
-    return options.forWrite && persona.status === 'archived' ? 'persona-archived' : undefined;
+    return (await loadSubjectPersona(transaction, scope, subject.personaId)) === undefined ? 'subject-not-found' : undefined;
   }
   // The portal never offers "Sugerir" on a section the agency has not filled; the route guarantees it.
   if (options.forWrite && scope.side === 'client' && !(await isSectionFilled(transaction, scope.clientId, subject.sectionKey))) {
@@ -435,7 +416,6 @@ export const openThread = async (
 };
 
 interface ThreadContextRow {
-  readonly persona_status: 'active' | 'archived' | null;
   readonly client_status: 'active' | 'archived';
   readonly content_id: string | null;
   /** Read through `public.contents`, so only the agency side (which may read it) ever sees a value. */
@@ -445,10 +425,8 @@ interface ThreadContextRow {
 /**
  * The thread as the caller can reach it: inside the client, and for the agency inside the agency of
  * the route. Nothing is returned for a thread the caller cannot read, which covers another client's
- * thread, another agency's, a missing one and, for the portal, one about an archived persona. That
- * last case is filtered here, not left to row-level security, for the same reason as in
- * `loadSubjectPersona`: a collaborator with a client link crosses the policy through its agency branch.
- * The conversation of a content is filtered the same way: the portal reaches it only while the content is open
+ * thread, another agency's and a missing one.
+ * The conversation of a content is filtered here, not left to row-level security: the portal reaches it only while the content is open
  * to the client, by `content_open_to_client`, whatever the agency branch of the policy would show that person.
  */
 const loadThreadContext = async (
@@ -462,14 +440,12 @@ const loadThreadContext = async (
     conditions.push('client.agency_id = ?::uuid');
     bindings.push(scope.agencyId);
   } else {
-    conditions.push("(thread.persona_id is null or persona.status = 'active')");
     conditions.push('(thread.content_id is null or app_private.content_open_to_client(thread.content_id))');
   }
   const result = await raw<RawRows<ThreadContextRow>>(transaction, `
-    select persona.status as persona_status, client.status as client_status, thread.content_id, content.status as content_status
+    select client.status as client_status, thread.content_id, content.status as content_status
     from public.client_threads thread
     join public.clients client on client.id = thread.client_id
-    left join public.client_personas persona on persona.id = thread.persona_id
     left join public.contents content on content.id = thread.content_id
     where ${conditions.join(' and ')}
   `, bindings);
@@ -497,8 +473,7 @@ const refusalOfContext = (
 ): ConversationRefusal | undefined => {
   const permissionRefusal = permissionRefusalOfContext(scope, context, access);
   if (permissionRefusal !== undefined || context === undefined) return permissionRefusal;
-  if (context.client_status === 'archived') return 'client-archived';
-  return context.persona_status === 'archived' ? 'persona-archived' : undefined;
+  return context.client_status === 'archived' ? 'client-archived' : undefined;
 };
 
 export type AddCommentResult =
@@ -741,7 +716,7 @@ export const loadComment = async (
 
 /**
  * Reads back why a write the earlier checks let through was refused by row-level security: the
- * client or the persona changed between the check and the write. The agency learns which (409); the
+ * client changed between the check and the write. The agency learns which (409); the
  * portal only learns that what it was looking at is gone (404). Runs in a fresh transaction, because
  * the one that was refused is aborted. `undefined` means neither changed, so the refusal was not a
  * state conflict and the route answers 403.
@@ -757,7 +732,6 @@ export const diagnoseConversationRefusal = async (
   if (target.threadId !== undefined) {
     const context = await loadThreadContext(transaction, scope, target.threadId);
     if (context === undefined) return undefined;
-    if (context.persona_status === 'archived') return 'persona-archived';
     return context.content_id !== null && !isContentOpenToAgencyWriter(context.content_status) ? 'content-not-open' : undefined;
   }
   if (target.contentId !== undefined) {
@@ -765,9 +739,6 @@ export const diagnoseConversationRefusal = async (
     if (content === undefined) return 'subject-not-found';
     return isContentOpenToAgencyWriter(content.status) ? undefined : 'content-not-open';
   }
-  if (target.personaId !== undefined) {
-    const persona = await loadSubjectPersona(transaction, scope, target.personaId);
-    return persona?.status === 'archived' ? 'persona-archived' : undefined;
-  }
+  if (target.personaId !== undefined && (await loadSubjectPersona(transaction, scope, target.personaId)) === undefined) return 'subject-not-found';
   return undefined;
 };

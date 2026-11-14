@@ -17,8 +17,7 @@ de RLS da tabela também exige:
 | `PUT` | `/agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey` | `cliente.operar` |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas` | `cliente.operar` |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | `cliente.operar` |
-| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/archive` | `cliente.operar` |
-| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive` | `cliente.operar` |
+| `DELETE` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | `cliente.operar` |
 
 As quatro rotas de encerrar, arquivar e reativar o cliente têm a sua seção, abaixo.
 
@@ -153,7 +152,7 @@ inglês no contrato e é gravado com o rótulo em português, como o banco exige
 - A persona tem ainda o perfil (decisão `2026-11-11`), todo opcional no `POST` e no `PATCH`: `age` (inteiro de 1 a 120),
   `occupation` e `location` (uma linha, até 80), `traits` (até 5 de até 24, cada uma uma linha visível; `[]` limpa),
   `whereTheyAre` e `toneThatWorks` (até 280, podem quebrar linha). Texto vazio vira `null`. Os limites estão também nas
-  CHECK da tabela, e o gatilho que trava a persona arquivada lista as seis colunas novas.
+  CHECK da tabela, e o gatilho que trava a edição lista as seis colunas novas.
 - Persona de outro cliente — da mesma agência ou não — é o mesmo `404`, e todo `:personaId`
   malformado também; o `PATCH`/`archive`/`unarchive` filtram por `client_id`.
 - Cliente arquivado responde `409` em toda escrita, inclusive quando o arquivamento acontece entre
@@ -190,14 +189,11 @@ As do portal usam `requireSession` e `requireClientAccess`, sem permissão do ca
   50 comentários por página, o mais antigo primeiro. O total sai de `count(*) over ()`, no
   mesmo snapshot da página.
 - **404 indistinto**: cliente de outra agência, thread de outro cliente, persona de outro cliente e
-  id malformado respondem o mesmo 404. No portal a persona arquivada também, e isso é um filtro da
+  id malformado respondem o mesmo 404. No portal a persona excluída também (ela já não existe). O filtro é da
   rota, não só da RLS: o **colaborador que também tem vínculo de cliente** atravessa a policy pelo
-  ramo de membro da agência, então toda regra do portal vale por filtro explícito (persona ativa,
-  cliente da URL, vínculo e cliente ativos na guarda). Pelo portal essa pessoa age só como cliente,
+  ramo de membro da agência, então toda regra do portal vale por filtro explícito (cliente da URL, vínculo e cliente ativos na guarda). Pelo portal essa pessoa age só como cliente,
   com qualquer papel na agência; cada rota do portal tem teste com ela.
-- **409**: `CLIENT_ARCHIVED` (cliente arquivado é só leitura), `PERSONA_ARCHIVED` (a agência abrindo,
-  comentando ou resolvendo em persona arquivada), `PERSONA_READ_ONLY` (editar ou arquivar de novo uma
-  persona arquivada; sai do gatilho `A0137` do banco, sem checagem na rota) e `SECTION_NOT_FILLED` (o portal abrindo thread em
+- **409**: `CLIENT_ARCHIVED` (cliente arquivado é só leitura), e `SECTION_NOT_FILLED` (o portal abrindo thread em
   seção que a agência não preencheu; a agência não tem essa restrição). A checagem vem **antes** da
   escrita; se o estado muda entre a checagem e a escrita, a recusa da RLS é relida numa transação
   nova e dá o mesmo 409 (404 no portal, que só sabe que o que via sumiu).
@@ -289,7 +285,7 @@ da requisição, e nenhuma consulta daqui lê `auth."user"`: o portal não mostr
   por id de vínculo (outra pessoa do mesmo cliente tem outro valor). `status` e `archivedAt` são
   fixados em `active` e `null` pelo contrato.
 - **`home`**: `threadsAnsweredByAgency` conta threads abertas cujo último comentário é da agência,
-  **deste cliente** e **só as que o portal lê** (a de persona arquivada fica de fora); `brandStudyFilled`
+  **deste cliente** e **só as que o portal lê**; `brandStudyFilled`
   usa a definição única de `service.ts`. Quando a agência responde o número sobe; um comentário novo do
   cliente o faz cair. `contentsAwaitingApproval` conta os conteúdos do **próprio cliente** em "aguardando
   aprovação", por `app_private.portal_contents`: a policy de `contents` responde só à agência, e a função
@@ -298,8 +294,8 @@ da requisição, e nenhuma consulta daqui lê `auth."user"`: o portal não mostr
   conteúdo não entra em `threadsAnsweredByAgency`.
 - **Estudo**: as sete seções sempre, só as personas `active`, sem `updatedBy` (a consulta nem seleciona
   `updated_by`). `updatedAt` fica.
-- **A RLS não diz por qual lado**: o colaborador que também tem vínculo de cliente lê a persona
-  arquivada e as threads de todos os clientes da agência pelo ramo de membro, então persona ativa, cliente
+- **A RLS não diz por qual lado**: o colaborador que também tem vínculo de cliente lê as
+  threads de todos os clientes da agência pelo ramo de membro, então cliente
   da rota e vínculo próprio são condições do SQL. Cada rota tem teste com ele (`dual`), com o de papel sem
   nenhuma chave `cliente.*` (`dualBare`) e com o de uma agência que tem vínculo com cliente de outra.
 - **404 indistinto** (a guarda): outro cliente, cliente de outra agência, cliente arquivado, agência
@@ -419,7 +415,12 @@ evento em `audit.events`. Todas respondem o cliente (`200`), no mesmo formato do
   persona, conversa e comentário. O `A0020` vira `409 CLIENT_ARCHIVED` na agência (`PUT` de seção, `POST` de
   persona, de conversa e de comentário) e `404 NOT_FOUND` no portal, onde cliente arquivado é sempre "não
   encontrado". Nada é gravado. Editar o que já existe (persona, seção já preenchida) não trava o cliente e
-  não levanta `A0020`.
+  não levanta `A0020`; **excluir** persona trava (`FOR SHARE`) e levanta `A0020` com o cliente arquivado.
+- **Excluir persona** (2026-11-12): `DELETE …/personas/:personaId`, `204`. Apaga a persona e a conversa dela
+  por cascata de chave estrangeira (`client_threads.persona_id` e os comentários), sem `DELETE` em threads nem em
+  comentários para o `ageniza_app`. A persona traz `messageCount` (as mensagens que vão junto), que a tela mostra
+  na confirmação. Cada exclusão grava `persona.deleted` em `audit.events`. Uma conversa que corre com a exclusão
+  recebe `404`. Não existe arquivar nem desarquivar persona.
 - O `404` é um só para cliente inexistente, de outra agência ou com id que não é UUID. Se a função
   recusar depois das checagens (permissão perdida no meio, cliente arquivado no meio), a recusa é relida
   numa transação nova e vira o `403`, o `404` ou o `409` que a checagem teria dado.

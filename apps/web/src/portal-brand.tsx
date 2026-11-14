@@ -130,7 +130,7 @@ export function PortalBrandPage() {
     // brand study and the access lists of the same clients live under the same prefix and are not touched.
     void queryClient.invalidateQueries({ queryKey: ['agency'], predicate: isClientRosterKey });
   };
-  // The agency archived a persona or emptied a section under the client: read the study again.
+  // The agency deleted a persona or emptied a section under the client: read the study again.
   const onStale = (): void => { void queryClient.invalidateQueries({ queryKey: portalBrandStudyQueryKey(client.id) }); };
 
   // A retry keeps the error and its button mounted (and the focus on it): only the first read is a skeleton.

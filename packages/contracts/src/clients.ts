@@ -510,7 +510,8 @@ export const PersonaSchema = z.object({
   traits: z.array(z.string()),
   whereTheyAre: z.string().nullable(),
   toneThatWorks: z.string().nullable(),
-  status: z.enum(['active', 'archived']),
+  /** The messages of the persona's conversation, which the deletion takes along: the screen says how many before it asks. */
+  messageCount: z.number().int().nonnegative(),
   updatedBy: BrandStudyUpdatedBySchema.nullable(),
   updatedAt: z.string().nullable()
 }).strict();
@@ -557,8 +558,8 @@ export const PortalClientResponseSchema = z.object({
 /** A section as the portal reads it: the same as the agency's, without who edited it internally. */
 export const PortalBrandStudySectionSchema = BrandStudySectionSchema.omit({ updatedBy: true });
 
-/** An active persona; an archived one is not served, and the literal makes a leak fail to parse. */
-export const PortalPersonaSchema = PersonaSchema.omit({ updatedBy: true }).extend({ status: z.literal('active') });
+/** A persona as the portal reads it: without who edited it and without the count of the agency's conversation. */
+export const PortalPersonaSchema = PersonaSchema.omit({ updatedBy: true, messageCount: true });
 
 export const PortalBrandStudyResponseSchema = z.object({
   filled: z.number().int().min(0).max(7),

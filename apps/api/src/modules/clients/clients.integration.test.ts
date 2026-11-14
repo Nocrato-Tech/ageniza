@@ -351,7 +351,7 @@ describe('CLIENTS HTTP module (#124)', () => {
     expect(response.json()).toMatchObject({ error: { code: 'CLIENT_NAME_IN_USE' } });
   });
 
-  it('counts brandStudyFilled with personas only when active', async () => {
+  it('counts brandStudyFilled with personas only while there is one', async () => {
     const clientId = await createClient({ agencyId: agencyA });
     await owner.knex('client_brand_sections').insert([
       { client_id: clientId, section_key: 'branding', body: 'Marca' },
@@ -359,16 +359,13 @@ describe('CLIENTS HTTP module (#124)', () => {
     ]);
     await owner.knex.raw(`insert into public.client_brand_sections (client_id, section_key, colors) values (?, 'colors', ?::jsonb)`, [clientId, JSON.stringify([{ name: 'Vinho', hex: '#7A1F2B' }])]);
     const activePersona = randomUUID();
-    await owner.knex('client_personas').insert([
-      { id: activePersona, client_id: clientId, name: 'Ativa' },
-      { id: randomUUID(), client_id: clientId, name: 'Arquivada', status: 'archived' }
-    ]);
+    await owner.knex('client_personas').insert({ id: activePersona, client_id: clientId, name: 'Ativa' });
 
     const filled = await getClient(adminCookie, agencyA, clientId);
     expect(filled.statusCode).toBe(200);
     expect(filled.json()).toMatchObject({ summary: { brandStudyFilled: 3 } });
 
-    await owner.knex('client_personas').where({ id: activePersona }).update({ status: 'archived' });
+    await owner.knex('client_personas').where({ id: activePersona }).delete();
     const withoutActivePersona = await getClient(adminCookie, agencyA, clientId);
     expect(withoutActivePersona.json()).toMatchObject({ summary: { brandStudyFilled: 2 } });
   });
