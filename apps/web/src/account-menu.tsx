@@ -4,8 +4,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeftRight, ChevronDown, ChevronsUpDown, Crown, LogOut, Plus, UserRound, WalletCards } from 'lucide-react';
 
 import {
-  AuthLogoutAllResponseSchema,
-  AuthLogoutResponseSchema,
   MeContextsResponseSchema,
   PutLastContextResponseSchema,
   type AuthUser,
@@ -18,10 +16,9 @@ import { useAuthSession, useOptionalAuthSessionStore, type AuthSessionStore } fr
 import { contextDestination, targetFromDestination, type ContextTarget } from './context-destination.js';
 import { contextDescription, contextKey, contextTitle } from './context-labels.js';
 import { CREATE_AGENCY_LABEL, CreateAgencyDialog } from './create-agency.js';
-import { forgetGoogleInvite } from './google-sign-in.js';
-import { HttpClientError, useApiClient } from './http.js';
+import { useApiClient } from './http.js';
+import { useLogout, type LogoutAction } from './use-logout.js';
 
-type LogoutAction = 'logout' | 'logout-all';
 type AccountMenuPanel = 'root' | 'switch';
 
 const fallbackAuthSnapshot = { status: 'ready' as const, isAuthenticated: false, user: null };
@@ -71,8 +68,7 @@ export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', us
   const [panel, setPanel] = useState<AccountMenuPanel>('root');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [createAgencyOpen, setCreateAgencyOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<LogoutAction | null>(null);
-  const [failedAction, setFailedAction] = useState<LogoutAction | null>(null);
+  const { logout, pendingAction, failedAction, clearFailure } = useLogout();
 
   const user = userOverride === undefined ? session.user : userOverride;
 
@@ -115,34 +111,8 @@ export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', us
   }
 
   const startLogout = async (action: LogoutAction): Promise<void> => {
-    setFailedAction(null);
-    setPendingAction(action);
-    try {
-      await httpClient.request({
-        path: action === 'logout' ? '/auth/logout' : '/auth/logout-all',
-        method: 'POST',
-        response: action === 'logout' ? AuthLogoutResponseSchema : AuthLogoutAllResponseSchema
-      });
-      queryClient.clear();
-      forgetGoogleInvite();
-      authStore?.end();
-      navigate('/entrar', { replace: true });
-    } catch (error: unknown) {
-      // A session revoked elsewhere answers 401; the person asked to leave, so that is the outcome
-      // they wanted. Finish the sign-out without state, over the destination the session-ended
-      // redirect saved, so the next account is not sent back to the previous one's address.
-      if (error instanceof HttpClientError && error.status === 401) {
-        queryClient.clear();
-        forgetGoogleInvite();
-        authStore?.end();
-        navigate('/entrar', { replace: true });
-        return;
-      }
-      setFailedAction(action);
-      if (action === 'logout-all') setConfirmOpen(false);
-    } finally {
-      setPendingAction(null);
-    }
+    const out = await logout(action);
+    if (!out && action === 'logout-all') setConfirmOpen(false);
   };
 
   const failedMessage = failedAction === 'logout-all' ? logoutAllErrorMessage : logoutErrorMessage;
@@ -205,7 +175,7 @@ export function AccountMenu({ activeContext, contextLabel = 'Contexto ativo', us
           <MenuItem icon={<LogOut />} onClick={() => { void startLogout('logout'); }}>Sair</MenuItem>
           {canLogoutAll && <>
             <MenuSeparator />
-            <MenuItem variant='destructive' icon={<LogOut />} onClick={() => { setFailedAction(null); setConfirmOpen(true); }}>
+            <MenuItem variant='destructive' icon={<LogOut />} onClick={() => { clearFailure(); setConfirmOpen(true); }}>
               {logoutAllLabel}
             </MenuItem>
           </>}
