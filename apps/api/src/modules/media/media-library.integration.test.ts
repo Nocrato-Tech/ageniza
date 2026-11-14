@@ -291,6 +291,7 @@ describe('the library of a client, across its folders', () => {
       altText: 'Capa da campanha',
       videoProcessingStatus: 'not_applicable',
       uploadedBy: { membershipId: await membershipOf('opVis'), name: 'opVis' },
+      uploadedBySide: 'agency',
       createdAt: day(1).toISOString(),
       usageCount: 0
     });

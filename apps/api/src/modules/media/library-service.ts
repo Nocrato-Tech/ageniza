@@ -35,6 +35,7 @@ export interface LibraryAssetRow {
   readonly video_processing_status: MediaLibraryAsset['videoProcessingStatus'];
   readonly uploader_membership_id: string | null;
   readonly uploader_name: string | null;
+  readonly uploaded_by_side: MediaLibraryAsset['uploadedBySide'];
   readonly created_at: Date;
   readonly usage_count: string | number;
 }
@@ -57,6 +58,7 @@ export const libraryAssetFrom = (row: LibraryAssetRow): MediaLibraryAsset => ({
   altText: row.alt_text,
   videoProcessingStatus: row.video_processing_status,
   uploadedBy: personFrom(row.uploader_membership_id, row.uploader_name),
+  uploadedBySide: row.uploaded_by_side,
   createdAt: new Date(row.created_at).toISOString(),
   usageCount: Number(row.usage_count)
 });
@@ -81,7 +83,7 @@ const USAGE_COUNT = `(
 const ASSET_COLUMNS = `
   asset.id, asset.folder_id, folder.name as folder_name, asset.category, asset.confirmed_content_type, asset.confirmed_size_bytes,
   asset.file_name, asset.width, asset.height, asset.alt_text, asset.video_processing_status,
-  uploader_link.id as uploader_membership_id, uploader_account.name as uploader_name, asset.created_at,
+  uploader_link.id as uploader_membership_id, uploader_account.name as uploader_name, asset.uploaded_by_side, asset.created_at,
   ${USAGE_COUNT} as usage_count
 `;
 

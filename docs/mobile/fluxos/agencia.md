@@ -194,9 +194,11 @@ stateDiagram-v2
 | `GET` | `…/clients/:clientId/brand-study` | `cliente.visualizar` | as sete seções e as personas |
 | `PUT` | `…/clients/:clientId/brand-study/sections/:sectionKey` | `cliente.operar` | grava uma seção |
 | `POST` | `…/clients/:clientId/personas` | `cliente.operar` | cria uma persona |
-| `PATCH` | `…/clients/:clientId/personas/:personaId` | `cliente.operar` | edita uma persona |
-| `POST` | `…/clients/:clientId/personas/:personaId/archive` | `cliente.operar` | arquiva (some do portal) |
+| `PATCH` | `…/clients/:clientId/personas/:personaId` | `cliente.operar` | edita uma persona; persona arquivada responde `409 PERSONA_READ_ONLY` |
+| `POST` | `…/clients/:clientId/personas/:personaId/archive` | `cliente.operar` | arquiva (some do portal); persona já arquivada responde `409 PERSONA_READ_ONLY` |
 | `POST` | `…/clients/:clientId/personas/:personaId/unarchive` | `cliente.operar` | desarquiva |
+
+**Persona arquivada é somente leitura** ([decisão](../../business/decisions/2026-11-13-persona-arquivada-e-somente-leitura.md)): nenhum campo muda enquanto ela está arquivada, e a única ação é **Desarquivar**. Quem abriu a edição antes de outra pessoa arquivar recebe `409 PERSONA_READ_ONLY` ("Esta persona está arquivada. Desarquive-a para editar.") e a persona não muda; o app deve mostrar a mensagem e recarregar a persona.
 
 **Persona (2026-11-11, [campos novos](../../business/decisions/2026-11-11-estrutural-a-persona-ganha-idade-ocupacao-local-tracos-onde-esta-e-tom.md)).** Além de nome, descrição, dores, desejos e objeções, a persona ganha, todos opcionais: **idade** (1 a 120), **ocupação** (até 80), **local** (até 80), **traços** (até 5 chips de até 24 caracteres), **"onde está"** (até 280) e **"tom que funciona"** (até 280). Persona sem eles continua válida. O perfil mostra a linha de apoio "34 anos · gerente de RH · Pinheiros", os chips e as linhas Dor, Desejo, Objeções, Onde está e Tom que funciona, **cada uma com o seu lápis, salvando sozinha** no mesmo `PATCH …/personas/:personaId`. O formulário avisa para não pôr dado de pessoa real. O portal lê os campos novos junto da persona ativa.
 
@@ -415,14 +417,14 @@ stateDiagram-v2
 |---|---|---|---|
 | `POST` | `…/media/uploads` | `midia.enviar` ou `conteudo.operar` | inicia o upload e devolve a URL assinada, simples ou multipart |
 | `POST` | `…/media/uploads/:assetId/parts` | `midia.enviar` ou `conteudo.operar` | URLs das partes do multipart |
-| `POST` | `…/media/uploads/:assetId/complete` | `midia.enviar` ou `conteudo.operar` | confirma o upload e valida o arquivo |
+| `POST` | `…/media/uploads/:assetId/complete` | `midia.enviar` ou `conteudo.operar` | confirma o upload e valida o arquivo; só confirma arquivo da agência: a reserva que o cliente fez pelo portal responde `404`, como um arquivo que não existe (o portal a confirma) |
 | `GET` | `…/media/:assetId/download-url` | `midia.enviar` ou `conteudo.visualizar` | URL assinada de leitura |
 | `GET` | `…/clients/:clientId/media-folders` | `conteudo.visualizar` | pastas do cliente |
 | `POST` | `…/clients/:clientId/media-folders` | `conteudo.operar` | cria uma pasta |
 | `GET` | `…/clients/:clientId/media-folders/:folderId/assets` | `conteudo.visualizar` | mídias da pasta |
 | `POST` | `…/clients/:clientId/media-folders/:folderId/assets/:assetId/remove` | `conteudo.operar` | remove da pasta |
-| `GET` | `…/clients/:clientId/media` | `conteudo.visualizar` | os arquivos do cliente, dos mais novos para os mais antigos, com os filtros `q` (nome), `category` e `folderId` e a paginação de sempre |
-| `GET` | `…/clients/:clientId/media/:assetId` | `conteudo.visualizar` | um arquivo, com nome, tipo, tamanho, largura e altura, texto alternativo e quem enviou |
+| `GET` | `…/clients/:clientId/media` | `conteudo.visualizar` | os arquivos do cliente, dos mais novos para os mais antigos, com os filtros `q` (nome), `category` e `folderId` e a paginação de sempre; cada item traz `uploadedBySide` (`agency` ou `client`: `client` é o arquivo que o cliente enviou pelo portal, e a tela mostra "Enviada por <nome do cliente>") |
+| `GET` | `…/clients/:clientId/media/:assetId` | `conteudo.visualizar` | um arquivo, com nome, tipo, tamanho, largura e altura, texto alternativo, quem enviou e o lado de quem enviou (`uploadedBySide`) |
 | `PATCH` | `…/clients/:clientId/media/:assetId` | `conteudo.operar` **e** `conteudo.visualizar` | renomeia (`name`) e edita o texto alternativo (`altText`, até 500 caracteres); devolve o arquivo |
 | `POST` | `…/clients/:clientId/media/:assetId/move` | `conteudo.operar` **e** `conteudo.visualizar` | move para outra pasta **do mesmo cliente** (`folderId`); `409 MEDIA_IN_USE` se o arquivo está em uso; devolve o arquivo |
 | `GET` | `…/clients/:clientId/media/:assetId/usage` | `conteudo.visualizar` | os conteúdos que usam o arquivo, com título e estado, e se é mídia, capa ou os dois |

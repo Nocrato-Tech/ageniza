@@ -340,6 +340,56 @@ describe('CLIENTS brand-study and personas HTTP module (#127)', () => {
     expect(edited.json()).toMatchObject({ name: 'Lucas Silva', description: null });
   });
 
+  it('answers 409 PERSONA_READ_ONLY to a PATCH of an archived persona and changes nothing (#891)', async () => {
+    const clientId = await createClient(agencyA);
+    const personaId = await insertPersonaRow(clientId, 'archived');
+    const before = await owner.knex('client_personas').where({ id: personaId }).first();
+
+    const response = await patchPersona(adminCookie, agencyA, clientId, personaId, { name: 'Renomeada', pains: 'Novas dores' });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json<{ error: { code: string; message: string } }>().error).toMatchObject({
+      code: 'PERSONA_READ_ONLY',
+      message: 'Esta persona está arquivada. Desarquive-a para editar.'
+    });
+    expect(await owner.knex('client_personas').where({ id: personaId }).first()).toEqual(before);
+  });
+
+  it('refuses to archive an archived persona, and takes the unarchive and the edit that follows (#891)', async () => {
+    const clientId = await createClient(agencyA);
+    const personaId = await insertPersonaRow(clientId, 'archived');
+
+    const again = await personaStatus(adminCookie, agencyA, clientId, personaId, 'archive');
+    expect(again.statusCode).toBe(409);
+    expect(again.json<{ error: { code: string } }>().error.code).toBe('PERSONA_READ_ONLY');
+
+    expect((await personaStatus(adminCookie, agencyA, clientId, personaId, 'unarchive')).statusCode).toBe(200);
+    const edited = await patchPersona(adminCookie, agencyA, clientId, personaId, { name: 'De volta' });
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json()).toMatchObject({ name: 'De volta', status: 'active' });
+  });
+
+  it('answers 409 PERSONA_READ_ONLY, never 500, to an edit open while the persona was archived (#891)', async () => {
+    const clientId = await createClient(agencyA);
+    const personaId = await insertPersonaRow(clientId, 'active');
+    const racing = await owner.knex.transaction();
+    let response: Promise<InjectResponse> | undefined;
+    try {
+      await racing('client_personas').where({ id: personaId }).update({ status: 'archived' });
+      response = patchPersona(adminCookie, agencyA, clientId, personaId, { name: 'Perdeu a corrida' });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } finally {
+      await racing.commit();
+    }
+
+    const result = await response!;
+    expect(result.statusCode).toBe(409);
+    expect(result.json<{ error: { code: string } }>().error.code).toBe('PERSONA_READ_ONLY');
+    expect((await owner.knex('client_personas').where({ id: personaId }).first('name', 'status'))).toEqual({
+      name: `Persona ${personaId}`, status: 'archived'
+    });
+  });
+
   it('rejects an empty persona PATCH body', async () => {
     const clientId = await createClient(agencyA);
     const personaId = await insertPersonaRow(clientId);

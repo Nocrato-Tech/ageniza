@@ -34,7 +34,7 @@ import type { EmailService } from '../auth/email-service.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import { tenantHolds } from '../tenancy/guards.js';
 import { registerAccessRoutes } from './access-routes.js';
-import { registerConversationRoutes } from './conversation-routes.js';
+import { registerConversationRoutes, type PortalUploadsPort } from './conversation-routes.js';
 import { registerLifecycleRoutes } from './lifecycle-routes.js';
 import { registerPortalReadRoutes } from './portal-routes.js';
 import { buildClientAvatarKeyPrefix, isClientAvatarKey } from '../identity-storage/policy.js';
@@ -56,6 +56,7 @@ import {
   createPersona,
   isActiveClientNameConflict,
   isClientNoLongerActive,
+  isPersonaReadOnly,
   isRowLevelSecurityViolation,
   listClients,
   loadBrandSection,
@@ -94,6 +95,8 @@ export interface ClientModuleDependencies {
   readonly requirePermission: (key: string) => ClientPreHandler;
   /** Injected by the tenancy module; the portal conversation routes are authorized by the client link alone. */
   readonly requireClientAccess: ClientPreHandler;
+  /** Injected at the composition by the media module's owner; absent, the route that announces a batch of files is not registered. */
+  readonly portalUploads?: PortalUploadsPort;
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -144,7 +147,13 @@ const clientIdFromRoute = (request: FastifyRequest): string => {
 
 const personaNotFound = (): HttpError => new HttpError({ statusCode: 404, code: 'NOT_FOUND', message: 'Persona not found.' });
 
-const sectionNotWritable = (): HttpError => new HttpError({
+const personaReadOnly = (): HttpError => new HttpError({
+  statusCode: 409,
+  code: 'PERSONA_READ_ONLY',
+  message: 'Esta persona está arquivada. Desarquive-a para editar.'
+});
+
+const sectionNotWritable =(): HttpError => new HttpError({
   statusCode: 400,
   code: 'VALIDATION_ERROR',
   message: 'Request validation failed',
@@ -484,6 +493,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       try {
         updated = await updatePersona(transaction, { clientId, personaId, actorUserId: auth.userId, changes: body });
       } catch (error) {
+        if (isPersonaReadOnly(error)) return { kind: 'persona-read-only' } as const;
         if (isRowLevelSecurityViolation(error) || isClientNoLongerActive(error)) return { kind: 'archived' } as const;
         throw error;
       }
@@ -495,6 +505,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     if (outcome.kind === 'not-found') throw clientNotFound();
     if (outcome.kind === 'archived') throw clientArchived();
     if (outcome.kind === 'persona-not-found') throw personaNotFound();
+    if (outcome.kind === 'persona-read-only') throw personaReadOnly();
     return reply.send(routeResponse(updatePersonaDocs, request, outcome.persona));
   });
 
@@ -512,6 +523,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
       try {
         updated = await setPersonaStatus(transaction, { clientId, personaId, actorUserId: auth.userId, status });
       } catch (error) {
+        if (isPersonaReadOnly(error)) return { kind: 'persona-read-only' } as const;
         if (isRowLevelSecurityViolation(error) || isClientNoLongerActive(error)) return { kind: 'archived' } as const;
         throw error;
       }
@@ -523,6 +535,7 @@ export const registerClientModule = (app: FastifyInstance, dependencies: ClientM
     if (outcome.kind === 'not-found') throw clientNotFound();
     if (outcome.kind === 'archived') throw clientArchived();
     if (outcome.kind === 'persona-not-found') throw personaNotFound();
+    if (outcome.kind === 'persona-read-only') throw personaReadOnly();
     return reply.send(routeResponse(personaStatusDocs, request, outcome.persona));
   };
 

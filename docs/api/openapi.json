@@ -6894,6 +6894,254 @@
         ],
         "additionalProperties": false
       },
+      "startPortalMaterialUploadResponse": {
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "image",
+              "audio"
+            ]
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "upload": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "single"
+                ]
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "type",
+              "url",
+              "expiresAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "assetId",
+          "category",
+          "contentType",
+          "upload"
+        ],
+        "additionalProperties": false
+      },
+      "startPortalMaterialUploadRequest": {
+        "type": "object",
+        "properties": {
+          "fileName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 510
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "declaredSizeBytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 10737418240
+          }
+        },
+        "required": [
+          "fileName",
+          "contentType",
+          "declaredSizeBytes"
+        ],
+        "additionalProperties": false
+      },
+      "completePortalMaterialUploadResponse": {
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed"
+            ]
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "assetId",
+          "status",
+          "sizeBytes",
+          "contentType"
+        ],
+        "additionalProperties": false
+      },
+      "completePortalMaterialUploadRequest": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "listPortalMaterialUploadsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "confirmed"
+                  ]
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "image",
+                    "audio"
+                  ]
+                },
+                "contentType": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "width": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
+                },
+                "height": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uri"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "status",
+                "category",
+                "contentType",
+                "sizeBytes",
+                "name",
+                "width",
+                "height",
+                "url",
+                "createdAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "pageSize": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "totalItems": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalPages": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "page",
+              "pageSize",
+              "totalItems",
+              "totalPages"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "announcePortalMaterialUploadsRequest": {
+        "type": "object",
+        "properties": {
+          "assetIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "additionalProperties": false
+      },
       "getPortalClientResponse": {
         "type": "object",
         "properties": {
@@ -7844,6 +8092,13 @@
                   ],
                   "additionalProperties": false
                 },
+                "uploadedBySide": {
+                  "type": "string",
+                  "enum": [
+                    "agency",
+                    "client"
+                  ]
+                },
                 "createdAt": {
                   "type": "string",
                   "format": "date-time"
@@ -7866,6 +8121,7 @@
                 "altText",
                 "videoProcessingStatus",
                 "uploadedBy",
+                "uploadedBySide",
                 "createdAt",
                 "usageCount"
               ],
@@ -7998,6 +8254,13 @@
             ],
             "additionalProperties": false
           },
+          "uploadedBySide": {
+            "type": "string",
+            "enum": [
+              "agency",
+              "client"
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -8020,6 +8283,7 @@
           "altText",
           "videoProcessingStatus",
           "uploadedBy",
+          "uploadedBySide",
           "createdAt",
           "usageCount"
         ],
@@ -23039,7 +23303,7 @@
       "patch": {
         "operationId": "updatePersona",
         "summary": "Edita uma persona",
-        "description": "Aceita um subconjunto dos campos; `null` limpa. Persona de outro cliente é o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "Aceita um subconjunto dos campos; `null` limpa. Persona de outro cliente é o mesmo 404. Persona arquivada é somente leitura: responde 409 `PERSONA_READ_ONLY` e nada muda; para editar, desarquive antes.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
         "tags": [
           "clients"
         ],
@@ -23198,7 +23462,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_READ_ONLY: Esta persona está arquivada. Desarquive-a para editar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -23242,7 +23506,7 @@
       "post": {
         "operationId": "archivePersona",
         "summary": "Arquiva uma persona",
-        "description": "A persona sai do portal e as conversas dela ficam somente leitura; o histórico continua na agência.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
+        "description": "A persona sai do portal e as conversas dela ficam somente leitura; o histórico continua na agência. Arquivar uma persona que já está arquivada não muda o status e responde 409 `PERSONA_READ_ONLY`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `cliente.operar`.",
         "tags": [
           "clients"
         ],
@@ -23368,7 +23632,7 @@
             }
           },
           "409": {
-            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado.",
+            "description": "CLIENT_ARCHIVED: Cliente arquivado não pode ser editado. | PERSONA_READ_ONLY: Esta persona está arquivada. Desarquive-a para editar.",
             "content": {
               "application/json": {
                 "schema": {
@@ -26857,6 +27121,847 @@
         }
       }
     },
+    "/clients/{clientId}/material-requests/{threadId}/uploads": {
+      "post": {
+        "operationId": "startPortalMaterialUpload",
+        "summary": "Inicia o envio de uma foto ou áudio a um pedido de material, no portal",
+        "description": "Decisão 2026-11-11 (\"o cliente envia material pelo portal\"). A pessoa do portal envia **imagem** (PNG, JPEG, WebP, GIF) ou **áudio** (MP3, M4A, WAV, WebM, Ogg; o parâmetro `;codecs=opus` de uma gravação não conta) a um pedido de material **aberto** do cliente dela, até 25 MiB por arquivo e 20 arquivos por pedido.\nNunca SVG, vídeo nem PDF. O fluxo é o do upload da agência, sempre em uma parte só: esta rota reserva o arquivo e devolve a URL assinada de `PUT` (com o `Content-Type` devolvido em `contentType`); depois do `PUT`, `…/uploads/:assetId/complete` lê os bytes e confirma.\nO tipo e o tamanho declarados não são confiados: a recusa de tipo (415) e de tamanho (413) vem do banco, e os bytes são lidos na confirmação. O arquivo cai na pasta \"Enviados pelo cliente\" do cliente e conta no armazenamento da agência.\nNenhuma resposta fala de plano, cota, armazenamento nem cobrança: a agência que não pode receber o arquivo agora (`UPLOAD_UNAVAILABLE`) e a agência em somente leitura (`AGENCY_READ_ONLY`) respondem a mesma frase neutra do portal. Pedido de outro cliente, que não é de material, cliente arquivado, agência suspensa e vínculo removido são o mesmo 404.\nLimitada por endereço, como o upload da agência. A chave do objeto nunca é devolvida.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/startPortalMaterialUploadRequest"
+              },
+              "example": {
+                "fileName": "equipe.jpg",
+                "contentType": "image/jpeg",
+                "declaredSizeBytes": 2404019
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Reserva criada; a URL assinada vale até `expiresAt`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/startPortalMaterialUploadResponse"
+                },
+                "example": {
+                  "assetId": "44444444-4444-4444-8444-444444444444",
+                  "category": "image",
+                  "contentType": "image/jpeg",
+                  "upload": {
+                    "type": "single",
+                    "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+                    "expiresAt": "2026-11-13T12:15:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Pedido não encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Pedido não encontrado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "REQUEST_RESOLVED: | REQUEST_FULL: | UPLOAD_UNAVAILABLE: A aprovação está pausada no momento. A agência já foi avisada. | AGENCY_READ_ONLY: A aprovação está pausada no momento. A agência já foi avisada. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "REQUEST_RESOLVED",
+                    "message": "Request failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE: Request payload is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Request payload is too large"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "UNSUPPORTED_MEDIA_TYPE: This content type is not accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNSUPPORTED_MEDIA_TYPE",
+                    "message": "This content type is not accepted."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listPortalMaterialUploads",
+        "summary": "Lista o que a própria pessoa enviou a um pedido de material, no portal",
+        "description": "Só os arquivos que **a própria pessoa** enviou àquele pedido, `pending` e `confirmed`, do mais antigo ao mais novo; o arquivo de outra pessoa, de outro cliente ou da agência nunca aparece. Quarenta e oito por página, e uma página além do fim traz só o total.\n`url` é a URL assinada de leitura do arquivo confirmado (o áudio sai como download) e `null` no pendente. Nunca devolve a chave do objeto, a do staging nem o id do multipart. A leitura não exige que o pedido esteja aberto: o cliente continua vendo o que enviou.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página dos arquivos enviados pela pessoa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/listPortalMaterialUploadsResponse"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "id": "44444444-4444-4444-8444-444444444444",
+                      "status": "confirmed",
+                      "category": "image",
+                      "contentType": "image/jpeg",
+                      "sizeBytes": 2404019,
+                      "name": "equipe.jpg",
+                      "width": 3024,
+                      "height": 4032,
+                      "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+                      "createdAt": "2026-11-13T12:00:00.000Z"
+                    }
+                  ],
+                  "meta": {
+                    "page": 1,
+                    "pageSize": 48,
+                    "totalItems": 1,
+                    "totalPages": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "TERMS_NOT_ACCEPTED",
+                    "message": "Aceite os Termos de Uso e a Política de Privacidade para continuar."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Pedido não encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Pedido não encontrado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{clientId}/material-requests/{threadId}/uploads/{assetId}/complete": {
+      "post": {
+        "operationId": "completePortalMaterialUpload",
+        "summary": "Confirma o envio depois do PUT, no portal",
+        "description": "Sem corpo. Só a pessoa que fez a reserva a confirma (o arquivo de outra pessoa, do mesmo cliente ou de outro, é o mesmo 404 de um id que não existe). A API lê o objeto do armazenamento com o mesmo código da agência: copia do staging para a chave final e confere o tipo real pelos primeiros bytes, o tamanho (até 25 MiB, antes de copiar) e as dimensões de uma foto; um SVG nunca é aceito. A confirmação é uma por arquivo, em série.\nA recusa por causa dos bytes é **422 `UPLOAD_REJECTED`** com `details.reason` em `empty_object`, `content_type_mismatch`, `too_large`, `invalid_dimensions`, `request_full` ou `agency_unavailable` (a falta de espaço da agência chega assim, sem falar de plano nem de cota). A recusa fica gravada, a reserva é liberada e os objetos (a chave final e o staging) são apagados: o cliente começa de novo pela rota de iniciar.\nPedido resolvido, agência em somente leitura e agência sem vínculo seguem as respostas da rota de iniciar, e o arquivo continua pendente.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "media"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "assetId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/completePortalMaterialUploadRequest"
+              },
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Arquivo confirmado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/completePortalMaterialUploadResponse"
+                },
+                "example": {
+                  "assetId": "44444444-4444-4444-8444-444444444444",
+                  "status": "confirmed",
+                  "sizeBytes": 2404019,
+                  "contentType": "image/jpeg"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Pedido não encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Pedido não encontrado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "REQUEST_RESOLVED: | UPLOAD_NOT_PENDING: This upload is not pending confirmation. | AGENCY_READ_ONLY: A aprovação está pausada no momento. A agência já foi avisada. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "REQUEST_RESOLVED",
+                    "message": "Request failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "UPLOAD_REJECTED: The uploaded object was rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UPLOAD_REJECTED",
+                    "message": "The uploaded object was rejected."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{clientId}/material-requests/{threadId}/uploads/announce": {
+      "post": {
+        "operationId": "announcePortalMaterialUploads",
+        "summary": "Avisa o pedido de que o cliente enviou um lote de arquivos, no portal",
+        "description": "Chamada no fim do lote. Cada id de `assetIds` (de 1 a 20, sem repetir) tem de ser um arquivo **confirmado** da própria pessoa **naquele pedido**; qualquer outro (de outra pessoa, pendente, recusado, de outro pedido ou inexistente) é o mesmo 404, sem dizer qual, e nada é gravado.\nGrava **um** comentário do cliente no pedido, pelo caminho de comentário do portal, com o texto montado pelo servidor (\"enviou 3 fotos\", \"enviou 1 áudio\", \"enviou 2 fotos e 1 áudio\"); é esse comentário que gera a notificação de resposta. Nada marca o arquivo como avisado: avisar o mesmo lote duas vezes são dois comentários.\nPedido resolvido é 409 `REQUEST_RESOLVED`, e a agência em somente leitura responde a frase neutra do portal.\n\nAcesso: Sessão + vínculo com o cliente.",
+        "tags": [
+          "clients"
+        ],
+        "x-permission": null,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/announcePortalMaterialUploadsRequest"
+              },
+              "example": {
+                "assetIds": [
+                  "44444444-4444-4444-8444-444444444444"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Comentário gravado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/addAgencyThreadCommentResponse"
+                },
+                "example": {
+                  "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "body": "enviou 1 foto",
+                  "side": "client",
+                  "author": {
+                    "name": "Ana, da Padaria Central",
+                    "photoUrl": null
+                  },
+                  "createdAt": "2026-10-07T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_ERROR: Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request validation failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED: Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Authentication is required."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CSRF_REJECTED: Request origin is not allowed | TERMS_NOT_ACCEPTED: Aceite os Termos de Uso e a Política de Privacidade para continuar. | EMAIL_NOT_CONFIRMED: Confirme o seu e-mail para entrar.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "CSRF_REJECTED",
+                    "message": "Request origin is not allowed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: Pedido não encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Pedido não encontrado."
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "REQUEST_RESOLVED: | AGENCY_READ_ONLY: A aprovação está pausada no momento. A agência já foi avisada. | TRY_AGAIN: Houve um conflito momentâneo. Tente de novo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "REQUEST_RESOLVED",
+                    "message": "Request failed"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR: An unexpected error occurred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred"
+                  },
+                  "meta": {
+                    "requestId": "req-de-exemplo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/clients/{clientId}": {
       "get": {
         "operationId": "getPortalClient",
@@ -27644,7 +28749,7 @@
       "post": {
         "operationId": "completeMediaUpload",
         "summary": "Confirma o upload e valida o objeto",
-        "description": "Valida tipo e tamanho pelo conteúdo observado no armazenamento; rejeição vira 422 e fica registrada, e o objeto é apagado.\nO tipo do objeto tem de ser o declarado e os primeiros bytes têm de ser os desse tipo (`details.reason`: `content_type_mismatch`);\numa foto traz as dimensões do cabeçalho (`invalid_dimensions` quando passam de 100000). Um SVG é lido inteiro e é recusado\n(`svg_rejected`) se tiver script, manipulador de evento (`on…`), `foreignObject`, referência externa, `data:`, `javascript:`,\nentidade ou instrução de processamento. Outras razões: `too_large`, `empty_object`, `object_not_found` e `quota_exceeded`.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar` ou `conteudo.operar`.",
+        "description": "Valida tipo e tamanho pelo conteúdo observado no armazenamento; rejeição vira 422 e fica registrada, e o objeto é apagado.\nO tipo do objeto tem de ser o declarado e os primeiros bytes têm de ser os desse tipo (`details.reason`: `content_type_mismatch`);\numa foto traz as dimensões do cabeçalho (`invalid_dimensions` quando passam de 100000). Um SVG é lido inteiro e é recusado\n(`svg_rejected`) se tiver script, manipulador de evento (`on…`), `foreignObject`, referência externa, `data:`, `javascript:`,\nentidade ou instrução de processamento. Outras razões: `too_large`, `empty_object`, `object_not_found` e `quota_exceeded`.\nSó confirma arquivo da agência: a reserva que o cliente fez pelo portal responde o mesmo 404 de um arquivo que não existe, e é o portal quem a confirma.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `midia.enviar` ou `conteudo.operar`.",
         "tags": [
           "media"
         ],
@@ -28801,7 +29906,7 @@
       "get": {
         "operationId": "listClientMedia",
         "summary": "Lista a biblioteca de mídia de um cliente",
-        "description": "Os arquivos confirmados e não removidos do cliente em todas as pastas, o mais recente primeiro (a tabela \"enviados\nrecentemente\"); quarenta e oito por página. `q` busca pelo nome, sem diferenciar maiúsculas nem acento (um `%` ou `_`\ndigitado vale como o próprio caractere; o arquivo enviado antes de o nome ser guardado não casa), `category` filtra por tipo\n(`image`, `video`, `pdf`, `audio`, `logo`) e `folderId` por pasta. Cada item traz nome, dimensões, texto alternativo, quem\nenviou (`uploadedBy`, `null` para quem não tem vínculo com a agência) e em quantos conteúdos é usado (`usageCount`, só os que a pessoa lê).\nNunca devolve chave de objeto. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
+        "description": "Os arquivos confirmados e não removidos do cliente em todas as pastas, o mais recente primeiro (a tabela \"enviados\nrecentemente\"); quarenta e oito por página. `q` busca pelo nome, sem diferenciar maiúsculas nem acento (um `%` ou `_`\ndigitado vale como o próprio caractere; o arquivo enviado antes de o nome ser guardado não casa), `category` filtra por tipo\n(`image`, `video`, `pdf`, `audio`, `logo`) e `folderId` por pasta. Cada item traz nome, dimensões, texto alternativo, quem\nenviou (`uploadedBy`, `null` para quem não tem vínculo com a agência; `uploadedBySide`, `client` para o arquivo que o cliente mandou pelo portal, que a tela mostra como \"Enviada por <nome do cliente>\") e em quantos conteúdos é usado (`usageCount`, só os que a pessoa lê).\nNunca devolve chave de objeto. Cliente de outra agência, pasta de outro cliente e id inválido devolvem o mesmo 404.\n\nAcesso: Sessão + vínculo com a agência. Permissão exigida: `conteudo.visualizar`.",
         "tags": [
           "media"
         ],
@@ -28907,6 +30012,7 @@
                         "membershipId": "22222222-2222-4222-8222-222222222222",
                         "name": "Ana Souza"
                       },
+                      "uploadedBySide": "agency",
                       "createdAt": "2026-11-11T12:00:00.000Z",
                       "usageCount": 2
                     }
@@ -29081,6 +30187,7 @@
                     "membershipId": "22222222-2222-4222-8222-222222222222",
                     "name": "Ana Souza"
                   },
+                  "uploadedBySide": "agency",
                   "createdAt": "2026-11-11T12:00:00.000Z",
                   "usageCount": 2
                 }
@@ -29259,6 +30366,7 @@
                     "membershipId": "22222222-2222-4222-8222-222222222222",
                     "name": "Ana Souza"
                   },
+                  "uploadedBySide": "agency",
                   "createdAt": "2026-11-11T12:00:00.000Z",
                   "usageCount": 2
                 }
@@ -29476,6 +30584,7 @@
                     "membershipId": "22222222-2222-4222-8222-222222222222",
                     "name": "Ana Souza"
                   },
+                  "uploadedBySide": "agency",
                   "createdAt": "2026-11-11T12:00:00.000Z",
                   "usageCount": 2
                 }

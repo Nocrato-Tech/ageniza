@@ -193,6 +193,8 @@ active   → archived   # cliente.operar; some do portal, threads ficam somente 
 archived → active     # cliente.operar
 ```
 
+**Persona `archived` é somente leitura** ([decisão de 2026-11-13](../docs/business/decisions/2026-11-13-persona-arquivada-e-somente-leitura.md)): nenhum campo muda, e a única escrita aceita é a que desarquiva. `PATCH` e `archive` numa persona arquivada respondem `409 PERSONA_READ_ONLY` ("Esta persona está arquivada. Desarquive-a para editar."); o banco recusa a escrita (`A0137`), também fora da API.
+
 ## 5. Regras invioláveis
 
 Garantidas pelo banco — RLS, *grant* ou índice — e não apenas pela rota. Cada uma vira teste de integração contra o banco.
@@ -323,7 +325,7 @@ A última segue o precedente de `accept_invitation`: o *grant* de `UPDATE` em `c
 |---|---|
 | `clients` | `INSERT`: `cliente.cadastrar`, `status = 'active'`. `UPDATE`: `cliente.operar` e `status = 'active'` no `using` e no `with check`. `SELECT` já existe |
 | `client_brand_sections` | `SELECT`: membro da agência do cliente, ou vínculo de cliente. `INSERT`/`UPDATE`: `cliente.operar` e cliente ativo |
-| `client_personas` | `SELECT`: membro da agência; vínculo de cliente só em `active`. `INSERT`/`UPDATE`: `cliente.operar` e cliente ativo |
+| `client_personas` | `SELECT`: membro da agência; vínculo de cliente só em `active`. `INSERT`/`UPDATE`: `cliente.operar` e cliente ativo. Gatilho `BEFORE UPDATE`: persona arquivada só aceita a escrita que a desarquiva (`A0137`, 2026-11-13) |
 | `client_threads` | `SELECT`: membro da agência ou vínculo de cliente, por `client_id`. `INSERT`: lado `agency` com `cliente.operar`, lado `client` com vínculo; cliente ativo; persona do assunto ativa. `UPDATE` (resolver): só `cliente.operar`, cliente ativo |
 | `client_thread_comments` | `SELECT`: igual a threads. `INSERT`: mesma regra de lado; cliente ativo; persona ativa. Sem `UPDATE` e sem `DELETE` concedidos |
 

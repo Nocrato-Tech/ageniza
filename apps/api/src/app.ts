@@ -14,7 +14,10 @@ import { registerCollaboratorModule, type CollaboratorModuleDependencies } from 
 import { registerContextModule, type ContextModuleDependencies } from './modules/contexts/routes.js';
 import { registerEmailChangeModule, type EmailChangeModuleDependencies } from './modules/email-change/routes.js';
 import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
+import { registerPortalUploadRoutes } from './modules/media/portal-upload-routes.js';
+import { portalUploadsForClients } from './modules/media/portal-upload-service.js';
 import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
+import { createRequireClientAccess } from './modules/tenancy/guards.js';
 import { registerLegalModule, type LegalModuleDependencies } from './modules/legal/routes.js';
 import { registerNotificationsModule, type NotificationModuleDependencies } from './modules/notifications/routes.js';
 import { registerSearchModule, type SearchModuleDependencies } from './modules/search/routes.js';
@@ -204,7 +207,8 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     registerAgencyModule(app, options.agencies);
   }
   if (options.clients !== undefined) {
-    registerClientModule(app, options.clients);
+    // The announcement of a batch of files checks them with what the media module reads and answers: injected here, never imported by clients.
+    registerClientModule(app, { ...options.clients, portalUploads: portalUploadsForClients });
   }
   if (options.contents !== undefined) {
     registerContentModule(app, options.contents);
@@ -220,6 +224,7 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.media !== undefined) {
     registerMediaModule(app, options.media);
+    registerPortalUploadRoutes(app, { ...options.media, requireClientAccess: createRequireClientAccess({ database: options.media.database }) });
   }
   if (options.storyScripts !== undefined) {
     registerStoryScriptModule(app, options.storyScripts);
