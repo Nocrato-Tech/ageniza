@@ -277,6 +277,53 @@ describe('CLIENTS routes that write into the children of a client being archived
       expect(await countOf('client_thread_comments', clientId)).toBe(0);
     }, 30_000);
 
+    // The persona is deleted for real, in the two orders a write can meet the deletion (#891):
+    //  - still open: the write waits on the foreign key and is refused with 23503 when the delete commits;
+    //  - already committed between the checks of the route and its INSERT: the holder keeps a SHARE lock on the table the INSERT
+    //    needs, so the route has passed its checks (they only read) and waits at the INSERT, which then runs after the commit
+    //    and meets the BEFORE INSERT trigger (A0010 on a thread, A0011 on a comment).
+    // Both are the same 404 of "not found", on the agency side and on the portal side, and nothing is written.
+    describe.each([
+      ['a comment of the agency', 'client_thread_comments', 'comment', 'agency'],
+      ['a comment of the portal', 'client_thread_comments', 'comment', 'portal'],
+      ['the opening of a conversation by the agency', 'client_threads', 'open', 'agency'],
+      ['the opening of a conversation by the portal', 'client_threads', 'open', 'portal']
+    ] as const)('%s while its persona is deleted', (_label, lockedTable, kind, side) => {
+      it.each([
+        ['the delete is still open when the write waits', false],
+        ['the delete was committed between the checks and the INSERT', true]
+      ] as const)('answers 404, never 500, when %s', async (_order, committedFirst) => {
+        const clientId = await newClient(`persona-corrida-${kind}-${side}-${committedFirst}`);
+        await withPortalPerson(clientId);
+        const personaId = await withPersona(clientId);
+        const threadId = await withThread(clientId, personaId);
+        const threadsBefore = await countOf('client_threads', clientId);
+        const holder = await owner.knex.transaction();
+        let released = false;
+        try {
+          if (committedFirst) await holder.raw(`lock table public.${lockedTable} in share mode`);
+          await holder('client_personas').where({ id: personaId }).delete();
+          const holderPid = await backendPid(holder);
+          const base = side === 'agency' ? agencyClient(clientId) : `/clients/${clientId}`;
+          const cookie = side === 'agency' ? cookies.writer! : cookies.portal!;
+          const pending = kind === 'comment'
+            ? call('POST', `${base}/threads/${threadId}/comments`, cookie, { body: 'Chegou tarde' })
+            : call('POST', `${base}/threads`, cookie, { subject: { personaId }, body: 'Chegou tarde' });
+          await waitForBackendsBlockedBy(owner.knex, holderPid);
+          await holder.commit();
+          released = true;
+          const reply = await pending;
+          expect(reply.statusCode).toBe(404);
+          expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
+        } finally {
+          if (!released) await holder.rollback();
+        }
+        expect(await countOf('client_thread_comments', clientId)).toBe(0);
+        expect(await countOf('client_threads', clientId)).toBe(0);
+        expect(threadsBefore).toBe(1);
+      }, 30_000);
+    });
+
     it('answers 409 CLIENT_ARCHIVED to a brand study section that already exists, rewritten while the client is archived, and keeps the old text', async () => {
       const clientId = await newClient('secao-existente');
       await owner.knex('client_brand_sections').insert({ client_id: clientId, section_key: 'branding', body: 'Texto antigo', updated_by: users.writer!.id });
