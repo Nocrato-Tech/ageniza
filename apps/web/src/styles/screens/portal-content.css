@@ -369,9 +369,23 @@
     column-gap: var(--space-6);
   }
 
-  .portal-post__decide {
+  /* "Sua resposta" is as tall as the post's row and its foot (the two decisions and the notice under them) sits at the end of it, so the foot can hold the bottom of the window however long the sender's note is. "Quer mudar algo?" stays compact. */
+  .portal-post__decide--answer {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+  }
+
+  .portal-post__decide--answer .portal-post__foot {
     position: sticky;
-    top: var(--space-4);
+    display: grid;
+    gap: var(--space-2);
+    margin-top: auto;
+    bottom: var(--space-4);
+    padding-block: var(--space-3);
+    border-radius: var(--radius-lg);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-raised);
   }
 
   /* Without an answer to give (approved, published, adjusting) the post keeps one column. */
