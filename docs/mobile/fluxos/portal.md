@@ -131,7 +131,7 @@ A agência pode pedir material ao cliente, com prazo opcional (decisão: [pedido
 
 ## Estudo de marca
 
-É só leitura. A persona excluída pela agência deixa de existir, com a conversa dela, e não há mais persona arquivada. A persona não traz `status` nem a contagem de mensagens da agência. Desde 2026-11-11 a persona traz também idade, ocupação, local, traços, "onde está" e "tom que funciona" (todos opcionais), lidos como o resto da persona.
+É só leitura. A persona excluída pela agência deixa de existir, com a conversa dela, e não há mais persona arquivada. Com a conversa da persona aberta, se a agência a excluiu, a conversa responde `404`: o app lê o estudo de novo, fecha a conversa e avisa "Essa persona foi removida pela agência.". A persona não traz `status` nem a contagem de mensagens da agência. Desde 2026-11-11 a persona traz também idade, ocupação, local, traços, "onde está" e "tom que funciona" (todos opcionais), lidos como o resto da persona.
 
 ## Roteiros de stories
 
