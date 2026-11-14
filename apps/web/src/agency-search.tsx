@@ -17,6 +17,7 @@ import {
   type SearchItem,
   type SearchState
 } from './agency-search-model.js';
+import { daysBetween, todayInSaoPaulo } from './content-dates.js';
 import { CARD_FORMAT_LABELS, STATUS_LABELS } from './content-labels.js';
 import { useApiClient } from './http.js';
 import { TYPE_LABELS } from './media-library-model.js';
@@ -31,10 +32,13 @@ function Marked({ text, term }: { text: string; term: string }) {
   return parts === null ? <>{text}</> : <>{parts.before}<mark>{parts.hit}</mark>{parts.after}</>;
 }
 
+/** "Atrasado 2 dias": the days since the publish day, counted in São Paulo days like the contents list. */
+const lateLabel = (days: number): string => `Atrasado ${days} ${days === 1 ? 'dia' : 'dias'}`;
+
 const handleOf = (value: string): string => `@${value.replace(/^@/, '')}`;
 
-function Row({ item, term, id, active, href, onOpen, onHover }: {
-  item: SearchItem; term: string; id: string; active: boolean; href: string; onOpen: () => void; onHover: () => void;
+function Row({ item, term, today, id, active, href, onOpen, onHover }: {
+  item: SearchItem; term: string; today: string; id: string; active: boolean; href: string; onOpen: () => void; onHover: () => void;
 }) {
   const onClick = (event: MouseEvent<HTMLAnchorElement>): void => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -54,7 +58,7 @@ function Row({ item, term, id, active, href, onOpen, onHover }: {
     const Icon = FORMAT_ICONS[entry.format];
     icon = <span className="agency-search__icon agency-search__icon--content" aria-hidden="true"><Icon /></span>;
     name = entry.title;
-    meta = `${entry.clientName} · ${CARD_FORMAT_LABELS[entry.format]} · ${entry.overdue ? 'Atrasado' : entry.scheduled ? 'Agendado' : STATUS_LABELS[entry.status]}`;
+    meta = `${entry.clientName} · ${CARD_FORMAT_LABELS[entry.format]} · ${entry.overdue ? lateLabel(daysBetween(entry.publishOn, today)) : entry.scheduled ? 'Agendado' : STATUS_LABELS[entry.status]}`;
   } else {
     const { entry } = item;
     const Icon = CATEGORY_ICONS[entry.category];
@@ -81,11 +85,12 @@ function Row({ item, term, id, active, href, onOpen, onHover }: {
       <span className="agency-search__name"><Marked text={name} term={term} /></span>
       {meta !== '' && <span className="agency-search__meta">{meta}</span>}
     </span>
+    {active && <Kbd className="agency-search__enter" aria-hidden="true">Enter</Kbd>}
   </a>;
 }
 
-function Results({ state, items, data, term, listId, active, agencyId, onOpen, onHover, onClear, onRetry }: {
-  state: SearchState; items: SearchItem[]; data: SearchData | null; term: string; listId: string; active: number; agencyId: string;
+function Results({ state, items, data, term, today, listId, active, agencyId, onOpen, onHover, onClear, onRetry }: {
+  state: SearchState; items: SearchItem[]; data: SearchData | null; term: string; today: string; listId: string; active: number; agencyId: string;
   onOpen: (item: SearchItem) => void; onHover: (index: number) => void; onClear: () => void; onRetry: () => void;
 }) {
   if (state.kind === 'idle') {
@@ -132,6 +137,7 @@ function Results({ state, items, data, term, listId, active, agencyId, onOpen, o
             key={entry.id}
             item={item}
             term={term}
+            today={today}
             id={`${listId}-${position}`}
             active={position === active}
             href={itemPath(agencyId, item)}
@@ -156,6 +162,7 @@ function SearchSurface({ agencyId, phone, onDone }: { agencyId: string; phone: b
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const { state, retry } = useAgencySearch(agencyId, text);
+  const today = todayInSaoPaulo();
 
   const data = state.kind === 'ready' ? state.data : state.kind === 'loading' ? state.previous : null;
   const items = data === null ? [] : flattenResults(data);
@@ -190,6 +197,8 @@ function SearchSurface({ agencyId, phone, onDone }: { agencyId: string; phone: b
     void loadFolders(queryClient, httpClient, agencyId, item.entry.clientId).then((folders) => { void navigate(itemPath(agencyId, item, folders)); });
   };
 
+  const clear = (): void => { setText(''); input.current?.focus(); };
+
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -200,11 +209,11 @@ function SearchSurface({ agencyId, phone, onDone }: { agencyId: string; phone: b
       choose(items[current]);
     } else if (event.key === 'Escape' && open && !phone) {
       event.preventDefault();
-      setOpen(false);
+      if (text === '') setOpen(false);
+      else clear();
     }
   };
 
-  const clear = (): void => { setText(''); input.current?.focus(); };
   const summary = state.kind === 'ready' && items.length > 0 ? `${items.length} ${items.length === 1 ? 'resultado' : 'resultados'} para «${state.term}»` : '';
 
   return <div
@@ -234,9 +243,9 @@ function SearchSurface({ agencyId, phone, onDone }: { agencyId: string; phone: b
       {!phone && <div className="agency-search__head"><span aria-live="polite">{summary}</span><Kbd>Esc</Kbd></div>}
       {phone && <p className="visually-hidden" aria-live="polite">{summary}</p>}
       <div className="agency-search__body">
-        <Results state={state} items={items} data={data} term={term} listId={listId} active={current} agencyId={agencyId} onOpen={choose} onHover={setActive} onClear={clear} onRetry={retry} />
+        <Results state={state} items={items} data={data} term={term} today={today} listId={listId} active={current} agencyId={agencyId} onOpen={choose} onHover={setActive} onClear={clear} onRetry={retry} />
       </div>
-      {!phone && <div className="agency-search__foot"><span><Kbd>↑</Kbd><Kbd>↓</Kbd> navegar</span><span><Kbd>Enter</Kbd> abrir</span><span><Kbd>Esc</Kbd> fechar</span></div>}
+      {!phone && <div className="agency-search__foot"><span><Kbd>↑</Kbd><Kbd>↓</Kbd> navegar</span><span><Kbd>Enter</Kbd> abrir</span><span><Kbd>Esc</Kbd> {text === '' ? 'fechar' : 'limpar'}</span><span className="agency-search__scope">Clientes, conteúdos e arquivos</span></div>}
     </section>}
   </div>;
 }

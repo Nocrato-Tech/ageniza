@@ -1,7 +1,7 @@
 import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
 
 import { IconSlot } from './icon.js';
-import { Pill } from './pill.js';
+import { Pill, type PillTone } from './pill.js';
 import { rovingTarget } from './roving.js';
 import { Skeleton } from './skeleton.js';
 
@@ -11,6 +11,8 @@ export interface TabItem {
   readonly icon?: ReactNode;
   /** A short number shown beside the label, e.g. how many items the tab holds; it is part of the tab's name. */
   readonly count?: number;
+  /** `accent` fills the count in indigo, for a count that asks for attention (what is unread); the default is the quiet capsule. */
+  readonly countTone?: PillTone;
   readonly disabled?: boolean;
   /** Keeps the panel in the tree, hidden, while another tab is open: what was typed in it is still there when the person comes back. */
   readonly keepMounted?: boolean;
@@ -65,7 +67,7 @@ export function Tabs({ label, value, items, onChange, loading = false, className
           >
             {item.icon !== undefined && <IconSlot>{item.icon}</IconSlot>}
             {item.label}
-            {item.count !== undefined && <Pill className="ui-tabs__count">{item.count}</Pill>}
+            {item.count !== undefined && <Pill tone={item.countTone} className="ui-tabs__count">{item.count}</Pill>}
           </button>
         ))}
       </div>
