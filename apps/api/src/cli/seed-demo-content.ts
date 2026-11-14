@@ -117,6 +117,7 @@ const MEDIA_INFO: Readonly<Record<string, MediaInfo>> = {
   'familia-3': { fileName: 'cafe-em-familia-3.png', width: 1080, height: 1350, alt: 'Criança servindo suco na mesa de domingo', uploader: 'admin' },
   'promo-1': { fileName: 'combo-cafe-e-pao.png', width: 1080, height: 1080, alt: 'Combo de café com leite e pão na chapa sobre a bancada', uploader: 'admin' },
   'bastidores-1': { fileName: 'fornada-das-cinco.mp4', alt: 'Padeiros tirando a fornada das cinco do forno', uploader: 'admin' },
+  'baguete-1': { fileName: 'baguete-de-fermentacao-natural.png', width: 1080, height: 1080, alt: 'Baguetes douradas recém-saídas do forno sobre a bancada', uploader: 'admin' },
   'queijo-1': { fileName: 'pao-de-queijo-em-dobro.png', width: 1080, height: 1080, alt: 'Duas bandejas de pão de queijo recém-saído do forno', uploader: 'admin' },
   'checkup-1': { fileName: 'checkup-anual.mp4', alt: 'Médica explicando quais exames fazer no check-up anual', uploader: 'manager' },
   'vacina-1': { fileName: 'calendario-de-vacinas.png', width: 1080, height: 1350, alt: 'Calendário de vacinação da família em tons de azul', uploader: 'manager' },
@@ -203,6 +204,12 @@ export const DEMO_CONTENTS: readonly ContentSpec[] = [
     caption: 'Toda quarta, o segundo pão de queijo sai por nossa conta.',
     folder: { name: 'Imagens' }, media: [{ key: 'queijo-1', category: 'image' }], target: 'approved', actor: 'admin',
     approvalNote: 'Adorei a foto. Vamos avisar o time do balcão sobre a promoção.'
+  },
+  {
+    key: 'padaria-pao-do-dia', client: PADARIA, title: 'Pão do dia: baguete de fermentação natural', format: 'image', offset: 0,
+    caption: 'Saiu agora do forno: crosta crocante e miolo macio.',
+    folder: { name: 'Imagens' }, media: [{ key: 'baguete-1', category: 'image' }], target: 'approved', actor: 'admin',
+    approvalNote: 'Aprovado, pode sair hoje mesmo.'
   },
   {
     key: 'padaria-bastidores', client: PADARIA, title: 'Bastidores da fornada das cinco', format: 'reels', offset: -3,

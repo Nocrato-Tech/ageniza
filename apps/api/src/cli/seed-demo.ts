@@ -15,6 +15,7 @@ import {
 } from '@ageniza/database';
 
 import { DEMO_CONTENTS, ensureContentDemo, type ContentSpec } from './seed-demo-content.js';
+import { ensureNotificationsDemo } from './seed-demo-notifications.js';
 import { ensurePortalDemo } from './seed-demo-portal.js';
 import { ensureDemoSessions } from './seed-demo-session.js';
 
@@ -311,6 +312,16 @@ const MAIN_CLIENTS: readonly DemoClientSpec[] = [
         openedSide: 'client',
         comments: [
           { key: 'comment:padaria-positioning-1', author: PORTAL_USER.key, side: 'client', body: 'O texto do posicionamento ficou mais formal do que a gente fala no balcão. Podemos deixar mais próximo?' }
+        ]
+      },
+      {
+        key: 'thread:padaria-moradora',
+        personaKey: 'persona:padaria-moradora',
+        openedBy: 'user:rafael',
+        openedSide: 'agency',
+        comments: [
+          { key: 'comment:padaria-moradora-1', author: 'user:rafael', side: 'agency', body: 'Montei a Moradora do bairro a partir das conversas no balcão. Falta algo que vocês ouvem com frequência?' },
+          { key: 'comment:padaria-moradora-2', author: PORTAL_USER.key, side: 'client', body: 'Ela sempre pergunta se o pão de queijo já saiu do forno. Vale colocar.' }
         ]
       },
       {
@@ -1150,7 +1161,13 @@ export const runSeedDemo = async (options: SeedDemoOptions): Promise<SeedDemoRes
         portal: portalUserId
       }
     });
-    await ensurePortalDemo({ database, adminUserId, clientIds: clientIdByKey, emailFor });
+    await ensurePortalDemo({ database, adminUserId, portalUserId, clientIds: clientIdByKey, emailFor });
+    await ensureNotificationsDemo({
+      owner,
+      clientIds: clientIdByKey,
+      agencyId: mainAgencyId,
+      recipients: { owner: mainOwnerId, production: mainUserIds.get('user:bruno')! }
+    });
     profiles.push({
       label: 'Portal',
       email: portalEmail,

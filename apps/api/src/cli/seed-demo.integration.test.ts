@@ -10,6 +10,7 @@ import {
   type DatabaseClient
 } from '@ageniza/database';
 
+import { ACTIVE_SESSION_SQL } from '../modules/auth/session-validity.js';
 import { revokeInsertId } from '../modules/auth/test-support/insert-id-revoked.js';
 import {
   buildTestApp,
@@ -146,6 +147,7 @@ describe('seed:demo (issue #183)', { timeout: 30_000 }, () => {
     const userIds = first.userIds;
     const clientIds = first.clientIds;
     await owner.knex('client_thread_comments').whereIn('client_id', clientIds).delete();
+    await owner.knex('media_assets').whereIn('client_id', clientIds).whereNotNull('material_request_thread_id').delete();
     await owner.knex('client_threads').whereIn('client_id', clientIds).delete();
     await owner.knex('notification_queue').whereIn('client_id', clientIds).delete();
     await owner.knex('content_media').whereIn('client_id', clientIds).delete();
@@ -188,10 +190,10 @@ describe('seed:demo (issue #183)', { timeout: 30_000 }, () => {
     expect(await count('select count(*)::text as total from public.clients where id = any(?::uuid[])', [clientIds])).toBe(7);
     expect(await count("select count(*)::text as total from public.agency_memberships where agency_id = any(?::uuid[]) and status = 'active'", [agencyIds])).toBe(8);
     expect(await count("select count(*)::text as total from public.client_memberships where client_id = any(?::uuid[]) and status = 'active'", [clientIds])).toBe(1);
-    expect(await count('select count(*)::text as total from public.client_threads where client_id = any(?::uuid[]) and content_id is null', [clientIds])).toBe(6);
+    expect(await count('select count(*)::text as total from public.client_threads where client_id = any(?::uuid[]) and content_id is null', [clientIds])).toBe(7);
     expect(await count(`select count(*)::text as total from public.client_thread_comments comment
       join public.client_threads thread on thread.id = comment.thread_id
-      where comment.client_id = any(?::uuid[]) and thread.content_id is null`, [clientIds])).toBe(7);
+      where comment.client_id = any(?::uuid[]) and thread.content_id is null`, [clientIds])).toBe(10);
     expect(await count('select count(*)::text as total from public.client_personas where client_id = any(?::uuid[])', [clientIds])).toBe(3);
     expect(await count('select count(*)::text as total from public.client_brand_sections where client_id = any(?::uuid[])', [clientIds])).toBe(11);
     expect(await count("select count(*)::text as total from public.invitations where agency_id = any(?::uuid[]) and used_at is null and revoked_at is null", [agencyIds])).toBe(2);
@@ -208,23 +210,23 @@ describe('seed:demo (issue #183)', { timeout: 30_000 }, () => {
     const clientIds = first.clientIds;
     const byStatus = await owner.knex('contents').whereIn('client_id', clientIds).groupBy('status').select('status').count<Array<{ status: string; count: string }>>('id as count');
     expect(Object.fromEntries(byStatus.map((row) => [row.status, Number(row.count)]))).toEqual({
-      in_production: 3, awaiting_approval: 4, adjusting: 1, approved: 3, published: 1, cancelled: 1
+      in_production: 3, awaiting_approval: 4, adjusting: 1, approved: 4, published: 1, cancelled: 1
     });
     const tasks = await owner.knex('content_tasks').whereIn('client_id', clientIds).groupBy('status').select('status').count<Array<{ status: string; count: string }>>('id as count');
     expect(Object.fromEntries(tasks.map((row) => [row.status, Number(row.count)]))).toEqual({ pending: 1, delivered: 1, approved: 1 });
     const scripts = await owner.knex('story_scripts').whereIn('client_id', clientIds).groupBy('status').select('status').count<Array<{ status: string; count: string }>>('id as count');
     expect(Object.fromEntries(scripts.map((row) => [row.status, Number(row.count)]))).toEqual({ draft: 1, sent: 1, recorded: 1 });
     expect(await count('select count(*)::text as total from public.story_script_scenes where client_id = any(?::uuid[])', [clientIds])).toBe(7);
-    expect(await count("select count(*)::text as total from public.media_assets where agency_id = any(?::uuid[]) and status = 'confirmed' and client_id is not null", [first.agencyIds])).toBe(16);
-    expect(await count('select count(*)::text as total from public.content_media where client_id = any(?::uuid[])', [clientIds])).toBe(13);
+    expect(await count("select count(*)::text as total from public.media_assets where agency_id = any(?::uuid[]) and status = 'confirmed' and client_id is not null", [first.agencyIds])).toBe(20);
+    expect(await count('select count(*)::text as total from public.content_media where client_id = any(?::uuid[])', [clientIds])).toBe(14);
     expect(await count('select count(*)::text as total from public.media_folders where client_id = any(?::uuid[]) and is_default = false', [clientIds])).toBe(2);
-    expect(await count('select count(*)::text as total from public.client_threads where client_id = any(?::uuid[]) and content_id is not null', [clientIds])).toBe(4);
+    expect(await count('select count(*)::text as total from public.client_threads where client_id = any(?::uuid[]) and content_id is not null', [clientIds])).toBe(5);
     expect(await count(`select count(*)::text as total from public.client_thread_comments comment
       join public.client_threads thread on thread.id = comment.thread_id
-      where comment.client_id = any(?::uuid[]) and thread.content_id is not null`, [clientIds])).toBe(5);
+      where comment.client_id = any(?::uuid[]) and thread.content_id is not null`, [clientIds])).toBe(6);
     // Two runs, and the counts are the same: a content is found again by its client and title, a script by its client and day.
-    expect(await count('select count(*)::text as total from public.contents where client_id = any(?::uuid[])', [clientIds])).toBe(13);
-    expect(await count('select count(distinct (client_id, title))::text as total from public.contents where client_id = any(?::uuid[])', [clientIds])).toBe(13);
+    expect(await count('select count(*)::text as total from public.contents where client_id = any(?::uuid[])', [clientIds])).toBe(14);
+    expect(await count('select count(distinct (client_id, title))::text as total from public.contents where client_id = any(?::uuid[])', [clientIds])).toBe(14);
   });
 
   it('fills the fields the redesigned screens read: client, persona, request for material, round, media, portal access and sessions', async () => {
@@ -258,7 +260,7 @@ describe('seed:demo (issue #183)', { timeout: 30_000 }, () => {
     expect(await count(`select count(*)::text as total from public.client_thread_comments comment
       join public.client_threads thread on thread.id = comment.thread_id
       join public.contents content on content.id = thread.content_id
-      where comment.client_id = any(?::uuid[]) and comment.author_side = 'client' and content.status = 'approved'`, [clientIds])).toBe(2);
+      where comment.client_id = any(?::uuid[]) and comment.author_side = 'client' and content.status = 'approved'`, [clientIds])).toBe(3);
 
     // The derived states: scheduled (approved, future day and hour) and late (past day, never approved).
     expect(await count(`select count(*)::text as total from public.contents
@@ -268,9 +270,9 @@ describe('seed:demo (issue #183)', { timeout: 30_000 }, () => {
 
     // Media: name, dimensions of the images, alternative text, who sent it and the folder.
     const media = "from public.media_assets where agency_id = any(?::uuid[]) and client_id is not null and status = 'confirmed'";
-    expect(await count(`select count(*)::text as total ${media} and file_name is not null and alt_text is not null and created_by_user_id is not null and folder_id is not null`, [first.agencyIds])).toBe(16);
-    expect(await count(`select count(*)::text as total ${media} and category in ('image', 'logo') and width > 0 and height > 0`, [first.agencyIds])).toBe(12);
-    expect(await count(`select count(distinct created_by_user_id)::text as total ${media}`, [first.agencyIds])).toBe(2);
+    expect(await count(`select count(*)::text as total ${media} and file_name is not null and alt_text is not null and created_by_user_id is not null and folder_id is not null and uploaded_by_side = 'agency'`, [first.agencyIds])).toBe(17);
+    expect(await count(`select count(*)::text as total ${media} and category in ('image', 'logo') and width > 0 and height > 0 and uploaded_by_side = 'agency'`, [first.agencyIds])).toBe(13);
+    expect(await count(`select count(distinct created_by_user_id)::text as total ${media} and uploaded_by_side = 'agency'`, [first.agencyIds])).toBe(2);
     expect(await count(`select count(*)::text as total ${media} and category in ('logo', 'pdf')`, [first.agencyIds])).toBe(2);
 
     // Portal access: added with a typed name, the person has not entered.
@@ -282,6 +284,46 @@ describe('seed:demo (issue #183)', { timeout: 30_000 }, () => {
     const ownerId = await userIdFor(ownerProfile.email);
     expect(await count('select count(*)::text as total from auth."session" where "userId" = ?::uuid and "expiresAt" > now()', [ownerId])).toBeGreaterThanOrEqual(2);
     expect(await count(`select count(*)::text as total from auth."session" where "userId" = ?::uuid and city = 'São Paulo'`, [ownerId])).toBe(1);
+    // Three sessions are active by the rule of the guard (made after the last replacement of the credential), on different devices, and
+    // one expired more than 30 days ago, which the daily cleanup deletes.
+    expect(await count(`select count(*)::text as total from auth."session" "session" where "userId" = ?::uuid and ${ACTIVE_SESSION_SQL}`, [ownerId])).toBe(3);
+    expect(await count('select count(distinct "userAgent")::text as total from auth."session" where "userId" = ?::uuid and "expiresAt" > now()', [ownerId])).toBe(3);
+    expect(await count(`select count(*)::text as total from auth."session" where "userId" = ?::uuid and "expiresAt" < now() - interval '30 days'`, [ownerId])).toBe(1);
+
+    // Notifications: the owner and a person of the production read their own, some read and some not, of every kind.
+    const ownerNotifications = await owner.knex('notifications').where({ recipient_user_id: ownerId }).select('kind', 'read_at');
+    expect([...new Set(ownerNotifications.map((row) => row.kind))].sort()).toEqual([
+      'approval_deadline_passed', 'content_approved', 'content_changes_requested', 'invitation_accepted', 'material_request_answered'
+    ]);
+    expect(ownerNotifications.some((row) => row.read_at === null)).toBe(true);
+    expect(ownerNotifications.some((row) => row.read_at !== null)).toBe(true);
+    const productionProfile = latest.profiles.find((profile) => profile.email.startsWith('producao@') && profile.agencyId === first.agencyIds[0])!;
+    const productionNotifications = await owner.knex('notifications').where({ recipient_user_id: await userIdFor(productionProfile.email) }).select('read_at');
+    expect(productionNotifications.length).toBeGreaterThanOrEqual(3);
+    expect(productionNotifications.some((row) => row.read_at === null)).toBe(true);
+    expect(productionNotifications.some((row) => row.read_at !== null)).toBe(true);
+
+    // The person of the portal sent three confirmed files to an open request, in the folder "Enviados pelo cliente", and said so.
+    const sent = await owner.knex('media_assets as asset')
+      .join('client_threads as thread', 'thread.id', 'asset.material_request_thread_id')
+      .join('media_folders as folder', 'folder.id', 'asset.folder_id')
+      .whereIn('asset.client_id', clientIds).where({ 'asset.uploaded_by_side': 'client', 'asset.status': 'confirmed' })
+      .select('thread.resolved_at', 'folder.name as folder');
+    expect(sent).toHaveLength(3);
+    expect(sent.every((row) => row.resolved_at === null && row.folder === 'Enviados pelo cliente')).toBe(true);
+    expect(await count(`select count(*)::text as total from public.client_thread_comments where client_id = any(?::uuid[]) and author_side = 'client' and body = 'enviou 3 fotos'`, [clientIds])).toBe(1);
+
+    // Personas: none archived (archiving is gone), and one has a conversation with messages, for the confirmation to count.
+    expect(await count("select count(*)::text as total from public.client_personas where client_id = any(?::uuid[]) and status <> 'active'", [clientIds])).toBe(0);
+    expect(await count(`select count(*)::text as total from public.client_threads thread
+      join public.client_thread_comments comment on comment.thread_id = thread.id
+      where thread.client_id = any(?::uuid[]) and thread.persona_id is not null`, [clientIds])).toBeGreaterThanOrEqual(2);
+
+    // Approved contents: one still some days from its publication (the portal offers "Pedir ajuste") and one for today (it does not).
+    expect(await count(`select count(*)::text as total from public.contents
+      where client_id = any(?::uuid[]) and status = 'approved' and publish_on >= app_private.sao_paulo_date(now()) + 2`, [clientIds])).toBeGreaterThanOrEqual(1);
+    expect(await count(`select count(*)::text as total from public.contents
+      where client_id = any(?::uuid[]) and status = 'approved' and publish_on = app_private.sao_paulo_date(now())`, [clientIds])).toBe(1);
   });
 
   it('serves the seeded Conteúdo through the agency and the portal routes, as each person may read it (issue #608)', async () => {
@@ -304,7 +346,7 @@ describe('seed:demo (issue #183)', { timeout: 30_000 }, () => {
     const month = await get(admin, `/agencies/${agencyId}/clients/${clientId}/contents?${period}`);
     expect(month.status).toBe(200);
     expect(month.body.data.contents.map((content: { status: string }) => content.status).sort()).toEqual([
-      'adjusting', 'approved', 'approved', 'awaiting_approval', 'awaiting_approval', 'cancelled', 'in_production', 'in_production', 'published'
+      'adjusting', 'approved', 'approved', 'approved', 'awaiting_approval', 'awaiting_approval', 'cancelled', 'in_production', 'in_production', 'published'
     ]);
     expect(month.body.data.storyScripts).toHaveLength(3);
     const withTasks = month.body.data.contents.find((content: { title: string }) => content.title === 'O segredo da fermentação natural');
@@ -319,7 +361,7 @@ describe('seed:demo (issue #183)', { timeout: 30_000 }, () => {
     // The carteira shows the signals of what was seeded, to who reads Conteúdo, and none to Vendas.
     const carteira = await get(manager, `/agencies/${agencyId}/clients`);
     const indicatorsOf = (name: string): unknown => carteira.body.data.find((client: { name: string }) => client.name === name).contentIndicators;
-    expect(indicatorsOf('Padaria Central')).toEqual({ pending: 3, inReview: 2, overdue: 2, adjusting: 1, dueSoon: 2 });
+    expect(indicatorsOf('Padaria Central')).toEqual({ pending: 3, inReview: 2, overdue: 2, adjusting: 1, dueSoon: 3 });
     expect(indicatorsOf('Clínica Viver Bem')).toEqual({ pending: 1, inReview: 1, overdue: 1, adjusting: 0, dueSoon: 2 });
     expect(indicatorsOf('Café do Alto')).toEqual({ pending: 0, inReview: 1, overdue: 0, adjusting: 0, dueSoon: 1 });
     expect((await get(sales, `/agencies/${agencyId}/clients/${clientId}/contents?${period}`)).status).toBe(403);
@@ -330,7 +372,7 @@ describe('seed:demo (issue #183)', { timeout: 30_000 }, () => {
     expect(awaiting.body.data.map((content: { title: string }) => content.title).sort()).toEqual(['O pão de ontem vira torrada', 'Receita de sábado: pão de queijo']);
     const portalMonth = await get(portal, `/clients/${clientId}/contents?${period}`);
     expect(portalMonth.status).toBe(200);
-    expect(portalMonth.body.data).toHaveLength(8);
+    expect(portalMonth.body.data).toHaveLength(9);
     expect(JSON.stringify(portalMonth.body)).not.toContain('Campanha de aniversário');
     const scripts = await get(portal, `/clients/${clientId}/story-scripts?${period}`);
     expect(scripts.status).toBe(200);
