@@ -334,6 +334,14 @@ describe('approve_content with a note', () => {
       await expect(approveAs(ids.portalA1, content, THE_NOTE)).rejects.toMatchObject({ code: 'A0123' });
     });
 
+    it('refuses with A0123 the person who wrote the same text as a comment before approving with no note', async () => {
+      const content = await waiting();
+      await writeLater(content, ids.portalA1, THE_NOTE);
+      await approveAs(ids.portalA1, content, null);
+      await expect(approveAs(ids.portalA1, content, THE_NOTE)).rejects.toMatchObject({ code: 'A0123' });
+      expect(await commentsOf(content)).toHaveLength(1);
+    });
+
     // A comment planted with the instant of the approval isolates each leg of the rule: only the one under test is false.
     const plantAtApproval = async (content: string, author: string): Promise<void> => {
       await owner()('client_threads').insert({ client_id: ids.clientA1, content_id: content, opened_by: author, opened_side: 'client' });

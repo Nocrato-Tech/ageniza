@@ -605,6 +605,19 @@ describe('approving with a note to the agency', () => {
     expect(errorOf(stale).code).toBe('CONTENT_ALREADY_APPROVED');
   });
 
+  it('compares the trimmed note: spaces at the edges are the same note, a difference inside the text is another', async () => {
+    const client = await freshClient('note-resent-spaces', ['portalOne']);
+    const id = await waiting(client, 'Recado com espaços');
+    expect((await post('portalOne', approveUrl(client, id), { revision: 1, note: 'Recado de teste' })).statusCode).toBe(200);
+
+    const edges = await post('portalOne', approveUrl(client, id), { revision: 1, note: '  Recado de teste   ' });
+    expect(edges.statusCode).toBe(200);
+    const inside = await post('portalOne', approveUrl(client, id), { revision: 1, note: 'Recado  de teste' });
+    expect(inside.statusCode).toBe(409);
+    expect(errorOf(inside).code).toBe('CONTENT_ALREADY_APPROVED');
+    expect((await noteOf(id)).map((comment) => comment.body)).toEqual(['Recado de teste']);
+  });
+
   it('lets two requests of the same approval with the same note, sent together, both answer 200 with one comment', async () => {
     const client = await freshClient('note-double-click', ['portalOne']);
     const id = await waiting(client, 'Clique duplo');

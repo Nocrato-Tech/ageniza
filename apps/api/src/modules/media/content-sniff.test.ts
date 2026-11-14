@@ -169,6 +169,23 @@ describe('the EXIF orientation of a JPEG', () => {
     }
   });
 
+  describe('more than one APP1 segment', () => {
+    const xmp = [0xff, 0xe1, 0x00, 0x0a, 0x68, 0x74, 0x74, 0x70, 0x3a, 0x2f, 0x2f, 0x78];
+    const swapped = { matches: true, dimensions: { width: 3000, height: 4000 } };
+    const plain = { matches: true, dimensions: { width: 4000, height: 3000 } };
+
+    it('keeps the orientation of the EXIF when an XMP segment comes after it, and when it comes before', () => {
+      expect(dimensionsOf(withApp1([...exifSegment(6, true), ...xmp]))).toEqual(swapped);
+      expect(dimensionsOf(withApp1([...exifSegment(6, false), ...xmp]))).toEqual(swapped);
+      expect(dimensionsOf(withApp1([...xmp, ...exifSegment(6, true)]))).toEqual(swapped);
+    });
+
+    it('takes the orientation of the first EXIF segment when there are two', () => {
+      expect(dimensionsOf(withApp1([...exifSegment(6, true), ...exifSegment(1, true)]))).toEqual(swapped);
+      expect(dimensionsOf(withApp1([...exifSegment(1, true), ...exifSegment(6, true)]))).toEqual(plain);
+    });
+  });
+
   it('keeps the dimensions when there is no EXIF or it is not EXIF', () => {
     expect(dimensionsOf(jpegBytes(4000, 3000))).toEqual({ matches: true, dimensions: { width: 4000, height: 3000 } });
     const xmp = [0xff, 0xe1, 0x00, 0x0a, 0x68, 0x74, 0x74, 0x70, 0x3a, 0x2f, 0x2f, 0x78];
