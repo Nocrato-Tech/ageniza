@@ -20,6 +20,7 @@ export { Field, type FieldControlProps, type FieldCounter, type FieldProps } fro
 export { FilterBar, FilterBarItem, FilterBarSelect, type FilterBarControlProps, type FilterBarItemProps, type FilterBarProps, type FilterBarSelectProps } from './filter-bar.js';
 export { Kbd, type KbdProps } from './kbd.js';
 export { Pagination, paginationItems, type PaginationProps } from './pagination.js';
+export { RoleTag, type RoleTagProps, type RoleTagTone } from './role-tag.js';
 export { Pill, PillAction, type PillActionProps, type PillProps, type PillTone } from './pill.js';
 export { Popover, type PopoverPlacement, type PopoverProps, type PopoverTriggerProps } from './popover.js';
 export { ProgressBar, type ProgressBarProps } from './progress-bar.js';

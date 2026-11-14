@@ -1031,10 +1031,10 @@ describe('redesign components: sheets, tokens, motion and contrast', () => {
     '.ui-avatar--violet',
     '.ui-avatar--teal',
     '.ui-avatar--sky',
-    '.ui-badge-card__role--indigo .ui-pill',
-    '.ui-badge-card__role--violet .ui-pill',
-    '.ui-badge-card__role--teal .ui-pill',
-    '.ui-badge-card__role--sky .ui-pill'
+    '.ui-role-tag--indigo',
+    '.ui-role-tag--violet',
+    '.ui-role-tag--teal',
+    '.ui-role-tag--sky'
   ])('keeps the text of %s AA on its own fill', (selector) => {
     const colours = pair(selector);
 

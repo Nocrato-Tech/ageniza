@@ -1,7 +1,7 @@
 import { Check, HardDrive, Info, Layers, Sparkles, TrendingUp, TriangleAlert, Users } from 'lucide-react';
 
 import type { SubscriptionOverviewResponse, SubscriptionPlansResponse } from '@ageniza/contracts';
-import { Button, Pill } from '@ageniza/ui';
+import { Button, Pill, Stage3D } from '@ageniza/ui';
 
 import { formatBrl, formatGb, formatMoney } from './subscription-format.js';
 
@@ -119,18 +119,22 @@ export function recommend(plans: readonly Plan[], subscription: Subscription): R
     : { key: current.key, title: `Fique no ${current.name}: ele cobre a sua carteira com folga`, text: `${usage}${today}${full}${tail}`, why, staying: true };
 }
 
-export function PlanRecommendation({ recommendation, onSeePlans }: { recommendation: Recommendation; onSeePlans: () => void }) {
+export function PlanRecommendation({ recommendation, onSeePlans, onSeeLosses }: { recommendation: Recommendation; onSeePlans: () => void; onSeeLosses: () => void }) {
   const icons = { users: <Users aria-hidden="true" />, storage: <HardDrive aria-hidden="true" />, trend: <TrendingUp aria-hidden="true" /> };
   return <section className="plan-rec" aria-labelledby="plan-rec-title">
-    <p className="plan-rec__eyebrow">Recomendação para a sua agência</p>
-    <h2 id="plan-rec-title" className="plan-rec__title">{recommendation.title}</h2>
-    <p className="plan-rec__text">{recommendation.text}</p>
-    <ul className="plan-rec__why">
-      {recommendation.why.map((item) => <li key={item.text}>{icons[item.icon]}{item.text}</li>)}
-    </ul>
-    <div className="subscription__actions">
-      <Button variant="secondary" leadingIcon={<Layers aria-hidden="true" />} onClick={onSeePlans}>Ver os três planos lado a lado</Button>
+    <div className="plan-rec__body">
+      <p className="plan-rec__eyebrow">Recomendação para a sua agência</p>
+      <h2 id="plan-rec-title" className="plan-rec__title">{recommendation.title}</h2>
+      <p className="plan-rec__text">{recommendation.text}</p>
+      <ul className="plan-rec__why">
+        {recommendation.why.map((item) => <li key={item.text}>{icons[item.icon]}{item.text}</li>)}
+      </ul>
+      <div className="plan-rec__cta">
+        <Button leadingIcon={<Layers aria-hidden="true" />} onClick={onSeePlans}>Ver os três planos lado a lado</Button>
+        <Button variant="ghost" onClick={onSeeLosses}>O que muda se eu descer</Button>
+      </div>
     </div>
+    <Stage3D className="plan-rec__art" src="/3d/trophy.png" tone="indigo" size="md" />
   </section>;
 }
 

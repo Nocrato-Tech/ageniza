@@ -481,6 +481,27 @@ describe('with a paid plan: "Seu plano" (#773)', () => {
       expect(within(planCard('Profissional')).queryByText('Recomendado')).toBeNull();
     });
 
+    it('draws the recommendation as the tinted banner with the trophy, and its two ways out reach the plans and the losses', async () => {
+      const { impl } = makeSubscriptionApi(ownerWorld({ subscription: { planKey: 'profissional', extraClients: 0, extraStorageGib: 0, usedClients: 18 } }));
+      renderSubscription(impl);
+      const banner = (await screen.findByRole('region', { name: 'Fique no Profissional: ele cobre a sua carteira com folga' }));
+
+      expect(within(banner).getByText('Recomendação para a sua agência')).toBeTruthy();
+      expect(banner.querySelector('.plan-rec__art img[src="/3d/trophy.png"]')).not.toBeNull();
+      expect(banner.querySelector('.plan-rec__art')?.getAttribute('aria-hidden')).toBe('true');
+      const plans = within(banner).getByRole('button', { name: 'Ver os três planos lado a lado' });
+      expect(plans.className).toContain('ui-button--primary');
+      fireEvent.click(plans);
+      expect(document.activeElement?.id).toBe('planos-title');
+
+      const lower = within(banner).getByRole('button', { name: 'O que muda se eu descer' });
+      expect(lower.className).toContain('ui-button--ghost');
+      fireEvent.click(lower);
+      expect(document.activeElement?.id).toBe('perdas-t');
+      expect(document.activeElement?.textContent).toBe('O que você perde, em números');
+      expect(within(document.getElementById('perdas') as HTMLElement).getByText('Baixar para o Essencial')).toBeTruthy();
+    });
+
     it('a downgrade is scheduled without a card', async () => {
       const world = ownerWorld({ subscription: { planKey: 'agencia', extraClients: 0, extraStorageGib: 0 } });
       const { impl, recorded } = makeSubscriptionApi(world);
