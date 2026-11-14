@@ -104,10 +104,12 @@ export const ensurePortalDemo = async (input: PortalDemoInput): Promise<void> =>
   }
 
   const ensureClientUploads = async (request: MaterialRequestSpec, uploads: readonly ClientUploadSpec[]): Promise<void> => {
+    // A request the agency resolved by hand takes no more files: it stays as it is.
     const threadId = (await as((transaction) => raw<Rows<{ id: string }>>(transaction, `
-      select id from public.client_threads where client_id = ?::uuid and is_material_request and title = ? order by created_at, id limit 1
+      select id from public.client_threads
+      where client_id = ?::uuid and is_material_request and title = ? and resolved_at is null order by created_at, id limit 1
     `, [clientId(request.client), request.title]))).rows[0]?.id;
-    if (threadId === undefined) throw new Error(`The demo request ${request.title} was not found.`);
+    if (threadId === undefined) return;
 
     await asPortal(async (transaction) => {
       const sent = await raw<Rows<{ file_name: string | null }>>(transaction, `

@@ -8,6 +8,12 @@ import { raw, type DatabaseClient } from '@ageniza/database';
  * write the table, and found again by recipient, kind and subject, so a rerun adds none; the instant and the read mark follow the spec.
  */
 
+/**
+ * A database that was already used (an older seed, a screen that moved a content, something deleted) may not hold what a notification
+ * points at: a content that was cancelled or sent back has no round, a request or a content may be gone, and the function writes nothing
+ * for an archived client. Then that notification is skipped; the seed never fails over it.
+ */
+
 const PADARIA = 'client:padaria-central';
 
 type Recipient = 'owner' | 'production';
@@ -79,11 +85,11 @@ export const ensureNotificationsDemo = async (input: NotificationsDemoInput): Pr
         const thread = (await raw<Rows<{ id: string }>>(transaction, `
           select id from public.client_threads where client_id = ?::uuid and is_material_request and title = ? order by created_at, id limit 1
         `, [clientId, title])).rows[0];
-        if (thread === undefined) throw new Error(`The demo request ${title} was not found.`);
+        if (thread === undefined) return;
         subject = { kind: 'thread', id: thread.id };
       } else {
         const content = (await raw<Rows<{ id: string }>>(transaction, 'select id from public.contents where client_id = ?::uuid and title = ?', [clientId, title])).rows[0];
-        if (content === undefined) throw new Error(`The demo content ${title} was not found.`);
+        if (content === undefined) return;
         subject = { kind: 'content', id: content.id };
       }
 
@@ -113,14 +119,14 @@ export const ensureNotificationsDemo = async (input: NotificationsDemoInput): Pr
           const round = spec.kind === 'approval_deadline_passed'
             ? (await raw<Rows<{ id: string }>>(transaction, 'select id from public.content_approval_rounds where content_id = ?::uuid order by sequence desc limit 1', [subject.id])).rows[0]?.id ?? null
             : null;
-          if (spec.kind === 'approval_deadline_passed' && round === null) throw new Error(`The demo content ${title} has no round.`);
+          if (spec.kind === 'approval_deadline_passed' && round === null) return;
           const summary = spec.kind === 'approval_deadline_passed' ? [title] : [client.name, title];
           notificationId = (await raw<Rows<{ id: string | null }>>(transaction, `
             select app_private.add_notification(?, ?::uuid, ?::uuid, ?::uuid, ?::uuid, null, null, ?::uuid, ${SUMMARY[spec.kind]}) as id
           `, [spec.kind, recipient, agencyId, clientId, subject.id, round, ...summary])).rows[0]?.id ?? undefined;
         }
       }
-      if (notificationId === undefined) throw new Error(`The demo notification ${spec.kind} for ${spec.recipient} was not created.`);
+      if (notificationId === undefined) return;
 
       await raw(transaction, `
         update public.notifications
