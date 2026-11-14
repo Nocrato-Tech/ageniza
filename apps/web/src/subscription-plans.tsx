@@ -6,16 +6,16 @@ import { Button, Pill } from '@ageniza/ui';
 import { formatBrl, formatGb, formatMoney } from './subscription-format.js';
 
 export type Plan = SubscriptionPlansResponse['plans'][number];
-type Subscription = NonNullable<SubscriptionOverviewResponse['subscription']>;
+export type Subscription = NonNullable<SubscriptionOverviewResponse['subscription']>;
 
 const GIB = 1024 ** 3;
 /** Without usage data (a trial) the table has no basis to recommend: it keeps pointing at the middle plan. */
-const TRIAL_RECOMMENDED_KEY = 'profissional';
+export const TRIAL_RECOMMENDED_KEY = 'profissional';
 /** The share of the ceiling from which the next plan is the one to look at. */
-const NEAR_CEILING = 0.8;
-const POSTS_PER_CLIENT = 8;
-const MINUTES_PER_ROUND_TRIP = 10;
-const PHOTO_MB = 4;
+export const NEAR_CEILING = 0.8;
+export const POSTS_PER_CLIENT = 8;
+export const MINUTES_PER_ROUND_TRIP = 10;
+export const PHOTO_MB = 4;
 
 /** Who each plan is for, in the words of the board; a plan the table does not know has no line. */
 const COPY: Record<string, { tagline: string; fit: string }> = {
@@ -27,11 +27,11 @@ const COPY: Record<string, { tagline: string; fit: string }> = {
 /** What every plan has: unlimited collaborators and portal access (decision 2026-10-29) and the product as it ships. */
 const INCLUDED = ['Calendário editorial', 'Portal de aprovação do cliente', 'App mobile', 'Colaboradores ilimitados', 'Acessos ao portal sem limite'];
 
-const gib = (plan: Plan): number => Math.round(plan.storageBytes / GIB);
-const perClientCents = (plan: Plan): number => Math.round(plan.monthlyCents / plan.clientLimit);
+export const gib = (plan: Plan): number => Math.round(plan.storageBytes / GIB);
+export const perClientCents = (plan: Plan): number => Math.round(plan.monthlyCents / plan.clientLimit);
 /** "5 mil", rounded to the nearest five thousand: the order of magnitude, not a promise. */
-const photosOf = (plan: Plan): string => `${Math.max(5, Math.round((plan.storageBytes / (PHOTO_MB * 1024 * 1024)) / 5000) * 5)} mil`;
-const cheapestPerClient = (plans: readonly Plan[]): Plan | undefined => [...plans].sort((a, b) => perClientCents(a) - perClientCents(b))[0];
+export const photosOf = (plan: Plan): string => `${Math.max(5, Math.round((plan.storageBytes / (PHOTO_MB * 1024 * 1024)) / 5000) * 5)} mil`;
+export const cheapestPerClient = (plans: readonly Plan[]): Plan | undefined => [...plans].sort((a, b) => perClientCents(a) - perClientCents(b))[0];
 const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
 
 function unlocksOf(plan: Plan, previous: Plan | undefined): string[] {

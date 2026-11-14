@@ -229,3 +229,8 @@
   color: var(--text-danger);
 }
 
+
+.subscription__chip--waiting {
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+}

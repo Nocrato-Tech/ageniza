@@ -515,3 +515,61 @@
 .checkout__ok-title {
   font: var(--heading-lg);
 }
+
+/* The three steps of the purchase. From the narrow breakpoint on, one step at a time; wide, everything shows and the steps are not offered. */
+.checkout__steps,
+.checkout__nav {
+  display: none;
+}
+
+.checkout__choice {
+  display: grid;
+  gap: var(--space-3);
+}
+
+@media (max-width: 47.99rem) {
+  .checkout__steps {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .checkout__steps-bar {
+    display: grid;
+    flex: 1;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-2);
+  }
+
+  .checkout__steps-bar span {
+    height: 0.375rem;
+    border-radius: var(--radius-full);
+    background: var(--border-default);
+  }
+
+  .checkout__steps-bar span.is-on {
+    background: var(--color-indigo-600);
+  }
+
+  .checkout__steps-label {
+    font: var(--label-md);
+    font-weight: 600;
+  }
+
+  .checkout__step[data-current='false'] {
+    display: none;
+  }
+
+  .checkout__main {
+    display: contents;
+  }
+
+  .checkout__nav {
+    display: flex;
+    gap: var(--space-3);
+  }
+
+  .checkout__nav > * {
+    flex: 1;
+  }
+}

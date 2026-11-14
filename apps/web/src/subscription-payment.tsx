@@ -1,14 +1,15 @@
 ﻿import { useRef, useState, type FormEvent } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArrowUpRight, CalendarClock, Check, CircleAlert, FlaskConical, ReceiptText, ShieldCheck, Sparkles } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 import { SimulatedPaymentResponseSchema, type SubscriptionQuoteLine } from '@ageniza/contracts';
-import { Button, ButtonLink, Field, LiveStatus, TextInput } from '@ageniza/ui';
+import { Button, ButtonLink, ChoiceRadio, Field, LiveStatus, TextInput } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { useApiClient } from './http.js';
-import { formatInstant, formatMoney, lineLabel } from './subscription-format.js';
+import { formatExpiry, formatInstant, formatMoney, lineLabel } from './subscription-format.js';
+import { testCardQuery } from './subscription-queries.js';
 
 /** How a payment ended for the screen that opened it: it approved, was refused, or the provider could not answer. */
 export type PaymentResult = 'approved' | 'declined' | 'failed';
@@ -30,6 +31,9 @@ export interface Purchase {
   periodEnd: string | undefined;
   ceilings: { clients: number; gib: number };
 }
+
+const STEP_LABELS = ['Seu plano', 'Pagamento', 'Revisar e pagar'] as const;
+type Step = 1 | 2 | 3;
 
 const titleOf = (purchase: Purchase): string => purchase.kind === 'extras' ? 'Comprar extras' : purchase.kind === 'subscribe' ? `Assinar o ${purchase.planName}` : `Subir para o ${purchase.planName}`;
 
@@ -65,6 +69,12 @@ export function CheckoutStep({ agencyId, chargeId, amountCents, purchase, reopen
   const [pendingOutcome, setPendingOutcome] = useState<'approved' | 'declined' | undefined>();
   const [currentCharge, setCurrentCharge] = useState(chargeId);
   const sent = useRef(false);
+  const [step, setStep] = useState<Step>(1);
+  const [choice, setChoice] = useState<'saved' | 'other' | undefined>();
+  const savedQuery = useQuery(testCardQuery(httpClient, agencyId));
+  const savedCard = savedQuery.data?.available === true ? savedQuery.data.card : null;
+  const cardChoice = choice ?? (savedCard === null ? 'other' : 'saved');
+  const go = (to: number): void => { setStep(Math.min(3, Math.max(1, to)) as Step); };
 
   const pay = useMutation({
     mutationFn: async (outcome: 'approved' | 'declined') => {
@@ -80,6 +90,7 @@ export function CheckoutStep({ agencyId, chargeId, amountCents, purchase, reopen
     onSuccess: (answer) => {
       if (answer.status === 'confirmed') { setStatus('approved'); onApproved(); return; }
       setStatus('declined');
+      setStep(3);
       sent.current = false;
     },
     onError: () => { onFinish('failed'); }
@@ -89,6 +100,7 @@ export function CheckoutStep({ agencyId, chargeId, amountCents, purchase, reopen
   const submit = (outcome: 'approved' | 'declined'): void => {
     if (sent.current) return;
     sent.current = true;
+    setStep(3);
     setPendingOutcome(outcome);
     pay.mutate(outcome);
   };
@@ -107,7 +119,7 @@ export function CheckoutStep({ agencyId, chargeId, amountCents, purchase, reopen
     <header className="subscription__head">
       <p className="subscription__eyebrow">Pagamento</p>
       <h1 id="checkout-title">{titleOf(purchase)}</h1>
-      <p className="subscription__lead">Revise o que você ganha e confirme. Nada é cobrado de verdade.</p>
+      <p className="subscription__lead">Revise o que você ganha, escolha o cartão e confirme. Nada é cobrado de verdade.</p>
     </header>
 
     {status === 'approved'
@@ -121,9 +133,13 @@ export function CheckoutStep({ agencyId, chargeId, amountCents, purchase, reopen
           <ButtonLink as={Link} to={`/agencia/${agencyId}/assinatura/faturas`} state={location.state} variant="secondary" leadingIcon={<ReceiptText aria-hidden="true" />}>Ver a fatura</ButtonLink>
         </div>
       </section>
-      : <form className="checkout__grid" aria-labelledby="checkout-title" onSubmit={(event: FormEvent) => { event.preventDefault(); submit('approved'); }}>
+      : <form className="checkout__grid" data-step={step} aria-labelledby="checkout-title" onSubmit={(event: FormEvent) => { event.preventDefault(); submit('approved'); }}>
+        <div className="checkout__steps" aria-live="polite">
+          <div className="checkout__steps-bar" aria-hidden="true">{STEP_LABELS.map((label, index) => <span key={label} className={index < step ? 'is-on' : undefined} />)}</div>
+          <span className="checkout__steps-label">Passo {step} de 3 · {STEP_LABELS[step - 1]}</span>
+        </div>
         <div className="checkout__main">
-          <section className="subscription__block subscription__block--card" aria-labelledby="checkout-plan">
+          <section className="subscription__block subscription__block--card checkout__step" data-current={step === 1} aria-labelledby="checkout-plan">
             <div className="checkout__plan-head">
               <div>
                 <p className="subscription__eyebrow">Você escolheu</p>
@@ -137,21 +153,33 @@ export function CheckoutStep({ agencyId, chargeId, amountCents, purchase, reopen
               <ul className="checkout__gain">{purchase.gain.map((item) => <li key={item}><Check aria-hidden="true" />{item}</li>)}</ul>
             </div>
             {purchase.daysLeft !== null && purchase.periodEnd !== undefined && <p className="checkout__period"><CalendarClock aria-hidden="true" />Período atual até {formatInstant(purchase.periodEnd)} ({purchase.daysLeft} {purchase.daysLeft === 1 ? 'dia que falta' : 'dias que faltam'}).</p>}
+            {step === 1 && <div className="checkout__nav">
+              <Button variant="ghost" onClick={onLeave}>Cancelar</Button>
+              <Button onClick={() => { go(2); }}>Continuar</Button>
+            </div>}
           </section>
 
-          <section className="subscription__block subscription__block--card" aria-labelledby="subscription-card-title">
+          <section className="subscription__block subscription__block--card checkout__step" data-current={step === 2} aria-labelledby="subscription-card-title">
             <h2 id="subscription-card-title">Como você quer pagar</h2>
             <p className="checkout__testnote" role="note"><FlaskConical aria-hidden="true" /><span><strong>Ambiente de teste: nenhum valor é cobrado.</strong> Isto é um pagamento de teste: qualquer dado serve e nenhum dado de cartão sai do seu navegador.</span></p>
-            <div className="subscription-card__fields">
+            {savedCard !== null && <div className="checkout__choice" role="radiogroup" aria-label="Cartão">
+              <ChoiceRadio name="checkout-card" value="saved" checked={cardChoice === 'saved'} onChange={() => { setChoice('saved'); }} title={`Cartão de teste final ${savedCard.last4}`} description={`Cartão salvo · vence ${formatExpiry(savedCard.expMonth, savedCard.expYear)}`} />
+              <ChoiceRadio name="checkout-card" value="other" checked={cardChoice === 'other'} onChange={() => { setChoice('other'); }} title="Usar outro cartão" description="Preencha os dados abaixo" />
+            </div>}
+            {cardChoice === 'other' && <div className="subscription-card__fields">
               <Field label="Número do cartão">{(control) => <TextInput {...control} inputMode="numeric" autoComplete="off" placeholder="0000 0000 0000" />}</Field>
               <Field label="Validade">{(control) => <TextInput {...control} autoComplete="off" placeholder="MM/AA" />}</Field>
               <Field label="CVV">{(control) => <TextInput {...control} inputMode="numeric" autoComplete="off" placeholder="000" />}</Field>
               <Field label="Nome impresso no cartão">{(control) => <TextInput {...control} autoComplete="off" />}</Field>
-            </div>
+            </div>}
+            {step === 2 && <div className="checkout__nav">
+              <Button variant="ghost" onClick={() => { go(1); }}>Voltar</Button>
+              <Button onClick={() => { go(3); }}>Continuar</Button>
+            </div>}
           </section>
         </div>
 
-        <aside className="subscription__block subscription__block--card checkout__sum" aria-labelledby="checkout-sum-title">
+        <aside className="subscription__block subscription__block--card checkout__sum checkout__step" data-current={step === 3} aria-labelledby="checkout-sum-title">
           <h2 id="checkout-sum-title">Resumo</h2>
           <ul className="checkout__lines">
             {purchase.lines.map((line) => <li key={line.kind}><span>{lineLabel(line, purchase.planName)}<small>por mês</small></span><span>{formatMoney(line.totalCents)}</span></li>)}
@@ -172,6 +200,7 @@ export function CheckoutStep({ agencyId, chargeId, amountCents, purchase, reopen
             <Button variant="secondary" loading={busy && pendingOutcome === 'declined'} disabled={busy && pendingOutcome !== 'declined'} onClick={() => { submit('declined'); }}>Simular recusa</Button>
             <Button variant="ghost" disabled={busy} onClick={onLeave}>Voltar sem pagar</Button>
           </div>
+          {step === 3 && <div className="checkout__nav"><Button variant="ghost" disabled={busy} onClick={() => { go(2); }}>Voltar</Button></div>}
           <p className="checkout__note"><ShieldCheck aria-hidden="true" />Cancele quando quiser, sem multa. Só a dona da agência paga e altera o plano.</p>
         </aside>
       </form>}
