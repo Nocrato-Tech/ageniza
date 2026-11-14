@@ -231,8 +231,7 @@ headers" is on, which is the owner's action in the dashboard**; without it every
   `sessions.purge-dead` (daily at 04:20 in `America/Sao_Paulo` and at every start) calls
   `app_private.purge_dead_sessions(now(), 500)` until a batch is not full. A session is dead since the
   earlier of its `expiresAt` and the last replacement of the credential (the rule of
-  `ACTIVE_SESSION_SQL` in `session-validity.ts`, written again in the function: change one, change
-  both); it goes when that was **more than** 30 days ago. An active session is never a candidate, and
+  `ACTIVE_SESSION_SQL` in `session-validity.ts`, written again in the function; `session-purge-parity.integration.test.ts` ties the two over every edge); it goes when that was **more than** 30 days ago. An active session is never a candidate, and
   one being renewed or revoked at that moment is skipped (`for update skip locked`). The function is
   `security definer`, refused when a user is bound to the transaction, and uses no tenant context.
   `audit.events` holds no IP, user agent or city, so nothing there changes.

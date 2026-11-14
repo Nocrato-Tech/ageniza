@@ -139,6 +139,18 @@ describe('app_private.purge_dead_sessions', () => {
     expect(await exists(beforeButRecent)).toBe(true);
   });
 
+  it('treats a session made at the very instant the credential was replaced as dead, and one made a millisecond later as alive', async () => {
+    const replacedAt = ago(31 * DAY_MS);
+    const user = await newUser(replacedAt);
+    const sameInstant = await newSession(user, { createdAt: replacedAt, expiresAt: ahead(DAY_MS) });
+    const justAfter = await newSession(user, { createdAt: new Date(replacedAt.getTime() + 1), expiresAt: ahead(DAY_MS) });
+
+    await purge();
+
+    expect(await exists(sameInstant)).toBe(false);
+    expect(await exists(justAfter)).toBe(true);
+  });
+
   it('reads the replacement of the credential in the account too, not only in the user', async () => {
     const user = await newUser();
     await getOwner().knex('auth.account').insert({
