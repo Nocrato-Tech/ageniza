@@ -109,7 +109,7 @@ Sinais de teste fraco:
 - afirma "Page not found" em vez da rota de destino.
 
 ### 5. Publicar
-No fluxo de escopo, a revisão é da onda que toca as áreas desta revisão (a branch da onda `feat/<escopo>--onda<k>` e o commit dados pela tarefa, diff contra a integração `feat/<escopo>`): é gravada em arquivo, nunca no worktree de um implementador, e o maestro a publica como comentário no PR único do escopo, que é o registro desta revisão. Ver [decisão de 2026-11-06](business/decisions/2026-11-06-um-pr-por-escopo-com-revisao-por-subtarefa.md) e [decisão de 2026-11-10](business/decisions/2026-11-10-revisao-por-onda-com-perfil-e-esforco-decididos-pelo-maestro-e-revisor.md).
+No fluxo de escopo, a revisão é da onda: uma só cobre todas as subtarefas de nível Alto que a onda junta (branch da onda e commit de cada subtarefa dados pela tarefa, diff contra a integração `feat/<escopo>`). Ela parte do autoataque que cada implementador listou no retorno e se concentra no que ele não cobre. É gravada em arquivo, nunca no worktree do implementador, e o maestro a publica como comentário no PR único do escopo, que é o registro desta revisão. Ver as decisões de [2026-11-06](business/decisions/2026-11-06-um-pr-por-escopo-com-revisao-por-subtarefa.md) e de [2026-11-13](business/decisions/2026-11-13-revisao-de-seguranca-por-onda-com-autoataque-do-implementador.md).
 
 Fora desse fluxo, uma revisão por PR, com `gh pr review <N> --comment` e **nunca** `--approve` ou `--request-changes`, porque o merge é decisão do orquestrador. Em português:
 
@@ -139,7 +139,7 @@ O que está correto (o que foi tentado e resistiu)
 Crítica ou Alta impede o merge. Uma Média de segurança também impede, salvo decisão registrada em `docs/business/decisions/` com follow-up aberto, como o #166.
 
 ### 6. Re-revisão
-Depois da correção, a re-revisão refaz **os mesmos ataques** e procura regressão introduzida pela correção. Nas rodadas reais, a correção de uma falha trouxe outra mais de uma vez: o trigger que resolveu a corrida quebrou o reaceite de convite, e a correção do logout em `/contextos` mandou quem perdeu o acesso para `/entrar`. Na onda, o laço de correção e re-revisão segue até zerar os achados: conferir só as correções quer dizer não revisar a onda inteira de novo, e não pular os mesmos ataques.
+Depois da correção, a re-revisão refaz **os mesmos ataques** e procura regressão introduzida pela correção. Nas rodadas reais, a correção de uma falha trouxe outra mais de uma vez: o trigger que resolveu a corrida quebrou o reaceite de convite, e a correção do logout em `/contextos` mandou quem perdeu o acesso para `/entrar`. Na onda, o laço de correção e re-revisão segue até zerar os achados Média e Alta; da 2ª rodada em diante, achado só Baixa é corrigido e conferido na revisão da onda seguinte ou do PR, e na 3ª rodada sem zerar quem decide é o dono.
 
 ## Lições que já custaram caro
 
