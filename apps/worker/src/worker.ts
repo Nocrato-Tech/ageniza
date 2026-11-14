@@ -29,6 +29,7 @@ import { createNotificationQueue } from './notification-queue.js';
 import { approvalDeadlineNotificationsJob } from './notifications-deadline-job.js';
 import { createDurableQueue, type DurableQueue } from './queue.js';
 import { renewSubscriptionsJob } from './renew-subscriptions-job.js';
+import { deadSessionPurgeJob } from './dead-session-purge-job.js';
 import { unconfirmedAccountPurgeJob } from './unconfirmed-account-purge-job.js';
 
 type WorkerSignal = 'SIGINT' | 'SIGTERM';
@@ -109,6 +110,8 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
   if (queue !== undefined) queue.register(archiveDueClientsJob({ database }));
   // The retention of the accounts never confirmed (issue #724) needs only the database too.
   if (queue !== undefined) queue.register(unconfirmedAccountPurgeJob({ database }));
+  // The retention of the sessions dead for more than 30 days (decision 2026-11-12) needs only the database too.
+  if (queue !== undefined) queue.register(deadSessionPurgeJob({ database }));
   // The reminders of approval (decision 2026-11-10) only enqueue, from the database: the e-mail job below sends them.
   if (queue !== undefined) queue.register(approvalRemindersJob({ database }));
   // The notification inside the app of a deadline that passed (decision 2026-11-11) needs only the database too.
