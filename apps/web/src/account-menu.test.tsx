@@ -197,6 +197,18 @@ describe('AccountMenu', () => {
     await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Sair de todas as sessões' })).toBeNull());
   });
 
+  it('does not carry the e-mail change nor the tour: they live in Conta and in Ajuda', async () => {
+    renderAccountMenu(async (input) => {
+      if (String(input).endsWith('/auth/session')) return json(sessionBody);
+      throw new Error('unexpected ' + String(input));
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
+    const menu = await screen.findByRole('menu', { name: 'Menu da conta' });
+    expect(within(menu).getByRole('menuitem', { name: 'Sair' })).toBeTruthy();
+    expect(within(menu).queryByRole('menuitem', { name: 'Pedir troca de e-mail' })).toBeNull();
+    expect(within(menu).queryByRole('menuitem', { name: 'Rever o tour' })).toBeNull();
+  });
+
   it('opens Minha conta under the area the person is in', async () => {
     const { probe } = renderAccountMenu(async (input) => {
       if (String(input).endsWith('/auth/session')) return json(sessionBody);
@@ -439,7 +451,7 @@ describe('AccountMenu', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
     fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Minha conta' }), { key: 'ArrowDown' });
-    const moved = screen.getByRole('menuitem', { name: 'Pedir troca de e-mail' });
+    const moved = screen.getByRole('menuitem', { name: 'Sair' });
     expect(document.activeElement).toBe(moved);
 
     await act(async () => { release?.(); });

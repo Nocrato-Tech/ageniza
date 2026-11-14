@@ -168,8 +168,8 @@ const targetsOf = (): string[] =>
 const click = (name: string): void => { fireEvent.click(screen.getByRole('button', { name })); };
 
 const openReview = async (): Promise<void> => {
-  fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
-  const menu = await screen.findByRole('menu');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Ajuda' })[0]!);
+  const menu = await screen.findByRole('menu', { name: 'Ajuda' });
   fireEvent.click(within(menu).getByRole('menuitem', { name: 'Rever o tour' }));
 };
 
@@ -368,7 +368,7 @@ describe('portal tour (#144)', () => {
     expect(world.calls.slice(before).filter((call) => call.startsWith('POST') || call.startsWith('PUT') || call.startsWith('PATCH'))).toEqual([]);
   });
 
-  it('keeps a review to the client it was asked in, and hands focus back to the account menu when it closes', async () => {
+  it('keeps a review to the client it was asked in, and hands focus back to Ajuda when it closes', async () => {
     const world = makeWorld({ seen: [CLIENT_ID, SECOND_ID], alsoCollaborator: true });
     const { probe } = renderPortal(world.impl);
     await screen.findByRole('heading', { name: 'Olá, Maria' });
@@ -381,7 +381,7 @@ describe('portal tour (#144)', () => {
 
     act(() => { probe.navigate(portalUrl('inicio', CLIENT_ID)); });
     await screen.findByRole('heading', { name: 'Olá, Maria' });
-    const trigger = screen.getByRole('button', { name: /Maria/ });
+    const trigger = screen.getAllByRole('button', { name: 'Ajuda' })[0]!;
     await openReview();
     fireEvent.keyDown(await tour(WELCOME), { key: 'Escape' });
     await waitFor(() => { expect(queryTour()).toBeNull(); });
@@ -394,9 +394,12 @@ describe('portal tour (#144)', () => {
     renderPortal(world.impl);
     await tour(WELCOME);
 
-    fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
-    const menu = await screen.findByRole('menu');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ajuda' })[0]!);
+    const menu = await screen.findByRole('menu', { name: 'Ajuda' });
     expect(within(menu).queryByRole('menuitem', { name: 'Rever o tour' })).toBeNull();
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
+    expect(within(await screen.findByRole('menu', { name: 'Menu da conta' })).queryByRole('menuitem', { name: 'Rever o tour' })).toBeNull();
   });
 
   it('shows the tour in each client the first time, and seeing it in one does not mark the other', async () => {
@@ -430,9 +433,8 @@ describe('portal tour (#144)', () => {
     click('Começar');
     await tour('Início');
 
-    fireEvent.click(screen.getByRole('button', { name: /Maria/ }));
-    const menu = await screen.findByRole('menu');
-    expect(await within(menu).findByRole('menuitem', { name: /Trocar de contexto/ })).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ajuda' })[0]!);
+    const menu = await screen.findByRole('menu', { name: 'Ajuda' });
     expect(within(menu).queryByRole('menuitem', { name: 'Rever o tour' })).toBeNull();
   });
 

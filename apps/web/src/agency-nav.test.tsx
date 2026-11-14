@@ -378,13 +378,13 @@ describe('the phone shell (390px)', () => {
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY}/assinatura`));
   });
 
-  it('keeps every control of the account menu within reach: the context, the e-mail change and the ways out', async () => {
+  it('keeps every control of the account menu within reach: the context, the account page and the ways out', async () => {
     stubPhone();
     renderAt(`/agencia/${AGENCY}`, everything);
     fireEvent.click(await screen.findByRole('button', { name: 'Conta de Pessoa' }));
     const menu = await screen.findByRole('menu', { name: 'Menu da conta' });
     expect(within(menu).getByRole('group', { name: 'Agência logada' })).toBeTruthy();
-    for (const name of ['Pedir troca de e-mail', 'Sair', 'Minha conta', 'Sair de todas as sessões']) expect(await within(menu).findByRole('menuitem', { name })).toBeTruthy();
+    for (const name of ['Sair', 'Minha conta', 'Sair de todas as sessões']) expect(await within(menu).findByRole('menuitem', { name })).toBeTruthy();
   });
 
   it('opens Ajuda from the top bar with the status of the system', async () => {

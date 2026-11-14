@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { MailCheck } from 'lucide-react';
 
 import { Avatar, Button, Skeleton } from '@ageniza/ui';
@@ -13,8 +13,15 @@ import { EmailChangeDialog } from './email-change.js';
 export function AccountPage() {
   const session = useAuthSession(useAuthSessionStore());
   const location = useLocation();
-  const [emailChangeOpen, setEmailChangeOpen] = useState(false);
+  const navigate = useNavigate();
+  // Coming back from the Google confirmation of an e-mail change (`GoogleLandingPage`): the dialog reopens in its Google mode.
+  const [reopenedViaGoogle, setReopenedViaGoogle] = useState(() => (location.state as { reopenEmailChange?: unknown } | null)?.reopenEmailChange === true);
+  const [emailChangeOpen, setEmailChangeOpen] = useState(reopenedViaGoogle);
   const user = session.user;
+  // The marker is spent on arrival, so a reload or a later visit to the same entry does not reopen the dialog.
+  useEffect(() => {
+    if (reopenedViaGoogle) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, []);
   useDocumentTitle('Conta e sessões — Ageniza');
 
   return <section className="account-page" aria-labelledby="account-title">
@@ -42,6 +49,6 @@ export function AccountPage() {
       <AccountSessions />
     </div>
 
-    {emailChangeOpen && <EmailChangeDialog returnTo={`${location.pathname}${location.search}`} onClose={() => { setEmailChangeOpen(false); }} />}
+    {emailChangeOpen && <EmailChangeDialog viaGoogle={reopenedViaGoogle} returnTo={`${location.pathname}${location.search}`} onClose={() => { setEmailChangeOpen(false); setReopenedViaGoogle(false); }} />}
   </section>;
 }

@@ -130,6 +130,6 @@ export function AgencySidebarSkeleton() {
     <div className="agency-sidebar__top"><Logo variant="on-light" height={30} /></div>
     <div className="agency-sidebar__context"><Skeleton className="agency-header__skeleton" /></div>
     <nav className="agency-nav" aria-label="Navegação da agência"><Skeleton /></nav>
-    <div className="agency-sidebar__foot"><AccountMenu variant="sidebar" reopensEmailChange={false} /></div>
+    <div className="agency-sidebar__foot"><AccountMenu variant="sidebar" /></div>
   </aside>;
 }

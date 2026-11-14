@@ -5,6 +5,7 @@ import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { AccountMenu } from './account-menu.js';
+import { AccountPage } from './account-page.js';
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
@@ -36,6 +37,7 @@ afterAll(() => {
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const AGENCY_A = '22222222-2222-4222-8222-222222222222';
 const AGENCY_B = '33333333-3333-4333-8333-333333333333';
+const ACCOUNT_PAGE = `/agencia/${AGENCY_A}/conta`;
 const agencyA = { type: 'agency', agencyId: AGENCY_A, agencyName: 'Agência Um', roleKey: 'admin', roleName: 'Admin', isOwner: true };
 const agencyB = { type: 'agency', agencyId: AGENCY_B, agencyName: 'Agência Dois', roleKey: 'admin', roleName: 'Admin', isOwner: true };
 const agencyMe = { agencyId: AGENCY_A, agencyName: 'Agência Um', isOwner: true, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['colaborador.visualizar', 'cliente.visualizar'] };
@@ -370,12 +372,12 @@ describe('the landing /entrar/google (issue #713)', () => {
 
   describe('after a reauthentication (?intent=reauth)', () => {
     it('goes back to the screen that asked and reopens the e-mail change there, in its Google mode', async () => {
-      window.sessionStorage.setItem(REAUTH_KEY, '/contextos');
+      window.sessionStorage.setItem(REAUTH_KEY, ACCOUNT_PAGE);
       const { impl } = makeFetch({ loggedIn: true, resolve: selectBoth });
       const { probe } = renderApp(impl, '/entrar/google?intent=reauth');
 
       const dialog = await screen.findByRole('dialog', { name: 'Pedir troca de e-mail' });
-      expect(probe.pathname).toBe('/contextos');
+      expect(probe.pathname).toBe(ACCOUNT_PAGE);
       expect(within(dialog).queryByLabelText('Senha atual')).toBeNull();
       expect(within(dialog).getByText(/Você entra com o Google, então não há senha para confirmar/)).toBeTruthy();
       // The mark is spent on arrival: the entry does not reopen the dialog again.
@@ -398,7 +400,7 @@ describe('the landing /entrar/google (issue #713)', () => {
     });
 
     it('with no session is the refusal, and keeps nothing it must not follow', async () => {
-      window.sessionStorage.setItem(REAUTH_KEY, '/contextos');
+      window.sessionStorage.setItem(REAUTH_KEY, ACCOUNT_PAGE);
       const { impl } = makeFetch({ loggedIn: false });
       const { probe } = renderApp(impl, '/entrar/google?intent=reauth');
 
@@ -424,12 +426,12 @@ describe('the return from Google when the page loads from scratch (review of #73
   });
 
   it('after a reauthentication goes back to the screen that asked and reopens the dialog, never through the refusal', async () => {
-    window.sessionStorage.setItem(REAUTH_KEY, '/contextos');
+    window.sessionStorage.setItem(REAUTH_KEY, ACCOUNT_PAGE);
     const { impl } = makeFetch({ loggedIn: true, resolve: selectBoth, sessionDelayMs: 15 });
     const { probe } = renderApp(impl, '/entrar/google?intent=reauth');
 
     expect(await screen.findByRole('dialog', { name: 'Pedir troca de e-mail' })).toBeTruthy();
-    expect(probe.pathname).toBe('/contextos');
+    expect(probe.pathname).toBe(ACCOUNT_PAGE);
     expect(probe.visited).not.toContain(REFUSED);
     expect(window.sessionStorage.getItem(REAUTH_KEY)).toBeNull();
   });
@@ -594,12 +596,12 @@ describe('Google on the invitation screen (review of #736; owner decision 2026-1
 
   it('never takes a reauthentication to an invitation, even when one was left in the tab', async () => {
     keepInvite();
-    window.sessionStorage.setItem(REAUTH_KEY, '/contextos');
+    window.sessionStorage.setItem(REAUTH_KEY, ACCOUNT_PAGE);
     const { impl } = makeFetch({ loggedIn: true, resolve: selectBoth, invitation: { email: INVITED } });
     const { probe } = renderApp(impl, '/entrar/google?intent=reauth');
 
     expect(await screen.findByRole('dialog', { name: 'Pedir troca de e-mail' })).toBeTruthy();
-    expect(probe.pathname).toBe('/contextos');
+    expect(probe.pathname).toBe(ACCOUNT_PAGE);
     expect(probe.visited.some((address) => address.startsWith('/convite/'))).toBe(false);
   });
 
@@ -651,7 +653,7 @@ describe('Google on the invitation screen (review of #736; owner decision 2026-1
 
     it('is forgotten by a reauthentication after the trip was cancelled, and a later visit to the return accepts nothing', async () => {
       await startTheTrip();
-      window.sessionStorage.setItem(REAUTH_KEY, '/contextos');
+      window.sessionStorage.setItem(REAUTH_KEY, ACCOUNT_PAGE);
       const { impl } = makeFetch({ loggedIn: true, resolve: selectBoth, invitation: { email: INVITED } });
       const { probe } = renderApp(impl, '/entrar/google?intent=reauth');
 
@@ -739,7 +741,7 @@ describe('Google on the invitation screen (review of #736; owner decision 2026-1
   });
 });
 
-describe('the dialog of the e-mail change reopens in the real menu of the area (review of #736)', () => {
+describe('the dialog of the e-mail change reopens in the Conta page of the area (review of #736)', () => {
   // The menus of the loading skeletons are gone when the area loads: if one of them spent the mark, the real one would not find it.
   const back = async (area: string) => {
     window.sessionStorage.setItem(REAUTH_KEY, area);
@@ -759,11 +761,11 @@ describe('the dialog of the e-mail change reopens in the real menu of the area (
   };
 
   it('back to the agency area', async () => {
-    await back(`/agencia/${AGENCY_A}`);
+    await back(`/agencia/${AGENCY_A}/conta`);
   });
 
   it('back to the client portal', async () => {
-    await back(`/portal/${CLIENT_ID}/inicio`);
+    await back(`/portal/${CLIENT_ID}/conta`);
   });
 });
 
@@ -778,6 +780,7 @@ const renderMenu = (impl: typeof fetch, entry: string | { pathname: string; stat
           <MemoryRouter initialEntries={[entry]}>
             <LocationProbe probe={probe} />
             <AccountMenu activeContext='Agência Um' />
+            <AccountPage />
           </MemoryRouter>
         </ApiClientProvider>
       </QueryClientProvider>
@@ -787,8 +790,7 @@ const renderMenu = (impl: typeof fetch, entry: string | { pathname: string; stat
 };
 
 const openDialog = async (): Promise<HTMLElement> => {
-  fireEvent.click(await screen.findByRole('button', { name: /Pessoa/ }));
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Pedir troca de e-mail' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Pedir troca de e-mail' }));
   return screen.findByRole('dialog', { name: 'Pedir troca de e-mail' });
 };
 

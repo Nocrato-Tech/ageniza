@@ -102,7 +102,7 @@ function PortalShellSkeleton() {
           <Skeleton className="portal-header__avatar-skeleton" />
           <div className="portal-header__labels"><Skeleton className="portal-header__name-skeleton" /><Skeleton /></div>
         </div>
-        <AccountMenu variant="sidebar" reopensEmailChange={false} />
+        <AccountMenu variant="sidebar" />
       </header>
     </div>
     <main className="portal-content" id="main-content">
@@ -218,7 +218,7 @@ export function PortalAreaLayout() {
           </Link>
           {phone && <HelpMenu onReviewTour={reviewTour} />}
           {/* The account menu (#70) lives here; the active context is the client this portal is. */}
-          <AccountMenu variant="sidebar" activeContext={data.name} role={PORTAL_ROLE} onReviewTour={reviewTour} />
+          <AccountMenu variant="sidebar" activeContext={data.name} role={PORTAL_ROLE}/>
         </header>
         {/* The card lives in the bar so it sits right above it, whatever the bar's height becomes. */}
         <PortalNav clienteId={clienteId} tourTarget={tourTarget}>
