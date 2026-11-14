@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Laptop, Monitor, ShieldOff, Smartphone } from 'lucide-react';
+import { Check, Globe, Laptop, Monitor, ShieldOff, Smartphone } from 'lucide-react';
 
 import {
   AuthNoContentResponseSchema,
@@ -11,6 +11,7 @@ import {
 import { Button, ConfirmDialog, EmptyState, Skeleton } from '@ageniza/ui';
 
 import { HttpClientError, useApiClient } from './http.js';
+import { useLogout } from './use-logout.js';
 
 export const activeSessionsQueryKey = ['auth', 'sessions'] as const;
 
@@ -46,9 +47,18 @@ export const sessionMeta = (session: AuthActiveSession, now: Date = new Date()):
   return session.city === null ? capitalize(text) : text;
 };
 
+const deviceKind = (os: AuthActiveSession['os']): 'phone' | 'laptop' | 'computer' | 'unknown' => {
+  if (os === null) return 'unknown';
+  if (os === 'iOS' || os === 'Android') return 'phone';
+  return os === 'macOS' || os === 'ChromeOS' ? 'laptop' : 'computer';
+};
+
+const DEVICE_ICONS = { phone: Smartphone, laptop: Laptop, computer: Monitor, unknown: Globe } as const;
+
 const DeviceIcon = ({ os }: { os: AuthActiveSession['os'] }) => {
-  if (os === 'iOS' || os === 'Android') return <Smartphone aria-hidden="true" />;
-  return os === 'macOS' || os === 'ChromeOS' ? <Laptop aria-hidden="true" /> : <Monitor aria-hidden="true" />;
+  const kind = deviceKind(os);
+  const Icon = DEVICE_ICONS[kind];
+  return <Icon aria-hidden="true" data-device={kind} />;
 };
 
 /** The sessions of the account; the account menu reads the same query to know whether "Sair de todas" is offered. */
@@ -63,6 +73,7 @@ export const useActiveSessions = (enabled = true) => {
 };
 
 const revokeOneError = 'Não foi possível sair desse aparelho. Tente de novo.';
+const signOutError = 'Não foi possível sair. Tente de novo.';
 const revokeOthersError = 'Não foi possível encerrar as outras sessões. Tente de novo.';
 
 const othersNotice = (revoked: number): string => {
@@ -77,6 +88,7 @@ export function AccountSessions() {
   const sessions = useActiveSessions();
   const [leaving, setLeaving] = useState<AuthActiveSession | null>(null);
   const [confirmOthers, setConfirmOthers] = useState(false);
+  const signOut = useLogout();
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -151,6 +163,7 @@ export function AccountSessions() {
       </div>
       {notice !== null && <p className="account-sessions__notice" role="status">{notice}</p>}
       {failure !== null && <p className="account-sessions__error" role="alert">{failure}</p>}
+      {signOut.failedAction !== null && <p className="account-sessions__error" role="alert">{signOutError}</p>}
       <ul className="account-sessions__list">
         {list.map((session) => {
           const name = sessionName(session);
@@ -163,13 +176,19 @@ export function AccountSessions() {
               </p>
               <p className="account-session__meta">{sessionMeta(session)}</p>
             </div>
-            {!session.current && <Button
+            <Button
               className="account-session__action"
               variant="secondary"
               size="sm"
               aria-label={`Sair deste aparelho: ${name}`}
-              onClick={() => { setFailure(null); setNotice(null); setLeaving(session); }}
-            >Sair deste aparelho</Button>}
+              disabled={session.current && signOut.pendingAction !== null}
+              onClick={() => {
+                setFailure(null);
+                setNotice(null);
+                if (session.current) void signOut.logout('logout');
+                else setLeaving(session);
+              }}
+            >Sair deste aparelho</Button>
           </li>;
         })}
       </ul>

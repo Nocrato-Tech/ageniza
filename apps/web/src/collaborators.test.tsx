@@ -1131,7 +1131,7 @@ describe('collaborator admin actions (#104)', () => {
     await waitFor(() => expect(bodies).toEqual([{ jobTitle: 'Editor de Vídeo', roleId: roleIdOf('finance') }]));
     // The profile header reflects the new values at once.
     expect(await within(dialog).findByText('Editor de Vídeo')).toBeTruthy();
-    expect(dialog.querySelector('.collaborator-profile__role')?.textContent).toBe('Financeiro');
+    expect(dialog.querySelector('.collaborator-profile__name .ui-role-tag')?.textContent).toBe('Financeiro');
     // And the list beside it, without a reload.
     await waitFor(() => {
       expect(container.querySelector('.collaborator-page__person-job')?.textContent).toBe('Editor de Vídeo');
@@ -3056,7 +3056,8 @@ describe('team screens in the Pauta language (#638)', () => {
       const rows = Array.from(region.querySelectorAll('.invites__item'));
       expect(rows).toHaveLength(2);
       const [pending, expired] = rows as [Element, Element];
-      expect(pending.querySelector('.invites__role .ui-pill')?.textContent).toBe('Produção');
+      expect(pending.querySelector('.invites__role .ui-role-tag')?.textContent).toBe('Produção');
+      expect(pending.querySelector('.invites__role .ui-role-tag--teal')).not.toBeNull();
       expect(pending.querySelector('.invites__expiry svg')).not.toBeNull();
       expect(pending.querySelector('.invites__expiry')?.textContent).toBe('expira em 5 dias');
       expect(pending.querySelector('.invites__expiry--expired')).toBeNull();
@@ -3189,7 +3190,7 @@ describe('team screens in the Pauta language (#638)', () => {
       const { impl } = makeFetch();
       renderCollaborators(impl, detailUrl);
       const modal = await profileOf('Mário Costa');
-      expect(modal.querySelector('.collaborator-profile__name .collaborator-profile__role--teal')?.textContent).toBe('Produção');
+      expect(modal.querySelector('.collaborator-profile__name .ui-role-tag--teal')?.textContent).toBe('Produção');
       expect(Array.from(modal.querySelectorAll('.collaborator-profile__who .collaborator-detail__meta')).map((line) => line.textContent)).toEqual(['Copywriter', 'mario@example.test', 'Na agência desde 13/03/2026']);
     });
 

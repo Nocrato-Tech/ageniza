@@ -68,6 +68,12 @@
   background: var(--action-secondary-bg);
 }
 
+.ui-tabs__count.ui-pill--accent,
+.ui-tabs__tab[aria-selected='true'] .ui-tabs__count.ui-pill--accent {
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+
 .ui-tabs__panel {
   padding-top: var(--space-4);
 }

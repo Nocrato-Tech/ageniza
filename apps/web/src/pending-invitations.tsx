@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, Info, Plus, Send, ShieldCheck, X } from 'lucide-react';
+import { Clock, Info, Plus, Send, X } from 'lucide-react';
 
 import {
   AuthNoContentResponseSchema,
@@ -8,11 +8,12 @@ import {
   PendingInvitationListResponseSchema,
   type PendingInvitation
 } from '@ageniza/contracts';
-import { Button, ConfirmDialog, EmptyState, LiveStatus, Pagination, Pill, Skeleton } from '@ageniza/ui';
+import { Button, ConfirmDialog, EmptyState, LiveStatus, Pagination, Pill, RoleTag, Skeleton } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { CopyInvitationLinkButton } from './copy-invitation-link.js';
+import { collaboratorRoleTone } from './collaborator-detail.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 /** `specs/colaboradores.md` §6: 24 per page, creation date ascending (the route owns the order). */
@@ -170,7 +171,7 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
       <ul className="invites__list">
         {data.data.map((invitation) => <li key={invitation.id} className="invites__item">
           <p className="invites__email">{invitation.email}</p>
-          <p className="invites__role"><Pill icon={<ShieldCheck />}>{invitation.role.name}</Pill></p>
+          <p className="invites__role"><RoleTag name={invitation.role.name} tone={collaboratorRoleTone(invitation.role.key)} /></p>
           <p className={['invites__expiry', pendingInviteExpiryLabel(invitation.expiresAt) === 'expirado' && 'invites__expiry--expired'].filter(Boolean).join(' ')}>
             <Clock aria-hidden="true" size={16} strokeWidth={1.75} />{pendingInviteExpiryLabel(invitation.expiresAt)}
           </p>

@@ -50,6 +50,7 @@ function renderPage(options: {
   sessions?: () => Response | Promise<Response>;
   revokeOne?: (id: string) => Response;
   revokeOthers?: () => Response;
+  logout?: () => Response | Promise<Response>;
 } = {}) {
   const calls: Call[] = [];
   const impl: typeof fetch = async (input, init) => {
@@ -60,6 +61,7 @@ function renderPage(options: {
     if (url.pathname === '/auth/sessions' && method === 'GET') return (options.sessions ?? (() => json({ sessions: [current, phone, edge] })))();
     if (url.pathname.startsWith('/auth/sessions/') && method === 'DELETE') return (options.revokeOne ?? (() => new Response(null, { status: 204 })))(url.pathname.split('/').pop()!);
     if (url.pathname === '/auth/sessions/revoke-others' && method === 'POST') return (options.revokeOthers ?? (() => json({ revoked: 2 })))();
+    if (url.pathname === '/auth/logout' && method === 'POST') return (options.logout ?? (() => new Response(null, { status: 204 })))();
     throw new Error(`unexpected ${method} ${url.pathname}`);
   };
   const client = new HttpClient('http://127.0.0.1:3001', impl);
@@ -69,7 +71,10 @@ function renderPage(options: {
       <QueryClientProvider client={createQueryClient()}>
         <ApiClientProvider client={client}>
           <MemoryRouter initialEntries={[`/agencia/${AGENCY}/conta`]}>
-            <Routes><Route path="agencia/:agenciaId/conta" element={<AccountPage />} /></Routes>
+            <Routes>
+              <Route path="agencia/:agenciaId/conta" element={<AccountPage />} />
+              <Route path="entrar" element={<p>Tela de entrada</p>} />
+            </Routes>
           </MemoryRouter>
         </ApiClientProvider>
       </QueryClientProvider>
@@ -133,7 +138,7 @@ describe('the Conta page', () => {
   it('leaves one session on the right row, after a confirmation, with the row name in the button', async () => {
     const { calls } = renderPage();
     await screen.findByText('3 aparelhos com a conta aberta.');
-    expect(within(rowOf('Chrome no Windows')).queryByRole('button')).toBeNull();
+    expect(within(rowOf('Chrome no Windows')).getByRole('button', { name: 'Sair deste aparelho: Chrome no Windows' })).toBeTruthy();
 
     const edgeButton = within(rowOf('Edge no Windows')).getByRole('button', { name: 'Sair deste aparelho: Edge no Windows' });
     expect(edgeButton.textContent).toBe('Sair deste aparelho');
@@ -149,6 +154,33 @@ describe('the Conta page', () => {
     await waitFor(() => expect(calls.filter((call) => call.method === 'DELETE')).toEqual([{ path: `/auth/sessions/${ID_PHONE}`, method: 'DELETE' }]));
     expect((await screen.findByRole('status')).textContent).toBe('Você saiu de Safari no iOS.');
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Sair de Safari no iOS?' })).toBeNull());
+  });
+
+  it('draws a phone for iOS, a computer for Windows and a generic icon when the system is unknown', async () => {
+    const unknown: AuthActiveSession = { ...edge, id: '44444444-4444-4444-8444-444444444444', browser: 'Firefox', os: null };
+    renderPage({ sessions: () => json({ sessions: [current, phone, unknown] }) });
+    await screen.findByText('3 aparelhos com a conta aberta.');
+    const deviceOf = (name: string) => rowOf(name).querySelector('.account-session__thumb svg')?.getAttribute('data-device');
+    expect(deviceOf('Safari no iOS')).toBe('phone');
+    expect(deviceOf('Chrome no Windows')).toBe('computer');
+    expect(deviceOf('Firefox')).toBe('unknown');
+  });
+
+  it('leaves this device from its own row with the same sign-out call of the menu and goes to the entry screen', async () => {
+    const { calls } = renderPage({ logout: () => new Promise<Response>((resolve) => { setTimeout(() => { resolve(new Response(null, { status: 204 })); }, 0); }) });
+    await screen.findByText('3 aparelhos com a conta aberta.');
+    fireEvent.click(within(rowOf('Chrome no Windows')).getByRole('button', { name: 'Sair deste aparelho: Chrome no Windows' }));
+    expect(await screen.findByText('Tela de entrada')).toBeTruthy();
+    expect(calls.filter((call) => call.path === '/auth/logout')).toEqual([{ path: '/auth/logout', method: 'POST' }]);
+    expect(calls.some((call) => call.method === 'DELETE')).toBe(false);
+  });
+
+  it('says so and stays on the page when signing out of this device fails', async () => {
+    renderPage({ logout: () => json({ error: 'x' }, 500) });
+    await screen.findByText('3 aparelhos com a conta aberta.');
+    fireEvent.click(within(rowOf('Chrome no Windows')).getByRole('button', { name: 'Sair deste aparelho: Chrome no Windows' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Não foi possível sair. Tente de novo.');
+    expect(screen.queryByText('Tela de entrada')).toBeNull();
   });
 
   it('says so when leaving one session fails and keeps the list', async () => {
@@ -186,7 +218,8 @@ describe('the Conta page', () => {
     renderPage({ sessions: () => json({ sessions: [current] }) });
     expect(await screen.findByText('1 aparelho com a conta aberta.')).toBeTruthy();
     expect(screen.getByText('Este aparelho')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Sair/ })).toBeNull();
+    expect(screen.getAllByRole('button', { name: /^Sair deste aparelho/ })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Sair de todas as outras' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Encerrar as outras sessões' })).toBeNull();
   });
 

@@ -170,7 +170,7 @@ describe('the header of the profile', () => {
     const profile = await profileOf('João Pedro Alves');
 
     expect(within(profile).getAllByText('Gestor de conta').length).toBeGreaterThan(0);
-    expect(profile.querySelector('.collaborator-profile__role--violet')?.textContent).toBe('Gestor de conta');
+    expect(profile.querySelector('.ui-role-tag--violet')?.textContent).toBe('Gestor de conta');
     expect(within(profile).getAllByText('Social media sênior').length).toBeGreaterThan(0);
     expect(within(profile).getAllByText('joao@example.test').length).toBeGreaterThan(0);
     expect(within(profile).getByText(/Na agência desde/).textContent).toBe('Na agência desde 11/03/2026');
@@ -184,7 +184,7 @@ describe('the header of the profile', () => {
     renderAt(impl, pageOf(owner));
     const profile = await profileOf('Marina Bastos');
     expect(within(profile).getByText('Dona da agência')).toBeTruthy();
-    expect(profile.querySelector('.collaborator-profile__role svg.lucide-crown')).not.toBeNull();
+    expect(profile.querySelector('.ui-role-tag--indigo svg.lucide-crown')).not.toBeNull();
     expect(within(profile).getAllByText('Admin').length).toBeGreaterThan(0);
   });
 });
