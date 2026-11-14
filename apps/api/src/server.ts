@@ -26,6 +26,8 @@ import { createMediaJobDispatcher } from './modules/media/job-dispatcher.js';
 import type { MediaModuleDependencies } from './modules/media/routes.js';
 import { createMediaStorageClient } from './modules/media/storage-client.js';
 import type { LegalModuleDependencies } from './modules/legal/routes.js';
+import type { NotificationModuleDependencies } from './modules/notifications/routes.js';
+import type { SearchModuleDependencies } from './modules/search/routes.js';
 import type { EmailChangeModuleDependencies } from './modules/email-change/routes.js';
 import type { ProfileModuleDependencies } from './modules/profile/routes.js';
 import type { StoryScriptModuleDependencies } from './modules/story-scripts/routes.js';
@@ -124,7 +126,10 @@ export const startApi = async (): Promise<void> => {
     database,
     auth,
     requireClientAccess: createRequireClientAccess({ database }),
-    ...(mediaDependencies === undefined ? {} : { media: { storage: mediaDependencies.storage, downloadUrlExpirySeconds: mediaDependencies.config.downloadUrlExpirySeconds } })
+    ...(mediaDependencies === undefined ? {} : { media: { storage: mediaDependencies.storage, downloadUrlExpirySeconds: mediaDependencies.config.downloadUrlExpirySeconds } }),
+    ...(config.identityStorage === undefined ? {} : {
+      senderPhoto: { identityStorage: createIdentityStorageClient(config.identityStorage) }
+    })
   };
   const approvalLinkDependencies: ApprovalLinkModuleDependencies = {
     database,
@@ -150,6 +155,20 @@ export const startApi = async (): Promise<void> => {
   };
 
   const emailChangeDependencies: EmailChangeModuleDependencies = { database, auth, emailService };
+
+  const notificationDependencies: NotificationModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database })
+  };
+
+  const searchDependencies: SearchModuleDependencies = {
+    database,
+    auth,
+    requireAgencyAccess: createRequireAgencyAccess({ database }),
+    ...(config.identityStorage === undefined ? {} : { identityStorage: createIdentityStorageClient(config.identityStorage) }),
+    photoUrlExpirySeconds: config.identityStorage?.downloadUrlExpirySeconds ?? 300
+  };
 
   const storyScriptDependencies: StoryScriptModuleDependencies = {
     database,
@@ -201,6 +220,8 @@ export const startApi = async (): Promise<void> => {
     profile: profileDependencies,
     legal: legalDependencies,
     emailChange: emailChangeDependencies,
+    notifications: notificationDependencies,
+    search: searchDependencies,
     storyScripts: storyScriptDependencies,
     subscriptions: subscriptionDependencies
   });

@@ -1,0 +1,275 @@
+/* The bell, its panel and the page of the notifications (specs/notificacoes.md section 7). The panel hangs from the bell on a wide screen and is a sheet on a phone. */
+
+.notif-bell {
+  flex: none;
+}
+
+.notif-bell .ui-icon-button {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.notif-bell .ui-icon-button:hover,
+.notif-bell .ui-icon-button:focus-visible,
+.notif-bell .ui-icon-button[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.notif-bell .ui-icon-button svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.notif-bell .ui-popover {
+  width: min(27rem, calc(100vw - var(--space-8)));
+  max-width: none;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.notif {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.notif:not(.notif--sheet) {
+  padding: var(--space-4) var(--space-2) var(--space-3);
+}
+
+.notif__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-inline: var(--space-3);
+}
+
+.notif:not(.notif--sheet) .notif__head {
+  margin-inline: calc(var(--space-2) * -1);
+  padding: 0 var(--space-5) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.notif--sheet .notif__head {
+  justify-content: flex-end;
+  padding-inline: 0;
+}
+
+.notif__title {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.notif__error {
+  margin: 0;
+  padding-inline: var(--space-3);
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+.notif .ui-tabs {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.notif:not(.notif--sheet) .ui-tabs {
+  padding-inline: var(--space-3);
+}
+
+.notif:not(.notif--sheet) .ui-tabs__panel {
+  max-height: min(30rem, calc(100vh - 17rem));
+  margin-inline: calc(var(--space-3) * -1);
+  padding-inline: var(--space-3);
+  overflow-y: auto;
+}
+
+/* The foot is a tinted strip to the edges of the panel, as in the search panel. */
+.notif__foot {
+  display: flex;
+  justify-content: flex-end;
+  margin: var(--space-1) calc(var(--space-2) * -1) calc(var(--space-3) * -1);
+  padding: var(--space-2) var(--space-5);
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-canvas);
+}
+
+.notif--sheet .notif__foot {
+  margin: 0;
+  padding-inline: 0;
+}
+
+.notif-groups {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.notif-groups__title {
+  margin: 0;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.notif-groups__list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notif-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  min-height: 3.5rem;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.notif-row:hover {
+  background: var(--bg-hover);
+}
+
+/* Unread is the dot and the weight; the tint only helps the eye. */
+.notif-row[data-unread] {
+  background: var(--bg-tint);
+}
+
+.notif-row__icon {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-full);
+}
+
+.notif-row__icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.notif-row__icon--ready { background: var(--status-ready-bg); color: var(--status-ready-text); }
+.notif-row__icon--adjust { background: var(--status-adjust-bg); color: var(--status-adjust-text); }
+.notif-row__icon--request { background: var(--status-scheduled-bg); color: var(--status-scheduled-text); }
+.notif-row__icon--late { background: var(--status-late-bg); color: var(--status-late-text); }
+.notif-row__icon--team { background: var(--color-slate-100); color: var(--color-slate-700); }
+
+.notif-row__text {
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.notif-row[data-unread] .notif-row__text {
+  font-weight: 600;
+}
+
+.notif-row__end {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font: var(--caption);
+  white-space: nowrap;
+}
+
+.notif-row__dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: var(--radius-full);
+  background: var(--action-primary-bg);
+}
+
+.notif-row__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.notif-skeleton {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.notif-skeleton__row {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr) 3rem;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.notif-skeleton__row .ui-skeleton {
+  height: 0.75rem;
+}
+
+.notif-skeleton__row .notif-skeleton__icon {
+  height: 2.25rem;
+  border-radius: var(--radius-full);
+}
+
+.notif-skeleton__text {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.notif-skeleton__text .ui-skeleton:last-child {
+  width: 55%;
+}
+
+.notif .ui-empty-state {
+  padding-block: var(--space-6);
+}
+
+.notifications-page {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 48rem;
+}
+
+.notifications-page__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.notifications-page h1 {
+  margin: 0;
+  font: var(--heading-xl);
+  letter-spacing: -0.01em;
+}
+
+.notifications-page .ui-tabs {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.notifications-page .ui-tabs__panel {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.notifications-page .ui-tabs__list {
+  justify-self: start;
+}

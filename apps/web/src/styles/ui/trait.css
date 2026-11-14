@@ -1,0 +1,12 @@
+/* Trait: a persona's trait in a neutral capsule; the words carry the meaning. */
+.ui-trait {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--block-slate-bg);
+  color: var(--block-slate-fg);
+  font: var(--caption);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}

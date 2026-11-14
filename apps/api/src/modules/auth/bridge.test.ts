@@ -55,6 +55,52 @@ describe('Fastify -> Better Auth bridge', () => {
     await app.close();
   });
 
+  describe('the city header', () => {
+    const forwarded = async (headers: Record<string, string | string[]>): Promise<Headers> => {
+      const app = Fastify();
+      let captured: Headers | undefined;
+      app.get('/probe', async (request) => {
+        captured = toAuthHeaders(request);
+        return { ok: true };
+      });
+      const response = await app.inject({ method: 'GET', url: '/probe', headers });
+      await app.close();
+      expect(response.statusCode).toBe(200);
+      return captured as Headers;
+    };
+
+    it('travels as it came, next to the other three, and no other location header does', async () => {
+      const headers = await forwarded({
+        cookie: 'ageniza.session=abc',
+        'cf-ipcity': 'Campinas',
+        'cf-ipcountry': 'BR',
+        'cf-region': 'Sao Paulo',
+        'x-forwarded-city': 'Evil',
+        'x-ageniza-city': 'Evil',
+        city: 'Evil'
+      });
+
+      expect(headers.get('cf-ipcity')).toBe('Campinas');
+      // `inject` adds a user-agent of its own, which is one of the three that always travel.
+      expect([...headers.keys()].sort()).toEqual(['cf-ipcity', 'cookie', 'user-agent', 'x-ageniza-client-ip']);
+    });
+
+    it('is not there when the request did not send it', async () => {
+      expect((await forwarded({ cookie: 'a=b' })).has('cf-ipcity')).toBe(false);
+    });
+
+    it('is left as the cleaner will judge it: a hostile value is not repaired or cut here', async () => {
+      const hostile = `Sao${'x'.repeat(10_000)}`;
+      expect((await forwarded({ 'cf-ipcity': hostile })).get('cf-ipcity')).toBe(hostile);
+    });
+
+    it('is dropped, without failing the request, when it is not a value a header can hold', async () => {
+      const headers = await forwarded({ cookie: 'a=b', 'cf-ipcity': 'Tōkyō' });
+      expect(headers.has('cf-ipcity')).toBe(false);
+      expect(headers.get('cookie')).toBe('a=b');
+    });
+  });
+
   it('copies every set-cookie from a returnHeaders result onto the Fastify reply', async () => {
     const app = Fastify();
     app.get('/probe', async (_request, reply) => {

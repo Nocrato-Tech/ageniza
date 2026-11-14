@@ -43,6 +43,17 @@ describe('media ffmpeg wrapper (real ffmpeg/ffprobe, no network)', () => {
     expect(probe.height).toBe(240);
   });
 
+  it('probes the upright size of a video stored sideways with a rotation flag', async () => {
+    const rotatedPath = join(workDir, 'rotated.mp4');
+    const { spawnSync } = await import('node:child_process');
+    const result = spawnSync('ffmpeg', ['-y', '-hide_banner', '-v', 'error', '-display_rotation', '90', '-i', samplePath, '-c', 'copy', rotatedPath]);
+    if (result.status !== 0) throw new Error(`Failed to generate the rotated video: ${result.stderr?.toString()}`);
+
+    const probe = await probeVideo(rotatedPath, { timeoutMs: 10_000 });
+    expect(probe.width).toBe(240);
+    expect(probe.height).toBe(320);
+  });
+
   it('generates a scaled thumbnail image', async () => {
     const outputPath = join(workDir, 'thumb.jpg');
     await generateThumbnail(samplePath, outputPath, { timeoutMs: 10_000, widthPixels: 160, atSeconds: 1 });

@@ -83,7 +83,7 @@ Verifica se a API está pronta para receber tráfego.
 
 **Erros:** `503 NOT_READY`
 
-### auth — Cadastro e confirmação do e-mail, login, sessão, logout e recuperação de senha.
+### auth — Cadastro e confirmação do e-mail, login, sessão, logout, as sessões ativas da conta e recuperação de senha.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
@@ -98,6 +98,9 @@ Verifica se a API está pronta para receber tráfego.
 | `POST` | `/auth/logout-all` | Sessão | — | Encerra todas as sessões da conta |
 | `GET` | `/auth/session` | Sessão | — | Devolve a sessão e a pessoa autenticada |
 | `GET` | `/auth/session/check` | Sessão | — | Confere se a sessão continua válida, sem renová-la |
+| `GET` | `/auth/sessions` | Sessão | — | Lista as sessões ativas da conta |
+| `DELETE` | `/auth/sessions/:sessionId` | Sessão | — | Encerra uma das outras sessões da conta |
+| `POST` | `/auth/sessions/revoke-others` | Sessão | — | Encerra todas as sessões da conta, menos a atual |
 | `POST` | `/auth/password/forgot` | Público | — | Pede o link de recuperação de senha |
 | `POST` | `/auth/password/reset` | Público | — | Redefine a senha |
 
@@ -320,6 +323,70 @@ Confere se a sessão continua válida, sem renová-la.
 ```
 
 **Erros:** `401 SESSION_EXPIRED` · `401 UNAUTHENTICATED` · `500 INTERNAL_ERROR`
+
+#### `GET /auth/sessions`
+
+Lista as sessões ativas da conta.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Resposta `200`** — As sessões ativas da conta.
+
+```json
+{
+  "sessions": [
+    {
+      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "current": true,
+      "browser": "Chrome",
+      "os": "Windows",
+      "city": "São Paulo",
+      "lastUsedAt": "2026-11-12T12:00:00.000Z",
+      "createdAt": "2026-11-10T08:30:00.000Z"
+    },
+    {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "current": false,
+      "browser": "Safari",
+      "os": "iOS",
+      "city": null,
+      "lastUsedAt": "2026-11-09T21:15:00.000Z",
+      "createdAt": "2026-11-05T19:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Erros:** `401 SESSION_EXPIRED` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `DELETE /auth/sessions/:sessionId`
+
+Encerra uma das outras sessões da conta.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Resposta `204`** — Sessão encerrada.
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `404 SESSION_NOT_FOUND` · `409 USE_LOGOUT` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `POST /auth/sessions/revoke-others`
+
+Encerra todas as sessões da conta, menos a atual.
+
+- Acesso: Sessão.
+- Permissão: —.
+
+**Resposta `200`** — Quantas sessões foram encerradas.
+
+```json
+{
+  "revoked": 2
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /auth/password/forgot`
 
@@ -746,8 +813,7 @@ Cria uma agência em período de teste.
 | `PUT` | `/agencies/:agencyId/clients/:clientId/brand-study/sections/:sectionKey` | Sessão + vínculo com a agência | `cliente.operar` | Grava uma seção do estudo de marca (upsert) |
 | `POST` | `/agencies/:agencyId/clients/:clientId/personas` | Sessão + vínculo com a agência | `cliente.operar` | Cria uma persona do cliente |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | Sessão + vínculo com a agência | `cliente.operar` | Edita uma persona |
-| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/archive` | Sessão + vínculo com a agência | `cliente.operar` | Arquiva uma persona |
-| `POST` | `/agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive` | Sessão + vínculo com a agência | `cliente.operar` | Desarquiva uma persona |
+| `DELETE` | `/agencies/:agencyId/clients/:clientId/personas/:personaId` | Sessão + vínculo com a agência | `cliente.operar` | Exclui uma persona |
 | `GET` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.visualizar` ou `conteudo.visualizar` | Lista as conversas de um assunto do cliente |
 | `POST` | `/agencies/:agencyId/clients/:clientId/threads` | Sessão + vínculo com a agência | `cliente.operar` ou `conteudo.operar` | Abre uma conversa pela agência, com o primeiro comentário |
 | `GET` | `/agencies/:agencyId/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com a agência | `cliente.visualizar` ou `conteudo.visualizar` | Lista os comentários de uma conversa |
@@ -764,6 +830,8 @@ Cria uma agência em período de teste.
 | `POST` | `/clients/:clientId/threads` | Sessão + vínculo com o cliente | — | Abre uma conversa pelo portal, com o primeiro comentário |
 | `GET` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Lista os comentários de uma conversa, no portal |
 | `POST` | `/clients/:clientId/threads/:threadId/comments` | Sessão + vínculo com o cliente | — | Comenta uma conversa pelo portal |
+| `GET` | `/clients/:clientId/material-requests` | Sessão + vínculo com o cliente | — | Lista os pedidos de material abertos do cliente, no portal |
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads/announce` | Sessão + vínculo com o cliente | — | Avisa o pedido de que o cliente enviou um lote de arquivos, no portal |
 | `GET` | `/clients/:clientId` | Sessão + vínculo com o cliente | — | Lê o cadastro do próprio cliente e o resumo do Início, no portal |
 | `GET` | `/clients/:clientId/brand-study` | Sessão + vínculo com o cliente | — | Lê o estudo de marca, no portal |
 
@@ -846,12 +914,14 @@ Cadastra um cliente.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null
 }
 ```
@@ -876,18 +946,31 @@ Lê o detalhe do cliente com o resumo da aba Geral.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null,
   "summary": {
     "brandStudyFilled": 3,
     "threadsAwaitingAgency": 1,
     "threadsAnsweredByAgency": 2,
-    "activePortalMembers": 3
+    "activePortalMembers": 3,
+    "contentsThisMonth": 4,
+    "mediaFiles": 38,
+    "mediaFolders": 5,
+    "workers": [
+      {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Dono da Agência",
+        "photoUrl": null
+      }
+    ],
+    "workersMore": 0
   }
 }
 ```
@@ -921,12 +1004,14 @@ Edita o cadastro do cliente.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null
 }
 ```
@@ -995,12 +1080,14 @@ Agenda o encerramento do contrato do cliente.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": "2026-12-31",
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null
 }
 ```
@@ -1025,12 +1112,14 @@ Desmarca o encerramento agendado do cliente.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null
 }
 ```
@@ -1055,12 +1144,14 @@ Arquiva o cliente agora.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": "2026-10-07T12:00:00.000Z"
 }
 ```
@@ -1085,12 +1176,14 @@ Reativa um cliente arquivado.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null
 }
 ```
@@ -1186,7 +1279,16 @@ Lê o estudo de marca com as sete seções e as personas.
       "pains": "Pouco tempo para pesquisar.",
       "desires": "Reconhecimento da comunidade.",
       "objections": "Preço acima do esperado.",
-      "status": "active",
+      "age": 58,
+      "occupation": "Dona de casa",
+      "location": "Campinas, SP",
+      "traits": [
+        "Prática",
+        "Desconfiada"
+      ],
+      "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+      "toneThatWorks": "Próximo, direto e sem jargão.",
+      "messageCount": 12,
       "updatedBy": {
         "id": "55555555-5555-4555-8555-555555555555",
         "name": "Dono da Agência"
@@ -1263,7 +1365,16 @@ Cria uma persona do cliente.
   "pains": "Pouco tempo para pesquisar.",
   "desires": "Reconhecimento da comunidade.",
   "objections": "Preço acima do esperado.",
-  "status": "active",
+  "age": 58,
+  "occupation": "Dona de casa",
+  "location": "Campinas, SP",
+  "traits": [
+    "Prática",
+    "Desconfiada"
+  ],
+  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+  "toneThatWorks": "Próximo, direto e sem jargão.",
+  "messageCount": 12,
   "updatedBy": {
     "id": "55555555-5555-4555-8555-555555555555",
     "name": "Dono da Agência"
@@ -1300,7 +1411,16 @@ Edita uma persona.
   "pains": "Pouco tempo para pesquisar.",
   "desires": "Reconhecimento da comunidade.",
   "objections": "Preço acima do esperado.",
-  "status": "active",
+  "age": 58,
+  "occupation": "Dona de casa",
+  "location": "Campinas, SP",
+  "traits": [
+    "Prática",
+    "Desconfiada"
+  ],
+  "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+  "toneThatWorks": "Próximo, direto e sem jargão.",
+  "messageCount": 12,
   "updatedBy": {
     "id": "55555555-5555-4555-8555-555555555555",
     "name": "Dono da Agência"
@@ -1311,59 +1431,14 @@ Edita uma persona.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
-#### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/archive`
+#### `DELETE /agencies/:agencyId/clients/:clientId/personas/:personaId`
 
-Arquiva uma persona.
-
-- Acesso: Sessão + vínculo com a agência.
-- Permissão: `cliente.operar`.
-
-**Resposta `200`** — Persona arquivada.
-
-```json
-{
-  "id": "88888888-8888-4888-8888-888888888888",
-  "name": "Dona Maria",
-  "description": "Dona de casa, 58 anos.",
-  "pains": "Pouco tempo para pesquisar.",
-  "desires": "Reconhecimento da comunidade.",
-  "objections": "Preço acima do esperado.",
-  "status": "archived",
-  "updatedBy": {
-    "id": "55555555-5555-4555-8555-555555555555",
-    "name": "Dono da Agência"
-  },
-  "updatedAt": "2026-09-30T12:00:00.000Z"
-}
-```
-
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
-
-#### `POST /agencies/:agencyId/clients/:clientId/personas/:personaId/unarchive`
-
-Desarquiva uma persona.
+Exclui uma persona.
 
 - Acesso: Sessão + vínculo com a agência.
 - Permissão: `cliente.operar`.
 
-**Resposta `200`** — Persona reativada.
-
-```json
-{
-  "id": "88888888-8888-4888-8888-888888888888",
-  "name": "Dona Maria",
-  "description": "Dona de casa, 58 anos.",
-  "pains": "Pouco tempo para pesquisar.",
-  "desires": "Reconhecimento da comunidade.",
-  "objections": "Preço acima do esperado.",
-  "status": "active",
-  "updatedBy": {
-    "id": "55555555-5555-4555-8555-555555555555",
-    "name": "Dono da Agência"
-  },
-  "updatedAt": "2026-09-30T12:00:00.000Z"
-}
-```
+**Resposta `204`** — Persona excluída, com a conversa dela.
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `500 INTERNAL_ERROR`
 
@@ -1405,7 +1480,9 @@ Lista as conversas de um assunto do cliente.
       },
       "commentCount": 1,
       "resolvedBy": null,
-      "resolvedAt": null
+      "resolvedAt": null,
+      "dueOn": null,
+      "title": null
     }
   ],
   "meta": {
@@ -1458,7 +1535,9 @@ Abre uma conversa pela agência, com o primeiro comentário.
     },
     "commentCount": 1,
     "resolvedBy": null,
-    "resolvedAt": null
+    "resolvedAt": null,
+    "dueOn": null,
+    "title": null
   },
   "comment": {
     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -1473,7 +1552,7 @@ Abre uma conversa pela agência, com o primeiro comentário.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/threads/:threadId/comments`
 
@@ -1547,7 +1626,7 @@ Comenta uma conversa pela agência.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_NOT_OPEN` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/threads/:threadId/resolve`
 
@@ -1578,11 +1657,13 @@ Resolve uma conversa.
   "resolvedBy": {
     "name": "Dono da Agência"
   },
-  "resolvedAt": "2026-10-07T13:00:00.000Z"
+  "resolvedAt": "2026-10-07T13:00:00.000Z",
+  "dueOn": null,
+  "title": null
 }
 ```
 
-**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 PERSONA_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `GET /agencies/:agencyId/clients/:clientId/members`
 
@@ -1610,6 +1691,16 @@ Lista as pessoas com acesso ao portal de um cliente.
       "email": "maria@padariacentral.exemplo.test",
       "status": "active",
       "entered": true,
+      "lastEnteredAt": "2026-11-08T14:30:00.000Z",
+      "since": "2026-09-02T12:00:00.000Z"
+    },
+    {
+      "accessId": "66666666-6666-4666-8666-666666666666",
+      "name": null,
+      "email": "joao@padariacentral.exemplo.test",
+      "status": "active",
+      "entered": false,
+      "lastEnteredAt": "2026-11-09T10:15:00.000Z",
       "since": "2026-09-02T12:00:00.000Z"
     },
     {
@@ -1618,13 +1709,14 @@ Lista as pessoas com acesso ao portal de um cliente.
       "email": "maria@padariacentral.exemplo.test",
       "status": "active",
       "entered": false,
+      "lastEnteredAt": null,
       "since": "2026-09-02T12:00:00.000Z"
     }
   ],
   "meta": {
     "page": 1,
     "pageSize": 20,
-    "totalItems": 2,
+    "totalItems": 3,
     "totalPages": 1
   }
 }
@@ -1656,6 +1748,7 @@ Adiciona uma pessoa ao portal do cliente.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": false,
+  "lastEnteredAt": null,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1678,6 +1771,7 @@ Reenvia o e-mail de boas-vindas de quem ainda não entrou no portal.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": false,
+  "lastEnteredAt": null,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1700,6 +1794,7 @@ Transforma um convite de portal antigo em acesso direto.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": false,
+  "lastEnteredAt": null,
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1722,6 +1817,7 @@ Remove uma pessoa do portal do cliente.
   "email": "maria@padariacentral.exemplo.test",
   "status": "removed",
   "entered": true,
+  "lastEnteredAt": "2026-11-08T14:30:00.000Z",
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1744,6 +1840,7 @@ Reativa uma pessoa do portal do cliente.
   "email": "maria@padariacentral.exemplo.test",
   "status": "active",
   "entered": true,
+  "lastEnteredAt": "2026-11-08T14:30:00.000Z",
   "since": "2026-09-02T12:00:00.000Z"
 }
 ```
@@ -1824,7 +1921,9 @@ Lista as conversas de um assunto, no portal.
       },
       "commentCount": 1,
       "resolvedBy": null,
-      "resolvedAt": null
+      "resolvedAt": null,
+      "dueOn": null,
+      "title": null
     }
   ],
   "meta": {
@@ -1877,7 +1976,9 @@ Abre uma conversa pelo portal, com o primeiro comentário.
     },
     "commentCount": 1,
     "resolvedBy": null,
-    "resolvedAt": null
+    "resolvedAt": null,
+    "dueOn": null,
+    "title": null
   },
   "comment": {
     "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -1968,6 +2069,80 @@ Comenta uma conversa pelo portal.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
+#### `GET /clients/:clientId/material-requests`
+
+Lista os pedidos de material abertos do cliente, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de pedidos de material abertos.
+
+```json
+{
+  "data": [
+    {
+      "threadId": "99999999-9999-4999-8999-999999999999",
+      "title": "Fotos da equipe",
+      "body": "Envie 3 fotos da equipe",
+      "dueOn": "2026-10-20",
+      "createdAt": "2026-10-07T12:00:00.000Z",
+      "state": "open"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `POST /clients/:clientId/material-requests/:threadId/uploads/announce`
+
+Avisa o pedido de que o cliente enviou um lote de arquivos, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "assetIds": [
+    "44444444-4444-4444-8444-444444444444"
+  ]
+}
+```
+
+**Resposta `201`** — Comentário gravado.
+
+```json
+{
+  "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "body": "enviou 1 foto",
+  "side": "client",
+  "author": {
+    "name": "Ana, da Padaria Central",
+    "photoUrl": null
+  },
+  "createdAt": "2026-10-07T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 AGENCY_READ_ONLY` · `409 REQUEST_RESOLVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
 #### `GET /clients/:clientId`
 
 Lê o cadastro do próprio cliente e o resumo do Início, no portal.
@@ -1986,19 +2161,22 @@ Lê o cadastro do próprio cliente e o resumo do Início, no portal.
   "legalName": "Padaria Central Ltda",
   "taxId": "12345678000190",
   "segment": "Alimentação",
+  "city": "Campinas",
   "website": "https://padariacentral.exemplo.test",
   "instagramHandle": "padariacentral",
   "contactName": "Maria Souza",
   "contactPhone": "+55 11 90000-0000",
   "contactEmail": "maria@padariacentral.exemplo.test",
   "closingDate": null,
+  "createdAt": "2026-09-02T12:00:00.000Z",
   "archivedAt": null,
   "agencyName": "Agência Exemplo",
   "onboardingSeenAt": "2026-10-01T12:00:00.000Z",
   "home": {
     "threadsAnsweredByAgency": 2,
     "brandStudyFilled": 3,
-    "contentsAwaitingApproval": 2
+    "contentsAwaitingApproval": 2,
+    "materialRequestsOpen": 1
   },
   "agencyReadOnly": false
 }
@@ -2082,7 +2260,15 @@ Lê o estudo de marca, no portal.
       "pains": "Pouco tempo para pesquisar.",
       "desires": "Reconhecimento da comunidade.",
       "objections": "Preço acima do esperado.",
-      "status": "active",
+      "age": 58,
+      "occupation": "Dona de casa",
+      "location": "Campinas, SP",
+      "traits": [
+        "Prática",
+        "Desconfiada"
+      ],
+      "whereTheyAre": "Instagram e grupos de bairro no WhatsApp.",
+      "toneThatWorks": "Próximo, direto e sem jargão.",
       "updatedAt": "2026-09-30T12:00:00.000Z"
     }
   ]
@@ -2097,10 +2283,14 @@ Lê o estudo de marca, no portal.
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents` | Sessão + vínculo com a agência | `conteudo.visualizar` | Consulta os conteúdos e os roteiros de stories de um período |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/feed` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9 |
+| `GET` | `/agencies/:agencyId/contents/awaiting-client` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista o que está parado no cliente, para o Início da agência |
+| `GET` | `/agencies/:agencyId/contents/activation` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê os fatos do caminho de ativação da agência |
+| `GET` | `/agencies/:agencyId/contents/summary` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê os contadores do Início da agência |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents` | Sessão + vínculo com a agência | `conteudo.operar` | Cria um conteúdo em produção |
 | `GET` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa |
 | `PATCH` | `/agencies/:agencyId/clients/:clientId/contents/:contentId` | Sessão + vínculo com a agência | `conteudo.operar` | Edita um conteúdo; mover de data é editar `publishOn` |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/submit` | Sessão + vínculo com a agência | `conteudo.operar` | Envia o conteúdo para aprovação |
+| `POST` | `/agencies/:agencyId/clients/:clientId/contents/submit` | Sessão + vínculo com a agência | `conteudo.operar` | Envia vários conteúdos de um cliente para aprovação, de uma vez |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/approve-by-agency` | Sessão + vínculo com a agência | `conteudo.aprovar_pela_agencia` | Registra a aprovação feita fora da plataforma |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/publish` | Sessão + vínculo com a agência | `conteudo.publicar` | Marca o conteúdo aprovado como publicado |
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/unpublish` | Sessão + vínculo com a agência | `conteudo.publicar` | Desfaz a publicação no mesmo dia |
@@ -2113,7 +2303,9 @@ Lê o estudo de marca, no portal.
 | `POST` | `/agencies/:agencyId/clients/:clientId/contents/:contentId/tasks/:taskId/return` | Sessão + vínculo com a agência | `conteudo.visualizar` | Devolve uma subtarefa entregue, com comentário |
 | `GET` | `/clients/:clientId/contents` | Sessão + vínculo com o cliente | — | Lista os conteúdos de um período, no portal |
 | `GET` | `/clients/:clientId/contents/awaiting-approval` | Sessão + vínculo com o cliente | — | Lista o que espera a aprovação da pessoa, no portal |
+| `GET` | `/clients/:clientId/contents/progress` | Sessão + vínculo com o cliente | — | Lê o progresso do mês, no portal ("Boa notícia") |
 | `GET` | `/clients/:clientId/contents/:contentId` | Sessão + vínculo com o cliente | — | Lê um conteúdo, no portal |
+| `GET` | `/clients/:clientId/contents/:contentId/sender-photo` | Sessão + vínculo com o cliente | — | Lê a foto de quem da agência enviou a rodada, no portal |
 | `GET` | `/clients/:clientId/contents/:contentId/media/:assetId/url` | Sessão + vínculo com o cliente | — | Emite a URL assinada de uma mídia do conteúdo, no portal |
 | `POST` | `/clients/:clientId/contents/:contentId/withdraw-approval` | Sessão + vínculo com o cliente | — | Desfaz a aprovação de um conteúdo antes da publicação, no portal |
 | `POST` | `/clients/:clientId/contents/:contentId/approve` | Sessão + vínculo com o cliente | — | Aprova um conteúdo, no portal |
@@ -2158,14 +2350,16 @@ Consulta os conteúdos e os roteiros de stories de um período.
         "revision": 1,
         "publishedOn": null,
         "tasksTotal": 3,
-        "tasksApproved": 1
+        "tasksApproved": 1,
+        "approval": null
       }
     ],
     "storyScripts": [
       {
         "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
         "scriptOn": "2026-10-21",
-        "status": "draft"
+        "status": "draft",
+        "sceneCount": 4
       }
     ]
   },
@@ -2209,7 +2403,8 @@ Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9.
         "revision": 1,
         "publishedOn": null,
         "tasksTotal": 3,
-        "tasksApproved": 1
+        "tasksApproved": 1,
+        "approval": null
       }
     ],
     "nextCursor": "WyIyMDI2LTEwLTIwIiwiMTg6MzA6MDAiLCJmZmZmZmZmZi1mZmZmLTRmZmYtOGZmZi1mZmZmZmZmZmZmZmYiXQ",
@@ -2226,6 +2421,113 @@ Lê o feed do cliente, do mais recente para o mais antigo, de 9 em 9.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/contents/awaiting-client`
+
+Lista o que está parado no cliente, para o Início da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — O que está parado no cliente.
+
+```json
+{
+  "data": [
+    {
+      "clientId": "77777777-7777-4777-8777-777777777777",
+      "clientName": "Padaria Central",
+      "approvers": [
+        "Rosana Teixeira"
+      ],
+      "contents": [
+        {
+          "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+          "title": "Lançamento da coleção de outono",
+          "format": "reels",
+          "publishOn": "2026-10-20",
+          "thumbnailAssetId": "44444444-4444-4444-8444-444444444444",
+          "sentAt": "2026-10-14T12:00:00.000Z",
+          "dueAt": "2026-10-18T21:00:00.000Z",
+          "dueOn": "2026-10-18",
+          "daysWaiting": 2,
+          "daysToDue": 2,
+          "daysLate": null
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "truncated": false
+  }
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/contents/activation`
+
+Lê os fatos do caminho de ativação da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — Os fatos e os passos.
+
+```json
+{
+  "data": {
+    "hasContent": true,
+    "sentForApproval": true,
+    "approvedByClient": false,
+    "published": false,
+    "steps": {
+      "firstClient": {
+        "at": "2026-10-03T12:00:00.000Z",
+        "name": "Padaria Central"
+      },
+      "firstContent": {
+        "at": "2026-10-11T12:00:00.000Z",
+        "name": "Lançamento da coleção de outono"
+      },
+      "firstSent": {
+        "at": "2026-10-14T12:00:00.000Z",
+        "name": "Rosana Teixeira",
+        "others": 1
+      },
+      "firstApproved": null
+    }
+  }
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/contents/summary`
+
+Lê os contadores do Início da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — Os contadores.
+
+```json
+{
+  "data": {
+    "awaitingClient": 5,
+    "overdueAwaitingClient": 1,
+    "approvedThisMonth": 12,
+    "approvedLastMonth": 9,
+    "scheduled": {
+      "count": 6,
+      "lastPublishOn": "2026-10-30"
+    }
+  }
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents`
 
@@ -2272,6 +2574,7 @@ Cria um conteúdo em produção.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2337,6 +2640,7 @@ Lê um conteúdo com as mídias, as subtarefas e o resumo da conversa.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2411,6 +2715,7 @@ Edita um conteúdo; mover de data é editar `publishOn`.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2453,7 +2758,10 @@ Envia o conteúdo para aprovação.
 **Requisição** (`application/json`):
 
 ```json
-{}
+{
+  "dueAt": "2026-10-18T18:00:00-03:00",
+  "note": "Preciso da sua resposta até sábado para publicar na segunda."
+}
 ```
 
 **Resposta `200`** — Conteúdo aguardando aprovação.
@@ -2482,6 +2790,12 @@ Envia o conteúdo para aprovação.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": {
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "dueAt": "2026-10-18T21:00:00.000Z",
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda."
+  },
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2512,7 +2826,65 @@ Envia o conteúdo para aprovação.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 CONTENT_TASKS_NOT_APPROVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_APPROVAL_DUE_INVALID` · `400 CONTENT_APPROVAL_NOTE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 CONTENT_TASKS_NOT_APPROVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/contents/submit`
+
+Envia vários conteúdos de um cliente para aprovação, de uma vez.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "contentIds": [
+    "ffffffff-ffff-4fff-8fff-ffffffffffff"
+  ],
+  "dueAt": "2026-10-18T18:00:00-03:00",
+  "note": "Preciso da sua resposta até sábado para publicar na segunda."
+}
+```
+
+**Resposta `200`** — O lote enviado.
+
+```json
+{
+  "data": {
+    "batchId": "0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+    "contents": [
+      {
+        "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "title": "Lançamento da coleção de outono",
+        "platform": "instagram",
+        "format": "reels",
+        "publishOn": "2026-10-20",
+        "publishAtTime": "18:30",
+        "status": "awaiting_approval",
+        "owner": {
+          "membershipId": "22222222-2222-4222-8222-222222222222",
+          "name": "Ana Souza"
+        },
+        "coverAssetId": null,
+        "thumbnailAssetId": "44444444-4444-4444-8444-444444444444",
+        "revision": 1,
+        "publishedOn": null,
+        "tasksTotal": 3,
+        "tasksApproved": 1,
+        "approval": {
+          "sentAt": "2026-10-14T12:00:00.000Z",
+          "dueAt": "2026-10-18T21:00:00.000Z",
+          "dueOn": "2026-10-18",
+          "note": "Preciso da sua resposta até sábado para publicar na segunda."
+        }
+      }
+    ]
+  }
+}
+```
+
+**Erros:** `400 CONTENT_APPROVAL_DUE_INVALID` · `400 CONTENT_APPROVAL_NOTE_INVALID` · `400 CONTENT_BATCH_INVALID` · `400 CONTENT_BATCH_MIXED_CLIENTS` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 CONTENT_MEDIA_INCOMPLETE` · `409 CONTENT_MEDIA_NOT_CONFIRMED` · `409 CONTENT_STATE` · `409 CONTENT_TASKS_NOT_APPROVED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/clients/:clientId/contents/:contentId/approve-by-agency`
 
@@ -2559,6 +2931,7 @@ Registra a aprovação feita fora da plataforma.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2632,6 +3005,7 @@ Marca o conteúdo aprovado como publicado.
   "publishedOn": "2026-10-10",
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2703,6 +3077,7 @@ Desfaz a publicação no mesmo dia.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2774,6 +3149,7 @@ Cancela o conteúdo (ele fica guardado).
   "publishedOn": null,
   "cancelledAt": "2026-10-11T12:30:00.000Z",
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -2847,6 +3223,7 @@ Reagenda um conteúdo cancelado.
   "publishedOn": null,
   "cancelledAt": null,
   "createdAt": "2026-10-11T12:00:00.000Z",
+  "approval": null,
   "media": [
     {
       "id": "44444444-4444-4444-8444-444444444444",
@@ -3088,6 +3465,16 @@ Lista os conteúdos de um período, no portal.
       "status": "awaiting_approval",
       "coverAssetId": null,
       "publishedOn": null,
+      "approval": {
+        "dueAt": "2026-10-18T21:00:00.000Z",
+        "dueOn": "2026-10-18",
+        "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+        "sentAt": "2026-10-14T12:00:00.000Z",
+        "sentBy": {
+          "name": "João Pereira",
+          "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
+        }
+      },
       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
     }
   ],
@@ -3132,6 +3519,16 @@ Lista o que espera a aprovação da pessoa, no portal.
       "status": "awaiting_approval",
       "coverAssetId": null,
       "publishedOn": null,
+      "approval": {
+        "dueAt": "2026-10-18T21:00:00.000Z",
+        "dueOn": "2026-10-18",
+        "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+        "sentAt": "2026-10-14T12:00:00.000Z",
+        "sentBy": {
+          "name": "João Pereira",
+          "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
+        }
+      },
       "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
     }
   ],
@@ -3145,6 +3542,33 @@ Lista o que espera a aprovação da pessoa, no portal.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/contents/progress`
+
+Lê o progresso do mês, no portal ("Boa notícia").
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Resposta `200`** — O progresso do mês.
+
+```json
+{
+  "data": {
+    "month": "2026-10",
+    "approved": 7,
+    "total": 10,
+    "next": {
+      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "title": "Lançamento da coleção de outono",
+      "publishOn": "2026-10-20",
+      "publishAtTime": "18:30"
+    }
+  }
+}
+```
+
+**Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/contents/:contentId`
 
@@ -3166,6 +3590,16 @@ Lê um conteúdo, no portal.
   "status": "awaiting_approval",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
+    }
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3179,6 +3613,17 @@ Lê um conteúdo, no portal.
 ```
 
 **Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/contents/:contentId/sender-photo`
+
+Lê a foto de quem da agência enviou a rodada, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Resposta `200`** — Os bytes da imagem, com o tipo que eles dizem (`image/png`, `image/jpeg`, `image/webp` ou `image/gif`).
+
+**Erros:** `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `GET /clients/:clientId/contents/:contentId/media/:assetId/url`
 
@@ -3234,6 +3679,16 @@ Desfaz a aprovação de um conteúdo antes da publicação, no portal.
   "status": "awaiting_approval",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
+    }
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3259,7 +3714,8 @@ Aprova um conteúdo, no portal.
 
 ```json
 {
-  "revision": 1
+  "revision": 1,
+  "note": "Ficou ótimo, pode publicar!"
 }
 ```
 
@@ -3276,6 +3732,16 @@ Aprova um conteúdo, no portal.
   "status": "approved",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
+    }
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3288,7 +3754,7 @@ Aprova um conteúdo, no portal.
 }
 ```
 
-**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+**Erros:** `400 CONTENT_APPROVAL_NOTE_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CONTENT_ALREADY_APPROVED` · `409 CONTENT_NOT_AWAITING_APPROVAL` · `409 CONTENT_REVISION_CHANGED` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `POST /clients/:clientId/contents/:contentId/request-changes`
 
@@ -3319,6 +3785,16 @@ Pede ajuste de um conteúdo, no portal.
   "status": "adjusting",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
+    }
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3396,6 +3872,13 @@ Lê o lote do link de aprovação.
       "status": "awaiting_approval",
       "coverAssetId": null,
       "publishedOn": null,
+      "approval": {
+        "dueAt": null,
+        "dueOn": "2026-10-18",
+        "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+        "sentAt": null,
+        "sentBy": null
+      },
       "caption": "Novidades de outono chegando!",
       "revision": 1,
       "media": [
@@ -3467,6 +3950,16 @@ Aprova um conteúdo do lote, pelo link.
   "status": "approved",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
+    }
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3511,6 +4004,16 @@ Pede ajuste de um conteúdo do lote, pelo link.
   "status": "adjusting",
   "coverAssetId": null,
   "publishedOn": null,
+  "approval": {
+    "dueAt": "2026-10-18T21:00:00.000Z",
+    "dueOn": "2026-10-18",
+    "note": "Preciso da sua resposta até sábado para publicar na segunda.",
+    "sentAt": "2026-10-14T12:00:00.000Z",
+    "sentBy": {
+      "name": "João Pereira",
+      "photoUrl": "/clients/77777777-7777-4777-8777-777777777777/contents/ffffffff-ffff-4fff-8fff-ffffffffffff/sender-photo"
+    }
+  },
   "caption": "Novidades de outono chegando!",
   "revision": 1,
   "media": [
@@ -3532,6 +4035,7 @@ Pede ajuste de um conteúdo do lote, pelo link.
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/collaborators` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista a equipe da agência |
 | `GET` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.visualizar` | Devolve um colaborador da agência |
+| `GET` | `/agencies/:agencyId/collaborators/:membershipId/open-contents` | Sessão + vínculo com a agência | `colaborador.visualizar` | Lista os clientes e o que está com um colaborador |
 | `PATCH` | `/agencies/:agencyId/collaborators/:membershipId` | Sessão + vínculo com a agência | `colaborador.alterar_funcao` ou `colaborador.alterar_papel` | Altera o cargo e/ou o papel de um colaborador |
 | `POST` | `/agencies/:agencyId/collaborators/:membershipId/remove` | Sessão + vínculo com a agência | `colaborador.remover` | Remove um colaborador do quadro |
 | `POST` | `/agencies/:agencyId/collaborators/:membershipId/reactivate` | Sessão + vínculo com a agência | `colaborador.alterar_papel` | Reativa um colaborador removido |
@@ -3617,6 +4121,49 @@ Devolve um colaborador da agência.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/collaborators/:membershipId/open-contents`
+
+Lista os clientes e o que está com um colaborador.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `colaborador.visualizar`.
+
+**Resposta `200`** — Os clientes e o que está com o colaborador.
+
+```json
+{
+  "summary": {
+    "clients": 1,
+    "contents": 2,
+    "awaiting": 1
+  },
+  "data": [
+    {
+      "client": {
+        "id": "77777777-7777-4777-8777-777777777777",
+        "name": "Casa Aurora"
+      },
+      "contents": 2,
+      "awaiting": 1,
+      "now": [
+        {
+          "contentId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+          "title": "Bastidores da coleção",
+          "state": "awaiting_approval"
+        },
+        {
+          "contentId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          "title": "Lançamento de verão",
+          "state": "in_production"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 #### `PATCH /agencies/:agencyId/collaborators/:membershipId`
 
@@ -3775,6 +4322,9 @@ Lista os papéis atribuíveis na agência.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads` | Sessão + vínculo com o cliente | — | Inicia o envio de uma foto ou áudio a um pedido de material, no portal |
+| `POST` | `/clients/:clientId/material-requests/:threadId/uploads/:assetId/complete` | Sessão + vínculo com o cliente | — | Confirma o envio depois do PUT, no portal |
+| `GET` | `/clients/:clientId/material-requests/:threadId/uploads` | Sessão + vínculo com o cliente | — | Lista o que a própria pessoa enviou a um pedido de material, no portal |
 | `POST` | `/agencies/:agencyId/media/uploads` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Inicia um upload de mídia |
 | `POST` | `/agencies/:agencyId/media/uploads/:assetId/parts` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Pede URLs assinadas de partes do multipart |
 | `POST` | `/agencies/:agencyId/media/uploads/:assetId/complete` | Sessão + vínculo com a agência | `midia.enviar` ou `conteudo.operar` | Confirma o upload e valida o objeto |
@@ -3783,6 +4333,118 @@ Lista os papéis atribuíveis na agência.
 | `POST` | `/agencies/:agencyId/clients/:clientId/media-folders` | Sessão + vínculo com a agência | `conteudo.operar` | Cria uma pasta de mídia do cliente |
 | `GET` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as mídias de uma pasta |
 | `POST` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId/assets/:assetId/remove` | Sessão + vínculo com a agência | `conteudo.operar` | Remove uma mídia da pasta |
+| `GET` | `/agencies/:agencyId/clients/:clientId/media` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista a biblioteca de mídia de um cliente |
+| `GET` | `/agencies/:agencyId/clients/:clientId/media/:assetId` | Sessão + vínculo com a agência | `conteudo.visualizar` | Detalha um arquivo da biblioteca |
+| `PATCH` | `/agencies/:agencyId/clients/:clientId/media/:assetId` | Sessão + vínculo com a agência | `conteudo.operar` | Renomeia um arquivo ou edita o texto alternativo |
+| `POST` | `/agencies/:agencyId/clients/:clientId/media/:assetId/move` | Sessão + vínculo com a agência | `conteudo.operar` | Move um arquivo para outra pasta do mesmo cliente |
+| `GET` | `/agencies/:agencyId/clients/:clientId/media/:assetId/usage` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista os conteúdos que usam um arquivo |
+| `GET` | `/agencies/:agencyId/clients/:clientId/media-folders/summary` | Sessão + vínculo com a agência | `conteudo.visualizar` | Lista as pastas de mídia com o que cada uma guarda |
+| `PATCH` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId` | Sessão + vínculo com a agência | `conteudo.operar` | Renomeia uma pasta de mídia do cliente |
+| `DELETE` | `/agencies/:agencyId/clients/:clientId/media-folders/:folderId` | Sessão + vínculo com a agência | `conteudo.operar` | Exclui uma pasta de mídia vazia do cliente |
+
+#### `POST /clients/:clientId/material-requests/:threadId/uploads`
+
+Inicia o envio de uma foto ou áudio a um pedido de material, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "fileName": "equipe.jpg",
+  "contentType": "image/jpeg",
+  "declaredSizeBytes": 2404019
+}
+```
+
+**Resposta `201`** — Reserva criada; a URL assinada vale até `expiresAt`.
+
+```json
+{
+  "assetId": "44444444-4444-4444-8444-444444444444",
+  "category": "image",
+  "contentType": "image/jpeg",
+  "upload": {
+    "type": "single",
+    "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+    "expiresAt": "2026-11-13T12:15:00.000Z"
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 AGENCY_READ_ONLY` · `409 REQUEST_FULL` · `409 REQUEST_RESOLVED` · `409 TRY_AGAIN` · `409 UPLOAD_UNAVAILABLE` · `413 PAYLOAD_TOO_LARGE` · `415 UNSUPPORTED_MEDIA_TYPE` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `POST /clients/:clientId/material-requests/:threadId/uploads/:assetId/complete`
+
+Confirma o envio depois do PUT, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{}
+```
+
+**Resposta `200`** — Arquivo confirmado.
+
+```json
+{
+  "assetId": "44444444-4444-4444-8444-444444444444",
+  "status": "confirmed",
+  "sizeBytes": 2404019,
+  "contentType": "image/jpeg"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 AGENCY_READ_ONLY` · `409 REQUEST_RESOLVED` · `409 TRY_AGAIN` · `409 UPLOAD_NOT_PENDING` · `422 UPLOAD_REJECTED` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
+#### `GET /clients/:clientId/material-requests/:threadId/uploads`
+
+Lista o que a própria pessoa enviou a um pedido de material, no portal.
+
+- Acesso: Sessão + vínculo com o cliente.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página dos arquivos enviados pela pessoa.
+
+```json
+{
+  "data": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "status": "confirmed",
+      "category": "image",
+      "contentType": "image/jpeg",
+      "sizeBytes": 2404019,
+      "name": "equipe.jpg",
+      "width": 3024,
+      "height": 4032,
+      "url": "https://storage.exemplo.test/arquivo.png?assinatura=ficticia",
+      "createdAt": "2026-11-13T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 48,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
 
 #### `POST /agencies/:agencyId/media/uploads`
 
@@ -4037,6 +4699,312 @@ Remove uma mídia da pasta.
 ```
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 MEDIA_IN_USE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/media`
+
+Lista a biblioteca de mídia de um cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "q": "vitrine",
+  "category": "image",
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de arquivos.
+
+```json
+{
+  "data": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "folderName": "Imagens",
+      "category": "image",
+      "contentType": "image/jpeg",
+      "sizeBytes": 4404019,
+      "name": "vitrine-outubro.jpg",
+      "width": 3024,
+      "height": 4032,
+      "altText": "Vitrine da padaria com pães recém-saídos do forno",
+      "videoProcessingStatus": "not_applicable",
+      "uploadedBy": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
+      "uploadedBySide": "agency",
+      "createdAt": "2026-11-11T12:00:00.000Z",
+      "usageCount": 2
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 48,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/media/:assetId`
+
+Detalha um arquivo da biblioteca.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Resposta `200`** — O arquivo.
+
+```json
+{
+  "id": "44444444-4444-4444-8444-444444444444",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "folderName": "Imagens",
+  "category": "image",
+  "contentType": "image/jpeg",
+  "sizeBytes": 4404019,
+  "name": "vitrine-outubro.jpg",
+  "width": 3024,
+  "height": 4032,
+  "altText": "Vitrine da padaria com pães recém-saídos do forno",
+  "videoProcessingStatus": "not_applicable",
+  "uploadedBy": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
+  "uploadedBySide": "agency",
+  "createdAt": "2026-11-11T12:00:00.000Z",
+  "usageCount": 2
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `PATCH /agencies/:agencyId/clients/:clientId/media/:assetId`
+
+Renomeia um arquivo ou edita o texto alternativo.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "vitrine-outubro.jpg",
+  "altText": "Vitrine da padaria com pães recém-saídos do forno"
+}
+```
+
+**Resposta `200`** — O arquivo com a edição.
+
+```json
+{
+  "id": "44444444-4444-4444-8444-444444444444",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "folderName": "Imagens",
+  "category": "image",
+  "contentType": "image/jpeg",
+  "sizeBytes": 4404019,
+  "name": "vitrine-outubro.jpg",
+  "width": 3024,
+  "height": 4032,
+  "altText": "Vitrine da padaria com pães recém-saídos do forno",
+  "videoProcessingStatus": "not_applicable",
+  "uploadedBy": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
+  "uploadedBySide": "agency",
+  "createdAt": "2026-11-11T12:00:00.000Z",
+  "usageCount": 2
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/clients/:clientId/media/:assetId/move`
+
+Move um arquivo para outra pasta do mesmo cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+}
+```
+
+**Resposta `200`** — O arquivo na pasta nova.
+
+```json
+{
+  "id": "44444444-4444-4444-8444-444444444444",
+  "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "folderName": "Imagens",
+  "category": "image",
+  "contentType": "image/jpeg",
+  "sizeBytes": 4404019,
+  "name": "vitrine-outubro.jpg",
+  "width": 3024,
+  "height": 4032,
+  "altText": "Vitrine da padaria com pães recém-saídos do forno",
+  "videoProcessingStatus": "not_applicable",
+  "uploadedBy": {
+    "membershipId": "22222222-2222-4222-8222-222222222222",
+    "name": "Ana Souza"
+  },
+  "uploadedBySide": "agency",
+  "createdAt": "2026-11-11T12:00:00.000Z",
+  "usageCount": 2
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 MEDIA_IN_USE` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/media/:assetId/usage`
+
+Lista os conteúdos que usam um arquivo.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de usos.
+
+```json
+{
+  "data": [
+    {
+      "contentId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "title": "Lançamento da vitrine",
+      "status": "approved",
+      "asMedia": true,
+      "asCover": false
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 100,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/clients/:clientId/media-folders/summary`
+
+Lista as pastas de mídia com o que cada uma guarda.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.visualizar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1
+}
+```
+
+**Resposta `200`** — Página de pastas com o resumo.
+
+```json
+{
+  "data": [
+    {
+      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "parentId": null,
+      "name": "Imagens",
+      "isDefault": true,
+      "createdAt": "2026-10-07T12:00:00.000Z",
+      "counts": {
+        "image": 96,
+        "video": 0,
+        "pdf": 9,
+        "audio": 0,
+        "logo": 1
+      },
+      "assetCount": 106,
+      "totalSizeBytes": 482344960,
+      "lastChangedAt": "2026-11-11T12:00:00.000Z",
+      "lastUploadedBy": {
+        "membershipId": "22222222-2222-4222-8222-222222222222",
+        "name": "Ana Souza"
+      },
+      "inUseNow": false
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 100,
+    "totalItems": 1,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
+
+#### `PATCH /agencies/:agencyId/clients/:clientId/media-folders/:folderId`
+
+Renomeia uma pasta de mídia do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "name": "Lançamento de novembro"
+}
+```
+
+**Resposta `200`** — Pasta renomeada.
+
+```json
+{
+  "id": "12121212-1212-4121-8121-121212121212",
+  "parentId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "name": "Lançamento de novembro",
+  "isDefault": false,
+  "createdAt": "2026-10-07T12:00:00.000Z"
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 DEFAULT_FOLDER_IMMUTABLE` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+#### `DELETE /agencies/:agencyId/clients/:clientId/media-folders/:folderId`
+
+Exclui uma pasta de mídia vazia do cliente.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `conteudo.operar`.
+
+**Resposta `204`** — Pasta excluída.
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `404 NOT_FOUND` · `409 CLIENT_ARCHIVED` · `409 DEFAULT_FOLDER_IMMUTABLE` · `409 FOLDER_NOT_EMPTY` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
 ### profile — Edição do próprio nome e da própria foto de perfil.
 
@@ -4507,18 +5475,21 @@ Marca o roteiro como gravado, no portal.
 
 **Erros:** `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
-### subscriptions — Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar; e, só fora de produção, pagar com o provedor simulado e avançar o relógio.
+### subscriptions — Assinatura paga da agência, só do Owner: planos e preços, o que uma mudança custa, abrir a cobrança, cancelar e reativar, e as faturas; e, só fora de produção, o cartão de teste, pagar com o provedor simulado e avançar o relógio.
 
 | método | rota | acesso | permissão | o que faz |
 |---|---|---|---|---|
 | `GET` | `/agencies/:agencyId/subscription/plans` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Lista os planos pagos e o preço dos extras |
 | `GET` | `/agencies/:agencyId/subscription` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Devolve a assinatura da agência, o uso e a tolerância |
+| `GET` | `/agencies/:agencyId/subscription/invoices` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Lista as faturas da agência |
 | `POST` | `/agencies/:agencyId/subscription/quote` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Calcula o que uma mudança de plano ou de extras faz e custa |
 | `POST` | `/agencies/:agencyId/subscription/charges` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Pede a mudança de plano ou de extras e abre a cobrança |
 | `POST` | `/agencies/:agencyId/subscription/cancel` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Cancela a assinatura |
 | `POST` | `/agencies/:agencyId/subscription/reactivate` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Desfaz o cancelamento até o fim do período |
 | `POST` | `/agencies/:agencyId/subscription/charges/:chargeId/simulated-payment` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Paga uma cobrança com o provedor simulado (só fora de produção) |
 | `POST` | `/agencies/:agencyId/subscription/simulated-period-advance` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Avança o relógio da assinatura simulada (só fora de produção) |
+| `GET` | `/agencies/:agencyId/subscription/test-card` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Devolve o cartão de teste da agência (só fora de produção) |
+| `PUT` | `/agencies/:agencyId/subscription/test-card` | Sessão + vínculo com a agência | `assinatura.gerenciar` | Salva ou troca o cartão de teste da agência (só fora de produção) |
 
 #### `GET /agencies/:agencyId/subscription/plans`
 
@@ -4588,6 +5559,53 @@ Devolve a assinatura da agência, o uso e a tolerância.
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `500 INTERNAL_ERROR`
 
+#### `GET /agencies/:agencyId/subscription/invoices`
+
+Lista as faturas da agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1,
+  "pageSize": 20
+}
+```
+
+**Resposta `200`** — Página das faturas.
+
+```json
+{
+  "data": [
+    {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "date": "2026-11-12T14:00:00.000Z",
+      "description": "Plano Profissional + 5 clientes extras",
+      "amountCents": 22700,
+      "status": "declined"
+    },
+    {
+      "id": "88888888-8888-4888-8888-888888888888",
+      "date": "2026-10-12T14:00:00.000Z",
+      "description": "Plano Profissional",
+      "amountCents": 19700,
+      "status": "paid"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 2,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
 #### `POST /agencies/:agencyId/subscription/quote`
 
 Calcula o que uma mudança de plano ou de extras faz e custa.
@@ -4612,7 +5630,17 @@ Calcula o que uma mudança de plano ou de extras faz e custa.
   "effect": "upgrade",
   "monthlyCents": 19700,
   "amountCents": 6800,
-  "effectiveAt": "2026-11-15T12:00:00.000Z"
+  "effectiveAt": "2026-11-15T12:00:00.000Z",
+  "daysLeft": 15,
+  "periodDays": 30,
+  "lines": [
+    {
+      "kind": "plan",
+      "quantity": 1,
+      "unitCents": 19700,
+      "totalCents": 19700
+    }
+  ]
 }
 ```
 
@@ -4707,6 +5735,235 @@ Avança o relógio da assinatura simulada (só fora de produção).
 
 **Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 SUBSCRIPTION_NOT_AVAILABLE` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
 
+#### `GET /agencies/:agencyId/subscription/test-card`
+
+Devolve o cartão de teste da agência (só fora de produção).
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Resposta `200`** — O cartão de teste, ou `null`.
+
+```json
+{
+  "card": {
+    "last4": "4242",
+    "expMonth": 8,
+    "expYear": 2028,
+    "brand": "test"
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `PUT /agencies/:agencyId/subscription/test-card`
+
+Salva ou troca o cartão de teste da agência (só fora de produção).
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: `assinatura.gerenciar`.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "last4": "4242",
+  "expMonth": 8,
+  "expYear": 2028,
+  "brand": "test"
+}
+```
+
+**Resposta `200`** — O cartão de teste salvo.
+
+```json
+{
+  "card": {
+    "last4": "4242",
+    "expMonth": 8,
+    "expYear": 2028,
+    "brand": "test"
+  }
+}
+```
+
+**Erros:** `400 TEST_CARD_INVALID` · `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `413 PAYLOAD_TOO_LARGE` · `500 INTERNAL_ERROR`
+
+### notifications — As notificações da pessoa dentro do app: a lista paginada, a contagem de não lidas para o sino e marcar como lida, uma ou todas. Cada pessoa lê só as próprias; quem as cria é o banco, junto do evento.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `GET` | `/agencies/:agencyId/notifications` | Sessão + vínculo com a agência | — | Lista as notificações da pessoa na agência |
+| `GET` | `/agencies/:agencyId/notifications/unread-count` | Sessão + vínculo com a agência | — | Conta as notificações não lidas da pessoa |
+| `POST` | `/agencies/:agencyId/notifications/:notificationId/read` | Sessão + vínculo com a agência | — | Marca uma notificação como lida |
+| `POST` | `/agencies/:agencyId/notifications/read-all` | Sessão + vínculo com a agência | — | Marca como lidas todas as notificações da pessoa na agência |
+
+#### `GET /agencies/:agencyId/notifications`
+
+Lista as notificações da pessoa na agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "page": 1,
+  "pageSize": 20,
+  "unread": "true"
+}
+```
+
+**Resposta `200`** — Página das notificações da pessoa.
+
+```json
+{
+  "data": [
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "kind": "content_approved",
+      "summary": "Rosana aprovou \"Promoção de pães\"",
+      "createdAt": "2026-11-12T14:00:00.000Z",
+      "readAt": null,
+      "destination": {
+        "type": "content",
+        "clientId": "77777777-7777-4777-8777-777777777777",
+        "contentId": "ffffffff-ffff-4fff-8fff-ffffffffffff"
+      }
+    },
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "kind": "invitation_accepted",
+      "summary": "Ana aceitou o seu convite",
+      "createdAt": "2026-11-10T12:00:00.000Z",
+      "readAt": "2026-11-10T13:00:00.000Z",
+      "destination": {
+        "type": "collaborators"
+      }
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 2,
+    "totalPages": 1
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `GET /agencies/:agencyId/notifications/unread-count`
+
+Conta as notificações não lidas da pessoa.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: —.
+
+**Resposta `200`** — A contagem.
+
+```json
+{
+  "data": {
+    "count": 3
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/notifications/:notificationId/read`
+
+Marca uma notificação como lida.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: —.
+
+**Resposta `204`** — Notificação marcada como lida.
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+#### `POST /agencies/:agencyId/notifications/read-all`
+
+Marca como lidas todas as notificações da pessoa na agência.
+
+- Acesso: Sessão + vínculo com a agência.
+- Permissão: —.
+
+**Resposta `204`** — Notificações marcadas como lidas.
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 CSRF_REJECTED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `500 INTERNAL_ERROR`
+
+### search — A busca da barra superior da agência: clientes, conteúdos e arquivos pelo nome, em três grupos de até seis. Cada grupo respeita a permissão da leitura que ele atalha, e um grupo que a pessoa não pode ler vem vazio, igual a um grupo sem resultado.
+
+| método | rota | acesso | permissão | o que faz |
+|---|---|---|---|---|
+| `GET` | `/agencies/:agencyId/search` | Sessão + vínculo com a agência; cada grupo por permissão própria | — | Busca clientes, conteúdos e arquivos pelo nome |
+
+#### `GET /agencies/:agencyId/search`
+
+Busca clientes, conteúdos e arquivos pelo nome.
+
+- Acesso: Sessão + vínculo com a agência; cada grupo por permissão própria.
+- Permissão: —.
+
+**Requisição** (`application/json`):
+
+```json
+{
+  "q": "padar"
+}
+```
+
+**Resposta `200`** — Os três grupos, sempre presentes.
+
+```json
+{
+  "data": {
+    "clients": [
+      {
+        "id": "77777777-7777-4777-8777-777777777777",
+        "name": "Padaria Central",
+        "photoUrl": null,
+        "instagramHandle": "padariacentral",
+        "archived": false
+      }
+    ],
+    "contents": [
+      {
+        "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "clientId": "77777777-7777-4777-8777-777777777777",
+        "clientName": "Padaria Central",
+        "title": "Promoção de pães",
+        "format": "reels",
+        "status": "approved",
+        "overdue": false,
+        "scheduled": true,
+        "publishOn": "2026-11-20"
+      }
+    ],
+    "files": [
+      {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "clientId": "77777777-7777-4777-8777-777777777777",
+        "clientName": "Padaria Central",
+        "folderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "name": "padaria-fachada.jpg",
+        "category": "image",
+        "thumbnailAssetId": "44444444-4444-4444-8444-444444444444"
+      }
+    ]
+  },
+  "meta": {
+    "q": "padar"
+  }
+}
+```
+
+**Erros:** `400 VALIDATION_ERROR` · `401 UNAUTHENTICATED` · `403 EMAIL_NOT_CONFIRMED` · `403 FORBIDDEN` · `403 TERMS_NOT_ACCEPTED` · `404 NOT_FOUND` · `409 TRY_AGAIN` · `429 RATE_LIMITED` · `500 INTERNAL_ERROR`
+
 ## Catálogo de códigos de erro
 
 | código | mensagem padrão |
@@ -4714,6 +5971,8 @@ Avança o relógio da assinatura simulada (só fora de produção).
 | `VALIDATION_ERROR` | Request validation failed |
 | `UNAUTHENTICATED` | Authentication is required. |
 | `SESSION_EXPIRED` | Session has expired. |
+| `SESSION_NOT_FOUND` | Sessão não encontrada. |
+| `USE_LOGOUT` | Esta é a sessão deste aparelho. Para sair dela, use "Sair". |
 | `INVALID_CREDENTIALS` | Credenciais inválidas. |
 | `FORBIDDEN` | You do not have permission to perform this action. |
 | `NO_CONTEXT_ACCESS` | Sua conta não tem acesso a nenhum espaço de trabalho. Fale com quem administra a agência para receber um convite. |
@@ -4751,7 +6010,6 @@ Avança o relógio da assinatura simulada (só fora de produção).
 | `MEDIA_IN_USE` | Esta mídia está em um conteúdo enviado para aprovação, aprovado ou publicado e não pode ser removida. |
 | `CLIENT_NOT_ARCHIVED` | Este cliente já está ativo. |
 | `CLOSING_DATE_NOT_SET` | Este cliente não tem encerramento agendado. |
-| `PERSONA_ARCHIVED` | Persona arquivada: a conversa é somente leitura. |
 | `SECTION_NOT_FILLED` | Esta seção ainda não foi preenchida pela agência. |
 | `CONTENT_PERIOD_TOO_LARGE` | O período tem mais de 500 itens. Consulte um período menor. |
 | `CONTENT_NOT_EDITABLE` | Conteúdo publicado ou cancelado não pode ser editado. |

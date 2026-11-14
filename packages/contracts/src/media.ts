@@ -1,15 +1,59 @@
 import { z } from 'zod';
 
-/** The only two media categories the issue defines limits for (#21). */
+import { characterCount } from './display-name.js';
+import { hasInvisibleCharacters } from './invisible-characters.js';
+
+/** The two media categories a content takes: a photo or a video (#21). A content never holds a PDF, an audio or a logo. */
 export const MediaCategorySchema = z.enum(['image', 'video']);
+
+/**
+ * The five types of a client's media library (decision 2026-11-11): the two a content takes and the files of support. A logo is an
+ * image the agency marks as one (`asLogo` at the upload), and the only home of an SVG.
+ */
+export const MediaLibraryCategorySchema = z.enum(['image', 'video', 'pdf', 'audio', 'logo']);
+
+/** What the column `file_name` holds at most: characters, not bytes. */
+export const MEDIA_FILE_NAME_MAX_LENGTH = 255;
+export const MEDIA_ALT_TEXT_MAX_LENGTH = 500;
+
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+// The line and paragraph separators (U+2028, U+2029) are not controls, and they break a line as a line feed does.
+const isOneReadableLine = (value: string): boolean =>
+  !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(value) && !hasInvisibleCharacters(value) && !LONE_SURROGATE.test(value);
+
+/**
+ * The name a person gives a file: a label, never a path and never part of the object key. One line of at most 255 characters, with no
+ * separator of a folder, no control, bidi or invisible character, and not only dots. The database CHECK `media_assets_file_name_shape`
+ * holds the same rule for a caller that skips the route.
+ */
+export const MediaFileNameSchema = z.string()
+  .trim()
+  .min(1, 'must not be empty')
+  .max(MEDIA_FILE_NAME_MAX_LENGTH * 2)
+  .refine((value) => characterCount(value) <= MEDIA_FILE_NAME_MAX_LENGTH, `must be at most ${MEDIA_FILE_NAME_MAX_LENGTH} characters`)
+  .refine((value) => !/[\\/]/.test(value), 'must be a file name, not a path')
+  .refine((value) => !/^\.+$/.test(value), 'must not be only dots')
+  .refine(isOneReadableLine, 'must not contain control, bidi or invisible characters');
+
+/** The alternative text of a media: up to 500 characters of one line; blank is the same as none. */
+export const MediaAltTextSchema = z.string()
+  .trim()
+  .max(MEDIA_ALT_TEXT_MAX_LENGTH * 2)
+  .refine((value) => characterCount(value) <= MEDIA_ALT_TEXT_MAX_LENGTH, `must be at most ${MEDIA_ALT_TEXT_MAX_LENGTH} characters`)
+  .refine(isOneReadableLine, 'must be one line without control, bidi or invisible characters')
+  .transform((value) => (value === '' ? null : value));
 
 /** `POST /agencies/:agencyId/media/uploads` request body. The declared size and content type are
  * never trusted for validation; they only pick single-part vs. multipart and the initial category
- * check. The server-side `HeadObject` after upload is what actually enforces limits (issue #21). */
+ * check. The server-side `HeadObject` after upload is what actually enforces limits (issue #21), and
+ * the bytes are read at the confirmation: a type that is not the declared one is rejected. */
 export const CreateMediaUploadRequestSchema = z.object({
-  fileName: z.string().trim().min(1).max(256),
+  fileName: MediaFileNameSchema,
   contentType: z.string().trim().min(1).max(256),
   declaredSizeBytes: z.number().int().positive().max(10 * 1024 * 1024 * 1024),
+  // An image (PNG, JPEG, WebP) is a logo only when the agency says so, and an SVG is accepted only as one.
+  asLogo: z.boolean().optional(),
   // A media of a client is born in one of that client's folders: both or neither, and the server
   // checks that the folder is the client's (specs/conteudo.md §3).
   clientId: z.string().uuid().optional(),
@@ -36,7 +80,7 @@ const MultipartUploadSchema = z.object({
 export const CreateMediaUploadResponseSchema = z.object({
   assetId: z.string().uuid(),
   objectKey: z.string().min(1),
-  category: MediaCategorySchema,
+  category: MediaLibraryCategorySchema,
   upload: z.discriminatedUnion('type', [SingleUploadSchema, MultipartUploadSchema])
 }).strict();
 
@@ -91,6 +135,7 @@ export const MediaDownloadUrlResponseSchema = z.object({
 }).strict();
 
 export type MediaCategory = z.infer<typeof MediaCategorySchema>;
+export type MediaLibraryCategory = z.infer<typeof MediaLibraryCategorySchema>;
 export type CreateMediaUploadRequest = z.infer<typeof CreateMediaUploadRequestSchema>;
 export type CreateMediaUploadResponse = z.infer<typeof CreateMediaUploadResponseSchema>;
 export type RequestMediaUploadPartsRequest = z.infer<typeof RequestMediaUploadPartsRequestSchema>;

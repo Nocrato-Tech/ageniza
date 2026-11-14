@@ -113,7 +113,8 @@ describe('the catalog of the subscription tables', () => {
        order by c.column_name`, [table, `public.${table}`]
     )).rows.map((row) => row.column_name);
     expect(await selectable('subscription_charges')).toEqual([
-      'agency_id', 'amount_cents', 'confirmed_at', 'created_at', 'expires_at', 'extra_clients', 'extra_storage_gib', 'id', 'kind', 'period_end', 'period_start', 'plan_key', 'status'
+      'agency_id', 'amount_cents', 'confirmed_at', 'created_at', 'declined_at', 'expires_at', 'extra_clients', 'extra_storage_gib', 'id', 'kind', 'period_end', 'period_start',
+      'plan_key', 'status'
     ]);
     expect(await selectable('agency_subscriptions')).toEqual([
       'agency_id', 'cancel_at_period_end', 'current_period_end', 'current_period_start', 'extra_clients', 'extra_storage_gib', 'pending_extra_clients',

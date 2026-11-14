@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
@@ -15,6 +13,7 @@ import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 import { declarationsFor, readStyles } from './styles/theme-colors';
+import { readGlobalCss } from './styles/read-css';
 
 afterEach(cleanup);
 
@@ -92,6 +91,8 @@ interface Scenario {
   readonly failStudy?: () => Response;
   /** The person is also a collaborator of the agency of this client (the "pessoa dupla"). */
   readonly alsoCollaborator?: boolean;
+  /** The plan of the agency ended: the portal is read-only. */
+  readonly agencyReadOnly?: boolean;
 }
 
 const makeWorld = (scenario: Scenario = {}) => {
@@ -128,7 +129,7 @@ const makeWorld = (scenario: Scenario = {}) => {
       return json({ agencyId: AGENCY_ID, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'admin', name: 'Admin' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: false }, permissions: ['cliente.visualizar', 'cliente.operar', 'cliente.arquivar'] });
     }
     for (const clientId of Object.keys(names)) {
-      if (path === `/clients/${clientId}`) return json(portalClientBody(clientId, names[clientId]!));
+      if (path === `/clients/${clientId}`) return json({ ...portalClientBody(clientId, names[clientId]!), agencyReadOnly: scenario.agencyReadOnly ?? false });
       if (path === `/clients/${clientId}/brand-study`) {
         if (held !== undefined) { const release = held; held = undefined; await release; }
         if (failStudy !== undefined) { const make = failStudy; failStudy = undefined; return make(); }
@@ -245,6 +246,21 @@ describe('portal Marca (#143)', () => {
     expect(document.title).toBe('Marca — Portal do cliente — Ageniza');
   });
 
+  it('while the agency is read-only, every suggest button says the neutral reason and nothing on the page speaks of the plan (decision 2026-11-06)', async () => {
+    const { impl } = makeWorld({ agencyReadOnly: true });
+    renderPortal(impl);
+    const main = await page();
+
+    const buttons = within(main).getAllByRole('button');
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) {
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      const reason = (button.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent).join(' ');
+      expect(reason).toBe('A aprovação está pausada no momento. A agência já foi avisada.');
+    }
+    expect(document.body.textContent).not.toMatch(/plano|renov/i);
+  });
+
   it('has no control to edit the study: the only buttons of the page are the suggestions, one per part', async () => {
     const { impl } = makeWorld();
     renderPortal(impl);
@@ -290,16 +306,31 @@ describe('portal Marca (#143)', () => {
     ]);
   });
 
-  it('draws a study with nothing filled as seven preparing parts, without an error screen or a field', async () => {
+  it('says once, as a first use, that the agency has not shared the study when nothing is filled: no error, no field, no good news', async () => {
     const { impl } = makeWorld({ studies: { [CLIENT_ID]: portalStudyBody(), [SECOND_ID]: SECOND_STUDY } });
     renderPortal(impl);
     const main = await page();
 
-    expect(within(main).getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(SECTION_LABELS);
-    expect(within(main).getAllByText(NOT_PREPARED)).toHaveLength(7);
+    const empty = main.querySelector('.ui-empty-state') as HTMLElement;
+    expect(empty.classList.contains('ui-empty-state--failure')).toBe(false);
+    expect(empty.classList.contains('ui-empty-state--good-news')).toBe(false);
+    expect(within(empty).getByRole('heading', { level: 2, name: 'Sua agência ainda está preparando o estudo da sua marca' })).toBeTruthy();
+    expect(within(empty).getByText('Quando ela compartilhar, você vê aqui e pode sugerir mudanças.')).toBeTruthy();
+    expect(within(main).getAllByRole('heading', { level: 2 })).toHaveLength(1);
+    expect(within(main).queryByText(NOT_PREPARED)).toBeNull();
     expect(within(main).queryAllByRole('button')).toEqual([]);
     expect(within(main).queryAllByRole('textbox')).toEqual([]);
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('keeps the line of each part that is not ready, and no first use, as soon as one part is filled', async () => {
+    const { impl } = makeWorld({ studies: { [CLIENT_ID]: portalStudyBody({ branding: { body: 'Padaria de bairro desde 1990' } }), [SECOND_ID]: SECOND_STUDY } });
+    renderPortal(impl);
+    const main = await page();
+
+    expect(within(main).getAllByText(NOT_PREPARED)).toHaveLength(6);
+    expect(within(main).queryByText('Sua agência ainda está preparando o estudo da sua marca')).toBeNull();
+    expect(main.querySelector('.ui-empty-state')).toBeNull();
   });
 
   it('suggests on the part it was asked on: dialog, note, send, close on success, the suggestion in the list and the Início told', async () => {
@@ -387,10 +418,10 @@ describe('portal Marca (#143)', () => {
     const personaDialog = await screen.findByRole('dialog', { name: 'Sugerir sobre "Seu João"' });
     fireEvent.change(within(personaDialog).getByRole('textbox', { name: 'Escreva sua sugestão' }), { target: { value: 'Ele gosta de pão doce' } });
     setStudy(CLIENT_ID, portalStudyBody({ ...FULL_STUDY_FILLED }, [portalPersona(MARIA_ID, 'Dona Maria', { description: 'Mora perto da padaria', pains: 'Falta de tempo' })]));
-    apis[CLIENT_ID].failNextWrite(() => apiError(409, 'PERSONA_ARCHIVED'));
+    apis[CLIENT_ID].failNextWrite(() => apiError(409, 'SECTION_NOT_FILLED'));
     fireEvent.click(within(personaDialog).getByRole('button', { name: 'Enviar' }));
     const personaAlert = await within(personaDialog).findByRole('alert');
-    expect(personaAlert.textContent).toBe('Esta parte não está mais disponível para conversa.');
+    expect(personaAlert.textContent).toBe('Sua agência está preparando esta parte.');
     expect(personaAlert.textContent).not.toMatch(/persona/i);
     await waitFor(() => expect(screen.queryByText('Seu João')).toBeNull());
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -437,6 +468,30 @@ describe('portal Marca (#143)', () => {
     expect(stale(keys.detail)).toBe(false);
     expect(stale(keys.brandStudy)).toBe(false);
     expect(stale(keys.members)).toBe(false);
+  });
+
+  it('closes an open persona conversation, reads the study again and says the agency removed her when the next answer is a 404', async () => {
+    const { impl, apis, calls, setStudy } = makeWorld();
+    apis[CLIENT_ID].seed({ personaId: JOAO_ID }, [{ side: 'client', body: 'Ele gosta de pão doce', at: LATE }]);
+    renderPortal(impl);
+    await page();
+
+    const region = await screen.findByRole('region', { name: 'Conversas sobre Seu João' });
+    fireEvent.click(await within(region).findByRole('button', { name: /Ele gosta de pão doce/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Seu João' });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: /Responder|resposta/i }), { target: { value: 'Mais um detalhe' } });
+    expect(screen.queryByText('Essa persona foi removida pela agência.')).toBeNull();
+
+    const studyReads = calls.filter((call) => call === `GET /clients/${CLIENT_ID}/brand-study`).length;
+    setStudy(CLIENT_ID, portalStudyBody({ ...FULL_STUDY_FILLED }, [portalPersona(MARIA_ID, 'Dona Maria', { description: 'Mora perto da padaria', pains: 'Falta de tempo' })]));
+    apis[CLIENT_ID].failNextWrite(() => apiError(404, 'NOT_FOUND'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+
+    expect((await screen.findByRole('status')).textContent).toBe('Essa persona foi removida pela agência.');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('Seu João')).toBeNull();
+    expect(within(sectionOf('Quem é seu público')).getByRole('heading', { level: 3, name: 'Dona Maria' })).toBeTruthy();
+    expect(calls.filter((call) => call === `GET /clients/${CLIENT_ID}/brand-study`).length).toBe(studyReads + 1);
   });
 
   it('shows the agency answer with the name and photo of who answered, the day in São Paulo, and no Resolver', async () => {
@@ -557,7 +612,7 @@ describe('portal Marca (#143)', () => {
     expect(probe.pathname).toBe(marcaUrl(SECOND_ID));
   });
 
-  it('does not show a persona the payload marks as archived: the page fails closed', async () => {
+  it('does not show a persona whose payload still carries a status: the page fails closed', async () => {
     const study = portalStudyBody({ branding: { body: 'Padaria de bairro' } }, [{ ...portalPersona(JOAO_ID, 'Seu João'), status: 'archived' }]);
     const { impl } = makeWorld({ studies: { [CLIENT_ID]: study, [SECOND_ID]: SECOND_STUDY } });
     renderPortal(impl);
@@ -664,9 +719,14 @@ describe('portal Marca na Pauta (#689)', () => {
     renderPortal(impl);
 
     const alert = await screen.findByRole('alert');
-    expect(alert.className).toBe('portal-error');
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(within(alert).getByRole('heading', { level: 2, name: 'Não foi possível carregar a sua marca. Tente de novo.' })).toBeTruthy();
     expect(screen.getByRole('heading', { level: 1, name: 'Sua marca' }).className).toBe('portal-headline');
     expect(within(alert).getByRole('button', { name: 'Tentar de novo' }).className).toContain('ui-button--secondary');
+    // A read that did not answer never says the study is empty, nor that anything is fine.
+    expect(screen.queryByText('Sua agência ainda está preparando o estudo da sua marca')).toBeNull();
+    expect(screen.queryByText(NOT_PREPARED)).toBeNull();
+    expect(document.querySelector('.ui-empty-state--good-news')).toBeNull();
   });
 
   it('breaks a long colour name inside its swatch column instead of widening the page', async () => {
@@ -683,7 +743,7 @@ describe('portal Marca na Pauta (#689)', () => {
   it('keeps the error, its button and the focus in place while a retry is in flight, and only the first read is a skeleton', async () => {
     let release: () => void = () => undefined;
     const holdRetry = new Promise<void>((resolve) => { release = resolve; });
-    const { impl } = makeWorld({ failStudy: () => apiError(404, 'NOT_FOUND'), holdRetry });
+    const { impl, calls } = makeWorld({ failStudy: () => apiError(404, 'NOT_FOUND'), holdRetry });
     renderPortal(impl);
 
     const alert = await screen.findByRole('alert');
@@ -692,6 +752,11 @@ describe('portal Marca na Pauta (#689)', () => {
     fireEvent.click(retry);
 
     await waitFor(() => expect(retry.getAttribute('aria-busy')).toBe('true'));
+    // A second click while the repeat is in flight sends no second read.
+    const readsInFlight = calls.filter((call) => call === `GET /clients/${CLIENT_ID}/brand-study`).length;
+    fireEvent.click(retry);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+    expect(calls.filter((call) => call === `GET /clients/${CLIENT_ID}/brand-study`)).toHaveLength(readsInFlight);
     expect(screen.getByRole('alert')).toBe(alert);
     expect(within(alert).getByRole('button', { name: 'Tentar de novo' })).toBe(retry);
     expect(document.activeElement).toBe(retry);
@@ -703,7 +768,7 @@ describe('portal Marca na Pauta (#689)', () => {
   });
 
   describe('style', () => {
-    const raw = readFileSync(join(__dirname, 'styles/globals.css'), 'utf8').replace(/\r\n/g, '\n');
+    const raw = readGlobalCss().replace(/\r\n/g, '\n');
     const marker = '/* --- Portal: Marca (#143, #689)';
     const from = raw.indexOf(marker);
     // The block ends at the next banner or, for the last block before the utilities, at `.visually-hidden`.

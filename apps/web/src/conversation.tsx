@@ -1,12 +1,15 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCheck, Clock, MessageSquare, Plus } from 'lucide-react';
 
 import {
+  characterCount,
   CommentBodySchema,
   CommentListResponseSchema,
   CommentSchema,
   CreateThreadResponseSchema,
+  MATERIAL_REQUEST_TITLE_MAX_LENGTH,
+  MaterialRequestTitleSchema,
   ThreadListResponseSchema,
   ThreadSchema,
   type ConversationSide,
@@ -14,9 +17,10 @@ import {
   type Thread,
   type ThreadComment
 } from '@ageniza/contracts';
-import { Avatar, Button, Field, FieldMessage, Modal, Pill, Skeleton, Textarea, useFormErrors } from '@ageniza/ui';
+import { Avatar, Button, DatePicker, Field, FieldMessage, invalidDayMessage, LateBadge, Modal, Pill, Skeleton, Stage3D, Textarea, TextInput, useFormErrors } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
+import { addDays, dayMonthLabel, todayInSaoPaulo } from './content-dates.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 /**
@@ -45,10 +49,12 @@ export interface ConversationProps {
   readonly planBlockedReason?: string | undefined;
   /** Called after a write the conversation cannot invalidate itself (client summary, roster badge). */
   readonly onWritten: () => void;
-  /** Called when a write is refused because the subject changed under the person (persona archived, section emptied). */
+  /** Called when a write is refused because the subject changed under the person (persona deleted, section emptied). */
   readonly onStale?: () => void;
   /** The heading level of "Conversas", so it nests under whatever heading holds the area. */
   readonly headingLevel?: 3 | 4;
+  /** The empty list is a note with the bulb, for a column that stands beside a card (the brand study). */
+  readonly emptyTip?: boolean;
 }
 
 const THREADS_PAGE_SIZE = 100;
@@ -89,20 +95,35 @@ const OPENING: Record<ConversationSide, {
 
 const subjectKeyOf = (subject: ConversationSubject): string => {
   if ('sectionKey' in subject) return `section:${subject.sectionKey}`;
-  return 'personaId' in subject ? `persona:${subject.personaId}` : `content:${subject.contentId}`;
+  if ('personaId' in subject) return `persona:${subject.personaId}`;
+  return 'materialRequest' in subject ? 'material-request' : `content:${subject.contentId}`;
 };
 
 const subjectQueryOf = (subject: ConversationSubject): string => {
   if ('sectionKey' in subject) return `sectionKey=${subject.sectionKey}`;
-  return 'personaId' in subject ? `personaId=${subject.personaId}` : `contentId=${subject.contentId}`;
+  if ('personaId' in subject) return `personaId=${subject.personaId}`;
+  return 'materialRequest' in subject ? 'materialRequest=true' : `contentId=${subject.contentId}`;
 };
 
-const scopeKeyOf = (scope: ConversationScope) => ['conversation', scope.side, scope.clientId] as const;
+export const MATERIAL_REQUEST_LABEL = 'Pedido de material';
+/** The deadline of a request runs from today to this many days ahead, on the São Paulo day (the database refuses anything else). */
+const MATERIAL_DUE_WINDOW_DAYS = 90;
+const MATERIAL_DUE_RANGE = 'Escolha um prazo de hoje até 90 dias à frente.';
+
+const isMaterialRequest = (subject: ConversationSubject): boolean => 'materialRequest' in subject;
+
+export const deadlineLabel = (dueOn: string): string => `Entregar até ${dayMonthLabel(dueOn)}`;
+
+/** A request still open whose day has passed in São Paulo; `dueOn` is a plain day, never read through a `Date`. */
+export const isOverdue = (thread: Pick<Thread, 'state' | 'dueOn'>, today: string): boolean =>
+  thread.state === 'open' && thread.dueOn !== null && thread.dueOn < today;
+
+export const scopeKeyOf = (scope: ConversationScope) => ['conversation', scope.side, scope.clientId] as const;
 const threadsQueryKey = (scope: ConversationScope, subject: ConversationSubject) => [...scopeKeyOf(scope), 'threads', subjectKeyOf(subject)] as const;
 // The first page read is part of the key: a thread that grows onto a new page starts again at its end.
 const commentsQueryKey = (scope: ConversationScope, threadId: string, firstPage: number) => [...scopeKeyOf(scope), 'comments', threadId, firstPage] as const;
 
-const routesOf = (scope: ConversationScope) => {
+export const routesOf = (scope: ConversationScope) => {
   const values: Record<string, string> = scope.side === 'agency' ? { agencyId: scope.agencyId, clientId: scope.clientId } : { clientId: scope.clientId };
   const base = scope.side === 'agency' ? '/agencies/:agencyId/clients/:clientId' : '/clients/:clientId';
   return {
@@ -131,7 +152,7 @@ const formatDay = (value: string): string => {
 };
 
 /** What the person must do next, from where they stand: the agency answers the client and vice versa. */
-const awaitsViewer = (thread: Thread, viewer: ConversationSide): boolean =>
+export const awaitsViewer = (thread: Thread, viewer: ConversationSide): boolean =>
   thread.state === 'open' && thread.lastComment.side !== viewer;
 
 /** The rule of the API, not a copy of it: the screen asks the contract's own schema and only words the answer. */
@@ -145,14 +166,15 @@ const bodyProblem = (body: string): string | undefined => {
 };
 
 const isStaleSubject = (error: unknown): boolean =>
-  error instanceof HttpClientError && (error.code === 'PERSONA_ARCHIVED' || error.code === 'SECTION_NOT_FILLED' || error.code === 'CONTENT_NOT_OPEN');
+  error instanceof HttpClientError && (error.code === 'SECTION_NOT_FILLED' || error.code === 'CONTENT_NOT_OPEN');
 
-const writeError = (error: unknown, side: ConversationSide): string => {
+// A persona deleted under an open conversation answers 404 to everything about it.
+const isPersonaGone = (error: unknown, subject: ConversationProps['subject']): boolean =>
+  'personaId' in subject && error instanceof HttpClientError && error.status === 404;
+
+export const writeError = (error: unknown, side: ConversationSide): string => {
   if (!(error instanceof HttpClientError)) return 'Não foi possível enviar. Tente de novo.';
   if (error.code === 'CLIENT_ARCHIVED') return 'Cliente arquivado: a conversa está somente leitura.';
-  if (error.code === 'PERSONA_ARCHIVED') {
-    return side === 'client' ? 'Esta parte não está mais disponível para conversa.' : 'Persona arquivada: a conversa está somente leitura.';
-  }
   if (error.code === 'SECTION_NOT_FILLED') {
     return side === 'client' ? 'Sua agência está preparando esta parte.' : 'Esta parte ainda não foi preenchida.';
   }
@@ -165,10 +187,41 @@ const writeError = (error: unknown, side: ConversationSide): string => {
   return 'Não foi possível enviar. Tente de novo.';
 };
 
+const refusedPaths = (details: unknown): readonly string[] => {
+  const issues = (details as { issues?: unknown } | null | undefined)?.issues;
+  if (!Array.isArray(issues)) return [];
+  return issues.map((issue) => (issue as { path?: unknown } | null)?.path).filter((path): path is string => typeof path === 'string');
+};
+
+const MATERIAL_TITLE_REQUIRED = 'Informe o título do pedido.';
+const MATERIAL_TITLE_TOO_LONG = `O título passa de ${MATERIAL_REQUEST_TITLE_MAX_LENGTH} caracteres.`;
+const MATERIAL_TITLE_INVALID = 'O título tem caracteres que não são aceitos.';
+
+const titleLength = (value: string): number => characterCount(value.trim());
+
+const titleProblem = (title: string): string | undefined => {
+  if (MaterialRequestTitleSchema.safeParse(title).success) return undefined;
+  if (title.trim() === '') return MATERIAL_TITLE_REQUIRED;
+  return titleLength(title) > MATERIAL_REQUEST_TITLE_MAX_LENGTH ? MATERIAL_TITLE_TOO_LONG : MATERIAL_TITLE_INVALID;
+};
+
+/** What a refused request for material says: a title or a deadline out of range is the field's, the rest is the form's. */
+const materialRequestError = (error: unknown): { readonly field: 'title' | 'dueOn' | undefined; readonly message: string } => {
+  const form = (message: string) => ({ field: undefined, message });
+  if (!(error instanceof HttpClientError)) return form('Não foi possível enviar o pedido. Tente de novo.');
+  if (error.code === 'CLIENT_ARCHIVED') return form('Cliente arquivado: não é possível pedir material.');
+  if (error.status === 400 && refusedPaths(error.details).includes('title')) return { field: 'title', message: MATERIAL_TITLE_INVALID };
+  if (error.status === 400 && refusedPaths(error.details).includes('dueOn')) return { field: 'dueOn', message: MATERIAL_DUE_RANGE };
+  if (error.status === 400) return form('Revise o texto e tente de novo.');
+  if (error.status === 403) return form('Você não tem permissão para pedir material a este cliente.');
+  if (error.status === 404) return form('Este cliente não existe mais.');
+  return form('Não foi possível enviar o pedido. Tente de novo.');
+};
+
 const authorName = (comment: ThreadComment): string => comment.author?.name ?? (comment.side === 'agency' ? 'Agência' : 'Cliente');
 
 /** The writing box shared by the first message and the answers: the text leaves only once confirmed. */
-function Composer({ label, submitLabel, placeholder, note, pending, error, onSubmit, onEdit }: {
+export function Composer({ label, submitLabel, placeholder, note, pending, error, onSubmit, onEdit }: {
   label: string;
   submitLabel: string;
   placeholder?: string | undefined;
@@ -213,7 +266,7 @@ function Composer({ label, submitLabel, placeholder, note, pending, error, onSub
   </form>;
 }
 
-function CommentItem({ comment }: { comment: ThreadComment }) {
+export function CommentItem({ comment }: { comment: ThreadComment }) {
   return <li className={`conversation__comment conversation__comment--${comment.side}`}>
     <Avatar name={authorName(comment)} photoUrl={comment.author?.photoUrl ?? null} size="sm" />
     <div className="conversation__comment-main">
@@ -227,7 +280,7 @@ function CommentItem({ comment }: { comment: ThreadComment }) {
   </li>;
 }
 
-function OpenThread({ props, thread, onClose }: { props: ConversationProps; thread: Thread; onClose: () => void }) {
+export function OpenThread({ props, thread, onClose }: { props: ConversationProps; thread: Thread; onClose: () => void }) {
   const { scope, subjectLabel, canWrite, readOnly, blockedReason, planBlockedReason, onWritten, onStale } = props;
   const httpClient = useApiClient();
   const queryClient = useQueryClient();
@@ -250,6 +303,11 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
     getPreviousPageParam: (first) => (first.meta.page > 1 ? first.meta.page - 1 : undefined)
   });
 
+  const commentsError = comments.error;
+  useEffect(() => {
+    if (commentsError !== null && isPersonaGone(commentsError, props.subject)) onStale?.();
+  }, [commentsError]);
+
   const refresh = (): void => {
     void queryClient.invalidateQueries({ queryKey: scopeKeyOf(scope) });
     onWritten();
@@ -263,22 +321,24 @@ function OpenThread({ props, thread, onClose }: { props: ConversationProps; thre
       response: CommentSchema
     }),
     onSuccess: () => { setSendError(undefined); setSent((count) => count + 1); refresh(); },
-    onError: (error: unknown) => { setSendError(writeError(error, scope.side)); if (isStaleSubject(error)) onStale?.(); }
+    onError: (error: unknown) => { setSendError(writeError(error, scope.side)); if (isStaleSubject(error) || isPersonaGone(error, props.subject)) onStale?.(); }
   });
 
   const resolve = useMutation({
     mutationFn: () => httpClient.request({ path: routes.resolve(thread.id), method: 'POST', response: ThreadSchema }),
     onSuccess: () => { setResolveError(undefined); refresh(); },
-    onError: (error: unknown) => { setResolveError(writeError(error, scope.side)); if (isStaleSubject(error)) onStale?.(); }
+    onError: (error: unknown) => { setResolveError(writeError(error, scope.side)); if (isStaleSubject(error) || isPersonaGone(error, props.subject)) onStale?.(); }
   });
 
   const items = comments.data?.pages.flatMap((page) => page.data) ?? [];
   const writable = canWrite && !readOnly;
   const canResolve = writable && scope.side === 'agency' && thread.state === 'open';
 
+  const material = isMaterialRequest(thread.subject);
   // Inside the modal of a content, a second dialog with the title of the first would be two dialogs of one name.
-  return <Modal title={'contentId' in props.subject ? `Conversa sobre ${subjectLabel}` : subjectLabel} closeLabel="Fechar conversa" onClose={onClose}>
-    <div className="conversation__thread-view">
+  return <Modal title={material ? MATERIAL_REQUEST_LABEL : 'contentId' in props.subject ? `Conversa sobre ${subjectLabel}` : subjectLabel} closeLabel="Fechar conversa" onClose={onClose}>
+    <div className={scope.side === 'agency' && !('contentId' in props.subject) ? 'conversation__thread-view conversation__thread-view--agency' : 'conversation__thread-view'}>
+      {material && <MaterialDue thread={thread} today={todayInSaoPaulo()} />}
       {comments.isPending && <div className="conversation__comments-skeleton" aria-busy="true">
         <Skeleton /><Skeleton /><Skeleton />
       </div>}
@@ -340,7 +400,7 @@ function NewConversationDialog({ props, onClose }: { props: ConversationProps; o
       onWritten();
       onClose();
     },
-    onError: (failure: unknown) => { setError(writeError(failure, scope.side)); if (isStaleSubject(failure)) onStale?.(); }
+    onError: (failure: unknown) => { setError(writeError(failure, scope.side)); if (isStaleSubject(failure) || isPersonaGone(failure, props.subject)) onStale?.(); }
   });
 
   return <Modal title={wording.title(subjectLabel)} closeLabel={wording.closeLabel} onClose={onClose}>
@@ -357,7 +417,124 @@ function NewConversationDialog({ props, onClose }: { props: ConversationProps; o
   </Modal>;
 }
 
-function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: ConversationSide; onOpen: () => void }) {
+/** The agency asks the client for material: a first message, as any thread, and a deadline that only this subject has. */
+export function MaterialRequestDialog({ props, onClose }: { props: ConversationProps; onClose: () => void }) {
+  const { scope, onWritten } = props;
+  const httpClient = useApiClient();
+  const queryClient = useQueryClient();
+  const titleId = useId();
+  const bodyId = useId();
+  const formId = useId();
+  const { formRef, summary } = useFormErrors();
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [dueOn, setDueOn] = useState('');
+  // Text that is not a day also leaves `dueOn` empty: it must not go as "no deadline".
+  const [dueInvalid, setDueInvalid] = useState(false);
+  const [titleIssue, setTitleIssue] = useState<string | undefined>();
+  const [bodyIssue, setBodyIssue] = useState<string | undefined>();
+  const [dueIssue, setDueIssue] = useState<string | undefined>();
+  const [error, setError] = useState<string | undefined>();
+  const today = todayInSaoPaulo();
+
+  const open = useMutation({
+    mutationFn: (request: { title: string; body: string; dueOn: string }) => httpClient.request({
+      path: routesOf(scope).threads,
+      method: 'POST',
+      body: { subject: { materialRequest: true }, title: request.title, body: request.body, ...(request.dueOn === '' ? {} : { dueOn: request.dueOn }) },
+      response: CreateThreadResponseSchema
+    }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: scopeKeyOf(scope) });
+      onWritten();
+      onClose();
+    },
+    onError: (failure: unknown) => {
+      const refusal = materialRequestError(failure);
+      if (refusal.field === 'title') setTitleIssue(refusal.message);
+      else if (refusal.field === 'dueOn') setDueIssue(refusal.message);
+      else setError(refusal.message);
+    }
+  });
+
+  const submit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    const now = todayInSaoPaulo();
+    const titleFound = titleProblem(title);
+    const bodyFound = bodyProblem(body);
+    const dueFound = dueInvalid ? invalidDayMessage : dueOn !== '' && (dueOn < now || dueOn > addDays(now, MATERIAL_DUE_WINDOW_DAYS)) ? MATERIAL_DUE_RANGE : undefined;
+    setTitleIssue(titleFound);
+    setBodyIssue(bodyFound);
+    setDueIssue(dueFound);
+    setError(undefined);
+    if (titleFound !== undefined || bodyFound !== undefined || dueFound !== undefined) return;
+    open.mutate({ title: title.trim(), body: body.trim(), dueOn });
+  };
+
+  return <Modal
+    title="Pedir material"
+    closeLabel="Fechar pedido de material"
+    description="A mensagem abre uma conversa com o cliente. O prazo é opcional."
+    onClose={onClose}
+    confirmDiscard={{ dirty: (title.trim() !== '' || body.trim() !== '' || dueOn !== '' || dueInvalid) && !open.isPending }}
+    actions={<Button type="submit" form={formId} loading={open.isPending}>{error === undefined ? 'Enviar pedido' : 'Tentar de novo'}</Button>}
+  >
+    <form id={formId} ref={formRef} className="conversation__composer" onSubmit={submit} noValidate>
+      {summary}
+      <Field label="Título do pedido" id={titleId} counter={{ count: titleLength(title), max: MATERIAL_REQUEST_TITLE_MAX_LENGTH }} error={titleIssue}>
+        {(control) => (
+          <TextInput
+            {...control}
+            value={title}
+            placeholder="Ex.: Fotos da equipe"
+            readOnly={open.isPending}
+            onChange={(event) => { setTitle(event.target.value); setTitleIssue(undefined); setError(undefined); }}
+          />
+        )}
+      </Field>
+      <Field label="O que você precisa do cliente" id={bodyId} error={bodyIssue}>
+        {(control) => (
+          <Textarea
+            {...control}
+            value={body}
+            rows={4}
+            placeholder="Ex.: envie 3 fotos da equipe"
+            readOnly={open.isPending}
+            onChange={(event) => { setBody(event.target.value); setBodyIssue(undefined); setError(undefined); }}
+          />
+        )}
+      </Field>
+      <Field label="Prazo (opcional)" hint="De hoje até 90 dias à frente." error={dueIssue}>
+        {(control) => (
+          <DatePicker
+            {...control}
+            today={today}
+            min={today}
+            max={addDays(today, MATERIAL_DUE_WINDOW_DAYS)}
+            value={dueOn}
+            disabled={open.isPending}
+            toggleLabel="Abrir calendário do prazo"
+            onInvalidChange={setDueInvalid}
+            onChange={(day) => { setDueOn(day); setDueIssue(undefined); setError(undefined); }}
+          />
+        )}
+      </Field>
+      <p className="conversation__note">{NO_EDIT_NOTE}</p>
+      {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
+    </form>
+  </Modal>;
+}
+
+/** The deadline of a request for material, and "venceu" when it passed while the request is still open. */
+export function MaterialDue({ thread, today }: { thread: Pick<Thread, 'state' | 'dueOn'>; today: string }) {
+  if (thread.dueOn === null) return null;
+  return <span className="conversation__thread-due">
+    {deadlineLabel(thread.dueOn)}
+    {isOverdue(thread, today) && <LateBadge>venceu</LateBadge>}
+  </span>;
+}
+
+function ThreadRow({ thread, viewer, today, onOpen }: { thread: Thread; viewer: ConversationSide; today: string; onOpen: () => void }) {
   const awaiting = awaitsViewer(thread, viewer);
   const status = thread.state === 'resolved'
     ? (viewer === 'client' ? 'concluída' : 'resolvida')
@@ -365,6 +542,8 @@ function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: Convers
   const icon = thread.state === 'resolved' ? <CheckCheck /> : awaiting ? <Clock /> : <MessageSquare />;
   return <li>
     <button type="button" className="conversation__thread" onClick={onOpen}>
+      {isMaterialRequest(thread.subject) && <span className="conversation__thread-subject">{MATERIAL_REQUEST_LABEL}</span>}
+      {isMaterialRequest(thread.subject) && <MaterialDue thread={thread} today={today} />}
       <span className="conversation__thread-meta">
         {thread.openedBy.name === null
           ? `Aberta ${thread.openedBy.side === 'agency' ? 'pela agência' : 'pelo cliente'}`
@@ -372,13 +551,13 @@ function ThreadRow({ thread, viewer, onOpen }: { thread: Thread; viewer: Convers
       </span>
       <span className="conversation__thread-last">{SIDE_TITLE[thread.lastComment.side]} · {formatDay(thread.lastComment.at)}</span>
       <span className="conversation__thread-excerpt">{thread.lastComment.excerpt}</span>
-      <Pill tone={awaiting ? 'accent' : 'neutral'} icon={icon} className={awaiting ? 'conversation__status conversation__status--awaiting' : 'conversation__status'}>{status}</Pill>
+      <Pill tone={awaiting ? 'accent' : 'neutral'} icon={icon} className={`conversation__status conversation__status--${thread.state === 'resolved' ? 'resolved' : awaiting ? 'awaiting' : 'open'}`}>{status}</Pill>
     </button>
   </li>;
 }
 
 export function Conversation(props: ConversationProps) {
-  const { scope, subject, subjectLabel, canWrite, readOnly, blockedReason, planBlockedReason, headingLevel = 4 } = props;
+  const { scope, subject, subjectLabel, canWrite, readOnly, blockedReason, planBlockedReason, headingLevel = 4, emptyTip = false } = props;
   const Heading = `h${headingLevel}` as const;
   const opening = OPENING[scope.side];
   const httpClient = useApiClient();
@@ -387,6 +566,8 @@ export function Conversation(props: ConversationProps) {
   const subjectQuery = subjectQueryOf(subject);
   // A content has one conversation: a second "new conversation" would write into the first.
   const ofContent = 'contentId' in subject;
+  const material = isMaterialRequest(subject);
+  const today = todayInSaoPaulo();
 
   // One query reads both states and answers together: a thread that changes state moves between the
   // two lists, so reading them apart would make it vanish or repeat between the two answers.
@@ -403,6 +584,11 @@ export function Conversation(props: ConversationProps) {
     }
   });
 
+  const threadsError = threads.error;
+  useEffect(() => {
+    if (threadsError !== null && isPersonaGone(threadsError, subject)) props.onStale?.();
+  }, [threadsError]);
+
   const writable = canWrite && !readOnly;
   // The API already orders by latest activity inside each state.
   const list = threads.data === undefined ? [] : [...threads.data.open.data, ...threads.data.resolved.data];
@@ -413,15 +599,21 @@ export function Conversation(props: ConversationProps) {
   const current = openId === null ? undefined : list.find((thread) => thread.id === openId);
   const canStart = writable && blockedReason === undefined && (!ofContent || (threads.data !== undefined && list.length === 0));
 
-  return <section className="conversation" aria-label={`${ofContent ? 'Conversa' : 'Conversas'} sobre ${subjectLabel}`}>
+  const count = threads.data === undefined ? '' : ` (${totalItems})`;
+  const emptyText = material ? 'Nenhum pedido de material' : ofContent ? 'Nenhuma conversa sobre este conteúdo' : 'Nenhuma conversa sobre esta parte';
+  // The agency's list is drawn as cards; a content keeps its own look in the modal.
+  const rootClass = scope.side === 'agency' && !ofContent ? 'conversation conversation--agency' : 'conversation';
+  return <section className={rootClass} aria-label={material ? 'Pedidos de material' : `${ofContent ? 'Conversa' : 'Conversas'} sobre ${subjectLabel}`}>
     <header className="conversation__header">
       <Heading className="conversation__title">
-        {ofContent ? 'Conversa' : `Conversas${threads.data === undefined ? '' : ` (${totalItems})`}`}
+        {material ? `Pedidos de material${count}` : ofContent ? 'Conversa' : `Conversas${count}`}
       </Heading>
       {awaiting > 0 && <Pill tone="accent" className="conversation__status conversation__status--awaiting">
         {scope.side === 'agency' ? `${awaiting} aguardando` : `${awaiting} com resposta da agência`}
       </Pill>}
-      {canStart && (scope.side === 'client'
+      {canStart && (material
+        ? <Button size="sm" variant="secondary" leadingIcon={<Plus />} blockedReason={planBlockedReason} onClick={() => setCreating(true)}>Pedir material</Button>
+        : scope.side === 'client'
         ? <Button variant="secondary" aria-label={opening.buttonName(subjectLabel)} blockedReason={planBlockedReason} onClick={() => setCreating(true)}>Sugerir</Button>
         : <Button size="sm" variant="secondary" leadingIcon={<Plus />} aria-label={opening.buttonName(subjectLabel)} blockedReason={planBlockedReason} onClick={() => setCreating(true)}>conversa</Button>)}
     </header>
@@ -432,15 +624,22 @@ export function Conversation(props: ConversationProps) {
       <Button size="sm" variant="secondary" loading={threads.isFetching} onClick={() => { void threads.refetch(); }}>Tentar de novo</Button>
     </div>}
     {writable && blockedReason !== undefined && <p className="conversation__note">{blockedReason}</p>}
-    {threads.data !== undefined && list.length === 0 && <p className="conversation__empty">{ofContent ? 'Nenhuma conversa sobre este conteúdo' : 'Nenhuma conversa sobre esta parte'}</p>}
+    {threads.data !== undefined && list.length === 0 && (emptyTip
+      ? <div className="conversation__tip" data-stage-host>
+        <Stage3D src="/3d/bulb.png" tone="indigo" size="sm" />
+        <p className="conversation__empty">{emptyText}</p>
+      </div>
+      : <p className="conversation__empty">{emptyText}</p>)}
     {list.length > 0 && <ul className="conversation__threads">
-      {list.map((thread) => <ThreadRow key={thread.id} thread={thread} viewer={scope.side} onOpen={() => setOpenId(thread.id)} />)}
+      {list.map((thread) => <ThreadRow key={thread.id} thread={thread} viewer={scope.side} today={today} onOpen={() => setOpenId(thread.id)} />)}
     </ul>}
     {truncated && <p className="conversation__note">
       Mostrando as {THREADS_PAGE_SIZE} conversas mais recentes.
     </p>}
 
     {current !== undefined && <OpenThread props={props} thread={current} onClose={() => setOpenId(null)} />}
-    {creating && <NewConversationDialog props={props} onClose={() => setCreating(false)} />}
+    {creating && (material
+      ? <MaterialRequestDialog props={props} onClose={() => setCreating(false)} />
+      : <NewConversationDialog props={props} onClose={() => setCreating(false)} />)}
   </section>;
 }

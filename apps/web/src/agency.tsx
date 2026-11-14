@@ -1,16 +1,16 @@
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { Link, Outlet, useLocation, useParams } from 'react-router-dom';
-import { Briefcase, CalendarDays, ChevronRight, Users, type LucideIcon } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
 import { AgencyMeResponseSchema, type AgencyMeResponse } from '@ageniza/contracts';
 import { AccountMenu } from './account-menu.js';
 import { isTermsNotAccepted, TermsRedirect } from './acceptance.js';
 import { AgencySidebar, AgencySidebarSkeleton } from './agency-nav.js';
-import { Button, ButtonLink, EmptyState, Logo, Skeleton } from '@ageniza/ui';
+import { Button, Logo, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { useDocumentTitle } from './document-title.js';
+import { ShellTopbar } from './shell-topbar.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InvitationNotice } from './invitation-notice.js';
 import { LegalNotice } from './legal-notice.js';
@@ -119,9 +119,10 @@ export function AgencyAreaLayout() {
   return <AgencyAreaContext.Provider value={data}>
     <div className="app-shell agency-shell">
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-      <AgencySidebar agenciaId={agenciaId} agencyName={data.agencyName} permissions={data.permissions} />
+      <AgencySidebar agenciaId={agenciaId} agencyName={data.agencyName} permissions={data.permissions} isOwner={data.isOwner} roleName={data.role.name} />
       <div className="agency-body">
-        <TrialNotice plan={data.plan} />
+        <ShellTopbar />
+        <TrialNotice plan={data.plan} agencyId={data.agencyId} canSubscribe={data.permissions.includes('assinatura.gerenciar')} />
         <LegalNotice />
         <main className="agency-content" id="main-content"><InvitationNotice /><NotFoundHomeContext.Provider value={`/agencia/${data.agencyId}`}><Outlet /></NotFoundHomeContext.Provider></main>
       </div>
@@ -138,51 +139,6 @@ export function AgencyPermissionRoute({ permission, children }: { permission: st
   const allowed = (typeof permission === 'string' ? [permission] : permission).every((required) => permissions.includes(required));
   if (!allowed) return <NotFoundPage as="section" />;
   return <>{children}</>;
-}
-
-interface Shortcut {
-  to: string;
-  label: string;
-  description: string;
-  icon: LucideIcon;
-}
-
-export function AgencyHomePage() {
-  const agency = useAgencyContext();
-  const canSeeCollaborators = useCan('colaborador.visualizar');
-  const canSeeClients = useCan('cliente.visualizar');
-  // The same condition as the menu: Conteúdos needs the roster behind its picker.
-  const canSeeContents = useCan('conteudo.visualizar') && canSeeClients;
-  useDocumentTitle(`${agency.agencyName} — Ageniza`);
-
-  const shortcuts: Shortcut[] = [
-    ...(canSeeContents ? [{ to: 'conteudos', label: 'Calendário Editorial', description: 'Calendário do mês, aprovação e roteiros de stories.', icon: CalendarDays }] : []),
-    ...(canSeeClients ? [{ to: 'clientes', label: 'Clientes', description: 'Carteira, estudo de marca e conversas.', icon: Briefcase }] : []),
-    ...(canSeeCollaborators ? [{ to: 'colaboradores', label: 'Equipe', description: 'Colaboradores, papéis e convites.', icon: Users }] : [])
-  ];
-
-  return <section aria-labelledby="agency-home-title" className="agency-home">
-    <h1 id="agency-home-title">{agency.agencyName}</h1>
-    {shortcuts.length === 0
-      ? <EmptyState
-          className="agency-home__empty"
-          title="Nenhum módulo disponível para o seu papel"
-          description="Fale com quem administra a agência para liberar o acesso. Se você participa de outra agência, troque de contexto."
-          action={<ButtonLink as={Link} to="/contextos" variant="secondary">Trocar de contexto</ButtonLink>}
-        />
-      : <ul className="agency-shortcuts">
-          {shortcuts.map(({ to, label, description, icon: Icon }) => <li key={to}>
-            <Link className="agency-shortcut" to={to}>
-              <Icon className="agency-shortcut__icon" aria-hidden="true" />
-              <span className="agency-shortcut__text">
-                <span className="agency-shortcut__label">{label}</span>
-                <span className="agency-shortcut__description">{description}</span>
-              </span>
-              <ChevronRight className="agency-shortcut__chevron" aria-hidden="true" />
-            </Link>
-          </li>)}
-        </ul>}
-  </section>;
 }
 
 /**

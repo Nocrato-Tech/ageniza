@@ -146,7 +146,7 @@ describe('CLIENTS portal access by e-mail (#711)', () => {
       const row = await accessOf(clientA1, email);
       expect(row).toMatchObject({ user_id: null, status: 'active', generation: 1 });
       expect(response.json()).toEqual({
-        accessId: row.id, name: null, email, status: 'active', entered: false, since: new Date(row.created_at).toISOString()
+        accessId: row.id, name: null, email, status: 'active', entered: false, lastEnteredAt: null, since: new Date(row.created_at).toISOString()
       });
 
       const [mail] = await welcomes(email);
@@ -195,7 +195,7 @@ describe('CLIENTS portal access by e-mail (#711)', () => {
 
       for (const response of [withAccount, withoutAccount]) {
         expect(response.statusCode).toBe(201);
-        expect(Object.keys(response.json()).sort()).toEqual(['accessId', 'email', 'entered', 'name', 'since', 'status']);
+        expect(Object.keys(response.json()).sort()).toEqual(['accessId', 'email', 'entered', 'lastEnteredAt', 'name', 'since', 'status']);
         expect(response.json()).toMatchObject({ name: null, entered: false });
       }
       expect(await accessOf(clientA1, verified.email)).toMatchObject({ user_id: null });

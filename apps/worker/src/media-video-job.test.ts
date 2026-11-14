@@ -147,6 +147,25 @@ const unmock = (): void => {
   vi.doUnmock('node:fs/promises');
 };
 
+describe('the size of a video reaches the row with the rest of the outcome', () => {
+  const dimensionsHandedToTheRow = async (probe: () => Promise<unknown>): Promise<unknown> => {
+    const job = await loadJob({ probe });
+    const repository = await import('./media-repository.js');
+    await job.run(1);
+    const call = vi.mocked(repository.markVideoProcessingReady).mock.calls[0];
+    unmock();
+    return call?.[2];
+  };
+
+  it('hands over the width and the height the probe read', async () => {
+    expect(await dimensionsHandedToTheRow(async () => ({ durationSeconds: 60, width: 1080, height: 1920 }))).toMatchObject({ width: 1080, height: 1920 });
+  });
+
+  it('hands over nothing when the probe found no video stream', async () => {
+    expect(await dimensionsHandedToTheRow(async () => ({ durationSeconds: 60, width: undefined, height: undefined }))).toMatchObject({ width: undefined, height: undefined });
+  });
+});
+
 describe('a video that ran out of time is not tried again', () => {
   it('records the time-out as the final failure on the first attempt and ends the job without an error, so the queue does not repeat it', async () => {
     const job = await loadJob({ preview: async () => { throw new TestBinaryError('TIMEOUT'); } });

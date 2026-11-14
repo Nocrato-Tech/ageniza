@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { readGlobalCss } from './read-css';
+
 const STYLES = __dirname;
 
-/** A stylesheet of the app with comments removed and line endings normalised, so a CRLF checkout reads the same. */
+/** A stylesheet of the app with comments removed and line endings normalised, so a CRLF checkout reads the same. `globals.css` reads with its sheets in place. */
 export const readStyles = (file: string): string =>
-  readFileSync(join(STYLES, file), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
+  (file === 'globals.css' ? readGlobalCss() : readFileSync(join(STYLES, file), 'utf8')).replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
 
 const customProperties = (css: string, selector: string): Map<string, string> => {
   const start = css.indexOf(`${selector} {`);
@@ -16,11 +18,11 @@ const customProperties = (css: string, selector: string): Map<string, string> =>
 
 const light = new Map([
   ...customProperties(readStyles('tokens/primitives.css'), ':root'),
-  ...customProperties(readStyles('tokens/semantic.css'), ":root,\n[data-theme='light']")
+  ...customProperties(readStyles('tokens/semantic.css'), ':root')
 ]);
-const dark = new Map([...light, ...customProperties(readStyles('themes/dark.css'), "[data-theme='dark']")]);
 
-export const themes = { light, dark } as const;
+/** The app has one theme; the name stays an argument of the helpers so a test says which tokens it reads. */
+export const themes = { light } as const;
 
 type Rgb = [number, number, number];
 

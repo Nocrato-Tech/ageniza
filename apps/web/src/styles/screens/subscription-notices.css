@@ -1,0 +1,44 @@
+/* The plan strip of the agency (trial, end of trial, canceled period): the board's note, a soft tint with one corner squared.
+   In the last days it turns to the red block, and the icon keeps saying what it is. */
+.trial-notice {
+  border-color: transparent;
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.trial-notice--urgent {
+  background: var(--block-red-bg);
+  color: var(--block-red-fg);
+}
+
+.trial-notice--urgent .shell-notice__icon {
+  color: var(--block-red-fg);
+}
+
+/* A plan ceiling reached inside a form or a dialog: what blocked, and the way out. */
+.plan-limit {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  background: var(--block-red-bg);
+}
+
+.plan-limit__text {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--block-red-fg);
+  font: var(--body-md);
+}
+
+.plan-limit__text svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+

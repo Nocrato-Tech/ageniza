@@ -1,0 +1,21 @@
+/* Opacity and an 8px rise: the only motion of a dialog and of a floating card. */
+@keyframes ui-float-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+}
+
+.ui-modal__description {
+  margin: calc(var(--space-4) * -1) 0 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.ui-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+

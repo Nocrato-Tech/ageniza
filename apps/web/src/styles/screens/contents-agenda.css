@@ -1,0 +1,120 @@
+/* The agenda of a narrow screen: a block for each day, headed "Hoje", "Amanhã" or the weekday with the date, and the same cards under it. */
+.content-agenda {
+  display: grid;
+  gap: var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-agenda__day {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.content-agenda__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font: var(--label-md);
+  font-weight: 700;
+}
+
+.content-agenda__date {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.content-agenda__day--today .content-agenda__when {
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+
+.content-agenda__day--empty .content-agenda__label {
+  color: var(--text-muted);
+}
+
+.content-agenda__body {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.content-agenda .content-card__link {
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3);
+}
+
+.content-agenda .content-card {
+  border-radius: var(--radius-lg);
+}
+
+.content-agenda .content-card__cover {
+  width: 3rem;
+}
+
+.content-agenda .content-card__title {
+  font-size: 0.9375rem;
+  line-height: 1.375rem;
+}
+
+/* The tools of a day are a row in the flow here, not the corner of a cell: the "+" and the story row, both 44 px tall. */
+.content-agenda__day .content-day__tools {
+  position: static;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.content-agenda__day .content-day__tools .ui-menu__trigger {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  opacity: 1;
+}
+
+.content-agenda__day .content-day__tools .ui-menu__content {
+  top: 3rem;
+  right: auto;
+  left: 0;
+}
+
+.content-agenda__day .content-day__story {
+  flex: 1 1 100%;
+  justify-content: flex-start;
+  gap: var(--space-3);
+  min-height: 3.25rem;
+  padding: var(--space-3);
+  border: 1px dashed var(--color-slate-300);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  font: var(--label-md);
+  text-align: left;
+}
+
+.content-agenda__day .content-day__story .story-ring {
+  --story-size: 2rem;
+}
+
+.content-agenda__day .content-day__story-text {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+}
+
+.content-agenda__day .content-day__story-text small {
+  display: block;
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-weight: 500;
+}

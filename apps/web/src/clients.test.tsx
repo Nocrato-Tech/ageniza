@@ -5,6 +5,7 @@ import { MemoryRouter, type NavigateFunction } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { createQueryClient } from './query.js';
 import { ApplicationRoutes } from './routes.js';
@@ -116,7 +117,8 @@ const createdClient = {
   contactPhone: null,
   contactEmail: null,
   closingDate: null,
-  archivedAt: null
+  archivedAt: null,
+  ...clientRegistrationExtras
 };
 
 /** The detail answer of `GET .../clients/:clientId` for the fixtures (SPEC section 6). */
@@ -130,6 +132,7 @@ const detailOf = (listItem: Record<string, unknown>): Record<string, unknown> =>
   contactPhone: null,
   contactEmail: null,
   archivedAt: null,
+  ...clientRegistrationExtras,
   summary: { brandStudyFilled: 0, threadsAwaitingAgency: 2, threadsAnsweredByAgency: 0, activePortalMembers: 0 }
 });
 
@@ -619,7 +622,7 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
 
     await act(async () => { probe.navigate(`/agencia/${AGENCY_B}/clientes`); });
 
-    await screen.findByRole('link', { name: 'Agência Dois' });
+    await screen.findByRole('link', { name: /Agência Dois/ });
     expect(screen.queryByText('Padaria Central')).toBeNull();
     expect(container.querySelectorAll('.clients__card-skeleton')).toHaveLength(20);
   });
@@ -638,8 +641,14 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
 
     const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
     expect(alert.textContent).toContain('Não foi possível carregar os clientes.');
-    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    // The failure kind: neither the first-use invitation nor the empty archived list speaks for a roster that did not answer.
+    expect(alert.classList.contains('ui-empty-state--failure')).toBe(true);
+    expect(screen.queryByText('Nenhum cliente ainda')).toBeNull();
+    expect(screen.queryByText('Nenhum cliente arquivado')).toBeNull();
+    const attemptsBeforeRetry = attempts;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
     await screen.findByText('Padaria Central');
+    expect(attempts).toBeGreaterThan(attemptsBeforeRetry);
   });
 
   it('opens the client detail from its card', async () => {
@@ -650,7 +659,7 @@ describe('ClientsPage (/agencia/:agenciaId/clientes)', () => {
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${padaria.id}/geral`));
     expect(await screen.findByRole('heading', { name: 'Padaria Central' })).toBeTruthy();
     // The real detail (issue #136) renders the tab bar with Geral active.
-    expect(screen.getByRole('link', { name: 'Geral' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: /^Visão geral/ }).getAttribute('aria-current')).toBe('page');
   });
 
   it('renders an archived card dimmed and without any badge or indicator strip', async () => {
@@ -736,6 +745,29 @@ describe('create client modal (#135)', () => {
     return await screen.findByRole('dialog', { name: 'Cadastrar cliente' });
   };
 
+  it.each([
+    ['Esc', (dialog: HTMLElement) => { fireEvent(dialog, new Event('cancel', { bubbles: true, cancelable: true })); }],
+    ['the X', (dialog: HTMLElement) => { fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar cadastro de cliente' })); }]
+  ])('closes at once on %s while the name is empty, and asks before discarding a typed name', async (_name, close) => {
+    const { impl } = makeFetch();
+    const { container } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+
+    close(await openCreate(container));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    const dialog = await openCreate(container);
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nome' }), { target: { value: 'Padaria Nova' } });
+    close(dialog);
+    const confirmation = await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' });
+    expect(within(confirmation).getByRole('button', { name: 'Descartar' })).toBeTruthy();
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Continuar editando' }));
+    expect((within(dialog).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement).value).toBe('Padaria Nova');
+
+    close(dialog);
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).getByRole('button', { name: 'Descartar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
   it('opens with only the name field and the complete-later hint', async () => {
     const { impl } = makeFetch();
     const { container } = renderClients(impl);
@@ -836,7 +868,7 @@ describe('create client modal (#135)', () => {
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes/${createdClient.id}/geral`));
 
     // The creation invalidated the roster: going back shows the new client without a reload.
-    fireEvent.click(screen.getByRole('link', { name: 'Voltar para Clientes' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Você está em' })).getByRole('link', { name: 'Clientes' }));
     expect(await screen.findByText('Padaria Nova')).toBeTruthy();
   });
 
@@ -879,6 +911,44 @@ describe('create client modal (#135)', () => {
     expect(dialog.textContent).not.toContain('private diagnostic');
     expect(screen.getByRole('dialog', { name: 'Cadastrar cliente' })).toBe(dialog);
     expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`);
+  });
+
+  it.each([
+    ['TRIAL_CLIENT_LIMIT', 'O período de teste permite até 3 clientes ativos.'],
+    ['PLAN_CLIENT_LIMIT', 'Você chegou ao limite de clientes do seu plano.']
+  ])('on %s the Owner gets the limit with the way to plans and extras, not a name-in-use error', async (code, message) => {
+    const { impl } = makeFetch({
+      permissions: [...CLIENT_PERMISSIONS, 'assinatura.gerenciar'],
+      createClient: () => json({ error: { code, message } }, 409)
+    });
+    const { container } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+    const dialog = await openCreate(container);
+    const name = within(dialog).getByRole('textbox', { name: 'Nome' }) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: 'Padaria Nova' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cadastrar' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toContain('A agência chegou ao limite de clientes ativos do plano. Suba de plano ou compre extras para continuar.');
+    expect(within(dialog).getByRole('link', { name: 'Ver planos e extras' }).getAttribute('href')).toBe(`/agencia/${AGENCY_A}/assinatura`);
+    expect(within(dialog).queryByText('Já existe um cliente ativo com este nome.')).toBeNull();
+    expect(name.getAttribute('aria-invalid')).toBeNull();
+    expect(name.value).toBe('Padaria Nova');
+    fireEvent.change(name, { target: { value: 'Padaria Nova 2' } });
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+  });
+
+  it('on the client limit an Admin is told whom to ask and gets no link', async () => {
+    const { impl } = makeFetch({ createClient: () => json({ error: { code: 'PLAN_CLIENT_LIMIT', message: 'x' } }, 409) });
+    const { container } = renderClients(impl);
+    await screen.findByText('Padaria Central');
+    const dialog = await openCreate(container);
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nome' }), { target: { value: 'Padaria Nova' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cadastrar' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert.textContent).toContain('Peça a quem criou a agência para subir o plano ou comprar extras.');
+    expect(within(dialog).queryByRole('link')).toBeNull();
   });
 
   it('says the error with its icon, puts the focus back on the name, and sends from the foot of the dialog', async () => {
@@ -1141,6 +1211,45 @@ describe('the client badge (#636)', () => {
     expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Abrir cliente']);
   });
 
+  it.each([
+    ['the roster with its triage line', [lateAndInvited, dueSoon, quiet], 'Cliente Atrasado'],
+    ['the first-use state of an empty roster', [], 'Nenhum cliente ainda']
+  ] as const)('keeps the failure and its busy retry in place while it re-reads, then shows %s and drops the failure', async (_what, rows, shown) => {
+    let attempts = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { impl } = makeFetch({
+      permissions: ALL,
+      clients: async () => {
+        attempts += 1;
+        if (attempts <= 2) return json({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 500);
+        await held;
+        return listResponse(rows);
+      }
+    });
+    renderClients(impl);
+
+    const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
+    const retry = within(alert).getByRole('button', { name: 'Tentar de novo' });
+    retry.focus();
+    fireEvent.click(retry);
+
+    // The re-read in flight: the same failure, the same button, busy and focused, and no skeleton in its place.
+    await waitFor(() => expect(retry.getAttribute('aria-busy')).toBe('true'));
+    expect(screen.getByRole('alert')).toBe(alert);
+    expect(within(alert).getByRole('button', { name: 'Tentar de novo' })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(document.querySelector('.clients__card-skeleton')).toBeNull();
+
+    release();
+    expect(await screen.findByText(shown)).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
+    if (rows.length > 0) {
+      expect(screen.getByRole('region', { name: 'Triagem e filtros' }).textContent).toContain('Comece por Cliente Atrasado: 1 post atrasado.');
+    }
+  });
+
   it('writes the triage sentence from the first page of the unfiltered active roster, and only there', async () => {
     const { impl } = roster([lateAndInvited, dueSoon, quiet]);
     renderClients(impl);
@@ -1209,7 +1318,7 @@ describe('the roster address travels to the detail from every way in (#636)', ()
     await screen.findByText('Padaria Central');
 
     await enter();
-    fireEvent.click(await screen.findByRole('link', { name: 'Voltar para Clientes' }));
+    fireEvent.click(await within(await screen.findByRole('navigation', { name: 'Você está em' })).findByRole('link', { name: 'Clientes' }));
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}/clientes`));
     expect(probe.search).toBe('?search=padaria');
   });

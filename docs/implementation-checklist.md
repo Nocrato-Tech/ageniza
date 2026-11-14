@@ -52,6 +52,9 @@ _Ver também os itens 7 a 9 e 25, que estão na faixa Geral._
 62. **Gatilho com erro em UPDATE de rota existente.** Gatilho novo que levanta erro num `UPDATE` já usado por rota existente exige achar e testar cada rota que faz esse `UPDATE` antes do merge: a revisão do #545 achou, antes do merge, que o gatilho novo faria o `PATCH` de persona dar 500 (#545).
 63. **Lista de colunas do gatilho contra o grant.** Lista de colunas escrita à mão num gatilho precisa de teste de catálogo contra o grant (`tgattr` x `has_column_privilege`); senão coluna gravável nova escapa sem vermelho. Complementa o item 33 (#538).
 67. **Corrida com trava segurada.** Na trava de linha (tuple lock), o 2º waiter é bloqueado pelo 1º waiter, não pelo holder: esperar N bloqueados pelo pid do holder trava; conte `cardinality(pg_blocking_pids) > 0` (#555). Na trava consultiva, o holder bloqueia os dois waiters, e a contagem pelo pid do holder vale.
+92. **Array de uuid na função.** Função que recebe `uuid[]` confere `array_ndims(p) = 1` antes de `array_position` ou `unnest`: um array de duas dimensões passa pelo tipo e quebra com `0A000` em vez do erro de negócio (telas-melhorias, onda 1).
+93. **Função que recebe um instante.** Função que a aplicação pode executar não recebe o instante de fora: um instante passado refaz dias antigos. O instante fica numa variante interna (`…_at(p_at)`, só do dono, para teste) e a aplicação chama a versão sem argumento, que usa `now()` (telas-melhorias, onda 1).
+94. **Campo gravado por dois caminhos.** Campo novo gravado por mais de um caminho (com conta e só pelo link) tem a invariante do contrato conferida contra cada caminho, e todos os seus consumidores listados (rótulo, botão, regra do banco) antes de a tela usá-lo (telas-melhorias, onda 2).
 
 ## API e portal
 
@@ -81,6 +84,18 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 73. **Tooltip que vira Popover.** Quando um tooltip vira `Popover`, o elemento que recebe o foco continua descrito pelo cartão (`aria-describedby` com o id do cartão enquanto aberto, e sem ele depois do Esc), e o teste do vínculo não some na troca de role: troque `tooltip` por `dialog` na asserção, nunca a apague. Passar `aria-expanded` e `aria-controls` para outro elemento (o link de dentro do card) não substitui a descrição de quem tem o foco, e o leitor de tela só lê o cartão se ela existir (#668).
 
 74. **Clique duplo na mesma tarefa.** Guarda de clique duplo que lê o estado do TanStack Query (`isPending`) não cobre dois cliques na mesma tarefa: o estado só muda no render seguinte, e os dois cliques o veem falso. Para a garantia, a guarda é um `useRef` síncrono, posto antes do `mutate` e solto no `onSettled`. O teste dispara os dois cliques dentro de um só `act` (sem render entre eles) e afirma uma só chamada; o que o `isPending` sozinho deixa passar fica vermelho (#639, achado da Coruja no #675).
+
+86. **Fechar formulário com dado digitado pede confirmação.** Prova: teste de Esc, clique fora e X, cada um com e sem dado. Com dado abre a confirmação e nada fecha; sem dado fecha direto; o sucesso fecha sem perguntar (decisão `2026-11-10-cartao-de-conteudo-enxuto-e-fechamento-seguro-de-formulario`).
+
+87. **Vazio só afirma "nada pendente" com a consulta ok e completa.** Prova: teste com a consulta falhando mostra a falha com "Tentar de novo", nunca o vazio de boa notícia; a tela cobre todos os estados pendentes (decisão `2026-11-10-tres-tipos-de-estado-vazio`).
+
+88. **Cartão de conteúdo enxuto.** Mostra título, uma linha de apoio e o estado; o resto fica no cartão de passar o mouse. Prova: asserção do que fica e do que saiu, e captura em 1440 e 390 sem nada fora da tela.
+
+89. **Estado nunca só por cor.** Todo estado leva ícone e texto. Prova: asserção do ícone e do texto de cada estado.
+
+90. **Texto ao cliente fala em nome da agência.** Nunca vende o produto. Prova: asserção do texto positivo e leitura dele como a agência falando.
+
+91. **O que não se usa toda semana não fica no primeiro nível do menu.** Prova: teste da navegação com os itens do primeiro nível e onde cada um dos demais mora.
 
 ## Testes e mutação
 
@@ -123,5 +138,14 @@ _Ver também os itens 15 a 17, que estão na faixa Geral._
 84. **Teste que depende do dia de São Paulo.** Quando a função lê `now()` por dentro e não dá para injetar o instante sem abrir a função `security definer`, o teste espera sair da borda da meia-noite (`waitForQuietClock`).
 
 85. **Scratchpad e `%TEMP%` são compartilhados entre agentes.** Prefixo da subtarefa em tudo que criar, e apague só o que criou.
+95. **Contagem global é instável.** Teste de função que age no banco inteiro (fila, lembretes) confere só o efeito nas linhas do próprio teste, ou roda num clone: o retorno global depende do que outro arquivo deixou no banco (telas-melhorias, onda 2).
+96. **Dado plantado não vaza para suíte paralela.** Dado plantado para provar que o teste ignora o resto não pode ser pego por outra suíte que roda ao mesmo tempo, como uma fila reivindicada globalmente. Antes de plantar, confira que os arquivos rodam em série ou num clone (telas-melhorias, onda 2).
+97. **Correção por configuração tem controle sem ela.** Quando a correção depende de configuração (arquivos em série), rode o controle com a configuração removida para saber se é ela ou a limpeza que corrige (telas-melhorias, onda 2).
+98. **Trava que espera tem corrida real.** Trava cujo comentário diz "espera a operação em andamento" tem teste com duas transações reais segurando essa operação. Um teste de deadlock em outra tabela não pega a remoção da trava (telas-melhorias, onda 2).
+99. **Data opcional digitada pela metade.** Campo de data opcional tem teste com ano de dois dígitos (`14/10/26`): a data incompleta bloqueia o envio com a mensagem do `DatePicker`, e nunca vira "sem data" (telas-melhorias, onda 4).
+100. **Teste de isolamento espera a tela de destino.** Antes de afirmar que o dado de outro cliente não aparece, o teste espera a tela de destino terminar de carregar; afirmar ausência durante o carregamento passa sempre (telas-melhorias, onda 5).
+101. **Falha que some na nova tentativa.** Com TanStack Query v5, consulta que nunca teve dado volta a `pending` ao tentar de novo: a falha continua montada com `isPending && errorUpdateCount > 0`, e o `EmptyState` recebe `retrying={isFetching}` (telas-melhorias, onda 5).
+102. **Mutação da primeira leitura.** Tela com estado de falha tem a mutação "falha na primeira leitura" (sem dado anterior), além da falha depois de já ter dado (telas-melhorias, onda 5).
+103. **Descarte por diálogo.** Cada sinal novo de "formulário com dado digitado" tem o seu teste de descarte no diálogo que o usa; o teste do `Dialog` sozinho não cobre o sinal (telas-melhorias, onda 4).
 
 As lições completas de segurança estão em `docs/security-review.md` e nas notas do projeto; este checklist só lista o que mais se repete.

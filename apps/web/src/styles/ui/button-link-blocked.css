@@ -1,0 +1,6 @@
+/* ButtonLink that cannot be followed: dimmed like a disabled button, and the pointer passes through it. */
+.ui-button--link-disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+

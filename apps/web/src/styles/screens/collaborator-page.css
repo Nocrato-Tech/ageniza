@@ -1,0 +1,298 @@
+/* Collaborator page: specs/colaboradores.md section 7 (the board's agencia-colaborador). The team list stands beside the
+   profile from 64rem; below it the list is the team screen itself and "Voltar à equipe" goes back to it. */
+.collaborator-page {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.collaborator-page__crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.collaborator-page__crumbs a {
+  color: var(--text-secondary);
+}
+
+.collaborator-page__crumbs a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.collaborator-page__crumbs svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.collaborator-page__crumbs [aria-current='page'] {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.collaborator-page__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-self: start;
+  min-height: var(--control-h);
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+.collaborator-page__back svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.collaborator-page__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.collaborator-page__main {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.collaborator-page__list {
+  display: none;
+  gap: var(--space-3);
+}
+
+@media (min-width: 64rem) {
+  .collaborator-page__layout {
+    grid-template-columns: 19rem minmax(0, 1fr);
+  }
+
+  .collaborator-page__back {
+    display: none;
+  }
+
+  .collaborator-page__list {
+    display: grid;
+    position: sticky;
+    top: var(--space-4);
+  }
+}
+
+.collaborator-page__list-rows {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collaborator-page__list-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.collaborator-page__retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* The open person is marked by the border and the tint, never by a hover fill under the text. */
+.collaborator-page__person {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.collaborator-page__person:hover {
+  border-color: var(--focus-ring);
+}
+
+.collaborator-page__person[aria-current='page'] {
+  border-color: var(--focus-ring);
+  background: var(--bg-tint);
+}
+
+.collaborator-page__person-text {
+  display: grid;
+  min-width: 0;
+}
+
+.collaborator-page__person-name {
+  font: var(--label-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.collaborator-page__person-job {
+  color: var(--text-secondary);
+  font: var(--caption);
+  overflow-wrap: anywhere;
+}
+
+/* Profile: header, tabs and the details on one surface, then what is with the person, then the removal. */
+.collaborator-profile {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.collaborator-profile__card,
+.collaborator-open {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.collaborator-profile__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.collaborator-profile__head .ui-avatar {
+  width: 5.5rem;
+  height: 5.5rem;
+}
+
+.collaborator-profile__who {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.collaborator-profile__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.collaborator-profile__name h1 {
+  margin: 0;
+  font: var(--heading-xl);
+  overflow-wrap: anywhere;
+}
+
+.collaborator-profile__who .form-hint {
+  margin: 0;
+}
+
+.collaborator-profile__summary {
+  margin: var(--space-1) 0 0;
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+@media (max-width: 47.99rem) {
+  .collaborator-profile__card,
+  .collaborator-open {
+    padding: var(--space-4);
+  }
+
+  .collaborator-profile__head {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .collaborator-profile__head .ui-avatar {
+    width: 4rem;
+    height: 4rem;
+  }
+}
+
+/* Clientes e o que está com ele */
+.collaborator-open__title {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.collaborator-open__empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.collaborator-open__clients,
+.collaborator-open__now {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collaborator-open__client {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+.collaborator-open__client p {
+  margin: 0;
+}
+
+.collaborator-open__client-name {
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.collaborator-open__counts {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.collaborator-open__now-label {
+  margin-top: var(--space-2);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.collaborator-open__content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.collaborator-open__content:hover {
+  border-color: var(--focus-ring);
+}
+
+.collaborator-open__content-title {
+  min-width: 0;
+  font: var(--label-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

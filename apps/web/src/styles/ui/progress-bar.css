@@ -1,0 +1,26 @@
+/* ProgressBar: how far something went. The number lives in the text beside it. */
+.ui-progress-bar {
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--block-slate-bg);
+}
+
+.ui-progress-bar__fill {
+  display: block;
+  width: var(--ui-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--action-primary-bg);
+  transition: width var(--motion-slow) var(--motion-easing-standard);
+}
+
+.ui-progress-bar--teal .ui-progress-bar__fill {
+  background: var(--status-ready-fg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-progress-bar__fill {
+    transition: none;
+  }
+}

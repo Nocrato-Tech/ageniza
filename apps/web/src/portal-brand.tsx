@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Hourglass } from 'lucide-react';
+import { Hourglass, Info } from 'lucide-react';
 
 import {
   ARCHETYPE_LABELS,
@@ -7,14 +8,14 @@ import {
   type PortalBrandStudyResponse,
   type PortalPersona
 } from '@ageniza/contracts';
-import { Button, Skeleton } from '@ageniza/ui';
+import { EmptyState, Skeleton } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
 import { Conversation } from './conversation.js';
 import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
-import { PLAN_RENEWAL_REASON } from './plan-notice.js';
-import { portalClientQueryKey, usePortalClient } from './portal.js';
+import { PORTAL_PAUSED_REASON } from './plan-notice.js';
+import { PortalStageEmpty, portalClientQueryKey, usePortalClient } from './portal.js';
 
 /**
  * The portal's Marca (specs/clientes.md section 7, issue #143): the study made for the client, in
@@ -24,6 +25,7 @@ import { portalClientQueryKey, usePortalClient } from './portal.js';
  */
 
 const NOT_PREPARED = 'Sua agência está preparando esta parte';
+const PERSONA_GONE = 'Essa persona foi removida pela agência.';
 const LOAD_FAILED = 'Não foi possível carregar a sua marca. Tente de novo.';
 
 /** The seven fixed sections, in the order of the study; the labels are the client's, not the agency's. */
@@ -93,7 +95,7 @@ function PersonaCard({ persona, onWritten, onStale }: { persona: PortalPersona; 
       subjectLabel={persona.name}
       canWrite
       readOnly={false}
-      planBlockedReason={client.agencyReadOnly ? PLAN_RENEWAL_REASON : undefined}
+      planBlockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined}
       headingLevel={4}
       onWritten={onWritten}
       onStale={onStale}
@@ -101,7 +103,7 @@ function PersonaCard({ persona, onWritten, onStale }: { persona: PortalPersona; 
   </li>;
 }
 
-const isClientRosterKey = (query: { readonly queryKey: readonly unknown[] }): boolean => {
+export const isClientRosterKey = (query: { readonly queryKey: readonly unknown[] }): boolean => {
   const key = query.queryKey;
   return key[2] === 'clients' && typeof key[3] === 'object' && key[3] !== null;
 };
@@ -130,8 +132,10 @@ export function PortalBrandPage() {
     // brand study and the access lists of the same clients live under the same prefix and are not touched.
     void queryClient.invalidateQueries({ queryKey: ['agency'], predicate: isClientRosterKey });
   };
-  // The agency archived a persona or emptied a section under the client: read the study again.
+  // The agency deleted a persona or emptied a section under the client: read the study again.
   const onStale = (): void => { void queryClient.invalidateQueries({ queryKey: portalBrandStudyQueryKey(client.id) }); };
+  const [personaGone, setPersonaGone] = useState(false);
+  const onPersonaStale = (): void => { setPersonaGone(true); onStale(); };
 
   // A retry keeps the error and its button mounted (and the focus on it): only the first read is a skeleton.
   if (study.isPending && study.errorUpdateCount === 0) {
@@ -143,16 +147,28 @@ export function PortalBrandPage() {
   if (study.data === undefined) {
     return <section className="portal-brand">
       <h1 className="portal-headline">Sua marca</h1>
-      <div className="portal-error" role="alert">
-        <p>{LOAD_FAILED}</p>
-        <Button variant="secondary" onClick={() => { void study.refetch(); }} loading={study.isFetching}>Tentar de novo</Button>
-      </div>
+      <EmptyState kind="failure" className="portal-empty" headingLevel={2} title={LOAD_FAILED} retrying={study.isFetching} onRetry={() => { void study.refetch(); }} />
     </section>;
   }
 
   const data = study.data;
+  // Nothing shared yet: one line for the whole study, instead of the same "preparing" line seven times.
+  if (SECTIONS.every((section) => !isFilled(section.key, data))) {
+    return <section className="portal-brand" aria-labelledby="portal-brand-title">
+      <h1 id="portal-brand-title" className="portal-headline">Sua marca</h1>
+      <PortalStageEmpty icon="bulb" tone="indigo">
+        <EmptyState
+          className="portal-empty"
+          headingLevel={2}
+          title="Sua agência ainda está preparando o estudo da sua marca"
+          description="Quando ela compartilhar, você vê aqui e pode sugerir mudanças."
+        />
+      </PortalStageEmpty>
+    </section>;
+  }
   return <section className="portal-brand brand-study" aria-labelledby="portal-brand-title">
     <h1 id="portal-brand-title" className="portal-headline">Sua marca</h1>
+    {personaGone && <p className="portal-brand__pending" role="status"><Info aria-hidden="true" />{PERSONA_GONE}</p>}
     {SECTIONS.map((section) => {
       const filled = isFilled(section.key, data);
       const titleId = `portal-brand-${section.key}`;
@@ -160,7 +176,7 @@ export function PortalBrandPage() {
         <header className="brand-section__header"><h2 id={titleId}>{section.label}</h2></header>
         {!filled && <p className="portal-brand__pending"><Hourglass aria-hidden="true" />{NOT_PREPARED}</p>}
         {filled && section.key === 'personas' && <ul className="portal-persona-list">
-          {data.personas.map((persona) => <PersonaCard key={persona.id} persona={persona} onWritten={onWritten} onStale={onStale} />)}
+          {data.personas.map((persona) => <PersonaCard key={persona.id} persona={persona} onWritten={onWritten} onStale={onPersonaStale} />)}
         </ul>}
         {filled && section.key !== 'personas' && <SectionContent sectionKey={section.key} study={data} />}
         {filled && <Conversation
@@ -169,7 +185,7 @@ export function PortalBrandPage() {
           subjectLabel={section.label}
           canWrite
           readOnly={false}
-          planBlockedReason={client.agencyReadOnly ? PLAN_RENEWAL_REASON : undefined}
+          planBlockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined}
           headingLevel={3}
           onWritten={onWritten}
           onStale={onStale}

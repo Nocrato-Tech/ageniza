@@ -39,7 +39,7 @@ sequenceDiagram
 
 1. O token vem no **fragmento** da URL, a parte depois do `#`. O fragmento não vai para servidores nem para logs. Leia o token do link, apague-o da URL e não o registre em lugar nenhum.
 2. `POST /portal-approval/session` com `{ "token" }` troca o token por uma **sessão de aprovação**. Essa sessão é um cookie próprio, separado da sessão de login. A resposta traz `sessionExpiresAt` e `linkExpiresAt`.
-3. `GET /portal-approval/batch` lê o lote.
+3. `GET /portal-approval/batch` lê o lote. Cada conteúdo a partir de "aguardando aprovação" traz `approval`: `{ dueOn, note }`, o prazo e o recado que a agência deu ao enviar (`null` em cada campo quando não deu). O conteúdo em produção não traz `approval`, e o que já aguardava antes das rodadas traz `approval: null`: nesse caso não mostre prazo nem recado. Mostre `dueOn` como o limite da **aprovação** ("responder até"), diferente da data da publicação, e `note` como texto da agência. A resposta de aprovar e de pedir ajuste traz o mesmo `approval`. A data de envio, quem enviou e o lote nunca chegam ao link.
 4. Para cada mídia, peça a URL assinada. Ela dura poucos minutos; se expirar, peça outra.
 5. Para cada conteúdo, aprove ou peça ajuste. O pedido de ajuste exige comentário.
 6. A tela pode oferecer "Criar conta para ver o portal", com o e-mail já preenchido.
@@ -54,6 +54,7 @@ sequenceDiagram
   - a agência foi suspensa ou está em modo leitura.
 - Reativar o acesso **não** faz um link antigo voltar a funcionar.
 - As pessoas do portal que ainda não têm conta também recebem esse e-mail.
+- O e-mail do envio mostra o prazo e o recado da agência, e o link é o mesmo de antes. Os lembretes "vence amanhã" (na véspera do prazo) e "venceu" (no dia seguinte) também levam o link, saem às 9h de São Paulo, uma vez por rodada cada um, só para as pessoas ativas do portal e só enquanto o conteúdo ainda aguarda decisão. Nada sai com o cliente arquivado ou a agência suspensa ou em modo leitura, e "vence amanhã" não sai se o envio foi feito na própria véspera do prazo.
 
 ## Erros
 

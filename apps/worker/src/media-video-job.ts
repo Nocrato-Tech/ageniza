@@ -128,7 +128,7 @@ export const mediaVideoProcessingJob = (
     const previewKey = objectKeyFor(asset.agency_id, asset.id, 'preview.mp4');
 
     try {
-      let result: { durationSeconds: number; thumbnailSizeBytes: number; previewSizeBytes: number };
+      let result: { durationSeconds: number; width: number | undefined; height: number | undefined; thumbnailSizeBytes: number; previewSizeBytes: number };
       try {
         await storage.downloadToFile({ key: asset.object_key, destinationPath: originalPath, signal: jobSignal });
 
@@ -154,6 +154,8 @@ export const mediaVideoProcessingJob = (
         const [thumbnailStat, previewStat] = await Promise.all([stat(thumbnailPath), stat(previewPath)]);
         result = {
           durationSeconds: probe.durationSeconds,
+          width: probe.width,
+          height: probe.height,
           thumbnailSizeBytes: thumbnailStat.size,
           previewSizeBytes: previewStat.size
         };
@@ -165,6 +167,8 @@ export const mediaVideoProcessingJob = (
           thumbnailObjectKey: thumbnailKey,
           previewObjectKey: previewKey,
           durationSeconds: result.durationSeconds,
+          width: result.width,
+          height: result.height,
           thumbnailSizeBytes: result.thumbnailSizeBytes,
           previewSizeBytes: result.previewSizeBytes
         }));

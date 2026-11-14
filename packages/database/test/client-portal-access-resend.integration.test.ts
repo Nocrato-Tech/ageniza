@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Knex } from 'knex';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, type DatabaseClient } from '../src/index.js';
+import { createLocalTestDatabaseClient, resolveIntegrationDatabaseUrls, waitForQuietClock, type DatabaseClient } from '../src/index.js';
 
 import { createContentWorld } from './support/content-world.js';
 
@@ -26,37 +26,11 @@ const owner = (): Knex => w.getOwner().knex;
 // so an event aged across São Paulo midnight leaves the day it was meant to count in. The database clock cannot be moved, so the
 // suite starts only when the whole run fits between the minute that ageing needs after midnight and the next midnight.
 const AGED_SECONDS = 90;
-const AFTER_MIDNIGHT_SECONDS = AGED_SECONDS + 10;
-const BEFORE_MIDNIGHT_SECONDS = 90;
-
-const msUntilClockIsQuiet = (secondsSinceMidnight: number, secondsToMidnight: number): number => {
-  if (secondsSinceMidnight < AFTER_MIDNIGHT_SECONDS) return (AFTER_MIDNIGHT_SECONDS - secondsSinceMidnight) * 1000;
-  if (secondsToMidnight < BEFORE_MIDNIGHT_SECONDS) return (secondsToMidnight + AFTER_MIDNIGHT_SECONDS) * 1000;
-  return 0;
-};
-
-const waitForQuietClock = async (): Promise<void> => {
-  const { rows } = await owner().raw<{ rows: Array<{ since: number; until: number }> }>(`
-    select extract(epoch from now() - app_private.sao_paulo_date(now())::timestamp at time zone 'America/Sao_Paulo')::float8 as since,
-           extract(epoch from (app_private.sao_paulo_date(now()) + 1)::timestamp at time zone 'America/Sao_Paulo' - now())::float8 as until
-  `);
-  const wait = msUntilClockIsQuiet(rows[0]!.since, rows[0]!.until);
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-};
-
-describe('the clock guard of this suite', () => {
-  it('lets the run start in the middle of the day and waits out the edges of São Paulo midnight', () => {
-    expect(msUntilClockIsQuiet(12 * 3600, 12 * 3600)).toBe(0);
-    expect(msUntilClockIsQuiet(AFTER_MIDNIGHT_SECONDS, 86_400 - AFTER_MIDNIGHT_SECONDS)).toBe(0);
-    expect(msUntilClockIsQuiet(10, 86_390)).toBe((AFTER_MIDNIGHT_SECONDS - 10) * 1000);
-    expect(msUntilClockIsQuiet(86_400 - 30, 30)).toBe((30 + AFTER_MIDNIGHT_SECONDS) * 1000);
-    expect(msUntilClockIsQuiet(86_400 - BEFORE_MIDNIGHT_SECONDS, BEFORE_MIDNIGHT_SECONDS)).toBe(0);
-  });
-});
+const QUIET_WINDOW = { afterMidnightSeconds: AGED_SECONDS + 10, beforeMidnightSeconds: 90 };
 
 beforeAll(async () => {
   await w.setup();
-  await waitForQuietClock();
+  await waitForQuietClock(owner(), QUIET_WINDOW);
   worker = createLocalTestDatabaseClient(applicationUrl);
   await w.archiveClient(ids.clientArchived);
 }, 300_000);

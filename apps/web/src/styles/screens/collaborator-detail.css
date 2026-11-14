@@ -1,0 +1,158 @@
+/* Detail of a collaborator: the pieces of the profile that are not layout (the layout is collaborator-page.css). */
+.collaborator-detail__meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.collaborator-detail__meta svg {
+  width: 1rem;
+  height: 1rem;
+  margin-top: var(--space-1);
+}
+
+/* Labels of the profile fields speak one language, whether the field is plain or a Select. */
+.collaborator-profile .form-field > label {
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+/* The panel of the open tab: the fields sit a step below the tab list. */
+.collaborator-profile .ui-tabs__panel {
+  padding-top: var(--space-4);
+}
+
+/* Why Performance and Entregas are off (specs/colaboradores.md section 7): words, never only a disabled tab. */
+.collaborator-detail__soon {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font: var(--body-md);
+}
+
+.collaborator-detail__soon > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.collaborator-detail__soon dt {
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+.collaborator-detail__soon dd {
+  margin: 0;
+}
+
+.collaborator-detail__fields,
+.collaborator-detail__status {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.collaborator-detail__fields dt {
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+.collaborator-detail__fields dd {
+  margin: 0 0 var(--space-3);
+}
+
+.collaborator-detail__readonly {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.collaborator-detail__readonly p {
+  margin: 0;
+}
+
+.collaborator-detail__label {
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+/* The only destructive action of the page, set apart at the foot of the page (specs/colaboradores.md §7). */
+.collaborator-detail__remove {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--block-red-bg);
+  border-radius: var(--radius-lg);
+}
+
+/* Away from the primary action and quiet: the red is the text, not a filled block. */
+.collaborator-detail__remove .ui-button--destructive:not(:disabled) {
+  background: transparent;
+  color: var(--text-danger);
+}
+
+.collaborator-detail__remove .ui-button--destructive:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--block-red-bg);
+  filter: none;
+}
+
+.collaborator-detail__status p {
+  margin: 0;
+}
+
+/* Self profile (specs/colaboradores.md section 7): the same page, editable only for its own person. */
+.collaborator-detail__photo {
+  display: grid;
+  flex: none;
+  justify-items: center;
+  align-content: start;
+  gap: var(--space-2);
+}
+
+/* The photo column keeps the width of its button: beside the text it must not be squeezed into a letter per line. */
+.collaborator-detail__photo .ui-button {
+  white-space: nowrap;
+}
+
+/* Driven by the visible "Trocar foto" button; kept in the DOM for its file picker and accept
+   filter, but visually hidden so it never draws a second control. */
+.collaborator-detail__photo-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.collaborator-detail__photo-progress {
+  width: 100%;
+}
+
+.self-profile {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.self-profile__readonly {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.self-profile__readonly p {
+  margin: 0;
+}
+
+.self-profile__label {
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+

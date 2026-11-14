@@ -1,7 +1,15 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { PORTAL_APPROVAL_PAGE_PATH } from '@ageniza/contracts';
-import { contentsAwaitingApprovalEmail, contentsPublishedEmail, type EmailMessage, type EmailSender } from '@ageniza/email';
+import {
+  approvalDueSoonEmail,
+  approvalOverdueEmail,
+  contentsAwaitingApprovalEmail,
+  contentsPublishedEmail,
+  type ApprovalBatch,
+  type EmailMessage,
+  type EmailSender
+} from '@ageniza/email';
 
 import type { ClaimedNotification, NotificationQueue } from './notification-queue.js';
 import type { DurableJob, DurableJobContext, DurableJobDefinition } from './queue.js';
@@ -32,11 +40,16 @@ export interface ClientContentEmailJobDependencies {
 
 const TEMPLATES = {
   content_awaiting_approval: 'contents-awaiting-approval',
-  content_published: 'contents-published'
+  content_published: 'contents-published',
+  content_approval_due_soon: 'approval-due-soon',
+  content_approval_overdue: 'approval-overdue'
 } as const;
 
 type KnownType = keyof typeof TEMPLATES;
 const isKnownType = (type: string): type is KnownType => Object.hasOwn(TEMPLATES, type);
+
+/** Every type but the summary of "published" carries the approval link of the person; the summary carries the portal. */
+const carriesApprovalLink = (type: KnownType): boolean => type !== 'content_published';
 
 /** The portal of the client. Signing in is what authorizes opening it, so the link carries nothing of the person. */
 export const portalUrlFor = (appPublicUrl: string, clientId: string): string =>
@@ -96,17 +109,38 @@ const markSentWithRetry = async (queue: NotificationQueue, itemIds: readonly str
 
 interface Totals { claimedGroups: number; sent: number; droppedItems: number; failedGroups: number; releasedGroups: number }
 
+// The same content queued for two accesses of one mailbox is one line of the e-mail.
+const uniqueContents = (items: readonly ClaimedNotification[]): ClaimedNotification[] => [...new Map(items.map((item) => [item.contentId, item])).values()];
+
+/**
+ * The contents of an approval e-mail by the send they came with (`approval_batch_id`), in the order the queue gave them, each send with its
+ * own deadline and note. The contents from before the rounds have no send: they are one group with neither deadline nor note.
+ */
+const batchesOf = (items: readonly ClaimedNotification[]): ApprovalBatch[] => {
+  const batches = new Map<string, { dueOn: string | null; note: string | null; items: Array<{ title: string; publishOn: string | null }> }>();
+  for (const item of uniqueContents(items)) {
+    const key = item.approvalBatchId ?? 'none';
+    const batch = batches.get(key) ?? { dueOn: item.approvalDueOn, note: item.approvalNote, items: [] };
+    batch.items.push({ title: item.contentTitle, publishOn: item.contentPublishOn });
+    batches.set(key, batch);
+  }
+  return [...batches.values()];
+};
+
+const APPROVAL_EMAILS = {
+  content_awaiting_approval: contentsAwaitingApprovalEmail,
+  content_approval_due_soon: approvalDueSoonEmail,
+  content_approval_overdue: approvalOverdueEmail
+} as const;
+
 const messageOf = (type: KnownType, items: readonly ClaimedNotification[], appPublicUrl: string, approvalUrl: string | undefined): EmailMessage => {
   const first = items[0]!;
-  const common = {
-    agencyName: first.agencyName,
-    clientName: first.clientName,
-    // The same content queued for two accesses of one mailbox is one line of the e-mail.
-    items: [...new Map(items.map((item) => [item.contentId, item])).values()].map((item) => ({ title: item.contentTitle, publishOn: item.contentPublishOn }))
-  };
-  if (type === 'content_published') return contentsPublishedEmail({ ...common, portalUrl: portalUrlFor(appPublicUrl, first.clientId) });
-  if (approvalUrl === undefined) throw new Error('The e-mail of contents to approve needs its approval link.');
-  return contentsAwaitingApprovalEmail({ ...common, approvalUrl });
+  const names = { agencyName: first.agencyName, clientName: first.clientName };
+  if (type === 'content_published') {
+    return contentsPublishedEmail({ ...names, portalUrl: portalUrlFor(appPublicUrl, first.clientId), items: uniqueContents(items).map((item) => ({ title: item.contentTitle, publishOn: item.contentPublishOn })) });
+  }
+  if (approvalUrl === undefined) throw new Error('The e-mail of approval needs its approval link.');
+  return APPROVAL_EMAILS[type]({ ...names, approvalUrl, batches: batchesOf(items) });
 };
 
 /**
@@ -164,7 +198,7 @@ export const clientContentEmailJob = (
         // the token it carries exists nowhere but here and in the e-mail. A link that cannot be issued (the agency went read-only in the
         // meantime) releases the group like a failed send, with a code and a delay.
         let approvalUrl: string | undefined;
-        if (group.type === 'content_awaiting_approval') {
+        if (carriesApprovalLink(group.type)) {
           const token = generateApprovalToken();
           try {
             await queue.issueApprovalLink(keptIds, group.claimToken, hashApprovalToken(token));

@@ -3,7 +3,9 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { HttpError } from '@ageniza/core';
 
-/** Only these four headers ever reach Better Auth; nothing else the client sent is forwarded. */
+import { SESSION_CITY_HEADER } from './session-city.js';
+
+/** Only these headers, and the city header below, ever reach Better Auth; nothing else the client sent is forwarded. */
 const FORWARDED_REQUEST_HEADERS = ['cookie', 'origin', 'user-agent'] as const;
 const CLIENT_IP_HEADER = 'x-ageniza-client-ip';
 
@@ -13,12 +15,23 @@ const CLIENT_IP_HEADER = 'x-ageniza-client-ip';
  * `x-ageniza-client-ip` is always set from Fastify's own resolved `request.ip` (which honors
  * `trustProxy`/`API_TRUSTED_PROXY_CIDRS`); any `x-ageniza-client-ip` the client itself sent is
  * discarded, never forwarded.
+ *
+ * The city header the edge adds travels as it came and is cleaned once, where a session is created
+ * (`better-auth.ts`). A value `Headers` itself refuses is no city: it never fails the request.
  */
 export const toAuthHeaders = (request: FastifyRequest): Headers => {
   const headers = new Headers();
   for (const name of FORWARDED_REQUEST_HEADERS) {
     const value = request.headers[name];
     if (typeof value === 'string') headers.set(name, value);
+  }
+  const city = request.headers[SESSION_CITY_HEADER];
+  if (typeof city === 'string') {
+    try {
+      headers.set(SESSION_CITY_HEADER, city);
+    } catch {
+      // Not a header value (a character beyond Latin-1, a line break): the session simply gets no city.
+    }
   }
   headers.set(CLIENT_IP_HEADER, request.ip);
   return headers;

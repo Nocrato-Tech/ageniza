@@ -22,6 +22,10 @@ const CLIENT_B = '00000000-0000-4000-8000-0000000000b1';
 const PERSON_1 = '00000000-0000-4000-8000-0000000000e1';
 const PERSON_2 = '00000000-0000-4000-8000-0000000000e2';
 
+const APPROVAL_TYPES = ['content_awaiting_approval', 'content_approval_due_soon', 'content_approval_overdue'];
+const BATCH_1 = '00000000-0000-4000-8000-0000000000f1';
+const BATCH_2 = '00000000-0000-4000-8000-0000000000f2';
+
 let counter = 0;
 const item = (overrides: Partial<ClaimedNotification> = {}): ClaimedNotification => {
   counter += 1;
@@ -37,6 +41,9 @@ const item = (overrides: Partial<ClaimedNotification> = {}): ClaimedNotification
     contentId: `00000000-0000-4000-8000-c${String(counter).padStart(11, '0')}`,
     contentTitle: `Post ${counter}`,
     contentPublishOn: '2026-10-20',
+    approvalDueOn: null,
+    approvalNote: null,
+    approvalBatchId: null,
     ...overrides
   };
 };
@@ -59,10 +66,11 @@ const fakeQueue = (
   const queue: NotificationQueue = {
     issueApprovalLink: async (itemIds, token, tokenHash) => {
       calls.push({ call: 'issueApprovalLink', itemIds, token });
-      // The function refuses what is not a live claim of items "awaiting approval" and a hash that is not a sha256 in hex.
+      // The function refuses what is not a live claim of items of approval (the send and its two reminders, not the summary of "published")
+      // and a hash that is not a sha256 in hex.
       const live = itemIds.length > 0 && itemIds.every((id) => {
         const claimed = held.get(id);
-        return claimed !== undefined && claimed.claimToken === token && claimed.notificationType === 'content_awaiting_approval' && !sent.has(id) && !released.has(id);
+        return claimed !== undefined && claimed.claimToken === token && APPROVAL_TYPES.includes(claimed.notificationType) && !sent.has(id) && !released.has(id);
       });
       if (!live || !/^[0-9a-f]{64}$/.test(tokenHash)) throw Object.assign(new Error('The items and the claim do not describe one e-mail.'), { code: 'A0101' });
       if (options.issueFails === true) throw Object.assign(new Error('The agency is read-only: its trial has ended.'), { code: 'A0090' });
@@ -500,5 +508,211 @@ describe('notifications.send-client-content-emails (issue #260)', () => {
       expect(failureCodeOf(error)).toBe(expected);
       expect(failureCodeOf(error)).toMatch(legal);
     }
+  });
+});
+
+describe('the deadline and the note of the e-mail "contents to approve" (decision 2026-11-10)', () => {
+  const dated = (overrides: Partial<ClaimedNotification> = {}): ClaimedNotification => item({ approvalBatchId: BATCH_1, approvalDueOn: '2026-11-13', approvalNote: 'Oi! Segue a pauta.', ...overrides });
+
+  it('groups the contents of ONE e-mail by the send they came with, each send with its own deadline and note, and the legacy contents with neither', async () => {
+    const one = [dated({ contentTitle: 'Post A' }), dated({ contentTitle: 'Post B' })];
+    const two = [dated({ contentTitle: 'Post C', approvalBatchId: BATCH_2, approvalDueOn: '2026-11-16', approvalNote: 'Segundo envio' })];
+    const legacy = [item({ contentTitle: 'Post D' })];
+    const { queue, sent } = fakeQueue([[one[0]!, two[0]!, legacy[0]!, one[1]!]]);
+    const { sender, emails } = senderThatRecords();
+
+    await run(queue, sender);
+
+    expect(emails).toHaveLength(1);
+    expect(emails[0]!.template).toBe('contents-awaiting-approval');
+    // Two sends and a legacy group are one e-mail of four contents; the subject names a deadline only if every send has one.
+    expect(emails[0]!.subject).toBe('4 conteúdos para você aprovar: Padaria Sol');
+    const text = emails[0]!.text;
+    expect(text).toContain('Aprovar até sexta, 13/11\n\nRecado:\nOi! Segue a pauta.\n— Agência Aurora\n\n- Post A (20/10/2026)\n- Post B (20/10/2026)');
+    expect(text).toContain('Aprovar até segunda, 16/11\n\nRecado:\nSegundo envio\n— Agência Aurora\n\n- Post C (20/10/2026)');
+    expect(text).toContain('- Post D (20/10/2026)');
+    expect(text.split('Aprovar até')).toHaveLength(3);
+    expect(text.split('Recado:')).toHaveLength(3);
+    expect(text.indexOf('Post A')).toBeLessThan(text.indexOf('Post C'));
+    expect(text.indexOf('Post C')).toBeLessThan(text.indexOf('Post D'));
+    expect([...sent].sort()).toEqual([...one, ...two, ...legacy].map((claimed) => claimed.itemId).sort());
+  });
+
+  it('keeps the contents from before the rounds in one list, with no deadline and no note, as the e-mail always was', async () => {
+    const { queue } = fakeQueue([[item({ contentTitle: 'Post A' }), item({ contentTitle: 'Post B' }), item({ contentTitle: 'Post C' })]]);
+    const { sender, emails } = senderThatRecords();
+
+    await run(queue, sender);
+
+    expect(emails[0]!.text.split('\n\n').slice(0, 3)).toEqual([
+      'Agência Aurora enviou 3 conteúdos de Padaria Sol para a sua aprovação.',
+      '- Post A (20/10/2026)\n- Post B (20/10/2026)\n- Post C (20/10/2026)',
+      expect.stringContaining('Abra o link')
+    ]);
+    expect(emails[0]!.html).toContain('<ul><li>Post A (20/10/2026)</li><li>Post B (20/10/2026)</li><li>Post C (20/10/2026)</li></ul>');
+  });
+
+  it('cites the deadline in the subject when the send has one, and the e-mail of a legacy content leaves as it did', async () => {
+    const withDeadline = [dated(), dated()];
+    const legacy = [item({ clientId: CLIENT_B, clientName: 'Loja Lua' })];
+    const { queue } = fakeQueue([[...withDeadline, ...legacy]]);
+    const { sender, emails } = senderThatRecords();
+
+    await run(queue, sender);
+
+    const byClient = (name: string) => emails.find((email) => email.subject.includes(name))!;
+    expect(byClient('Padaria Sol').subject).toBe('2 conteúdos para você aprovar até sexta, 13/11: Padaria Sol');
+    expect(byClient('Loja Lua').subject).toBe('um conteúdo para você aprovar: Loja Lua');
+    expect(byClient('Loja Lua').text).not.toMatch(/Aprovar até|Recado/);
+    expect(byClient('Loja Lua').html).not.toMatch(/Aprovar até|Recado|blockquote/);
+  });
+
+  it('signs the note by the agency and escapes it: what is typed never starts markup, a header or a line of the subject', async () => {
+    const hostile = '<script>alert(1)</script>\r\n<img src=x onerror="alert(2)"> & "q"\r\nBcc: alguem@exemplo.test\r\n\r\n</blockquote><p>fim';
+    const { queue } = fakeQueue([[dated({ approvalNote: hostile })]]);
+    const { sender, emails } = senderThatRecords();
+
+    await run(queue, sender);
+
+    const [email] = emails;
+    expect(email!.html).not.toContain('<script');
+    expect(email!.html).not.toContain('<img');
+    expect(email!.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;<br>&lt;img src=x onerror=&quot;alert(2)&quot;&gt; &amp; &quot;q&quot;<br>Bcc: alguem@exemplo.test<br><br>&lt;/blockquote&gt;&lt;p&gt;fim<br>— Agência Aurora</blockquote>');
+    expect(email!.html.match(/<blockquote>/g)).toHaveLength(1);
+    expect(email!.text).toContain('Recado:\n<script>alert(1)</script>\n<img src=x onerror="alert(2)"> & "q"\nBcc: alguem@exemplo.test\n\n</blockquote><p>fim\n— Agência Aurora');
+    expect(email!.subject).toBe('um conteúdo para você aprovar até sexta, 13/11: Padaria Sol');
+  });
+
+  it('does not log the note, the deadline or the send', async () => {
+    const { queue } = fakeQueue([[dated({ approvalNote: 'Recado secreto da campanha' })]]);
+    const { sender } = senderThatRecords();
+
+    const captured = await run(queue, sender);
+
+    const text = await captured.text();
+    for (const secret of ['Recado secreto', 'sexta', '2026-11-13', BATCH_1]) expect(text).not.toContain(secret);
+  });
+});
+
+describe('the reminders of approval, "vence amanhã" and "venceu" (decision 2026-11-10)', () => {
+  const reminder = (type: string, overrides: Partial<ClaimedNotification> = {}): ClaimedNotification =>
+    item({ notificationType: type, approvalBatchId: BATCH_1, approvalDueOn: '2026-11-13', approvalNote: 'Preciso do seu OK.', ...overrides });
+
+  it.each([
+    ['content_approval_due_soon', 'approval-due-soon', 'Vence amanhã: aprovar 2 conteúdos de Padaria Sol', 'o prazo termina amanhã'],
+    ['content_approval_overdue', 'approval-overdue', 'Prazo vencido: aprovar 2 conteúdos de Padaria Sol', 'o prazo já passou']
+  ])('sends the %s e-mail with the approval link, the contents that wait and the deadline', async (type, template, subject, sentence) => {
+    const group = [reminder(type, { contentTitle: 'Post A' }), reminder(type, { contentTitle: 'Post B' })];
+    const { queue, calls, issued, sent } = fakeQueue([group]);
+    const { sender, emails } = senderThatRecords();
+
+    await run(queue, sender);
+
+    expect(emails).toHaveLength(1);
+    const [email] = emails;
+    expect(email!.template).toBe(template);
+    expect(email!.to).toBe('ana@padaria.test');
+    expect(email!.subject).toBe(subject);
+    expect(email!.text).toContain(sentence);
+    expect(email!.text).toContain('Prazo: sexta, 13/11\n\nRecado:\nPreciso do seu OK.\n— Agência Aurora\n\n- Post A (20/10/2026)\n- Post B (20/10/2026)');
+    expect(email!.text).toContain('O link vale por 7 dias, abre só os conteúdos deste e-mail e não pede que você crie uma conta.');
+    // The link is the approval link of the person, issued for the items of this e-mail before it leaves.
+    const url = new URL(linkOf(email!));
+    expect(url.origin + url.pathname).toBe(`${ORIGIN}/aprovar`);
+    expect(url.search).toBe('');
+    expect(url.hash).toMatch(/^#[A-Za-z0-9_-]{43}$/);
+    expect(issued).toHaveLength(1);
+    expect([...issued[0]!.itemIds].sort()).toEqual(group.map((claimed) => claimed.itemId).sort());
+    expect(issued[0]!.tokenHash).toBe(sha256(url.hash.slice(1)));
+    expect(email!.html).toContain(`<a href="${linkOf(email!)}">`);
+    expect(calls.map((call) => call.call)).toEqual(['claim', 'recheck', 'issueApprovalLink', 'markSent', 'claim']);
+    expect([...sent].sort()).toEqual(group.map((claimed) => claimed.itemId).sort());
+  });
+
+  it('sends the reminders and the send as separate e-mails to the same person, each with a link of its own', async () => {
+    const send = [item({ contentTitle: 'Pauta de segunda' })];
+    const soon = [reminder('content_approval_due_soon', { contentTitle: 'Reels de terça' })];
+    const overdue = [reminder('content_approval_overdue', { contentTitle: 'Foto de quarta' })];
+    const { queue, issued } = fakeQueue([[...send, ...soon, ...overdue]]);
+    const { sender, emails } = senderThatRecords();
+
+    await run(queue, sender);
+
+    expect(emails.map((email) => email.template).sort()).toEqual(['approval-due-soon', 'approval-overdue', 'contents-awaiting-approval']);
+    expect(new Set(emails.map(linkOf)).size).toBe(3);
+    expect(issued).toHaveLength(3);
+    for (const email of emails) {
+      const others = ['Pauta de segunda', 'Reels de terça', 'Foto de quarta'].filter((title) => !email.text.includes(title));
+      expect(others).toHaveLength(2);
+    }
+  });
+
+  it.each(['content_approval_due_soon', 'content_approval_overdue'])('issues the link of %s only for the items that still hold after the recheck', async (type) => {
+    const group = [reminder(type), reminder(type), reminder(type)];
+    const gone = group[1]!.itemId;
+    const { queue, issued, sent } = fakeQueue([group], { stopsHolding: (id) => id === gone });
+    const { sender, emails } = senderThatRecords();
+
+    await run(queue, sender);
+
+    expect([...issued[0]!.itemIds].sort()).toEqual([group[0]!.itemId, group[2]!.itemId].sort());
+    expect(emails[0]!.subject).toContain('2 conteúdos');
+    expect([...sent].sort()).toEqual([group[0]!.itemId, group[2]!.itemId].sort());
+  });
+
+  it.each(['content_approval_due_soon', 'content_approval_overdue'])('sends nothing and issues no link when nothing of the %s group holds any more', async (type) => {
+    const { queue, calls } = fakeQueue([[reminder(type)]], { stopsHolding: () => true });
+    const { sender, send } = senderThatRecords();
+
+    await run(queue, sender);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(calls.map((call) => call.call)).toEqual(['claim', 'recheck', 'claim']);
+  });
+
+  it.each(['content_approval_due_soon', 'content_approval_overdue'])('releases the %s items with a code, sending nothing, when the link cannot be issued', async (type) => {
+    const group = [reminder(type), reminder(type)];
+    const { queue, released, sent } = fakeQueue([group], { issueFails: true });
+    const { sender, send } = senderThatRecords();
+
+    const captured = await run(queue, sender);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(sent.size).toBe(0);
+    expect([...released.entries()].sort()).toEqual(group.map((claimed) => [claimed.itemId, 'approval_link_failed']).sort());
+    expect(await captured.records()).toContainEqual(expect.objectContaining({ errorCode: 'approval_link_failed', items: 2, notificationType: type }));
+  });
+
+  it.each(['content_approval_due_soon', 'content_approval_overdue'])('releases the %s items with the code of the provider when the e-mail fails, and does not stamp them', async (type) => {
+    const group = [reminder(type)];
+    const { queue, released, sent } = fakeQueue([group]);
+    const { sender } = senderThatRecords([Object.assign(new Error('450 full'), { responseCode: 450 })]);
+
+    await run(queue, sender);
+
+    expect([...released.entries()]).toEqual([[group[0]!.itemId, 'smtp_temporary']]);
+    expect(sent.size).toBe(0);
+  });
+
+  it.each(['content_approval_due_soon', 'content_approval_overdue'])('writes only counts to the log, never the note, the link or the contents of %s', async (type) => {
+    const { queue, issued } = fakeQueue([[reminder(type, { contentTitle: 'Lançamento secreto', approvalNote: 'Recado secreto' })]]);
+    const { sender, emails } = senderThatRecords();
+
+    const captured = await run(queue, sender);
+
+    const token = new URL(linkOf(emails[0]!)).hash.slice(1);
+    const text = await captured.text();
+    for (const secret of ['Lançamento secreto', 'Recado secreto', token, issued[0]!.tokenHash, 'ana@padaria.test', 'Padaria Sol', 'Agência Aurora', '/aprovar']) expect(text).not.toContain(secret);
+    expect(await captured.records()).toContainEqual(expect.objectContaining({ claimedGroups: 1, sent: 1 }));
+  });
+
+  it('issues no link for the summary of published even beside a reminder, and gives it the portal', async () => {
+    const { queue, issued } = fakeQueue([[reminder('content_approval_due_soon'), item({ notificationType: 'content_published' })]]);
+    const { sender, emails } = senderThatRecords();
+
+    await run(queue, sender);
+
+    expect(issued).toHaveLength(1);
+    expect(emails.find((email) => email.template === 'contents-published')!.text).toContain(`${ORIGIN}/portal/${CLIENT_A}/calendario`);
   });
 });

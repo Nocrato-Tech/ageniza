@@ -83,3 +83,68 @@ describe('identity storage client and the SDK checksum defaults (#292, #306)', (
     expect(parameters.get('response-content-disposition')).toBe('inline');
   });
 });
+
+/** An S3 that answers every GET with the status, the headers and the body given, as a bucket would for an object it holds or does not. */
+const startFakeGet = async (answer: { readonly status: number; readonly headers?: Record<string, string>; readonly body?: Uint8Array | string }): Promise<Server> => {
+  const server = createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      response.writeHead(answer.status, answer.headers ?? {});
+      response.end(answer.body === undefined ? undefined : Buffer.from(answer.body));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return server;
+};
+
+const endpointOf = (server: Server): string => `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+describe('reading an identity image through the API (security review of the A2, round 1)', () => {
+  let running: Server | undefined;
+  afterEach(async () => {
+    const server = running;
+    running = undefined;
+    if (server !== undefined) await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('returns the bytes with the content type the bytes say, not the one stored on the object', async () => {
+    running = await startFakeGet({ status: 200, headers: { 'content-type': 'text/html' }, body: PNG });
+    const client = createIdentityStorageClient(configFor(endpointOf(running)));
+
+    const image = await client.readImage({ key: 'users/u/avatar/v.png' });
+
+    expect(image?.contentType).toBe('image/png');
+    expect([...(image?.body ?? [])]).toEqual([...PNG]);
+  });
+
+  it('answers nothing for bytes that are no image this deployment accepts, whatever the object says it is', async () => {
+    running = await startFakeGet({ status: 200, headers: { 'content-type': 'image/png' }, body: '<html><script>alert(1)</script></html>' });
+    const client = createIdentityStorageClient(configFor(endpointOf(running)));
+
+    expect(await client.readImage({ key: 'users/u/avatar/v.png' })).toBeUndefined();
+  });
+
+  it('answers nothing for an object that is not there', async () => {
+    running = await startFakeGet({
+      status: 404,
+      headers: { 'content-type': 'application/xml' },
+      body: '<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>'
+    });
+    const client = createIdentityStorageClient(configFor(endpointOf(running)));
+
+    expect(await client.readImage({ key: 'users/u/avatar/gone.png' })).toBeUndefined();
+  });
+
+  it('refuses an object over the size limit instead of reading it', async () => {
+    running = await startFakeGet({ status: 200, body: new Uint8Array(1024) });
+    const small = { ...configFor(endpointOf(running)), maxImageBytes: 512 };
+
+    await expect(createIdentityStorageClient(small).readImage({ key: 'users/u/avatar/v.png' })).rejects.toMatchObject({ name: 'IdentityImageTooLargeError' });
+  });
+
+  it('lets a failure of the bucket through, as a failure and not as "no photo"', async () => {
+    running = await startFakeGet({ status: 500, headers: { 'content-type': 'application/xml' }, body: '<Error><Code>InternalError</Code></Error>' });
+
+    await expect(createIdentityStorageClient(configFor(endpointOf(running))).readImage({ key: 'users/u/avatar/v.png' })).rejects.toBeDefined();
+  });
+});

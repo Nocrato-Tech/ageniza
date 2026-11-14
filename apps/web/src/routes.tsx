@@ -5,17 +5,23 @@ import { useQuery } from '@tanstack/react-query';
 import type { AuthSessionSnapshot } from './auth.js';
 import { AcceptanceGate, AcceptancePage } from './acceptance.js';
 import { AccountMenu } from './account-menu.js';
+import { AccountPage } from './account-page.js';
 import { ApprovalLinkPage } from './approval-link.js';
-import { DarkArea } from './area-theme.js';
-import { AgencyAreaLayout, AgencyHomePage, AgencyPermissionRoute } from './agency.js';
+import { AgencyAreaLayout, AgencyPermissionRoute } from './agency.js';
+import { AgencyHomePage } from './agency-home.js';
 import { AuthLayout } from './auth-layout.js';
 import { CircleAlert, CircleCheck } from 'lucide-react';
 import { Button, LiveStatus, Logo } from '@ageniza/ui';
 import { ClientBrandStudyTab } from './brand-study.js';
-import { ClientDetailPage, ClientGeneralTab, ClientSkeletonTab } from './client-detail.js';
+import { ClientContentsTab, hasLegacyContentsQuery } from './client-contents.js';
+import { ClientDetailPage, ClientGeneralTab } from './client-detail.js';
 import { ClientMediaTab } from './client-media.js';
 import { ClientsPage } from './clients.js';
+import { CollaboratorPage } from './collaborator-page.js';
 import { CollaboratorsPage } from './collaborators.js';
+import { SubscriptionInvoicesPage } from './subscription-invoices.js';
+import { SubscriptionPage } from './subscription.js';
+import { NotificationsPage } from './notifications.js';
 import { ContentCreateRoute, ContentModalRoute } from './content-modal.js';
 import { ContentsClientPage, ContentsPage } from './contents.js';
 import { ContextSelectPage } from './contexts.js';
@@ -33,8 +39,9 @@ import { termsOfUse } from './legal/terms.js';
 import { LoginPage } from './login.js';
 import { NoAccessPage } from './no-access.js';
 import { ClientAccessTab } from './portal-access.js';
-import { PortalAreaLayout, PortalSkeletonPage } from './portal.js';
+import { PortalAreaLayout } from './portal.js';
 import { PortalHomePage } from './portal-home.js';
+import { PortalRequestsPage } from './portal-requests.js';
 import { PortalContentsPage } from './portal-contents.js';
 import { PortalBrandPage } from './portal-brand.js';
 import { PortalContentPage } from './portal-content.js';
@@ -71,9 +78,23 @@ function PortalCalendarRedirect() {
   return <Navigate to={{ pathname: `/portal/${encodeURIComponent(clienteId)}/conteudos`, search }} replace />;
 }
 
+/** The portal has no Relatórios (the board dropped it): the old address lands on the Início. */
+function PortalReportsRedirect() {
+  const { clienteId = '' } = useParams();
+  return <Navigate to={`/portal/${encodeURIComponent(clienteId)}/inicio`} replace />;
+}
+
+/** The profile has no Tarefas or Relatórios anymore (the board dropped them): the old addresses land on the Visão geral, the roster address kept. */
+function ClientGeneralRedirect() {
+  const { agenciaId = '', clienteId = '' } = useParams();
+  const { state } = useLocation();
+  return <Navigate to={`/agencia/${agenciaId}/clientes/${clienteId}/geral`} state={state} replace />;
+}
+
 /**
- * `/clientes/:clienteId/conteudos[/novo|/:conteudoId]`, from when the profile had a calendar tab (until 2026-11-04):
+ * `/clientes/:clienteId/conteudos/novo` and `/:conteudoId`, from when the profile had a calendar tab (until 2026-11-04):
  * the same client, content and creation on the screen of Conteúdos, with the query (`visao`, `data`, `dia`...) and the navigation state kept.
+ * The bare `/conteudos` is the list tab since 2026-11-11.
  */
 function LegacyClientContentsRedirect({ suffix }: { suffix?: string }) {
   const { agenciaId = '', clienteId = '', conteudoId } = useParams();
@@ -81,6 +102,17 @@ function LegacyClientContentsRedirect({ suffix }: { suffix?: string }) {
   const rest = suffix ?? conteudoId;
   const pathname = `/agencia/${agenciaId}/conteudos/${clienteId}${rest === undefined ? '' : `/${rest}`}`;
   return <Navigate to={{ pathname, search, hash }} state={state} replace />;
+}
+
+/**
+ * The tab address `/clientes/:clienteId/conteudos` is the list since 2026-11-11; with the query of the calendar or of the folders
+ * (`visao`, `data`, `vista`) it is an old bookmark and still leads where it led.
+ */
+function ClientContentsEntry() {
+  const { search } = useLocation();
+  return hasLegacyContentsQuery(search)
+    ? <AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}><LegacyClientContentsRedirect /></AgencyPermissionRoute>
+    : <ClientContentsTab />;
 }
 
 /**
@@ -140,13 +172,32 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="confirme-seu-email" element={<EmailPendingPage />} />
       <Route path="criar-conta" element={session.isAuthenticated ? <Navigate to="/app" replace /> : <SignUpPage />} />
     </Route>
-    <Route path="agencia/:agenciaId" element={<DarkArea><SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate></DarkArea>}>
+    <Route path="agencia/:agenciaId" element={<SessionGate session={session}><SessionWatch /><AgencyAreaLayout /></SessionGate>}>
       <Route index element={<AgencyHomePage />} />
       <Route path="colaboradores" element={
         <AgencyPermissionRoute permission="colaborador.visualizar">
           <CollaboratorsPage />
         </AgencyPermissionRoute>
       } />
+      <Route path="colaboradores/:membershipId" element={
+        <AgencyPermissionRoute permission="colaborador.visualizar">
+          <CollaboratorPage />
+        </AgencyPermissionRoute>
+      } />
+      <Route path="notificacoes" element={<NotificationsPage />} />
+      <Route path="conta" element={<AccountPage />} />
+      <Route path="assinatura">
+        <Route index element={
+          <AgencyPermissionRoute permission="assinatura.gerenciar">
+            <SubscriptionPage />
+          </AgencyPermissionRoute>
+        } />
+        <Route path="faturas" element={
+          <AgencyPermissionRoute permission="assinatura.gerenciar">
+            <SubscriptionInvoicesPage />
+          </AgencyPermissionRoute>
+        } />
+      </Route>
       <Route path="conteudos">
         <Route index element={
           <AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}>
@@ -169,12 +220,6 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
             <ClientsPage />
           </AgencyPermissionRoute>
         } />
-        {/* The calendar tab of the profile is gone (decision 2026-11-04): its old addresses lead to the screen of Conteúdos, query and state kept. */}
-        <Route path=":clienteId/conteudos" element={<AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}><Outlet /></AgencyPermissionRoute>}>
-          <Route index element={<LegacyClientContentsRedirect />} />
-          <Route path="novo" element={<LegacyClientContentsRedirect suffix="novo" />} />
-          <Route path=":conteudoId" element={<LegacyClientContentsRedirect />} />
-        </Route>
         <Route path=":clienteId" element={
           <AgencyPermissionRoute permission="cliente.visualizar">
             <ClientDetailPage />
@@ -183,11 +228,15 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
           {/* The tab lives in the URL: a bare address goes to Geral (specs/clientes.md §7). */}
           <Route index element={<Navigate to="geral" replace />} />
           <Route path="geral" element={<ClientGeneralTab />} />
+          {/* The list tab; the old addresses of the profile's calendar (creation and a content) still lead to the screen of Conteúdos. */}
+          <Route path="conteudos" element={<ClientContentsEntry />} />
+          <Route path="conteudos/novo" element={<AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}><LegacyClientContentsRedirect suffix="novo" /></AgencyPermissionRoute>} />
+          <Route path="conteudos/:conteudoId" element={<AgencyPermissionRoute permission={CONTENT_AREA_PERMISSIONS}><LegacyClientContentsRedirect /></AgencyPermissionRoute>} />
           {/* The media library of the client; the permission gate is in ClientDetailPage, like the other tabs'. */}
           <Route path="midias" element={<ClientMediaTab />} />
-          <Route path="tarefas" element={<ClientSkeletonTab title="Tarefas" description="Aqui vão ficar as tarefas deste cliente, com prazos e responsáveis." />} />
+          <Route path="tarefas" element={<ClientGeneralRedirect />} />
           <Route path="estudo-de-marca" element={<ClientBrandStudyTab />} />
-          <Route path="relatorios" element={<ClientSkeletonTab title="Relatórios" description="Aqui vai ficar o relatório deste cliente, com os resultados do trabalho." />} />
+          <Route path="relatorios" element={<ClientGeneralRedirect />} />
           {/* The permission gate lives in ClientDetailPage: without it the whole address is the
               ordinary not-found, header included, not a not-found inside a visible client page. */}
           <Route path="acessos" element={<ClientAccessTab />} />
@@ -205,7 +254,9 @@ export function ApplicationRoutes({ session }: { session: AuthSessionSnapshot })
       <Route path="conteudos/:conteudoId" element={<PortalContentPage />} />
       <Route path="calendario" element={<PortalCalendarRedirect />} />
       <Route path="marca" element={<PortalBrandPage />} />
-      <Route path="relatorios" element={<PortalSkeletonPage title="Relatórios" description="Aqui você vai ver os resultados do trabalho que sua agência faz para você." />} />
+      <Route path="pedidos" element={<PortalRequestsPage />} />
+      <Route path="conta" element={<AccountPage />} />
+      <Route path="relatorios" element={<PortalReportsRedirect />} />
       <Route path="*" element={<NotFoundPage as="section" />} />
     </Route>
     {DesignSystemPage !== null && <Route path="design-system" element={<Suspense fallback={<LoadingPage />}><DesignSystemPage /></Suspense>} />}

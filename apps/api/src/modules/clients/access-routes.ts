@@ -241,7 +241,7 @@ export const registerAccessRoutes = (app: FastifyInstance, dependencies: AccessR
 
         // The database counts the welcome e-mail in the daily limit of the agency (A0095, 429) and refuses a read-only agency
         // (A0090, 409); both reach the error handler as they are.
-        const added = await addClientMember(transaction, clientId, body.email);
+        const added = await addClientMember(transaction, clientId, body.email, body.name);
 
         // The address changed hands and the account that held it lost the access: that is a removal for it, and ends its sessions.
         if (added.unlinkedUserId !== null) await revokeUserSessions(transaction, added.unlinkedUserId, auth.sessionId);

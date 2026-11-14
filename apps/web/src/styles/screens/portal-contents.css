@@ -1,0 +1,289 @@
+/* --- Portal: Conteúdos (#269, #688): celular primeiro, a lista no padrão do Calendário da agência, no claro. Toda caixa pode encolher e todo texto quebra, para 390 px nunca rolar de lado. --- */
+
+.portal-contents {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.portal-contents h1,
+.portal-contents h2 {
+  margin: 0;
+}
+
+.portal-contents h1.portal-headline {
+  font: var(--display-lg);
+}
+
+/* What waits is the lilac block of the Início: the posts are white cards on it. */
+.portal-awaiting {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--bg-tint);
+}
+
+.portal-awaiting .portal-section__title {
+  font: var(--heading-lg);
+}
+
+.portal-awaiting__skeleton {
+  width: 100%;
+  height: 8rem;
+}
+
+.portal-awaiting__list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-awaiting__item {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.portal-awaiting__title,
+.portal-awaiting__day,
+.portal-awaiting__more,
+.portal-card__title,
+.portal-day__label {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.portal-awaiting__title {
+  font: var(--caption);
+}
+
+/* The title is the link and its box stretches over the whole card, so the tap does not need to find the words. */
+.portal-card-link {
+  color: inherit;
+  text-decoration: none;
+  /* The card is taller than its link: the focus ring of the card must clear the bar as well (the page's scroll-padding is for the link alone). */
+  scroll-margin-bottom: 4rem;
+}
+
+.portal-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.portal-awaiting__item:has(.portal-card-link:focus-visible),
+.portal-card:has(.portal-card-link:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.portal-card-link:focus-visible {
+  outline: none;
+}
+
+.portal-awaiting__day,
+.portal-awaiting__more {
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-awaiting__cover,
+.portal-card__cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+.portal-awaiting__cover {
+  aspect-ratio: 4 / 5;
+}
+
+.portal-card__cover {
+  align-self: start;
+  aspect-ratio: 1;
+}
+
+.portal-awaiting__cover img,
+.portal-card__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.portal-awaiting__cover--placeholder,
+.portal-card__cover--placeholder {
+  --format-shape-size: 1.5rem;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+/* The shape of a format stands for a cover that is not there, in every screen that draws one: a cover that sets no size gets the size of its own font. */
+.format-shape {
+  display: inline-flex;
+}
+
+.format-shape > svg {
+  width: var(--format-shape-size, 1em);
+  height: var(--format-shape-size, 1em);
+  stroke-width: 1.75;
+}
+
+.portal-contents__period {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.portal-contents__period-title {
+  font: var(--body-md);
+  font-weight: 600;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.portal-contents__toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+}
+
+.portal-contents__toggle .ui-button {
+  border-radius: var(--radius-full);
+}
+
+.portal-contents__period .ui-button,
+.portal-contents__toggle .ui-button {
+  min-height: 2.75rem;
+}
+
+.portal-contents__period .ui-button {
+  padding-inline: 0;
+}
+
+.portal-contents .ui-field {
+  min-width: 0;
+}
+
+.portal-contents .ui-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.portal-contents__skeleton {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.portal-contents__skeleton .ui-skeleton {
+  height: 5rem;
+  border-radius: var(--radius-md);
+}
+
+.portal-days,
+.portal-day__items {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-day {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.portal-day__label {
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+.portal-day__items,
+.portal-card__text {
+  min-width: 0;
+}
+
+/* A wide screen is not three covers of a third of the page each, nor a card as wide as the page. */
+@media (min-width: 48rem) {
+  .portal-awaiting__list {
+    grid-template-columns: repeat(3, minmax(0, 10rem));
+    gap: var(--space-3);
+  }
+
+  .portal-day__items {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 24rem));
+  }
+}
+
+.portal-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+/* The card is tinted by its format, as in the agency's calendar (`format/*`); the state is the tag, and the tint only helps. */
+.portal-card[data-format='carousel'] {
+  background: var(--format-carousel-bg);
+  --portal-card-title: var(--format-carousel-fg);
+}
+
+.portal-card[data-format='reels'] {
+  background: var(--format-reels-bg);
+  --portal-card-title: var(--format-reels-fg);
+}
+
+.portal-card[data-format='static'] {
+  background: var(--format-static-bg);
+  --portal-card-title: var(--format-static-fg);
+}
+
+.portal-card__text {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+}
+
+.portal-card__title {
+  color: var(--portal-card-title, var(--text-primary));
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+.portal-card .portal-meta {
+  margin: 0;
+}
+
+.portal-contents .content-feed {
+  min-width: 0;
+}
+
+/* An empty state without the owl keeps the three sizes of the screen: its title is a body line, as the one with the owl. */
+.portal-contents .portal-empty .ui-empty-state__title {
+  font: var(--body-md);
+  font-weight: 600;
+}
+

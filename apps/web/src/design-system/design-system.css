@@ -18,13 +18,17 @@
 .ds-group { margin-bottom: var(--space-6); }
 
 .ds-themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: var(--space-6); }
-.ds-theme-panel {
+.ds-panel {
   padding: var(--space-6);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  background: var(--bg-canvas);
+  background: var(--bg-surface);
   color: var(--text-primary);
 }
+
+.ds-blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+.ds-block { display: grid; justify-items: start; gap: var(--space-2); padding: var(--space-5); border-radius: var(--radius-lg); font: var(--body-md); }
+.ds-block code { font: var(--caption); }
 
 .ds-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--space-3); margin: 0 0 var(--space-4); padding: 0; list-style: none; }
 .ds-token { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: var(--space-3); font: var(--body-md); }
@@ -49,7 +53,7 @@
 .ds-radius { grid-row: span 2; width: var(--space-12); height: var(--space-12); border: 2px solid var(--action-primary-bg); }
 .ds-elevation { grid-row: span 2; width: var(--space-12); height: var(--space-8); border-radius: var(--radius-md); background: var(--bg-elevated); border: 1px solid var(--border-subtle); }
 
-.ds-play, .ds-toggle button {
+.ds-play {
   min-height: 2.75rem;
   padding: 0 var(--space-4);
   border: 1px solid var(--border-default);
@@ -59,8 +63,6 @@
   font: var(--button-md);
   cursor: pointer;
 }
-.ds-toggle { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
-.ds-toggle button[aria-pressed='true'] { background: var(--action-primary-bg); color: var(--action-primary-fg); border-color: transparent; }
 .ds-play { margin-bottom: var(--space-4); }
 
 .ds-track { grid-row: span 2; width: 6rem; padding: var(--space-1); border-radius: var(--radius-full); background: var(--bg-hover); }
@@ -75,6 +77,9 @@
 .ds-na { color: var(--text-muted); }
 /* A floating card hangs below its trigger inside a scroll box, which would clip it: this keeps the room it needs. */
 .ds-floating-room { padding-bottom: 7rem; }
+.ds-floating-room--tall { padding-bottom: 14rem; }
+
+.ds-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-6); }
 
 .ds-backdrop { display: inline-block; padding: var(--space-3); border-radius: var(--radius-md); }
 .ds-backdrop--light { background: var(--color-white); }
@@ -83,3 +88,13 @@
 @media (prefers-reduced-motion: reduce) {
   .ds-ball { transition-duration: 0ms !important; }
 }
+
+.ds-thumb { display: inline-grid; flex: none; place-items: center; width: var(--space-8); height: var(--space-8); border-radius: var(--radius-md); background: var(--bg-tint); color: var(--action-secondary-fg); }
+.ds-progress { display: block; width: 12rem; max-width: 100%; }
+.ds-fieldset { display: grid; gap: var(--space-3); min-width: 0; margin: 0; padding: 0; border: 0; }
+.ds-fieldset legend { margin-bottom: var(--space-2); padding: 0; font: var(--label-md); }
+.ds-stack { display: grid; gap: var(--space-6); min-width: 0; }
+/* The component tables of this page style every th and td; the calendar's grid is not one of them. */
+.ds-component .ui-date-picker__grid { min-width: 0; }
+.ds-component .ui-date-picker__grid th { padding: 0 0 var(--space-1); border-bottom: 0; font: var(--label-sm); text-align: center; }
+.ds-component .ui-date-picker__grid td { padding: 0; border-bottom: 0; text-align: center; }

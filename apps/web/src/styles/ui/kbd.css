@@ -1,0 +1,10 @@
+/* Kbd: a key or a chord as the keyboard labels it. */
+.ui-kbd {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--block-slate-bg);
+  color: var(--block-slate-fg);
+  font: var(--caption);
+  white-space: nowrap;
+}

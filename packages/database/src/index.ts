@@ -242,6 +242,7 @@ export {
 } from './integration-clone.js';
 
 export { backendPid, requestLockOnceBlocked, waitForBackendsBlockedBy, type LockBarrierOptions, type WaitForBlockedOptions } from './lock-barrier.js';
+export { QUIET_SECONDS, secondsUntilClockIsQuiet, waitForQuietClock, type QuietClockWindow } from './quiet-clock.js';
 
 /**
  * Creates a narrow capability after an authentication boundary has verified the user's token.

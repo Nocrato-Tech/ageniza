@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import {
+  ApprovalNoteSchema,
   ApproveContentByAgencyRequestSchema,
   ContentFormatSchema,
   ContentPlatformSchema,
@@ -27,7 +28,38 @@ export const PortalContentInProductionSchema = z.object({
   status: z.literal('in_production')
 }).strict();
 
-/** From "awaiting approval" on, as the calendar and the feed need it: no caption and no media. */
+/** The photo of who sent the round of a content, served by the portal itself under the guard of the client: the path is relative to the API. */
+export const PORTAL_SENDER_PHOTO_PATH = /^\/clients\/[0-9a-f-]{36}\/contents\/[0-9a-f-]{36}\/sender-photo$/i;
+
+/**
+ * Who of the agency sent the round, as the portal shows it ("Recado de João Pereira, da Agência Horizonte"): the name and the path of the
+ * photo, `null` when the person has none. The path is `/clients/:clientId/contents/:contentId/sender-photo`, relative to the API, and the
+ * route answers the bytes of the image (404 for no photo or no access): an address of the storage would carry the key of the object, which
+ * names the account of the sender. No e-mail, role, id or membership of the collaborator.
+ */
+export const PortalApprovalSenderSchema = z.object({
+  name: z.string(),
+  photoUrl: z.string().regex(PORTAL_SENDER_PHOTO_PATH).nullable()
+}).strict();
+
+/**
+ * What the agency asked of the client when it sent the content (decision 2026-11-11): the deadline as an instant (`dueAt`) and as the São
+ * Paulo day of that instant (`dueOn`), the note, the instant it was sent and who sent it. The batch stays with the agency. `sentBy` is
+ * `null` for a round with no readable sender; the approval link answers the day (`dueOn`) and the note only: its `dueAt`, `sentAt` and
+ * `sentBy` are `null`.
+ */
+export const PortalContentApprovalSchema = z.object({
+  dueAt: z.string().datetime().nullable(),
+  dueOn: z.string().nullable(),
+  note: z.string().nullable(),
+  sentAt: z.string().datetime().nullable(),
+  sentBy: PortalApprovalSenderSchema.nullable()
+}).strict();
+
+/**
+ * From "awaiting approval" on, as the calendar and the feed need it: no caption and no media. `approval` is `null` when the content was
+ * never sent in a round (sent before the rounds existed).
+ */
 export const PortalContentOpenListItemSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
@@ -38,7 +70,8 @@ export const PortalContentOpenListItemSchema = z.object({
   status: z.enum(['awaiting_approval', 'adjusting', 'approved', 'published']),
   coverAssetId: z.string().uuid().nullable(),
   thumbnailAssetId: z.string().uuid().nullable(),
-  publishedOn: z.string().nullable()
+  publishedOn: z.string().nullable(),
+  approval: PortalContentApprovalSchema.nullable()
 }).strict();
 
 export const PortalContentListItemSchema = z.union([PortalContentInProductionSchema, PortalContentOpenListItemSchema]);
@@ -73,7 +106,28 @@ export const PortalContentPeriodResponseSchema = z.object({
 }).strict();
 
 export const PortalContentAwaitingQuerySchema = PaginationInputSchema;
+/** What waits for the person, the deadline that comes first first (a content with no deadline last, by its publication day). */
 export const PortalContentAwaitingResponseSchema = createPaginatedResponseSchema(PortalContentOpenListItemSchema);
+
+/**
+ * The progress of the month for the Início of the portal, "Boa notícia" (decision 2026-11-11): of the contents of the month of today (São
+ * Paulo) that are not cancelled (`total`), how many are approved or published (`approved`); and the next post to go on air: the earliest
+ * approved content that has not been published and whose publication day has not passed (and, with an hour, whose hour has not). `next` is
+ * `null` when there is none; `publishAtTime` is `null` for an approved content with no hour.
+ */
+export const PortalContentProgressResponseSchema = z.object({
+  data: z.object({
+    month: z.string().regex(/^\d{4}-\d{2}$/),
+    approved: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    next: z.object({
+      id: z.string().uuid(),
+      title: z.string(),
+      publishOn: z.string(),
+      publishAtTime: z.string().nullable()
+    }).strict().nullable()
+  }).strict()
+}).strict();
 
 export const PortalContentPathParamsSchema = z.object({
   clientId: z.string().uuid(),
@@ -106,6 +160,16 @@ export const PortalApproveContentRequestSchema = z.object({
 }).strict();
 
 /**
+ * Body of `POST .../approve` of the portal: the revision the person read and, optionally, a note to the agency (decision 2026-11-11), up to
+ * 500 visible characters like the note of the agency, which enters the conversation of the content as a comment of the client in the same
+ * transaction as the approval. The approval link of the e-mail takes no note (`PortalApproveContentRequestSchema`).
+ */
+export const PortalApproveContentWithNoteRequestSchema = z.object({
+  revision: ApproveContentByAgencyRequestSchema.shape.revision,
+  note: ApprovalNoteSchema.optional()
+}).strict();
+
+/**
  * Body of `POST .../request-changes`: the revision read and the comment, which is required and enters the conversation of
  * the content. The comment follows the one rule of free text of the conversations (no control, invisible or format
  * character, never empty, at most 5000 bytes).
@@ -117,6 +181,7 @@ export const PortalRequestContentChangesRequestSchema = z.object({
 
 export type PortalContentInProduction = z.infer<typeof PortalContentInProductionSchema>;
 export type PortalContentListItem = z.infer<typeof PortalContentListItemSchema>;
+export type PortalContentApproval = z.infer<typeof PortalContentApprovalSchema>;
 export type PortalContentOpenListItem = z.infer<typeof PortalContentOpenListItemSchema>;
 export type PortalContentDetail = z.infer<typeof PortalContentDetailSchema>;
 export type PortalContentPeriodResponse = z.infer<typeof PortalContentPeriodResponseSchema>;
@@ -124,4 +189,7 @@ export type PortalContentAwaitingResponse = z.infer<typeof PortalContentAwaiting
 export type PortalContentMediaUrlQuery = z.infer<typeof PortalContentMediaUrlQuerySchema>;
 export type PortalContentMediaUrlResponse = z.infer<typeof PortalContentMediaUrlResponseSchema>;
 export type PortalApproveContentRequest = z.infer<typeof PortalApproveContentRequestSchema>;
+export type PortalApproveContentWithNoteRequest = z.infer<typeof PortalApproveContentWithNoteRequestSchema>;
+export type PortalApprovalSender = z.infer<typeof PortalApprovalSenderSchema>;
+export type PortalContentProgressResponse = z.infer<typeof PortalContentProgressResponseSchema>;
 export type PortalRequestContentChangesRequest = z.infer<typeof PortalRequestContentChangesRequestSchema>;

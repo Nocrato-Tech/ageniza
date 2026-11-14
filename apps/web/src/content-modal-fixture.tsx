@@ -12,6 +12,7 @@ import {
   UpdateContentRequestSchema
 } from '@ageniza/contracts';
 
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { createConversationApi } from './conversation-fixture.js';
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
 import { ApiClientProvider, HttpClient } from './http.js';
@@ -82,7 +83,7 @@ export const ROSTER = [padaria, barbearia];
 export const clientDetail = (row: ReturnType<typeof client>) => ({
   id: row.id, name: row.name, status: row.status, photoUrl: row.photoUrl, instagramHandle: row.instagramHandle, closingDate: row.closingDate,
   legalName: null, taxId: null, segment: null, website: null, contactName: null, contactPhone: null, contactEmail: null,
-  archivedAt: row.status === 'archived' ? '2026-10-01T00:00:00.000Z' : null,
+  archivedAt: row.status === 'archived' ? '2026-10-01T00:00:00.000Z' : null, ...clientRegistrationExtras,
   summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 }
 });
 
@@ -157,7 +158,7 @@ export const detailOf = (row: Stored) => ({
   id: row.id, clientId: row.clientId, title: row.title, platform: 'instagram', format: row.format, publishOn: row.publishOn,
   publishAtTime: row.publishAtTime, caption: row.caption, folderId: row.folderId, coverAssetId: row.coverAssetId, owner: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' },
   status: row.status, revision: row.revision, approvedBy: null, approvedAt: null, approvedByAgencyReason: null, publishedOn: row.publishedOn,
-  cancelledAt: null, createdAt: '2026-10-01T12:00:00.000Z',
+  cancelledAt: null, createdAt: '2026-10-01T12:00:00.000Z', approval: null,
   media: row.media.map((id, index) => ({ id, position: index + 1 })), tasks: row.tasks.map((status, index) => ({
     id: `b0b0b0b0-0000-4000-8000-${String(index + 1).padStart(12, '0')}`, title: `Subtarefa ${index + 1}`, description: null,
     assignee: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' }, dueOn: '2026-10-15', status, returnComment: null, approvedBy: null, approvedAt: null
@@ -167,7 +168,7 @@ export const detailOf = (row: Stored) => ({
 
 export const listItemOf = (row: Stored) => ({
   id: row.id, title: row.title, platform: 'instagram', format: row.format, publishOn: row.publishOn, publishAtTime: row.publishAtTime,
-  status: row.status, owner: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' }, coverAssetId: row.coverAssetId, thumbnailAssetId: row.coverAssetId ?? row.media[0] ?? null, revision: row.revision, publishedOn: null, tasksTotal: 0, tasksApproved: 0
+  status: row.status, owner: { membershipId: 'e0e0e0e0-0000-4000-8000-000000000001', name: 'Ana Souza' }, coverAssetId: row.coverAssetId, thumbnailAssetId: row.coverAssetId ?? row.media[0] ?? null, revision: row.revision, publishedOn: null, tasksTotal: 0, tasksApproved: 0, approval: null
 });
 
 export type ConversationFake = ReturnType<typeof createConversationApi>;

@@ -1,11 +1,14 @@
 import {
   AgencyClientContentPathParamsSchema,
+  AgencyClientPathParamsSchema,
   ApproveContentByAgencyRequestSchema,
   ContentDetailSchema,
   ContentMoveRequestSchema,
   PublishContentRequestSchema,
   RescheduleContentRequestSchema,
-  type ContentDetail
+  SubmitContentRequestSchema,
+  SubmitContentsBatchRequestSchema,
+  SubmitContentsBatchResponseSchema
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { databaseErrorCode, withAuthenticatedUserTransaction } from '@ageniza/database';
@@ -20,7 +23,7 @@ import { clientArchived, clientNotFound, contentNotFound, forbidden, unauthentic
 import { CONTENT_READ_PERMISSION } from './policy.js';
 import { idFromRoute } from './route-support.js';
 import type { ContentModuleDependencies } from './routes.js';
-import { loadClientStatus, loadContent, loadContentDetail, type ContentTransaction } from './service.js';
+import { countClientContents, listBatchContents, loadClientStatus, loadContent, loadContentDetail, type ContentTransaction } from './service.js';
 import { mediaNotComplete, mediaNotConfirmed, translateTransitionError, type TransitionAction } from './transition-errors.js';
 import {
   approveContentByAgency,
@@ -30,6 +33,7 @@ import {
   rescheduleContent,
   saoPauloDay,
   submitContent,
+  submitContents,
   unpublishContent
 } from './transition-service.js';
 
@@ -56,7 +60,12 @@ export const registerContentTransitionRoutes = (app: FastifyInstance, dependenci
   const submitDocs = {
     permission: 'conteudo.operar',
     responseStatus: 200,
-    schemas: { params: AgencyClientContentPathParamsSchema, body: ContentMoveRequestSchema, response: ContentDetailSchema }
+    schemas: { params: AgencyClientContentPathParamsSchema, body: SubmitContentRequestSchema, response: ContentDetailSchema }
+  } satisfies DocumentedRouteConfig;
+  const submitBatchDocs = {
+    permission: 'conteudo.operar',
+    responseStatus: 200,
+    schemas: { params: AgencyClientPathParamsSchema, body: SubmitContentsBatchRequestSchema, response: SubmitContentsBatchResponseSchema }
   } satisfies DocumentedRouteConfig;
   const approveDocs = {
     permission: 'conteudo.aprovar_pela_agencia',
@@ -112,23 +121,23 @@ export const registerContentTransitionRoutes = (app: FastifyInstance, dependenci
   };
 
   /** `A0065` is a media that is missing and a media that is still uploading: only the second is told apart by its own code. */
-  const diagnoseMedia = async (request: FastifyRequest, contentId: string): Promise<HttpError> => {
-    const pending = await withAuthenticatedUserTransaction(dependencies.database, claimsOf(request), (transaction) => hasUnconfirmedMedia(transaction, contentId));
+  const diagnoseMedia = async (request: FastifyRequest, contentIds: readonly string[]): Promise<HttpError> => {
+    const pending = await withAuthenticatedUserTransaction(dependencies.database, claimsOf(request), (transaction) => hasUnconfirmedMedia(transaction, contentIds));
     return pending ? mediaNotConfirmed() : mediaNotComplete();
   };
 
-  const write = async (
+  const write = async <TResult>(
     request: FastifyRequest,
     scope: Scope,
-    contentId: string,
+    contentIds: readonly string[],
     action: TransitionAction,
-    work: (transaction: ContentTransaction) => Promise<ContentDetail>
-  ): Promise<ContentDetail> => {
+    work: (transaction: ContentTransaction) => Promise<TResult>
+  ): Promise<TResult> => {
     try {
       return await withAuthenticatedUserTransaction(dependencies.database, claimsOf(request), work);
     } catch (error) {
       if (error instanceof HttpError) throw error;
-      if (databaseErrorCode(error) === 'A0065') throw await diagnoseMedia(request, contentId);
+      if (databaseErrorCode(error) === 'A0065') throw await diagnoseMedia(request, contentIds);
       const translated = translateTransitionError(error, action);
       if (translated !== undefined) throw translated;
       if (isInsufficientPrivilegeError(error)) throw await diagnoseRefusal(request, scope);
@@ -153,7 +162,7 @@ export const registerContentTransitionRoutes = (app: FastifyInstance, dependenci
       const body = handler.body(request);
       const scope = { agencyId: tenant.agencyId, clientId };
 
-      const detail = await write(request, scope, contentId, action, async (transaction) => {
+      const detail = await write(request, scope, [contentId], action, async (transaction) => {
         // The content of this client, as this person reads it. Whether they may move it, and the state of the client, are
         // judged by the function after its own locks, so the client is read after the last wait and never before it.
         if (await loadClientStatus(transaction, scope) === undefined) throw clientNotFound();
@@ -169,7 +178,25 @@ export const registerContentTransitionRoutes = (app: FastifyInstance, dependenci
 
   register('submit', submitDocs, 'submit', {
     body: (request) => bodyOrEmpty(submitDocs, request),
-    run: (transaction, { contentId }) => submitContent(transaction, contentId)
+    run: (transaction, { contentId, body }) => submitContent(transaction, contentId, { dueAt: body.dueAt, dueOn: body.dueOn, note: body.note })
+  });
+
+  // One batch is one client's: the route reads each content as THIS client's before the function runs (another client's of the same
+  // agency is a 404, as in the individual send), and the function refuses a batch that mixes clients (A0122) all the same.
+  app.post('/agencies/:agencyId/clients/:clientId/contents/submit', guards(submitBatchDocs), async (request, reply) => {
+    const tenant = request.tenant;
+    if (tenant === undefined) throw clientNotFound();
+    const clientId = idFromRoute(request, 'clientId', clientNotFound);
+    const body = routeBody(submitBatchDocs, request);
+    const scope = { agencyId: tenant.agencyId, clientId };
+
+    const result = await write(request, scope, body.contentIds, 'submit', async (transaction) => {
+      if (await loadClientStatus(transaction, scope) === undefined) throw clientNotFound();
+      if (await countClientContents(transaction, { clientId, contentIds: body.contentIds }) !== body.contentIds.length) throw contentNotFound();
+      const batchId = await submitContents(transaction, { contentIds: body.contentIds, dueAt: body.dueAt, dueOn: body.dueOn, note: body.note });
+      return { batchId, contents: await listBatchContents(transaction, { clientId, batchId }) };
+    });
+    return reply.send(routeResponse(submitBatchDocs, request, { data: result }));
   });
 
   register('approve-by-agency', approveDocs, 'approve-by-agency', {
@@ -178,7 +205,7 @@ export const registerContentTransitionRoutes = (app: FastifyInstance, dependenci
       await approveContentByAgency(transaction, { contentId, revision: body.revision, reason: body.reason });
       // The function does not read the media: a content whose media has not finished uploading is never approved here,
       // and the whole transaction is undone by the throw.
-      if (await hasUnconfirmedMedia(transaction, contentId)) throw mediaNotConfirmed();
+      if (await hasUnconfirmedMedia(transaction, [contentId])) throw mediaNotConfirmed();
     }
   });
 

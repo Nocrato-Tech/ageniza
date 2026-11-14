@@ -13,9 +13,12 @@ import type { ClientTransaction } from './service.js';
  * filtered by the client of the route and by that client's agency, and reaches the account only through the access's own
  * `user_id`, with a LEFT join: an access nobody has entered is a row, not a gap.
  *
- * Nothing here says whether an address has an account. The name is the account's, and only once that account has entered the
- * portal of THIS client (`first_entered_at`): the link happens at any load of the contexts, even of someone who only works in
- * another agency, and the list must not turn that into a name.
+ * Nothing here says whether an address has an account. The name is the account's only once that account has entered the portal of
+ * THIS client (`first_entered_at`): the link happens at any load of the contexts, even of someone who only works in another agency,
+ * and the list must not turn that into a name. Before that it is the name the agency typed for the access, if any.
+ *
+ * `lastEnteredAt` is the database's `last_entered_at`, read through the same policy as the rest of the row. It is set by the
+ * account's entry and by the approval link, so a person who only opened the link has it set while `entered` stays false.
  */
 
 interface RawRows<TResult> {
@@ -28,14 +31,17 @@ export interface ClientMemberRow {
   readonly email: string;
   readonly status: ClientMemberStatus;
   readonly entered: boolean;
+  readonly last_entered_at: Date | null;
   readonly created_at: Date;
 }
 
 /**
- * The name the agency sees: the account's own, and only after the person entered THIS portal (the link at the login is not an entry).
- * The list shows it and the order uses it, so neither tells the agency that an address has an account.
+ * The name the agency sees: the account's own once the person entered THIS portal (the link at the login is not an entry), and until
+ * then the one the agency typed (decision 2026-11-11), or null when it typed none. The condition is the one of `entered`. The typed name
+ * is a value of the access and never comes from the account, so an address with an account and one without look the same, and the
+ * list shows it and the order uses it without telling the agency which addresses have an account.
  */
-const SHOWN_NAME_SQL = 'case when access.first_entered_at is not null then member.name end';
+const SHOWN_NAME_SQL = 'case when access.first_entered_at is not null and access.user_id is not null then member.name else access.invited_name end';
 
 const MEMBER_COLUMNS = `
   access.id as access_id,
@@ -43,6 +49,7 @@ const MEMBER_COLUMNS = `
   access.email as email,
   access.status as status,
   (access.first_entered_at is not null and access.user_id is not null) as entered,
+  access.last_entered_at as last_entered_at,
   access.created_at as created_at
 `;
 
@@ -58,6 +65,7 @@ export const clientMemberFromRow = (row: ClientMemberRow): ClientMember => ({
   email: row.email,
   status: row.status,
   entered: row.entered,
+  lastEnteredAt: row.last_entered_at === null ? null : new Date(row.last_entered_at).toISOString(),
   since: new Date(row.created_at).toISOString()
 });
 
@@ -67,7 +75,7 @@ export interface ClientMemberPage {
 }
 
 /**
- * One page of the people of a client in one status, by name ascending (the account's name once the person entered, the address before;
+ * One page of the people of a client in one status, by name ascending (the shown name: the account's once the person entered, the typed one before, the address when none;
  * accent and case folded, then compared byte by byte like the collaborators, so the order does not depend on the database
  * collation) with the access id as the tie-break. `count(*) over ()` rides the page's own snapshot.
  */
@@ -123,17 +131,19 @@ export interface AddedClientAccess {
 
 /**
  * "Adicionar pessoa": the one function that may insert an access. It checks `cliente.convidar_usuario` on the client's own
- * agency, locks the client, and gives the access on the spot, or reactivates the row of the same address.
+ * agency, locks the client, and gives the access on the spot, or reactivates the row of the same address. `name` is what the agency
+ * typed, if it did: the function records it for a new address and for a removed one added again, and leaves an active access alone.
  */
 export const addClientMember = async (
   transaction: ClientTransaction,
   clientId: string,
-  email: string
+  email: string,
+  name?: string
 ): Promise<AddedClientAccess> => {
   const result = await raw<RawRows<{ access_id: string; outcome: AddedClientAccess['outcome']; unlinked_user_id: string | null }>>(
     transaction,
-    'select * from app_private.add_client_portal_access(?::uuid, ?)',
-    [clientId, email]
+    'select * from app_private.add_client_portal_access(?::uuid, ?, ?)',
+    [clientId, email, name ?? null]
   );
   const row = result.rows[0];
   if (row === undefined) throw new Error('The access just added could not be read back.');

@@ -1,6 +1,6 @@
-import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { Camera, UserMinus } from 'lucide-react';
+import { Briefcase, CalendarDays, Camera, Mail, UserMinus } from 'lucide-react';
 import { z } from 'zod';
 
 import {
@@ -16,11 +16,12 @@ import {
   type Collaborator,
   type UpdateCollaboratorRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, ConfirmDialog, FieldMessage, LiveStatus, Modal, Select, Skeleton, Tabs, TextInput } from '@ageniza/ui';
+import { Avatar, Button, ConfirmDialog, FieldMessage, LiveStatus, RoleTag, Select, Skeleton, Tabs, TextInput, type BadgeRoleTone } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { useOptionalAuthSessionStore } from './auth.js';
+import { openContentsSummaryText, useCollaboratorOpenContents, CollaboratorOpenContentsCard } from './collaborator-open-contents.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 const NAME_REQUIRED = 'Informe o seu nome.';
@@ -265,9 +266,23 @@ function ReadOnlyField({ label, value, note }: { label: string; value: string; n
   </div>;
 }
 
-/** SPEC §7: the modal header shows the agency entry date, for the own profile too (#357). */
+/** The day is the agency's, not the browser's: 01:30Z of the 12th is still the 11th in São Paulo. */
+const joinedFormatter = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' });
+
+/** The colour of the role's tag, from the colour blocks: it only tells roles apart, the words say the role. */
+export const collaboratorRoleTone = (roleKey: string): BadgeRoleTone => {
+  switch (roleKey) {
+    case 'admin': return 'indigo';
+    case 'account_manager': return 'violet';
+    case 'production': return 'teal';
+    case 'sales': return 'sky';
+    default: return 'neutral';
+  }
+};
+
+/** SPEC §7: the profile header shows the agency entry date, for the own profile too (#357). */
 function AgencySince({ joinedAt }: { joinedAt: string }) {
-  return <p>Na agência desde <time dateTime={joinedAt}>{new Intl.DateTimeFormat('pt-BR').format(new Date(joinedAt))}</time></p>;
+  return <p className="collaborator-detail__meta"><CalendarDays aria-hidden="true" /><span>Na agência desde <time dateTime={joinedAt}>{joinedFormatter.format(new Date(joinedAt))}</time></span></p>;
 }
 
 interface AdminEditFieldsProps {
@@ -468,50 +483,59 @@ function RemoveCollaborator({ collaborator, membershipId, onRemoved }: { collabo
   </div>;
 }
 
-function CollaboratorDetails({ collaborator, isSelf, onRemoved }: { collaborator: Collaborator; isSelf: boolean; onRemoved: () => void }) {
+function CollaboratorHeader({ collaborator, isSelf }: { collaborator: Collaborator; isSelf: boolean }) {
+  const canSeeContents = useCan('conteudo.visualizar');
+  const openContents = useCollaboratorOpenContents(collaborator.membershipId.toLowerCase());
+  const tone = collaboratorRoleTone(collaborator.role.key);
+  return <header className="collaborator-profile__head">
+    {isSelf
+      ? <SelfProfilePhoto collaborator={collaborator} membershipId={collaborator.membershipId.toLowerCase()} />
+      : <Avatar name={collaborator.name} photoUrl={collaborator.photoUrl} size="lg" />}
+    <div className="collaborator-profile__who">
+      <div className="collaborator-profile__name">
+        <h1>{collaborator.name}</h1>
+        <RoleTag name={collaborator.role.name} tone={tone} />
+        {collaborator.isOwner && <RoleTag name={collaborator.role.name} isOwner />}
+      </div>
+      <p className="collaborator-detail__meta"><Briefcase aria-hidden="true" /><span>{collaborator.jobTitle ?? 'Cargo não informado'}</span></p>
+      <p className="collaborator-detail__meta"><Mail aria-hidden="true" /><span>{collaborator.email}</span></p>
+      <AgencySince joinedAt={collaborator.joinedAt} />
+      {isSelf && <p className="form-hint">{PHOTO_IS_GLOBAL}</p>}
+      {canSeeContents && openContents.data !== undefined && <p className="collaborator-profile__summary">{openContentsSummaryText(openContents.data.summary)}</p>}
+    </div>
+  </header>;
+}
+
+/** The profile of one person (specs/colaboradores.md §7): header, tabs, what is with them and, at the foot, the removal. */
+export function CollaboratorProfile({ collaborator, isSelf, onRemoved }: { collaborator: Collaborator; isSelf: boolean; onRemoved: () => void }) {
   const [tab, setTab] = useState('details');
   const membershipId = collaborator.membershipId.toLowerCase();
+  const canSeeContents = useCan('conteudo.visualizar');
   const canAlterJobTitle = useCan('colaborador.alterar_funcao');
   const canChangeRole = useCan('colaborador.alterar_papel');
   const canRemove = useCan('colaborador.remover');
-  // SPEC §7: nobody edits the Owner's role or job title, or removes the Owner, through this modal
-  // (the API refuses both edits with a 403); the self view has its own fields, so this branch never
-  // renders for the signed-in person.
+  // SPEC §7: nobody edits the Owner's role or job title, or removes the Owner, through this page
+  // (the API refuses both edits with a 403); the self view has its own fields, so the admin branch
+  // never renders for the signed-in person.
   const canChangeJobTitle = canAlterJobTitle && !collaborator.isOwner;
   const roleEditable = canChangeRole && !collaborator.isOwner;
-  const removeOffered = canRemove && !collaborator.isOwner;
+  const removeOffered = canRemove && !collaborator.isOwner && !isSelf;
   const editable = canChangeJobTitle || roleEditable;
 
-  return <>
-    {isSelf
-      ? <div className="collaborator-detail__identity">
-        <SelfProfilePhoto collaborator={collaborator} membershipId={membershipId} />
-        {/* The name is already the modal heading; repeating it here would show it twice. */}
-        <div className="collaborator-detail__self">
-          <p className="form-hint">{PHOTO_IS_GLOBAL}</p>
-          <AgencySince joinedAt={collaborator.joinedAt} />
-        </div>
-      </div>
-      : <div className="collaborator-detail__identity">
-        <Avatar name={collaborator.name} photoUrl={collaborator.photoUrl} size="lg" />
-        <div>
-          <p className="collaborator-detail__headline">{[collaborator.jobTitle, collaborator.role.name].filter(Boolean).join(' · ')}</p>
-          <p>{collaborator.email}</p>
-          <AgencySince joinedAt={collaborator.joinedAt} />
-        </div>
-      </div>}
-    <Tabs
-      label="Informações do colaborador"
-      value={tab}
-      onChange={setTab}
-      items={[
-        {
-          value: 'details',
-          label: 'Detalhes',
-          content: isSelf
-            ? <SelfProfileFields collaborator={collaborator} membershipId={membershipId} />
-            : <>
-              {editable
+  return <div className="collaborator-profile">
+    <section className="collaborator-profile__card" aria-label="Perfil">
+      <CollaboratorHeader collaborator={collaborator} isSelf={isSelf} />
+      <Tabs
+        label="Informações do colaborador"
+        value={tab}
+        onChange={setTab}
+        items={[
+          {
+            value: 'details',
+            label: 'Detalhes',
+            content: isSelf
+              ? <SelfProfileFields collaborator={collaborator} membershipId={membershipId} />
+              : editable
                 ? <AdminEditFields
                     collaborator={collaborator}
                     membershipId={membershipId}
@@ -522,25 +546,27 @@ function CollaboratorDetails({ collaborator, isSelf, onRemoved }: { collaborator
                   <dt>Cargo</dt><dd>{collaborator.jobTitle ?? 'Não informado'}</dd>
                   <dt>Papel</dt><dd>{collaborator.role.name}</dd>
                   <dt>E-mail</dt><dd>{collaborator.email}<p className="form-hint">{EMAIL_NOTE}</p></dd>
-                </dl>}
-              {removeOffered && <RemoveCollaborator collaborator={collaborator} membershipId={membershipId} onRemoved={onRemoved} />}
-            </>
-        },
-        { value: 'performance', label: 'Performance', disabled: true, content: null },
-        { value: 'deliveries', label: 'Entregas', disabled: true, content: null }
-      ]}
-    />
-    {/* The two future tabs say why they are off (specs/colaboradores.md §7), in words next to the tab list. */}
-    <dl className="collaborator-detail__soon">
-      {['Performance', 'Entregas'].map((label) => <div key={label}>
-        <dt>{label}</dt>
-        <dd>{UNAVAILABLE_REASON}</dd>
-      </div>)}
-    </dl>
-  </>;
+                </dl>
+          },
+          { value: 'performance', label: 'Performance', disabled: true, content: null },
+          { value: 'deliveries', label: 'Entregas', disabled: true, content: null }
+        ]}
+      />
+      {/* The two future tabs say why they are off (specs/colaboradores.md §7), in words next to the tab list. */}
+      <dl className="collaborator-detail__soon">
+        {['Performance', 'Entregas'].map((label) => <div key={label}>
+          <dt>{label}</dt>
+          <dd>{UNAVAILABLE_REASON}</dd>
+        </div>)}
+      </dl>
+    </section>
+    {canSeeContents && <CollaboratorOpenContentsCard membershipId={membershipId} />}
+    {removeOffered && <RemoveCollaborator collaborator={collaborator} membershipId={membershipId} onRemoved={onRemoved} />}
+  </div>;
 }
 
-export function CollaboratorDetailDialog({ membershipId, onClose }: { membershipId: string; onClose: () => void }) {
+/** The person of the address: `notFound` is a 403 or 404 (or a malformed id), which the page treats alike. */
+export function useCollaboratorDetail(membershipId: string) {
   const agency = useAgencyContext();
   const httpClient = useApiClient();
   const normalizedId = membershipId.toLowerCase();
@@ -557,23 +583,21 @@ export function CollaboratorDetailDialog({ membershipId, onClose }: { membership
   });
   const notFound = !validId || (detail.error instanceof HttpClientError && [403, 404].includes(detail.error.status ?? 0));
   const collaborator = !notFound && detail.data?.membershipId.toLowerCase() === normalizedId ? detail.data : undefined;
-  // Name and photo belong to the global user, so only the signed-in person's own link edits them;
-  // the API says which link that is.
-  const isSelf = collaborator?.isSelf === true;
+  return { detail, notFound, collaborator };
+}
 
-  return <Modal title={collaborator?.name ?? 'Detalhe do colaborador'} closeLabel="Fechar detalhe do colaborador" onClose={onClose}>
-    {notFound ? <div className="collaborator-detail__status">
-      <p>Colaborador não encontrado.</p>
-      <Button variant="secondary" onClick={onClose}>Voltar à lista</Button>
-    </div> : <>
-      {detail.isError || (detail.data !== undefined && collaborator === undefined) ? <div role="alert" className="collaborator-detail__status">
-        <p>Não foi possível carregar o colaborador. Tente de novo.</p>
-        <Button onClick={() => { void detail.refetch(); }} loading={detail.isFetching}>Tentar de novo</Button>
-      </div> : null}
-      {collaborator !== undefined ? <CollaboratorDetails collaborator={collaborator} isSelf={isSelf} onRemoved={onClose} /> : detail.isPending ? <div className="collaborator-detail__status">
-        <LiveStatus>Carregando colaborador…</LiveStatus>
-        <Skeleton /><Skeleton />
-      </div> : null}
-    </>}
-  </Modal>;
+export function CollaboratorProfileStatus({ detail, notFound, collaborator, backTo }: { detail: ReturnType<typeof useCollaboratorDetail>['detail']; notFound: boolean; collaborator: Collaborator | undefined; backTo: ReactNode }) {
+  if (notFound) return <div className="collaborator-detail__status">
+    <p>Colaborador não encontrado.</p>
+    {backTo}
+  </div>;
+  if (detail.isError || (detail.data !== undefined && collaborator === undefined)) return <div role="alert" className="collaborator-detail__status">
+    <p>Não foi possível carregar o colaborador. Tente de novo.</p>
+    <Button onClick={() => { void detail.refetch(); }} loading={detail.isFetching}>Tentar de novo</Button>
+  </div>;
+  if (collaborator === undefined && detail.isPending) return <div className="collaborator-detail__status">
+    <LiveStatus>Carregando colaborador…</LiveStatus>
+    <Skeleton /><Skeleton />
+  </div>;
+  return null;
 }

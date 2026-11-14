@@ -1,6 +1,6 @@
 import { raw, type DatabaseClient } from '@ageniza/database';
 
-export const NOTIFICATION_TYPES = ['content_awaiting_approval', 'content_published'] as const;
+export const NOTIFICATION_TYPES = ['content_awaiting_approval', 'content_published', 'content_approval_due_soon', 'content_approval_overdue'] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 /** What an e-mail needs about one item of the queue: the only thing the worker can read, since RLS gives it no row. */
@@ -18,6 +18,13 @@ export interface ClaimedNotification {
   readonly contentTitle: string;
   /** `YYYY-MM-DD`, or null. */
   readonly contentPublishOn: string | null;
+  /**
+   * The round the e-mail talks about (null for "published" and for a content that already waited before the rounds): `YYYY-MM-DD`, the day in
+   * São Paulo, then the note of the agency (free text, never trusted) and the identifier of the send the content came with.
+   */
+  readonly approvalDueOn: string | null;
+  readonly approvalNote: string | null;
+  readonly approvalBatchId: string | null;
 }
 
 /**
@@ -40,7 +47,7 @@ export interface NotificationQueue {
 }
 
 const COLUMNS = `item_id, claim_token, notification_type, client_id, client_name, agency_name, recipient_portal_access_id, recipient_email,
-  content_id, content_title, content_publish_on::text as content_publish_on`;
+  content_id, content_title, content_publish_on::text as content_publish_on, approval_due_on::text as approval_due_on, approval_note, approval_batch_id`;
 
 const text = (row: Record<string, unknown>, column: string): string => {
   const value = row[column];
@@ -48,9 +55,14 @@ const text = (row: Record<string, unknown>, column: string): string => {
   return value;
 };
 
+const nullableText = (row: Record<string, unknown>, column: string): string | null => {
+  const value = row[column];
+  if (value !== null && typeof value !== 'string') throw new Error(`The notification queue did not return ${column}.`);
+  return value;
+};
+
 const toClaimed = (row: Record<string, unknown>): ClaimedNotification => {
-  const publishOn = row.content_publish_on;
-  if (publishOn !== null && typeof publishOn !== 'string') throw new Error('The notification queue did not return content_publish_on.');
+  const publishOn = nullableText(row, 'content_publish_on');
   return {
     itemId: text(row, 'item_id'),
     claimToken: text(row, 'claim_token'),
@@ -62,7 +74,10 @@ const toClaimed = (row: Record<string, unknown>): ClaimedNotification => {
     recipientEmail: text(row, 'recipient_email'),
     contentId: text(row, 'content_id'),
     contentTitle: text(row, 'content_title'),
-    contentPublishOn: publishOn
+    contentPublishOn: publishOn,
+    approvalDueOn: nullableText(row, 'approval_due_on'),
+    approvalNote: nullableText(row, 'approval_note'),
+    approvalBatchId: nullableText(row, 'approval_batch_id')
   };
 };
 

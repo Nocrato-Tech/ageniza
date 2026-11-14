@@ -183,14 +183,10 @@ export function PortalMediaCarousel({ ids, format, coverAssetId, media, title }:
     onTouchEnd={onTouchEnd}
   >
     <div className="portal-media__stage">
+      {total > 1 && <p className="portal-media__counter" aria-live="polite">{current + 1} de {total}</p>}
       <Slide key={item.id} ids={ids} format={format} coverAssetId={coverAssetId} item={item} position={current + 1} total={total} title={title} />
     </div>
     {total > 1 && <>
-      <div className="portal-media__controls">
-        <Button variant="secondary" disabled={current === 0} onClick={() => { move(current - 1); }}><span aria-hidden="true">‹ </span>Anterior</Button>
-        <p className="portal-media__counter" aria-live="polite">{current + 1} de {total}</p>
-        <Button variant="secondary" disabled={current === total - 1} onClick={() => { move(current + 1); }}>Próxima<span aria-hidden="true"> ›</span></Button>
-      </div>
       <ul className="portal-media__strip" aria-label="Miniaturas das mídias">
         {items.map((entry, position) => <Thumb
           key={entry.id}
@@ -202,6 +198,10 @@ export function PortalMediaCarousel({ ids, format, coverAssetId, media, title }:
           onSelect={() => { move(position); }}
         />)}
       </ul>
+      <div className="portal-media__controls">
+        <Button variant="secondary" disabled={current === 0} onClick={() => { move(current - 1); }}><span aria-hidden="true">‹ </span>Anterior</Button>
+        <Button variant="secondary" disabled={current === total - 1} onClick={() => { move(current + 1); }}>Próxima<span aria-hidden="true"> ›</span></Button>
+      </div>
     </>}
   </section>;
 }

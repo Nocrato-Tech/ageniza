@@ -45,6 +45,19 @@ describe('buildIndex', () => {
       .toThrow('d.md: falta a linha "# " ou "**Data.**"');
   });
 
+  it('usa a data do nome do arquivo quando a linha "**Data.**" falta, e a linha vence o nome', () => {
+    const { text } = buildIndex({
+      files: {
+        '2026-11-05-sem-linha.md': '# Sem linha\n\nCorpo.\n',
+        '2026-11-06-com-linha.md': decision('Com linha', '2026-11-07')
+      },
+      readme: README_INTRO
+    });
+
+    expect(text).toContain('- 2026-11-05 — [Sem linha](2026-11-05-sem-linha.md)');
+    expect(text).toContain('- 2026-11-07 — [Com linha](2026-11-06-com-linha.md)');
+  });
+
   it('recusa a mesma decisão em dois módulos', () => {
     const readme = `${README_INTRO}\n## Infra\n\n- 2026-01-01 — [e](e.md)\n\n## Clientes\n\n- 2026-01-01 — [e](e.md)\n`;
     expect(() => buildIndex({ files: { 'e.md': decision('E', '2026-01-01') }, readme }))

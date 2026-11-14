@@ -546,7 +546,7 @@ describe('what the session reads (the batch and nothing else)', () => {
     expect([...shown].sort()).toEqual([...s.contents].sort());
     for (const hidden of [outsideSameClient, otherClient, ...other.contents]) expect(shown).not.toContain(hidden);
     expect(Object.keys((await contentsOf(s.sessionHash))[0]!).sort()).toEqual([
-      'caption', 'cover_asset_id', 'format', 'id', 'platform', 'publish_at_time', 'publish_on', 'published_on', 'revision', 'status', 'title'
+      'approval_due_on', 'approval_note', 'approval_sent_at', 'caption', 'cover_asset_id', 'format', 'id', 'platform', 'publish_at_time', 'publish_on', 'published_on', 'revision', 'status', 'title'
     ]);
   });
 

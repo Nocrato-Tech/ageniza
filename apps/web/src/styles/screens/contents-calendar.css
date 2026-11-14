@@ -1,0 +1,222 @@
+/* The month and the week: one surface with a header of weekdays (Sunday first) and a row for each week. */
+.content-calendar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.content-calendar__weekdays,
+.content-calendar__days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-calendar__weekdays {
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.content-calendar__weekdays li {
+  padding: var(--space-3);
+}
+
+/* `minmax(0, 1fr)` lets a card shrink to the day: tags that do not fit wrap inside it instead of widening the column. */
+.content-day {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 9.25rem;
+  padding: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  background: transparent;
+}
+
+.content-day:nth-child(-n + 7) {
+  border-top: 0;
+}
+
+.content-day:nth-child(7n) {
+  border-right: 0;
+}
+
+.content-calendar[data-view='week'] .content-day {
+  min-height: 16rem;
+}
+
+.content-day--outside {
+  background: var(--bg-canvas);
+  color: var(--text-muted);
+}
+
+/* Today is the one filled index in the grid (indigo is the action, today and the viewer's turn). */
+.content-day--today {
+  background: var(--calendar-today-bg);
+}
+
+.content-day__number {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--label-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.content-day__number span[aria-hidden='true'] {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-full);
+}
+
+.content-day--outside .content-day__number {
+  color: var(--text-muted);
+}
+
+.content-day--today .content-day__number span[aria-hidden='true'] {
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+  font-weight: 700;
+}
+
+.content-day--today .content-day__number::after {
+  content: ' hoje';
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.content-day__items > li {
+  min-width: 0;
+}
+
+.content-day__items {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The "+" and the circle of the day's stories sit in its top-right corner; the circle shows the scenes, and the whole button opens the script. */
+.content-day__tools {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.content-day__tools .ui-menu {
+  position: static;
+}
+
+/* The "+" is one small control: seen on hover or focus, always where there is no hover. */
+.content-day__tools .ui-menu__trigger {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  opacity: 0;
+  transition: opacity var(--motion-fast);
+}
+
+.content-day:hover .ui-menu__trigger,
+.content-day:focus-within .ui-menu__trigger,
+.content-day__tools .ui-menu__trigger[aria-expanded='true'] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .content-day__tools .ui-menu__trigger {
+    opacity: 1;
+  }
+}
+
+.content-day__tools .ui-menu__trigger:hover,
+.content-day__tools .ui-menu__trigger:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.content-day__tools .ui-menu__content {
+  top: 2.5rem;
+  right: auto;
+  left: calc(var(--space-2) * -1);
+  min-width: 11rem;
+}
+
+.content-day:nth-child(7n + 6) .content-day__tools .ui-menu__content,
+.content-day:nth-child(7n) .content-day__tools .ui-menu__content {
+  right: 0;
+  left: auto;
+}
+
+/* The story of a day in the grid is its circle with the number of scenes; the words stay for who does not see the ring. */
+.content-day__story {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  cursor: pointer;
+}
+
+.content-day__story:hover,
+.content-day__story:focus-visible {
+  background: var(--bg-hover);
+}
+
+.content-day__story .story-ring {
+  --story-size: 1.5rem;
+}
+
+.content-day__story-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* "+N": the rest of a crowded day is one press away, in the week it belongs to. */
+.content-day__more {
+  width: 100%;
+  min-height: 1.75rem;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--label-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.content-day__more:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}

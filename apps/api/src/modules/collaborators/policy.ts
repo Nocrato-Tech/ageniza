@@ -6,6 +6,9 @@ export const COLLABORATOR_PERMISSIONS = {
 
 export const COLLABORATOR_REMOVE_PERMISSION = 'colaborador.remover';
 
+/** The second key of `GET .../open-contents`: the cards show content titles, so the caller must read contents. */
+export const COLLABORATOR_OPEN_CONTENTS_CONTENT_PERMISSION = 'conteudo.visualizar';
+
 /**
  * Who sees removed links: whoever can remove or reactivate, plus the Owner by ownership. The
  * criterion is the task, not the name of the role, so a custom role built for managing the team

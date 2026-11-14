@@ -34,6 +34,10 @@ export interface SeedContent {
   readonly publishOn?: string;
   readonly publishAtTime?: string | null;
   readonly coverAssetId?: string;
+  /** The instant the row was written: it is fixed once the row exists, so a test that dates the contents names it here. */
+  readonly createdAt?: string;
+  /** For an approved or published content: who approved it (a person, or the access of the portal that approved through a link), when and, outside the platform, why. */
+  readonly approval?: { readonly by?: string; readonly byPortalAccessId?: string; readonly at?: string; readonly agencyReason?: string };
 }
 
 const origin = { origin: TEST_APP_PUBLIC_URL };
@@ -191,7 +195,15 @@ export const createContentsWorld = (label: string) => {
       owner_user_id: extra.ownerUserId ?? people.production.id,
       ...(extra.coverAssetId === undefined ? {} : { cover_asset_id: extra.coverAssetId }),
       status,
-      ...(status === 'approved' || status === 'published' ? { approved_by: people.admin.id, approved_at: new Date('2026-10-05T12:00:00.000Z') } : {}),
+      ...(extra.createdAt === undefined ? {} : { created_at: new Date(extra.createdAt) }),
+      ...(status === 'approved' || status === 'published'
+        ? {
+            approved_by: extra.approval?.byPortalAccessId === undefined ? extra.approval?.by ?? people.admin.id : null,
+            approved_at: new Date(extra.approval?.at ?? '2026-10-05T12:00:00.000Z'),
+            ...(extra.approval?.byPortalAccessId === undefined ? {} : { approved_by_portal_access_id: extra.approval.byPortalAccessId }),
+            ...(extra.approval?.agencyReason === undefined ? {} : { approved_by_agency_reason: extra.approval.agencyReason })
+          }
+        : {}),
       ...(status === 'published' ? { published_on: '2026-10-06', published_at: new Date('2026-10-06T15:00:00.000Z') } : {}),
       ...(status === 'cancelled' ? { cancelled_at: new Date('2026-10-05T12:00:00.000Z') } : {})
     });
@@ -233,6 +245,21 @@ export const createContentsWorld = (label: string) => {
     return id;
   };
 
+  /** A person of the portal of the client, as its accesses record them: `state` is how far they got (one who never entered, or was removed, is nobody yet). */
+  const seedPortalPerson = async (
+    clientId: string,
+    name: string,
+    state: 'entered' | 'not-entered' | 'removed' = 'entered'
+  ): Promise<{ id: string; email: string }> => {
+    const id = randomUUID();
+    const email = `portal-${id.slice(0, 8)}@portal-people.test`;
+    createdUserIds.push(id);
+    await owner.knex.raw('insert into auth."user" (id, name, email, "emailVerified") values (?, ?, ?, true)', [id, name, email]);
+    await owner.knex('client_memberships').insert({ client_id: clientId, user_id: id, status: state === 'removed' ? 'removed' : 'active' });
+    if (state === 'not-entered') await owner.knex('client_portal_accesses').where({ client_id: clientId, user_id: id }).update({ first_entered_at: null });
+    return { id, email };
+  };
+
   const contentRow = async (id: string): Promise<Record<string, unknown>> => {
     const row = await owner.knex('contents').where({ id }).first();
     if (row === undefined) throw new Error(`Content ${id} does not exist.`);
@@ -262,6 +289,7 @@ export const createContentsWorld = (label: string) => {
     attach,
     seedTask,
     seedScript,
+    seedPortalPerson,
     contentRow,
     publishOnOf,
     countContents,
@@ -280,6 +308,7 @@ export const createContentsWorld = (label: string) => {
     async setup(options: {
       readonly contentsClock?: () => Date;
       readonly wrapMediaStorage?: TestAppOptions['wrapMediaStorage'];
+      readonly wrapIdentityStorage?: TestAppOptions['wrapIdentityStorage'];
       readonly logger?: TestAppOptions['logger'];
       readonly config?: TestAppOptions['config'];
     } = {}): Promise<void> {
@@ -289,6 +318,7 @@ export const createContentsWorld = (label: string) => {
         wrapDatabase: instrument,
         ...(options.contentsClock === undefined ? {} : { contentsClock: options.contentsClock }),
         ...(options.wrapMediaStorage === undefined ? {} : { wrapMediaStorage: options.wrapMediaStorage }),
+        ...(options.wrapIdentityStorage === undefined ? {} : { wrapIdentityStorage: options.wrapIdentityStorage }),
         ...(options.logger === undefined ? {} : { logger: options.logger }),
         ...(options.config === undefined ? {} : { config: options.config })
       });
@@ -335,6 +365,7 @@ export const createContentsWorld = (label: string) => {
 
     async teardown(): Promise<void> {
       const clients = createdClientIds;
+      await owner.knex('client_memberships').whereIn('user_id', createdUserIds).delete();
       await owner.knex('client_portal_approval_links').whereIn('client_id', clients).delete();
       await owner.knex('client_thread_comments').whereIn('client_id', clients).delete();
       await owner.knex('client_threads').whereIn('client_id', clients).delete();

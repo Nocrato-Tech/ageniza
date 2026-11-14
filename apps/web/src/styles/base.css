@@ -1,0 +1,67 @@
+/**
+ * shadcn/Tailwind bridge (docs/design-system.md section 15): not active.
+ * Neither is a dependency of this app yet. If either is adopted, its
+ * variables (shadcn's `--primary`, `--muted-foreground`, `--ring`, or a
+ * Tailwind theme config) must point at the tokens above, never carry their
+ * own values — no parallel palette.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  font: var(--body-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+a {
+  color: var(--text-link);
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-shell > header {
+  padding: var(--space-4) max(var(--space-6), calc((100vw - 72rem) / 2));
+  /* A fixed dark band on purpose, carried over from the pre-token stylesheet (docs/design-system.md 17). */
+  background: var(--color-ink-900);
+  color: var(--color-white);
+  font: var(--heading-md);
+}
+
+.app-shell > header a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-shell > main,
+.page-status {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--space-12) var(--space-4);
+}
+
+.page-status {
+  min-height: 60vh;
+  display: grid;
+  align-content: center;
+}
+

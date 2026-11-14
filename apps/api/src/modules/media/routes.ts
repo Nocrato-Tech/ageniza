@@ -27,16 +27,22 @@ import { clientScopeOf, lockFolder } from './folder-service.js';
 import { registerMediaFolderRoutes } from './folder-routes.js';
 import type { MediaJobDispatcher } from './job-dispatcher.js';
 import {
+  categoryForUpload,
   describeMediaContentType,
+  downloadResponseHeaders,
   maxBytesForCategory,
   MEDIA_RATE_LIMITS,
   MEDIA_READ_PERMISSIONS,
   MEDIA_READ_URL_BUCKET,
   MEDIA_UPLOAD_PERMISSIONS,
   multipartPlan,
+  objectKeyFor,
+  uploadObjectKeyFor,
   usesMultipartUpload,
   type MediaLimits
 } from './policy.js';
+import { registerMediaLibraryRoutes } from './library-routes.js';
+import { copyAndInspectStagedObject, type UploadVerdict } from './upload-inspection.js';
 import {
   auditMediaEvent,
   findConfirmedAssetWithVariants,
@@ -117,12 +123,6 @@ const requireAuth = (request: FastifyRequest): NonNullable<FastifyRequest['auth'
   return auth;
 };
 
-const objectKeyFor = (agencyId: string, assetId: string, extension: string): string => `${agencyId}/${assetId}/original.${extension}`;
-// All temporary objects share a leading prefix so R2 lifecycle can expire them without matching
-// canonical originals or generated variants. R2 lifecycle filters support prefixes, not suffixes.
-const uploadObjectKeyFor = (agencyId: string, assetId: string, extension: string): string =>
-  `staging/${agencyId}/${assetId}/upload.${extension}`;
-
 /**
  * A media of a client is a child of it: once the client is archived, no write of the upload goes on (a new URL, a renewed
  * reservation, a confirmation). The foreign key keeps the client in this agency, so anything but "active" is the archive.
@@ -198,7 +198,10 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
 
     const descriptor = describeMediaContentType(body.contentType);
     if (descriptor === undefined) throw unsupportedType();
-    if (body.declaredSizeBytes > maxBytesForCategory(config, descriptor.category)) throw payloadTooLarge();
+    const category = categoryForUpload(descriptor, body.asLogo === true);
+    // A PDF, an audio and a logo are files of a client's library: there is no home for one outside it.
+    if (category === undefined || ((category !== 'image' && category !== 'video') && body.clientId === undefined)) throw unsupportedType();
+    if (body.declaredSizeBytes > maxBytesForCategory(config, category, descriptor.contentType)) throw payloadTooLarge();
 
     const assetId = randomUUID();
     const objectKey = objectKeyFor(params.agencyId, assetId, descriptor.extension);
@@ -229,9 +232,10 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       await insertPendingAsset(transaction, {
         id: assetId,
         agencyId: params.agencyId,
-        category: descriptor.category,
+        category,
         declaredContentType: body.contentType,
         extension: descriptor.extension,
+        fileName: body.fileName,
         objectKey,
         uploadObjectKey,
         declaredSizeBytes: body.declaredSizeBytes,
@@ -262,7 +266,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     return reply.status(201).send(routeResponse(uploadDocs, request, {
       assetId,
       objectKey,
-      category: descriptor.category,
+      category,
       upload: upload.type === 'single'
         ? { type: 'single', url: upload.url, expiresAt }
         : { type: 'multipart', uploadId: upload.uploadId, partSizeBytes: upload.partSizeBytes, partCount: upload.partCount }
@@ -332,28 +336,27 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         await storage.completeMultipartUpload({ key: asset.upload_object_key, uploadId: asset.multipart_upload_id!, parts: body.parts! });
       }
 
-      // A still-valid browser URL can mutate only staging. Copy first, then validate the immutable
-      // canonical key so an overwrite between HeadObject and CopyObject cannot smuggle different
-      // bytes past validation. The preliminary staging HEAD preserves the explicit missing-object
+      // The preliminary staging HEAD (inside the shared inspection) preserves the explicit missing-object
       // rejection instead of surfacing an opaque CopyObject error.
-      const stagingHead = await storage.headObject({ key: asset.upload_object_key });
-      if (stagingHead !== undefined) {
-        await storage.copyObject({ sourceKey: asset.upload_object_key, destinationKey: asset.object_key });
-        copiedCanonicalKey = asset.object_key;
-      }
-      // The R2/S3 protocol offers no upload-time size policy for a presigned PUT. This canonical
-      // HeadObject observes exactly the object that will survive confirmation.
-      const head = stagingHead === undefined ? undefined : await storage.headObject({ key: asset.object_key });
-      const maxBytes = maxBytesForCategory(config, asset.category);
+      const inspection = await copyAndInspectStagedObject(storage, config, {
+        stagingKey: asset.upload_object_key,
+        canonicalKey: asset.object_key,
+        declaredContentType: asset.declared_content_type,
+        category: asset.category,
+        onCopied: () => { copiedCanonicalKey = asset.object_key; }
+      });
+      const head = inspection.copied ? inspection.head : undefined;
 
       let rejectionReason: string | undefined;
-      if (head === undefined) {
+      let confirmed: Extract<UploadVerdict, { readonly ok: true }> | undefined;
+      if (!inspection.copied || head === undefined) {
         rejectionReason = 'object_not_found';
-      } else if (head.contentType === undefined || describeMediaContentType(head.contentType)?.category !== asset.category) {
-        rejectionReason = 'content_type_mismatch';
-      } else if (head.sizeBytes > maxBytes) {
-        rejectionReason = 'too_large';
+      } else if (inspection.verdict.ok) {
+        confirmed = inspection.verdict;
       } else {
+        rejectionReason = inspection.verdict.reason;
+      }
+      if (head !== undefined && confirmed !== undefined) {
         await lockAgencyStorageQuota(transaction, params.agencyId);
         // Again, after the last wait before the write: the storage calls and the lock above can outlast an archive.
         await requireOpenClient(transaction, params.agencyId, asset);
@@ -375,13 +378,13 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
         // records the rejection.
         if (copiedCanonicalKey !== undefined) await storage.deleteObject({ key: copiedCanonicalKey });
         copiedCanonicalKey = undefined;
-        if (stagingHead !== undefined) await storage.deleteObject({ key: asset.upload_object_key });
+        if (inspection.stagingFound) await storage.deleteObject({ key: asset.upload_object_key });
         await markAssetRejected(transaction, asset.id, rejectionReason);
         await auditMediaEvent(transaction, { action: 'media.upload_rejected', actorUserId: auth.userId, agencyId: params.agencyId, targetId: asset.id });
         return { ok: false as const, reason: rejectionReason };
       }
 
-      await markAssetConfirmed(transaction, asset.id, head!.sizeBytes, head!.contentType!, asset.category);
+      await markAssetConfirmed(transaction, asset.id, head!.sizeBytes, confirmed!.contentType, asset.category, confirmed!.dimensions);
       await auditMediaEvent(transaction, { action: 'media.upload_confirmed', actorUserId: auth.userId, agencyId: params.agencyId, targetId: asset.id });
       if (asset.category === 'video') {
         if (dependencies.jobs === undefined) throw new Error('Video processing queue is not configured.');
@@ -394,7 +397,7 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
       return {
         ok: true as const,
         sizeBytes: head!.sizeBytes,
-        contentType: head!.contentType!,
+        contentType: confirmed!.contentType,
         uploadObjectKey: asset.upload_object_key
       };
       });
@@ -438,23 +441,24 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
     const params = routeParams(downloadDocs, request);
     const query = routeQuery(downloadDocs, request);
 
-    const objectKey = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
+    const { objectKey, headers } = await withAuthenticatedUserTransaction(database, auth.claims, async (transaction) => {
       const asset = await findConfirmedAssetWithVariants(transaction, params.assetId, params.agencyId);
       if (asset === undefined) throw assetNotFound();
       // The thumbnail/preview variants exist only for a video whose worker job has finished
       // (issue #24); until then this is a 409, not a 404, since the asset itself is real.
-      // An image has no generated thumbnail: its original is the thumbnail (issue #550).
+      // An image (and a logo) has no generated thumbnail: its original is the thumbnail (issue #550).
       const key = query.variant === 'original' ? asset.objectKey
-        : query.variant === 'thumbnail' ? (asset.category === 'image' ? asset.objectKey : asset.thumbnailObjectKey)
+        : query.variant === 'thumbnail' ? (asset.category === 'image' || asset.category === 'logo' ? asset.objectKey : asset.thumbnailObjectKey)
         : asset.previewObjectKey;
       if (key === null) {
         if (asset.videoProcessingStatus === 'failed') throw variantProcessingFailed(asset.videoProcessingError);
         throw variantNotReady();
       }
-      return key;
+      // Only the original has the headers of a file that is saved and never opened: they are signed into the URL.
+      return { objectKey: key, headers: key === asset.objectKey ? downloadResponseHeaders(asset) : undefined };
     });
 
-    const url = await storage.presignGetObject({ key: objectKey, expiresInSeconds: config.downloadUrlExpirySeconds });
+    const url = await storage.presignGetObject({ key: objectKey, expiresInSeconds: config.downloadUrlExpirySeconds, ...headers });
     // Only the explicit download of the original is audited: the thumbnail and the preview are what the screens render, one per card (issue #550).
     // It is written after the URL is signed (#593): a refused signature leaves no event for a URL that was never issued.
     if (query.variant === 'original') {
@@ -465,4 +469,5 @@ export const registerMediaModule = (app: FastifyInstance, dependencies: MediaMod
   });
 
   registerMediaFolderRoutes(app, dependencies);
+  registerMediaLibraryRoutes(app, dependencies);
 };

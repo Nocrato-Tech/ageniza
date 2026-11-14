@@ -336,6 +336,6 @@ describe('LoginPage (/entrar)', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' }).getAttribute('aria-disabled')).toBe('true'));
     release?.();
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Agência Um' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('link', { name: /Agência Um/ })).toBeTruthy());
   });
 });

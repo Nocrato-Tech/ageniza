@@ -1,0 +1,104 @@
+/* "Como o cliente vê": the post as the portal shows it, inside the content modal. */
+.client-view {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.client-view__post {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 32rem;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
+}
+
+.client-view__title {
+  margin: 0;
+  font: var(--heading-md);
+  overflow-wrap: anywhere;
+}
+
+/* The media of a content as tiles: a numbered frame and the controls under it; the folder lists the same tiles with "Adicionar". */
+.content-media {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.content-media__title {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.content-media__selected,
+.content-media__folder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-media__tile {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+  align-content: start;
+  width: 6rem;
+}
+
+.content-media__frame {
+  position: relative;
+}
+
+.content-media__number {
+  position: absolute;
+  top: var(--space-1);
+  left: var(--space-1);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.content-media__tools {
+  display: flex;
+}
+
+.content-media__caption {
+  color: var(--text-secondary);
+  font: var(--caption);
+  text-align: center;
+}
+
+.content-media__confirm {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.content-media__confirm p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.content-media__confirm-title {
+  font: var(--label-md);
+}
+
+.content-media__new-folder {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+

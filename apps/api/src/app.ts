@@ -14,8 +14,13 @@ import { registerCollaboratorModule, type CollaboratorModuleDependencies } from 
 import { registerContextModule, type ContextModuleDependencies } from './modules/contexts/routes.js';
 import { registerEmailChangeModule, type EmailChangeModuleDependencies } from './modules/email-change/routes.js';
 import { createInvitationTokenLookup, registerInvitationModule, type InvitationModuleDependencies } from './modules/invitations/routes.js';
+import { registerPortalUploadRoutes } from './modules/media/portal-upload-routes.js';
+import { portalUploadsForClients } from './modules/media/portal-upload-service.js';
 import { registerMediaModule, type MediaModuleDependencies } from './modules/media/routes.js';
+import { createRequireClientAccess } from './modules/tenancy/guards.js';
 import { registerLegalModule, type LegalModuleDependencies } from './modules/legal/routes.js';
+import { registerNotificationsModule, type NotificationModuleDependencies } from './modules/notifications/routes.js';
+import { registerSearchModule, type SearchModuleDependencies } from './modules/search/routes.js';
 import { registerStoryScriptModule, type StoryScriptModuleDependencies } from './modules/story-scripts/routes.js';
 import { registerProfileModule, type ProfileModuleDependencies } from './modules/profile/routes.js';
 import { registerSubscriptionModule, type SubscriptionModuleDependencies } from './modules/subscriptions/routes.js';
@@ -61,6 +66,10 @@ export interface ApiAppOptions {
   storyScripts?: StoryScriptModuleDependencies;
   /** Billing of the agency (#772); optional, undefined for tests that never touch it. */
   subscriptions?: SubscriptionModuleDependencies;
+  /** The notifications of the person inside the app; optional, undefined for tests that never touch them. */
+  notifications?: NotificationModuleDependencies;
+  /** The search of the agency's top bar; optional, undefined for tests that never touch it. */
+  search?: SearchModuleDependencies;
   /** Profile dependencies are optional; undefined where identity storage is not configured. */
   profile?: ProfileModuleDependencies;
   /** Legal acceptance dependencies are optional; undefined for tests that never touch the legal routes. */
@@ -198,7 +207,8 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
     registerAgencyModule(app, options.agencies);
   }
   if (options.clients !== undefined) {
-    registerClientModule(app, options.clients);
+    // The announcement of a batch of files checks them with what the media module reads and answers: injected here, never imported by clients.
+    registerClientModule(app, { ...options.clients, portalUploads: portalUploadsForClients });
   }
   if (options.contents !== undefined) {
     registerContentModule(app, options.contents);
@@ -214,12 +224,19 @@ export const buildApp = async (options: ApiAppOptions): Promise<FastifyInstance>
   }
   if (options.media !== undefined) {
     registerMediaModule(app, options.media);
+    registerPortalUploadRoutes(app, { ...options.media, requireClientAccess: createRequireClientAccess({ database: options.media.database }) });
   }
   if (options.storyScripts !== undefined) {
     registerStoryScriptModule(app, options.storyScripts);
   }
   if (options.subscriptions !== undefined) {
     registerSubscriptionModule(app, options.subscriptions);
+  }
+  if (options.notifications !== undefined) {
+    registerNotificationsModule(app, options.notifications);
+  }
+  if (options.search !== undefined) {
+    registerSearchModule(app, options.search);
   }
   if (options.profile !== undefined) {
     registerProfileModule(app, options.profile);

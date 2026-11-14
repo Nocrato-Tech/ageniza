@@ -14,6 +14,7 @@ import { Button, DatePicker, FieldMessage, Textarea } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
+import { ApprovalSubmitDialog } from './approval-submit-dialog.js';
 import {
   ACTION_RULES,
   actionRefusal,
@@ -90,6 +91,9 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
   const [publishOn, setPublishOn] = useState(content.publishOn);
   const [problem, setProblem] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
+  // "Enviar para aprovação" asks for the deadline and the note first: it is a dialog of its own, with its own request.
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [submitBusy, setSubmitBusy] = useState(false);
 
   // The move on its way is this screen's own state, set in the click: the mutation's reaches the buttons a render later, and a second click in between would send it twice.
   const [sending, setSending] = useState<ContentAction | null>(null);
@@ -112,7 +116,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
     }
   });
 
-  const busy = sending !== null;
+  const busy = sending !== null || submitBusy;
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
 
   if (available.length === 0) return <div className="content-modal__footer-row">{children}</div>;
@@ -164,7 +168,7 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
   );
   const buttonOf = (action: ContentAction) => {
     switch (action) {
-      case 'submit': return button(action, () => send({ action }), missing.length > 0);
+      case 'submit': return button(action, () => { setError(undefined); setSubmitOpen(true); }, missing.length > 0);
       case 'approve': return button(action, () => open('approve'));
       case 'publish': return button(action, () => open('publish'));
       case 'reschedule': return button(action, () => open('reschedule'));
@@ -241,5 +245,11 @@ export function ContentActions({ clientId, content, dirty, onBusyChange, onDone,
         {available.filter((action) => action !== 'cancel').map(buttonOf)}
       </section>
     </div>
+    {submitOpen && <ApprovalSubmitDialog
+      target={{ kind: 'one', clientId, content: { id: content.id, title: content.title } }}
+      onBusyChange={setSubmitBusy}
+      onClose={() => { setSubmitOpen(false); }}
+      onSent={() => { setSubmitOpen(false); onDone(); }}
+    />}
   </>;
 }

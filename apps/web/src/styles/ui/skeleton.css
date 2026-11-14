@@ -1,0 +1,6 @@
+.ui-skeleton {
+  height: 4.5rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-tint);
+}
+

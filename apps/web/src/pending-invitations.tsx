@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, Plus, Send, ShieldCheck, X } from 'lucide-react';
+import { Clock, Info, Plus, Send, X } from 'lucide-react';
 
 import {
   AuthNoContentResponseSchema,
@@ -8,11 +8,12 @@ import {
   PendingInvitationListResponseSchema,
   type PendingInvitation
 } from '@ageniza/contracts';
-import { Button, ConfirmDialog, EmptyState, LiveStatus, Pagination, Pill, Skeleton } from '@ageniza/ui';
+import { Button, ConfirmDialog, EmptyState, LiveStatus, Pagination, Pill, RoleTag, Skeleton } from '@ageniza/ui';
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { CopyInvitationLinkButton } from './copy-invitation-link.js';
+import { collaboratorRoleTone } from './collaborator-detail.js';
 import { HttpClientError, useApiClient } from './http.js';
 
 /** `specs/colaboradores.md` §6: 24 per page, creation date ascending (the route owns the order). */
@@ -22,6 +23,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const LIST_ERROR = 'Não foi possível carregar os convites. Tente de novo.';
 const RESEND_ERROR = 'Não foi possível reenviar o convite. Tente de novo.';
 const CANCEL_ERROR = 'Não foi possível cancelar o convite. Tente de novo.';
+const INVITES_NOTE = 'Depois de reenviar, o link anterior deixa de valer e aparece o botão “Copiar link”. Convide por e-mail e escolha o papel: a pessoa entra na equipe assim que aceitar.';
 
 /**
  * The relative deadline (`specs/colaboradores.md` §7): "expira em 5 dias", "expira amanhã". The
@@ -136,19 +138,27 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
   const outOfRange = data !== undefined && page > Math.max(1, data.meta.totalPages);
 
   let body: ReactNode;
-  if (invitations.isPending) {
+  // A retry keeps the failure and its busy button (and the focus) in place: only the first read is a skeleton.
+  const failed = invitations.isError || (invitations.isPending && invitations.errorUpdateCount > 0);
+  if (invitations.isPending && !failed) {
     body = <ul className="invites__list" aria-hidden="true">
       {Array.from({ length: 3 }, (_value, index) => <li key={index}><Skeleton /></li>)}
     </ul>;
-  } else if (invitations.isError) {
-    body = <div className="invites__error" role="alert">
-      <p>{LIST_ERROR}</p>
-      <Button variant="secondary" onClick={() => { void invitations.refetch(); }}>Tentar de novo</Button>
-    </div>;
+  } else if (failed) {
+    body = <EmptyState
+      kind="failure"
+      className="invites__empty"
+      headingLevel={3}
+      title={LIST_ERROR}
+      retrying={invitations.isFetching}
+      onRetry={() => { void invitations.refetch(); }}
+    />;
   } else if (data === undefined || outOfRange) {
     body = null;
   } else if (data.data.length === 0) {
+    // Only the team's first visit invites to start; with a full team, no invitation waiting is just good news.
     body = <EmptyState
+      kind={mascot ? 'first-use' : 'good-news'}
       className="invites__empty"
       headingLevel={3}
       mascot={mascot}
@@ -161,7 +171,7 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
       <ul className="invites__list">
         {data.data.map((invitation) => <li key={invitation.id} className="invites__item">
           <p className="invites__email">{invitation.email}</p>
-          <p className="invites__role"><Pill icon={<ShieldCheck />}>{invitation.role.name}</Pill></p>
+          <p className="invites__role"><RoleTag name={invitation.role.name} tone={collaboratorRoleTone(invitation.role.key)} /></p>
           <p className={['invites__expiry', pendingInviteExpiryLabel(invitation.expiresAt) === 'expirado' && 'invites__expiry--expired'].filter(Boolean).join(' ')}>
             <Clock aria-hidden="true" size={16} strokeWidth={1.75} />{pendingInviteExpiryLabel(invitation.expiresAt)}
           </p>
@@ -189,6 +199,7 @@ export function PendingInvitationsSection({ page, onPageChange, onInvite, mascot
         </li>)}
       </ul>
       <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onPageChange={onPageChange} />
+      <p className="invites__note"><Info aria-hidden="true" />{INVITES_NOTE}</p>
     </>;
   }
 

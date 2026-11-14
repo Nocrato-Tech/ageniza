@@ -22,6 +22,7 @@ const open = {
   status: 'awaiting_approval',
   coverAssetId: null,
   publishedOn: null,
+  approval: null,
   caption: 'Legenda',
   revision: 1,
   media: [{ id: ID, position: 1, kind: 'image' }],

@@ -57,6 +57,16 @@ describe('real API adapter boundaries', () => {
       expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'ready', name: 'Reel.mp4' }));
     } finally { finish(); vi.unstubAllGlobals(); }
   });
+  // The library now holds five categories; the app shows photos and videos, so anything that is not a video is a picture to it.
+  it.each([['video', 'video'], ['image', 'image'], ['logo', 'image'], ['pdf', 'image'], ['audio', 'image']] as const)('answers an upload the server filed as %s as a %s of the app', async (category, kind) => {
+    const request = vi.fn(async (path: string) => path.endsWith('/media/uploads') ? { assetId: contentId, category, upload: { type: 'single', url: 'https://storage.test/one' } } : {});
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 200 })));
+    try {
+      const repo = remoteRepository(client(request), { type: 'agency', agencyId, agencyName: 'Agência', roleKey: 'admin', roleName: 'Admin', isOwner: false });
+      const asset = await repo.upload(clientId, clientId, { uri: '', name: 'Arquivo', mimeType: 'image/png', size: 3, file: new File(['abc'], 'Arquivo') });
+      expect(asset).toMatchObject({ id: contentId, kind });
+    } finally { vi.unstubAllGlobals(); }
+  });
   it('reports the created id before a later detail reload fails, allowing a PATCH retry', async () => {
     const mediaId = '44444444-4444-4444-8444-444444444444';
     const input = { ...post, folderId: clientId, coverId: null, mediaIds: [mediaId] };

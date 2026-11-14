@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, RotateCcw } from 'lucide-react';
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 
 import { CollaboratorListResponseSchema } from '@ageniza/contracts';
@@ -9,7 +9,7 @@ import { BadgeCard, Button, EmptyState, FilterBar, FilterBarItem, FilterBarSelec
 
 import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
-import { CollaboratorDetailDialog } from './collaborator-detail.js';
+import { collaboratorRoleTone } from './collaborator-detail.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
 import { InviteCollaboratorDialog } from './invite-collaborator.js';
@@ -76,7 +76,7 @@ const isNotVisible = (error: unknown): boolean =>
  * Search, role and job-title filters live in the URL, so the state is shareable and survives a
  * reload. The screen never reorders, groups or draws an empty state.
  */
-export function CollaboratorsPage() {
+function CollaboratorTeam() {
   const httpClient = useApiClient();
   const agency = useAgencyContext();
   const canInvite = useCan('colaborador.convidar');
@@ -91,16 +91,7 @@ export function CollaboratorsPage() {
   const [reactivating, setReactivating] = useState<{ membershipId: string; name: string } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
-  const navigate = useNavigate();
-  const membershipId = searchParams.get('colaborador');
-  const listParams = new URLSearchParams(searchParams);
-  listParams.delete('colaborador');
-  const listUrl = `${location.pathname}${listParams.size === 0 ? '' : `?${listParams}`}`;
-  const closeDetail = (): void => {
-    const state = z.object({ collaboratorListUrl: z.string() }).safeParse(location.state);
-    if (state.success && state.data.collaboratorListUrl === listUrl) void navigate(-1);
-    else setSearchParams(listParams, { replace: true, state: null });
-  };
+  const listUrl = `${location.pathname}${location.search}`;
   useDocumentTitle('Colaboradores — Ageniza');
 
   const q = searchParams.get('q') ?? '';
@@ -173,7 +164,9 @@ export function CollaboratorsPage() {
 
   const hasFilters = search !== '' || role !== '' || jobTitle !== '';
   // Placeholder rows are the previous filter's: an empty one must not become this filter's empty state or "0 de 0" summary, so it keeps the skeleton.
-  const loading = collaborators.isPending || (collaborators.isPlaceholderData && collaborators.data.data.length === 0);
+  // A retry keeps the failure and its busy button (and the focus) in place: only the first read is a skeleton.
+  const failed = collaborators.isError || (collaborators.isPending && collaborators.errorUpdateCount > 0);
+  const loading = (collaborators.isPending && !failed) || (collaborators.isPlaceholderData && collaborators.data.data.length === 0);
   const outOfRange = collaborators.data !== undefined && !collaborators.isPlaceholderData && page > Math.max(1, collaborators.data.meta.totalPages);
   // A brand new agency has the Owner and nobody else: the only moment the owl may greet the empty invitations (docs/brand.md).
   const aloneInTheTeam = collaborators.data !== undefined && !collaborators.isPlaceholderData && collaborators.data.meta.totalItems === 1 && !hasFilters && status === 'active';
@@ -182,7 +175,11 @@ export function CollaboratorsPage() {
   return (
     <section aria-labelledby="collaborators-title" className="collaborators">
       <header className="collaborators__header">
-        <h1 id="collaborators-title">Colaboradores</h1>
+        <div className="collaborators__heading">
+          <p className="collaborators__eyebrow">Agência</p>
+          <h1 id="collaborators-title">Colaboradores</h1>
+          <p className="collaborators__lead">Cada pessoa tem um crachá: foto, nome, cargo e papel. Abra um para ver e mudar o que ela pode fazer.</p>
+        </div>
         {canInvite && (
           <Button size="lg" leadingIcon={<Plus />} blockedReason={blocked} onClick={() => setInviteOpen(true)}>Convidar</Button>
         )}
@@ -225,11 +222,15 @@ export function CollaboratorsPage() {
         <ul className="collaborators__grid" aria-hidden="true">
           {Array.from({ length: PAGE_SIZE }, (_value, index) => <li key={index}><Skeleton className="ui-badge-card__skeleton" /></li>)}
         </ul>
-      ) : collaborators.isError ? (
-        <div className="collaborators__error" role="alert">
-          <p>Não foi possível carregar a equipe. Tente de novo.</p>
-          <Button variant="secondary" onClick={() => { void collaborators.refetch(); }}>Tentar de novo</Button>
-        </div>
+      ) : collaborators.isError || collaborators.isPending ? (
+        <EmptyState
+          kind="failure"
+          className="collaborators__empty"
+          headingLevel={3}
+          title="Não foi possível carregar a equipe. Tente de novo."
+          retrying={collaborators.isFetching}
+          onRetry={() => { void collaborators.refetch(); }}
+        />
       ) : outOfRange ? null : <>
         {collaborators.isPlaceholderData && <p className="list-refreshing" role="status">Atualizando…</p>}
         {collaborators.data.data.length === 0 && status === 'removed' && !hasFilters ? (
@@ -249,7 +250,7 @@ export function CollaboratorsPage() {
               <li key={collaborator.membershipId}>
                 <Link
                   className="collaborators__badge-link"
-                  to={{ search: `?${new URLSearchParams([...listParams, ['colaborador', collaborator.membershipId]])}` }}
+                  to={`/agencia/${agency.agencyId}/colaboradores/${collaborator.membershipId}`}
                   state={{ collaboratorListUrl: listUrl }}
                   aria-label={`Ver detalhes de ${collaborator.name}`}
                 >
@@ -258,6 +259,8 @@ export function CollaboratorsPage() {
                     photoUrl={collaborator.photoUrl}
                     jobTitle={collaborator.jobTitle}
                     role={collaborator.role.name}
+                    roleTone={collaboratorRoleTone(collaborator.role.key)}
+                    isOwner={collaborator.isOwner}
                     removed={collaborator.status === 'removed'}
                   />
                 </Link>
@@ -284,7 +287,6 @@ export function CollaboratorsPage() {
         />
       </>}
       <PendingInvitationsSection page={invitesPage} onPageChange={changeInvitesPage} onInvite={() => setInviteOpen(true)} mascot={aloneInTheTeam} />
-      {membershipId !== null && <CollaboratorDetailDialog key={agency.agencyId + membershipId} membershipId={membershipId} onClose={closeDetail} />}
       {inviteOpen && <InviteCollaboratorDialog onClose={() => setInviteOpen(false)} />}
       {reactivating !== null && <ReactivateCollaboratorDialog
         key={agency.agencyId + reactivating.membershipId}
@@ -294,4 +296,16 @@ export function CollaboratorsPage() {
       />}
     </section>
   );
+}
+
+/** The legacy address of the detail (`?colaborador=<id>`, from when it was a modal) goes to the page of the person. */
+export function CollaboratorsPage() {
+  const agency = useAgencyContext();
+  const [searchParams] = useSearchParams();
+  const membershipId = searchParams.get('colaborador');
+  if (membershipId === null || membershipId === '') return <CollaboratorTeam />;
+  const rest = new URLSearchParams(searchParams);
+  rest.delete('colaborador');
+  const teamPath = `/agencia/${agency.agencyId}/colaboradores`;
+  return <Navigate replace to={`${teamPath}/${encodeURIComponent(membershipId)}`} state={{ collaboratorListUrl: rest.size === 0 ? teamPath : `${teamPath}?${rest}` }} />;
 }

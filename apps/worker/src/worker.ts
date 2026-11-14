@@ -18,6 +18,7 @@ import { createDatabaseClient, type DatabaseClient } from '@ageniza/database';
 import { createEmailSender, type EmailSender } from '@ageniza/email';
 import type { PaymentProvider } from '@ageniza/payments';
 
+import { approvalRemindersJob } from './approval-reminders-job.js';
 import { archiveDueClientsJob } from './archive-due-clients-job.js';
 import { clientContentEmailJob } from './client-content-email-job.js';
 import { createJobProcessor, type JobProcessor } from './jobs.js';
@@ -25,8 +26,10 @@ import { mediaPurgeJob } from './media-purge-job.js';
 import { mediaVideoProcessingJob } from './media-video-job.js';
 import { createMediaProcessingStorageClient } from './media-storage.js';
 import { createNotificationQueue } from './notification-queue.js';
+import { approvalDeadlineNotificationsJob } from './notifications-deadline-job.js';
 import { createDurableQueue, type DurableQueue } from './queue.js';
 import { renewSubscriptionsJob } from './renew-subscriptions-job.js';
+import { deadSessionPurgeJob } from './dead-session-purge-job.js';
 import { unconfirmedAccountPurgeJob } from './unconfirmed-account-purge-job.js';
 
 type WorkerSignal = 'SIGINT' | 'SIGTERM';
@@ -107,6 +110,12 @@ export const createWorkerRuntime = (options: CreateWorkerRuntimeOptions): Worker
   if (queue !== undefined) queue.register(archiveDueClientsJob({ database }));
   // The retention of the accounts never confirmed (issue #724) needs only the database too.
   if (queue !== undefined) queue.register(unconfirmedAccountPurgeJob({ database }));
+  // The retention of the sessions dead for more than 30 days (decision 2026-11-12) needs only the database too.
+  if (queue !== undefined) queue.register(deadSessionPurgeJob({ database }));
+  // The reminders of approval (decision 2026-11-10) only enqueue, from the database: the e-mail job below sends them.
+  if (queue !== undefined) queue.register(approvalRemindersJob({ database }));
+  // The notification inside the app of a deadline that passed (decision 2026-11-11) needs only the database too.
+  if (queue !== undefined) queue.register(approvalDeadlineNotificationsJob({ database }));
   // Video processing (issue #24): registered whenever object storage is configured, exactly like
   // the API only mounts its media routes when `config.storage` is present. Registration must
   // happen before `queue.start()` (enforced by `queue.register` itself).

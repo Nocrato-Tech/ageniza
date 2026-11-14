@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Regenera docs/business/decisions/README.md a partir dos arquivos de decisão.
 //
-// Título (linha "# ") e data ("**Data.**") vêm de cada arquivo. O módulo de cada decisão
+// Título (linha "# ") e data ("**Data.**") vêm de cada arquivo; sem a linha de data vale a do nome (AAAA-MM-DD-...). O módulo de cada decisão
 // vem das seções atuais do índice: o índice guarda o agrupamento, e uma decisão nova sem
 // linha cai em "A classificar" até ser movida para o módulo. O script não move decisão pelo
 // título. Módulo novo exige editar MODULES. Roda fora dos PRs de entrega, ao fim de cada onda.
@@ -56,11 +56,11 @@ export function parseGroups(readme) {
 export function readDecision(text, name) {
   const lines = text.split('\n');
   const title = lines.find((l) => l.startsWith('# '))?.slice(2).trim();
-  const date = lines
-    .map((l) => l.match(/^\*\*Data\.\*\*\s*(\d{4}-\d{2}-\d{2})/))
-    .find(Boolean)?.[1];
+  const date =
+    lines.map((l) => l.match(/^\*\*Data\.\*\*\s*(\d{4}-\d{2}-\d{2})/)).find(Boolean)?.[1] ??
+    name.match(/^(\d{4}-\d{2}-\d{2})-/)?.[1];
   if (!title || !date) {
-    throw new Error(`${name}: falta a linha "# " ou "**Data.**" com AAAA-MM-DD`);
+    throw new Error(`${name}: falta a linha "# " ou "**Data.**" com AAAA-MM-DD (o nome AAAA-MM-DD-... também vale)`);
   }
   return { title, date };
 }

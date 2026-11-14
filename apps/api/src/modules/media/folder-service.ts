@@ -102,7 +102,11 @@ export const insertFolder = async (
   return row;
 };
 
-/** Confirmed and not removed: a pending or rejected upload is not yet a media of the folder. */
+/**
+ * Confirmed and not removed: a pending or rejected upload is not yet a media of the folder. Only a photo and a video are listed (the
+ * ones a content takes, and what the picker of the content modal reads); the PDFs, audios and logos of the folder are in the library
+ * listing of the client.
+ */
 export const listFolderAssets = async (
   transaction: Transaction,
   folderId: string,
@@ -112,7 +116,7 @@ export const listFolderAssets = async (
     select id, category, confirmed_content_type, confirmed_size_bytes, video_processing_status, created_at,
       count(*) over () as total
     from public.media_assets
-    where folder_id = ?::uuid and status = 'confirmed' and removed_at is null
+    where folder_id = ?::uuid and status = 'confirmed' and removed_at is null and category in ('image', 'video')
     order by created_at desc, id desc
     limit ? offset ?
   `, [folderId, page.limit, page.offset]);
@@ -121,7 +125,7 @@ export const listFolderAssets = async (
   // A page past the end carries no row, and "no total" would read as an empty folder.
   const count = await raw<RawRows<{ total: string | number }>>(transaction, `
     select count(*) as total from public.media_assets
-    where folder_id = ?::uuid and status = 'confirmed' and removed_at is null
+    where folder_id = ?::uuid and status = 'confirmed' and removed_at is null and category in ('image', 'video')
   `, [folderId]);
   return { rows: [], total: Number(count.rows[0]?.total ?? 0) };
 };
@@ -149,13 +153,26 @@ const databaseCode = (error: unknown): string | undefined =>
     ? (error as { code: string }).code
     : undefined;
 
-/** What the functions of 20261007001500 and the gate on the client raise, as the API's refusals. */
-export const folderFunctionRefusal = (error: unknown): 'not-found' | 'client-archived' | 'in-use' | undefined => {
+/** `app_private.delete_media_folder`: raises when the folder is a default one, holds files, has subfolders or is tied to contents. */
+export const deleteFolder = async (transaction: Transaction, folderId: string): Promise<void> => {
+  await raw(transaction, 'select app_private.delete_media_folder(?::uuid)', [folderId]);
+};
+
+export type FolderFunctionRefusal =
+  | 'not-found' | 'client-archived' | 'in-use'
+  | 'folder-has-files' | 'folder-has-subfolders' | 'folder-has-contents' | 'folder-is-default';
+
+/** What the functions of 20261007001500 and 20261112000001 and the gate on the client raise, as the API's refusals. */
+export const folderFunctionRefusal = (error: unknown): FolderFunctionRefusal | undefined => {
   switch (databaseCode(error)) {
     case 'A0080': return 'not-found';
     case 'A0020':
     case 'A0081': return 'client-archived';
     case 'A0082': return 'in-use';
+    case 'A0083': return 'folder-has-files';
+    case 'A0084': return 'folder-has-subfolders';
+    case 'A0085': return 'folder-has-contents';
+    case 'A0086': return 'folder-is-default';
     default: return undefined;
   }
 };

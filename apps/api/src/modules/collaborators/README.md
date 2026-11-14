@@ -29,6 +29,34 @@ rotas. Quem não tem a chave recebe 403; quem não tem acesso à agência recebe
 ao de agência inexistente. A lista é a mesma para todos os papéis: o total não depende de quem olha
 (`specs/colaboradores.md` §5, regra 1).
 
+## Clientes e o que está com a pessoa (`open-contents`)
+
+`GET /agencies/:agencyId/collaborators/:membershipId/open-contents` (decisão 2026-11-11) alimenta o cartão
+"Clientes e o que está com ele" e o resumo do cabeçalho da página. Não existe atribuição de cliente a pessoa:
+o vínculo é o `owner_user_id` do conteúdo, e "aberto" é em produção, em ajuste, aguardando aprovação ou
+aprovado (`CONTENT_DEADLINE_OPEN_STATUSES`, a mesma lista do prazo do módulo de conteúdo).
+
+- **Duas permissões.** `colaborador.visualizar` **e** `conteudo.visualizar`, em dois guards seguidos; sem a
+  segunda é 403 (o Owner passa por posse). A permissão que a documentação nomeia é a primeira, como nas rotas
+  do módulo de conteúdo que pedem duas chaves, e a descrição do catálogo diz a segunda.
+- **Ordem das recusas** igual à do detalhe: 401, 404 da agência, 403 da porta, 404 do vínculo. O vínculo é
+  lido só `active` e na agência da rota: o de outra agência, o inexistente, o malformado e o removido dão o
+  mesmo 404, para qualquer um (o Owner também).
+- **A consulta** (`open-contents.ts`) roda como a pessoa, sob a RLS de `contents` e `clients`, e repete no
+  `WHERE` a agência da rota e o responsável: `contents_select` mostra toda agência de que quem olha é
+  membro, então um conteúdo do mesmo usuário em outra agência só fica de fora por esse filtro, e o
+  responsável não é policy nenhuma. Um teste troca as duas policies por `using (true)` e confere que a
+  resposta não muda.
+- **Um comando só**, para o cabeçalho e os cartões saírem do mesmo instante. `summary` conta todos os
+  clientes; `data` vai por nome do cliente (dobrado e com `collate "C"`, como a listagem) até 100, com o id
+  como desempate; `now` traz até 3 conteúdos por cliente por dia, hora (sem hora vem depois) e id, o critério
+  do calendário. Sem nenhum conteúdo aberto, 200 com `summary` zerado e `data` vazio.
+- **Erros do banco**: `42501` vira 403, `40P01` e `40001` viram 409 `TRY_AGAIN`, nunca 500.
+- **Índice.** Não há índice por responsável: com `contents_client_status_idx (client_id, status)` a consulta
+  lê, por cliente da agência, os conteúdos abertos e filtra o responsável depois (medido: 40 clientes, 13 mil
+  abertos, 33 ms). Cresce com os conteúdos abertos da agência, não com a tabela inteira. Se isso pesar, o
+  remédio é uma migration própria com `(owner_user_id)` parcial nos estados abertos.
+
 ## Foto
 
 `auth."user".image` guarda a **chave** do armazenamento de identidade (issue #100), nunca uma URL

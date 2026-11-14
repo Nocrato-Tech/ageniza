@@ -1,0 +1,495 @@
+// @vitest-environment jsdom
+import { QueryClientProvider } from '@tanstack/react-query';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { SubmitContentsBatchRequestSchema } from '@ageniza/contracts';
+import { invalidDayMessage } from '@ageniza/ui';
+
+import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
+import { ApiClientProvider, HttpClient } from './http.js';
+import { createQueryClient } from './query.js';
+import { ApplicationRoutes } from './routes.js';
+
+/**
+ * The batch send of the Conteúdos tab of the client (decision 2026-11-13, which took it out of the calendar): the marked contents of ONE
+ * client go in one dialog, the request to the batch route, the cap of 30, and what the screen says when the API refuses all of it.
+ */
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+const dialogDescriptors = ['showModal', 'close'].map((name) => [name, Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, name)] as const);
+beforeAll(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value(this: HTMLDialogElement) { this.open = true; } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value(this: HTMLDialogElement) { this.open = false; } });
+});
+afterAll(() => {
+  for (const [name, descriptor] of dialogDescriptors) {
+    if (descriptor === undefined) Reflect.deleteProperty(HTMLDialogElement.prototype, name);
+    else Object.defineProperty(HTMLDialogElement.prototype, name, descriptor);
+  }
+});
+
+/** 01:30Z of the 12th is 22:30 of the 11th in São Paulo: today is the 11th, and a day computed in UTC would be the wrong one. */
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-12T01:30:00Z'));
+});
+
+const AGENCY = '11111111-1111-4111-8111-111111111111';
+const CLIENT = '1a1a1a1a-1111-4111-8111-111111111111';
+const OTHER_CLIENT = '2b2b2b2b-2222-4222-8222-222222222222';
+const VISUALIZE = 'conteudo.visualizar';
+const READ_CLIENTS = 'cliente.visualizar';
+const OPERATE = 'conteudo.operar';
+const EDITOR = [VISUALIZE, READ_CLIENTS, OPERATE];
+const COVER = 'a0a0a0a0-0000-4000-8000-000000000001';
+
+const json = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+const failure = (status: number, code: string): Response => json({ error: { code, message: 'MENSAGEM DO SERVIDOR' } }, status);
+
+type Status = 'in_production' | 'awaiting_approval' | 'adjusting' | 'approved';
+
+interface Row {
+  id: string;
+  title: string;
+  format: 'image' | 'carousel' | 'reels';
+  publishOn: string;
+  publishAtTime: string | null;
+  status: Status;
+  thumbnailAssetId: string | null;
+  tasksTotal: number;
+  tasksApproved: number;
+}
+
+let sequence = 0;
+const row = (overrides: Partial<Row> = {}): Row => {
+  sequence += 1;
+  return {
+    id: `c0c0c0c0-0000-4000-8000-${String(sequence).padStart(12, '0')}`,
+    title: `Conteúdo ${sequence}`,
+    format: 'image',
+    publishOn: '2026-10-20',
+    publishAtTime: null,
+    status: 'in_production',
+    thumbnailAssetId: COVER,
+    tasksTotal: 0,
+    tasksApproved: 0,
+    ...overrides
+  };
+};
+
+const listItem = (content: Row) => ({
+  id: content.id, title: content.title, platform: 'instagram', format: content.format, publishOn: content.publishOn, publishAtTime: content.publishAtTime,
+  status: content.status, owner: { membershipId: '99999999-9999-4999-8999-999999999999', name: 'Ana Souza' }, coverAssetId: null,
+  thumbnailAssetId: content.thumbnailAssetId, revision: 1, publishedOn: null, tasksTotal: content.tasksTotal, tasksApproved: content.tasksApproved, approval: null
+});
+
+interface Scenario {
+  readonly permissions?: readonly string[];
+  readonly clientStatus?: 'active' | 'archived';
+  readonly readOnlyPlan?: boolean;
+  readonly rows: Row[];
+  /** Answers instead of the fake for the batch route, when it returns a response. */
+  readonly batch?: (body: { contentIds: string[]; dueOn?: string; note?: string }, rows: Row[]) => Response | Promise<Response> | undefined;
+}
+
+const makeFetch = (scenario: Scenario) => {
+  const batches: Array<{ path: string; body: unknown }> = [];
+  const periodCalls: string[] = [];
+  const permissions = scenario.permissions ?? EDITOR;
+  const client = { id: CLIENT, name: 'Padaria Central', photoUrl: null, instagramHandle: 'padariacentral', status: scenario.clientStatus ?? 'active', closingDate: null, threadsAwaitingAgency: 0 };
+  const impl: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const path = url.pathname;
+    const method = init?.method ?? 'GET';
+    if (path.endsWith('/auth/session')) return json({ user: { id: '99999999-9999-4999-8999-999999999999', name: 'Pessoa', email: 'pessoa@example.test' }, session: { expiresAt: '2026-01-01T00:00:00.000Z' } });
+    if (path === `/agencies/${AGENCY}/me`) return json({ agencyId: AGENCY, agencyName: 'Agência Um', isOwner: false, membershipId: null, role: { key: 'custom', name: 'Papel' }, plan: { kind: 'isenta', trialEndsAt: null, readOnly: scenario.readOnlyPlan ?? false }, permissions });
+    if (path === `/agencies/${AGENCY}/clients` && method === 'GET') return json({ data: [client], meta: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } });
+    if (path === `/agencies/${AGENCY}/clients/${CLIENT}` && method === 'GET') {
+      return json({ id: client.id, name: client.name, status: client.status, photoUrl: null, instagramHandle: client.instagramHandle, legalName: null, taxId: null, segment: null, website: null, contactName: null, contactPhone: null, contactEmail: null, closingDate: null, archivedAt: null, ...clientRegistrationExtras, summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 } });
+    }
+    if (path === `/agencies/${AGENCY}/clients/${CLIENT}/contents` && method === 'GET') {
+      periodCalls.push(url.search);
+      const from = url.searchParams.get('from')!;
+      const to = url.searchParams.get('to')!;
+      const found = scenario.rows.filter((content) => content.publishOn >= from && content.publishOn <= to);
+      return json({ data: { contents: found.map(listItem), storyScripts: [] }, meta: { from, to, count: found.length } });
+    }
+    if (path === `/agencies/${AGENCY}/clients/${CLIENT}/contents/feed`) {
+      return json({ data: { contents: [], nextCursor: null, counters: { posts: 0, approved: 0, awaitingApproval: 0 } }, meta: { count: 0 } });
+    }
+    if (/\/media\/[^/]+\/download-url$/.test(path)) return json({ url: 'https://storage.test/cover.jpg', expiresAt: '2026-10-12T01:45:00.000Z' });
+    if (path === `/agencies/${AGENCY}/clients/${CLIENT}/contents/submit` && method === 'POST') {
+      const body: unknown = JSON.parse(String(init?.body));
+      batches.push({ path, body });
+      const parsed = SubmitContentsBatchRequestSchema.safeParse(body);
+      if (!parsed.success) return failure(400, 'VALIDATION_ERROR');
+      const custom = scenario.batch?.(parsed.data, scenario.rows);
+      if (custom !== undefined) return custom;
+      const sent = scenario.rows.filter((content) => parsed.data.contentIds.includes(content.id));
+      for (const content of sent) content.status = 'awaiting_approval';
+      return json({ data: { batchId: '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e', contents: sent.map(listItem) } });
+    }
+    throw new Error(`unexpected ${method} ${url}`);
+  };
+  return { impl, batches, periodCalls };
+};
+
+function Harness({ store }: { store: AuthSessionStore }) {
+  const session = useAuthSession(store);
+  return <ApplicationRoutes session={session} />;
+}
+
+const mount = async (scenario: Scenario) => {
+  const fake = makeFetch(scenario);
+  const client = new HttpClient('http://127.0.0.1:3001', fake.impl, { onSessionEnded: () => undefined });
+  const store = createAuthSessionStore(client);
+  render(
+    <AuthSessionProvider store={store}>
+      <QueryClientProvider client={createQueryClient()}>
+        <ApiClientProvider client={client}>
+          <MemoryRouter initialEntries={[`/agencia/${AGENCY}/clientes/${CLIENT}/conteudos?agrupar=data`]}>
+            <Harness store={store} />
+          </MemoryRouter>
+        </ApiClientProvider>
+      </QueryClientProvider>
+    </AuthSessionProvider>
+  );
+  await waitFor(() => expect(document.querySelector('.client-contents__group')).not.toBeNull());
+  return fake;
+};
+
+const SEND = /^Enviar( \d+)? para aprovação$/;
+const batchDialog = (): HTMLElement => screen.getByRole('dialog', { name: 'Enviar conteúdos para aprovação' });
+/** The box of the tab, before the dialog is open: it exists only on the contents that can go to approval. */
+const mark = (title: string): HTMLInputElement => screen.getByRole('checkbox', { name: `Marcar ${title} para enviar` }) as HTMLInputElement;
+const markBox = (title: string): HTMLInputElement | null => screen.queryByRole('checkbox', { name: `Marcar ${title} para enviar` }) as HTMLInputElement | null;
+const tabButton = (name: string | RegExp = SEND): HTMLElement => screen.getByRole('button', { name });
+const openBatch = (...titles: string[]): HTMLElement => {
+  for (const title of titles) fireEvent.click(mark(title));
+  fireEvent.click(tabButton());
+  return batchDialog();
+};
+const box = (name: string | RegExp): HTMLInputElement => within(batchDialog()).getByRole('checkbox', { name }) as HTMLInputElement;
+const send = (name: string | RegExp = SEND): void => { fireEvent.click(within(batchDialog()).getByRole('button', { name })); };
+const settle = async (): Promise<void> => { await new Promise<void>((resolve) => { setTimeout(resolve, 100); }); };
+
+describe('the entry point', () => {
+  it('offers a box on each content that can go to approval, and the button of the batch, to who operates', async () => {
+    await mount({ rows: [row({ title: 'Reels da semana' })] });
+    expect(mark('Reels da semana').checked).toBe(false);
+    expect((tabButton('Enviar para aprovação') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it.each([
+    ['who cannot operate', { permissions: [VISUALIZE, READ_CLIENTS], rows: [row()] }],
+    ['a period where every content already waits', { rows: [row({ status: 'awaiting_approval' }), row({ status: 'approved' })] }],
+    ['an archived client', { clientStatus: 'archived' as const, rows: [row()] }]
+  ])('shows neither the boxes nor the button for %s', async (_name, scenario) => {
+    await mount(scenario);
+    await settle();
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: SEND })).toBeNull();
+  });
+
+  it('puts a box only where the content can go: not on what waits, has no media or has subtasks open', async () => {
+    await mount({
+      rows: [
+        row({ title: 'Pronto' }),
+        row({ title: 'Em ajuste ainda', status: 'adjusting' }),
+        row({ title: 'Já está com o cliente', status: 'awaiting_approval' }),
+        row({ title: 'Já aprovado', status: 'approved' }),
+        row({ title: 'Sem mídia', thumbnailAssetId: null }),
+        row({ title: 'Subtarefa aberta', tasksTotal: 2, tasksApproved: 1 })
+      ]
+    });
+    expect(mark('Pronto')).toBeTruthy();
+    expect(mark('Em ajuste ainda')).toBeTruthy();
+    for (const title of ['Já está com o cliente', 'Já aprovado', 'Sem mídia', 'Subtarefa aberta']) expect(markBox(title)).toBeNull();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+  });
+
+  it('counts the marked ones on the button, and is disabled again when none is marked', async () => {
+    await mount({ rows: [row({ title: 'Um' }), row({ title: 'Dois' })] });
+    expect((tabButton('Enviar para aprovação') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(mark('Um'));
+    expect((tabButton('Enviar 1 para aprovação') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(mark('Dois'));
+    expect(tabButton('Enviar 2 para aprovação')).toBeTruthy();
+    fireEvent.click(mark('Um'));
+    fireEvent.click(mark('Dois'));
+    expect((tabButton('Enviar para aprovação') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('follows the permission that released the calendar button: a read-only plan blocks the marks and the send', async () => {
+    await mount({ rows: [row({ title: 'Um' })], readOnlyPlan: true });
+    expect(mark('Um').disabled).toBe(true);
+    expect(tabButton('Enviar para aprovação').getAttribute('aria-disabled')).toBe('true');
+  });
+});
+
+describe('the dialog', () => {
+  it('opens on the marked contents, already chosen, with their format and day, and leaves the others out', async () => {
+    await mount({
+      rows: [
+        row({ title: 'Bastidores da recepção', format: 'reels', publishOn: '2026-10-20', publishAtTime: '18:30' }),
+        row({ title: 'Em ajuste ainda', status: 'adjusting', publishOn: '2026-10-21' }),
+        row({ title: 'Não marcado', publishOn: '2026-10-22' })
+      ]
+    });
+    openBatch('Bastidores da recepção', 'Em ajuste ainda');
+    expect(box(/Bastidores da recepção/).checked).toBe(true);
+    expect(within(batchDialog()).getByText('Reels')).toBeTruthy();
+    expect(within(batchDialog()).getByText('ter, 20/10 · 18:30')).toBeTruthy();
+    expect(box(/Em ajuste ainda/).checked).toBe(true);
+    expect(within(batchDialog()).queryByText('Não marcado')).toBeNull();
+    expect(within(batchDialog()).getByText(/Escolha os conteúdos marcados/)).toBeTruthy();
+    expect(within(batchDialog()).getByRole('button', { name: 'Enviar 2 para aprovação' })).toBeTruthy();
+  });
+
+  it('sends nothing while none is chosen in the dialog', async () => {
+    const { batches } = await mount({ rows: [row({ title: 'Um' }), row({ title: 'Dois' })] });
+    openBatch('Um');
+    fireEvent.click(box(/Um/));
+    expect(within(batchDialog()).getByRole('button', { name: 'Enviar para aprovação' })).toBeTruthy();
+    send();
+    expect(await within(batchDialog()).findByText('Escolha ao menos um conteúdo.')).toBeTruthy();
+    expect(batches).toHaveLength(0);
+    fireEvent.click(box(/Um/));
+    expect(within(batchDialog()).getByRole('button', { name: 'Enviar 1 para aprovação' })).toBeTruthy();
+  });
+
+  it('"Desmarcar todos" clears the dialog and "Marcar todos" brings the marked ones back', async () => {
+    await mount({ rows: [row({ title: 'Um' }), row({ title: 'Dois' })] });
+    openBatch('Um', 'Dois');
+    fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Desmarcar todos' }));
+    expect(box(/Um/).checked || box(/Dois/).checked).toBe(false);
+    fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Marcar todos' }));
+    expect(box(/Um/).checked && box(/Dois/).checked).toBe(true);
+  });
+});
+
+describe('the send', () => {
+  it('sends the marked contents, and only them, to the batch route with the deadline and the note, then clears the marks', async () => {
+    const rows = [row({ title: 'Primeiro' }), row({ title: 'Segundo' }), row({ title: 'Terceiro' })];
+    const { batches, periodCalls } = await mount({ rows });
+    openBatch('Primeiro', 'Terceiro');
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '14/10/2026' } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Hora do prazo'), { target: { value: '18:00' } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Recado para o cliente'), { target: { value: ' Confira a legenda. ' } });
+    const before = periodCalls.length;
+    send('Enviar 2 para aprovação');
+
+    expect(await screen.findByText('2 conteúdos enviados para aprovação.')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(batches).toEqual([{
+      path: `/agencies/${AGENCY}/clients/${CLIENT}/contents/submit`,
+      body: { contentIds: [rows[0]!.id, rows[2]!.id], dueAt: '2026-10-14T21:00:00.000Z', note: 'Confira a legenda.' }
+    }]);
+    expect(rows.map((content) => content.status)).toEqual(['awaiting_approval', 'in_production', 'awaiting_approval']);
+    await waitFor(() => expect(periodCalls.length).toBeGreaterThan(before));
+    // The list was read again: the two sent ones lost their boxes, and nothing stays marked.
+    await waitFor(() => expect(markBox('Primeiro')).toBeNull());
+    expect(markBox('Terceiro')).toBeNull();
+    expect(mark('Segundo').checked).toBe(false);
+    expect((tabButton('Enviar para aprovação') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('proposes the deadline of 48 hours, with the hour, and sends it untouched with no note; says "1 conteúdo" in the singular', async () => {
+    const rows = [row({ title: 'Único' })];
+    const { batches } = await mount({ rows });
+    openBatch('Único');
+    // 01:30Z of the 12th is 22:30 of the 11th in São Paulo: 48 hours later is 22:30 of the 13th.
+    expect((within(batchDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('13/10/2026');
+    expect((within(batchDialog()).getByLabelText('Hora do prazo') as HTMLInputElement).value).toBe('22:30');
+    expect(within(batchDialog()).getByText('Padrão: 48 horas')).toBeTruthy();
+    send('Enviar 1 para aprovação');
+    expect(await screen.findByText('1 conteúdo enviado para aprovação.')).toBeTruthy();
+    expect(batches[0]!.body).toEqual({ contentIds: [rows[0]!.id], dueAt: '2026-10-14T01:30:00.000Z' });
+  });
+
+  it('is of one client: the ids are the ones the tab of that client lists', async () => {
+    const rows = [row({ title: 'Do cliente' })];
+    const { batches } = await mount({ rows });
+    openBatch('Do cliente');
+    send('Enviar 1 para aprovação');
+    await screen.findByText('1 conteúdo enviado para aprovação.');
+    expect(batches[0]!.path).toContain(CLIENT);
+    expect(batches[0]!.path).not.toContain(OTHER_CLIENT);
+  });
+
+  it('refuses a deadline out of the range on the field, before any request', async () => {
+    const { batches } = await mount({ rows: [row({ title: 'Um' })] });
+    openBatch('Um');
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '10/10/2026' } });
+    send('Enviar 1 para aprovação');
+    expect(await within(batchDialog()).findByText('Escolha um dia e uma hora de agora até 90 dias à frente.')).toBeTruthy();
+    expect(batches).toHaveLength(0);
+  });
+
+  it.each([
+    ['a year of two digits', '14/10/26'],
+    ['a day that does not exist', '31/02/2026'],
+    ['half a date', '14/10']
+  ])('refuses %s as "Data inválida" on the field, sends nothing and keeps the dialog open with what was typed', async (_name, typed) => {
+    const { batches } = await mount({ rows: [row({ title: 'Um' })] });
+    openBatch('Um');
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: typed } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Recado para o cliente'), { target: { value: 'Até sábado.' } });
+    send('Enviar 1 para aprovação');
+    expect(await within(batchDialog()).findByText(invalidDayMessage)).toBeTruthy();
+    expect(within(batchDialog()).getByLabelText('Responder até').getAttribute('aria-invalid')).toBe('true');
+    expect((within(batchDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe(typed);
+    expect((within(batchDialog()).getByLabelText('Recado para o cliente') as HTMLTextAreaElement).value).toBe('Até sábado.');
+    expect(box(/Um/).checked).toBe(true);
+    expect(batches).toHaveLength(0);
+  });
+
+  it('sends no deadline at all when the day was typed into and then emptied', async () => {
+    const { batches } = await mount({ rows: [row({ title: 'Um' })] });
+    openBatch('Um');
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '14/10/26' } });
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '' } });
+    send('Enviar 1 para aprovação');
+    await waitFor(() => expect(batches).toHaveLength(1));
+    expect(batches[0]!.body).toEqual({ contentIds: expect.any(Array) });
+  });
+
+  it.each([
+    ['X', () => { fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Fechar envio para aprovação' })); }],
+    ['Esc', () => { fireEvent(batchDialog(), new Event('cancel', { bubbles: true, cancelable: true })); }]
+  ])('asks before %s discards a deadline that was only half typed', async (_name, close) => {
+    await mount({ rows: [row({ title: 'Um' })] });
+    openBatch('Um');
+    fireEvent.change(within(batchDialog()).getByLabelText('Responder até'), { target: { value: '14/10' } });
+    close();
+    expect(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    expect((within(batchDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('14/10');
+  });
+
+  it('closes at once with what the tab marked and nothing else, keeping the marks; asks when the dialog changed the choice', async () => {
+    await mount({ rows: [row({ title: 'Um' }), row({ title: 'Dois' })] });
+    openBatch('Um', 'Dois');
+    fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Fechar envio para aprovação' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mark('Um').checked && mark('Dois').checked).toBe(true);
+
+    fireEvent.click(tabButton());
+    fireEvent.click(box(/Dois/));
+    fireEvent.click(within(batchDialog()).getByRole('button', { name: 'Fechar envio para aprovação' }));
+    expect(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    expect(box(/Um/).checked).toBe(true);
+    expect(box(/Dois/).checked).toBe(false);
+  });
+});
+
+describe('the cap of 30', () => {
+  const many = (count: number): Row[] => Array.from({ length: count }, (_value, index) => row({
+    title: `Post ${String(index + 1).padStart(2, '0')}`,
+    publishOn: `2026-10-${String((index % 28) + 1).padStart(2, '0')}`
+  }));
+
+  it('marks at most 30, blocks the 31st with the reason, and frees it when one is unmarked', async () => {
+    const rows = many(31);
+    const { batches } = await mount({ rows });
+    for (const content of rows.slice(0, 30)) fireEvent.click(mark(content.title));
+    expect(tabButton('Enviar 30 para aprovação')).toBeTruthy();
+    expect(screen.getByText('Um envio leva até 30 conteúdos.')).toBeTruthy();
+    expect(mark('Post 31').disabled).toBe(true);
+    expect(mark('Post 30').checked).toBe(true);
+
+    fireEvent.click(mark('Post 01'));
+    expect(mark('Post 31').disabled).toBe(false);
+    fireEvent.click(mark('Post 31'));
+    expect(tabButton('Enviar 30 para aprovação')).toBeTruthy();
+    fireEvent.click(tabButton());
+    send('Enviar 30 para aprovação');
+    await screen.findByText('30 conteúdos enviados para aprovação.');
+    const sent = (batches[0]!.body as { contentIds: string[] }).contentIds;
+    expect(sent).toHaveLength(30);
+    expect(sent).not.toContain(rows[0]!.id);
+    expect(sent).toContain(rows[30]!.id);
+  });
+});
+
+describe('what the API refuses', () => {
+  it('all or nothing: says nothing was sent, keeps what was typed, and shows which content left the batch', async () => {
+    const rows = [row({ title: 'Primeiro' }), row({ title: 'Segundo' })];
+    const { batches, periodCalls } = await mount({
+      rows,
+      batch: (_body, all) => {
+        // Another operator sent the second one in the meantime: the whole batch is refused.
+        all[1]!.status = 'awaiting_approval';
+        return failure(409, 'CONTENT_STATE');
+      }
+    });
+    openBatch('Primeiro', 'Segundo');
+    fireEvent.change(within(batchDialog()).getByLabelText('Recado para o cliente'), { target: { value: 'Até sexta.' } });
+    const before = periodCalls.length;
+    send('Enviar 2 para aprovação');
+
+    expect(await within(batchDialog()).findByText('Algum dos conteúdos já não está em produção nem em ajuste. Nenhum conteúdo foi enviado: confira a lista abaixo.')).toBeTruthy();
+    expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+    expect(batches).toHaveLength(1);
+    expect((within(batchDialog()).getByLabelText('Recado para o cliente') as HTMLTextAreaElement).value).toBe('Até sexta.');
+    await waitFor(() => expect(periodCalls.length).toBeGreaterThan(before));
+    // The list is read again: the one that changed says why it cannot go, and the other stays chosen.
+    expect(await within(batchDialog()).findByText('Já aguarda aprovação.')).toBeTruthy();
+    expect(box(/Segundo/).disabled).toBe(true);
+    expect(box(/Segundo/).checked).toBe(false);
+    expect(box(/Primeiro/).checked).toBe(true);
+    expect(within(batchDialog()).getByRole('button', { name: 'Enviar 1 para aprovação' })).toBeTruthy();
+  });
+
+  it.each([
+    [409, 'CONTENT_TASKS_NOT_APPROVED', 'Todas as subtarefas precisam estar aprovadas antes do envio. Nenhum conteúdo foi enviado.'],
+    [409, 'CONTENT_MEDIA_INCOMPLETE', 'A mídia ou a capa não está completa para este formato: falta mídia, ou a mídia ou a capa saiu da pasta. Nenhum conteúdo foi enviado.'],
+    [404, 'NOT_FOUND', 'Algum dos conteúdos não existe mais. Nenhum conteúdo foi enviado: confira a lista abaixo.'],
+    [409, 'TRY_AGAIN', 'Outra alteração aconteceu ao mesmo tempo. Tente de novo.'],
+    [409, 'CLIENT_ARCHIVED', 'Este cliente está arquivado: o conteúdo é só leitura.'],
+    [403, 'FORBIDDEN', 'Você não tem permissão para esta ação.'],
+    [500, 'INTERNAL', 'Não foi possível enviar os conteúdos para aprovação. Tente de novo.']
+  ])('says %s %s in its own words and keeps the dialog open', async (status, code, text) => {
+    const rows = [row({ title: 'Um' })];
+    await mount({ rows, batch: () => failure(status, code) });
+    openBatch('Um');
+    send('Enviar 1 para aprovação');
+    expect(await within(batchDialog()).findByText(text)).toBeTruthy();
+    expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+    expect(box(/Um/).checked).toBe(true);
+  });
+
+  it.each([
+    ['CONTENT_APPROVAL_DUE_INVALID', 'O prazo vai de agora até 90 dias à frente. Escolha outro dia ou outra hora.'],
+    ['CONTENT_APPROVAL_NOTE_INVALID', 'O recado tem até 500 caracteres e não pode ter caracteres especiais. Deixe em branco para enviar sem recado.']
+  ])('puts %s on its own field', async (code, text) => {
+    await mount({ rows: [row({ title: 'Um' })], batch: () => failure(400, code) });
+    openBatch('Um');
+    send('Enviar 1 para aprovação');
+    expect(await within(batchDialog()).findByText(text)).toBeTruthy();
+    expect(batchDialog().querySelectorAll('[aria-invalid="true"]')).toHaveLength(1);
+  });
+
+  it('is ready for the next try: the second send goes through and closes the dialog', async () => {
+    let refusing = true;
+    const rows = [row({ title: 'Um' })];
+    const { batches } = await mount({ rows, batch: () => (refusing ? failure(409, 'TRY_AGAIN') : undefined) });
+    openBatch('Um');
+    send('Enviar 1 para aprovação');
+    await within(batchDialog()).findByText('Outra alteração aconteceu ao mesmo tempo. Tente de novo.');
+    refusing = false;
+    send('Enviar 1 para aprovação');
+    await screen.findByText('1 conteúdo enviado para aprovação.');
+    expect(batches).toHaveLength(2);
+    expect(rows[0]!.status).toBe('awaiting_approval');
+  });
+});

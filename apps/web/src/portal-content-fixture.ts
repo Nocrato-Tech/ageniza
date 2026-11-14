@@ -1,12 +1,15 @@
 import {
   CommentBodySchema,
-  PortalApproveContentRequestSchema,
+  PortalApproveContentWithNoteRequestSchema,
   PortalContentMediaUrlQuerySchema,
   PortalRequestContentChangesRequestSchema,
-  type ContentFormat
+  type ContentFormat,
+  type PortalContentApproval
 } from '@ageniza/contracts';
 
 import type { createConversationApi } from './conversation-fixture.js';
+import { todayInSaoPaulo } from './content-dates.js';
+import { portalApprovalOf, type SeededApproval } from './portal-approval-fixture.js';
 
 /**
  * A stateful stand-in for the content routes of the portal (#257, #584), answering as the API does: a content of another client, a
@@ -18,7 +21,11 @@ import type { createConversationApi } from './conversation-fixture.js';
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+const definedOnly = (values: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined));
 export const portalContentError = (status: number, code: string, message = 'MENSAGEM DO SERVIDOR'): Response => json({ error: { code, message } }, status);
+
+/** A round as a test seeds it: the day and the note, and optionally the instants and the sender the portal would answer. */
+export type PortalApprovalSeed = SeededApproval & Partial<Pick<PortalContentApproval, 'dueAt' | 'sentAt' | 'sentBy'>>;
 
 export type PortalContentState = 'in_production' | 'awaiting_approval' | 'adjusting' | 'approved' | 'published' | 'cancelled';
 
@@ -35,6 +42,8 @@ export interface PortalContentRow {
   coverAssetId: string | null;
   media: Array<{ id: string; position: number; kind: 'image' | 'video' }>;
   publishedOn: string | null;
+  /** The round the agency opened: the deadline and the note it gave, or none (sent before the rounds). */
+  approval: PortalApprovalSeed | null;
 }
 
 export type PortalContentSeed = Partial<PortalContentRow> & Pick<PortalContentRow, 'id' | 'clientId'>;
@@ -64,6 +73,7 @@ export const createPortalContentsApi = (
       coverAssetId: null,
       media: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', position: 1, kind: ['image', 'carousel'].includes(input.format ?? 'image') ? 'image' : 'video' }],
       publishedOn: null,
+      approval: null,
       ...input
     };
     rows.set(row.id, row);
@@ -84,7 +94,8 @@ export const createPortalContentsApi = (
       publishedOn: row.publishedOn,
       caption: row.caption,
       revision: row.revision,
-      media: row.media
+      media: row.media,
+      approval: row.approval === null ? null : { ...portalApprovalOf(row.approval), ...definedOnly({ dueAt: row.approval.dueAt, sentAt: row.approval.sentAt, sentBy: row.approval.sentBy }) }
     };
 
   // What the portal can read: its own client's, and never a cancelled one.
@@ -121,19 +132,24 @@ export const createPortalContentsApi = (
     if (action === undefined || method !== 'POST') return portalContentError(404, 'NOT_FOUND');
 
     if (action === 'approve') {
-      const body = PortalApproveContentRequestSchema.safeParse(rawBody);
+      const body = PortalApproveContentWithNoteRequestSchema.safeParse(rawBody);
       if (!body.success) return portalContentError(400, 'VALIDATION_ERROR');
       if (row === undefined) return notFound();
-      if (row.state === 'approved') return json(detailOf(row));
+      if (row.state === 'approved') {
+        return body.data.note === undefined ? json(detailOf(row)) : portalContentError(409, 'CONTENT_ALREADY_APPROVED');
+      }
       if (row.state !== 'awaiting_approval') return portalContentError(409, 'CONTENT_NOT_AWAITING_APPROVAL');
       if (body.data.revision !== row.revision) return portalContentError(409, 'CONTENT_REVISION_CHANGED');
       row.state = 'approved';
+      if (body.data.note !== undefined) conversation.seed({ contentId: row.id }, [{ side: 'client', body: CommentBodySchema.parse(body.data.note), at: '2026-10-13T01:30:00.000Z' }]);
       return json(detailOf(row));
     }
     const body = PortalRequestContentChangesRequestSchema.safeParse(rawBody);
     if (!body.success) return portalContentError(400, 'VALIDATION_ERROR');
     if (row === undefined) return notFound();
-    if (row.state !== 'awaiting_approval') return portalContentError(409, 'CONTENT_NOT_AWAITING_APPROVAL');
+    const lateApproved = row.state === 'approved' && row.publishOn > todayInSaoPaulo();
+    if (row.state === 'approved' && !lateApproved) return portalContentError(409, 'CONTENT_NOT_AWAITING_APPROVAL', 'Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação.');
+    if (row.state !== 'awaiting_approval' && !lateApproved) return portalContentError(409, 'CONTENT_NOT_AWAITING_APPROVAL');
     if (body.data.revision !== row.revision) return portalContentError(409, 'CONTENT_REVISION_CHANGED');
     row.state = 'adjusting';
     conversation.seed({ contentId: row.id }, [{ side: 'client', body: CommentBodySchema.parse(body.data.comment), at: '2026-10-13T01:30:00.000Z' }]);

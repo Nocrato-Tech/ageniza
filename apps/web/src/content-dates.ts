@@ -9,28 +9,36 @@ export type CalendarView = 'month' | 'week';
 
 const DAY_MS = 86_400_000;
 const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'] as const;
-const WEEKDAYS = ['segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado', 'domingo'] as const;
+const WEEKDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'] as const;
 
-export const WEEKDAY_LABELS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'] as const;
+export const WEEKDAY_LABELS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'] as const;
+
+/** The header of the grid: the same weekdays, as the board spells them. */
+export const WEEKDAY_HEADERS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'] as const;
 
 const toMs = (day: string): number => Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)));
 const fromMs = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 
-const todayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
+const todayFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+});
+
+/** The day (`YYYY-MM-DD`) and the time (`HH:MM:SS`) of an instant in the agency's time zone (`America/Sao_Paulo`). */
+export const saoPauloClock = (now: Date = new Date()): { readonly day: string; readonly time: string } => {
+  const parts = Object.fromEntries(todayFormatter.formatToParts(now).map((part) => [part.type, part.value]));
+  return { day: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}:${parts.second}` };
+};
 
 /** Today in the agency's time zone (`America/Sao_Paulo`), as `YYYY-MM-DD`. */
-export const todayInSaoPaulo = (now: Date = new Date()): string => {
-  const parts = Object.fromEntries(todayFormatter.formatToParts(now).map((part) => [part.type, part.value]));
-  return `${parts.year}-${parts.month}-${parts.day}`;
-};
+export const todayInSaoPaulo = (now: Date = new Date()): string => saoPauloClock(now).day;
 
 export const addDays = (day: string, count: number): string => fromMs(toMs(day) + count * DAY_MS);
 
 /** Whole days from `from` to `to`; negative when `to` is earlier. */
 export const daysBetween = (from: string, to: string): number => Math.round((toMs(to) - toMs(from)) / DAY_MS);
 
-/** 0 is Monday: the calendar's week starts on "seg". */
-const weekdayIndex = (day: string): number => (new Date(toMs(day)).getUTCDay() + 6) % 7;
+/** 0 is Sunday: the calendar's week starts on "dom" (decision 2026-11-11). */
+const weekdayIndex = (day: string): number => new Date(toMs(day)).getUTCDay();
 
 export const startOfWeek = (day: string): string => addDays(day, -weekdayIndex(day));
 
@@ -94,3 +102,9 @@ const MONTH_ABBREVIATIONS = ['jan.', 'fev.', 'mar.', 'abr.', 'mai.', 'jun.', 'ju
 
 /** "03 de ago.": the day the hover card says the content goes out, from the text, never from a `Date`. */
 export const dayMonthNameLabel = (day: string): string => `${day.slice(8, 10)} de ${MONTH_ABBREVIATIONS[Number(day.slice(5, 7)) - 1]!}`;
+
+/** "11 de novembro": the day and the month in full, from the text, never from a `Date`. */
+export const dayOfMonthLabel = (day: string): string => `${dayOfMonth(day)} de ${monthName(day)}`;
+
+/** "27 nov": the short date of a tile of the feed, from the text, never from a `Date`. */
+export const shortDayLabel = (day: string): string => `${dayOfMonth(day)} ${MONTH_ABBREVIATIONS[Number(day.slice(5, 7)) - 1]!.replace('.', '')}`;

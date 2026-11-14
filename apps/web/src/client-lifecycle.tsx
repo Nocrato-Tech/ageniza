@@ -9,6 +9,7 @@ import { useAgencyContext, useCan, useWriteBlocked } from './agency.js';
 import { apiPath } from './api-path.js';
 import { clientDetailQueryKey } from './client-detail.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { PlanLimitNotice, planLimitOf, type PlanLimit } from './plan-limit.js';
 
 const CLOSING_HINT = 'Até essa data tudo continua funcionando, inclusive o portal do cliente. No dia seguinte o cliente é arquivado automaticamente. Você pode desmarcar até lá.';
 const ARCHIVE_EFFECTS = [
@@ -176,6 +177,7 @@ export function ClientLifecycleActions({ client }: { client: ClientDetailRespons
   const [closingOpen, setClosingOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [limit, setLimit] = useState<PlanLimit | undefined>();
 
   const clearClosing = useMutation({
     mutationFn: () => httpClient.request({ path: path('/closing'), method: 'DELETE', response: ClientSchema }),
@@ -198,8 +200,10 @@ export function ClientLifecycleActions({ client }: { client: ClientDetailRespons
 
   const reactivate = useMutation({
     mutationFn: () => httpClient.request({ path: path('/reactivate'), method: 'POST', response: ClientSchema }),
-    onSuccess: (updated) => { applyClient(updated); setError(undefined); },
+    onSuccess: (updated) => { applyClient(updated); setError(undefined); setLimit(undefined); },
     onError: (reactivateError: unknown) => {
+      const reached = planLimitOf(reactivateError);
+      if (reached !== undefined) { setLimit(reached); return; }
       // The conflict message is product copy written by the API ("renomeie um dos dois antes").
       if (reactivateError instanceof HttpClientError && reactivateError.code === 'CLIENT_NAME_IN_USE') {
         setError(reactivateError.message);
@@ -218,7 +222,7 @@ export function ClientLifecycleActions({ client }: { client: ClientDetailRespons
 
   return <div className="client-lifecycle">
     {client.status === 'archived'
-      ? <Button loading={reactivate.isPending} blockedReason={blocked} onClick={() => { setError(undefined); reactivate.mutate(); }}>Reativar</Button>
+      ? <Button loading={reactivate.isPending} blockedReason={blocked} onClick={() => { setError(undefined); setLimit(undefined); reactivate.mutate(); }}>Reativar</Button>
       : blocked !== undefined
       ? <IconButton label="Ações do cliente" icon={<EllipsisVertical />} blockedReason={blocked} />
       : <Menu
@@ -231,6 +235,7 @@ export function ClientLifecycleActions({ client }: { client: ClientDetailRespons
           <MenuItem onClick={() => { setError(undefined); setArchiveOpen(true); }}>Arquivar agora…</MenuItem>
         </Menu>}
     {error !== undefined && <FieldMessage role="alert">{error}</FieldMessage>}
+    {limit !== undefined && <PlanLimitNotice limit={limit} />}
     {closingOpen && <CloseContractDialog client={client} onClose={() => setClosingOpen(false)} />}
     {archiveOpen && <ArchiveClientDialog client={client} onClose={() => setArchiveOpen(false)} />}
   </div>;

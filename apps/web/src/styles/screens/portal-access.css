@@ -1,0 +1,266 @@
+/* Portal access tab: specs/clientes.md section 7, issue #140. A person is a rounded card with who they are, when they last came in and what can be done with the access;
+   the ready message and how the link works sit beside the list on a wide screen and under it on a narrow one. */
+.portal-access {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+.portal-access__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.portal-access__heading {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.portal-access__header h2 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.portal-access__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.portal-access__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.portal-access__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-access__row,
+.portal-access__ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.portal-access__who {
+  display: grid;
+  flex: 1 1 12rem;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.portal-access__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+.portal-access__name {
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.portal-access__name--pending {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.portal-access__not-entered {
+  border-color: transparent;
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+}
+
+.portal-access__email,
+.portal-access__email-strong {
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.portal-access__email-strong {
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+/* What can be done with the access gets its own line under the person, so the buttons never squeeze the name. */
+.portal-access__actions {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.portal-access__ask .portal-access__actions {
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+
+.portal-access__row > .ui-button {
+  margin-left: auto;
+}
+
+.portal-access__actions > .ui-icon-button {
+  margin-left: auto;
+}
+
+.portal-access > .ui-button {
+  justify-self: start;
+}
+
+.brand-personas > .ui-button {
+  justify-self: start;
+}
+
+.portal-access__removed,
+.portal-access__invites {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.portal-access__section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.portal-access__section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.portal-access__section-head h3,
+.portal-access__section-title h3 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.portal-access__invites .portal-access__section-head {
+  justify-content: flex-start;
+  gap: var(--space-2);
+}
+
+.portal-access__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-tint);
+  color: var(--action-secondary-fg);
+  font: var(--caption);
+  font-weight: 600;
+}
+
+.portal-access__last {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-access__last svg {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.portal-access__copy {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  max-width: 20rem;
+}
+
+.portal-access__side {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* The ready message: a block of colour with the words in quotes, the way it will arrive on the phone. */
+.portal-access__share {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--block-indigo-bg);
+  color: var(--block-indigo-fg);
+}
+
+.portal-access__share q {
+  quotes: none;
+  overflow-wrap: anywhere;
+  font: var(--body-lg);
+}
+
+.portal-access__eyebrow {
+  margin: 0;
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.portal-access__share .ui-button-link,
+.portal-access__share .ui-button {
+  justify-self: start;
+}
+
+.portal-access__note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tint);
+}
+
+.portal-access__note svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--action-secondary-fg);
+}
+
+.portal-access__note p {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+@media (min-width: 64rem) {
+  .portal-access__split {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
+
+  .portal-access__side {
+    position: sticky;
+    top: var(--space-4);
+  }
+}

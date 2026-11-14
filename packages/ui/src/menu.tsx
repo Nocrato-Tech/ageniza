@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode } from 'react';
 
 import { Button } from './button.js';
+import { IconSlot } from './icon.js';
 
 interface MenuContextValue {
   close: () => void;
@@ -120,11 +121,14 @@ export function Menu({ label, triggerLabel, trigger, children, onOpenChange, act
 }
 
 export type MenuItemProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type'> & {
+  /** `destructive` is the danger item: red text, set apart by a `MenuSeparator` above it. */
   variant?: 'default' | 'destructive';
+  /** A lucide icon before the label; decorative, so the label still names the item. */
+  icon?: ReactNode;
 };
 
 export const MenuItem = React.forwardRef<HTMLButtonElement, MenuItemProps>(function MenuItem(
-  { className, variant = 'default', onClick, disabled, children, ...props },
+  { className, variant = 'default', icon, onClick, disabled, children, ...props },
   ref
 ) {
   const menu = React.useContext(MenuContext);
@@ -141,6 +145,7 @@ export const MenuItem = React.forwardRef<HTMLButtonElement, MenuItemProps>(funct
         if (!event.defaultPrevented && !disabled) menu?.close();
       }}
     >
+      {icon !== undefined && <IconSlot>{icon}</IconSlot>}
       {children}
     </button>
   );

@@ -96,6 +96,17 @@ describe('the routes of the approval link translate what the database refuses (i
     }
   });
 
+  it('tells the person that only a content awaiting approval takes a request for changes, without the day before the publication, which is the rule of the portal', async () => {
+    const { app } = await build(() => databaseError('A0062'));
+    apps.push(app);
+
+    const reply = await app.inject(requests.changes(sessionCookie()));
+
+    expect(reply.statusCode).toBe(409);
+    expect(reply.json().error.message).toBe('Só um conteúdo aguardando aprovação recebe um pedido de ajuste.');
+    expect(reply.body).not.toMatch(/véspera/);
+  });
+
   it.each([
     ['A0100', 404, 'APPROVAL_LINK_INVALID'],
     ['A0090', 404, 'APPROVAL_LINK_INVALID'],

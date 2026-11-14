@@ -43,10 +43,8 @@ const clientHome = randomUUID();
 const clientContents = randomUUID();
 
 const personaActive = randomUUID();
-const personaArchived = randomUUID();
 const personaOfA2 = randomUUID();
 const personaHomeActive = randomUUID();
-const personaHomeArchived = randomUUID();
 
 const AGENCY_A_NAME = 'Portal Agência A';
 const AGENCY_B_NAME = 'Portal Agência B';
@@ -97,7 +95,7 @@ const sectionOf = (body: { sections: { key: string }[] }, key: string): Record<s
 
 const iso = (value: unknown): string => new Date(value as string).toISOString();
 
-const home = async (cookie: string, clientId = clientHome): Promise<{ threadsAnsweredByAgency: number; brandStudyFilled: number; contentsAwaitingApproval: number }> => {
+const home = async (cookie: string, clientId = clientHome): Promise<{ threadsAnsweredByAgency: number; brandStudyFilled: number; contentsAwaitingApproval: number; materialRequestsOpen: number }> => {
   const response = await call('GET', portalClient(clientId), cookie);
   expect(response.statusCode).toBe(200);
   return response.json().home;
@@ -156,6 +154,7 @@ describe('CLIENTS portal reads (#129)', () => {
         agency_id: agencyA,
         name: `Portal A1 ${clientA1}`,
         legal_name: 'Padaria Central Ltda',
+        city: 'Campinas',
         tax_id: '12345678000190',
         segment: 'Alimentação',
         website: 'https://padariacentral.exemplo.test',
@@ -198,13 +197,14 @@ describe('CLIENTS portal reads (#129)', () => {
     ]);
 
     await owner.knex('client_personas').insert([
-      { id: personaActive, client_id: clientA1, name: 'Persona ativa', description: 'Dona de casa.', pains: 'Pouco tempo.', desires: 'Reconhecimento.', objections: 'Preço.', updated_by: users.admin!.id },
-      { id: personaArchived, client_id: clientA1, name: 'Persona arquivada', updated_by: users.admin!.id },
+      {
+        id: personaActive, client_id: clientA1, name: 'Persona ativa', description: 'Dona de casa.', pains: 'Pouco tempo.', desires: 'Reconhecimento.', objections: 'Preço.',
+        age: 34, occupation: 'Dona de padaria', location: 'Campinas, SP', traits: JSON.stringify(['Prática', 'Ocupada']),
+        where_they_are: 'Instagram e grupos de bairro.', tone_that_works: 'Próximo e direto.', updated_by: users.admin!.id
+      },
       { id: personaOfA2, client_id: clientA2, name: 'Persona do A2', updated_by: users.admin!.id },
-      { id: personaHomeActive, client_id: clientHome, name: 'Persona do Início', updated_by: users.admin!.id },
-      { id: personaHomeArchived, client_id: clientHome, name: 'Persona arquivada do Início', updated_by: users.admin!.id }
+      { id: personaHomeActive, client_id: clientHome, name: 'Persona do Início', updated_by: users.admin!.id }
     ]);
-    await owner.knex('client_personas').whereIn('id', [personaArchived, personaHomeArchived]).update({ status: 'archived' });
     await owner.knex('client_brand_sections').insert([
       { client_id: clientA1, section_key: 'branding', body: 'Marca acolhedora.', updated_by: users.admin!.id },
       { client_id: clientA1, section_key: 'colors', colors: JSON.stringify([{ name: 'Vinho', hex: '#7A1F2B' }]), updated_by: users.admin!.id },
@@ -264,10 +264,12 @@ describe('CLIENTS portal reads (#129)', () => {
         archivedAt: null,
         agencyName: AGENCY_A_NAME,
         onboardingSeenAt: null,
-        home: { threadsAnsweredByAgency: 0, brandStudyFilled: 4 }
+        city: 'Campinas',
+        createdAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT.*Z$/),
+        home: { threadsAnsweredByAgency: 0, brandStudyFilled: 4, materialRequestsOpen: 0 }
       });
       expect(Object.keys(body).sort()).toEqual([
-        'agencyName', 'agencyReadOnly', 'archivedAt', 'closingDate', 'contactEmail', 'contactName', 'contactPhone', 'home', 'id',
+        'agencyName', 'agencyReadOnly', 'archivedAt', 'city', 'closingDate', 'contactEmail', 'contactName', 'contactPhone', 'createdAt', 'home', 'id',
         'instagramHandle', 'legalName', 'name', 'onboardingSeenAt', 'photoUrl', 'segment', 'status', 'taxId', 'website'
       ]);
     });
@@ -377,7 +379,7 @@ describe('CLIENTS portal reads (#129)', () => {
       const threadsOf = (clientId: string): Promise<{ id: string }[]> => owner.knex('client_threads').where({ client_id: clientId }).select('id');
 
       it('counts the open threads the agency answered last, rises on an agency reply and falls on a client comment', async () => {
-        for (const key of ['portalOne', 'dual', 'dualBare']) expect(await home(cookies[key]!), key).toEqual({ threadsAnsweredByAgency: 0, brandStudyFilled: 2, contentsAwaitingApproval: 0 });
+        for (const key of ['portalOne', 'dual', 'dualBare']) expect(await home(cookies[key]!), key).toEqual({ threadsAnsweredByAgency: 0, brandStudyFilled: 2, contentsAwaitingApproval: 0, materialRequestsOpen: 0 });
 
         const opened = await call('POST', `${portalClient(clientHome)}/threads`, cookies.portalOne!, { subject: { sectionKey: 'branding' }, body: 'Posso sugerir algo?' });
         expect(opened.statusCode).toBe(201);
@@ -402,28 +404,6 @@ describe('CLIENTS portal reads (#129)', () => {
         await call('POST', `${portalClient(clientHome)}/threads/${threadId}/comments`, cookies.portalOne!, { body: 'Mais uma ideia.' });
         await call('POST', `/agencies/${agencyA}/clients/${clientHome}/threads/${threadId}/comments`, cookies.manager!, { body: 'Anotado.' });
         expect((await home(cookies.portalOne!)).threadsAnsweredByAgency).toBe(1);
-      });
-
-      it('leaves out a thread about an archived persona, for the person who reads it through the agency too', async () => {
-        const before = await home(cookies.dual!);
-        const threadId = randomUUID();
-        await owner.knex('client_threads').insert({ id: threadId, client_id: clientHome, persona_id: personaHomeArchived, opened_by: users.portalOne!.id, opened_side: 'client', created_at: '2026-10-02T10:00:00Z' });
-        await owner.knex('client_thread_comments').insert([
-          { thread_id: threadId, client_id: clientHome, author_user_id: users.portalOne!.id, author_side: 'client', body: 'Sobre a persona antiga', created_at: '2026-10-02T10:00:00Z' },
-          { thread_id: threadId, client_id: clientHome, author_user_id: users.manager!.id, author_side: 'agency', body: 'Resposta da agência', created_at: '2026-10-02T11:00:00Z' }
-        ]);
-        // The precondition that makes the assertion mean something: the thread is open and the agency spoke last.
-        expect(await owner.knex('client_threads').where({ id: threadId }).first()).toMatchObject({ resolved_at: null, persona_id: personaHomeArchived });
-
-        for (const key of ['portalOne', 'dual', 'dualBare']) expect(await home(cookies[key]!), key).toEqual(before);
-
-        // Unarchived, the persona is on the portal again and so is the reply.
-        await owner.knex('client_personas').where({ id: personaHomeArchived }).update({ status: 'active' });
-        try {
-          for (const key of ['portalOne', 'dual']) expect((await home(cookies[key]!)).threadsAnsweredByAgency, key).toBe(before.threadsAnsweredByAgency + 1);
-        } finally {
-          await owner.knex('client_personas').where({ id: personaHomeArchived }).update({ status: 'archived' });
-        }
       });
 
       it('counts only the client of the route, although the collaborator reads every client of the agency', async () => {
@@ -516,18 +496,18 @@ describe('CLIENTS portal reads (#129)', () => {
         });
       });
 
-      it('fills the study count by the same definition as the brand study, and personas only while active', async () => {
+      it('fills the study count by the same definition as the brand study, and personas only while there is one', async () => {
         const study = (await call('GET', portalStudy(clientHome), cookies.portalOne!)).json();
         expect(study.filled).toBe((await home(cookies.portalOne!)).brandStudyFilled);
         expect(study.filled).toBe(2);
 
-        await owner.knex('client_personas').where({ id: personaHomeActive }).update({ status: 'archived' });
+        await owner.knex('client_personas').where({ id: personaHomeActive }).delete();
         try {
           expect((await home(cookies.portalOne!)).brandStudyFilled).toBe(1);
           expect((await home(cookies.dual!)).brandStudyFilled).toBe(1);
           expect((await call('GET', portalStudy(clientHome), cookies.dual!)).json().filled).toBe(1);
         } finally {
-          await owner.knex('client_personas').where({ id: personaHomeActive }).update({ status: 'active' });
+          await owner.knex('client_personas').insert({ id: personaHomeActive, client_id: clientHome, name: 'Persona do Início', updated_by: users.admin!.id });
         }
         expect((await home(cookies.portalOne!)).brandStudyFilled).toBe(2);
       });
@@ -581,7 +561,12 @@ describe('CLIENTS portal reads (#129)', () => {
         pains: 'Pouco tempo.',
         desires: 'Reconhecimento.',
         objections: 'Preço.',
-        status: 'active',
+        age: 34,
+        occupation: 'Dona de padaria',
+        location: 'Campinas, SP',
+        traits: ['Prática', 'Ocupada'],
+        whereTheyAre: 'Instagram e grupos de bairro.',
+        toneThatWorks: 'Próximo e direto.',
         updatedAt: expect.any(String)
       }]);
 
@@ -592,26 +577,19 @@ describe('CLIENTS portal reads (#129)', () => {
       expect(JSON.stringify(body)).not.toContain(users.admin!.id);
     });
 
-    it('hides an archived persona from the portal, the collaborator with a client link included, and brings it back unarchived', async () => {
+    it('serves the persona without who edited it and without the count of the conversation of the agency, the collaborator with a client link included', async () => {
       for (const key of ['portalOne', 'portalTwo', 'dual', 'dualBare']) {
         const body = (await call('GET', portalStudy(clientA1), cookies[key]!)).json();
         expect(body.personas.map((persona: { id: string }) => persona.id), key).toEqual([personaActive]);
+        expect(Object.keys(body.personas[0]).sort(), key).toEqual([
+          'age', 'description', 'desires', 'id', 'location', 'name', 'objections', 'occupation', 'pains', 'toneThatWorks', 'traits', 'updatedAt', 'whereTheyAre'
+        ]);
       }
 
-      // The agency still sees both: the persona is there, it is the portal that does not show it.
+      // The agency reads the same persona with the count of its conversation, and with no status: there is none to read.
       const agencySide = (await call('GET', `/agencies/${agencyA}/clients/${clientA1}/brand-study`, cookies.manager!)).json();
-      expect(agencySide.personas.map((persona: { id: string }) => persona.id).sort()).toEqual([personaActive, personaArchived].sort());
-
-      await owner.knex('client_personas').where({ id: personaArchived }).update({ status: 'active' });
-      try {
-        for (const key of ['portalOne', 'dual', 'dualBare']) {
-          const body = (await call('GET', portalStudy(clientA1), cookies[key]!)).json();
-          expect(body.personas.map((persona: { id: string }) => persona.id).sort(), key).toEqual([personaActive, personaArchived].sort());
-        }
-      } finally {
-        await owner.knex('client_personas').where({ id: personaArchived }).update({ status: 'archived' });
-      }
-      expect((await call('GET', portalStudy(clientA1), cookies.dual!)).json().personas).toHaveLength(1);
+      expect(agencySide.personas).toEqual([expect.objectContaining({ id: personaActive, messageCount: 0 })]);
+      expect(agencySide.personas[0]).not.toHaveProperty('status');
     });
 
     it('serves only the client of the route to the collaborator who reads every client of the agency', async () => {

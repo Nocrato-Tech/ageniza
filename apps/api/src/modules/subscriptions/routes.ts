@@ -1,13 +1,20 @@
 import {
   AgencyPathParamsSchema,
+  SUBSCRIPTION_INVOICES_PAGE_SIZE,
+  SaveSubscriptionTestCardRequestSchema,
   SimulatedPaymentRequestSchema,
   SimulatedPaymentResponseSchema,
   SubscriptionChangeRequestSchema,
   SubscriptionChargePathParamsSchema,
   SubscriptionChargeResponseSchema,
+  SubscriptionInvoiceListQuerySchema,
+  SubscriptionInvoiceListResponseSchema,
   SubscriptionOverviewResponseSchema,
   SubscriptionPlansResponseSchema,
-  SubscriptionQuoteResponseSchema
+  SubscriptionQuoteResponseSchema,
+  SubscriptionTestCardResponseSchema,
+  buildPaginationMetadata,
+  resolvePagination
 } from '@ageniza/contracts';
 import { HttpError } from '@ageniza/core';
 import { withAuthenticatedUserTransaction, type DatabaseClient } from '@ageniza/database';
@@ -17,11 +24,13 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthInstance } from '../auth/better-auth.js';
 import { createRequireSession } from '../auth/session-guard.js';
 import type { DocumentedRouteConfig } from '../../plugins/infra/route-metadata.js';
-import { routeBody, routeParams, routeResponse } from '../../plugins/infra/zod.js';
-import { chargeNotFound, chargeNotOpen, paymentProviderFailed, translateSubscriptionError } from './errors.js';
+import { routeBody, routeParams, routeQuery, routeResponse } from '../../plugins/infra/zod.js';
+import { chargeNotFound, chargeNotOpen, paymentProviderFailed, translateSubscriptionError, withoutFieldNames } from './errors.js';
+import { listInvoices } from './invoices.js';
 import { SUBSCRIPTION_PERMISSION, isProviderReference } from './policy.js';
 import {
   confirmCharge,
+  declineCharge,
   loadOwnCharge,
   loadPlans,
   loadSubscription,
@@ -30,6 +39,7 @@ import {
   runLifecycleOperation,
   type LifecycleOperation
 } from './service.js';
+import { loadTestCard, saveTestCard } from './test-card.js';
 
 export type SubscriptionPreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -65,6 +75,17 @@ const chargeDocs = { permission: SUBSCRIPTION_PERMISSION, responseStatus: 201, s
 const cancelDocs = { permission: SUBSCRIPTION_PERMISSION, responseStatus: 204, schemas: { ...params } } satisfies DocumentedRouteConfig;
 const reactivateDocs = { permission: SUBSCRIPTION_PERMISSION, responseStatus: 204, schemas: { ...params } } satisfies DocumentedRouteConfig;
 const advanceDocs = { permission: SUBSCRIPTION_PERMISSION, responseStatus: 204, schemas: { ...params } } satisfies DocumentedRouteConfig;
+const invoicesDocs = {
+  permission: SUBSCRIPTION_PERMISSION,
+  responseStatus: 200,
+  schemas: { ...params, query: SubscriptionInvoiceListQuerySchema, response: SubscriptionInvoiceListResponseSchema }
+} satisfies DocumentedRouteConfig;
+const testCardDocs = { permission: SUBSCRIPTION_PERMISSION, responseStatus: 200, schemas: { ...params, response: SubscriptionTestCardResponseSchema } } satisfies DocumentedRouteConfig;
+const saveTestCardDocs = {
+  permission: SUBSCRIPTION_PERMISSION,
+  responseStatus: 200,
+  schemas: { ...params, body: SaveSubscriptionTestCardRequestSchema, response: SubscriptionTestCardResponseSchema }
+} satisfies DocumentedRouteConfig;
 const simulatedPaymentDocs = {
   permission: SUBSCRIPTION_PERMISSION,
   responseStatus: 200,
@@ -75,7 +96,8 @@ const simulatedPaymentDocs = {
  * Billing of the agency (issue #772). Every route is for the Owner: `assinatura.gerenciar` is held by ownership alone, and the
  * database checks it again in each function. The plan and the ceilings change only in `confirmCharge`, and only after the provider
  * approved a charge the Owner opened. One transaction per call of the database: cancel, reactivate and advance take only the lock
- * of the agency, so none of them may share a transaction with a request or a confirmation, which take the storage lock first.
+ * of the agency, so none of them may share a transaction with a request or a confirmation, which take the storage lock first. The
+ * recording of a declined payment is one of them.
  */
 export const registerSubscriptionModule = (app: FastifyInstance, dependencies: SubscriptionModuleDependencies): void => {
   const requireSession = createRequireSession({ auth: dependencies.auth });
@@ -119,6 +141,13 @@ export const registerSubscriptionModule = (app: FastifyInstance, dependencies: S
     return reply.send(routeResponse(overviewDocs, request, { subscription, paymentProvider: dependencies.paymentProvider?.name ?? null }));
   });
 
+  app.get('/agencies/:agencyId/subscription/invoices', { preHandler: guards(invoicesDocs), config: invoicesDocs }, async (request, reply) => {
+    routeParams(invoicesDocs, request);
+    const pagination = resolvePagination(routeQuery(invoicesDocs, request), SUBSCRIPTION_INVOICES_PAGE_SIZE);
+    const page = await asOwner(request, (transaction, agencyId) => listInvoices(transaction, agencyId, pagination));
+    return reply.send(routeResponse(invoicesDocs, request, { data: page.items, meta: buildPaginationMetadata(pagination, page.totalItems) }));
+  });
+
   app.post('/agencies/:agencyId/subscription/quote', { preHandler: guards(quoteDocs), config: quoteDocs }, async (request, reply) => {
     routeParams(quoteDocs, request);
     const change = routeBody(quoteDocs, request);
@@ -141,6 +170,20 @@ export const registerSubscriptionModule = (app: FastifyInstance, dependencies: S
 
   lifecycle('simulated-period-advance', advanceDocs, 'advance_simulated_period');
 
+  // The test card exists only where the simulated payment does (decision 2026-11-11, item 1): nothing of it is registered in production.
+  app.get('/agencies/:agencyId/subscription/test-card', { preHandler: guards(testCardDocs), config: testCardDocs }, async (request, reply) => {
+    routeParams(testCardDocs, request);
+    const card = await asOwner(request, (transaction, agencyId) => loadTestCard(transaction, agencyId));
+    return reply.send(routeResponse(testCardDocs, request, { card }));
+  });
+
+  app.put('/agencies/:agencyId/subscription/test-card', { preHandler: guards(saveTestCardDocs), config: saveTestCardDocs }, async (request, reply) => {
+    routeParams(saveTestCardDocs, request);
+    const submitted = withoutFieldNames(() => routeBody(saveTestCardDocs, request));
+    const card = await asOwner(request, (transaction, agencyId) => saveTestCard(transaction, agencyId, submitted));
+    return reply.send(routeResponse(saveTestCardDocs, request, { card }));
+  });
+
   app.post('/agencies/:agencyId/subscription/charges/:chargeId/simulated-payment', {
     preHandler: guards(simulatedPaymentDocs), config: simulatedPaymentDocs
   }, async (request, reply) => {
@@ -151,7 +194,8 @@ export const registerSubscriptionModule = (app: FastifyInstance, dependencies: S
     // The confirmation below runs with nobody bound and takes the charge id on trust, so this is the only place that ties them.
     const charge = await asOwner(request, (transaction, agencyId) => loadOwnCharge(transaction, agencyId, chargeId));
     if (charge === undefined) throw chargeNotFound();
-    if (charge.status !== 'pending') throw chargeNotOpen();
+    // A declined charge stays declined: the provider is not asked again, and trying once more is a new charge (decision 2026-11-12, item 3).
+    if (charge.status !== 'pending' || charge.declined) throw chargeNotOpen();
 
     let result: ChargeResult;
     try {
@@ -159,7 +203,11 @@ export const registerSubscriptionModule = (app: FastifyInstance, dependencies: S
     } catch {
       throw paymentProviderFailed();
     }
-    if (result.status === 'declined') return reply.send(routeResponse(simulatedPaymentDocs, request, { status: 'declined' }));
+    if (result.status === 'declined') {
+      // A transaction of its own, as the person: the decline takes only the lock of the agency, so it never shares one with a request or a confirmation.
+      await asOwner(request, (transaction, agencyId) => declineCharge(transaction, agencyId, charge.id));
+      return reply.send(routeResponse(simulatedPaymentDocs, request, { status: 'declined' }));
+    }
     if (!isProviderReference(result.providerRef)) throw paymentProviderFailed();
 
     // Second transaction, with nobody bound: the database refuses a confirmation that comes with a person.

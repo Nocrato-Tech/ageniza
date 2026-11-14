@@ -126,7 +126,7 @@ export function remoteRepository(api: ApiClient, context: Context): Repository {
         checkCancelled(); confirming = true; report('confirming');
         await api.request(`${root}/media/uploads/${created.assetId}/complete`, { method: 'POST', body: created.upload.type === 'single' ? {} : { parts } });
         libraries.delete(clientId); report('ready');
-        return { id: created.assetId, clientId, folderId, name: file.name, kind: created.category, size: blob.size, contentType: file.mimeType };
+        return { id: created.assetId, clientId, folderId, name: file.name, kind: created.category === 'video' ? 'video' : 'image', size: blob.size, contentType: file.mimeType };
       } catch (cause) { report(signal?.aborted && !confirming ? 'cancelled' : 'failed'); throw cause; }
     },
     assetUrl: async (clientId, postId, id, variant = 'original') => { const path = agency ? `${root}/media/${id}/download-url?variant=${variant}` : `${base(clientId)}/contents/${postId}/media/${id}/url?variant=${variant}`; return (await api.request<{ url: string }>(path)).url; },

@@ -14,12 +14,14 @@ import {
   type PortalApprovalApproveRequest,
   type PortalApprovalBatch,
   type PortalApprovalContent,
+  type PortalContentApproval,
   type PortalContentMediaUrlResponse,
   type PortalApprovalRequestChangesRequest
 } from '@ageniza/contracts';
-import { Avatar, Button, ButtonLink, FieldMessage, FormatTag, LiveStatus, Logo, Skeleton, StatusTag } from '@ageniza/ui';
+import { Avatar, Button, ButtonLink, FieldMessage, FormatTag, LiveStatus, Logo, Skeleton, Stage3D, StatusTag } from '@ageniza/ui';
 
 import { apiPath } from './api-path.js';
+import { ApprovalRound } from './approval-deadline.js';
 import { Phone } from './content-feed.js';
 import { FormatShape, isHttpUrl } from './content-cover.js';
 import { fullDayLabel } from './content-dates.js';
@@ -382,7 +384,23 @@ interface Decisions {
   readonly onAsk: (content: OpenContent) => void;
 }
 
-function ContentCard({ content, clientName, decisions }: { content: PortalApprovalContent; clientName: string; decisions: Decisions }) {
+const approvalOf = (content: PortalApprovalContent): PortalContentApproval | null => ('approval' in content ? content.approval : null);
+
+/** The round the contents to decide share, when they all have the same one: it is said once, above them, and not on every card. */
+const sharedRound = (pending: readonly PortalApprovalContent[]): PortalContentApproval | null => {
+  const first = pending[0] === undefined ? null : approvalOf(pending[0]);
+  if (first === null) return null;
+  return pending.every((content) => approvalOf(content)?.dueOn === first.dueOn && approvalOf(content)?.note === first.note) ? first : null;
+};
+
+function ContentCard({ content, clientName, agencyName, ownRound, decisions }: {
+  content: PortalApprovalContent;
+  clientName: string;
+  agencyName: string;
+  /** The card says its own deadline and note: the contents to decide do not share one round. */
+  ownRound: boolean;
+  decisions: Decisions;
+}) {
   const titleId = `approval-title-${content.id}`;
   const open = content.status === 'in_production' ? null : content;
   const mine = decisions.busy?.contentId === content.id;
@@ -400,6 +418,7 @@ function ContentCard({ content, clientName, decisions }: { content: PortalApprov
         </li>
       </ul>
     </div>
+    {ownRound && open !== null && content.canDecide && <ApprovalRound approval={open.approval} agencyName={agencyName} />}
     {open === null
       ? <p className="approval-card__hint">{MESSAGES.inProduction}</p>
       : <PostOnPhone content={open} clientName={clientName} />}
@@ -435,6 +454,7 @@ function ReadyView({ batch, link }: { batch: PortalApprovalBatch; link: Approval
 
   const pending = batch.contents.filter((content) => content.canDecide);
   const others = batch.contents.filter((content) => !content.canDecide);
+  const shared = sharedRound(pending);
 
   /** A conflict means the lot on screen is old: it is read again and the page says why, in the place the person is looking. */
   const stale = async (text: string): Promise<void> => {
@@ -495,18 +515,22 @@ function ReadyView({ batch, link }: { batch: PortalApprovalBatch; link: Approval
     <section className="approval__section" aria-labelledby="approval-pending-title">
       <h2 id="approval-pending-title" className="approval__heading">Para aprovar{pending.length > 0 && ` (${pending.length})`}</h2>
       {pending.length === 0
-        ? <div className="approval__empty">
+        ? <div className={batch.contents.length === 0 ? 'approval__empty' : 'approval__empty approval__empty--done'} data-stage-host>
+          {batch.contents.length > 0 && <Stage3D src="/3d/thumb-up.png" tone="teal" size="xl" />}
           <p className="approval__empty-title">{batch.contents.length === 0 ? MESSAGES.emptyBatch : MESSAGES.nothingToApprove}</p>
           {batch.contents.length > 0 && <p>{MESSAGES.nothingLead}</p>}
         </div>
-        : <div className="approval__list">
-          {pending.map((content) => <ContentCard key={content.id} content={content} clientName={batch.clientName} decisions={decisions} />)}
-        </div>}
+        : <>
+          {shared !== null && <ApprovalRound approval={shared} agencyName={batch.agencyName} />}
+          <div className="approval__list">
+            {pending.map((content) => <ContentCard key={content.id} content={content} clientName={batch.clientName} agencyName={batch.agencyName} ownRound={shared === null} decisions={decisions} />)}
+          </div>
+        </>}
     </section>
     {others.length > 0 && <section className="approval__section" aria-labelledby="approval-others-title">
       <h2 id="approval-others-title" className="approval__heading">Outros conteúdos deste e-mail</h2>
       <div className="approval__list">
-        {others.map((content) => <ContentCard key={content.id} content={content} clientName={batch.clientName} decisions={decisions} />)}
+        {others.map((content) => <ContentCard key={content.id} content={content} clientName={batch.clientName} agencyName={batch.agencyName} ownRound={false} decisions={decisions} />)}
       </div>
     </section>}
     <section className="approval__section approval__account" aria-labelledby="approval-account-title">

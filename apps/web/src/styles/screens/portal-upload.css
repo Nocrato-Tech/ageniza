@@ -1,0 +1,154 @@
+/* Envio de material pelo cliente no portal: fotos e depoimento de um pedido aberto. */
+.portal-requests-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  grid-column: 1 / -1;
+}
+
+.portal-upload {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.portal-upload__pick,
+.portal-upload__recorder,
+.portal-upload__take {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.portal-upload__row,
+.portal-upload__recording {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.portal-upload__note {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-upload__error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--status-late-bg);
+  color: var(--status-late-text);
+  font: var(--body-md);
+}
+
+.portal-upload__live {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-upload__dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: var(--radius-full);
+  background: var(--status-late-fg);
+}
+
+.portal-upload__clock {
+  font: var(--body-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.portal-upload__take audio,
+.portal-upload__audio audio {
+  width: 100%;
+  max-width: 100%;
+}
+
+.portal-upload__items,
+.portal-upload__grid {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-upload__item {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.portal-upload__item-name {
+  font: var(--body-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.portal-upload__item-status {
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.portal-upload__item-status--failed {
+  color: var(--status-late-text);
+}
+
+.portal-upload__sent {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.portal-upload__subtitle {
+  margin: 0;
+  font: var(--body-md);
+  font-weight: 600;
+}
+
+.portal-upload__sent .portal-upload__grid {
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  width: 100%;
+}
+
+.portal-upload__file {
+  min-width: 0;
+}
+
+.portal-upload__file--audio {
+  grid-column: 1 / -1;
+}
+
+.portal-upload__thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.portal-upload__audio {
+  display: grid;
+  gap: var(--space-1);
+  font: var(--caption);
+}
+
+.portal-upload__wait {
+  color: var(--text-secondary);
+  font: var(--caption);
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,82 @@
+/* Agency area shell: issue #181. Header, side navigation and content, all on tokens. */
+
+.agency-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) max(var(--space-6), calc((100vw - 72rem) / 2));
+  background: var(--color-ink-900);
+  color: var(--color-white);
+}
+
+.agency-header__skeleton {
+  width: 12rem;
+  height: 1.75rem;
+}
+
+/* The top bar of the wide shells: the search has its own subtask, so its place is kept empty; the portal keeps the bell's place empty too. */
+.shell-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.agency-body > .shell-topbar {
+  padding: var(--space-5) var(--space-8) 0;
+}
+
+.shell-topbar__search-slot {
+  flex: 1;
+}
+
+.shell-topbar__bell-slot {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.help-menu .ui-menu__trigger {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-color: var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.help-menu .ui-menu__trigger:hover,
+.help-menu .ui-menu__trigger:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.help-menu .ui-menu__trigger svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.help-menu .ui-menu__content {
+  min-width: 13.5rem;
+}
+
+.help-menu__status {
+  margin-inline-start: auto;
+}
+
+.protected-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.protected-header > a {
+  color: inherit;
+  font: var(--heading-md);
+  text-decoration: none;
+}
+

@@ -1,0 +1,28 @@
+/* RoleTag: the capsule of a role. The words say the role, the colour only tells roles apart.
+   A custom role can have a long name: the capsule wraps instead of widening its track. */
+.ui-role-tag {
+  max-width: 100%;
+  padding-block: var(--space-1);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ui-role-tag--indigo {
+  background: var(--block-indigo-bg);
+  color: var(--block-indigo-fg);
+}
+
+.ui-role-tag--violet {
+  background: var(--block-violet-bg);
+  color: var(--block-violet-fg);
+}
+
+.ui-role-tag--teal {
+  background: var(--block-teal-bg);
+  color: var(--block-teal-fg);
+}
+
+.ui-role-tag--sky {
+  background: var(--block-sky-bg);
+  color: var(--block-sky-fg);
+}

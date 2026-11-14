@@ -23,5 +23,5 @@ export const translateApprovalError = (error: unknown, action: PortalContentActi
   const code = databaseErrorCode(error);
   if (code === 'A0100' || code === 'A0090') return approvalLinkInvalid();
   if (action === 'read') return code === 'A0060' ? contentNotFound() : undefined;
-  return translatePortalError(error, action);
+  return translatePortalError(error, action === 'request-changes' ? 'link-request-changes' : action);
 };

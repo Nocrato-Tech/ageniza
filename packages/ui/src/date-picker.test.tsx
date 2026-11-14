@@ -66,6 +66,53 @@ describe('DatePicker field', () => {
     expect(field().value).toBe('');
   });
 
+  it('tells an empty field from text that is not a day: both give an empty value, only the second is invalid', () => {
+    const invalid = vi.fn();
+    render(<Harness onInvalidChange={invalid} />);
+    expect(invalid).toHaveBeenLastCalledWith(false);
+
+    type('14/10/26');
+    expect(field().value).toBe('14/10/26');
+    expect(invalid).toHaveBeenLastCalledWith(true);
+
+    type('31022026');
+    expect(invalid).toHaveBeenLastCalledWith(true);
+
+    type('14102026');
+    expect(invalid).toHaveBeenLastCalledWith(false);
+
+    type('14/1');
+    expect(invalid).toHaveBeenLastCalledWith(true);
+
+    type('');
+    expect(invalid).toHaveBeenLastCalledWith(false);
+  });
+
+  it('is not invalid when the day is picked on the calendar over text that was not a day', () => {
+    const invalid = vi.fn();
+    render(<Harness onInvalidChange={invalid} />);
+    type('14/10/26');
+    expect(invalid).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(toggle());
+    fireEvent.click(dayButton('2026-10-20'));
+
+    expect(field().value).toBe('20/10/2026');
+    expect(invalid).toHaveBeenLastCalledWith(false);
+  });
+
+  it('lets go of "invalid" when the field leaves, and works without the signal for the callers that do not ask for it', () => {
+    const invalid = vi.fn();
+    const { unmount } = render(<Harness onInvalidChange={invalid} />);
+    type('14/10/26');
+    unmount();
+    expect(invalid).toHaveBeenLastCalledWith(false);
+
+    render(<Harness />);
+    expect(() => type('14/10/26')).not.toThrow();
+    expect(field().value).toBe('14/10/26');
+  });
+
   it('accepts a day pasted as YYYY-MM-DD and shows it the way it is typed', () => {
     const seen = vi.fn();
     render(<Harness onValue={seen} />);

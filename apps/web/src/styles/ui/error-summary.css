@@ -1,0 +1,17 @@
+/* One summary per refused form, above the fields: text/danger is guaranteed on the surface and the canvas (docs/design-system.md 20.1). */
+.ui-error-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--block-red-bg);
+  font: var(--body-md);
+  color: var(--text-danger);
+}
+
+.ui-live-status {
+  min-height: 1.5rem;
+}
+

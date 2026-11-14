@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { ARCHETYPE_LABELS, BrandStudySectionUpdateRequestSchema, CreatePersonaRequestSchema, UpdatePersonaRequestSchema } from '@ageniza/contracts';
 import type { BrandStudyResponse, Persona } from '@ageniza/contracts';
+import { ApiError } from '../api/client';
 import { api } from '../api/runtime';
 import { Action, Card, ErrorText, Field, Info, Txt, colors } from '../product/ui';
 import { useRemoteResource } from './useRemoteResource';
@@ -15,16 +16,25 @@ import { BrandText } from './BrandText';
 import { readBrandFields } from './brand-text';
 
 const labels: Record<string, string> = { branding: 'Identidade da marca', tone_of_voice: 'Tom de voz', colors: 'Cores', positioning: 'Posicionamento', archetype: 'Arquétipo', personas: 'Personas', observations: 'Observações' };
+const deleteText = (count: number) => count === 0 ? 'Ela ainda não tem mensagens. Não dá para desfazer.' : `A conversa dela, com ${count === 1 ? '1 mensagem' : `${count} mensagens`}, também será apagada. Não dá para desfazer.`;
 type PersonaDraft = { id?: string; name: string; description: string; pains: string; desires: string; objections: string };
 export function BrandStudy({ root, canEdit, agency = true, readOnly = false }: { root: string; canEdit: boolean; agency?: boolean; readOnly?: boolean }) {
   const load = useCallback((signal: AbortSignal) => api.request<BrandStudyResponse>(`${root}/brand-study`, { signal }), [root]);
-  const { data, loading, busy, error, notice, run, setError } = useRemoteResource(load);
+  const { data, loading, busy, error, notice, run, refresh, setError } = useRemoteResource(load);
   const [editing, setEditing] = useState('');
   const [body, setBody] = useState('');
   const [archetype, setArchetype] = useState('');
   const [palette, setPalette] = useState<{ name: string; hex: string }[]>([]);
   const [persona, setPersona] = useState<PersonaDraft>();
   const [conversation, setConversation] = useState('');
+  const [removing, setRemoving] = useState('');
+  const removePersona = (id: string) => run(async () => {
+    try { await api.request(`${root}/personas/${id}`, { method: 'DELETE' }); setRemoving(''); } catch (cause) {
+      if (!(cause instanceof ApiError) || cause.status !== 404) throw cause;
+      setRemoving(''); await refresh().catch(() => {});
+      throw new Error('Esta persona não existe mais.');
+    }
+  }, 'Persona excluída.');
   const editPersona = (value?: Persona) => setPersona({ id: value?.id, name: value?.name ?? '', description: value?.description ?? '', pains: value?.pains ?? '', desires: value?.desires ?? '', objections: value?.objections ?? '' });
   return <View style={{ gap: 16 }}>{!!error && <ErrorText text={error} />}{!!notice && <Info title={notice} />}{loading && <ActivityIndicator color={colors.indigo} />}
     {data && <><Info title={`${data.filled} de 7 seções preenchidas`} text={canEdit ? 'Mantenha as decisões da marca acessíveis à agência e ao cliente.' : 'As informações da marca são mantidas pela sua agência.'} />
@@ -36,7 +46,7 @@ export function BrandStudy({ root, canEdit, agency = true, readOnly = false }: {
         </> : <>{section.body && <BrandText section={section.key} body={section.body} />}{section.archetype && <Txt>{ARCHETYPE_LABELS[section.archetype]}</Txt>}{section.key === 'colors' && <BrandPalette value={section.colors ?? []} />}{section.key !== 'colors' && !section.body && !section.archetype && !section.colors?.length && <Txt color={colors.muted}>Ainda não preenchido.</Txt>}{canEdit && <Action soft label={`Editar ${labels[section.key]}`} onPress={() => { setEditing(section.key); setBody(section.body ?? ''); setArchetype(section.archetype ?? ''); setPalette(section.colors ?? []); }} />}</>}</StateSwap>
         <Action plain label={`Conversar sobre ${labels[section.key]}`} onPress={() => setConversation(conversation === section.key ? '' : section.key)} /><Disclosure open={conversation === section.key}>{conversation === section.key && <Conversations root={root} subject={{ sectionKey: section.key }} canWrite={!readOnly && (agency ? canEdit : true)} canResolve={agency && canEdit} />}</Disclosure>
       </Card>)}
-      <Txt kind="section">Personas</Txt><FlowList items={data.personas} renderItem={(item) => <Card key={item.id}><Txt kind="strong">{item.name}{item.status === 'archived' ? ' · Arquivada' : ''}</Txt>{item.description && <Txt>{item.description}</Txt>}{item.pains && <Txt>Dores: {item.pains}</Txt>}{item.desires && <Txt>Desejos: {item.desires}</Txt>}{item.objections && <Txt>Objeções: {item.objections}</Txt>}{item.status === 'active' && <><Action plain label={`Conversar sobre persona ${item.name}`} onPress={() => setConversation(conversation === `persona:${item.id}` ? '' : `persona:${item.id}`)} /><Disclosure open={conversation === `persona:${item.id}`}>{conversation === `persona:${item.id}` && <Conversations root={root} subject={{ personaId: item.id }} canWrite={!readOnly && (agency ? canEdit : true)} canResolve={agency && canEdit} />}</Disclosure></>}{canEdit && <><Action soft label={`Editar persona ${item.name}`} onPress={() => editPersona(item)} /><Action plain label={item.status === 'active' ? `Arquivar persona ${item.name}` : `Desarquivar persona ${item.name}`} busy={busy} onPress={() => void run(async () => { await api.request(`${root}/personas/${item.id}/${item.status === 'active' ? 'archive' : 'unarchive'}`, { method: 'POST' }); })} /></>}</Card>} />
+      <Txt kind="section">Personas</Txt><FlowList items={data.personas} renderItem={(item) => <Card key={item.id}><Txt kind="strong">{item.name}</Txt>{item.description && <Txt>{item.description}</Txt>}{item.pains && <Txt>Dores: {item.pains}</Txt>}{item.desires && <Txt>Desejos: {item.desires}</Txt>}{item.objections && <Txt>Objeções: {item.objections}</Txt>}<><Action plain label={`Conversar sobre persona ${item.name}`} onPress={() => setConversation(conversation === `persona:${item.id}` ? '' : `persona:${item.id}`)} /><Disclosure open={conversation === `persona:${item.id}`}>{conversation === `persona:${item.id}` && <Conversations root={root} subject={{ personaId: item.id }} canWrite={!readOnly && (agency ? canEdit : true)} canResolve={agency && canEdit} />}</Disclosure></>{canEdit && <Action soft label={`Editar persona ${item.name}`} onPress={() => editPersona(item)} />}{canEdit && (removing === item.id ? <><Info warning title={`Excluir a persona ${item.name}?`} text={deleteText(item.messageCount)} /><Action label={`Confirmar exclusão da persona ${item.name}`} busy={busy} onPress={() => void removePersona(item.id)} /><Action plain label={`Manter persona ${item.name}`} onPress={() => setRemoving('')} /></> : <Action plain label={`Excluir persona ${item.name}`} onPress={() => setRemoving(item.id)} />)}</Card>} />
       {canEdit && <Action soft label="Adicionar persona" onPress={() => editPersona()} />}
       <Disclosure open={!!persona}>{persona && <Card><Txt kind="section">{persona.id ? 'Editar persona' : 'Nova persona'}</Txt>{(['name', 'description', 'pains', 'desires', 'objections'] as const).map((key) => <Field key={key} label={{ name: 'Nome da persona', description: 'Descrição', pains: 'Dores', desires: 'Desejos', objections: 'Objeções' }[key]} value={persona[key]} onChangeText={(value) => setPersona({ ...persona, [key]: value })} multiline={key !== 'name'} />)}<Action label="Salvar persona" busy={busy} onPress={() => void run(async () => { const { id, ...input } = persona; const parsed = (id ? UpdatePersonaRequestSchema : CreatePersonaRequestSchema).safeParse(input); if (!parsed.success) { setError('Confira os campos da persona. Nome é obrigatório.'); throw new Error('Confira os campos da persona. Nome é obrigatório.'); } await api.request(`${root}/personas${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', body: parsed.data }); setPersona(undefined); })} /><Action plain label="Cancelar persona" onPress={() => setPersona(undefined)} /></Card>}</Disclosure>
     </>}

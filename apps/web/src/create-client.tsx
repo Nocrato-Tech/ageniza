@@ -9,6 +9,7 @@ import { Button, Field, FieldMessage, Modal, TextInput, useFormErrors } from '@a
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { PlanLimitNotice, planLimitOf, type PlanLimit } from './plan-limit.js';
 
 const NAME_REQUIRED = 'Informe o nome do cliente.';
 const NAME_INVALID = 'O nome contém caracteres que não são aceitos.';
@@ -40,6 +41,7 @@ export function CreateClientDialog({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
+  const [limit, setLimit] = useState<PlanLimit | undefined>();
   const nameRef = useRef<HTMLInputElement>(null);
 
   // `autoFocus` would run before `Modal` captures the previous focus and break the focus return.
@@ -47,6 +49,8 @@ export function CreateClientDialog({ onClose }: { onClose: () => void }) {
 
   const applyError = (error: unknown): void => {
     if (!(error instanceof HttpClientError)) { setFormError(CREATE_FAILED); return; }
+    const reached = planLimitOf(error);
+    if (reached !== undefined) { setLimit(reached); return; }
     if (error.code === 'CLIENT_NAME_IN_USE' || error.status === 409) { setNameError(NAME_IN_USE); return; }
     if (error.code === 'FORBIDDEN' || error.status === 403) { setFormError(NO_PERMISSION); return; }
     if (error.status === 400) {
@@ -88,6 +92,7 @@ export function CreateClientDialog({ onClose }: { onClose: () => void }) {
     size="sm"
     description="O cadastro começa só pelo nome do cliente."
     onClose={onClose}
+    confirmDiscard={{ dirty: name !== '' && !create.isPending }}
     actions={<Button type="submit" form={formId} disabled={!canSubmit} loading={create.isPending}>Cadastrar</Button>}
   >
     <form ref={formRef} id={formId} className="form-stack" onSubmit={onSubmit} noValidate>
@@ -99,12 +104,13 @@ export function CreateClientDialog({ onClose }: { onClose: () => void }) {
             ref={nameRef}
             name="name"
             value={name}
-            onChange={(event) => { setName(event.target.value); setNameError(undefined); setFormError(undefined); }}
+            onChange={(event) => { setName(event.target.value); setNameError(undefined); setFormError(undefined); setLimit(undefined); }}
           />
         )}
       </Field>
 
       {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
+      {limit !== undefined && <PlanLimitNotice limit={limit} />}
     </form>
   </Modal>;
 }

@@ -81,7 +81,7 @@ export interface World {
   endPeriod(agencyId: string, endedSecondsAgo: number): Promise<void>;
   subscriptionOf(agencyId: string): Promise<Record<string, unknown> | undefined>;
   chargesOf(agencyId: string): Promise<Array<Record<string, unknown>>>;
-  call(person: Person | undefined, method: 'GET' | 'POST', url: string, payload?: Record<string, unknown>): Promise<LightMyRequestResponse>;
+  call(person: Person | undefined, method: 'GET' | 'POST' | 'PUT', url: string, payload?: Record<string, unknown>): Promise<LightMyRequestResponse>;
   teardown(): Promise<void>;
 }
 

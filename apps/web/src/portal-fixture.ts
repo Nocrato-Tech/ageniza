@@ -1,3 +1,5 @@
+import { clientRegistrationExtras, emptyPersonaProfile } from './client-registration-fixture.js';
+
 /** A `GET /clients/:clientId` answer (the portal's own read); the tour is already seen unless the test asks for it. */
 export const portalClientBody = (clientId: string, name: string, onboardingSeenAt: string | null = '2026-10-01T12:00:00.000Z'): Record<string, unknown> => ({
   id: clientId,
@@ -14,10 +16,11 @@ export const portalClientBody = (clientId: string, name: string, onboardingSeenA
   contactEmail: null,
   closingDate: null,
   archivedAt: null,
+  ...clientRegistrationExtras,
   agencyName: 'Agência Um',
   onboardingSeenAt,
   agencyReadOnly: false,
-  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0, contentsAwaitingApproval: 0 }
+  home: { threadsAnsweredByAgency: 0, brandStudyFilled: 0, contentsAwaitingApproval: 0, materialRequestsOpen: 0 }
 });
 
 const SECTION_KEYS = ['branding', 'tone_of_voice', 'colors', 'positioning', 'archetype', 'personas', 'observations'] as const;
@@ -51,7 +54,7 @@ export const portalPersona = (id: string, name: string, fields: Record<string, s
   pains: null,
   desires: null,
   objections: null,
-  status: 'active',
+  ...emptyPersonaProfile(),
   updatedAt: '2026-10-13T01:30:00.000Z',
   ...fields
 });

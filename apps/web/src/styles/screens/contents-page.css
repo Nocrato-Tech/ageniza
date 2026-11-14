@@ -1,0 +1,281 @@
+/* Conteúdos (agency): specs/conteudo.md section 7. The header with the trail, the period and the views, the filters, the stories of
+   the month and the calendar or the feed, as the board draws them. */
+.contents {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.contents h1 {
+  margin: 0;
+}
+
+.content-stories__note {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.contents__main {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.contents__client-skeleton {
+  width: 12rem;
+  height: 1.75rem;
+}
+
+/* The header: the trail and the period on the left, the three views and the actions on the right; one primary action, in its own block. */
+.contents__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.contents__lead {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.contents__crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.contents__crumbs a {
+  color: inherit;
+}
+
+.contents__crumbs a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.contents__crumbs > svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* The chip that changes the client: the same capsule as the filters, with the client's face and name. */
+.contents__crumbs .ui-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font: var(--label-md);
+  cursor: pointer;
+}
+
+.contents__crumbs .ui-menu__trigger:hover,
+.contents__crumbs .ui-menu__trigger[aria-expanded='true'] {
+  border-color: var(--color-indigo-200);
+  background: var(--bg-hover);
+}
+
+.contents__crumbs .ui-menu__trigger svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.contents__crumb-name {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.contents__crumbs .ui-menu__content {
+  min-width: 14rem;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.contents__crumb-signals {
+  display: block;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.contents__period {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.contents__title {
+  min-width: 12ch;
+  font: var(--heading-xl);
+  letter-spacing: -0.01em;
+}
+
+.contents__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* The filters are chips, each with the tag of its state and its count; they wrap, so every one stays in reach at any width. */
+.contents__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.contents__filters .ui-chip {
+  min-height: 2.75rem;
+}
+
+.contents__skeleton {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.contents__empty {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+/* The formats, with the colour that tints their card, and the sentence that tells the tint from the tag. */
+.contents__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  color: var(--text-secondary);
+  font: var(--caption);
+  list-style: none;
+}
+
+.contents__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.contents__legend i {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--format-static-bg);
+  border: 1.5px solid var(--format-static-fg);
+}
+
+.contents__legend i[data-format='carousel'] {
+  background: var(--format-carousel-bg);
+  border: 1.5px solid var(--format-carousel-fg);
+}
+
+.contents__legend i[data-format='reels'] {
+  background: var(--format-reels-bg);
+  border: 1.5px solid var(--format-reels-fg);
+}
+
+/* The picker of the index: a link for each client, the avatar and name on the left, what asks for action under them. */
+.content-clients {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.content-clients > li {
+  display: grid;
+  min-width: 0;
+}
+
+.content-clients__skeleton {
+  height: 5.5rem;
+}
+
+.content-clients__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-height: 5.5rem;
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: border-color var(--motion-fast);
+}
+
+.content-clients__item:hover {
+  border-color: var(--border-default);
+}
+
+.content-clients__item .ui-avatar {
+  grid-row: span 2;
+}
+
+.content-clients__name {
+  font: var(--title-md);
+  overflow-wrap: anywhere;
+}
+
+.content-clients__signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  grid-column: 2;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.content-clients__signals--calm {
+  color: var(--text-muted);
+}
+
+.content-clients__signal[data-signal='overdue'] {
+  color: var(--status-late-fg);
+  font-weight: 600;
+}
+
+/* The calendar takes the width the page has. */
+.agency-body > .agency-content:has(> .contents[data-screen]) {
+  max-width: none;
+}
+
+.contents__note,
+.contents__move-error {
+  margin: 0;
+}
+
+.contents__move-error {
+  color: var(--text-danger);
+}
+
+/* On a phone the period's title shrinks and the trail, the period and the actions each take their own line. */
+@media (max-width: 47.99rem) {
+  .contents__title {
+    min-width: 0;
+    font-size: 1.5rem;
+    line-height: 1.875rem;
+  }
+
+  .contents__actions {
+    width: 100%;
+  }
+
+  .contents__crumbs .ui-menu__content {
+    max-width: calc(100vw - var(--space-8));
+  }
+}

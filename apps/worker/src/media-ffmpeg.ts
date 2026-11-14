@@ -113,6 +113,8 @@ interface FfprobeStream {
   readonly width?: number;
   readonly height?: number;
   readonly codec_type?: string;
+  readonly tags?: { readonly rotate?: string };
+  readonly side_data_list?: readonly { readonly rotation?: number | string }[];
 }
 
 interface FfprobeOutput {
@@ -120,7 +122,13 @@ interface FfprobeOutput {
   readonly streams?: readonly FfprobeStream[];
 }
 
-/** Reads duration and the first video stream's dimensions without decoding any frame. */
+// A phone video is stored sideways with a rotation flag: ffmpeg turns it upright, so the size people see swaps width and height.
+const turnsAQuarter = (stream: FfprobeStream): boolean => {
+  const rotation = Number(stream.side_data_list?.find((data) => data.rotation !== undefined)?.rotation ?? stream.tags?.rotate);
+  return Number.isFinite(rotation) && rotation % 90 === 0 && Math.abs(rotation / 90) % 2 === 1;
+};
+
+/** Reads duration and the first video stream's dimensions, as displayed, without decoding any frame. */
 export const probeVideo = async (filePath: string, options: RunMediaBinaryOptions): Promise<VideoProbeResult> => {
   // ffprobe (unlike ffmpeg) has no `-nostdin` option; it never reads from stdin in the first
   // place, so there is nothing to disable here.
@@ -128,7 +136,7 @@ export const probeVideo = async (filePath: string, options: RunMediaBinaryOption
     '-hide_banner',
     '-v', 'error',
     ...PROTOCOL_WHITELIST_ARGS,
-    '-show_entries', 'format=duration:stream=width,height,codec_type',
+    '-show_entries', 'format=duration:stream=width,height,codec_type:stream_side_data=rotation:stream_tags=rotate',
     '-of', 'json',
     filePath
   ], options);
@@ -144,6 +152,9 @@ export const probeVideo = async (filePath: string, options: RunMediaBinaryOption
     throw new MediaBinaryError('ffprobe did not report a valid duration.', 'EXIT_FAILURE');
   }
   const videoStream = parsed.streams?.find((stream) => stream.codec_type === 'video');
+  if (videoStream !== undefined && turnsAQuarter(videoStream)) {
+    return { durationSeconds, width: videoStream.height, height: videoStream.width };
+  }
   return { durationSeconds, width: videoStream?.width, height: videoStream?.height };
 };
 

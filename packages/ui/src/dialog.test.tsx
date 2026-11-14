@@ -171,3 +171,69 @@ describe('Dialog', () => {
     expect(Modal).toBe(Dialog);
   });
 });
+
+describe('Dialog with a discard guard', () => {
+  const form = (dirty: boolean, onClose: () => void) => render(
+    <Dialog title="Editar cliente" closeLabel="Fechar edição" onClose={onClose} confirmDiscard={{ dirty }}><p>Corpo</p></Dialog>
+  );
+  const form_dialog = (): HTMLDialogElement => screen.getByRole('dialog', { name: 'Editar cliente', hidden: true }) as HTMLDialogElement;
+  const closers: ReadonlyArray<readonly [string, () => void]> = [
+    ['Esc', () => { fireEvent(form_dialog(), new Event('cancel', { bubbles: true, cancelable: true })); }],
+    ['a click outside', () => { press(form_dialog(), 5, 5); fireEvent.click(form_dialog(), { clientX: 5, clientY: 5 }); }],
+    ['the X', () => { fireEvent.click(screen.getByRole('button', { name: 'Fechar edição' })); }]
+  ];
+
+  it.each(closers)('closes straight away on %s when nothing was typed', (_name, close) => {
+    const onClose = vi.fn();
+    form(false, onClose);
+
+    close();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog', { name: 'Descartar o que você escreveu?', hidden: true })).toBeNull();
+  });
+
+  it.each(closers)('asks before closing on %s when there is typed data, and keeps the form', (_name, close) => {
+    const onClose = vi.fn();
+    form(true, onClose);
+
+    close();
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Descartar o que você escreveu?', hidden: true })).toBeTruthy();
+    expect(screen.getByText('Corpo')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    expect(screen.queryByRole('dialog', { name: 'Descartar o que você escreveu?', hidden: true })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(form_dialog().open).toBe(true);
+
+    close();
+    fireEvent.click(screen.getByRole('button', { name: 'Descartar' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes only the confirmation on Esc, and puts the dangerous action before the primary one', () => {
+    const onClose = vi.fn();
+    form(true, onClose);
+    fireEvent(form_dialog(), new Event('cancel', { bubbles: true, cancelable: true }));
+    const confirmation = screen.getByRole('dialog', { name: 'Descartar o que você escreveu?', hidden: true });
+
+    const buttons = [...confirmation.querySelectorAll('.ui-modal__actions button')];
+    expect(buttons.map((button) => button.textContent)).toEqual(['Descartar', 'Continuar editando']);
+    expect(buttons[0]!.classList.contains('ui-button--destructive')).toBe(true);
+
+    fireEvent(confirmation, new Event('cancel', { bubbles: true, cancelable: true }));
+    expect(screen.queryByRole('dialog', { name: 'Descartar o que você escreveu?', hidden: true })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('takes the wording from the caller', () => {
+    render(<Dialog title="Convidar" closeLabel="Fechar" onClose={() => undefined} confirmDiscard={{ dirty: true, title: 'Perder o convite?', keepLabel: 'Voltar', discardLabel: 'Perder' }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar' }));
+
+    expect(screen.getByRole('dialog', { name: 'Perder o convite?', hidden: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Voltar' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Perder' })).toBeTruthy();
+  });
+});

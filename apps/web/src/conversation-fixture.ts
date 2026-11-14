@@ -28,6 +28,8 @@ export interface StoredThread {
   readonly comments: ThreadComment[];
   resolvedAt: string | null;
   resolvedBy: { name: string | null } | null;
+  dueOn: string | null;
+  title: string | null;
 }
 
 export interface FakePeople {
@@ -57,7 +59,8 @@ const DEFAULT_PEOPLE: FakePeople = {
 const sameSubject = (left: ConversationSubject, right: ConversationSubject): boolean =>
   ('sectionKey' in left && 'sectionKey' in right && left.sectionKey === right.sectionKey)
   || ('personaId' in left && 'personaId' in right && left.personaId === right.personaId)
-  || ('contentId' in left && 'contentId' in right && left.contentId === right.contentId);
+  || ('contentId' in left && 'contentId' in right && left.contentId === right.contentId)
+  || ('materialRequest' in left && 'materialRequest' in right);
 
 export const createConversationApi = (options: ConversationApiOptions) => {
   const people = options.people ?? DEFAULT_PEOPLE;
@@ -81,14 +84,16 @@ export const createConversationApi = (options: ConversationApiOptions) => {
     lastComment: { side: lastOf(thread).side, at: lastOf(thread).createdAt, excerpt: lastOf(thread).body.slice(0, 120) },
     commentCount: thread.comments.length,
     resolvedBy: stateOf(thread) === 'resolved' ? thread.resolvedBy : null,
-    resolvedAt: stateOf(thread) === 'resolved' ? thread.resolvedAt : null
+    resolvedAt: stateOf(thread) === 'resolved' ? thread.resolvedAt : null,
+    dueOn: thread.dueOn,
+    title: thread.title
   });
 
   const commentOf = (side: ConversationSide, body: string, createdAt: string): ThreadComment => ({
     id: nextId(), body, side, author: people[side], createdAt
   });
 
-  const seed = (subject: ConversationSubject, comments: readonly SeedComment[], resolved?: { at: string; by: string | null }): string => {
+  const seed = (subject: ConversationSubject, comments: readonly SeedComment[], resolved?: { at: string; by: string | null }, dueOn: string | null = null, title: string | null = null): string => {
     const first = comments[0]!;
     const thread: StoredThread = {
       id: nextId(),
@@ -96,7 +101,9 @@ export const createConversationApi = (options: ConversationApiOptions) => {
       openedBy: { name: people[first.side].name, side: first.side },
       comments: comments.map((comment) => commentOf(comment.side, comment.body, comment.at)),
       resolvedAt: resolved?.at ?? null,
-      resolvedBy: resolved === undefined ? null : { name: resolved.by }
+      resolvedBy: resolved === undefined ? null : { name: resolved.by },
+      dueOn,
+      title
     };
     threads.unshift(thread);
     return thread.id;
@@ -149,7 +156,7 @@ export const createConversationApi = (options: ConversationApiOptions) => {
     if (isThreads && writing) {
       const parsed = CreateThreadRequestSchema.safeParse(rawBody);
       if (!parsed.success) return apiError(400, 'VALIDATION_ERROR');
-      const id = seed(parsed.data.subject, [{ side: options.side, body: parsed.data.body, at: tick() }]);
+      const id = seed(parsed.data.subject, [{ side: options.side, body: parsed.data.body, at: tick() }], undefined, parsed.data.dueOn ?? null, parsed.data.title ?? null);
       const thread = threads.find((item) => item.id === id)!;
       return json({ thread: publicThread(thread), comment: lastOf(thread) }, 201);
     }

@@ -2,12 +2,16 @@ import { type HTMLAttributes } from 'react';
 
 export type AvatarSize = 'sm' | 'md' | 'lg';
 
+/** The fill of the initials: `indigo` is the brand's, the others tell people apart in a stack (the tones of the colour blocks). */
+export type AvatarTone = 'indigo' | 'violet' | 'teal' | 'sky';
+
 export interface AvatarProps extends HTMLAttributes<HTMLSpanElement> {
   /** The person's name; the initials are taken from it when there is no photo. */
   name: string;
   /** Signed photo URL, or null when the person has no photo. */
   photoUrl?: string | null;
   size?: AvatarSize;
+  tone?: AvatarTone;
   /**
    * Why something of this person asks for action ("em ajuste, em atraso"). It draws the attention ring and is read by
    * assistive technology, so the ring is never the only signal.
@@ -32,10 +36,10 @@ export const avatarInitials = (name: string): string => {
  * not distinguish anyone). The avatar is decorative: the name is always shown next to it, so the
  * image is `alt=""` and the initials are hidden from assistive technology. The one thing it may say is `attention`.
  */
-export function Avatar({ name, photoUrl, size = 'md', attention, className, ...props }: AvatarProps) {
+export function Avatar({ name, photoUrl, size = 'md', tone = 'indigo', attention, className, ...props }: AvatarProps) {
   return (
     <span
-      className={['ui-avatar', `ui-avatar--${size}`, attention !== undefined && 'ui-avatar--attention', className].filter(Boolean).join(' ')}
+      className={['ui-avatar', `ui-avatar--${size}`, tone !== 'indigo' && `ui-avatar--${tone}`, attention !== undefined && 'ui-avatar--attention', className].filter(Boolean).join(' ')}
       {...props}
     >
       {photoUrl === null || photoUrl === undefined

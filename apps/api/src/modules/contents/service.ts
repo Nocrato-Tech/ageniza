@@ -1,5 +1,6 @@
 import type {
   Content,
+  ContentApproval,
   ContentDetail,
   ContentFeedPosition,
   ContentFeedResponse,
@@ -19,7 +20,14 @@ interface RawRows<TResult> {
   readonly rows: readonly TResult[];
 }
 
-interface ContentRow {
+interface ApprovalColumns {
+  readonly approval_sent_at: Date | null;
+  readonly approval_due_at: Date | null;
+  readonly approval_due_on: string | null;
+  readonly approval_note: string | null;
+}
+
+interface ContentRow extends ApprovalColumns {
   readonly id: string;
   readonly client_id: string;
   readonly title: string;
@@ -45,7 +53,7 @@ interface ContentRow {
   readonly created_at: Date;
 }
 
-interface ListRow {
+interface ListRow extends ApprovalColumns {
   readonly id: string;
   readonly title: string;
   readonly platform: ContentListItem['platform'];
@@ -67,7 +75,54 @@ interface ScriptRow {
   readonly id: string;
   readonly script_on: string;
   readonly status: StoryScriptListItem['status'];
+  readonly scene_count: string | number;
 }
+
+/**
+ * The round the content waits in: the latest one, and only while the content awaits approval (one in production, in adjustment or already
+ * decided has no deadline to show). A content that waited before the rounds existed has none, so every column is null.
+ */
+export const APPROVAL_JOIN = `
+  left join lateral (
+    select round.sent_at, round.due_at, round.due_on, round.note
+    from public.content_approval_rounds round
+    where round.content_id = content.id and content.status = 'awaiting_approval'
+    order by round.sequence desc
+    limit 1
+  ) approval on true
+`;
+export const APPROVAL_COLUMNS = `
+  approval.sent_at as approval_sent_at, approval.due_at as approval_due_at, approval.due_on::text as approval_due_on, approval.note as approval_note
+`;
+
+/** The file that serves as the cover of a content: its own cover or its first confirmed media, as the list and "Parado no cliente" show it. */
+export const THUMBNAIL_JOIN = `
+  left join lateral (
+    select entry.asset_id
+    from (
+      select content.cover_asset_id as asset_id, 0 as item_position where content.cover_asset_id is not null
+      union all
+      select item.asset_id, item.position from public.content_media item where item.content_id = content.id
+    ) entry
+    join public.media_assets asset on asset.id = entry.asset_id
+    where asset.status = 'confirmed' and asset.removed_at is null
+    order by entry.item_position, entry.asset_id
+    limit 1
+  ) thumbnail on true
+`;
+
+const approvalOf = (row: ApprovalColumns): ContentApproval | null =>
+  row.approval_sent_at === null
+    ? null
+    : {
+        sentAt: new Date(row.approval_sent_at).toISOString(),
+        dueAt: row.approval_due_at === null ? null : new Date(row.approval_due_at).toISOString(),
+        dueOn: row.approval_due_on,
+        note: row.approval_note
+      };
+
+/** The name of who approved: the account behind the approval, or the label of the portal access that approved through a link. */
+export const APPROVER_NAME = `coalesce(approver_account.name, app_private.portal_access_label(content.approved_by_portal_access_id, content.client_id))`;
 
 // Dates are read as text and the time as HH:MM: the driver would turn a `date` into an instant in the server's zone.
 const CONTENT_COLUMNS = `
@@ -76,9 +131,9 @@ const CONTENT_COLUMNS = `
   content.caption, content.folder_id, content.cover_asset_id, content.owner_user_id, owner_link.id as owner_membership_id,
   owner_account.name as owner_name, content.status, content.revision,
   case when content.approved_by is null and content.approved_by_portal_access_id is null then null when content.approved_by_agency_reason is not null then 'agency' else 'client' end as approver_side,
-  coalesce(approver_account.name, app_private.portal_access_label(content.approved_by_portal_access_id, content.client_id)) as approver_name,
+  ${APPROVER_NAME} as approver_name,
   (content.approved_by_portal_access_id is not null) as approved_via_link, content.approved_at, content.approved_by_agency_reason,
-  content.published_on::text as published_on, content.cancelled_at, content.created_at
+  content.published_on::text as published_on, content.cancelled_at, content.created_at, ${APPROVAL_COLUMNS}
 `;
 
 /**
@@ -101,12 +156,13 @@ const agencyTie = (person: string, agency: string): string => `(
 /**
  * Who approved is named without an id, by the link of the side they approved from: a collaborator of the agency for an approval outside
  * the platform, a person of the client's portal for the approval of the client. The side is how it was approved (the reason is written
- * only by the approval outside the platform), so a person who is both is named by the side they used.
+ * only by the approval outside the platform), so a person who is both is named by the side they used. `clientAgency` is the agency of the
+ * content's client, as the query names it.
  */
-const APPROVER_JOIN = `
+export const approverJoin = (clientAgency: string): string => `
   left join auth."user" approver_account on approver_account.id = content.approved_by and (
     case when content.approved_by_agency_reason is not null
-      then ${agencyTie('content.approved_by', 'owner_client.agency_id')}
+      then ${agencyTie('content.approved_by', clientAgency)}
       else exists (
         select 1 from public.client_memberships portal_link
         where portal_link.client_id = content.client_id and portal_link.user_id = content.approved_by
@@ -114,6 +170,8 @@ const APPROVER_JOIN = `
     end
   )
 `;
+
+const APPROVER_JOIN = approverJoin('owner_client.agency_id');
 
 const ownerOf = (row: { readonly owner_membership_id: string | null; readonly owner_name: string | null }): Content['owner'] =>
   row.owner_membership_id === null || row.owner_name === null ? null : { membershipId: row.owner_membership_id, name: row.owner_name };
@@ -167,26 +225,16 @@ select
   to_char(content.publish_at_time, 'HH24:MI') as publish_at_time, content.status,
   owner_link.id as owner_membership_id, owner_account.name as owner_name,
   content.cover_asset_id, thumbnail.asset_id as thumbnail_asset_id, content.revision, content.published_on::text as published_on,
-  tasks.total as tasks_total, tasks.approved as tasks_approved
+  tasks.total as tasks_total, tasks.approved as tasks_approved, ${APPROVAL_COLUMNS}
 from public.contents content
 ${OWNER_JOINS}
-left join lateral (
-  select entry.asset_id
-  from (
-    select content.cover_asset_id as asset_id, 0 as item_position where content.cover_asset_id is not null
-    union all
-    select item.asset_id, item.position from public.content_media item where item.content_id = content.id
-  ) entry
-  join public.media_assets asset on asset.id = entry.asset_id
-  where asset.status = 'confirmed' and asset.removed_at is null
-  order by entry.item_position, entry.asset_id
-  limit 1
-) thumbnail on true
+${THUMBNAIL_JOIN}
 left join lateral (
   select count(*) as total, count(*) filter (where task.status = 'approved') as approved
   from public.content_tasks task
   where task.content_id = content.id
 ) tasks on true
+${APPROVAL_JOIN}
 `;
 
 const listItemOf = (row: ListRow): ContentListItem => ({
@@ -203,7 +251,8 @@ const listItemOf = (row: ListRow): ContentListItem => ({
   revision: Number(row.revision),
   publishedOn: row.published_on,
   tasksTotal: Number(row.tasks_total),
-  tasksApproved: Number(row.tasks_approved)
+  tasksApproved: Number(row.tasks_approved),
+  approval: approvalOf(row)
 });
 
 /** The formats of the feed's grid; long videos and VSLs live in the calendar only (specs/conteudo.md section 7). */
@@ -266,8 +315,11 @@ export const listPeriod = async (
   `, [input.clientId, input.from, input.to, input.limit]);
 
   const scripts = await raw<RawRows<ScriptRow>>(transaction, `
-    select script.id, script.script_on::text as script_on, script.status
+    select script.id, script.script_on::text as script_on, script.status, scenes.total as scene_count
     from public.story_scripts script
+    left join lateral (
+      select count(*) as total from public.story_script_scenes scene where scene.script_id = script.id
+    ) scenes on true
     where script.client_id = ?::uuid and script.script_on between ?::date and ?::date
     order by script.script_on, script.id
     limit ?
@@ -275,8 +327,34 @@ export const listPeriod = async (
 
   return {
     contents: contents.rows.map(listItemOf),
-    storyScripts: scripts.rows.map((row) => ({ id: row.id, scriptOn: row.script_on, status: row.status }))
+    storyScripts: scripts.rows.map((row) => ({ id: row.id, scriptOn: row.script_on, status: row.status, sceneCount: Number(row.scene_count) }))
   };
+};
+
+/** The contents among `contentIds` that are this client's and that this person reads: a batch is only ever of one client. */
+export const countClientContents = async (
+  transaction: ContentTransaction,
+  input: { readonly clientId: string; readonly contentIds: readonly string[] }
+): Promise<number> => {
+  const result = await raw<RawRows<{ total: string | number }>>(transaction, `
+    select count(*) as total from public.contents content where content.client_id = ?::uuid and content.id = any(?::uuid[])
+  `, [input.clientId, `{${input.contentIds.join(',')}}`]);
+  return Number(result.rows[0]?.total ?? 0);
+};
+
+/** The contents a batch was sent with, as the period lists them. */
+export const listBatchContents = async (
+  transaction: ContentTransaction,
+  input: { readonly clientId: string; readonly batchId: string }
+): Promise<ContentListItem[]> => {
+  const result = await raw<RawRows<ListRow>>(transaction, `
+    ${LIST_SELECT}
+    where content.client_id = ?::uuid and content.id in (
+      select round.content_id from public.content_approval_rounds round where round.batch_id = ?::uuid and round.client_id = ?::uuid
+    )
+    order by content.publish_on, content.publish_at_time, content.id
+  `, [input.clientId, input.batchId, input.clientId]);
+  return result.rows.map(listItemOf);
 };
 
 export const loadContent = async (
@@ -288,6 +366,7 @@ export const loadContent = async (
     from public.contents content
     ${OWNER_JOINS}
     ${APPROVER_JOIN}
+    ${APPROVAL_JOIN}
     where content.id = ?::uuid and content.client_id = ?::uuid
   `, [input.contentId, input.clientId]);
   return result.rows[0];
@@ -312,7 +391,8 @@ export const contentFromRow = (row: ContentRow): Content => ({
   approvedByAgencyReason: row.approved_by_agency_reason,
   publishedOn: row.published_on,
   cancelledAt: row.cancelled_at === null ? null : new Date(row.cancelled_at).toISOString(),
-  createdAt: new Date(row.created_at).toISOString()
+  createdAt: new Date(row.created_at).toISOString(),
+  approval: approvalOf(row)
 });
 
 /** The owner is omitted, never sent as null, so the column default (who creates) applies. */

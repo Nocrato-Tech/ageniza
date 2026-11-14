@@ -1,0 +1,159 @@
+/* Table: a card with a header and rows that rise on hover. It is table roles on a grid, so on a phone it can become a list. */
+.ui-table {
+  position: relative;
+  container-type: inline-size;
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.ui-table__row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--ui-table-columns);
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
+}
+
+.ui-table__row--head {
+  min-height: 2.5rem;
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font: var(--caption);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ui-table__body {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+
+.ui-table__body .ui-table__row {
+  min-height: 3.75rem;
+  border-radius: var(--radius-md);
+  transition: background-color var(--motion-fast);
+}
+
+.ui-table__body .ui-table__row:hover {
+  background: var(--bg-hover);
+}
+
+.ui-table__row--selected,
+.ui-table__body .ui-table__row--selected:hover {
+  background: var(--bg-tint);
+}
+
+.ui-table__cell {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The name is the row's button: no clipping here, which would cut its focus ring. */
+.ui-table__cell--name {
+  overflow: visible;
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 600;
+  white-space: normal;
+}
+
+.ui-table__row--selected .ui-table__cell--name {
+  color: var(--action-secondary-fg);
+}
+
+.ui-table__cell--actions {
+  position: relative;
+  z-index: 1;
+  overflow: visible;
+}
+
+.ui-table__select {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The press area is the whole row; the actions cell sits above it. */
+.ui-table__select::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+}
+
+.ui-table__select:focus-visible {
+  outline: none;
+}
+
+.ui-table__select:focus-visible::after {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.ui-table__empty {
+  display: block;
+  padding: var(--space-6);
+  color: var(--text-secondary);
+  font: var(--body-md);
+  text-align: center;
+}
+
+.ui-table__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* In a narrow box (a phone, a side panel) the header goes and each row is a list item: the name, what is kept, the actions. */
+@container (max-width: 40rem) {
+  .ui-table__row--head {
+    display: none;
+  }
+
+  .ui-table__body .ui-table__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    min-height: 4rem;
+  }
+
+  .ui-table__cell--name {
+    flex: 1 1 10rem;
+  }
+
+  .ui-table__cell--keep,
+  .ui-table__cell--actions {
+    flex: none;
+  }
+
+  .ui-table__cell:not(.ui-table__cell--name):not(.ui-table__cell--keep):not(.ui-table__cell--actions) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-table__body .ui-table__row {
+    transition: none;
+  }
+}

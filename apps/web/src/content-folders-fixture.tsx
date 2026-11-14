@@ -7,14 +7,21 @@ import {
   CreateMediaFolderRequestSchema,
   CreateMediaUploadRequestSchema,
   MediaDownloadUrlQuerySchema,
-  MediaFolderAssetListQuerySchema,
   MediaFolderListQuerySchema,
+  MediaLibraryListQuerySchema,
+  MoveMediaAssetRequestSchema,
+  RenameMediaFolderRequestSchema,
   RequestMediaUploadPartsRequestSchema,
+  UpdateMediaAssetRequestSchema,
   type MediaFolder,
-  type MediaFolderAsset
+  type MediaFolderSummary,
+  type MediaLibraryAsset,
+  type MediaLibraryCategory,
+  type MediaUsage
 } from '@ageniza/contracts';
 
 import { AuthSessionProvider, createAuthSessionStore, useAuthSession, type AuthSessionStore } from './auth.js';
+import { clientRegistrationExtras } from './client-registration-fixture.js';
 import { ApiClientProvider, HttpClient } from './http.js';
 import { useCommittedLocation } from './location-probe-fixture.js';
 import { createQueryClient } from './query.js';
@@ -39,18 +46,25 @@ export const idOf = (prefix: string, index: number): string => `${prefix}0000000
 export const folderFixture = (index: number, name: string, overrides: Partial<MediaFolder> = {}): MediaFolder =>
   ({ id: idOf('f', index), parentId: null, name, isDefault: false, createdAt: '2026-10-01T12:00:00.000Z', ...overrides });
 
-export interface AssetRow extends MediaFolderAsset {
-  readonly folderId: string;
-  /** Used by a content waiting for approval, approved or published: the API refuses to remove it. */
+export const MARINA = { membershipId: idOf('c', 1), name: 'Marina Bastos' };
+
+export interface AssetRow extends Omit<MediaLibraryAsset, 'folderName' | 'usageCount'> {
+  /** The contents that hold the file; the count of the list and the rows of the panel come from here. */
+  usage: MediaUsage[];
+  /** Used by a content waiting for approval, approved or published: the API refuses to remove or move it. */
   readonly inUse?: boolean;
   removed?: boolean;
 }
 
 /** 01:30Z is the evening of the day before in São Paulo: a date computed in UTC is the wrong one. */
 export const assetFixture = (index: number, folderId: string, overrides: Partial<AssetRow> = {}): AssetRow => ({
-  id: idOf('a', index), folderId, category: 'image', contentType: 'image/jpeg', sizeBytes: 2_411_724, videoProcessingStatus: 'not_applicable',
-  createdAt: '2026-10-12T01:30:00.000Z', ...overrides
+  id: idOf('a', index), folderId, category: 'image', contentType: 'image/jpeg', sizeBytes: 2_411_724, name: `arquivo-${index}.jpg`,
+  width: 3024, height: 4032, altText: null, videoProcessingStatus: 'not_applicable', uploadedBy: MARINA, uploadedBySide: 'agency',
+  createdAt: '2026-10-12T01:30:00.000Z', usage: [], ...overrides
 });
+
+export const usageFixture = (index: number, overrides: Partial<MediaUsage> = {}): MediaUsage =>
+  ({ contentId: idOf('d', index), title: `Conteúdo ${index}`, status: 'awaiting_approval', asMedia: true, asCover: false, ...overrides });
 
 export const DEFAULT_FOLDERS: readonly MediaFolder[] = [
   folderFixture(1, 'Vídeos', { isDefault: true }),
@@ -71,6 +85,7 @@ export interface PendingUpload {
   readonly contentType: string;
   readonly sizeBytes: number;
   readonly multipart: boolean;
+  readonly asLogo: boolean;
   confirmed?: boolean;
 }
 
@@ -79,6 +94,8 @@ export interface World {
   assets: AssetRow[];
   permissions: string[];
   clientStatus: 'active' | 'archived';
+  /** The folder the API names "in use now"; none by default. */
+  inUseFolderId?: string;
   /** Every request the screen made, as "METHOD path?query". */
   calls: string[];
   /** The uploads the API reserved, confirmed or not. */
@@ -94,14 +111,14 @@ export interface World {
   foldersGate?: Promise<void>;
   /** Holds the answer of the client's own record. */
   clientGate?: Promise<void>;
-  /** Asked before each answer of an asset list: a promise holds that answer. */
+  /** Asked before each answer of a file list: a promise holds that answer. */
   assetsGate?: () => Promise<void> | undefined;
-  /** Called for each answer of the folder or asset list; a Response replaces the real one. */
+  /** Called for each request of the library; a Response replaces the real one. */
   override?: (method: string, path: string, search: string) => Response | Promise<Response> | undefined;
 }
 
 export const makeWorld = (overrides: Partial<World> = {}): World => ({
-  folders: [...DEFAULT_FOLDERS],
+  folders: DEFAULT_FOLDERS.map((folder) => ({ ...folder })),
   assets: [],
   permissions: ['conteudo.visualizar', 'conteudo.operar', 'cliente.visualizar'],
   clientStatus: 'active',
@@ -119,6 +136,35 @@ const pageOf = <T,>(rows: readonly T[], query: { page?: number | undefined; page
 };
 
 const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const plain = (value: string): string => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+
+const live = (world: World): AssetRow[] => world.assets.filter((asset) => asset.removed !== true);
+
+const libraryRow = (world: World, asset: AssetRow): MediaLibraryAsset => {
+  const { usage, ...row } = asset;
+  delete row.inUse;
+  delete row.removed;
+  return { ...row, folderName: world.folders.find((folder) => folder.id === asset.folderId)?.name ?? 'Pasta', usageCount: usage.length };
+};
+
+const summaryRow = (world: World, folder: MediaFolder): MediaFolderSummary => {
+  const files = live(world).filter((asset) => asset.folderId === folder.id).sort((a, b) => byCodePoint(b.createdAt, a.createdAt));
+  const counts = { image: 0, video: 0, pdf: 0, audio: 0, logo: 0 };
+  for (const asset of files) counts[asset.category] += 1;
+  return {
+    ...folder, counts, assetCount: files.length, totalSizeBytes: files.reduce((sum, asset) => sum + asset.sizeBytes, 0),
+    lastChangedAt: files[0]?.createdAt ?? folder.createdAt, lastUploadedBy: files[0]?.uploadedBy ?? null, inUseNow: world.inUseFolderId === folder.id
+  };
+};
+
+const categoryOf = (contentType: string, asLogo: boolean): MediaLibraryCategory | undefined => {
+  if (contentType === 'image/svg+xml') return asLogo ? 'logo' : undefined;
+  if (/^image\//.test(contentType)) return asLogo ? 'logo' : 'image';
+  if (/^video\//.test(contentType)) return 'video';
+  if (contentType === 'application/pdf') return 'pdf';
+  if (/^audio\//.test(contentType)) return 'audio';
+  return undefined;
+};
 
 /** The agency API as the screen sees it: validates what it receives with the same schemas as the real one, and 404s what is not the client's. */
 export const makeFetch = (world: World, extra?: (method: string, url: URL, init: RequestInit | undefined) => Response | Promise<Response> | undefined): typeof fetch => async (input, init) => {
@@ -139,7 +185,7 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
     return json({
       id: padaria.id, name: padaria.name, status: world.clientStatus, photoUrl: null, instagramHandle: padaria.instagramHandle,
       legalName: null, taxId: null, segment: null, website: null, contactName: null, contactPhone: null, contactEmail: null,
-      closingDate: null, archivedAt: null,
+      closingDate: null, archivedAt: null, ...clientRegistrationExtras,
       summary: { brandStudyFilled: 0, threadsAwaitingAgency: 0, threadsAnsweredByAgency: 0, activePortalMembers: 0 }
     });
   }
@@ -149,14 +195,16 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
 
   const holds = (permission: string): boolean => world.permissions.includes(permission);
   const forbidden = (): Response => apiError(403, 'FORBIDDEN', 'You do not have permission to perform this action.');
+  const archived = (): Response => apiError(409, 'CLIENT_ARCHIVED', 'Cliente arquivado não pode ser editado.');
+  const body = (): unknown => JSON.parse(String(init?.body)) as unknown;
 
   const folderList = /\/agencies\/[^/]+\/clients\/([^/]+)\/media-folders$/.exec(path);
   if (folderList !== null) {
     if (folderList[1] !== padaria.id) return apiError(404, 'NOT_FOUND', 'Client not found.');
     if (method === 'POST') {
       if (!holds('conteudo.operar') || !holds('conteudo.visualizar')) return forbidden();
-      if (world.clientStatus === 'archived') return apiError(409, 'CLIENT_ARCHIVED', 'Cliente arquivado não pode ser editado.');
-      const parsed = CreateMediaFolderRequestSchema.safeParse(JSON.parse(String(init?.body)) as unknown);
+      if (world.clientStatus === 'archived') return archived();
+      const parsed = CreateMediaFolderRequestSchema.safeParse(body());
       if (!parsed.success) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
       const parent = parsed.data.parentId === undefined ? undefined : world.folders.find((folder) => folder.id === parsed.data.parentId);
       if (parsed.data.parentId !== undefined && (parent === undefined || parent.parentId !== null)) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
@@ -164,30 +212,82 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
       world.folders.push(created);
       return json(created, 201);
     }
+  }
+
+  const sorted = (): MediaFolder[] => [...world.folders].sort((a, b) =>
+    Number(a.parentId !== null) - Number(b.parentId !== null) || Number(b.isDefault) - Number(a.isDefault) || byCodePoint(a.name, b.name) || byCodePoint(a.id, b.id));
+
+  const summary = /\/agencies\/[^/]+\/clients\/([^/]+)\/media-folders\/summary$/.exec(path);
+  if (summary !== null) {
+    if (summary[1] !== padaria.id) return apiError(404, 'NOT_FOUND', 'Client not found.');
     if (!holds('conteudo.visualizar')) return forbidden();
     const query = MediaFolderListQuerySchema.safeParse(Object.fromEntries(url.searchParams));
     if (!query.success) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
     await world.foldersGate;
-    const sorted = [...world.folders].sort((a, b) =>
-      Number(a.parentId !== null) - Number(b.parentId !== null) || Number(b.isDefault) - Number(a.isDefault) || byCodePoint(a.name, b.name) || byCodePoint(a.id, b.id));
-    return pageOf(sorted, query.data, 100);
+    return pageOf(sorted().map((folder) => summaryRow(world, folder)), query.data, 100);
   }
 
-  const assetList = /\/agencies\/[^/]+\/clients\/([^/]+)\/media-folders\/([^/]+)\/assets$/.exec(path);
-  if (assetList !== null) {
-    if (assetList[1] !== padaria.id || !world.folders.some((folder) => folder.id === assetList[2])) return apiError(404, 'NOT_FOUND', 'Folder not found.');
+  const oneFolder = /\/agencies\/[^/]+\/clients\/([^/]+)\/media-folders\/([^/]+)$/.exec(path);
+  if (oneFolder !== null && (method === 'PATCH' || method === 'DELETE')) {
+    const folder = world.folders.find((candidate) => candidate.id === oneFolder[2]);
+    if (oneFolder[1] !== padaria.id || folder === undefined) return apiError(404, 'NOT_FOUND', 'Folder not found.');
+    if (!holds('conteudo.operar') || !holds('conteudo.visualizar')) return forbidden();
+    if (world.clientStatus === 'archived') return archived();
+    if (folder.isDefault) return apiError(409, 'DEFAULT_FOLDER_IMMUTABLE', method === 'PATCH' ? 'As pastas padrão não podem ser renomeadas.' : 'As pastas padrão não podem ser excluídas.');
+    if (method === 'PATCH') {
+      const parsed = RenameMediaFolderRequestSchema.safeParse(body());
+      if (!parsed.success) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
+      folder.name = parsed.data.name;
+      return json(folder);
+    }
+    if (live(world).some((asset) => asset.folderId === folder.id)) return apiError(409, 'FOLDER_NOT_EMPTY', 'Esta pasta tem arquivos. Mova ou exclua os arquivos antes.');
+    if (world.folders.some((candidate) => candidate.parentId === folder.id)) return apiError(409, 'FOLDER_NOT_EMPTY', 'Esta pasta tem subpastas. Mova ou exclua as subpastas antes.');
+    world.folders = world.folders.filter((candidate) => candidate.id !== folder.id);
+    return new Response(null, { status: 204 });
+  }
+
+  const library = /\/agencies\/[^/]+\/clients\/([^/]+)\/media$/.exec(path);
+  if (library !== null) {
+    if (library[1] !== padaria.id) return apiError(404, 'NOT_FOUND', 'Client not found.');
     if (!holds('conteudo.visualizar')) return forbidden();
-    const query = MediaFolderAssetListQuerySchema.safeParse(Object.fromEntries(url.searchParams));
+    const query = MediaLibraryListQuerySchema.safeParse(Object.fromEntries(url.searchParams));
     if (!query.success) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
+    if (query.data.folderId !== undefined && !world.folders.some((folder) => folder.id === query.data.folderId)) return apiError(404, 'NOT_FOUND', 'Folder not found.');
     await world.assetsGate?.();
-    const rows = world.assets
-      .filter((asset) => asset.folderId === assetList[2] && asset.removed !== true)
+    const term = plain(query.data.q ?? '');
+    const rows = live(world)
+      .filter((asset) => (query.data.folderId === undefined || asset.folderId === query.data.folderId)
+        && (query.data.category === undefined || asset.category === query.data.category)
+        && (term === '' || plain(asset.name ?? '').includes(term)))
       .sort((a, b) => byCodePoint(b.createdAt, a.createdAt) || byCodePoint(b.id, a.id))
-      .map((asset): MediaFolderAsset => ({
-        id: asset.id, category: asset.category, contentType: asset.contentType, sizeBytes: asset.sizeBytes,
-        videoProcessingStatus: asset.videoProcessingStatus, createdAt: asset.createdAt
-      }));
-    return pageOf(rows, query.data, 48);
+      .map((asset) => libraryRow(world, asset));
+    return pageOf(rows, query.data, 20);
+  }
+
+  const one = /\/agencies\/[^/]+\/clients\/([^/]+)\/media\/([^/]+)(\/move|\/usage)?$/.exec(path);
+  if (one !== null) {
+    const asset = live(world).find((candidate) => candidate.id === one[2]);
+    if (one[1] !== padaria.id || asset === undefined) return apiError(404, 'NOT_FOUND', 'Media asset not found.');
+    if (one[3] === '/usage') {
+      if (!holds('conteudo.visualizar')) return forbidden();
+      return pageOf(asset.usage, { page: 1, pageSize: 20 }, 20);
+    }
+    if (method === 'GET') return json(libraryRow(world, asset));
+    if (!holds('conteudo.operar') || !holds('conteudo.visualizar')) return forbidden();
+    if (world.clientStatus === 'archived') return archived();
+    if (one[3] === '/move') {
+      const parsed = MoveMediaAssetRequestSchema.safeParse(body());
+      if (!parsed.success) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
+      if (!world.folders.some((folder) => folder.id === parsed.data.folderId)) return apiError(404, 'NOT_FOUND', 'Folder not found.');
+      if (asset.inUse === true) return apiError(409, 'MEDIA_IN_USE', 'Esta mídia está em um conteúdo e não pode ser movida para outra pasta.');
+      asset.folderId = parsed.data.folderId;
+      return json(libraryRow(world, asset));
+    }
+    const parsed = UpdateMediaAssetRequestSchema.safeParse(body());
+    if (!parsed.success) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
+    if (parsed.data.name !== undefined) asset.name = parsed.data.name;
+    if (parsed.data.altText !== undefined) asset.altText = parsed.data.altText;
+    return json(libraryRow(world, asset));
   }
 
   const remove = /\/agencies\/[^/]+\/clients\/([^/]+)\/media-folders\/([^/]+)\/assets\/([^/]+)\/remove$/.exec(path);
@@ -218,18 +318,18 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
   const uploads = /\/agencies\/[^/]+\/media\/uploads$/.exec(path);
   if (uploads !== null && method === 'POST') {
     if (!holds('conteudo.operar') || !holds('conteudo.visualizar')) return forbidden();
-    const parsed = CreateMediaUploadRequestSchema.safeParse(JSON.parse(String(init?.body)) as unknown);
+    const parsed = CreateMediaUploadRequestSchema.safeParse(body());
     if (!parsed.success) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
     const request = parsed.data;
     if (request.clientId !== padaria.id || !world.folders.some((folder) => folder.id === request.folderId)) return apiError(404, 'NOT_FOUND', 'Folder not found.');
-    if (world.clientStatus === 'archived') return apiError(409, 'CLIENT_ARCHIVED', 'Cliente arquivado não pode ser editado.');
-    if (!/^(image|video)\//.test(request.contentType)) return apiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'This content type is not accepted.');
+    if (world.clientStatus === 'archived') return archived();
+    const category = categoryOf(request.contentType, request.asLogo === true);
+    if (category === undefined) return apiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'This content type is not accepted.');
     if (request.declaredSizeBytes > UPLOAD_MAX_BYTES) return apiError(413, 'PAYLOAD_TOO_LARGE', 'The declared file size exceeds the limit for its category.');
     if (world.quotaFull === true) return apiError(409, 'QUOTA_EXCEEDED', 'This agency has reached its storage quota.');
     const assetId = idOf('b', world.pending.length + 1);
     const multipart = request.declaredSizeBytes >= partBytes;
-    world.pending.push({ assetId, folderId: request.folderId!, fileName: request.fileName, contentType: request.contentType, sizeBytes: request.declaredSizeBytes, multipart });
-    const category = request.contentType.startsWith('video/') ? 'video' : 'image';
+    world.pending.push({ assetId, folderId: request.folderId!, fileName: request.fileName, contentType: request.contentType, sizeBytes: request.declaredSizeBytes, multipart, asLogo: request.asLogo === true });
     return json({
       assetId, objectKey: `${AGENCY_A}/${assetId}/original`, category,
       upload: multipart
@@ -241,7 +341,7 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
   if (uploadParts !== null && method === 'POST') {
     const pending = world.pending.find((candidate) => candidate.assetId === uploadParts[1] && candidate.confirmed !== true);
     if (pending === undefined) return apiError(404, 'NOT_FOUND', 'Media asset not found.');
-    const parsed = RequestMediaUploadPartsRequestSchema.safeParse(JSON.parse(String(init?.body)) as unknown);
+    const parsed = RequestMediaUploadPartsRequestSchema.safeParse(body());
     const count = Math.ceil(pending.sizeBytes / partBytes);
     if (!parsed.success || !pending.multipart || parsed.data.partNumbers.some((number) => number > count)) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
     return json({
@@ -253,7 +353,7 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
   if (uploadComplete !== null && method === 'POST') {
     const pending = world.pending.find((candidate) => candidate.assetId === uploadComplete[1] && candidate.confirmed !== true);
     if (pending === undefined) return apiError(404, 'NOT_FOUND', 'Media asset not found.');
-    const parsed = CompleteMediaUploadRequestSchema.safeParse(JSON.parse(String(init?.body)) as unknown);
+    const parsed = CompleteMediaUploadRequestSchema.safeParse(body());
     if (!parsed.success) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
     const count = Math.ceil(pending.sizeBytes / partBytes);
     if (pending.multipart !== (parsed.data.parts !== undefined)) return apiError(400, 'VALIDATION_ERROR', 'Request validation failed');
@@ -263,7 +363,7 @@ export const makeFetch = (world: World, extra?: (method: string, url: URL, init:
     if (world.rejectUpload === true) return apiError(422, 'UPLOAD_REJECTED', 'The uploaded object was rejected: content_type_mismatch.', { reason: 'content_type_mismatch' });
     pending.confirmed = true;
     world.assets.push(assetFixture(900 + world.assets.length, pending.folderId, {
-      id: pending.assetId, category: pending.contentType.startsWith('video/') ? 'video' : 'image', contentType: pending.contentType,
+      id: pending.assetId, category: categoryOf(pending.contentType, pending.asLogo)!, contentType: pending.contentType, name: pending.fileName,
       sizeBytes: pending.sizeBytes, createdAt: '2026-10-12T01:30:00.000Z'
     }));
     return json({ assetId: pending.assetId, status: 'confirmed', sizeBytes: pending.sizeBytes, contentType: pending.contentType });

@@ -35,7 +35,7 @@ interface Reply {
   json<T = any>(): T; // eslint-disable-line @typescript-eslint/no-explicit-any -- test helper over untyped JSON
 }
 
-const call = async (method: 'POST' | 'PUT' | 'PATCH', url: string, cookie: string, payload: unknown): Promise<Reply> =>
+const call = async (method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, cookie: string, payload: unknown): Promise<Reply> =>
   (await app.app.inject({ method, url, headers: { ...origin, cookie }, payload: payload as Record<string, unknown> })) as unknown as Reply;
 
 const makeUser = async (key: string, name: string): Promise<void> => {
@@ -63,9 +63,9 @@ const withPortalPerson = async (clientId: string): Promise<void> => {
   await owner.knex('client_memberships').insert({ client_id: clientId, user_id: users.portal!.id });
 };
 
-const withPersona = async (clientId: string, status: 'active' | 'archived' = 'active'): Promise<string> => {
+const withPersona = async (clientId: string): Promise<string> => {
   const id = randomUUID();
-  await owner.knex('client_personas').insert({ id, client_id: clientId, name: 'Persona da corrida', status, updated_by: users.writer!.id });
+  await owner.knex('client_personas').insert({ id, client_id: clientId, name: 'Persona da corrida', updated_by: users.writer!.id });
   return id;
 };
 
@@ -223,11 +223,11 @@ describe('CLIENTS routes that write into the children of a client being archived
 
   // Issue #545. The edit triggers of 20261011000700 make an UPDATE of a child wait for the archive and raise A0020 once it
   // commits, like the INSERT above. Every route of the inventory that UPDATEs one of those tables answers it as the archived
-  // client, never as the 500 an untranslated A0020 is: the edit of a persona and its archive and unarchive, the brand study
+  // client, never as the 500 an untranslated A0020 is: the edit and the deletion of a persona, the brand study
   // section that already exists (the update half of the upsert), the resolution of a thread, and the reopening of a resolved
   // thread by the comment of the portal. The confirmation of a media is in media-folders.integration.test.ts.
   describe('an UPDATE of a child of the client that waits for the archive (#545)', () => {
-    const personaOf = async (personaId: string): Promise<{ name: string; status: string }> =>
+    const personaOf = async (personaId: string): Promise<{ name: string; status: string } | undefined> =>
       await owner.knex('client_personas').where({ id: personaId }).first('name', 'status');
 
     it('answers 409 CLIENT_ARCHIVED to a persona edited while the client is archived, and edits none', async () => {
@@ -241,18 +241,129 @@ describe('CLIENTS routes that write into the children of a client being archived
       expect(await personaOf(personaId)).toEqual({ name: 'Persona da corrida', status: 'active' });
     }, 30_000);
 
-    it.each([
-      ['archive', 'active'],
-      ['unarchive', 'archived']
-    ] as const)('answers 409 CLIENT_ARCHIVED to a persona on %s while the client is archived, and changes none', async (action, from) => {
-      const clientId = await newClient(`persona-${action}`);
-      const personaId = await withPersona(clientId, from);
+    it('answers 409 CLIENT_ARCHIVED to a persona deleted while the client is archived, and deletes neither it nor its conversation (#891)', async () => {
+      const clientId = await newClient('persona-exclusao');
+      const personaId = await withPersona(clientId);
+      const threadId = await withThread(clientId, personaId);
       const reply = await archiveWhileRouteWaits(clientId, () =>
-        call('POST', `${agencyClient(clientId)}/personas/${personaId}/${action}`, cookies.writer!, undefined));
+        call('DELETE', `${agencyClient(clientId)}/personas/${personaId}`, cookies.writer!, undefined));
 
       expectArchived(reply);
       expect(await statusOf(clientId)).toBe('archived');
-      expect(await personaOf(personaId)).toEqual({ name: 'Persona da corrida', status: from });
+      expect(await personaOf(personaId)).toEqual({ name: 'Persona da corrida', status: 'active' });
+      expect(await owner.knex('client_threads').where({ id: threadId }).first('id')).toBeDefined();
+      expect(await countOf('client_thread_comments', clientId)).toBe(1);
+    }, 30_000);
+
+    it('answers 404, never 500, to a comment that waited for the deletion of its persona (#891)', async () => {
+      const clientId = await newClient('persona-comentario-exclusao');
+      const personaId = await withPersona(clientId);
+      const threadId = await withThread(clientId, personaId);
+      const holder = await owner.knex.transaction();
+      let released = false;
+      try {
+        await holder('client_personas').where({ id: personaId }).delete();
+        const holderPid = await backendPid(holder);
+        const pending = call('POST', `${agencyClient(clientId)}/threads/${threadId}/comments`, cookies.writer!, { body: 'Chegou tarde' });
+        await waitForBackendsBlockedBy(owner.knex, holderPid);
+        await holder.commit();
+        released = true;
+        const reply = await pending;
+        expect(reply.statusCode).toBe(404);
+        expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
+      } finally {
+        if (!released) await holder.rollback();
+      }
+      expect(await countOf('client_thread_comments', clientId)).toBe(0);
+    }, 30_000);
+
+    // The persona is deleted for real, in the two orders a write can meet the deletion (#891):
+    //  - still open: the write waits on the foreign key and is refused with 23503 when the delete commits;
+    //  - already committed between the checks of the route and its INSERT: the holder keeps a SHARE lock on the table the INSERT
+    //    needs, so the route has passed its checks (they only read) and waits at the INSERT, which then runs after the commit
+    //    and meets the BEFORE INSERT trigger (A0010 on a thread, A0011 on a comment).
+    // Both are the same 404 of "not found", on the agency side and on the portal side, and nothing is written.
+    describe.each([
+      ['a comment of the agency', 'client_thread_comments', 'comment', 'agency'],
+      ['a comment of the portal', 'client_thread_comments', 'comment', 'portal'],
+      ['the opening of a conversation by the agency', 'client_threads', 'open', 'agency'],
+      ['the opening of a conversation by the portal', 'client_threads', 'open', 'portal']
+    ] as const)('%s while its persona is deleted', (_label, lockedTable, kind, side) => {
+      it.each([
+        ['the delete is still open when the write waits', false],
+        ['the delete was committed between the checks and the INSERT', true]
+      ] as const)('answers 404, never 500, when %s', async (_order, committedFirst) => {
+        const clientId = await newClient(`persona-corrida-${kind}-${side}-${committedFirst}`);
+        await withPortalPerson(clientId);
+        const personaId = await withPersona(clientId);
+        const threadId = await withThread(clientId, personaId);
+        const threadsBefore = await countOf('client_threads', clientId);
+        const holder = await owner.knex.transaction();
+        let released = false;
+        try {
+          if (committedFirst) await holder.raw(`lock table public.${lockedTable} in share mode`);
+          await holder('client_personas').where({ id: personaId }).delete();
+          const holderPid = await backendPid(holder);
+          const base = side === 'agency' ? agencyClient(clientId) : `/clients/${clientId}`;
+          const cookie = side === 'agency' ? cookies.writer! : cookies.portal!;
+          const pending = kind === 'comment'
+            ? call('POST', `${base}/threads/${threadId}/comments`, cookie, { body: 'Chegou tarde' })
+            : call('POST', `${base}/threads`, cookie, { subject: { personaId }, body: 'Chegou tarde' });
+          await waitForBackendsBlockedBy(owner.knex, holderPid);
+          await holder.commit();
+          released = true;
+          const reply = await pending;
+          expect(reply.statusCode).toBe(404);
+          expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
+        } finally {
+          if (!released) await holder.rollback();
+        }
+        expect(await countOf('client_thread_comments', clientId)).toBe(0);
+        expect(await countOf('client_threads', clientId)).toBe(0);
+        expect(threadsBefore).toBe(1);
+      }, 30_000);
+    });
+
+    // The UPDATE of the resolution never meets the BEFORE INSERT trigger of the comments above: its row is gone and it matches nothing,
+    // so the service throws ConversationWriteRefused and the route reads the thread back (`thread-not-found`), not a bare 403. The
+    // portal has no resolve route, so there is no portal side of this write.
+    it.each([
+      ['the delete is still open when the UPDATE waits on the row', false],
+      ['the delete was committed between the checks and the UPDATE', true]
+    ] as const)('answers 404 Thread not found, never 403 or 500, to a thread resolved while its persona is deleted: %s', async (_order, committedFirst) => {
+      const clientId = await newClient(`resolver-persona-${committedFirst}`);
+      const personaId = await withPersona(clientId);
+      const threadId = await withThread(clientId, personaId);
+      const holder = await owner.knex.transaction();
+      let released = false;
+      try {
+        if (committedFirst) await holder.raw('lock table public.client_threads in share mode');
+        await holder('client_personas').where({ id: personaId }).delete();
+        const holderPid = await backendPid(holder);
+        const pending = call('POST', `${agencyClient(clientId)}/threads/${threadId}/resolve`, cookies.writer!, undefined);
+        await waitForBackendsBlockedBy(owner.knex, holderPid);
+        await holder.commit();
+        released = true;
+        const reply = await pending;
+        expect(reply.statusCode).toBe(404);
+        expect(reply.json().error).toEqual({ code: 'NOT_FOUND', message: 'Thread not found.' });
+        expect(JSON.stringify({ ...reply.json(), meta: undefined })).not.toMatch(NO_DATABASE_DETAIL);
+      } finally {
+        if (!released) await holder.rollback();
+      }
+      expect(await personaOf(personaId)).toBeUndefined();
+      expect(await owner.knex('client_threads').where({ id: threadId }).first('id')).toBeUndefined();
+      expect(await countOf('client_thread_comments', clientId)).toBe(0);
+    }, 30_000);
+
+    it('gives the portal no way to resolve a thread, and leaves it open', async () => {
+      const clientId = await newClient('portal-resolver');
+      await withPortalPerson(clientId);
+      const threadId = await withThread(clientId, await withPersona(clientId));
+      const reply = await call('POST', `/clients/${clientId}/threads/${threadId}/resolve`, cookies.portal!, undefined);
+
+      expect(reply.statusCode).toBe(404);
+      expect((await owner.knex('client_threads').where({ id: threadId }).first('resolved_at')).resolved_at).toBeNull();
     }, 30_000);
 
     it('answers 409 CLIENT_ARCHIVED to a brand study section that already exists, rewritten while the client is archived, and keeps the old text', async () => {

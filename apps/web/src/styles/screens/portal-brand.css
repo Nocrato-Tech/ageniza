@@ -1,0 +1,84 @@
+/* --- Portal: Marca (#143, #689) --- rows, not cards, as the agency client detail (#637) */
+
+.portal-brand {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+.portal-brand .portal-headline {
+  font: var(--display-lg);
+}
+
+/* Each part of the study is a white card of the board. */
+.portal-brand > .brand-section {
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.portal-brand .brand-section__header h2 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.portal-brand__pending {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.portal-brand__pending svg {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.portal-persona-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-persona {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+}
+
+.portal-persona__name {
+  margin: 0;
+  font: var(--body-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.portal-persona__field {
+  display: contents;
+}
+
+.portal-persona .brand-persona__fields dd {
+  font: var(--body-md);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+

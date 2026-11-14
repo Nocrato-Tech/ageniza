@@ -299,7 +299,7 @@ describe('InvitationPage (/convite/:token)', () => {
     await screen.findByRole('heading', { name: 'Termos de Uso' });
     act(() => probe.back());
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
-    await screen.findByRole('heading', { name: 'Agência Um' });
+    await screen.findByRole('heading', { level: 1, name: /, Pessoa$/ });
     expect(screen.queryByRole('status')).toBeNull();
   });
 
@@ -336,7 +336,7 @@ describe('InvitationPage (/convite/:token)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Aceitar convite' }));
 
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
-    await screen.findByRole('heading', { name: 'Agência Um' });
+    await screen.findByRole('heading', { level: 1, name: /, Pessoa$/ });
     expect(calls).not.toContain('resolve');
     expect(lastContextBodies).toEqual([{ type: 'agency', agencyId: AGENCY_A }]);
   });
@@ -375,7 +375,7 @@ describe('InvitationPage (/convite/:token)', () => {
     await screen.findByRole('heading', { name: 'Termos de Uso' });
     act(() => probe.back());
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
-    await screen.findByRole('heading', { name: 'Agência Um' });
+    await screen.findByRole('heading', { level: 1, name: /, Pessoa$/ });
     expect(screen.queryByRole('status')).toBeNull();
   });
 
@@ -399,7 +399,7 @@ describe('InvitationPage (/convite/:token)', () => {
     const { impl, calls } = makeFetch({ authenticated: true, preview: () => json(previewBody(true)) });
     const { probe } = renderInvite(impl, { state: { inviteLogin: true } });
     await waitFor(() => expect(probe.pathname).toBe(`/agencia/${AGENCY_A}`));
-    await screen.findByRole('heading', { name: 'Agência Um' });
+    await screen.findByRole('heading', { level: 1, name: /, Pessoa$/ });
 
     expect(calls).toContain('accept');
     expect(calls).not.toContain('resolve');

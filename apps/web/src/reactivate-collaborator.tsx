@@ -7,6 +7,7 @@ import { Button, FieldMessage, Modal, Select, useFormErrors } from '@ageniza/ui'
 import { useAgencyContext } from './agency.js';
 import { apiPath } from './api-path.js';
 import { HttpClientError, useApiClient } from './http.js';
+import { PlanLimitNotice, planLimitOf, type PlanLimit } from './plan-limit.js';
 
 const ROLE_REQUIRED = 'Selecione um papel.';
 const ROLE_INVALID = 'Escolha um papel da lista.';
@@ -36,6 +37,7 @@ export function ReactivateCollaboratorDialog({ membershipId, name, onClose }: {
   const [roleId, setRoleId] = useState('');
   const [roleError, setRoleError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
+  const [limit, setLimit] = useState<PlanLimit | undefined>();
 
   const roles = useQuery({
     queryKey: ['agency', agency.agencyId, 'roles'],
@@ -64,6 +66,8 @@ export function ReactivateCollaboratorDialog({ membershipId, name, onClose }: {
       onClose();
     },
     onError: (error: unknown) => {
+      const reached = planLimitOf(error);
+      if (reached !== undefined) { setLimit(reached); return; }
       if (error instanceof HttpClientError && error.status === 409) { setFormError(NOT_REMOVED); return; }
       if (error instanceof HttpClientError && error.code === 'INVALID_ROLE') { setRoleError(ROLE_INVALID); return; }
       if (error instanceof HttpClientError && (error.status === 403 || error.status === 404)) { setFormError(NO_PERMISSION); return; }
@@ -110,6 +114,7 @@ export function ReactivateCollaboratorDialog({ membershipId, name, onClose }: {
       </div>}
 
       {formError !== undefined && <FieldMessage role="alert">{formError}</FieldMessage>}
+      {limit !== undefined && <PlanLimitNotice limit={limit} />}
     </form>
   </Modal>;
 }

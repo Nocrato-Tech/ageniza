@@ -1,0 +1,149 @@
+/* The card is a compact tile tinted by its format (carousel teal, reels violet, every other one neutral), as on the board: the cover and the
+   format say what it is, and the state is the tag at its foot: the late card has no outline, the "Atrasado" block is enough. */
+.content-card {
+  --content-card-bg: var(--format-static-bg);
+  --content-card-fg: var(--format-static-fg);
+
+  position: relative;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--content-card-bg);
+  color: var(--text-primary);
+  transition: transform var(--motion-base);
+}
+
+.content-card[data-format='carousel'] {
+  --content-card-bg: var(--format-carousel-bg);
+  --content-card-fg: var(--format-carousel-fg);
+}
+
+.content-card[data-format='reels'] {
+  --content-card-bg: var(--format-reels-bg);
+  --content-card-fg: var(--format-reels-fg);
+}
+
+.content-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-raised);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content-card:hover {
+    transform: none;
+  }
+}
+
+/* The link is the whole card: a press anywhere on it opens the content, and its focus ring is the card's. */
+.content-card__link {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-2);
+  border-radius: inherit;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.content-card__link:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* The cover is the thumbnail of the post; without one, the shape of the format in the format's own ink. */
+.content-card__cover {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.content-card__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.content-card__cover--placeholder {
+  --format-shape-size: 1.125rem;
+
+  color: var(--content-card-fg);
+}
+
+.content-card__body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.content-card__support {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-1);
+  color: var(--content-card-fg);
+  font: var(--caption);
+  font-weight: 600;
+}
+
+.content-card__support svg {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.content-card__title {
+  font: var(--label-md);
+  font-size: 0.8125rem;
+  line-height: 1.1875rem;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.content-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+/* The card is tinted by its format, so the state pill sits on the surface to keep its own colours readable. */
+.content-card .ui-status-tag {
+  min-width: min-content;
+  border-color: transparent;
+  background: var(--bg-surface);
+  overflow-wrap: normal;
+  white-space: normal;
+}
+
+.content-card .ui-late-badge {
+  min-width: min-content;
+  overflow-wrap: normal;
+  white-space: normal;
+}
+
+.content-hover__meta {
+  color: var(--text-secondary);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.content-card--movable,
+.content-card--movable .content-card__link {
+  cursor: grab;
+}
+
+.content-card--busy {
+  opacity: 0.55;
+}

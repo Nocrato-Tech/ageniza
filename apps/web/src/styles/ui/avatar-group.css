@@ -1,0 +1,38 @@
+/* AvatarGroup: avatars that overlap, each ringed in the surface so they stay apart; "+N" closes the stack. */
+.ui-avatar-group {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ui-avatar-group > * + * {
+  margin-inline-start: calc(var(--space-1) * -1);
+}
+
+.ui-avatar-group .ui-avatar,
+.ui-avatar-group__more {
+  box-shadow: 0 0 0 2px var(--bg-surface);
+}
+
+.ui-avatar-group--sm .ui-avatar__initials {
+  font: var(--caption);
+  font-weight: 700;
+}
+
+.ui-avatar-group__more {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--block-slate-bg);
+  color: var(--block-slate-fg);
+  font: var(--caption);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-avatar-group--md .ui-avatar-group__more {
+  min-width: 2.75rem;
+  height: 2.75rem;
+}

@@ -1,0 +1,13 @@
+.ui-modal__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.ui-modal__heading h2 {
+  min-width: 0;
+  margin: 0;
+  font: var(--heading-md);
+}
+

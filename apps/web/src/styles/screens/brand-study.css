@@ -1,0 +1,776 @@
+/* Brand study tab: specs/clientes.md section 7, the seven fixed sections of issue #138. */
+.brand-study {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+.brand-study__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.brand-study__header h2 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.brand-section-skeleton {
+  height: 5rem;
+  border-radius: var(--radius-lg);
+}
+
+/* A section is a row of the study, set apart by a line: no card, so what it holds (colours, personas, threads) is the first level. */
+.brand-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-default);
+}
+
+.brand-section__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.brand-section__header h3,
+.brand-personas__header h3 {
+  margin: 0;
+  font: var(--heading-lg);
+}
+
+.brand-section__updated {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.brand-section__body {
+  max-width: 70ch;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+.brand-section__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.brand-section__editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.brand-section__editor-label {
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+/* An empty section says what is missing and carries its one way forward; the title is a label here, not a heading of the screen. */
+.brand-study .brand-section__empty {
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: 0;
+}
+
+.brand-study .brand-section__empty .ui-empty-state__body {
+  gap: var(--space-2);
+}
+
+.brand-study .brand-section__empty .ui-empty-state__title {
+  font: var(--label-md);
+}
+
+.brand-study .brand-section__empty .ui-empty-state__description {
+  font: var(--body-md);
+}
+
+.brand-study .brand-section__empty .ui-empty-state__action {
+  padding-top: var(--space-1);
+}
+
+.ui-textarea {
+  width: 100%;
+  min-height: 6.5rem;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font: var(--body-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.brand-colors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.brand-colors--edit {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.brand-colors__item {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  font: var(--body-md);
+}
+
+.brand-colors__name {
+  overflow-wrap: anywhere;
+}
+
+.brand-colors__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.brand-colors__row .ui-text-input {
+  flex: 1 1 10rem;
+}
+
+/* The client's own colour is data, not theme: the swatch paints the hex the registration stores. */
+.brand-colors__swatch {
+  height: 3.5rem;
+  margin-bottom: var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.brand-colors__hex {
+  color: var(--text-secondary);
+  font: var(--body-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.brand-personas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.brand-personas__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.brand-personas__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.brand-personas__card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: var(--space-4);
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding: var(--space-4) var(--space-5);
+  text-align: left;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  cursor: pointer;
+  transition: box-shadow var(--motion-base), border-color var(--motion-fast);
+}
+
+.brand-personas__body {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.brand-personas__role {
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.brand-personas__intro {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.brand-personas__traits,
+.brand-persona__traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.brand-personas__card[aria-current='true'] {
+  border-color: var(--action-primary-bg);
+}
+
+.brand-personas__go {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--text-secondary);
+}
+
+.brand-personas__card:hover,
+.brand-personas__card:focus-visible {
+  border-color: var(--border-control);
+}
+
+.brand-personas__card:hover {
+  box-shadow: var(--shadow-raised);
+}
+
+.brand-personas__name {
+  font: var(--label-md);
+  overflow-wrap: anywhere;
+}
+
+.brand-personas__description {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  overflow-wrap: anywhere;
+}
+
+.brand-persona__fields {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.brand-persona__fields dt {
+  color: var(--text-secondary);
+  font: var(--label-sm);
+}
+
+.brand-persona__fields dd {
+  margin: 0 0 var(--space-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.brand-persona__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+/* Brand study, agency side (telas-melhorias, S13): an index of the seven sections and one section on screen at a time.
+   Scoped to .brand-study--agency: the portal shares the section, colour and persona classes above and keeps its own rows. */
+.brand-study--agency .brand-study__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.brand-study--agency .brand-study__main {
+  min-width: 0;
+}
+
+/* The index is a card of its own: the title and the count, the bar of what is filled, then the seven sections. */
+.brand-study--agency .brand-study__side {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-study__header {
+  gap: var(--space-2) var(--space-3);
+}
+
+.brand-study--agency .brand-study__header h2 {
+  font: var(--title-md);
+}
+
+.brand-study--agency .brand-study__count {
+  border-color: transparent;
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.brand-study__updated {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+.brand-study__fill {
+  width: 100%;
+}
+
+/* The index is a column on a wide screen and a row that scrolls sideways on a narrow one; the page itself never scrolls sideways. */
+.brand-index {
+  min-width: 0;
+}
+
+.brand-index__list {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 0 var(--space-1);
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.brand-index__list > li {
+  flex: none;
+}
+
+.brand-index__link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font: var(--label-md);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.brand-index__dot {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: var(--radius-full);
+}
+
+.brand-index__dot--done {
+  background: var(--status-ready-bg);
+  color: var(--status-ready-text);
+}
+
+.brand-index__dot--now {
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+
+.brand-index__dot--open {
+  border: 1.5px solid var(--border-control);
+}
+
+.brand-index__dot > svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  stroke-width: 3;
+}
+
+.brand-index__link:hover {
+  border-color: var(--border-control);
+  color: var(--text-primary);
+}
+
+.brand-index__link[aria-current='page'] {
+  border-color: transparent;
+  background: var(--bg-tint);
+  color: var(--action-secondary-fg);
+  font-weight: 600;
+}
+
+.brand-index__awaiting {
+  margin-left: auto;
+  border-color: transparent;
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+}
+
+.brand-index--skeleton {
+  display: flex;
+  gap: var(--space-2);
+  overflow: hidden;
+}
+
+.brand-study--agency .brand-section-skeleton {
+  flex: none;
+  width: 8rem;
+  height: 2.75rem;
+  border-radius: var(--radius-md);
+}
+
+.brand-card-skeleton {
+  height: 12rem;
+  border-radius: var(--radius-lg);
+}
+
+/* The open section is a card: title and who last edited it on the left, the way to edit it on the right. */
+.brand-study--agency .brand-section {
+  align-content: start;
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-section__header {
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+}
+
+.brand-study--agency .brand-section__header h3 {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.brand-section__header-action {
+  order: 2;
+}
+
+.brand-study--agency .brand-section__updated {
+  order: 3;
+  flex-basis: 100%;
+}
+
+.brand-archetype {
+  margin: 0;
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--block-indigo-bg);
+  color: var(--block-indigo-fg);
+  font: var(--heading-xl);
+  overflow-wrap: anywhere;
+}
+
+/* The colours are swatches in a card of their own: the paint, then the name and the code. */
+.brand-study--agency .brand-colors:not(.brand-colors--edit) .brand-colors__item {
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-colors__swatch {
+  height: 4.5rem;
+  border-radius: var(--radius-md);
+}
+
+.brand-study--agency .brand-colors__name {
+  padding-inline: var(--space-1);
+  font: var(--label-md);
+}
+
+.brand-study--agency .brand-colors__hex {
+  padding-inline: var(--space-1);
+}
+
+/* The card, and the conversations of the same subject beside it when they fit or under it when they do not. */
+.brand-panel__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.brand-panel__main,
+.brand-panel__conversations {
+  min-width: 0;
+}
+
+/* The conversations of the subject are a card too, with the same edge as the section beside it. */
+.brand-study--agency .brand-panel__conversations {
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-panel__conversations .conversation {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.brand-personas__awaiting {
+  justify-self: start;
+  margin-top: var(--space-1);
+  border-color: transparent;
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting-text);
+}
+
+/* A persona is a profile: who she is on the left, one card for each long field on the right. */
+.brand-persona {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.brand-persona__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-self: start;
+  min-height: 2.75rem;
+  color: var(--text-secondary);
+  font: var(--label-md);
+  text-decoration: none;
+}
+
+.brand-persona__back > svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  stroke-width: 1.75;
+}
+
+.brand-persona__back:hover {
+  color: var(--text-primary);
+}
+
+.brand-persona__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.brand-persona__list,
+.brand-persona__profile {
+  min-width: 0;
+}
+
+.brand-persona__profile {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.brand-persona__identity,
+.brand-persona__rows {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.brand-persona__identity {
+  justify-items: center;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  text-align: center;
+}
+
+.brand-persona__avatar {
+  width: 6rem;
+  height: 6rem;
+  box-shadow: 0 0 0 4px var(--bg-tint);
+}
+
+.brand-persona__avatar .ui-avatar__initials {
+  font: var(--heading-xl);
+}
+
+.brand-persona__name {
+  margin: 0;
+  font: var(--heading-lg);
+  overflow-wrap: anywhere;
+}
+
+.brand-persona__description {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--body-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.brand-persona__role {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--label-md);
+}
+
+.brand-persona__traits {
+  justify-content: center;
+}
+
+.brand-persona__rows {
+  gap: 0;
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.brand-persona__row {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  padding-block: var(--space-4);
+}
+
+.brand-persona__row + .brand-persona__row {
+  border-top: 1px solid var(--border-default);
+}
+
+.brand-persona__row-icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-tint);
+  color: var(--action-secondary-fg);
+}
+
+.brand-persona__row-icon > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.brand-persona__row h4 {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--label-md);
+}
+
+.brand-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+  margin-top: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tint);
+}
+
+.brand-note__title,
+.brand-note__text {
+  margin: 0;
+}
+
+.brand-note__title {
+  font: var(--label-md);
+}
+
+.brand-note__text {
+  color: var(--text-primary);
+  font: var(--body-md);
+}
+
+.brand-persona__conversations {
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.brand-study--agency .brand-persona__conversations .conversation {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.brand-persona__form {
+  max-width: 40rem;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+@media (min-width: 64rem) {
+  .brand-persona__split {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+  }
+}
+
+@media (min-width: 64rem) {
+  .brand-study--agency .brand-study__layout {
+    grid-template-columns: 17rem minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+
+  .brand-index__list {
+    flex-direction: column;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .brand-index__link {
+    flex-wrap: wrap;
+    border-color: transparent;
+    white-space: normal;
+  }
+
+  .brand-index__link[aria-current='page'] {
+    border-color: transparent;
+  }
+
+  .brand-index--skeleton {
+    flex-direction: column;
+  }
+
+  .brand-study--agency .brand-section-skeleton {
+    width: auto;
+  }
+}
+
+@media (min-width: 80rem) {
+  .brand-panel__layout {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+  }
+
+  /* The column is narrow here: the status goes under the text instead of taking a column of its own. */
+  .brand-study--agency .brand-panel__conversations .conversation__thread {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .brand-study--agency .brand-panel__conversations .conversation__thread > .conversation__status {
+    grid-column: 1;
+    grid-row: auto;
+    order: 6;
+    justify-self: start;
+    margin-top: var(--space-1);
+  }
+
+}
+

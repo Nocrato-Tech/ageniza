@@ -415,6 +415,16 @@ describe('Tabs', () => {
     expect(tab('Atribuição 3')).toBeTruthy();
   });
 
+  it('draws the count quiet by default and filled in indigo when the item asks for the accent tone', () => {
+    render(<Tabs label="Filtro" value="a" onChange={() => undefined} items={[
+      { value: 'a', label: 'Todas', count: 4, content: null },
+      { value: 'b', label: 'Não lidas', count: 2, countTone: 'accent', content: null }
+    ]} />);
+
+    expect(screen.getByRole('tab', { name: 'Todas 4' }).querySelector('.ui-tabs__count')?.className).toContain('ui-pill--neutral');
+    expect(screen.getByRole('tab', { name: 'Não lidas 2' }).querySelector('.ui-tabs__count')?.className).toContain('ui-pill--accent');
+  });
+
   it('shows only the open panel, labelled by its tab, and links the tab to it', () => {
     render(<TabsHarness initial="assignment" />);
     const panel = screen.getByRole('tabpanel');

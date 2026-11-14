@@ -2,6 +2,8 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { invalidDayMessage } from '@ageniza/ui';
+
 import {
   AGENCY,
   barbearia,
@@ -54,6 +56,16 @@ const moves = (calls: readonly Call[]): Call[] => writes(calls).filter((call) =>
 const complete = (overrides: Partial<Stored> = {}): Stored => stored({ format: 'image', folderId: IMAGES, media: [IMG_1.id], ...overrides });
 const clickMove = (label: string): void => { fireEvent.click(within(dialog()).getByRole('button', { name: label })); };
 const status = (contents: readonly Stored[], id: string) => contents.find((content) => content.id === id)!.status;
+
+/** "Enviar para aprovação" opens a dialog of its own, over the modal of the content: with two dialogs open, `dialog()` is no longer the one to ask. */
+const submitDialog = (): HTMLElement => screen.getByRole('dialog', { name: SUBMIT });
+const confirmSubmit = (): void => { fireEvent.click(within(submitDialog()).getByRole('button', { name: SUBMIT })); };
+/** The whole move: the button of the modal, then the confirmation of the dialog, with nothing typed. */
+const sendRound = (): void => { clickMove(SUBMIT); confirmSubmit(); };
+const stillOpen = async (): Promise<void> => {
+  await new Promise<void>((resolve) => { setTimeout(resolve, 500); });
+  expect(screen.queryAllByRole('dialog').length).toBeGreaterThan(0);
+};
 
 /** A close that follows a refusal comes a moment later (a navigation, a timer): look only after the shell settled. */
 const staysOpen = async (): Promise<void> => {
@@ -192,9 +204,9 @@ describe('which button shows: the state AND the permission', () => {
       override: (call) => (call.path.endsWith('/submit') ? held.then(() => undefined) as never : undefined)
     });
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
-    clickMove(SUBMIT);
+    sendRound();
     await waitFor(() => expect(moves(calls)).toHaveLength(1));
-    const cancel = within(dialog()).getByRole('button', { name: 'Cancelar conteúdo' }) as HTMLButtonElement;
+    const cancel = screen.getByRole('button', { name: 'Cancelar conteúdo' }) as HTMLButtonElement;
     expect(cancel.disabled).toBe(true);
     fireEvent.click(cancel);
     expect(moves(calls)).toHaveLength(1);
@@ -207,17 +219,188 @@ describe('which button shows: the state AND the permission', () => {
 describe('Enviar para aprovação', () => {
   const EDITOR = [VISUALIZE, READ_CLIENTS, OPERATE];
 
-  it('sends the content with no body, closes, reads the calendar again, and the state is the API\'s', async () => {
+  it('asks for the deadline and the note first, sends nothing until it is confirmed, and an untouched round goes with the 48 hours proposed', async () => {
     const row = complete();
     const { calls, contents } = await openContent(row, { permissions: EDITOR });
     const before = periodCalls(calls).length;
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
+    expect(within(submitDialog()).getByLabelText('Responder até')).toBeTruthy();
+    expect(within(submitDialog()).getByLabelText('Recado para o cliente')).toBeTruthy();
+    // 22:30 of the 11th in São Paulo (01:30Z of the 12th), plus 48 hours.
+    expect((within(submitDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('13/10/2026');
+    expect((within(submitDialog()).getByLabelText('Hora do prazo') as HTMLInputElement).value).toBe('22:30');
+    expect(within(submitDialog()).getByText('Padrão: 48 horas')).toBeTruthy();
+    expect(moves(calls)).toHaveLength(0);
+    confirmSubmit();
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(moves(calls)).toEqual([{ method: 'POST', path: `${contentPath(row.id)}/submit`, body: undefined }]);
+    expect(moves(calls)).toEqual([{ method: 'POST', path: `${contentPath(row.id)}/submit`, body: { dueAt: '2026-10-14T01:30:00.000Z' } }]);
     expect(status(contents, row.id)).toBe('awaiting_approval');
     await waitFor(() => expect(periodCalls(calls).length).toBeGreaterThan(before));
+  });
+
+  it('sends the deadline and the note that were typed, the note without the spaces around it', async () => {
+    const row = complete();
+    const { calls } = await openContent(row, { permissions: EDITOR });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '14/10/2026' } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Recado para o cliente'), { target: { value: '  Preciso da resposta até sábado.  ' } });
+    expect(within(submitDialog()).getByText('31/500')).toBeTruthy();
+    confirmSubmit();
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(moves(calls)).toEqual([{ method: 'POST', path: `${contentPath(row.id)}/submit`, body: { dueAt: '2026-10-15T01:30:00.000Z', note: 'Preciso da resposta até sábado.' } }]);
+  });
+
+  it.each([
+    ['today, on the São Paulo day (01:30Z is still the 11th), at an hour that has not come', '11/10/2026', '23:00', '2026-10-12T02:00:00.000Z'],
+    ['the end of the 90 days, to the minute', '09/01/2027', '22:30', '2027-01-10T01:30:00.000Z']
+  ])('accepts a deadline of %s', async (_name, typed, hour, sent) => {
+    const row = complete();
+    const { calls } = await openContent(row, { permissions: EDITOR });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: typed } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Hora do prazo'), { target: { value: hour } });
+    confirmSubmit();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(moves(calls)).toEqual([{ method: 'POST', path: `${contentPath(row.id)}/submit`, body: { dueAt: sent } }]);
+  });
+
+  it.each([
+    ['yesterday', '10/10/2026', '22:30'],
+    ['today at an hour that has already passed', '11/10/2026', '22:00'],
+    ['more than 90 days ahead', '10/01/2027', '22:30']
+  ])('refuses a deadline %s on the field and sends nothing', async (_name, typed, hour) => {
+    const { calls } = await openContent(complete(), { permissions: EDITOR });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: typed } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Hora do prazo'), { target: { value: hour } });
+    confirmSubmit();
+    expect(await within(submitDialog()).findByText('Escolha um dia e uma hora de agora até 90 dias à frente.')).toBeTruthy();
+    expect(within(submitDialog()).getByLabelText('Responder até').getAttribute('aria-invalid')).toBe('true');
+    expect(moves(calls)).toHaveLength(0);
+  });
+
+  it.each([
+    ['a year of two digits', '14/10/26', '14/10/26'],
+    ['a day that does not exist', '31/02/2026', '31/02/2026'],
+    ['half a date', '14/10', '14/10']
+  ])('refuses %s as "Data inválida" on the field, sends nothing and keeps what was typed', async (_name, typed, shown) => {
+    const { calls } = await openContent(complete(), { permissions: EDITOR });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: typed } });
+    confirmSubmit();
+    expect(await within(submitDialog()).findByText(invalidDayMessage)).toBeTruthy();
+    expect(within(submitDialog()).getByLabelText('Responder até').getAttribute('aria-invalid')).toBe('true');
+    expect((within(submitDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe(shown);
+    await stillOpen();
+    expect(moves(calls)).toHaveLength(0);
+
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '14102026' } });
+    expect(within(submitDialog()).queryByText(invalidDayMessage)).toBeNull();
+    confirmSubmit();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(moves(calls)).toHaveLength(1);
+    expect(moves(calls)[0]!.body).toEqual({ dueAt: '2026-10-15T01:30:00.000Z' });
+  });
+
+  it('sends no deadline at all when the day was typed into and then emptied', async () => {
+    const { calls } = await openContent(complete(), { permissions: EDITOR });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '14/10/26' } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '' } });
+    confirmSubmit();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(moves(calls)[0]!.body).toEqual({});
+  });
+
+  it('refuses a note over 500 characters on the field, with the counter, and sends nothing', async () => {
+    const { calls } = await openContent(complete(), { permissions: EDITOR });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Recado para o cliente'), { target: { value: 'a'.repeat(501) } });
+    expect(within(submitDialog()).getByText('501/500')).toBeTruthy();
+    confirmSubmit();
+    expect(await within(submitDialog()).findByText('O recado tem até 500 caracteres.')).toBeTruthy();
+    expect(moves(calls)).toHaveLength(0);
+  });
+
+  it('asks before it closes with something typed, and closes at once with nothing', async () => {
+    await openContent(complete(), { permissions: EDITOR });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.click(within(submitDialog()).getByRole('button', { name: 'Fechar envio para aprovação' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: SUBMIT })).toBeNull());
+
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Recado para o cliente'), { target: { value: 'Oi!' } });
+    fireEvent.click(within(submitDialog()).getByRole('button', { name: 'Fechar envio para aprovação' }));
+    expect(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    expect((within(submitDialog()).getByLabelText('Recado para o cliente') as HTMLTextAreaElement).value).toBe('Oi!');
+  });
+
+  it.each([
+    ['X', () => { fireEvent.click(within(submitDialog()).getByRole('button', { name: 'Fechar envio para aprovação' })); }],
+    ['Esc', () => { fireEvent(submitDialog(), new Event('cancel', { bubbles: true, cancelable: true })); }]
+  ])('asks before %s discards a deadline that was only half typed', async (_name, close) => {
+    const { calls } = await openContent(complete(), { permissions: EDITOR });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '14/10' } });
+    close();
+    expect(await screen.findByRole('dialog', { name: 'Descartar o que você escreveu?' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    expect((within(submitDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('14/10');
+    expect(moves(calls)).toHaveLength(0);
+  });
+
+  it('keeps what was typed when the API refuses, and says the refused field in its own words', async () => {
+    const { calls } = await openContent(complete(), {
+      permissions: EDITOR,
+      override: (call) => (call.path.endsWith('/submit') ? failure(400, 'CONTENT_APPROVAL_DUE_INVALID') : undefined)
+    });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Responder até'), { target: { value: '14/10/2026' } });
+    fireEvent.change(within(submitDialog()).getByLabelText('Recado para o cliente'), { target: { value: 'Até sábado.' } });
+    confirmSubmit();
+    expect(await within(submitDialog()).findByText('O prazo vai de agora até 90 dias à frente. Escolha outro dia ou outra hora.')).toBeTruthy();
+    expect((within(submitDialog()).getByLabelText('Recado para o cliente') as HTMLTextAreaElement).value).toBe('Até sábado.');
+    expect((within(submitDialog()).getByLabelText('Responder até') as HTMLInputElement).value).toBe('14/10/2026');
+    expect(moves(calls)).toHaveLength(1);
+    await stillOpen();
+  });
+
+  it('says a refused note on the note field', async () => {
+    await openContent(complete(), {
+      permissions: EDITOR,
+      override: (call) => (call.path.endsWith('/submit') ? failure(400, 'CONTENT_APPROVAL_NOTE_INVALID') : undefined)
+    });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    clickMove(SUBMIT);
+    fireEvent.change(within(submitDialog()).getByLabelText('Recado para o cliente'), { target: { value: 'Oi' } });
+    confirmSubmit();
+    expect(await within(submitDialog()).findByText('O recado tem até 500 caracteres e não pode ter caracteres especiais. Deixe em branco para enviar sem recado.')).toBeTruthy();
+    expect(within(submitDialog()).getByLabelText('Recado para o cliente').getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('says a lost state in the words of the move, and keeps both dialogs open', async () => {
+    await openContent(complete(), {
+      permissions: EDITOR,
+      override: (call) => (call.path.endsWith('/submit') ? failure(409, 'CONTENT_STATE') : undefined)
+    });
+    await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
+    sendRound();
+    expect(await within(submitDialog()).findByText('Só um conteúdo em produção ou em ajuste é enviado para aprovação. Feche e abra de novo para ver o estado atual.')).toBeTruthy();
+    expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
+    await stillOpen();
   });
 
   it('acts on the content that was opened, not on another one of the calendar', async () => {
@@ -228,6 +411,8 @@ describe('Enviar para aprovação', () => {
     await screen.findByLabelText('Título');
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
+    expect(within(submitDialog()).getByText('Segundo')).toBeTruthy();
+    confirmSubmit();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(moves(calls).map((call) => call.path)).toEqual([`${contentPath(second.id)}/submit`]);
     expect(status(contents, first.id)).toBe('in_production');
@@ -244,10 +429,12 @@ describe('Enviar para aprovação', () => {
     });
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
     clickMove(SUBMIT);
-    clickMove(SUBMIT);
+    confirmSubmit();
+    confirmSubmit();
     await waitFor(() => expect(moves(calls)).toHaveLength(1));
-    fireEvent.click(within(dialog()).getByRole('button', { name: 'Fechar conteúdo' }));
-    expect(screen.queryByRole('dialog')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar conteúdo' }));
+    fireEvent.click(within(submitDialog()).getByRole('button', { name: 'Fechar envio para aprovação' }));
+    expect(screen.queryAllByRole('dialog')).toHaveLength(2);
     release();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(moves(calls)).toHaveLength(1);
@@ -316,11 +503,11 @@ describe('Enviar para aprovação', () => {
       override: (call) => (call.path.endsWith('/submit') ? failure(409, 'CONTENT_MEDIA_NOT_CONFIRMED') : undefined)
     });
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
-    clickMove(SUBMIT);
-    expect(await within(dialog()).findByText('O conteúdo tem mídia que ainda não terminou de subir. Espere o envio terminar ou troque a mídia.')).toBeTruthy();
+    sendRound();
+    expect(await within(submitDialog()).findByText('O conteúdo tem mídia que ainda não terminou de subir. Espere o envio terminar ou troque a mídia.')).toBeTruthy();
     expect(screen.queryByText('MENSAGEM DO SERVIDOR')).toBeNull();
     expect(moves(calls)).toHaveLength(1);
-    await staysOpen();
+    await stillOpen();
   });
 });
 
@@ -583,7 +770,6 @@ describe('Cancelar conteúdo e Reagendar', () => {
 describe('what the API refuses', () => {
   const ALL = [VISUALIZE, READ_CLIENTS, OPERATE, APPROVE, PUBLISH, CANCEL];
   const STATE_TEXT: Readonly<Record<string, string>> = {
-    submit: 'Só um conteúdo em produção ou em ajuste é enviado para aprovação. Feche e abra de novo para ver o estado atual.',
     cancel: 'Um conteúdo publicado não é cancelado. Feche e abra de novo para ver o estado atual.',
     unpublish: 'Só um conteúdo publicado volta a pronto para publicar. Feche e abra de novo para ver o estado atual.',
     publish: 'Só um conteúdo pronto para publicar é marcado como publicado. Feche e abra de novo para ver o estado atual.',
@@ -592,7 +778,6 @@ describe('what the API refuses', () => {
   };
 
   const flows: ReadonlyArray<readonly [string, string, Partial<Stored>, () => void]> = [
-    ['submit', 'submit', complete(), () => clickMove(SUBMIT)],
     ['cancel', 'cancel', { status: 'approved' }, () => clickMove('Cancelar conteúdo')],
     ['unpublish', 'unpublish', { status: 'published' }, () => clickMove('Desfazer publicação')],
     ['publish', 'publish', { status: 'approved' }, () => { clickMove('Marcar como publicado'); clickMove('Confirmar publicação'); }],
@@ -647,9 +832,9 @@ describe('what the API refuses', () => {
     });
     await settled(calls);
     await waitFor(() => expect((within(dialog()).getByRole('button', { name: SUBMIT }) as HTMLButtonElement).disabled).toBe(false));
-    clickMove(SUBMIT);
-    expect(await within(dialog()).findByText('Não foi possível enviar o conteúdo para aprovação. Tente de novo.')).toBeTruthy();
-    await staysOpen();
+    sendRound();
+    expect(await within(submitDialog()).findByText('Não foi possível enviar o conteúdo para aprovação. Tente de novo.')).toBeTruthy();
+    await stillOpen();
   });
 
   it('is ready for the next try after a refusal: the button works again', async () => {

@@ -199,7 +199,8 @@ describe('who may edit', () => {
 
   it('shows the state of the content, in the agency\'s words', async () => {
     await openContent(stored({ status: 'approved' }));
-    expect(within(dialog()).getByText('Pronto para publicar')).toBeTruthy();
+    expect(within(dialog()).getByText('Aprovado')).toBeTruthy();
+    expect(within(dialog()).queryByText('Pronto para publicar')).toBeNull();
   });
 });
 
@@ -958,21 +959,21 @@ describe('the folder is a drive: choosing it gives the content what it holds', (
 });
 
 describe('creating a content', () => {
-  const createButton = (): HTMLElement | null => screen.queryByRole('button', { name: 'Nova publicação' });
+  const createButton = (): HTMLElement | null => screen.queryByRole('button', { name: 'Novo conteúdo' });
   /** The folder is read when it is chosen, and the content is not created before the list on screen is the folder's. */
   const readyToCreate = (): Promise<void> => waitFor(() => expect((within(dialog()).getByRole('button', { name: 'Criar conteúdo' }) as HTMLButtonElement).disabled).toBe(false));
 
   it.each([
     ['conteudo.visualizar only', [VISUALIZE, READ_CLIENTS], false],
     ['conteudo.operar with visualizar', EDITOR, true]
-  ])('%s: the "Nova publicação" button exists only for who operates', async (_name, permissions, shown) => {
+  ])('%s: the "Novo conteúdo" button exists only for who operates', async (_name, permissions, shown) => {
     const { impl } = makeFetch({ permissions });
     render_(impl);
     await calendarReady();
     await waitFor(() => expect(createButton() !== null).toBe(shown));
   });
 
-  it('has no "Nova publicação" on an archived client', async () => {
+  it('has no "Novo conteúdo" on an archived client', async () => {
     const { impl } = makeFetch();
     render_(impl, base(barbearia.id));
     await calendarReady();
@@ -984,7 +985,7 @@ describe('creating a content', () => {
     const { impl } = makeFetch();
     const { probe } = render_(impl);
     await calendarReady();
-    fireEvent.click(await screen.findByRole('button', { name: 'Nova publicação' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Novo conteúdo' }));
 
     expect(await screen.findByRole('dialog', { name: 'Novo conteúdo' })).toBeTruthy();
     await screen.findByLabelText('Data');
@@ -997,7 +998,7 @@ describe('creating a content', () => {
     const { impl } = makeFetch();
     const first = render_(impl);
     await calendarReady();
-    const plus = within(document.querySelector('time[datetime="2026-10-22"]')!.closest('li')!).getByRole('button', { name: /^Adicionar no dia/ });
+    const plus = within(document.querySelector('.content-day time[datetime="2026-10-22"], .content-agenda__day time[datetime="2026-10-22"]')!.closest('li')!).getByRole('button', { name: /^Adicionar no dia/ });
     fireEvent.click(plus);
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Conteúdo' }));
 
@@ -1484,5 +1485,58 @@ describe('the conversation of the content (#266)', () => {
     fireEvent(thread, new Event('cancel', { bubbles: false, cancelable: true }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: `Conversa sobre ${row.title}` })).toBeNull());
     expect(screen.getByRole('dialog', { name: row.title })).toBeTruthy();
+  });
+});
+
+describe('"Usar em um conteúdo": ?midia= opens a new content with that file chosen', () => {
+  const PDF_ID = 'a0a0a0a0-0000-4000-8000-0000000000f1';
+  const MISSING = 'a0a0a0a0-0000-4000-8000-0000000000ee';
+  const libraryAsset = (found: typeof IMG_2, folderId: string, category: string = found.category) => ({
+    ...found, category, folderId, folderName: 'Pasta', name: null, width: null, height: null, altText: null, uploadedBy: null, uploadedBySide: 'agency', usageCount: 0
+  });
+  const mediaRead = (assetId: string, body: () => Response) => (call: { method: string; path: string }): Response | undefined =>
+    (call.method === 'GET' && call.path === `/agencies/${AGENCY}/clients/${padaria.id}/media/${assetId}` ? body() : undefined);
+  const selected = (): string[] => Array.from(dialog().querySelectorAll('.content-media__selected .content-media__tile')).map((tile) => tile.textContent ?? '');
+
+  it('starts in the folder of the file, as an image, with that file (the second of the folder) as the media, and saves it', async () => {
+    const { impl, calls } = makeFetch({ override: mediaRead(IMG_2.id, () => json(libraryAsset(IMG_2, IMAGES))) });
+    render_(impl, `${base()}/novo?midia=${IMG_2.id}`);
+    await screen.findByLabelText('Título');
+    await waitFor(() => expect((field('Pasta') as HTMLSelectElement).value).toBe(IMAGES));
+    expect((field('Formato') as HTMLSelectElement).value).toBe('image');
+    await waitFor(() => expect(selected()).toHaveLength(1));
+    type('Título', 'Do arquivo');
+    await savable();
+    click('Criar conteúdo');
+    await waitFor(closed);
+    expect(writes(calls)).toHaveLength(1);
+    expect(writes(calls)[0]!.body).toMatchObject({ folderId: IMAGES, format: 'image', mediaAssetIds: [IMG_2.id] });
+  });
+
+  it('starts a video as a reels, in its own folder', async () => {
+    const { impl } = makeFetch({ override: mediaRead(VID_1.id, () => json(libraryAsset(VID_1, VIDEOS))) });
+    render_(impl, `${base()}/novo?midia=${VID_1.id}`);
+    await screen.findByLabelText('Título');
+    await waitFor(() => expect((field('Pasta') as HTMLSelectElement).value).toBe(VIDEOS));
+    expect((field('Formato') as HTMLSelectElement).value).toBe('reels');
+    await waitFor(() => expect(selected()).toHaveLength(1));
+  });
+
+  it.each([
+    ['a file that does not exist', MISSING, () => failure(404, 'NOT_FOUND')],
+    ['a read that fails', IMG_2.id, () => failure(500, 'INTERNAL')],
+    ['a file that no content takes (a PDF)', PDF_ID, () => json(libraryAsset(IMG_2, IMAGES, 'pdf'))],
+    ['an id that is not one', 'not-an-id', () => failure(404, 'NOT_FOUND')]
+  ])('opens the modal empty and without an error for %s', async (_name, midia, answer) => {
+    const { impl, calls } = makeFetch({ override: mediaRead(midia, answer) });
+    render_(impl, `${base()}/novo?midia=${midia}`);
+    await screen.findByLabelText('Título');
+    await waitFor(() => expect(within(field('Pasta') as HTMLSelectElement).getAllByRole('option')).toHaveLength(4));
+
+    expect((field('Pasta') as HTMLSelectElement).value).toBe('');
+    expect((field('Formato') as HTMLSelectElement).value).toBe('image');
+    expect(selected()).toEqual([]);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(writes(calls)).toHaveLength(0);
   });
 });

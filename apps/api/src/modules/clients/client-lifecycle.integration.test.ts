@@ -104,7 +104,7 @@ const invitationsUrl = (clientId: string): string => `${clientUrl(agencyA, clien
 const membersUrl = (clientId: string): string => `${clientUrl(agencyA, clientId)}/members`;
 
 const CLIENT_KEYS = [
-  'archivedAt', 'closingDate', 'contactEmail', 'contactName', 'contactPhone', 'id', 'instagramHandle', 'legalName',
+  'archivedAt', 'city', 'closingDate', 'contactEmail', 'contactName', 'contactPhone', 'createdAt', 'id', 'instagramHandle', 'legalName',
   'name', 'photoUrl', 'segment', 'status', 'taxId', 'website'
 ];
 

@@ -1,12 +1,12 @@
-import { contentDeadline, type ContentDeadline, type ContentFormat, type ContentListItem, type ContentStatus } from '@ageniza/contracts';
+import { contentDeadline, contentIsScheduled, type ContentDeadline, type ContentFormat, type ContentListItem, type ContentStatus } from '@ageniza/contracts';
 import type { FormatTagFormat, StatusTagStatus } from '@ageniza/ui';
 
-/** In the agency, "aprovado" reads "Pronto para publicar" (specs/conteudo.md section 4). */
+/** "Aprovado" is "Aprovado" in the agency as well (owner's decision, 2026-11-12), as on the board. */
 export const STATUS_LABELS: Readonly<Record<ContentStatus, string>> = {
   in_production: 'Em produção',
   awaiting_approval: 'Aguardando aprovação',
   adjusting: 'Em ajuste',
-  approved: 'Pronto para publicar',
+  approved: 'Aprovado',
   published: 'Publicado',
   cancelled: 'Cancelado'
 };
@@ -18,6 +18,9 @@ export const FORMAT_LABELS: Readonly<Record<ContentFormat, string>> = {
   long_video: 'Vídeo longo',
   vsl: 'VSL'
 };
+
+/** The board names the plain image "Estático" on cards, in the feed and in the lists; the form that creates a content keeps "Imagem". */
+export const CARD_FORMAT_LABELS: Readonly<Record<ContentFormat, string>> = { ...FORMAT_LABELS, image: 'Estático' };
 
 export const PLATFORM_LABELS: Readonly<Record<ContentListItem['platform'], string>> = { instagram: 'Instagram' };
 
@@ -50,3 +53,31 @@ export const DEADLINE_LABELS: Readonly<Record<Exclude<DeadlineAlert, null>, stri
 /** Whole percent of approved subtasks; nothing without subtasks, so no "0%" over an empty list. */
 export const subtaskPercent = (content: Pick<ContentListItem, 'tasksApproved' | 'tasksTotal'>): number | null =>
   content.tasksTotal === 0 ? null : Math.round((content.tasksApproved / content.tasksTotal) * 100);
+
+/**
+ * What the calendar and the feed say about a content: the state of the flow, except where the day decides. A past publication day is
+ * "atrasado" and an approved content with a future hour is "agendado" (decisions 2026-11-11); both are derived, never stored.
+ */
+export type DisplayState = ContentStatus | 'scheduled' | 'late';
+
+export const displayState = (
+  content: Pick<ContentListItem, 'publishOn' | 'publishAtTime' | 'status'>,
+  now: { readonly day: string; readonly time: string }
+): DisplayState => {
+  if (deadlineAlert(content, now.day) === 'overdue') return 'late';
+  return contentIsScheduled(content, now) ? 'scheduled' : content.status;
+};
+
+/** The words of the calendar's chips and cards, as on the board; "Aguardando" is the short form of the flow's "Aguardando aprovação". */
+export const DISPLAY_LABELS: Readonly<Record<DisplayState, string>> = {
+  in_production: 'Em produção',
+  awaiting_approval: 'Aguardando',
+  adjusting: 'Em ajuste',
+  approved: 'Aprovado',
+  scheduled: 'Agendado',
+  late: 'Atrasado',
+  published: 'Publicado',
+  cancelled: 'Cancelado'
+};
+
+export const DISPLAY_TAGS: Readonly<Record<Exclude<DisplayState, 'late'>, StatusTagStatus>> = { ...STATUS_TAGS, scheduled: 'scheduled' };

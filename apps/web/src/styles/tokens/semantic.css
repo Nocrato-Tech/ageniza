@@ -1,76 +1,138 @@
 /**
- * Semantic tokens: what primitives mean in context. Components must
- * prefer these over primitives (docs/design-system.md section 17).
+ * Semantic tokens: what primitives mean in context, in the one light theme the whole app uses (agency, portal,
+ * sign-in and errors). Components prefer these over primitives (docs/design-system.md section 17).
  *
- * Light is the default at `:root`, and also applies under `[data-theme='light']`
- * so a light subtree inside a dark ancestor switches back. `themes/dark.css`
- * overrides it under `[data-theme='dark']`; themes/light.css only points here.
- *
- * `action-danger-*` is not in the design system page (see
- * docs/design-system.md section 5.1); kept here, next to the rest of the
- * `action/*` family.
- *
- * `text-link` and `text-danger` are only guaranteed to pass WCAG AA over
- * `bg-canvas` and `bg-surface` (docs/design-system.md 20.1); do not place
- * them over `bg-elevated` or `bg-hover`.
+ * `text-link`, `text-danger` and `text-muted` are guaranteed over `bg-canvas`, `bg-surface` and `bg-hover`; over
+ * the colour blocks and `bg-tint` use `text-primary` or the block's own `-fg` (docs/design-system.md 20.1).
  */
-:root,
-[data-theme='light'] {
+:root {
   color-scheme: light;
 
-  --bg-canvas: var(--color-cloud-50);
+  /* Surface: canvas (the screen background) > surface (card) > elevated (what floats). Hover and tint belong to the brand. */
+  --bg-canvas: var(--color-cloud-100);
   --bg-surface: var(--color-white);
   --bg-elevated: var(--color-white);
-  --bg-hover: var(--color-mist-100);
+  --bg-hover: var(--color-indigo-50);
+  --bg-tint: var(--color-indigo-100);
 
   --text-primary: var(--color-ink-900);
   --text-secondary: var(--color-slate-600);
   --text-muted: var(--color-slate-500);
-  --text-link: var(--color-indigo-600); /* approved 2026-09-28 (docs/design-system.md 5.1) */
-  --text-danger: var(--color-red-700); /* approved 2026-09-28 (docs/design-system.md 5.1) */
+  --text-link: var(--color-indigo-600);
+  --text-danger: var(--color-red-700);
 
   --border-default: var(--color-mist-200);
   --border-subtle: var(--color-mist-100);
   /* The edge of a control (input, select, textarea, choice card) is a UI component boundary: 3:1 on the surface
-     (WCAG 1.4.11). Built from existing primitives, so it is the same in both themes; every other border is
-     decorative and stays on `border-default` (docs/design-system.md 20.1). */
+     (WCAG 1.4.11). Every other border is decorative and stays on `border-default` (docs/design-system.md 20.1). */
   --border-control: color-mix(in srgb, var(--color-slate-400) 40%, var(--color-ink-600));
 
   --action-primary-bg: var(--color-indigo-600);
   --action-primary-fg: var(--color-white);
-  --action-danger-bg: var(--color-red-700); /* approved 2026-09-28 (docs/design-system.md 5.1) */
-  --action-danger-fg: var(--color-white); /* approved 2026-09-28 (docs/design-system.md 5.1) */
+  --action-primary-hover: var(--color-indigo-700);
+  --action-secondary-bg: var(--color-indigo-100);
+  --action-secondary-fg: var(--color-indigo-800);
+  --action-secondary-hover: var(--color-indigo-200);
+  --action-danger-bg: var(--color-red-700);
+  --action-danger-fg: var(--color-white);
+  --action-disabled-bg: var(--color-mist-100);
+  --action-disabled-fg: var(--color-slate-500);
 
   --focus-ring: var(--color-indigo-600);
+  --focus-halo: color-mix(in srgb, var(--color-indigo-600) 22%, transparent);
 
-  /* Content state: the colour goes on the icon (non-text, 3:1), the label stays text/secondary. */
-  --status-ready-fg: var(--color-teal-700);
-  --status-waiting-fg: var(--color-violet-600);
-  --status-adjust-fg: var(--color-indigo-600);
-  --status-late-fg: var(--color-red-700);
-  --status-published-fg: var(--color-slate-600);
+  /* State of a content: `-fg` is the icon colour (non-text, 3:1); `-bg` and `-text` make the soft tag. */
   --status-production-fg: var(--color-slate-500);
+  --status-production-bg: var(--color-slate-100);
+  --status-production-text: var(--color-slate-700);
+  --status-adjust-fg: var(--color-indigo-600);
+  --status-adjust-bg: var(--color-indigo-100);
+  --status-adjust-text: var(--color-indigo-800);
+  --status-waiting-fg: var(--color-violet-600);
+  --status-waiting-bg: var(--color-violet-100);
+  --status-waiting-text: var(--color-violet-800);
+  --status-ready-fg: var(--color-teal-700);
+  --status-ready-bg: var(--color-teal-100);
+  --status-ready-text: var(--color-teal-800);
+  --status-scheduled-fg: var(--color-sky-600);
+  --status-scheduled-bg: var(--color-sky-100);
+  --status-scheduled-text: var(--color-sky-800);
+  --status-late-fg: var(--color-red-700);
+  --status-late-bg: var(--color-red-700);
+  --status-late-text: var(--color-white);
+  --status-published-fg: var(--color-slate-600);
 
   --calendar-today-bg: color-mix(in srgb, var(--action-primary-bg) 14%, var(--bg-surface));
 
   /* Format tint of a calendar card: bg and fg for the card, tag-bg (fill) and tag-fg for the label. */
-  --format-carousel-bg: color-mix(in srgb, var(--color-teal-500) 10%, var(--color-white));
-  --format-carousel-fg: var(--color-teal-700);
+  --format-carousel-bg: var(--color-teal-100);
+  --format-carousel-fg: var(--color-teal-800);
   --format-carousel-tag-bg: var(--color-teal-700);
   --format-carousel-tag-fg: var(--color-white);
-  --format-reels-bg: color-mix(in srgb, var(--color-violet-600) 7%, var(--color-white));
-  --format-reels-fg: var(--color-violet-600);
+  --format-reels-bg: var(--color-violet-100);
+  --format-reels-fg: var(--color-violet-800);
   --format-reels-tag-bg: var(--color-violet-600);
   --format-reels-tag-fg: var(--color-white);
-  --format-static-bg: var(--color-mist-100);
-  --format-static-fg: var(--color-ink-900);
+  --format-static-bg: var(--color-slate-100);
+  --format-static-fg: var(--color-slate-700);
   --format-static-tag-bg: var(--color-slate-600);
   --format-static-tag-fg: var(--color-white);
 
-  /* Base of the client badge photo: indigo and violet darkened over ink (white text on it >= 9.5:1). */
+  /* Summary blocks: a soft fill and the text that passes AA on it. Each colour carries a meaning, it is not decoration. */
+  --block-indigo-bg: var(--color-indigo-100); /* the agency's turn, the brand */
+  --block-indigo-fg: var(--color-indigo-800);
+  --block-violet-bg: var(--color-violet-100); /* waiting for the client */
+  --block-violet-fg: var(--color-violet-800);
+  --block-teal-bg: var(--color-teal-100); /* approved, good news */
+  --block-teal-fg: var(--color-teal-800);
+  --block-sky-bg: var(--color-sky-100); /* scheduled */
+  --block-sky-fg: var(--color-sky-800);
+  --block-red-bg: var(--color-red-100); /* late, needs attention */
+  --block-red-fg: var(--color-red-800);
+  --block-slate-bg: var(--color-slate-100); /* neutral */
+  --block-slate-fg: var(--color-slate-700);
+
+  /* The 3D icon stage (decorative, aria-hidden, outside the AA table). The "color" render of 3dicons goes as it comes, never painted;
+     what belongs to the card is the disc it sits on. Each card family has a tone (the disc) and a deeper tone (its edge and contact shadow). */
+  --stage-indigo-tone: var(--color-stage-indigo);
+  --stage-indigo-deep: var(--color-stage-indigo-deep);
+  --stage-violet-tone: var(--color-stage-violet);
+  --stage-violet-deep: var(--color-stage-violet-deep);
+  --stage-teal-tone: var(--color-stage-teal);
+  --stage-teal-deep: var(--color-stage-teal-deep);
+  --stage-sky-tone: var(--color-stage-sky);
+  --stage-sky-deep: var(--color-stage-sky-deep);
+  --stage-red-tone: var(--color-stage-red);
+  --stage-red-deep: var(--color-stage-red-deep);
+  --stage-slate-tone: var(--color-slate-600);
+  --stage-slate-deep: var(--color-ink-900);
+  --stage-face-top: 14%; /* how much of the tone enters the top of the disc */
+  --stage-face-bottom: 30%; /* and its bottom edge */
+  --stage-edge-mix: 34%; /* thickness of the disc */
+  --stage-shadow-mix: 30%; /* strength of the contact shadow */
+  --stage-size-sm: 2.75rem; /* the icon size: disc, shadow and box come from it */
+  --stage-size-md: 4.5rem;
+  --stage-size-lg: 6.25rem;
+  --stage-size-xl: 8.5rem;
+  --stage-tilt: -6deg; /* rest tilt */
+  --stage-float-distance: 0.3rem;
+  --stage-float-duration: 4.2s;
+
+  /* Confetti and milestones: two warm tones besides the brand. */
+  --celebration-gold: var(--color-orange-400);
+  --celebration-coral: var(--color-pink-500);
+
+  /* Client badge: the only interface gradient (indigo and violet darkened over ink). */
   --client-badge-fade-start: color-mix(in srgb, var(--color-indigo-600) 60%, var(--color-ink-900));
   --client-badge-fade-end: color-mix(in srgb, var(--color-violet-600) 60%, var(--color-ink-900));
 
-  /* The only elevation: what floats (menu, hover card, modal). Everything else separates by surface and border. */
-  --shadow-floating: 0 24px 48px -12px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.35);
+  /* Elevation: two soft steps. The card the finger reaches (hover, active tab) and what floats (menu, hover card, dialog). */
+  --shadow-raised: 0 1px 2px rgb(17 24 39 / 0.04), 0 8px 24px -12px rgb(55 48 163 / 0.18);
+  --shadow-floating: 0 24px 48px -16px rgb(17 24 39 / 0.22), 0 2px 8px rgb(17 24 39 / 0.08);
+  --scrim: rgb(17 24 39 / 0.42); /* behind the dialog, no blur */
+
+  /* Layout measures */
+  --sidebar-w: 16rem;
+  --detail-w: 21.5rem;
+  --control-h: 2.75rem; /* minimum height of every control, on desktop and touch */
 }

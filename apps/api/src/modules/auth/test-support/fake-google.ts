@@ -225,6 +225,8 @@ export const signInWithGoogle = async (
     readonly callbackApp?: FastifyInstance;
     readonly remoteAddress?: string;
     readonly cookie?: string;
+    /** Headers the browser sends with the callback, as the edge's `cf-ipcity`. */
+    readonly callbackHeaders?: Readonly<Record<string, string>>;
     readonly query?: (issued: { code: string; state: string }) => Record<string, string | undefined>;
   } = {}
 ): Promise<GoogleSignInResult> => {
@@ -247,7 +249,7 @@ export const signInWithGoogle = async (
     method: 'GET',
     url: `/auth/callback/google${search === '' ? '' : `?${search}`}`,
     remoteAddress,
-    headers: { cookie }
+    headers: { ...options.callbackHeaders, cookie }
   });
   cookie = cookieHeader(callback.cookies, cookie);
   return { start, callback, location: String(callback.headers.location ?? ''), cookie };

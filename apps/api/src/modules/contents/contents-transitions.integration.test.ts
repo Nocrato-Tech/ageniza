@@ -216,7 +216,7 @@ describe('submit: sending for approval (issue #256, rules 7 and 11)', () => {
     const reply = await act('production', 'submit', contentId);
 
     error(reply, 409, 'CONTENT_STATE');
-    expect(reply.json().error.message).toBe('Só um conteúdo em produção ou em ajuste é enviado para aprovação.');
+    expect(reply.json().error.message).toBe('Só um conteúdo em produção ou em ajuste é enviado para aprovação. Um conteúdo que já aguarda aprovação não muda de prazo nem de recado.');
     expect(await statusOf(contentId)).toBe(status);
   });
 
