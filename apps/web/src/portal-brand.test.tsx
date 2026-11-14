@@ -418,10 +418,10 @@ describe('portal Marca (#143)', () => {
     const personaDialog = await screen.findByRole('dialog', { name: 'Sugerir sobre "Seu João"' });
     fireEvent.change(within(personaDialog).getByRole('textbox', { name: 'Escreva sua sugestão' }), { target: { value: 'Ele gosta de pão doce' } });
     setStudy(CLIENT_ID, portalStudyBody({ ...FULL_STUDY_FILLED }, [portalPersona(MARIA_ID, 'Dona Maria', { description: 'Mora perto da padaria', pains: 'Falta de tempo' })]));
-    apis[CLIENT_ID].failNextWrite(() => apiError(409, 'PERSONA_ARCHIVED'));
+    apis[CLIENT_ID].failNextWrite(() => apiError(409, 'SECTION_NOT_FILLED'));
     fireEvent.click(within(personaDialog).getByRole('button', { name: 'Enviar' }));
     const personaAlert = await within(personaDialog).findByRole('alert');
-    expect(personaAlert.textContent).toBe('Esta parte não está mais disponível para conversa.');
+    expect(personaAlert.textContent).toBe('Sua agência está preparando esta parte.');
     expect(personaAlert.textContent).not.toMatch(/persona/i);
     await waitFor(() => expect(screen.queryByText('Seu João')).toBeNull());
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -588,7 +588,7 @@ describe('portal Marca (#143)', () => {
     expect(probe.pathname).toBe(marcaUrl(SECOND_ID));
   });
 
-  it('does not show a persona the payload marks as archived: the page fails closed', async () => {
+  it('does not show a persona whose payload still carries a status: the page fails closed', async () => {
     const study = portalStudyBody({ branding: { body: 'Padaria de bairro' } }, [{ ...portalPersona(JOAO_ID, 'Seu João'), status: 'archived' }]);
     const { impl } = makeWorld({ studies: { [CLIENT_ID]: study, [SECOND_ID]: SECOND_STUDY } });
     renderPortal(impl);

@@ -37,10 +37,8 @@ const clientA = randomUUID();
 const clientOther = randomUUID();
 const clientB = randomUUID();
 const activePersona = randomUUID();
-const archivedPersona = randomUUID();
 const threadSection = randomUUID();
 const threadActivePersona = randomUUID();
-const threadArchivedPersona = randomUUID();
 const threadOtherClient = randomUUID();
 const threadMixedSides = randomUUID();
 const resolverOnly = randomUUID();
@@ -135,15 +133,10 @@ beforeAll(async () => {
       { client_id: clientA, user_id: bothSides },
       { client_id: clientOther, user_id: portalOtherClient }
     ]);
-    await transaction('client_personas').insert([
-      { id: activePersona, client_id: clientA, name: 'Active persona', updated_by: adminA },
-      { id: archivedPersona, client_id: clientA, name: 'Archived persona', updated_by: adminA }
-    ]);
-    await transaction('client_personas').where({ id: archivedPersona }).update({ status: 'archived' });
+    await transaction('client_personas').insert({ id: activePersona, client_id: clientA, name: 'Active persona', updated_by: adminA });
     await transaction('client_threads').insert([
       { id: threadSection, client_id: clientA, section_key: 'branding', opened_by: adminA, opened_side: 'agency' },
       { id: threadActivePersona, client_id: clientA, persona_id: activePersona, opened_by: portalOne, opened_side: 'client' },
-      { id: threadArchivedPersona, client_id: clientA, persona_id: archivedPersona, opened_by: adminA, opened_side: 'agency' },
       { id: threadOtherClient, client_id: clientOther, section_key: 'branding', opened_by: adminA, opened_side: 'agency' },
       { id: threadMixedSides, client_id: clientA, section_key: 'colors', opened_by: adminA, opened_side: 'agency' },
       { id: threadResolved, client_id: clientA, section_key: 'observations', opened_by: portalOne, opened_side: 'client' }
@@ -156,7 +149,6 @@ beforeAll(async () => {
       comment(threadSection, clientA, portalOne, 'client'),
       comment(threadSection, clientA, portalTwo, 'client'),
       comment(threadActivePersona, clientA, portalOne, 'client'),
-      comment(threadArchivedPersona, clientA, adminA, 'agency'),
       comment(threadOtherClient, clientOther, adminA, 'agency'),
       comment(threadOtherClient, clientOther, portalOtherClient, 'client'),
       // The same person writes from the two sides: each comment must resolve through its own link.
@@ -257,9 +249,7 @@ describe('thread_comment_authors (#128, #130)', () => {
     }
   });
 
-  it('hides a thread of an archived persona from the portal and keeps it for the agency', async () => {
-    expect(await authorsAs(portalOne, threadArchivedPersona)).toEqual([]);
-    expect(await authorsAs(adminA, threadArchivedPersona)).toEqual([adminAuthor]);
+  it('reads the thread of a persona for the portal of its client', async () => {
     expect(await authorsAs(portalOne, threadActivePersona)).toEqual([portalOneAuthor]);
   });
 
@@ -363,7 +353,7 @@ describe('thread_comment_authors (#128, #130)', () => {
 
   it('reads a thread for exactly the callers the client_threads policy lets read it', async () => {
     const callers = [adminA, ownerA, bothSides, portalOne, portalTwo, portalOtherClient, adminB, ownerB, outsider, resolverOnly];
-    const threads = [threadSection, threadActivePersona, threadArchivedPersona, threadOtherClient, threadMixedSides, threadResolved];
+    const threads = [threadSection, threadActivePersona, threadOtherClient, threadMixedSides, threadResolved];
     for (const caller of callers) {
       for (const thread of threads) {
         const byPolicy = await policyReadableAs(caller, thread);

@@ -42,7 +42,6 @@ const clientB1 = randomUUID();
 const clientBare = randomUUID();
 const clientArchived = randomUUID();
 const personaActive = randomUUID();
-const personaArchived = randomUUID();
 const personaOfA2 = randomUUID();
 
 const OWNER_NAME = 'Dona da Agência';
@@ -265,10 +264,8 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
     ]);
     await owner.knex('client_personas').insert([
       { id: personaActive, client_id: clientA1, name: 'Persona ativa', updated_by: users.admin!.id },
-      { id: personaArchived, client_id: clientA1, name: 'Persona arquivada', updated_by: users.admin!.id },
       { id: personaOfA2, client_id: clientA2, name: 'Persona do A2', updated_by: users.admin!.id }
     ]);
-    await owner.knex('client_personas').where({ id: personaArchived }).update({ status: 'archived' });
     await owner.knex('client_brand_sections').insert({ client_id: clientA1, section_key: 'branding', body: 'Marca acolhedora.', updated_by: users.admin!.id });
 
     for (const key of Object.keys(users)) cookies[key] = await login(users[key]!);
@@ -427,25 +424,6 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
       expect((await call('GET', `${base}?personaId=${personaOfA2}`, cookies.manager!)).statusCode).toBe(404);
       expect(await countThreads(clientA1)).toBe(threadsBefore);
       expect((await openAs(cookies.manager!, base, { personaId: personaActive })).statusCode).toBe(201);
-    });
-
-    it('keeps a thread of an archived persona readable and refuses to write to it with 409', async () => {
-      const threadId = await seedThread(clientA1, { personaId: personaArchived }, [{ author: 'manager', side: 'agency', at: '2026-10-01T10:00:00Z' }]);
-      const base = agencyThreads(agencyA, clientA1);
-      const commentsBefore = await countComments(clientA1);
-      const threadsBefore = await countThreads(clientA1);
-
-      expect((await call('GET', `${base}?personaId=${personaArchived}`, cookies.manager!)).json().data.map((item: { id: string }) => item.id)).toContain(threadId);
-      expect((await call('GET', `${base}/${threadId}/comments`, cookies.manager!)).statusCode).toBe(200);
-
-      const comment = await call('POST', `${base}/${threadId}/comments`, cookies.manager!, { body: 'x' });
-      expect(comment.statusCode).toBe(409);
-      expect(comment.json().error.code).toBe('PERSONA_ARCHIVED');
-      expect((await openAs(cookies.manager!, base, { personaId: personaArchived })).statusCode).toBe(409);
-      expect((await call('POST', `${base}/${threadId}/resolve`, cookies.manager!)).statusCode).toBe(409);
-      expect(await countComments(clientA1)).toBe(commentsBefore);
-      expect(await countThreads(clientA1)).toBe(threadsBefore);
-      expect(await threadRow(threadId)).toMatchObject({ resolved_at: null });
     });
 
     it('reopens a resolved thread when the client comments, and counts it as awaiting the agency', async () => {
@@ -703,20 +681,6 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
       expect(await countThreads(clientId)).toBe(0);
     });
 
-    it('answers 409 PERSONA_ARCHIVED when the persona is archived between the check and the write', async () => {
-      const persona = randomUUID();
-      await owner.knex('client_personas').insert({ id: persona, client_id: clientA1, name: 'Persona da corrida', updated_by: users.admin!.id });
-      const threadsBefore = await countThreads(clientA1);
-      await withRacingApp(racing('insert into public.client_threads', async () => {
-        await owner.knex('client_personas').where({ id: persona }).update({ status: 'archived' });
-      }), async (racingApp) => {
-        const reply = await injectOn(racingApp, 'POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject: { personaId: persona }, body: 'x' });
-        expect(reply.statusCode).toBe(409);
-        expect(reply.json().code).toBe('PERSONA_ARCHIVED');
-      });
-      expect(await countThreads(clientA1)).toBe(threadsBefore);
-    });
-
     it('answers 403, not 500, when row-level security refuses a write that no state change explains', async () => {
       await withRacingApp(racing('insert into public.client_threads'), async (racingApp) => {
         const reply = await injectOn(racingApp, 'POST', agencyThreads(agencyA, clientA1), cookies.admin!, { subject: { sectionKey: 'branding' }, body: 'x' });
@@ -724,37 +688,14 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
       });
     });
 
-    it('answers 409 when the persona is archived between the check and the comment, and when the resolve matches no row', async () => {
-      const persona = randomUUID();
-      await owner.knex('client_personas').insert({ id: persona, client_id: clientA1, name: 'Persona do comentário', updated_by: users.admin!.id });
-      const threadId = await seedThread(clientA1, { personaId: persona }, [{ author: 'manager', side: 'agency', at: '2026-03-01T10:00:00Z' }]);
-      const archive = async () => { await owner.knex('client_personas').where({ id: persona }).update({ status: 'archived' }); };
-
-      await withRacingApp(racing('insert into public.client_thread_comments', archive), async (racingApp) => {
-        const reply = await injectOn(racingApp, 'POST', `${agencyThreads(agencyA, clientA1)}/${threadId}/comments`, cookies.admin!, { body: 'x' });
-        expect(reply.statusCode).toBe(409);
-        expect(reply.json().code).toBe('PERSONA_ARCHIVED');
-      });
-      await owner.knex('client_personas').where({ id: persona }).update({ status: 'active' });
-      await withRacingApp({ statement: 'update public.client_threads', failure: 'empty', beforeFailure: archive }, async (racingApp) => {
-        const reply = await injectOn(racingApp, 'POST', `${agencyThreads(agencyA, clientA1)}/${threadId}/resolve`, cookies.admin!, undefined);
-        expect(reply.statusCode).toBe(409);
-        expect(reply.json().code).toBe('PERSONA_ARCHIVED');
-      });
-      expect(await threadRow(threadId)).toMatchObject({ resolved_at: null });
-    });
-
-    it('refuses an archived client or persona before attempting the write, not only after the database refuses it', async () => {
-      const personaThread = await seedThread(clientA1, { personaId: personaArchived }, [{ author: 'manager', side: 'agency', at: '2026-03-02T10:00:00Z' }]);
+    it('refuses an archived client before attempting the write, not only after the database refuses it', async () => {
       const archivedClientThread = await seedThread(clientArchived, { sectionKey: 'colors' }, [{ author: 'manager', side: 'agency', at: '2026-03-02T10:00:00Z' }]);
       const attempts: string[] = [];
       const note = (label: string) => async () => { attempts.push(label); };
       const cases = [
-        { label: 'open on an archived persona', statement: 'insert into public.client_threads', url: agencyThreads(agencyA, clientA1), payload: { subject: { personaId: personaArchived }, body: 'x' } },
-        { label: 'comment on an archived persona', statement: 'insert into public.client_thread_comments', url: `${agencyThreads(agencyA, clientA1)}/${personaThread}/comments`, payload: { body: 'x' } },
         { label: 'open on an archived client', statement: 'insert into public.client_threads', url: agencyThreads(agencyA, clientArchived), payload: { subject: { sectionKey: 'colors' }, body: 'x' } },
         { label: 'comment on an archived client', statement: 'insert into public.client_thread_comments', url: `${agencyThreads(agencyA, clientArchived)}/${archivedClientThread}/comments`, payload: { body: 'x' } },
-        { label: 'resolve on an archived persona', statement: 'update public.client_threads', url: `${agencyThreads(agencyA, clientA1)}/${personaThread}/resolve`, payload: undefined }
+        { label: 'resolve on an archived client', statement: 'update public.client_threads', url: `${agencyThreads(agencyA, clientArchived)}/${archivedClientThread}/resolve`, payload: undefined }
       ];
       for (const item of cases) {
         await withRacingApp({ statement: item.statement, failure: 'rls', beforeFailure: note(item.label) }, async (racingApp) => {
@@ -881,22 +822,6 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
       (await call('POST', `${portalThreads(clientId)}/${threadId}/comments`, cookie, { body: 'x' })).statusCode
     ];
 
-    it('treats an archived persona as nonexistent for a collaborator with a client link too, on every portal route', async () => {
-      const threadId = await seedThread(clientA1, { personaId: personaArchived }, [{ author: 'manager', side: 'agency', at: '2026-01-09T10:00:00Z' }]);
-      const threadsBefore = await countThreads(clientA1);
-      const commentsBefore = await countComments(clientA1);
-      for (const key of ['dual', 'dualBare']) {
-        expect(await portalRoutesAs(cookies[key]!, clientA1, threadId, { personaId: personaArchived }), key).toEqual([404, 404, 404, 404]);
-      }
-      expect(await countThreads(clientA1)).toBe(threadsBefore);
-      expect(await countComments(clientA1)).toBe(commentsBefore);
-
-      // The same person, through the agency routes, is still the agency: it reads the archived persona.
-      expect((await call('GET', `${agencyThreads(agencyA, clientA1)}?personaId=${personaArchived}`, cookies.dual!)).json().data.map((item: { id: string }) => item.id)).toContain(threadId);
-      expect((await call('GET', `${agencyThreads(agencyA, clientA1)}/${threadId}/comments`, cookies.dual!)).statusCode).toBe(200);
-      expect((await call('POST', `${agencyThreads(agencyA, clientA1)}/${threadId}/comments`, cookies.dual!, { body: 'x' })).statusCode).toBe(409);
-    });
-
     it('lets a collaborator whose role has no cliente permission act on the portal only as the client person', async () => {
       const bare = cookies.dualBare!;
       const opened = await openAs(bare, portalThreads(clientA1), { sectionKey: 'branding' }, 'Como cliente.');
@@ -998,14 +923,12 @@ describe('CLIENTS conversation routes (#128 agency, #130 portal)', () => {
       expect(await countComments(clientArchived)).toBe(commentsBefore);
     });
 
-    it('treats an archived persona as nonexistent: list, open, read and comment all answer 404', async () => {
-      const threadId = await seedThread(clientA1, { personaId: personaArchived }, [{ author: 'manager', side: 'agency', at: '2026-01-07T10:00:00Z' }]);
+    it('treats a persona of another client as nonexistent: list and open answer 404, and a persona of the client works', async () => {
+      const threadId = await seedThread(clientA1, { personaId: personaActive }, [{ author: 'manager', side: 'agency', at: '2026-01-07T10:00:00Z' }]);
       const threadsBefore = await countThreads(clientA1);
       const commentsBefore = await countComments(clientA1);
-      expect((await call('GET', `${portalThreads(clientA1)}?personaId=${personaArchived}`, cookies.portalOne!)).statusCode).toBe(404);
-      expect((await openAs(cookies.portalOne!, portalThreads(clientA1), { personaId: personaArchived })).statusCode).toBe(404);
-      expect((await call('GET', `${portalThreads(clientA1)}/${threadId}/comments`, cookies.portalOne!)).statusCode).toBe(404);
-      expect((await call('POST', `${portalThreads(clientA1)}/${threadId}/comments`, cookies.portalOne!, { body: 'x' })).statusCode).toBe(404);
+      expect((await openAs(cookies.portalOne!, portalThreads(clientA1), { personaId: personaOfA2 })).statusCode).toBe(404);
+      expect((await call('GET', `${portalThreads(clientA1)}/${threadId}/comments`, cookies.portalOne!)).statusCode).toBe(200);
       expect((await call('GET', `${portalThreads(clientA1)}?personaId=${personaOfA2}`, cookies.portalOne!)).statusCode).toBe(404);
       expect(await countThreads(clientA1)).toBe(threadsBefore);
       expect(await countComments(clientA1)).toBe(commentsBefore);

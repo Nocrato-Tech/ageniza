@@ -79,8 +79,7 @@ interface PortalHomeRow {
 
 /**
  * The Início summary. "Com resposta da agência" is the single thread-state definition, restricted to
- * the threads the portal can read: one about an archived persona is read-only history the portal
- * does not show, so it is not a reply waiting for the person either.
+ * the threads the portal can read.
  *
  * "Conteúdos esperando sua aprovação" counts only the caller's own client, only in "aguardando
  * aprovação", through `app_private.portal_contents`: the policy of `contents` answers the agency
@@ -101,13 +100,6 @@ export const loadPortalHome = async (transaction: ClientTransaction, clientId: s
           and ${brandStudyThreadSql('thread')}
           and ${openThreadSql('thread')}
           and ${latestCommentSideSql('thread')} = 'agency'
-          and (
-            thread.persona_id is null
-            or exists (
-              select 1 from public.client_personas persona
-              where persona.id = thread.persona_id and persona.client_id = thread.client_id and persona.status = 'active'
-            )
-          )
       ) as threads_answered_by_agency,
       (
         select count(*) from app_private.portal_contents(?::uuid, null, null, array['awaiting_approval']::text[])
@@ -174,15 +166,12 @@ const portalPersonaFromRow = (row: PortalPersonaRow): PortalPersona => ({
   traits: row.traits === null ? [] : [...row.traits],
   whereTheyAre: row.where_they_are,
   toneThatWorks: row.tone_that_works,
-  status: 'active',
   updatedAt: new Date(row.updated_at).toISOString()
 });
 
 /**
- * The seven sections and the active personas of the client. The statements do not select `updated_by`
- * at all, so who edited internally cannot reach the response by a mapping slip, and the persona query
- * filters `status = 'active'` itself: an archived persona is invisible to the portal and visible to
- * the agency, and the policy cannot tell the two callers apart for a collaborator with a client link.
+ * The seven sections and the personas of the client. The statements do not select `updated_by` (nor the
+ * count of messages) at all, so what is internal to the agency cannot reach the response by a mapping slip.
  */
 export const loadPortalBrandStudy = async (transaction: ClientTransaction, clientId: string): Promise<PortalBrandStudyResponse> => {
   const home = await raw<RawRows<{ readonly brand_study_filled: string | number }>>(transaction, `
@@ -197,7 +186,7 @@ export const loadPortalBrandStudy = async (transaction: ClientTransaction, clien
     select persona.id, persona.name, persona.description, persona.pains, persona.desires, persona.objections,
       persona.age, persona.occupation, persona.location, persona.traits, persona.where_they_are, persona.tone_that_works, persona.updated_at
     from public.client_personas persona
-    where persona.client_id = ?::uuid and persona.status = 'active'
+    where persona.client_id = ?::uuid
     order by persona.created_at asc, persona.id asc
   `, [clientId]);
   return {

@@ -31,10 +31,10 @@ afterAll(async () => {
   await owner?.close();
 });
 
-// The one table of `public` where the application role may DELETE: the preference of the person's own context, with a
-// delete policy of its own, and not a business entity. Anything else with a DELETE is an entity that is archived or
+// The tables of `public` where the application role may DELETE: the preference of the person's own context and, by the owner's decision of 2026-11-12, the persona of a client (it takes its conversation along); each has a
+// delete policy of its own. Anything else with a DELETE is an entity that is archived or
 // removed, never deleted (docs/business/structural-changes.md, "Exclusão reversível").
-const DELETABLE = ['user_context_preferences'];
+const DELETABLE = ['user_context_preferences', 'client_personas'];
 
 type Executor = Knex | Knex.Transaction;
 
@@ -98,6 +98,21 @@ describe('no table of public is open to the application role as a whole (accepta
              array(select polcmd::text from pg_catalog.pg_policy where polrelid = 'public.user_context_preferences'::regclass and polcmd = 'd') as policies
     `, []);
     expect(rows[0]).toEqual({ can_delete: true, policies: ['d'] });
+  });
+
+  it('keeps the persona of a client as the other DELETE, with its own delete policy and no DELETE on its conversation', async () => {
+    const { rows } = await raw<{ rows: readonly { table: string; can_delete: boolean; policies: string[] }[] }>(getOwner().knex, `
+      select c.relname as table, pg_catalog.has_table_privilege('ageniza_app', c.oid, 'delete') as can_delete,
+             array(select polcmd::text from pg_catalog.pg_policy where polrelid = c.oid and polcmd = 'd') as policies
+      from pg_catalog.pg_class c
+      where c.oid in ('public.client_personas'::regclass, 'public.client_threads'::regclass, 'public.client_thread_comments'::regclass)
+      order by 1
+    `, []);
+    expect(rows).toEqual([
+      { table: 'client_personas', can_delete: true, policies: ['d'] },
+      { table: 'client_thread_comments', can_delete: false, policies: [] },
+      { table: 'client_threads', can_delete: false, policies: [] }
+    ]);
   });
 
   it('sees a broad grant: a new table granted whole to the application role is reported, for each privilege', async () => {

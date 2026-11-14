@@ -60,7 +60,7 @@ import {
 import { announcementBody } from './material-upload-announcement.js';
 import { createPhotoUrlSigner } from './photo-url.js';
 import { COMMENT_DEFAULT_PAGE_SIZE, CONVERSATION_READ_PERMISSIONS, CONVERSATION_WRITE_PERMISSIONS, THREAD_DEFAULT_PAGE_SIZE } from './policy.js';
-import { isClientNoLongerActive, isRowLevelSecurityViolation, type ClientTransaction } from './service.js';
+import { isClientNoLongerActive, isRowLevelSecurityViolation, isSubjectGone, type ClientTransaction } from './service.js';
 
 type PreHandler = (request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;
 
@@ -105,8 +105,6 @@ const refusalError = (refusal: ConversationRefusal): HttpError => {
     case 'subject-not-found': return notFound('Subject not found.');
     case 'client-archived':
       return new HttpError({ statusCode: 409, code: 'CLIENT_ARCHIVED', message: 'Cliente arquivado não pode ser editado.' });
-    case 'persona-archived':
-      return new HttpError({ statusCode: 409, code: 'PERSONA_ARCHIVED', message: 'Persona arquivada: a conversa é somente leitura.' });
     case 'section-not-filled':
       return new HttpError({ statusCode: 409, code: 'SECTION_NOT_FILLED', message: 'Esta seção ainda não foi preenchida pela agência.' });
     case 'content-not-open':
@@ -207,6 +205,8 @@ export const registerConversationRoutes = (app: FastifyInstance, dependencies: C
       if (isRetryableConflict(error)) throw tryAgain();
       // The archive won the race for the client; the portal never learns that, an archived client is "not found" there.
       if (isClientNoLongerActive(error)) throw refusalError(scope.side === 'agency' ? 'client-archived' : 'client-not-found');
+      // The persona was deleted with its conversation after the checks: what the person was looking at is gone.
+      if (isSubjectGone(error)) throw refusalError(target.threadId === undefined ? 'subject-not-found' : 'thread-not-found');
       const materialRequestRefusal = materialRequestDatabaseRefusal(error);
       if (materialRequestRefusal !== undefined) throw materialRequestError(materialRequestRefusal);
       if (!isRowLevelSecurityViolation(error) && !(error instanceof ConversationWriteRefused)) throw error;

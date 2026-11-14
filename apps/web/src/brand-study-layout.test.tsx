@@ -62,7 +62,7 @@ describe('brand study layout (telas-melhorias S13)', () => {
     const selectors = Array.from(block.matchAll(/^\s*([^\s/*}@][^{}]*)\{/gm)).map((match) => match[1]!.trim());
     expect(selectors.length).toBeGreaterThan(20);
     // Everything in the block is new to the agency screen or sits under its modifier: no bare shared selector is restyled.
-    expect(selectors.filter((selector) => !/^\.(brand-study--agency|brand-index|brand-panel|brand-persona|brand-personas__awaiting|brand-personas__archived-item|brand-archetype|brand-card-skeleton|brand-section__header-action|brand-study__updated|brand-study__fill|brand-note)/.test(selector))).toEqual([]);
+    expect(selectors.filter((selector) => !/^\.(brand-study--agency|brand-index|brand-panel|brand-persona|brand-personas__awaiting|brand-archetype|brand-card-skeleton|brand-section__header-action|brand-study__updated|brand-study__fill|brand-note)/.test(selector))).toEqual([]);
     // The shared section row of the portal still has its line on top and its own header.
     const section = declarationsFor(css, '.brand-section');
     expect(section.get('border-top')).toBe('1px solid var(--border-default)');

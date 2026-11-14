@@ -41,7 +41,7 @@ const section = { key: 'branding', body: null, colors: null, archetype: null, up
 const persona = {
   id, name: 'Dona Maria', description: null, pains: null, desires: null, objections: null,
   age: null, occupation: null, location: null, traits: [], whereTheyAre: null, toneThatWorks: null,
-  status: 'active', updatedAt: '2026-10-07T12:00:00.000Z'
+  updatedAt: '2026-10-07T12:00:00.000Z'
 };
 
 describe('PortalClientResponseSchema (issue #129)', () => {
@@ -79,13 +79,14 @@ describe('PortalClientResponseSchema (issue #129)', () => {
 });
 
 describe('PortalBrandStudyResponseSchema (issue #129)', () => {
-  it('serves sections and active personas without who edited them', () => {
+  it('serves sections and personas without who edited them', () => {
     expect(PortalBrandStudyResponseSchema.safeParse({ filled: 1, sections: [section], personas: [persona] }).success).toBe(true);
   });
 
-  it('refuses an archived persona and any trace of who edited internally', () => {
+  it('refuses any trace of who edited internally and the count of the conversation of the agency', () => {
     for (const study of [
-      { filled: 1, sections: [section], personas: [{ ...persona, status: 'archived' }] },
+      { filled: 1, sections: [section], personas: [{ ...persona, messageCount: 3 }] },
+      { filled: 1, sections: [section], personas: [{ ...persona, status: 'active' }] },
       { filled: 1, sections: [{ ...section, updatedBy: { id, name: 'Alguém' } }], personas: [] },
       { filled: 1, sections: [{ ...section, updatedBy: null }], personas: [] },
       { filled: 1, sections: [section], personas: [{ ...persona, updatedBy: null }] },

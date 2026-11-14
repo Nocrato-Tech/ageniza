@@ -498,7 +498,7 @@ describe('CLIENTES city, tab counts, workers and persona profile (decisions 2026
       const client = await newClient('persona-cria');
       const created = await call('POST', personas(agencyA, client), cookies.admin, { name: 'Marina', ...PROFILE });
       expect(created.statusCode).toBe(201);
-      expect(created.json()).toMatchObject({ name: 'Marina', ...PROFILE, status: 'active' });
+      expect(created.json()).toMatchObject({ name: 'Marina', ...PROFILE, messageCount: 0 });
       expect(await personaRow(created.json().id)).toMatchObject({
         age: 34, occupation: 'Dona de padaria', location: 'Campinas, SP', traits: PROFILE.traits,
         where_they_are: PROFILE.whereTheyAre, tone_that_works: PROFILE.toneThatWorks
