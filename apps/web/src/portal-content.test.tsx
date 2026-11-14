@@ -1209,8 +1209,15 @@ describe('the post of the portal (#270)', () => {
       expect(rule('.portal-post__decide')).not.toMatch(/(^|[s;])order:/);
       const wide = mediaBlock('(min-width: 48rem)', '.portal-post__layout');
       expect(wide).toMatch(/\.portal-post__layout \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 24rem\);/);
-      // On a long post the answer stays in view beside it, held at the top while the page scrolls.
-      expect(wide).toMatch(/\.portal-post__decide \{\s*position:\s*sticky;\s*top:\s*var\(--space-4\);/);
+      // The answer is as tall as the post's row and only its bar is held at the bottom of the window, so the decisions stay in view for a note of any length.
+      expect(wide).toMatch(/\.portal-post__layout \{[^}]*align-items:\s*start;/);
+      expect(wide).toMatch(/\.portal-post__decide \{[^}]*display:\s*flex;/);
+      expect(wide).toMatch(/\.portal-post__decide \{[^}]*flex-direction:\s*column;/);
+      expect(wide).toMatch(/\.portal-post__decide \{[^}]*align-self:\s*stretch;/);
+      expect(wide).toMatch(/\.portal-post__decide \.portal-post__bar \{[^}]*margin-top:\s*auto;/);
+      expect(wide).toMatch(/\.portal-post__decide \.portal-post__bar \{[^}]*position:\s*sticky;/);
+      expect(wide).toMatch(/\.portal-post__decide \.portal-post__bar \{[^}]*bottom:\s*var\(--space-4\);/);
+      expect(wide).not.toMatch(/\.portal-post__decide \{[^}]*position:\s*sticky/);
     });
 
     it('draws no blur on the header of the portal and takes the hover lift of a cover card away for those who ask for less motion', () => {
