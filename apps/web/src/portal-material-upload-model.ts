@@ -11,7 +11,6 @@ import {
 
 import { apiPath } from './api-path.js';
 import { HttpClientError, type HttpClient } from './http.js';
-import { PORTAL_PAUSED_REASON } from './plan-notice.js';
 
 const BASE = '/clients/:clientId/material-requests/:threadId/uploads';
 
@@ -50,13 +49,15 @@ export class PortalUploadError extends Error {
   }
 }
 
+export const UPLOAD_PAUSED_REASON = 'O envio de arquivos está pausado no momento. Tente mais tarde ou fale com a sua agência.';
+
 const REJECTION_TEXT: Readonly<Record<string, string>> = {
   empty_object: 'O arquivo está vazio. Escolha outro.',
   content_type_mismatch: 'O arquivo não é uma foto nem um áudio válido. Escolha outro.',
   too_large: 'O arquivo passa do tamanho máximo de 25 MB.',
   invalid_dimensions: 'A imagem tem um tamanho que não é aceito. Escolha outra.',
   request_full: 'Este pedido já recebeu o máximo de 20 arquivos.',
-  agency_unavailable: PORTAL_PAUSED_REASON
+  agency_unavailable: UPLOAD_PAUSED_REASON
 };
 
 const GENERIC = 'Não foi possível enviar o arquivo. Tente de novo.';
@@ -74,7 +75,7 @@ export const uploadErrorOf = (error: unknown): PortalUploadError => {
     case 'REQUEST_FULL': return new PortalUploadError(REJECTION_TEXT.request_full ?? GENERIC, true);
     case 'REQUEST_RESOLVED': return new PortalUploadError('Este pedido já foi resolvido e não recebe mais arquivos.', true);
     case 'UPLOAD_UNAVAILABLE':
-    case 'AGENCY_READ_ONLY': return new PortalUploadError(PORTAL_PAUSED_REASON, true);
+    case 'AGENCY_READ_ONLY': return new PortalUploadError(UPLOAD_PAUSED_REASON, true);
     case 'NETWORK_ERROR': return new PortalUploadError('A conexão caiu durante o envio. Tente de novo.');
     default:
       if (error.status === 404) return new PortalUploadError('Este pedido não está mais disponível.', true);

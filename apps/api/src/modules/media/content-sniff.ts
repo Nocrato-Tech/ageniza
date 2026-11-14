@@ -57,8 +57,39 @@ const pngDimensions = (bytes: Uint8Array): MediaDimensions | undefined => {
 // The markers that carry a frame header (SOF), which are every one of 0xC0-0xCF but the three that are not frames.
 const isStartOfFrame = (marker: number): boolean => marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
 
+/**
+ * The EXIF Orientation (1-8) of an APP1 segment whose payload spans `[start, end)`: 1 when the segment is EXIF but has none, is truncated or
+ * is malformed, and `undefined` when it is not an EXIF segment at all (an XMP one, say), which must not touch the orientation already read.
+ */
+const exifOrientation = (bytes: Uint8Array, start: number, end: number): number | undefined => {
+  const limit = Math.min(end, bytes.length);
+  if (limit - start < 6 || !ascii(bytes, start, 'Exif') || bytes[start + 4] !== 0 || bytes[start + 5] !== 0) return undefined;
+  if (limit - start < 14) return 1;
+  const tiff = start + 6;
+  const little = bytes[tiff] === 0x49 && bytes[tiff + 1] === 0x49;
+  if (!little && !(bytes[tiff] === 0x4d && bytes[tiff + 1] === 0x4d)) return 1;
+  const u16 = (offset: number): number => (little ? u16le(bytes, offset) : u16be(bytes, offset));
+  const u32 = (offset: number): number =>
+    little ? (u16le(bytes, offset) + u16le(bytes, offset + 2) * 0x10000) : u32be(bytes, offset);
+  if (u16(tiff + 2) !== 42) return 1;
+  const ifd = tiff + u32(tiff + 4);
+  if (ifd + 2 > limit) return 1;
+  const count = u16(ifd);
+  for (let index = 0; index < count; index += 1) {
+    const entry = ifd + 2 + index * 12;
+    if (entry + 12 > limit) return 1;
+    if (u16(entry) === 0x0112) {
+      const value = u16(entry + 8);
+      return value >= 1 && value <= 8 ? value : 1;
+    }
+  }
+  return 1;
+};
+
 const jpegDimensions = (bytes: Uint8Array): MediaDimensions | undefined => {
   let position = 2;
+  let orientation = 1;
+  let exifSeen = false;
   while (position + 4 <= bytes.length) {
     if (bytes[position] !== 0xff) return undefined;
     const marker = bytes[position + 1]!;
@@ -76,7 +107,17 @@ const jpegDimensions = (bytes: Uint8Array): MediaDimensions | undefined => {
     if (length < 2) return undefined;
     if (isStartOfFrame(marker)) {
       if (position + 9 > bytes.length || length < 7) return undefined;
-      return { height: u16be(bytes, position + 5), width: u16be(bytes, position + 7) };
+      const height = u16be(bytes, position + 5);
+      const width = u16be(bytes, position + 7);
+      return orientation >= 5 ? { width: height, height: width } : { width, height };
+    }
+    // The first EXIF segment is the one that counts, as for the readers that show the photo; an XMP APP1 after it changes nothing.
+    if (marker === 0xe1 && !exifSeen) {
+      const found = exifOrientation(bytes, position + 4, position + 2 + length);
+      if (found !== undefined) {
+        orientation = found;
+        exifSeen = true;
+      }
     }
     position += 2 + length;
   }

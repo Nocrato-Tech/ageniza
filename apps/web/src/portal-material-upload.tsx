@@ -7,12 +7,12 @@ import { Button, LiveStatus, Modal, ProgressBar } from '@ageniza/ui';
 
 import { MATERIAL_REQUEST_LABEL } from './conversation.js';
 import { useApiClient } from './http.js';
-import { PORTAL_PAUSED_REASON } from './plan-notice.js';
 import { portalMaterialRequestsKey } from './portal-material-requests.js';
 import { TestimonyRecorder } from './portal-material-upload-recorder.js';
 import {
   IMAGE_ACCEPT,
   PortalUploadError,
+  UPLOAD_PAUSED_REASON,
   announceUploads,
   listUploads,
   portalUploadsKey,
@@ -205,7 +205,7 @@ export function PortalUploadActions({ clientId, request, variant = 'secondary' }
   const client = usePortalClient();
   const [mode, setMode] = useState<UploadMode | null>(null);
   if (request.state !== 'open') return null;
-  const blockedReason = client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined;
+  const blockedReason = client.agencyReadOnly ? UPLOAD_PAUSED_REASON : undefined;
   return <>
     <Button variant={variant} leadingIcon={<Camera />} blockedReason={blockedReason} onClick={() => setMode('photos')}>Enviar fotos</Button>
     <Button variant={variant} leadingIcon={<Mic />} blockedReason={blockedReason} onClick={() => setMode('testimony')}>Gravar depoimento</Button>

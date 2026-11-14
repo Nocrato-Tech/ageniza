@@ -5,12 +5,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import type { MaterialRequest } from '@ageniza/contracts';
 
-import { ApiClientProvider, HttpClient } from './http.js';
+import { ApiClientProvider, HttpClient, HttpClientError } from './http.js';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { PortalMaterialRequests } from './portal-material-requests.js';
 import { PortalRequestsPage } from './portal-requests.js';
 import { PortalUploadActions, PortalUploadDialog } from './portal-material-upload.js';
-import { pickRecorderType } from './portal-material-upload-model.js';
+import { pickRecorderType, uploadErrorOf } from './portal-material-upload-model.js';
 import { createPortalMaterialRequestsApi } from './portal-material-requests-fixture.js';
 import { createPortalUploadsApi, FakeXhr } from './portal-material-upload-fixture.js';
 import { createQueryClient } from './query.js';
@@ -93,7 +93,7 @@ describe('sending photos to an open request', () => {
     expect(uploads.announced[0]).toEqual(confirmed);
     expect(uploads.announced[0]).toHaveLength(1);
     const text = dialog().textContent ?? '';
-    expect(text).toContain('A aprovação está pausada no momento. A agência já foi avisada.');
+    expect(text).toContain('O envio de arquivos está pausado no momento. Tente mais tarde ou fale com a sua agência.');
     expect(text).not.toMatch(/plano|cota|armazenamento|assinatura|espaço/i);
     expect(within(dialog()).getByText('1 arquivo enviado, 1 não foi enviado.')).toBeTruthy();
   });
@@ -155,6 +155,14 @@ describe('sending photos to an open request', () => {
     mount(<PortalUploadActions clientId={CLIENT_ID} request={{ ...request, state: 'resolved' }} />);
     expect(screen.queryByRole('button', { name: 'Enviar fotos' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Gravar depoimento' })).toBeNull();
+  });
+});
+
+describe('the text of a paused upload', () => {
+  it.each(['UPLOAD_UNAVAILABLE', 'AGENCY_READ_ONLY'])('speaks of the upload, not of the approval, for %s', (code) => {
+    const error = uploadErrorOf(new HttpClientError('x', { code, status: 409 }));
+    expect(error.message).toBe('O envio de arquivos está pausado no momento. Tente mais tarde ou fale com a sua agência.');
+    expect(error.message).not.toMatch(/aprovação|avisada|plano|cota|armazenamento/i);
   });
 });
 

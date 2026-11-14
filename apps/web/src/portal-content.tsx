@@ -20,7 +20,7 @@ import { Button, EmptyState, Field, FieldMessage, FormatTag, LiveStatus, Skeleto
 import { apiPath } from './api-path.js';
 import { ApprovalDeadline, ApprovalSenderNote, hourLabel, spokenDayLabel, weekdayArticle } from './approval-deadline.js';
 import { Conversation } from './conversation.js';
-import { fullDayLabel } from './content-dates.js';
+import { fullDayLabel, todayInSaoPaulo } from './content-dates.js';
 import { CARD_FORMAT_LABELS, FORMAT_LABELS, FORMAT_TONES } from './content-labels.js';
 import { useDocumentTitle } from './document-title.js';
 import { HttpClientError, useApiClient } from './http.js';
@@ -66,6 +66,8 @@ const MESSAGES = {
   noteInvalid: 'O recado contém caracteres que não são aceitos.',
   requestFailed: 'Não foi possível enviar o pedido. Tente de novo.',
   approved: 'Conteúdo aprovado. Obrigado!',
+  adjustUndoes: 'A aprovação será desfeita e a agência ajusta o post.',
+  adjustUntilEve: 'Você pode pedir ajuste até a véspera da publicação.',
   requested: 'Pedido de ajuste enviado. A agência vai ver a sua mensagem na conversa abaixo.',
   ...COMMENT_MESSAGES
 } as const;
@@ -197,6 +199,8 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
     onSettled: () => { sending.current = false; }
   });
 
+  const wasApproved = content.status === 'approved';
+
   const requestChanges = useMutation({
     mutationFn: (comment: string) => httpClient.request({
       path: apiPath(`${DETAIL_PATH}/request-changes`, { clientId: client.id, contentId: content.id }),
@@ -215,7 +219,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
       refresh();
     },
     onError: (error: unknown) => {
-      if (isCode(error, 'CONTENT_NOT_AWAITING_APPROVAL')) { setAsking(false); setStateChanged(MESSAGES.stateChanged); }
+      if (isCode(error, 'CONTENT_NOT_AWAITING_APPROVAL')) { setAsking(false); setStateChanged(wasApproved && error instanceof Error ? error.message : MESSAGES.stateChanged); }
       else if (isCode(error, 'CONTENT_COMMENT_INVALID')) setRequestError({ message: MESSAGES.invalidCharacters, field: true });
       else setRequestError({ message: stale(error) ?? MESSAGES.requestFailed, field: false });
       refresh();
@@ -240,6 +244,8 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
   };
 
   const awaiting = content.status === 'awaiting_approval';
+  // Only the day decides, in São Paulo: on the day of publication itself an approved post no longer takes a change.
+  const adjustable = wasApproved && CalendarDaySchema.safeParse(content.publishOn).success && content.publishOn > todayInSaoPaulo();
   const stateNote = STATE_NOTES[content.status];
 
   // The button the person pressed leaves with the bar: what the screen answers takes the focus, so it is read and seen where the person is.
@@ -315,9 +321,18 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
         </div>
         <p className="portal-post__hint">Ao aprovar, a agência cuida da publicação na data marcada.</p>
       </aside>}
+      {adjustable && <aside className="portal-post__decide" aria-labelledby="portal-post-decision">
+        <h2 id="portal-post-decision">Quer mudar algo?</h2>
+        <p className="portal-post__hint">{MESSAGES.adjustUntilEve}</p>
+        <div className="portal-post__bar">
+          <div className="portal-post__actions">
+            <Button variant="secondary" size="lg" leadingIcon={<MessageSquarePlus />} disabled={reloading} blockedReason={client.agencyReadOnly ? PORTAL_PAUSED_REASON : undefined} onClick={() => { setRequestError(undefined); setStateChanged(undefined); setAsking(true); }}>Pedir ajuste</Button>
+          </div>
+        </div>
+      </aside>}
     </div>
     {asking && <RequestChangesDialog
-      hint="A agência vai ver a sua mensagem e responder na conversa deste conteúdo."
+      hint={wasApproved ? MESSAGES.adjustUndoes : 'A agência vai ver a sua mensagem e responder na conversa deste conteúdo.'}
       draft={draft}
       onDraft={(value) => { setDraft(value); setRequestError(undefined); }}
       pending={requestChanges.isPending}
