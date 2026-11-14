@@ -92,3 +92,234 @@
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
 }
 
+
+.subscription__note {
+  font: var(--caption);
+}
+
+/* The direct comparison: one column per plan; on a narrow screen each row is a list with the plan name in front of the value. */
+.cmp {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.cmp__row {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1.2fr) repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--border-default);
+}
+
+.cmp__row:first-child {
+  border-top: 0;
+}
+
+.cmp__row > * {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow-wrap: anywhere;
+}
+
+.cmp__row > :first-child {
+  color: var(--text-secondary);
+  font: var(--label-md);
+  font-weight: 600;
+}
+
+.cmp__row--head > * {
+  flex-wrap: wrap;
+  align-content: center;
+  padding-block: var(--space-4);
+  color: var(--text-primary);
+  font: var(--label-md);
+  font-weight: 700;
+}
+
+.cmp__row--head > :first-child {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.cmp__cell--rec {
+  background: var(--bg-tint);
+}
+
+.cmp__row--price > .cmp__cell {
+  font: var(--title-md);
+}
+
+.cmp__cell svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  color: var(--color-teal-700);
+}
+
+.cmp__cell--no {
+  color: var(--text-danger);
+}
+
+.cmp__cell > span {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cmp__cell small {
+  display: block;
+  flex-basis: 100%;
+  color: var(--text-secondary);
+  font: var(--caption);
+}
+
+.cmp__cell--rec small {
+  color: var(--color-indigo-800);
+}
+
+@media (max-width: 47.99rem) {
+  .cmp__row,
+  .cmp__row--head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cmp__row--head {
+    display: none;
+  }
+
+  .cmp__row > :first-child {
+    background: var(--bg-canvas);
+  }
+
+  .cmp__row > .cmp__cell {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+  }
+
+  .cmp__row > .cmp__cell::before {
+    align-self: center;
+    content: attr(data-plan);
+    color: var(--text-secondary);
+    font: var(--caption);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .cmp__row--price > .cmp__cell {
+    font: var(--label-md);
+  }
+}
+
+/* What is lost, in numbers: a card per situation, with what follows from it and the way out. */
+.loss {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+  gap: var(--space-4);
+}
+
+.loss__card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+}
+
+.loss__card h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: var(--heading-lg);
+}
+
+.loss__card h3 svg {
+  flex: none;
+  color: var(--text-danger);
+}
+
+.loss__list {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  list-style: none;
+  font: var(--body-md);
+}
+
+.loss__list li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.loss__list svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.1875rem;
+  color: var(--text-danger);
+}
+
+.loss__list .loss__ok {
+  color: var(--color-teal-700);
+}
+
+.loss__fix {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-tint);
+  color: var(--color-indigo-800);
+  font: var(--body-md);
+}
+
+/* "Sem letra miúda": six promises, three to a row. */
+.proof {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.proof li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.proof li > svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-top: 0.125rem;
+  color: var(--color-teal-700);
+}
+
+.proof strong {
+  display: block;
+  font: var(--label-md);
+  font-weight: 700;
+}
+
+.proof span {
+  color: var(--text-secondary);
+  font: var(--body-md);
+}
+
+@media (max-width: 80rem) {
+  .proof {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -22,9 +22,12 @@ import { trialDaysLeft } from './plan-notice.js';
 import { subscriptionOverviewQuery } from './subscription-queries.js';
 import { CancelSubscriptionDialog } from './subscription-cancel.js';
 import { daysLeftText, formatBrl, formatDay, formatGb, formatInstant, formatMoney, lineLabel } from './subscription-format.js';
+import { PlanComparison, PlanProof } from './subscription-compare.js';
+import { PlanLosses } from './subscription-loss.js';
 import { CheckoutStep, type Purchase } from './subscription-payment.js';
-import { PlanCards, PlanIncludes, PlanRecommendation, planSummary, recommend, type Plan } from './subscription-plans.js';
+import { MINUTES_PER_ROUND_TRIP, PHOTO_MB, PlanCards, PlanIncludes, PlanRecommendation, planSummary, POSTS_PER_CLIENT, recommend, type Plan } from './subscription-plans.js';
 import { TestCardRow } from './subscription-test-card.js';
+import { TrialPlan } from './subscription-trial.js';
 
 const GIB = 1024 ** 3;
 const PAYMENT_UNAVAILABLE = 'O pagamento ainda não está disponível neste ambiente.';
@@ -274,6 +277,7 @@ export function SubscriptionPage() {
   const blockedFor = (quote: SubscriptionQuoteResponse | undefined): string | undefined => (quote !== undefined && quote.amountCents > 0 && !simulated ? PAYMENT_UNAVAILABLE : undefined);
 
   const canChangePlan = paid && !subscription.cancelAtPeriodEnd;
+  const illustrationNote = <p className="subscription__muted subscription__note">Os exemplos de ganho usam contas simples ({POSTS_PER_CLIENT} posts por cliente por mês, {MINUTES_PER_ROUND_TRIP} minutos por ida e volta no WhatsApp, foto de {PHOTO_MB} MB). São ilustrações para você medir a escala, não medições da sua agência.</p>;
   const goToPlans = (): void => {
     const section = document.getElementById('planos');
     section?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
@@ -317,20 +321,37 @@ export function SubscriptionPage() {
       {header}
       <p className="subscription__state">{state}</p>
       {!simulated && <p className="subscription__notice">{PAYMENT_UNAVAILABLE}</p>}
-      <PlanCards
-        plans={plans.plans}
-        extraClientCents={plans.extraClientCents}
-        verb="Assinar"
-        blockedReason={simulated ? undefined : PAYMENT_UNAVAILABLE}
-        busyKey={subscribe.isPending ? subscribe.variables : undefined}
-        onChoose={(chosen: Plan) => {
-          // A synchronous guard: `isPending` only changes on the next render, and two clicks in one tick would both pass it.
-          if (requesting.current) return;
-          requesting.current = true;
-          setNotice(undefined);
-          subscribe.mutate(chosen.key, { onSettled: () => { requesting.current = false; } });
-        }}
-      />
+      <TrialPlan trialEndsAt={plan.trialEndsAt} daysLeft={days} ended={ended} />
+      <section className="subscription__plans" aria-labelledby="planos-title" id="planos">
+        <div className="subscription__section-head">
+          <h2 id="planos-title" tabIndex={-1}>O que cada plano coloca na sua mão</h2>
+          <p className="subscription__muted">Todos têm o mesmo produto completo. O que muda é quantos clientes você atende e quanta mídia guarda.</p>
+        </div>
+        <PlanCards
+          plans={plans.plans}
+          extraClientCents={plans.extraClientCents}
+          verb="Assinar"
+          blockedReason={simulated ? undefined : PAYMENT_UNAVAILABLE}
+          busyKey={subscribe.isPending ? subscribe.variables : undefined}
+          onChoose={(chosen: Plan) => {
+            // A synchronous guard: `isPending` only changes on the next render, and two clicks in one tick would both pass it.
+            if (requesting.current) return;
+            requesting.current = true;
+            setNotice(undefined);
+            subscribe.mutate(chosen.key, { onSettled: () => { requesting.current = false; } });
+          }}
+        />
+        {illustrationNote}
+      </section>
+      <section className="subscription__plans" aria-labelledby="cmp-title">
+        <div className="subscription__section-head">
+          <h2 id="cmp-title">Comparação direta</h2>
+          <p className="subscription__muted">A coluna marcada é a que recomendamos.</p>
+        </div>
+        <PlanComparison plans={plans.plans} />
+      </section>
+      <PlanLosses plans={plans.plans} extraClientCents={plans.extraClientCents} subscription={null} trial={{ trialEndsAt: plan.trialEndsAt, ended }} />
+      <PlanProof />
       <PlanIncludes />
       {testTools}
     </section>;
@@ -413,6 +434,7 @@ export function SubscriptionPage() {
         onChoose={(chosen: Plan) => { setNotice(undefined); setTarget(chosen.key); }}
       />
     </div>
+    {illustrationNote}
     {planTerms !== undefined && <section className="subscription__block subscription__block--card" aria-labelledby="subscription-target">
       <h3 id="subscription-target" className="subscription__target">Mudar para {planName(planTerms.planKey)}</h3>
       <QuoteSummary terms={planTerms} unchanged={false} query={planQuoteQuery} quote={planQuote} planName={planName(planTerms.planKey)} blockedReason={blockedFor(planQuote)} />
@@ -485,7 +507,16 @@ export function SubscriptionPage() {
     {recommendation !== undefined && <PlanRecommendation recommendation={recommendation} onSeePlans={goToPlans} />}
     <div className="subscription__split">{current}{billing}</div>
     {plansSection}
+    {canChangePlan && <section className="subscription__plans" aria-labelledby="cmp-title">
+      <div className="subscription__section-head">
+        <h2 id="cmp-title">Comparação direta</h2>
+        <p className="subscription__muted">A coluna marcada é a que recomendamos para o seu uso agora.</p>
+      </div>
+      <PlanComparison plans={plans.plans} recommendedKey={recommendation?.key} />
+    </section>}
     {extrasSection}
+    {canChangePlan && <PlanLosses plans={plans.plans} extraClientCents={plans.extraClientCents} subscription={subscription} trial={{ trialEndsAt: null, ended: false }} />}
+    <PlanProof />
     {lifecycle}
     {testTools}
 

@@ -120,7 +120,7 @@ describe('without a paid plan: only the price table (#773)', () => {
     renderSubscription(impl);
     await screen.findByRole('button', { name: 'Assinar Profissional' });
 
-    expect(screen.getAllByText('Recomendado')).toHaveLength(1);
+    expect(within(screen.getByRole('group', { name: 'Planos' })).getAllByText('Recomendado')).toHaveLength(1);
     expect(within(planCard('Profissional')).getByText('Recomendado')).toBeTruthy();
     expect(planCard('Profissional').className).toContain('plan-card--recommended');
     expect(screen.getByRole('button', { name: 'Assinar Profissional' }).className).toContain('ui-button--primary');
@@ -147,7 +147,7 @@ describe('without a paid plan: only the price table (#773)', () => {
     expect(screen.queryByRole('heading', { name: /extras/i })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Trocar de plano' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancelar a assinatura' })).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Seu plano' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: /Baixar para|Chegar ao teto|Cancelar a assinatura/ })).toBeNull();
   });
 
   it('says a trial of one day has one day left, and an ended trial is read-only', async () => {
