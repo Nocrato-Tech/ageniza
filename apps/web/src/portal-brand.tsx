@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Hourglass } from 'lucide-react';
+import { Hourglass, Info } from 'lucide-react';
 
 import {
   ARCHETYPE_LABELS,
@@ -24,6 +25,7 @@ import { PortalStageEmpty, portalClientQueryKey, usePortalClient } from './porta
  */
 
 const NOT_PREPARED = 'Sua agência está preparando esta parte';
+const PERSONA_GONE = 'Essa persona foi removida pela agência.';
 const LOAD_FAILED = 'Não foi possível carregar a sua marca. Tente de novo.';
 
 /** The seven fixed sections, in the order of the study; the labels are the client's, not the agency's. */
@@ -132,6 +134,8 @@ export function PortalBrandPage() {
   };
   // The agency deleted a persona or emptied a section under the client: read the study again.
   const onStale = (): void => { void queryClient.invalidateQueries({ queryKey: portalBrandStudyQueryKey(client.id) }); };
+  const [personaGone, setPersonaGone] = useState(false);
+  const onPersonaStale = (): void => { setPersonaGone(true); onStale(); };
 
   // A retry keeps the error and its button mounted (and the focus on it): only the first read is a skeleton.
   if (study.isPending && study.errorUpdateCount === 0) {
@@ -164,6 +168,7 @@ export function PortalBrandPage() {
   }
   return <section className="portal-brand brand-study" aria-labelledby="portal-brand-title">
     <h1 id="portal-brand-title" className="portal-headline">Sua marca</h1>
+    {personaGone && <p className="portal-brand__pending" role="status"><Info aria-hidden="true" />{PERSONA_GONE}</p>}
     {SECTIONS.map((section) => {
       const filled = isFilled(section.key, data);
       const titleId = `portal-brand-${section.key}`;
@@ -171,7 +176,7 @@ export function PortalBrandPage() {
         <header className="brand-section__header"><h2 id={titleId}>{section.label}</h2></header>
         {!filled && <p className="portal-brand__pending"><Hourglass aria-hidden="true" />{NOT_PREPARED}</p>}
         {filled && section.key === 'personas' && <ul className="portal-persona-list">
-          {data.personas.map((persona) => <PersonaCard key={persona.id} persona={persona} onWritten={onWritten} onStale={onStale} />)}
+          {data.personas.map((persona) => <PersonaCard key={persona.id} persona={persona} onWritten={onWritten} onStale={onPersonaStale} />)}
         </ul>}
         {filled && section.key !== 'personas' && <SectionContent sectionKey={section.key} study={data} />}
         {filled && <Conversation

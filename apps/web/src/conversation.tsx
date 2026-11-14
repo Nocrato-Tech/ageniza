@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCheck, Clock, MessageSquare, Plus } from 'lucide-react';
 
@@ -168,6 +168,10 @@ const bodyProblem = (body: string): string | undefined => {
 const isStaleSubject = (error: unknown): boolean =>
   error instanceof HttpClientError && (error.code === 'SECTION_NOT_FILLED' || error.code === 'CONTENT_NOT_OPEN');
 
+// A persona deleted under an open conversation answers 404 to everything about it.
+const isPersonaGone = (error: unknown, subject: ConversationProps['subject']): boolean =>
+  'personaId' in subject && error instanceof HttpClientError && error.status === 404;
+
 export const writeError = (error: unknown, side: ConversationSide): string => {
   if (!(error instanceof HttpClientError)) return 'Não foi possível enviar. Tente de novo.';
   if (error.code === 'CLIENT_ARCHIVED') return 'Cliente arquivado: a conversa está somente leitura.';
@@ -299,6 +303,11 @@ export function OpenThread({ props, thread, onClose }: { props: ConversationProp
     getPreviousPageParam: (first) => (first.meta.page > 1 ? first.meta.page - 1 : undefined)
   });
 
+  const commentsError = comments.error;
+  useEffect(() => {
+    if (commentsError !== null && isPersonaGone(commentsError, props.subject)) onStale?.();
+  }, [commentsError]);
+
   const refresh = (): void => {
     void queryClient.invalidateQueries({ queryKey: scopeKeyOf(scope) });
     onWritten();
@@ -312,13 +321,13 @@ export function OpenThread({ props, thread, onClose }: { props: ConversationProp
       response: CommentSchema
     }),
     onSuccess: () => { setSendError(undefined); setSent((count) => count + 1); refresh(); },
-    onError: (error: unknown) => { setSendError(writeError(error, scope.side)); if (isStaleSubject(error)) onStale?.(); }
+    onError: (error: unknown) => { setSendError(writeError(error, scope.side)); if (isStaleSubject(error) || isPersonaGone(error, props.subject)) onStale?.(); }
   });
 
   const resolve = useMutation({
     mutationFn: () => httpClient.request({ path: routes.resolve(thread.id), method: 'POST', response: ThreadSchema }),
     onSuccess: () => { setResolveError(undefined); refresh(); },
-    onError: (error: unknown) => { setResolveError(writeError(error, scope.side)); if (isStaleSubject(error)) onStale?.(); }
+    onError: (error: unknown) => { setResolveError(writeError(error, scope.side)); if (isStaleSubject(error) || isPersonaGone(error, props.subject)) onStale?.(); }
   });
 
   const items = comments.data?.pages.flatMap((page) => page.data) ?? [];
@@ -391,7 +400,7 @@ function NewConversationDialog({ props, onClose }: { props: ConversationProps; o
       onWritten();
       onClose();
     },
-    onError: (failure: unknown) => { setError(writeError(failure, scope.side)); if (isStaleSubject(failure)) onStale?.(); }
+    onError: (failure: unknown) => { setError(writeError(failure, scope.side)); if (isStaleSubject(failure) || isPersonaGone(failure, props.subject)) onStale?.(); }
   });
 
   return <Modal title={wording.title(subjectLabel)} closeLabel={wording.closeLabel} onClose={onClose}>
@@ -574,6 +583,11 @@ export function Conversation(props: ConversationProps) {
       return { open, resolved };
     }
   });
+
+  const threadsError = threads.error;
+  useEffect(() => {
+    if (threadsError !== null && isPersonaGone(threadsError, subject)) props.onStale?.();
+  }, [threadsError]);
 
   const writable = canWrite && !readOnly;
   // The API already orders by latest activity inside each state.
