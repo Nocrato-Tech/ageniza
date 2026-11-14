@@ -8,6 +8,7 @@ import {
 } from '@ageniza/contracts';
 
 import type { createConversationApi } from './conversation-fixture.js';
+import { todayInSaoPaulo } from './content-dates.js';
 import { portalApprovalOf, type SeededApproval } from './portal-approval-fixture.js';
 
 /**
@@ -146,7 +147,9 @@ export const createPortalContentsApi = (
     const body = PortalRequestContentChangesRequestSchema.safeParse(rawBody);
     if (!body.success) return portalContentError(400, 'VALIDATION_ERROR');
     if (row === undefined) return notFound();
-    if (row.state !== 'awaiting_approval') return portalContentError(409, 'CONTENT_NOT_AWAITING_APPROVAL');
+    const lateApproved = row.state === 'approved' && row.publishOn > todayInSaoPaulo();
+    if (row.state === 'approved' && !lateApproved) return portalContentError(409, 'CONTENT_NOT_AWAITING_APPROVAL', 'Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação.');
+    if (row.state !== 'awaiting_approval' && !lateApproved) return portalContentError(409, 'CONTENT_NOT_AWAITING_APPROVAL');
     if (body.data.revision !== row.revision) return portalContentError(409, 'CONTENT_REVISION_CHANGED');
     row.state = 'adjusting';
     conversation.seed({ contentId: row.id }, [{ side: 'client', body: CommentBodySchema.parse(body.data.comment), at: '2026-10-13T01:30:00.000Z' }]);

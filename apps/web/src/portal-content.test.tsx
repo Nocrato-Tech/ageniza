@@ -1368,3 +1368,67 @@ describe('the fakes answer as the API does', () => {
     expect(apiError(404, 'X').status).toBe(404);
   });
 });
+
+describe('asking for a change on an approved post: until the eve of the publication, in São Paulo', () => {
+  const MESSAGE = 'Este conteúdo não aceita mais pedido de ajuste: ele vale até a véspera da publicação.';
+  const askButton = (): HTMLElement | null => screen.queryByRole('button', { name: 'Pedir ajuste' });
+
+  // 23:30 of the 12th in São Paulo is already the 13th in UTC: the day of the agency is the one that counts.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-13T02:30:00.000Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('offers the button when the publication is after today in São Paulo, even when UTC already says tomorrow', async () => {
+    await open({ state: 'approved', publishOn: '2026-11-13' });
+    await title('Lançamento da primavera');
+    expect(await screen.findByRole('button', { name: 'Pedir ajuste' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Aprovar o post' })).toBeNull();
+    expect(screen.getByText('Você pode pedir ajuste até a véspera da publicação.')).toBeTruthy();
+  });
+
+  it('does not offer it on the day of the publication, in São Paulo, nor after it', async () => {
+    await open({ state: 'approved', publishOn: '2026-11-12' });
+    await title('Lançamento da primavera');
+    expect(askButton()).toBeNull();
+    cleanup();
+    await open({ state: 'approved', publishOn: '2026-11-10' });
+    await title('Lançamento da primavera');
+    expect(askButton()).toBeNull();
+  });
+
+  it('keeps a post that waits as it was, and a published one without the button', async () => {
+    await open({ state: 'awaiting_approval', publishOn: '2026-11-12' });
+    await title('Lançamento da primavera');
+    expect(await screen.findByRole('button', { name: 'Pedir ajuste' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Aprovar o post' })).toBeTruthy();
+    cleanup();
+    await open({ state: 'published', publishOn: '2026-11-20', publishedOn: '2026-11-20' });
+    await title('Lançamento da primavera');
+    expect(askButton()).toBeNull();
+  });
+
+  it('warns that the approval goes away, sends the revision read and shows the post as adjusting', async () => {
+    const { contents } = await open({ state: 'approved', publishOn: '2026-11-13' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Pedir ajuste' }));
+    expect(within(screen.getByRole('dialog', { name: 'Pedir ajuste' })).getByText('A aprovação será desfeita e a agência ajusta o post.')).toBeTruthy();
+    fireEvent.change(await screen.findByLabelText('O que precisa mudar?'), { target: { value: 'Troque a capa' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+    expect(await screen.findByText('Foi pedido um ajuste. A agência vai revisar e enviar de novo para a sua aprovação.')).toBeTruthy();
+    expect(sentBodies(contents, 'request-changes')).toEqual([{ revision: 1, comment: 'Troque a capa' }]);
+    expect(askButton()).toBeNull();
+  });
+
+  it('shows the message of the API when the day turned, and reads the post again', async () => {
+    const { contents } = await open({ state: 'approved', publishOn: '2026-11-13' });
+    await screen.findByRole('button', { name: 'Pedir ajuste' });
+    contents.rows.get(CONTENT)!.publishOn = '2026-11-12';
+    await askForChanges('Tarde');
+    expect(await screen.findByText(MESSAGE)).toBeTruthy();
+    expect(screen.queryByLabelText('O que precisa mudar?')).toBeNull();
+    await waitFor(() => { expect(askButton()).toBeNull(); });
+    expect(sentBodies(contents, 'request-changes')).toHaveLength(1);
+    expect(contents.calls.filter((call) => call === `GET /clients/${CLIENT}/contents/${CONTENT}`).length).toBeGreaterThan(1);
+  });
+});
