@@ -20,6 +20,7 @@ import {
 import { CARD_FORMAT_LABELS, STATUS_LABELS } from './content-labels.js';
 import { useApiClient } from './http.js';
 import { TYPE_LABELS } from './media-library-model.js';
+import { MediaThumbnail } from './media-thumbnail.js';
 
 const PLACEHOLDER = 'Buscar cliente, conteúdo ou arquivo';
 const FORMAT_ICONS: Readonly<Record<ContentFormat, LucideIcon>> = { image: Image, carousel: LayoutGrid, reels: Clapperboard, long_video: Video, vsl: Video };
@@ -57,7 +58,9 @@ function Row({ item, term, id, active, href, onOpen, onHover }: {
   } else {
     const { entry } = item;
     const Icon = CATEGORY_ICONS[entry.category];
-    icon = <span className="agency-search__icon agency-search__icon--file" aria-hidden="true"><Icon /></span>;
+    icon = <span className="agency-search__icon agency-search__icon--file" aria-hidden="true">
+      {entry.thumbnailAssetId === null ? <Icon /> : <MediaThumbnail assetId={entry.thumbnailAssetId} category={entry.category} />}
+    </span>;
     name = entry.name;
     meta = `${entry.clientName} · ${TYPE_LABELS[entry.category]}`;
   }

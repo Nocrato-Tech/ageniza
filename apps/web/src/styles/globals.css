@@ -28,6 +28,7 @@
 @import './screens/contexts.css';
 @import './ui/skeleton.css';
 @import './ui/avatar.css';
+@import './ui/role-tag.css';
 @import './ui/badge-card.css';
 @import './ui/field.css';
 @import './ui/select.css';

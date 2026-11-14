@@ -357,6 +357,13 @@ describe('CollaboratorsPage (/agencia/:agenciaId/colaboradores)', () => {
     expect(await screen.findByText('24 de 61 pessoas')).toBeTruthy();
   });
 
+  it('says "N de M pessoas" under the grid when everyone fits on one page', async () => {
+    const { impl } = makeFetch({ collaborators: () => json({ data: [anaPrado], meta: meta(1, 1, 1) }) });
+    renderCollaborators(impl);
+
+    expect(await screen.findByText('1 de 1 pessoas')).toBeTruthy();
+  });
+
   it('shows the invite button only with colaborador.convidar', async () => {
     const without = makeFetch({ permissions: ['colaborador.visualizar'] });
     renderCollaborators(without.impl);

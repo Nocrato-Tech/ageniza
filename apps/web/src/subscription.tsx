@@ -283,6 +283,10 @@ export function SubscriptionPage() {
     section?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
     document.getElementById('planos-title')?.focus();
   };
+  const goToLosses = (): void => {
+    document.getElementById('perdas')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    document.getElementById('perdas-t')?.focus();
+  };
 
   const header = <>
     <header className="subscription__head subscription__head--actions">
@@ -504,7 +508,7 @@ export function SubscriptionPage() {
 
   return <section aria-labelledby="subscription-title" className="subscription">
     {header}
-    {recommendation !== undefined && <PlanRecommendation recommendation={recommendation} onSeePlans={goToPlans} />}
+    {recommendation !== undefined && <PlanRecommendation recommendation={recommendation} onSeePlans={goToPlans} onSeeLosses={goToLosses} />}
     <div className="subscription__split">{current}{billing}</div>
     {plansSection}
     {canChangePlan && <section className="subscription__plans" aria-labelledby="cmp-title">

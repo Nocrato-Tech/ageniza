@@ -86,14 +86,18 @@
   overflow-y: auto;
 }
 
+/* The foot is a tinted strip to the edges of the panel, as in the search panel. */
 .notif__foot {
   display: flex;
   justify-content: flex-end;
-  padding: var(--space-3) var(--space-3) 0;
+  margin: var(--space-1) calc(var(--space-2) * -1) calc(var(--space-3) * -1);
+  padding: var(--space-2) var(--space-5);
   border-top: 1px solid var(--border-default);
+  background: var(--bg-canvas);
 }
 
 .notif--sheet .notif__foot {
+  margin: 0;
   padding-inline: 0;
 }
 

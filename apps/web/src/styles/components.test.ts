@@ -993,7 +993,9 @@ describe('redesign components: sheets, tokens, motion and contrast', () => {
     for (const selector of ['.ui-chip:focus-visible', '.ui-table__select:focus-visible::after', '.ui-choice-radio:has(input:focus-visible)']) {
       expect(rule(selector).get('outline'), selector).toMatch(/^3px solid var\(--focus-ring\)$/);
     }
-    expect(rule('.ui-search-field:has(.ui-search-field__input:focus-visible)').get('outline')).toBe('2px solid var(--focus-ring)');
+    // One ring only: the pill's border and halo; the input inside it draws no outline of its own.
+    expect(rule('.ui-search-field:focus-within').get('box-shadow')).toBe('0 0 0 4px var(--focus-halo)');
+    expect(rule('.ui-search-field .ui-search-field__input:focus-visible').get('outline')).toBe('none');
   });
 
   it('draws the discreet danger without a fill, and its hover in the red block', () => {
@@ -1029,10 +1031,10 @@ describe('redesign components: sheets, tokens, motion and contrast', () => {
     '.ui-avatar--violet',
     '.ui-avatar--teal',
     '.ui-avatar--sky',
-    '.ui-badge-card__role--indigo .ui-pill',
-    '.ui-badge-card__role--violet .ui-pill',
-    '.ui-badge-card__role--teal .ui-pill',
-    '.ui-badge-card__role--sky .ui-pill'
+    '.ui-role-tag--indigo',
+    '.ui-role-tag--violet',
+    '.ui-role-tag--teal',
+    '.ui-role-tag--sky'
   ])('keeps the text of %s AA on its own fill', (selector) => {
     const colours = pair(selector);
 

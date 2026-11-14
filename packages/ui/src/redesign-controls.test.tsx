@@ -231,15 +231,15 @@ describe('BadgeCard role colour and the owner', () => {
 
     expect(screen.getByText('Dona da agência')).toBeTruthy();
     expect(screen.queryByText('Admin')).toBeNull();
-    expect(container.querySelector('.ui-badge-card__role')!.classList.contains('ui-badge-card__role--indigo')).toBe(true);
+    expect(container.querySelector('.ui-badge-card__role .ui-role-tag')!.classList.contains('ui-role-tag--indigo')).toBe(true);
   });
 
   it('takes the colour of the role it is given, and stays neutral without one', () => {
     const { container } = render(<><BadgeCard name="Bianca Torres" role="Vendas" roleTone="sky" /><BadgeCard name="Henrique Dias" role="Financeiro" /></>);
-    const [sky, plain] = Array.from(container.querySelectorAll('.ui-badge-card__role'));
+    const [sky, plain] = Array.from(container.querySelectorAll('.ui-badge-card__role .ui-role-tag'));
 
-    expect(sky!.classList.contains('ui-badge-card__role--sky')).toBe(true);
-    expect(plain!.className).toBe('ui-badge-card__role');
+    expect(sky!.classList.contains('ui-role-tag--sky')).toBe(true);
+    expect(plain!.className).toBe('ui-pill ui-pill--neutral ui-role-tag');
     expect(screen.getByText('Vendas')).toBeTruthy();
   });
 });

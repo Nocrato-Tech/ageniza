@@ -470,6 +470,30 @@ describe('portal Marca (#143)', () => {
     expect(stale(keys.members)).toBe(false);
   });
 
+  it('closes an open persona conversation, reads the study again and says the agency removed her when the next answer is a 404', async () => {
+    const { impl, apis, calls, setStudy } = makeWorld();
+    apis[CLIENT_ID].seed({ personaId: JOAO_ID }, [{ side: 'client', body: 'Ele gosta de pão doce', at: LATE }]);
+    renderPortal(impl);
+    await page();
+
+    const region = await screen.findByRole('region', { name: 'Conversas sobre Seu João' });
+    fireEvent.click(await within(region).findByRole('button', { name: /Ele gosta de pão doce/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Seu João' });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: /Responder|resposta/i }), { target: { value: 'Mais um detalhe' } });
+    expect(screen.queryByText('Essa persona foi removida pela agência.')).toBeNull();
+
+    const studyReads = calls.filter((call) => call === `GET /clients/${CLIENT_ID}/brand-study`).length;
+    setStudy(CLIENT_ID, portalStudyBody({ ...FULL_STUDY_FILLED }, [portalPersona(MARIA_ID, 'Dona Maria', { description: 'Mora perto da padaria', pains: 'Falta de tempo' })]));
+    apis[CLIENT_ID].failNextWrite(() => apiError(404, 'NOT_FOUND'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Responder' }));
+
+    expect((await screen.findByRole('status')).textContent).toBe('Essa persona foi removida pela agência.');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('Seu João')).toBeNull();
+    expect(within(sectionOf('Quem é seu público')).getByRole('heading', { level: 3, name: 'Dona Maria' })).toBeTruthy();
+    expect(calls.filter((call) => call === `GET /clients/${CLIENT_ID}/brand-study`).length).toBe(studyReads + 1);
+  });
+
   it('shows the agency answer with the name and photo of who answered, the day in São Paulo, and no Resolver', async () => {
     const { impl, apis } = makeWorld();
     apis[CLIENT_ID].seed({ sectionKey: 'tone_of_voice' }, [

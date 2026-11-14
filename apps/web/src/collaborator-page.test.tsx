@@ -310,8 +310,8 @@ describe('the list beside the profile', () => {
     const probe = renderAt(impl, `/agencia/${AGENCY}/colaboradores`);
     const crowned = await screen.findByRole('link', { name: 'Ver detalhes de Marina Bastos' });
     expect(within(crowned).getByText('Dona da agência')).toBeTruthy();
-    expect(crowned.querySelector('.ui-badge-card__role--indigo svg.lucide-crown')).not.toBeNull();
-    expect(screen.getByRole('link', { name: 'Ver detalhes de João Pedro Alves' }).querySelector('.ui-badge-card__role--violet')).not.toBeNull();
+    expect(crowned.querySelector('.ui-role-tag--indigo svg.lucide-crown')).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'Ver detalhes de João Pedro Alves' }).querySelector('.ui-role-tag--violet')).not.toBeNull();
     fireEvent.click(crowned);
     await profileOf('Marina Bastos');
     expect(probe.pathname).toBe(pageOf(owner));
