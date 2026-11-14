@@ -668,9 +668,16 @@ export const isRowLevelSecurityViolation = (error: unknown): boolean =>
 /** The trigger of 20261007001400 found the client no longer active after waiting for the archive that held it. */
 export const isClientNoLongerActive = (error: unknown): boolean => databaseErrorCode(error) === 'A0020';
 
-/** The foreign key to the persona or to the thread refused the insert: it was deleted between the check and the write. */
-export const isSubjectGone = (error: unknown): boolean =>
-  databaseErrorCode(error) === '23503' && ['client_threads_persona_id_fkey', 'client_thread_comments_thread_id_fkey'].includes(String((error as { constraint?: unknown }).constraint));
+/**
+ * The persona or the thread was deleted between the check and the write. While the delete is still open the foreign key refuses the
+ * insert (23503); once it is committed the BEFORE INSERT triggers that compare the thread with its client and persona answer first
+ * (A0010 on a thread, A0011 on a comment), because they find nothing to compare with.
+ */
+export const isSubjectGone = (error: unknown): boolean => {
+  const code = databaseErrorCode(error);
+  if (code === 'A0010' || code === 'A0011') return true;
+  return code === '23503' && ['client_threads_persona_id_fkey', 'client_thread_comments_thread_id_fkey'].includes(String((error as { constraint?: unknown }).constraint));
+};
 
 export const loadBrandSections = async (
   transaction: ClientTransaction,
