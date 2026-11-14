@@ -174,7 +174,9 @@ O banco decide (migrations `20261110000100` e `20261111000200`: `submit_content(
   quem enviou. Só uma chave de avatar (`users/<id>/avatar/...`) é lida do armazenamento, pelo `IdentityStorageClient.readImage`.
 - **Recado em conteúdo já aprovado.** `approve` com `note` num conteúdo que já está aprovado é `A0123` -> `409 CONTENT_ALREADY_APPROVED`
   ("Este conteúdo já foi aprovado. Seu recado não foi enviado."), decidido depois da trava do conteúdo na função do banco (uma só cópia da regra,
-  porque é lá que duas pessoas aprovando juntas se separam); sem recado, o conteúdo já aprovado segue um `200` que não escreve nada. **O link de aprovação** do e-mail continua com o dia e o recado: o `dueAt`, o `sentAt` e o
+  porque é lá que duas pessoas aprovando juntas se separam); sem recado, o conteúdo já aprovado segue um `200` que não escreve nada. **O reenvio da mesma
+  requisição é um `200`** (decisão de 2026-11-12): quem aprovou, com a `revision` atual e o recado idêntico ao comentário da aprovação (o que o liga a ela
+  é `created_at = approved_at`, o `now()` da mesma transação), recebe a resposta da aprovação sem gravar nada; qualquer diferença segue o `409`. Só o portal. **O link de aprovação** do e-mail continua com o dia e o recado: o `dueAt`, o `sentAt` e o
   `sentBy` dele são `null` (vem de `portal_approval_contents`, que esta entrega não mexe).
 - **Parado no cliente.** `GET /agencies/:agencyId/contents/awaiting-client` (`awaiting-routes.ts`, `awaiting-service.ts`): o que aguarda
   aprovação, até 50 (`meta.truncated` quando havia mais), de quem espera há mais tempo ao mais novo (`sentAt`; o sem rodada vem por último,

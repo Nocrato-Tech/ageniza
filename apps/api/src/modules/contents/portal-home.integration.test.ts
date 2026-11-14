@@ -575,6 +575,51 @@ describe('approving with a note to the agency', () => {
     expect((await noteOf(id)).map((comment) => comment.body)).toEqual([NOTE]);
   });
 
+  // Decision 2026-11-12 "reenviar o mesmo recado ao aprovar conta como sucesso": the double click and the retry after a dropped network.
+  it('answers the same note sent again by the person who approved as the approval itself, writing nothing and telling nobody twice', async () => {
+    const client = await freshClient('note-resent', ['portalOne', 'portalMulti']);
+    const id = await waiting(client, 'Recado reenviado');
+
+    const first = await post('portalOne', approveUrl(client, id), { revision: 1, note: NOTE });
+    expect(first.statusCode).toBe(200);
+    const rowBefore = await w.contentRow(id);
+    const notifications = async (): Promise<number> => (await knex()('notifications').where({ content_id: id, kind: 'content_approved' })).length;
+    expect(await notifications()).toBe(1);
+
+    const again = await post('portalOne', approveUrl(client, id), { revision: 1, note: NOTE });
+
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toEqual(first.json());
+    expect(await w.contentRow(id)).toEqual(rowBefore);
+    expect((await noteOf(id)).map((comment) => comment.body)).toEqual([NOTE]);
+    expect(await notifications()).toBe(1);
+
+    const other = await post('portalMulti', approveUrl(client, id), { revision: 1, note: NOTE });
+    expect(other.statusCode).toBe(409);
+    expect(errorOf(other).code).toBe('CONTENT_ALREADY_APPROVED');
+    const different = await post('portalOne', approveUrl(client, id), { revision: 1, note: 'Outro recado' });
+    expect(different.statusCode).toBe(409);
+    expect(errorOf(different).code).toBe('CONTENT_ALREADY_APPROVED');
+    const stale = await post('portalOne', approveUrl(client, id), { revision: 2, note: NOTE });
+    expect(stale.statusCode).toBe(409);
+    expect(errorOf(stale).code).toBe('CONTENT_ALREADY_APPROVED');
+  });
+
+  it('lets two requests of the same approval with the same note, sent together, both answer 200 with one comment', async () => {
+    const client = await freshClient('note-double-click', ['portalOne']);
+    const id = await waiting(client, 'Clique duplo');
+
+    const replies = await Promise.all([
+      post('portalOne', approveUrl(client, id), { revision: 1, note: NOTE }),
+      post('portalOne', approveUrl(client, id), { revision: 1, note: NOTE })
+    ]);
+
+    expect(replies.map((reply) => reply.statusCode)).toEqual([200, 200]);
+    expect(await w.contentRow(id)).toMatchObject({ status: 'approved', approved_by: p.people.portalOne.id });
+    expect((await noteOf(id)).map((comment) => comment.body)).toEqual([NOTE]);
+    expect(await knex()('notifications').where({ content_id: id, kind: 'content_approved' })).toHaveLength(1);
+  });
+
   it('keeps the approval of an approved content with no note a quiet success: nothing changes and nothing is written', async () => {
     const client = await freshClient('note-approved-quiet', ['portalOne', 'portalMulti']);
     const id = await waiting(client, 'Aprovado sem recado');

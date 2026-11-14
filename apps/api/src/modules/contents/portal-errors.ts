@@ -19,7 +19,8 @@ import { revisionChanged } from './transition-errors.js';
  * - `A0068`: the comment of a request for changes, or the note of an approval, is blank or too long: 400 (the schema stops it first; the
  *   function is the second barrier), each with its own code;
  * - `A0123`: the person approved with a note a content that is already approved, so the note would be lost: 409, and the answer says so
- *   (an approval with no note on an approved content stays a quiet success);
+ *   (an approval with no note on an approved content stays a quiet success, and so does the same request sent again, which the function
+ *   recognises and never raises for);
  * - `40P01` and `40001`: a lost race, "try again".
  */
 

@@ -211,13 +211,14 @@ describe('approve_content with a note', () => {
 
   describe('a content that is already approved', () => {
     // Decision 2026-11-11 "recado em conteúdo já aprovado": a note that would be dropped is refused (A0123), never written and never lost in silence.
-    it('refuses a note with A0123, from the same person and from another, and keeps the first person who approved and the first note', async () => {
+    it('refuses a note with A0123 from another person or with another text, and keeps the first person who approved and the first note', async () => {
       const content = await waiting();
       await approveAs(ids.portalA1, content, 'Primeira nota');
       const revision = await revisionOf(content);
 
-      await expect(approveAs(ids.portalA1, content, 'Primeira nota', revision)).rejects.toMatchObject({ code: 'A0123' });
       await expect(approveAs(ids.portalA1Second, content, 'Outra nota', revision)).rejects.toMatchObject({ code: 'A0123' });
+      await expect(approveAs(ids.portalA1Second, content, 'Primeira nota', revision)).rejects.toMatchObject({ code: 'A0123' });
+      await expect(approveAs(ids.portalA1, content, 'Outra nota', revision)).rejects.toMatchObject({ code: 'A0123' });
 
       expect(await statusOf(content)).toBe('approved');
       expect((await commentsOf(content)).map((comment) => [comment.author_user_id, comment.body])).toEqual([[ids.portalA1, 'Primeira nota']]);
@@ -258,6 +259,163 @@ describe('approve_content with a note', () => {
       await approveAs(ids.portalA1, content, null);
       await expect(approveAs(ids.portalA1, content, 'a'.repeat(501))).rejects.toMatchObject({ code: 'A0068' });
       expect(await commentsOf(content)).toEqual([]);
+    });
+  });
+
+  describe('the same note sent again by the person who approved (decision 2026-11-12)', () => {
+    const approvedNotifications = async (content: string): Promise<number> =>
+      (await owner()('notifications').where({ content_id: content, kind: 'content_approved' })).length;
+    const rowOf = async (content: string): Promise<Record<string, unknown>> => await w.contentRow(content);
+    const writeLater = async (content: string, author: string, body: string): Promise<void> => {
+      if ((await threadsOf(content)).length === 0) {
+        await owner()('client_threads').insert({ client_id: ids.clientA1, content_id: content, opened_by: author, opened_side: 'client' });
+      }
+      const [thread] = await threadsOf(content);
+      await owner()('client_thread_comments').insert({ thread_id: thread!.id, client_id: ids.clientA1, author_user_id: author, author_side: 'client', body });
+    };
+
+    it('is a success that changes nothing: one comment, one conversation, one notification and the row as it was', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, THE_NOTE);
+      const revision = await revisionOf(content);
+      const rowBefore = await rowOf(content);
+      const commentsBefore = await commentsOf(content);
+      const threadsBefore = await threadsOf(content);
+      expect(await approvedNotifications(content)).toBe(1);
+
+      await expect(approveAs(ids.portalA1, content, THE_NOTE, revision)).resolves.toBeDefined();
+      await expect(approveAs(ids.portalA1, content, THE_NOTE, revision)).resolves.toBeDefined();
+
+      expect(await rowOf(content)).toEqual(rowBefore);
+      expect(await commentsOf(content)).toEqual(commentsBefore);
+      expect(await threadsOf(content)).toEqual(threadsBefore);
+      expect(await approvedNotifications(content)).toBe(1);
+    });
+
+    it('finds the comment of the approval among later comments of the same person', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, THE_NOTE);
+      await writeLater(content, ids.portalA1, 'Outro comentário');
+      await expect(approveAs(ids.portalA1, content, THE_NOTE)).resolves.toBeDefined();
+      expect(await commentsOf(content)).toHaveLength(2);
+    });
+
+    it('refuses with A0123 a different note, even one that only differs at the edges', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, THE_NOTE);
+      for (const note of [`${THE_NOTE} `, THE_NOTE.toUpperCase(), 'Outro recado']) {
+        await expect(approveAs(ids.portalA1, content, note), note).rejects.toMatchObject({ code: 'A0123' });
+      }
+      expect(await commentsOf(content)).toHaveLength(1);
+    });
+
+    it('refuses with A0123 a note on a content approved with no note, or approved by the agency', async () => {
+      const bare = await waiting();
+      await approveAs(ids.portalA1, bare, null);
+      await expect(approveAs(ids.portalA1, bare, THE_NOTE)).rejects.toMatchObject({ code: 'A0123' });
+
+      const byAgency = await waiting();
+      await w.asUser(ids.managerA, async (t) => t.raw('select app_private.approve_content_by_agency(?::uuid, ?::integer, ?::text)', [byAgency, await revisionOf(byAgency), 'Por telefone']));
+      await expect(approveAs(ids.portalA1, byAgency, THE_NOTE)).rejects.toMatchObject({ code: 'A0123' });
+      expect(await commentsOf(bare)).toEqual([]);
+    });
+
+    it('refuses with A0123 another person, even one who wrote the same text as a comment later', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, null);
+      await writeLater(content, ids.portalA1Second, THE_NOTE);
+      await expect(approveAs(ids.portalA1Second, content, THE_NOTE)).rejects.toMatchObject({ code: 'A0123' });
+    });
+
+    it('refuses with A0123 the person who approved with no note and wrote the same text as a comment later', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, null);
+      await writeLater(content, ids.portalA1, THE_NOTE);
+      await expect(approveAs(ids.portalA1, content, THE_NOTE)).rejects.toMatchObject({ code: 'A0123' });
+    });
+
+    // A comment planted with the instant of the approval isolates each leg of the rule: only the one under test is false.
+    const plantAtApproval = async (content: string, author: string): Promise<void> => {
+      await owner()('client_threads').insert({ client_id: ids.clientA1, content_id: content, opened_by: author, opened_side: 'client' });
+      const [thread] = await threadsOf(content);
+      // In SQL: a JavaScript date would cut the microseconds of the instant.
+      await owner().raw(
+        `insert into public.client_thread_comments (thread_id, client_id, author_user_id, author_side, body, created_at)
+         select ?::uuid, ?::uuid, ?::uuid, 'client', ?::text, content.approved_at from public.contents content where content.id = ?::uuid`,
+        [thread!.id, ids.clientA1, author, THE_NOTE, content]
+      );
+    };
+
+    it('refuses with A0123 a person who did not approve, even with a comment of theirs at the instant of the approval', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, null);
+      await plantAtApproval(content, ids.portalA1Second);
+      await expect(approveAs(ids.portalA1Second, content, THE_NOTE)).rejects.toMatchObject({ code: 'A0123' });
+    });
+
+    it('refuses with A0123 the person who approved when the comment at the instant of the approval is another person\'s', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, null);
+      await plantAtApproval(content, ids.portalA1Second);
+      await expect(approveAs(ids.portalA1, content, THE_NOTE)).rejects.toMatchObject({ code: 'A0123' });
+    });
+
+    it('refuses with A0123 another revision of the content', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, THE_NOTE);
+      const revision = await revisionOf(content);
+      await expect(approveAs(ids.portalA1, content, THE_NOTE, revision + 1)).rejects.toMatchObject({ code: 'A0123' });
+      await expect(approveAs(ids.portalA1, content, THE_NOTE, revision - 1)).rejects.toMatchObject({ code: 'A0123' });
+    });
+
+    it('refuses a content in another state as before, and a stranger is still not found', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, THE_NOTE);
+      for (const stranger of [ids.portalA2, ids.portalB, ids.adminA, ids.adminB, ids.dualRemoved]) {
+        await expect(approveAs(stranger, content, THE_NOTE), stranger).rejects.toMatchObject({ code: 'A0060' });
+      }
+      await expect(approveAs(ids.portalA1, content, 'a'.repeat(501))).rejects.toMatchObject({ code: 'A0068' });
+      const revision = await revisionOf(content);
+      await w.asUser(ids.productionA, (t) => t('contents').where({ id: content }).update({ caption: 'Outra legenda' }));
+      expect(await statusOf(content)).toBe('awaiting_approval');
+      await expect(approveAs(ids.portalA1, content, THE_NOTE, revision)).rejects.toMatchObject({ code: 'A0063' });
+      expect(await commentsOf(content)).toHaveLength(1);
+    });
+
+    it('lets a resend that waited for the lock of the first one succeed: one comment and one notification', async () => {
+      const content = await waiting();
+      const revision = await revisionOf(content);
+
+      const first = await w.openTransactionAs(ids.portalA1);
+      const firstPid = await backendPid(first);
+      let second: Promise<unknown> | undefined;
+      try {
+        await first.raw('select app_private.approve_content(?::uuid, ?::integer, ?::text)', [content, revision, THE_NOTE]);
+        second = approveAs(ids.portalA1, content, THE_NOTE, revision).then(() => 'done', (error: unknown) => error);
+        await waitForBackendsBlockedBy(owner(), firstPid);
+      } finally {
+        await first.commit();
+      }
+
+      expect(await second).toBe('done');
+      expect(await statusOf(content)).toBe('approved');
+      expect(await commentsOf(content)).toHaveLength(1);
+      expect(await approvedNotifications(content)).toBe(1);
+    });
+
+    it('lets two resends of an approved content at the same moment both succeed: one comment and one notification', async () => {
+      const content = await waiting();
+      await approveAs(ids.portalA1, content, THE_NOTE);
+      const revision = await revisionOf(content);
+
+      const results = await Promise.all([
+        approveAs(ids.portalA1, content, THE_NOTE, revision).then(() => 'done', (error: unknown) => error),
+        approveAs(ids.portalA1, content, THE_NOTE, revision).then(() => 'done', (error: unknown) => error)
+      ]);
+
+      expect(results).toEqual(['done', 'done']);
+      expect(await commentsOf(content)).toHaveLength(1);
+      expect(await approvedNotifications(content)).toBe(1);
     });
   });
 
