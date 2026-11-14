@@ -12,6 +12,7 @@ import { MATERIAL_REQUEST_LABEL } from './conversation.js';
 import { useDocumentTitle } from './document-title.js';
 import { useApiClient } from './http.js';
 import { portalMaterialRequestsKey, RequestThread } from './portal-material-requests.js';
+import { PortalUploadActions } from './portal-material-upload.js';
 import { usePortalClient } from './portal.js';
 
 /** The open requests for material of the client, as the portal reads them: the Início, this page and the badge of the navigation share one read. */
@@ -27,7 +28,7 @@ export const usePortalMaterialRequests = (clientId: string) => {
   });
 };
 
-function RequestCard({ request, agencyName, today, onOpen }: { request: MaterialRequest; agencyName: string; today: string; onOpen: () => void }) {
+function RequestCard({ clientId, request, agencyName, today, onOpen }: { clientId: string; request: MaterialRequest; agencyName: string; today: string; onOpen: () => void }) {
   const titleId = `portal-request-${request.threadId}`;
   return <li className="portal-requests-page__item">
     <span className="portal-requests-page__icon" aria-hidden="true"><Inbox /></span>
@@ -40,7 +41,10 @@ function RequestCard({ request, agencyName, today, onOpen }: { request: Material
         {isMaterialRequestOverdue(request, today) && <LateBadge>Atrasado</LateBadge>}
       </p>
     </div>
-    <Button variant="secondary" id={`${titleId}-button`} aria-labelledby={`${titleId}-button ${titleId}`} onClick={onOpen}>Responder</Button>
+    <div className="portal-requests-page__actions">
+      <PortalUploadActions clientId={clientId} request={request} variant="ghost" />
+      <Button variant="secondary" id={`${titleId}-button`} aria-labelledby={`${titleId}-button ${titleId}`} onClick={onOpen}>Responder</Button>
+    </div>
   </li>;
 }
 
@@ -79,7 +83,7 @@ export function PortalRequestsPage() {
       description={`A ${client.agencyName} não está esperando nenhum material seu.`}
     />}
     {data.length > 0 && <ul className="portal-requests-page__list">
-      {data.map((request) => <RequestCard key={request.threadId} request={request} agencyName={client.agencyName} today={today} onOpen={() => setOpenId(request.threadId)} />)}
+      {data.map((request) => <RequestCard key={request.threadId} clientId={clienteId} request={request} agencyName={client.agencyName} today={today} onOpen={() => setOpenId(request.threadId)} />)}
     </ul>}
     {total > data.length && <p className="portal-requests-page__more">Mostrando {data.length} de {total}</p>}
     {current !== undefined && <RequestThread clientId={clienteId} request={current} onClose={() => setOpenId(null)} />}
