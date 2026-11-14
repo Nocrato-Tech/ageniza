@@ -369,15 +369,17 @@
     column-gap: var(--space-6);
   }
 
-  /* The answer is as tall as the post's row and its bar sits at the end of it, so the bar can hold the bottom of the window however long the sender's note is. */
-  .portal-post__decide {
+  /* "Sua resposta" is as tall as the post's row and its foot (the two decisions and the notice under them) sits at the end of it, so the foot can hold the bottom of the window however long the sender's note is. "Quer mudar algo?" stays compact. */
+  .portal-post__decide--answer {
     display: flex;
     flex-direction: column;
     align-self: stretch;
   }
 
-  .portal-post__decide .portal-post__bar {
+  .portal-post__decide--answer .portal-post__foot {
     position: sticky;
+    display: grid;
+    gap: var(--space-2);
     margin-top: auto;
     bottom: var(--space-4);
     padding-block: var(--space-3);

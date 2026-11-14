@@ -1209,15 +1209,17 @@ describe('the post of the portal (#270)', () => {
       expect(rule('.portal-post__decide')).not.toMatch(/(^|[s;])order:/);
       const wide = mediaBlock('(min-width: 48rem)', '.portal-post__layout');
       expect(wide).toMatch(/\.portal-post__layout \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 24rem\);/);
-      // The answer is as tall as the post's row and only its bar is held at the bottom of the window, so the decisions stay in view for a note of any length.
-      expect(wide).toMatch(/\.portal-post__layout \{[^}]*align-items:\s*start;/);
-      expect(wide).toMatch(/\.portal-post__decide \{[^}]*display:\s*flex;/);
-      expect(wide).toMatch(/\.portal-post__decide \{[^}]*flex-direction:\s*column;/);
-      expect(wide).toMatch(/\.portal-post__decide \{[^}]*align-self:\s*stretch;/);
-      expect(wide).toMatch(/\.portal-post__decide \.portal-post__bar \{[^}]*margin-top:\s*auto;/);
-      expect(wide).toMatch(/\.portal-post__decide \.portal-post__bar \{[^}]*position:\s*sticky;/);
-      expect(wide).toMatch(/\.portal-post__decide \.portal-post__bar \{[^}]*bottom:\s*var\(--space-4\);/);
-      expect(wide).not.toMatch(/\.portal-post__decide \{[^}]*position:\s*sticky/);
+      // Only "Sua resposta" is as tall as the post's row, and only its foot (the decisions and the notice under them) is held at the bottom of the window.
+      expect(wide).toMatch(/\.portal-post__decide--answer \{[^}]*display:\s*flex;/);
+      expect(wide).toMatch(/\.portal-post__decide--answer \{[^}]*flex-direction:\s*column;/);
+      expect(wide).toMatch(/\.portal-post__decide--answer \{[^}]*align-self:\s*stretch;/);
+      expect(wide).toMatch(/\.portal-post__decide--answer \.portal-post__foot \{[^}]*margin-top:\s*auto;/);
+      expect(wide).toMatch(/\.portal-post__decide--answer \.portal-post__foot \{[^}]*position:\s*sticky;/);
+      expect(wide).toMatch(/\.portal-post__decide--answer \.portal-post__foot \{[^}]*bottom:\s*var\(--space-4\);/);
+      expect(wide).toMatch(/\.portal-post__decide--answer \.portal-post__foot \{[^}]*display:\s*grid;/);
+      // "Quer mudar algo?" keeps its compact card: no rule of the wide screen stretches or holds the plain .portal-post__decide.
+      expect(wide).not.toMatch(/\.portal-post__decide \{[^}]*(align-self|position:\s*sticky|display:\s*flex)/);
+      expect(wide).not.toMatch(/\.portal-post__bar \{[^}]*position:\s*sticky/);
     });
 
     it('draws no blur on the header of the portal and takes the hover lift of a cover card away for those who ask for less motion', () => {
@@ -1403,6 +1405,23 @@ describe('asking for a change on an approved post: until the eve of the publicat
     await open({ state: 'approved', publishOn: '2026-11-10' });
     await title('Lançamento da primavera');
     expect(askButton()).toBeNull();
+  });
+
+  it('puts the notice under the two decisions, inside the foot that holds the bottom, only on "Sua resposta"; the compact "Quer mudar algo?" has no foot', async () => {
+    await open({ state: 'awaiting_approval', publishOn: '2026-11-12' });
+    await title('Lançamento da primavera');
+    const answer = document.querySelector('.portal-post__decide--answer')!;
+    const foot = answer.querySelector('.portal-post__foot')!;
+    expect(foot.querySelector('.portal-post__bar')).not.toBeNull();
+    const hint = foot.querySelector('.portal-post__hint')!;
+    expect(hint.textContent).toBe('Ao aprovar, a agência cuida da publicação na data marcada.');
+    expect(foot.querySelector('.portal-post__bar')!.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    cleanup();
+    await open({ state: 'approved', publishOn: '2026-11-13' });
+    await title('Lançamento da primavera');
+    const change = document.querySelector('.portal-post__decide')!;
+    expect(change.classList.contains('portal-post__decide--answer')).toBe(false);
+    expect(change.querySelector('.portal-post__foot')).toBeNull();
   });
 
   it('keeps a post that waits as it was, and a published one without the button', async () => {

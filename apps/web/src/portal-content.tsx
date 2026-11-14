@@ -293,7 +293,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
           />}
         </details>
       </section>
-      {awaiting && <aside className="portal-post__decide" aria-labelledby="portal-post-decision">
+      {awaiting && <aside className="portal-post__decide portal-post__decide--answer" aria-labelledby="portal-post-decision">
         <h2 id="portal-post-decision">Sua resposta</h2>
         <ApprovalDeadline approval={content.approval} />
         <ApprovalSenderNote approval={content.approval} agencyName={client.agencyName} />
@@ -312,6 +312,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
             onChange={(event) => { setNote(event.target.value); setNoteProblem(undefined); }}
           />}
         </Field>
+        <div className="portal-post__foot">
         <div className="portal-post__bar">
           {actionError !== undefined && <FieldMessage role="alert">{actionError}</FieldMessage>}
           <div className="portal-post__actions">
@@ -320,6 +321,7 @@ function OpenPost({ content, reloading }: { content: OpenContent; reloading: boo
           </div>
         </div>
         <p className="portal-post__hint">Ao aprovar, a agência cuida da publicação na data marcada.</p>
+        </div>
       </aside>}
       {adjustable && <aside className="portal-post__decide" aria-labelledby="portal-post-decision">
         <h2 id="portal-post-decision">Quer mudar algo?</h2>
