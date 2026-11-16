@@ -638,3 +638,7 @@ A assinatura reúne os planos em linhas selecionáveis com preço mensal, limite
 Durante a consulta/cotação, seleção e quantidades ficam bloqueadas para conservar a revisão correspondente. Alterar plano ou extras invalida a revisão anterior. A escolha aceita teclado e movimento reduzido; a página e os campos conservam identidade. O aviso de simulação/indisponibilidade antecede a ação. Confirmar cobrança, aprovar/recusar no simulador, cancelar e reativar continuam usando as mesmas rotas, sem ativação de plano pelo cliente.
 
 A auditoria de prontidão e os limites de comprovação estão em [auditoria de 16/11/2026](../auditoria-prontidao-2026-11-16.md).
+
+
+## ML na apresentação — 2026-11-16
+No detalhe de conteúdo existente, a agência de demonstração mostra cenários e histórico sintético. O portal dos dois clientes fictícios mostra um cenário identificado como fictício, sem tarefas ou ritmos internos. Só na exportação web dev; não treina nem publica dados reais. Decisão: `2026-11-16-ml-ficticio-no-detalhe-da-demonstracao.md`.

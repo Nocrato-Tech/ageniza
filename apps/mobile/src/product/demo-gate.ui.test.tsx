@@ -20,7 +20,6 @@ const agencyName = 'Agência Horizonte · Demonstração';
 vi.mock('../demo/config', () => ({ get demoWorkspaceEnabled() { return gate.enabled; }, demoAgencyName: 'Agência Horizonte · Demonstração' }));
 vi.mock('../demo/DemoWorkspace', () => ({ DemoWorkspace: () => <p>Demo workspace screen</p> }));
 vi.mock('../demo/WebNotifications', () => ({ WebNotifications: () => <p>Demo notifications</p> }));
-vi.mock('../demo/ContentLearning', () => ({ ContentLearning: () => <p>Demo content learning</p> }));
 const repository = vi.hoisted(() => ({ demo: false, load: vi.fn(), detail: vi.fn(), library: vi.fn(), thumbnail: vi.fn() }));
 vi.mock('./remote', () => ({ remoteRepository: () => repository }));
 import { MobileApp } from './MobileApp';
@@ -90,13 +89,13 @@ it('shows the demo notifications panel only when the gate is on', async () => {
   expect(await screen.findByText('Demo notifications')).toBeTruthy();
 });
 it('shows the content learning panel on a content only when the gate is on', () => {
-  const props = { post, data, side: 'agency' as const, repository: repository as unknown as Repository, busy: false, onMove: async () => {}, onUpdate: async () => true, onEdit: () => {}, onError: () => {} };
+  const props = { post, data, side: 'agency' as const, repository: { ...repository, context: context(agencyName) } as unknown as Repository, busy: false, onMove: async () => {}, onUpdate: async () => true, onEdit: () => {}, onError: () => {} };
   const { unmount } = render(<PostDetail {...props} />);
   expect(screen.getByText('Conteúdo de teste')).toBeTruthy();
-  expect(screen.queryByText('Demo content learning')).toBeNull();
+  expect(screen.queryByText('Machine Learning · demonstração com dados fictícios')).toBeNull();
   unmount(); gate.enabled = true;
   render(<PostDetail {...props} />);
-  expect(screen.getByText('Demo content learning')).toBeTruthy();
+  expect(screen.getByText('Machine Learning · demonstração com dados fictícios')).toBeTruthy();
 });
 it('preserves the comment draft when an adjustment is opened and cancelled', () => {
   render(<PostDetail post={{ ...post, status: 'awaiting_approval' }} data={data} side="client" repository={repository as unknown as Repository} busy={false} onMove={async () => {}} onUpdate={async () => true} onEdit={() => {}} onError={() => {}} />);
@@ -117,4 +116,19 @@ it('sends an agency comment in production without moving the content', async () 
   fireEvent.click(screen.getByRole('button', { name: 'Enviar comentário' }));
   await waitFor(() => expect(comment).toHaveBeenCalledExactlyOnceWith(post, 'Comentário de produção'));
   expect(onMove).not.toHaveBeenCalled();
+});
+
+it('keeps client presentation synthetic, scoped to the selected client and without internal signals', () => {
+  gate.enabled = true;
+  const clientContext = { type: 'client' as const, agencyId: 'one', agencyName, clientId: 'c1', clientName: 'Clínica Vida · Exemplo', onboardingPending: false };
+  const props = { post: { ...post, status: 'awaiting_approval' as const }, data, side: 'client' as const, repository: { ...repository, context: clientContext } as unknown as Repository, busy: false, onMove: async () => {}, onUpdate: async () => true, onEdit: () => {}, onError: () => {} };
+  const view = render(<PostDetail {...props} />);
+  expect(screen.getByText('Machine Learning · demonstração')).toBeTruthy();
+  expect(screen.queryByText(/Tarefas pendentes no cenário/)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Ver histórico provisório' })).toBeNull();
+  expect(request).not.toHaveBeenCalled();
+  view.rerender(<PostDetail {...props} repository={{ ...repository, context: { ...clientContext, clientId: 'other' } } as unknown as Repository} />);
+  expect(screen.queryByText('Machine Learning · demonstração')).toBeNull();
+  view.rerender(<PostDetail {...props} repository={{ ...repository, context: { ...clientContext, clientName: 'Cliente real' } } as unknown as Repository} />);
+  expect(screen.queryByText('Machine Learning · demonstração')).toBeNull();
 });
