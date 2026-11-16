@@ -166,3 +166,5 @@ Na web de desenvolvimento com demonstração habilitada, cada proprietário da p
 O app reaproveita vínculo ativo, não reativa acesso removido automaticamente e só oferece a entrada após a API devolver o contexto de cliente correspondente. A troca usa o mesmo seletor de contexto autenticado das demais entradas. Qualquer conta verificada pode repetir o fluxo no próprio espaço de demonstração; isso não abre uma agência compartilhada nem altera as permissões do portal.
 
 Para testar: entre na agência de demonstração, abra **Mais → Preparar dados de demonstração → Preparar meu acesso ao portal de exemplo**. Depois da confirmação do servidor, **Entrar no portal de exemplo** usa a seleção autenticada normal. Uma recusa do servidor aparece nesse mesmo cartão, permitindo tentar novamente sem refazer o cadastro.
+
+Na demonstração web dev, os dois clientes fictícios veem o ML no detalhe já existente: cenário sintético de prontidão e alcance, identificado como fictício, sem tarefas, ritmos internos ou histórico da agência. Não executa pedidos à API nem altera a publicação.

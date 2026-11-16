@@ -35,3 +35,7 @@ Testar isolamento do alvo, bloqueio fora de dev, retomada após falha parcial se
 
 ## 12. Recorte
 Issue #833. Corrige a interpretação do PR #832; não conclui as issues de produção #817–#820.
+
+
+## ML na apresentação — 2026-11-16
+No detalhe de conteúdo existente, a agência de demonstração mostra cenários e histórico sintético. O portal dos dois clientes fictícios mostra um cenário identificado como fictício, sem tarefas ou ritmos internos. Só na exportação web dev; não treina nem publica dados reais. Decisão: `2026-11-16-ml-ficticio-no-detalhe-da-demonstracao.md`.

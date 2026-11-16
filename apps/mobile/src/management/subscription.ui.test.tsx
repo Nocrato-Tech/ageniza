@@ -23,7 +23,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) });
   request.mockImplementation(async (path: string) => {
     if (path.endsWith('/me')) return { plan: { kind: 'trial', readOnly: false } };
-    if (path.endsWith('/plans')) return { plans: [{ key: 'essencial', name: 'Essencial', monthlyCents: 9700, clientLimit: 10, storageBytes: 20 * 1024 ** 3 }] };
+    if (path.endsWith('/plans')) return { extraClientCents: 600, extraStorageGibCents: 40, maxExtra: 10000, plans: [{ key: 'essencial', name: 'Essencial', monthlyCents: 9700, clientLimit: 10, storageBytes: 20 * 1024 ** 3 }] };
     if (path.endsWith('/quote')) return { amountCents: 9700, monthlyCents: 9700, effect: 'subscribe', effectiveAt: '2026-11-05T12:00:00Z' };
     if (path.endsWith('/charges')) return { chargeId: 'charge-one', amountCents: 9700, monthlyCents: 9700, effect: 'subscribe', effectiveAt: '2026-11-05T12:00:00Z' };
     if (path.endsWith('/simulated-payment')) return { status: outcome };
@@ -33,14 +33,28 @@ beforeEach(() => {
 afterEach(cleanup);
 async function quote() {
   render(<SubscriptionScreen context={context} />);
-  await screen.findByRole('button', { name: 'Plano desejado' });
-  fireEvent.click(screen.getByRole('button', { name: 'Plano desejado' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Selecionar Essencial' }));
+  fireEvent.click(await screen.findByRole('radio', { name: 'Selecionar Essencial' }));
   fireEvent.click(screen.getByRole('button', { name: 'Calcular alteração sem cobrar' }));
   await screen.findByText('Confira antes de confirmar');
   await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar alteração no ambiente simulado' }).getAttribute('aria-disabled')).not.toBe('true'));
 }
 describe('server-backed simulated billing', () => {
+  it('keeps the selected plan and extras stable while a quote is pending', async () => {
+    let finish: (value: unknown) => void = () => {};
+    const respond = request.getMockImplementation()!;
+    request.mockImplementation((path, options) => path.endsWith('/quote') ? new Promise(resolve => { finish = resolve; }) : respond(path, options));
+    render(<SubscriptionScreen context={context} />);
+    fireEvent.click(await screen.findByRole('radio', { name: 'Selecionar Essencial' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Clientes extras' }), { target: { value: '2' } });
+    expect(screen.getByText('R$ 109,00/mês')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular alteração sem cobrar' }));
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Selecionar Essencial' }).getAttribute('aria-disabled')).toBe('true'));
+    expect((screen.getByRole('textbox', { name: 'Clientes extras' }) as HTMLInputElement).readOnly).toBe(true);
+    await act(async () => finish({ amountCents: 10900, monthlyCents: 10900, effect: 'subscribe', effectiveAt: '2026-11-05T12:00:00Z' }));
+    expect(await screen.findByText('Confira antes de confirmar')).toBeTruthy();
+    expect(request.mock.calls.some(([path]) => String(path).endsWith('/charges'))).toBe(false);
+  });
+
   it('quotes, explicitly requests one charge and confirms only the server response', async () => {
     await quote();
     expect(request.mock.calls.some(([path]) => String(path).endsWith('/charges'))).toBe(false);

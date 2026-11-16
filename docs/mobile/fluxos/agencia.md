@@ -630,3 +630,15 @@ O app só mostra foto e vídeo. Os tipos novos da biblioteca (PDF, áudio e logo
 ## Estudo de marca visual no mobile
 
 Cores são editadas em uma paleta com amostras visíveis, nomes, hexadecimal e ajustes RGB na web, limitada às 24 cores do contrato. Identidade, tom de voz e posicionamento apresentam perguntas específicas; textos existentes são preservados e as orientações continuam gravadas como texto legível, sem formato novo na API. Arquétipo é uma escolha visual entre as opções oficiais. Cancelar descarta somente o rascunho; salvar usa a mesma rota de seção. O portal vê as orientações e a paleta sem controles de edição.
+
+## Comparação de planos no mobile
+
+A assinatura reúne os planos em linhas selecionáveis com preço mensal, limite de clientes, armazenamento e identificação do plano atual. Os extras mostram os valores unitários do catálogo e uma estimativa mensal; a cotação continua sendo calculada pelo servidor, inclusive proporcional e vigência. O plano não é contratado pela seleção.
+
+Durante a consulta/cotação, seleção e quantidades ficam bloqueadas para conservar a revisão correspondente. Alterar plano ou extras invalida a revisão anterior. A escolha aceita teclado e movimento reduzido; a página e os campos conservam identidade. O aviso de simulação/indisponibilidade antecede a ação. Confirmar cobrança, aprovar/recusar no simulador, cancelar e reativar continuam usando as mesmas rotas, sem ativação de plano pelo cliente.
+
+A auditoria de prontidão e os limites de comprovação estão em [auditoria de 16/11/2026](../auditoria-prontidao-2026-11-16.md).
+
+
+## ML na apresentação — 2026-11-16
+No detalhe de conteúdo existente, a agência de demonstração mostra cenários e histórico sintético. O portal dos dois clientes fictícios mostra um cenário identificado como fictício, sem tarefas ou ritmos internos. Só na exportação web dev; não treina nem publica dados reais. Decisão: `2026-11-16-ml-ficticio-no-detalhe-da-demonstracao.md`.

@@ -1,8 +1,7 @@
 import { ScreenMotion } from './motion';
 import { Disclosure } from './Disclosure';
 import { FlowList } from './FlowList';
-import { ContentLearning } from '../demo/ContentLearning';
-import { demoWorkspaceEnabled } from '../demo/config';
+import { ProvisionalPredictions } from '../demo/ProvisionalPredictions';
 import { ContentTasks } from './ContentTasks';
 import { ContentActions } from './ContentActions';
 import { useState } from 'react';
@@ -31,10 +30,11 @@ export function PostDetail({ post, data, side, repository, busy, onMove, onUpdat
       {hidden ? <Info title="Conteúdo em produção" text="A agência está preparando este conteúdo. A legenda e as mídias estarão disponíveis quando ele for enviado para aprovação." /> : changes ? <><Field label="O que precisa mudar? *" value={adjustment} onChangeText={setAdjustment} placeholder="Descreva o que a agência precisa ajustar." multiline maxLength={4000} style={{ minHeight: 160, textAlignVertical: 'top' }} /><Info title="A agência recebe seu comentário" text="O pedido fica vinculado à versão que você está revisando." /></> : <>
         {side === 'agency' && <Tabs value={tab} options={[{ id: 'summary', label: 'Conteúdo' }, { id: 'preview', label: 'Instagram' }, { id: 'conversation', label: 'Conversa' }]} onChange={setTab} />}
         {(tab === 'preview' || side === 'client') && <InstagramPreview key={post.id} post={post} client={client} assets={data.assets} repository={repository} />}
+        {side === 'client' && repository.context && <ProvisionalPredictions context={repository.context} post={post} canRead /> }
         {side === 'agency' && tab === 'summary' && <>
           <Card><Txt kind="strong">Publicação</Txt><Txt>{post.caption || 'Nenhuma legenda adicionada.'}</Txt><Txt kind="small" color={colors.muted}>{post.mediaIds.length} mídia(s) vinculada(s)</Txt><Action soft label="Prévia do Instagram" onPress={() => setTab('preview')} /></Card>
           <Card><View style={ui.row}><Avatar name={owner?.name ?? data.profile.name} size={32} accent /><View><Txt kind="strong">{owner?.name ?? data.profile.name}</Txt><Txt kind="small" color={colors.muted}>Responsável pela produção</Txt></View></View><View style={ui.line} /><Txt kind="small" color={colors.muted}>Publicação proposta · {displayDay(post.date)} · {post.time || 'Sem horário'}</Txt></Card>
-          {demoWorkspaceEnabled && !['published', 'cancelled'].includes(post.status) && <ContentLearning post={post} />}
+          {repository.context && <ProvisionalPredictions context={repository.context} post={post} canRead={data.permissions.includes('*') || data.permissions.includes('conteudo.visualizar')} />}
           <ContentTasks post={post} data={data} repository={repository} busy={busy} onUpdate={onUpdate} />
           <ContentActions post={post} data={data} busy={busy} onMove={onMove} />
           {canEdit && <Action soft label="Editar conteúdo" onPress={onEdit} />}
