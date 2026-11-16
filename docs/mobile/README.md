@@ -22,6 +22,8 @@ Esta documentação também está publicada, com os diagramas desenhados e a ref
 
 ## Referências
 
+- [Auditoria de prontidão de 16/11/2026](auditoria-prontidao-2026-11-16.md): evidências do dev, diferenças para o código local e dependências de ML, hospedagem e pagamentos.
+
 - [Sistema de movimento](motion-system.md): seleção contínua, painéis, listas, acessibilidade e limites de validação no mobile web.
 
 - [Referência da API](../api/README.md): cada rota com acesso, permissão, exemplo de corpo e erros. Gerada do código; é a fonte da verdade dos contratos.
