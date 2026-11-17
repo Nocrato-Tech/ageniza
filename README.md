@@ -6,6 +6,16 @@ New here? Start with [onboarding](docs/onboarding.md), or read the [product over
 
 Going to write code? [`CONTRIBUTING.md`](CONTRIBUTING.md) covers branching, commits, pull requests and review; [docs/local-environment.md](docs/local-environment.md) takes a fresh clone to an environment you can actually sign into — **the database starts empty and there is no public sign-up**, so creating an agency is a documented step you cannot skip.
 
+## Presentation and demo links
+
+- [Presentation in Figma Slides](https://www.figma.com/slides/c2DNUrFMfA2as2xKJR2vg9)
+- [Desktop web demo](https://dev.ageniza.com.br/)
+- [Mobile web demo](https://dev.ageniza.com.br/app-mobile/)
+- [REST API presentation artifact and conceptual model](https://claude.ai/artifact/AuXwpfgqLnc6KbeR822KBy) — illustrative requests, not the running API. The current contract is in [the API reference](docs/api/README.md).
+- [Download the internal Android APK](https://github.com/Nocrato-Tech/ageniza/releases/tag/mobile-internal-2026-11-16) — open **Assets** and download `ageniza-internal.apk`.
+
+The internal APK connects to the development environment and uses the separate application ID `com.ageniza.mobile.internal`. It is a development-signed validation build, not a store release. The synthetic ML presentation is available in the mobile web demo. [APK build and checks](https://github.com/Nocrato-Tech/ageniza/actions/runs/43986581902).
+
 ## Prerequisites
 
 - Node.js 22.14+ (see `.nvmrc`)
