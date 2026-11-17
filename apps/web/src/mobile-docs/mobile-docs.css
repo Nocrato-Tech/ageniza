@@ -115,3 +115,9 @@
 .mdocs-code { min-width: 0; }
 .mdocs-code__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); color: var(--text-secondary); font: var(--caption); }
 .mdocs-code pre { margin: 0; max-height: 28rem; }
+
+.mdocs-live { margin-block: var(--space-6); padding: var(--space-5); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); scroll-margin-top: 6rem; }
+.mdocs-live h2 { margin-top: 0; font: var(--heading-lg); }
+.mdocs-live__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.mdocs-live__note { color: var(--text-secondary); font: var(--body-md); }
+.mdocs-live code { overflow-wrap: anywhere; }
