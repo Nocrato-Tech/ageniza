@@ -45,3 +45,5 @@ Esta documentação também está publicada, com os diagramas desenhados e a ref
 | Lote | os conteúdos enviados juntos para aprovação num e-mail |
 
 > Esta pasta acompanha o produto: todo PR que muda um fluxo atualiza o arquivo do fluxo aqui.
+
+A referência em /mobile/api#api-live permite executar consultas públicas reais de saúde, prontidão e provedores de login, mostrando o status HTTP e o JSON recebido do ambiente. A consulta só ocorre ao clicar, sem cookies ou alterações de dados.

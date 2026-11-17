@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mermaid = vi.hoisted(() => ({ initialize: vi.fn(), render: vi.fn() }));
 vi.mock('mermaid', () => ({ default: mermaid }));
 
+import { ApiClientProvider, HttpClient } from '../http.js';
 import { getReference } from './api-reference.js';
 import { guide } from './content.js';
 import { GuideMarkdown } from './markdown.js';
@@ -19,7 +20,7 @@ const FENCE = '```';
 const renderAt = (path: string) =>
   render(
     <MemoryRouter initialEntries={[path]}>
-      <Routes><Route path="mobile/*" element={<MobileDocsPage />} /></Routes>
+      <ApiClientProvider client={new HttpClient('https://dev.ageniza.com.br/api')}><Routes><Route path="mobile/*" element={<MobileDocsPage />} /></Routes></ApiClientProvider>
     </MemoryRouter>
   );
 
@@ -130,7 +131,7 @@ describe('the tab Referência da API', () => {
     const model = getReference();
     expect(screen.getByRole('heading', { level: 1, name: 'Referência da API' })).toBeTruthy();
     expect(screen.getByRole('status').textContent).toBe(`${model.operationCount} rotas`);
-    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(model.groups.map((group) => group.name));
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['API em execução', ...model.groups.map((group) => group.name)]);
     expect(screen.getByRole('link', { name: 'Referência da API' }).getAttribute('aria-current')).toBe('page');
   });
 

@@ -3,6 +3,7 @@ import { Check, Copy } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
+import { LiveApiPanel } from './live-api.js';
 import { InlineMarkdown } from './markdown.js';
 import { buildReference, searchOperations, type ApiReferenceModel, type OperationView, type OpenApiDocument } from './openapi.js';
 import openapiSource from '../../../../docs/api/openapi.json?raw';
@@ -149,6 +150,7 @@ export function ApiReference() {
           </Field>
           <p role="status" className="mdocs-count">{query.trim() === '' ? `${model.operationCount} rotas` : `${found} de ${model.operationCount} rotas`}</p>
         </header>
+        <LiveApiPanel />
         {found === 0 && <p className="mdocs-empty">Nenhuma rota encontrada. Tente o caminho (<code>/clients</code>), a permissão ou o código do erro.</p>}
         {groups.map((group) => (
           <section key={group.name} id={`tag-${group.name}`} className="mdocs-tag" aria-labelledby={`tag-${group.name}-title`}>
