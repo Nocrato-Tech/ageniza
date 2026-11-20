@@ -29,6 +29,8 @@ const renderAt = (path: string, fetchImpl: typeof fetch = async () => new Respon
 };
 
 describe('legal pages', () => {
+
+
   it.each([
     ['/termos', termsOfUse, 'Política de Privacidade'],
     ['/privacidade', privacyPolicy, 'Termos de Uso']
@@ -44,6 +46,21 @@ describe('legal pages', () => {
     // The content ships in the bundle: no request is made to render it.
     expect(calls).toBe(0);
   });
+
+  it.each(['/termos', '/privacidade'])(
+    'shows exit guidance when %s is opened from approval',
+    (path) => {
+      renderAt(`${path}?origem=aprovacao`);
+
+      expect(
+        screen.getByText('Você pode fechar esta aba para voltar às aprovações.')
+      ).toBeTruthy();
+
+      expect(
+        screen.queryByRole('button', { name: 'Voltar' })
+      ).toBeNull();
+    }
+  );
 
   it('sets the browser tab title to the document', () => {
     renderAt('/termos');
