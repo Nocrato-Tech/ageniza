@@ -203,6 +203,46 @@ describe('the page of the approval link (#717)', () => {
   });
 
   describe('the states of the page', () => {
+
+    it('does not redirect to login when the approval link is invalid', async () => {
+      open([A], {
+        setup: (server) => {
+          server.world.linkAlive = false;
+        }
+      });
+      await screen.findByRole('heading', {
+        name: 'Este link não vale mais'
+      });
+      expect(
+        screen.getByText('Você pode fechar esta aba.')
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole('link', { name: 'Ir para o início' })
+      ).toBeNull();
+    });
+
+    it('shows exit guidance when the approval session expires', async () => {
+      const { api } = await loaded([A]);
+
+      api.world.sessionLive = false;
+
+      fireEvent.click(
+        within(card(A.title)).getByRole('button', { name: 'Aprovar' })
+      );
+
+      await screen.findByRole('heading', {
+        name: 'Sua sessão venceu'
+      });
+
+      expect(
+        screen.getByText('Você pode fechar esta aba.')
+      ).toBeTruthy();
+
+      expect(
+        screen.queryByRole('link', { name: 'Ir para o início' })
+      ).toBeNull();
+    });
+
     it('says it is loading, with the shape of the page, until the lot arrives', async () => {
       const gate = held();
       open([A], { controls: { hold: { batch: gate.promise } } });

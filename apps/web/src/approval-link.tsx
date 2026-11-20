@@ -573,10 +573,11 @@ function RetryView({ text, onRetry }: { text: string; onRetry: () => void }) {
   </div>;
 }
 
-const HOME_ACTION = <ButtonLink as={Link} size="lg" to="/">Ir para o início</ButtonLink>;
+const EXIT_GUIDANCE = <span>Você pode fechar esta aba.</span>;
 
 export function ApprovalLinkPage() {
   const link = useApprovalLink();
+
   useDocumentTitle('Conteúdos para aprovar — Ageniza');
   useNoReferrer();
   const { phase } = link;
@@ -586,14 +587,14 @@ export function ApprovalLinkPage() {
     <main id="main-content" className="approval__main">
       {phase.kind === 'loading' && <LoadingView />}
       {phase.kind === 'ready' && <ReadyView batch={phase.batch} link={link} />}
-      {phase.kind === 'invalid' && <StatusPanel as="section" titleId="approval-invalid-title" title={MESSAGES.invalidTitle} action={HOME_ACTION}>{MESSAGES.invalid}</StatusPanel>}
-      {phase.kind === 'expired' && <StatusPanel as="section" titleId="approval-expired-title" title={MESSAGES.expiredTitle} action={HOME_ACTION}>{MESSAGES.expired}</StatusPanel>}
+      {phase.kind === 'invalid' && <StatusPanel as="section" titleId="approval-invalid-title" title={MESSAGES.invalidTitle} action={EXIT_GUIDANCE}>{MESSAGES.invalid}</StatusPanel>}
+      {phase.kind === 'expired' && <StatusPanel as="section" titleId="approval-expired-title" title={MESSAGES.expiredTitle} action={EXIT_GUIDANCE}>{MESSAGES.expired}</StatusPanel>}
       {phase.kind === 'limited' && <RetryView text={MESSAGES.limited} onRetry={link.retry} />}
       {phase.kind === 'failed' && <RetryView text={MESSAGES.loadFailed} onRetry={link.retry} />}
     </main>
     <footer className="approval__legal">
-      <Link to="/termos" target="_blank" rel="noreferrer">Termos de uso</Link>
-      <Link to="/privacidade" target="_blank" rel="noreferrer">Privacidade</Link>
+      <Link to="/termos?origem=aprovacao" target="_blank" rel="noreferrer">Termos de uso</Link>
+      <Link to="/privacidade?origem=aprovacao" target="_blank" rel="noreferrer">Privacidade</Link>
     </footer>
   </div>;
 }

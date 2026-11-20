@@ -17,6 +17,7 @@ export function LegalDocumentPage({ document, sibling }: {
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const fromApproval = new URLSearchParams(location.search).get('origem') === 'aprovacao';
   useDocumentTitle(`${document.title} — Ageniza`);
 
   // Opened directly by URL or in a new tab, there is no in-app history to return to; `default` is
@@ -41,8 +42,17 @@ export function LegalDocumentPage({ document, sibling }: {
       </section>
     ))}
     <footer className="legal-footer">
-      <Link to={sibling.to}>{sibling.title}</Link>
-      <Button variant="ghost" leadingIcon={<ArrowLeft />} onClick={goBack}>Voltar</Button>
+      <Link to={fromApproval ? `${sibling.to}?origem=aprovacao` : sibling.to}>
+        {sibling.title}
+      </Link>
+
+      {fromApproval ? (
+        <p>Você pode fechar esta aba para voltar às aprovações.</p>
+      ) : (
+        <Button variant="ghost" leadingIcon={<ArrowLeft />}onClick={goBack}>
+          Voltar
+        </Button>
+      )}
     </footer>
   </article>;
 }
